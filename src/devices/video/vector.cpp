@@ -91,12 +91,6 @@ vector_device::vector_device(const machine_config &mconfig, const char *tag, dev
 {
 }
 
-float vector_device::m_flicker = 0.0f;
-float vector_device::m_beam_width_min = 0.0f;
-float vector_device::m_beam_width_max = 0.0f;
-float vector_device::m_beam_intensity_weight = 0.0f;
-int vector_device::m_vector_index;
-
 struct serial_segment_t {
 	struct serial_segment_t * next;
 	int intensity;
@@ -457,41 +451,6 @@ void vector_device::device_start()
 		m_serial_fd = serial_open(m_serial);
 		fprintf(stderr, "serial dev='%s' fd=%d\n", m_serial, m_serial_fd);
 	}
-}
-
-void vector_device::set_flicker(float newval)
-{
-	m_flicker = newval;
-}
-
-float vector_device::get_flicker()
-{
-	return m_flicker;
-}
-
-void vector_device::set_beam_width_min(float newval)
-{
-	m_beam_width_min = newval;
-}
-
-float vector_device::get_beam_width_min()
-{
-	return m_beam_width_min;
-}
-
-void vector_device::set_beam_width_max(float newval)
-{
-	m_beam_width_max = newval;
-}
-
-float vector_device::get_beam_width_max()
-{
-	return m_beam_width_max;
-}
-
-void vector_device::set_beam_intensity_weight(float newval)
-{
-	m_beam_intensity_weight = newval;
 }
 
 /*
