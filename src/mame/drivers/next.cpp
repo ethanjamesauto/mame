@@ -25,14 +25,19 @@
 ****************************************************************************/
 
 
+#include "emu.h"
 #include "includes/next.h"
-#include "formats/pc_dsk.h"
-#include "formats/mfi_dsk.h"
-#include "machine/nscsi_cd.h"
-#include "machine/nscsi_hd.h"
+
+#include "bus/nscsi/cd.h"
+#include "bus/nscsi/hd.h"
+#include "screen.h"
 #include "softlist.h"
 
-UINT32 next_state::screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
+#include "formats/mfi_dsk.h"
+#include "formats/pc_dsk.h"
+
+
+uint32_t next_state::screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
 {
 	// We don't handle partial updates, but we don't generate them either :-)
 	if(cliprect.min_x || cliprect.min_y || cliprect.max_x+1 != screen_sx || cliprect.max_y+1 != screen_sy)
@@ -43,29 +48,29 @@ UINT32 next_state::screen_update(screen_device &screen, bitmap_rgb32 &bitmap, co
 	// 1120x832 (8)
 	// 832x624 (5c,9c)
 	if(screen_color) {
-		const UINT32 *vr = vram;
+		const uint32_t *vr = vram;
 		for(int y=0; y<screen_sy; y++) {
-			UINT32 *pix = reinterpret_cast<UINT32 *>(bitmap.raw_pixptr(y));
+			uint32_t *pix = reinterpret_cast<uint32_t *>(bitmap.raw_pixptr(y));
 			for(int x=0; x<screen_sx; x+=2) {
-				UINT32 v = *vr++;
+				uint32_t v = *vr++;
 				for(int xi=0; xi<2; xi++) {
-					UINT16 pen = (v >> (16-(xi*16))) & 0xffff;
-					UINT32 r = (pen & 0xf000) >> 12;
-					UINT32 g = (pen & 0x0f00) >> 8;
-					UINT32 b = (pen & 0x00f0) >> 4;
-					UINT32 col = (r << 20) | (r << 16) | (g << 12) | (g << 8) | (b << 4) | b;
+					uint16_t pen = (v >> (16-(xi*16))) & 0xffff;
+					uint32_t r = (pen & 0xf000) >> 12;
+					uint32_t g = (pen & 0x0f00) >> 8;
+					uint32_t b = (pen & 0x00f0) >> 4;
+					uint32_t col = (r << 20) | (r << 16) | (g << 12) | (g << 8) | (b << 4) | b;
 					*pix++ = col;
 				}
 			}
 			vr += screen_skip;
 		}
 	} else {
-		static UINT32 colors[4] = { 0xffffff, 0xaaaaaa, 0x555555, 0x000000 };
-		const UINT32 *vr = vram;
+		static uint32_t colors[4] = { 0xffffff, 0xaaaaaa, 0x555555, 0x000000 };
+		const uint32_t *vr = vram;
 		for(int y=0; y<screen_sy; y++) {
-			UINT32 *pix = reinterpret_cast<UINT32 *>(bitmap.raw_pixptr(y));
+			uint32_t *pix = reinterpret_cast<uint32_t *>(bitmap.raw_pixptr(y));
 			for(int x=0; x<screen_sx; x+=16) {
-				UINT32 v = *vr++;
+				uint32_t v = *vr++;
 				for(int xi=0; xi<16; xi++)
 					*pix++ = colors[(v >> (30-(xi*2))) & 0x3];
 			}
@@ -76,36 +81,18 @@ UINT32 next_state::screen_update(screen_device &screen, bitmap_rgb32 &bitmap, co
 	return 0;
 }
 
-/* Dummy catcher for any unknown r/w */
-READ8_MEMBER( next_state::io_r )
-{
-	if(!space.debugger_access())
-		printf("io_r %08x (%08x)\n",offset+0x02000000, space.device().safe_pc());
-
-	if(offset == 0xc0)
-		return 0;
-
-	return 0xff;
-}
-
-WRITE8_MEMBER( next_state::io_w )
-{
-	if(!space.debugger_access())
-		printf("io_w %08x, %02x (%08x)\n",offset+0x02000000,data, space.device().safe_pc());
-}
-
 /* map ROM at 0x01000000-0x0101ffff? */
-READ32_MEMBER( next_state::rom_map_r )
+uint32_t next_state::rom_map_r()
 {
-	if(0 && !space.debugger_access())
-		printf("%08x ROM MAP?\n",space.device().safe_pc());
+	if(0 && !machine().side_effects_disabled())
+		printf("%08x ROM MAP?\n",maincpu->pc());
 	return 0x01000000;
 }
 
-READ32_MEMBER( next_state::scr2_r )
+uint32_t next_state::scr2_r()
 {
-	if(0 && !space.debugger_access())
-		printf("%08x\n",space.device().safe_pc());
+	if(0 && !machine().side_effects_disabled())
+		printf("%08x\n",maincpu->pc());
 	/*
 	x--- ---- ---- ---- ---- ---- ---- ---- dsp reset
 	-x-- ---- ---- ---- ---- ---- ---- ---- dsp block end
@@ -132,17 +119,17 @@ READ32_MEMBER( next_state::scr2_r )
 
 	*/
 
-	UINT32 data = scr2 & 0xfffffbff;
+	uint32_t data = scr2 & 0xfffffbff;
 
 	data |= rtc->sdo_r() << 10;
 
 	return data;
 }
 
-WRITE32_MEMBER( next_state::scr2_w )
+void next_state::scr2_w(offs_t offset, uint32_t data, uint32_t mem_mask)
 {
-	if(0 && !space.debugger_access())
-		printf("scr2_w %08x (%08x)\n", data, space.device().safe_pc());
+	if(0 && !machine().side_effects_disabled())
+		printf("scr2_w %08x (%08x)\n", data, maincpu->pc());
 	COMBINE_DATA(&scr2);
 
 	rtc->ce_w(BIT(scr2, 8));
@@ -152,7 +139,7 @@ WRITE32_MEMBER( next_state::scr2_w )
 	irq_set(1, scr2 & 0x02000000);
 }
 
-READ32_MEMBER( next_state::scr1_r )
+uint32_t next_state::scr1_r()
 {
 	/*
 	    xxxx ---- ---- ---- ---- ---- ---- ---- slot ID
@@ -219,8 +206,8 @@ READ32_MEMBER( next_state::scr1_r )
 
 void next_state::irq_set(int id, bool raise)
 {
-	UINT32 mask = 1U << id;
-	UINT32 old_status = irq_status;
+	uint32_t mask = 1U << id;
+	uint32_t old_status = irq_status;
 	if(raise)
 		irq_status |= mask;
 	else
@@ -230,17 +217,17 @@ void next_state::irq_set(int id, bool raise)
 }
 
 
-READ32_MEMBER( next_state::irq_status_r )
+uint32_t next_state::irq_status_r()
 {
 	return irq_status;
 }
 
-READ32_MEMBER( next_state::irq_mask_r )
+uint32_t next_state::irq_mask_r()
 {
 	return irq_mask;
 }
 
-WRITE32_MEMBER( next_state::irq_mask_w )
+void next_state::irq_mask_w(offs_t offset, uint32_t data, uint32_t mem_mask)
 {
 	COMBINE_DATA(&irq_mask);
 	irq_check();
@@ -248,7 +235,7 @@ WRITE32_MEMBER( next_state::irq_mask_w )
 
 void next_state::irq_check()
 {
-	UINT32 act = irq_status & (irq_mask | 0x80000000);
+	uint32_t act = irq_status & (irq_mask | 0x80000000);
 	int bit;
 	for(bit=31; bit >= 0 && !(act & (1U << bit)); bit--);
 
@@ -266,24 +253,24 @@ void next_state::irq_check()
 
 	if(level != irq_level) {
 		maincpu->set_input_line(irq_level, CLEAR_LINE);
-		maincpu->set_input_line_and_vector(level, ASSERT_LINE, M68K_INT_ACK_AUTOVECTOR);
+		maincpu->set_input_line(level, ASSERT_LINE);
 		irq_level = level;
 	}
 }
 
-const char *next_state::dma_targets[0x20] = {
+char const *const next_state::dma_targets[0x20] = {
 	nullptr, "scsi", nullptr, nullptr, "soundout", "disk", nullptr, nullptr,
 	"soundin", "printer", nullptr, nullptr, "scc", "dsp", nullptr, nullptr,
 	"s-enetx", "enetx", nullptr, nullptr, "s-enetr", "enetr", nullptr, nullptr,
 	"video", nullptr, nullptr, nullptr, "r2m", "m2r", nullptr, nullptr
 };
 
-const int next_state::dma_irqs[0x20] = {
+int const next_state::dma_irqs[0x20] = {
 	-1, 26, -1, -1, 23, 25, -1, -1, 22, 24, -1, -1, 21, 20, -1, -1,
 	-1, 28, -1, -1, -1, 27, -1, -1,  5, -1, -1, -1, 18, 19, -1, -1
 };
 
-const bool next_state::dma_has_saved[0x20] = {
+bool const next_state::dma_has_saved[0x20] = {
 	false, false, false, false, false, false, false, false,
 	false, false, false, false, false, false, false, false,
 	false, true,  false, false, false, true,  false, false,
@@ -301,7 +288,7 @@ const char *next_state::dma_name(int slot)
 
 void next_state::dma_drq_w(int slot, bool state)
 {
-	//  fprintf(stderr, "DMA drq_w %d, %d\n", slot, state);
+	//  logerror("DMA drq_w %d, %d\n", slot, state);
 	dma_slot &ds = dma_slots[slot];
 	ds.drq = state;
 	if(state && (ds.state & DMA_ENABLE)) {
@@ -309,7 +296,7 @@ void next_state::dma_drq_w(int slot, bool state)
 		if(ds.state & DMA_READ) {
 			while(ds.drq) {
 				dma_check_update(slot);
-				UINT8 val;
+				uint8_t val;
 				bool eof;
 				bool err;
 				dma_read(slot, val, eof, err);
@@ -326,7 +313,7 @@ void next_state::dma_drq_w(int slot, bool state)
 		} else {
 			while(ds.drq) {
 				dma_check_update(slot);
-				UINT8 val = space.read_byte(ds.current++);
+				uint8_t val = space.read_byte(ds.current++);
 				bool eof = ds.current == (ds.limit & 0x7fffffff) && (ds.limit & 0x80000000);
 				bool err;
 				dma_write(slot, val, eof, err);
@@ -343,7 +330,7 @@ void next_state::dma_drq_w(int slot, bool state)
 	}
 }
 
-void next_state::dma_read(int slot, UINT8 &val, bool &eof, bool &err)
+void next_state::dma_read(int slot, uint8_t &val, bool &eof, bool &err)
 {
 	err = false;
 	eof = false;
@@ -360,7 +347,8 @@ void next_state::dma_read(int slot, UINT8 &val, bool &eof, bool &err)
 		break;
 
 	case 5:
-		val = mo->dma_r();
+		if(mo)
+			val = mo->dma_r();
 		break;
 
 	case 21:
@@ -375,7 +363,7 @@ void next_state::dma_read(int slot, UINT8 &val, bool &eof, bool &err)
 	}
 }
 
-void next_state::dma_write(int slot, UINT8 data, bool eof, bool &err)
+void next_state::dma_write(int slot, uint8_t data, bool eof, bool &err)
 {
 	err = false;
 	switch(slot) {
@@ -394,7 +382,8 @@ void next_state::dma_write(int slot, UINT8 data, bool eof, bool &err)
 		break;
 
 	case 5:
-		mo->dma_w(data);
+		if(mo)
+			mo->dma_w(data);
 		break;
 
 	case 17:
@@ -447,12 +436,12 @@ void next_state::dma_check_end(int slot, bool eof)
 		dma_end(slot);
 }
 
-READ32_MEMBER( next_state::dma_regs_r)
+uint32_t next_state::dma_regs_r(offs_t offset)
 {
 	int slot = offset >> 2;
 	int reg = offset & 3;
 
-	UINT32 res;
+	uint32_t res;
 
 	switch(reg) {
 	case 0:
@@ -470,19 +459,19 @@ READ32_MEMBER( next_state::dma_regs_r)
 	}
 
 	const char *name = dma_name(slot);
-	logerror("dma_regs_r %s:%d %08x (%08x)\n", name, reg, res, space.device().safe_pc());
+	logerror("dma_regs_r %s:%d %08x (%08x)\n", name, reg, res, maincpu->pc());
 
 	return res;
 }
 
-WRITE32_MEMBER( next_state::dma_regs_w)
+void next_state::dma_regs_w(offs_t offset, uint32_t data)
 {
 	int slot = offset >> 2;
 	int reg = offset & 3;
 
 	const char *name = dma_name(slot);
 
-	logerror("dma_regs_w %s:%d %08x (%08x)\n", name, reg, data, space.device().safe_pc());
+	logerror("dma_regs_w %s:%d %08x (%08x)\n", name, reg, data, maincpu->pc());
 	switch(reg) {
 	case 0:
 		dma_slots[slot].start = data;
@@ -500,25 +489,25 @@ WRITE32_MEMBER( next_state::dma_regs_w)
 	}
 }
 
-READ32_MEMBER( next_state::dma_ctrl_r)
+uint32_t next_state::dma_ctrl_r(offs_t offset)
 {
 	int slot = offset >> 2;
 	int reg = offset & 3;
 
 	const char *name = dma_name(slot);
 
-	if(space.device().safe_pc() != 0x409bb4e)
-		logerror("dma_ctrl_r %s:%d %02x (%08x)\n", name, reg, dma_slots[slot].state, space.device().safe_pc());
+	if(maincpu->pc() != 0x409bb4e)
+		logerror("dma_ctrl_r %s:%d %02x (%08x)\n", name, reg, dma_slots[slot].state, maincpu->pc());
 
 	return reg ? 0 : dma_slots[slot].state << 24;
 }
 
-WRITE32_MEMBER( next_state::dma_ctrl_w)
+void next_state::dma_ctrl_w(offs_t offset, uint32_t data, uint32_t mem_mask)
 {
 	int slot = offset >> 2;
 	int reg = offset & 3;
 	const char *name = dma_name(slot);
-	logerror("dma_ctrl_w %s:%d %08x @ %08x (%08x)\n", name, reg, data, mem_mask, space.device().safe_pc());
+	logerror("dma_ctrl_w %s:%d %08x @ %08x (%08x)\n", name, reg, data, mem_mask, maincpu->pc());
 	if(!reg) {
 		if(ACCESSING_BITS_16_23)
 			dma_do_ctrl_w(slot, data >> 16);
@@ -527,13 +516,13 @@ WRITE32_MEMBER( next_state::dma_ctrl_w)
 	}
 }
 
-void next_state::dma_do_ctrl_w(int slot, UINT8 data)
+void next_state::dma_do_ctrl_w(int slot, uint8_t data)
 {
 	const char *name = dma_name(slot);
 #if 0
-	fprintf(stderr, "dma_ctrl_w %s %02x (%08x)\n", name, data, maincpu->pc());
+	logerror("dma_ctrl_w %s %02x (%08x)\n", name, data, maincpu->pc());
 
-	fprintf(stderr, "  ->%s%s%s%s%s%s%s\n",
+	logerror("  ->%s%s%s%s%s%s%s\n",
 			data & DMA_SETENABLE ? " enable" : "",
 			data & DMA_SETSUPDATE ? " supdate" : "",
 			data & DMA_SETREAD ? " read" : "",
@@ -564,28 +553,28 @@ void next_state::dma_do_ctrl_w(int slot, UINT8 data)
 	}
 	if(data & DMA_SETENABLE) {
 		ds.state |= DMA_ENABLE;
-		//      fprintf(stderr, "dma slot %d drq=%s\n", slot, ds.drq ? "on" : "off");
+		//      logerror("dma slot %d drq=%s\n", slot, ds.drq ? "on" : "off");
 		if(ds.drq)
 			dma_drq_w(slot, ds.drq);
 	}
 }
 
-const int next_state::scsi_clocks[4] = { 10000000, 12000000, 20000000, 16000000 };
+int const next_state::scsi_clocks[4] = { 10000000, 12000000, 20000000, 16000000 };
 
-READ32_MEMBER( next_state::scsictrl_r )
+uint32_t next_state::scsictrl_r(offs_t offset, uint32_t mem_mask)
 {
-	UINT32 res = (scsictrl << 24) | (scsistat << 16);
-	logerror("scsictrl_read %08x @ %08x (%08x)\n", res, mem_mask, space.device().safe_pc());
+	uint32_t res = (scsictrl << 24) | (scsistat << 16);
+	logerror("scsictrl_read %08x @ %08x (%08x)\n", res, mem_mask, maincpu->pc());
 	return res;
 }
 
-WRITE32_MEMBER( next_state::scsictrl_w )
+void next_state::scsictrl_w(offs_t offset, uint32_t data, uint32_t mem_mask)
 {
 	if(ACCESSING_BITS_24_31) {
 		scsictrl = data >> 24;
 		if(scsictrl & 0x02)
 			scsi->reset();
-		device_t::static_set_clock(*scsi, scsi_clocks[scsictrl >> 6]);
+		scsi->set_clock(scsi_clocks[scsictrl >> 6]);
 
 		logerror("SCSIctrl %dMHz int=%s dma=%s dmadir=%s%s%s dest=%s (%08x)\n",
 				scsi_clocks[scsictrl >> 6]/1000000,
@@ -595,15 +584,15 @@ WRITE32_MEMBER( next_state::scsictrl_w )
 				scsictrl & 0x04 ? " flush" : "",
 				scsictrl & 0x02 ? " reset" : "",
 				scsictrl & 0x01 ? "wd3392" : "ncr5390",
-				space.device().safe_pc());
+				maincpu->pc());
 	}
 	if(ACCESSING_BITS_16_23) {
 		scsistat = data >> 16;
-		logerror("SCSIstat %02x (%08x)\n", data, space.device().safe_pc());
+		logerror("SCSIstat %02x (%08x)\n", data, maincpu->pc());
 	}
 }
 
-READ32_MEMBER( next_state::event_counter_r)
+uint32_t next_state::event_counter_r(offs_t offset, uint32_t mem_mask)
 {
 	// Event counters, around that time, are usually fixed-frequency counters.
 	// This one being 1MHz seems to make sense
@@ -615,17 +604,17 @@ READ32_MEMBER( next_state::event_counter_r)
 	return eventc_latch;
 }
 
-READ32_MEMBER( next_state::dsp_r)
+uint32_t next_state::dsp_r()
 {
 	return 0x7fffffff;
 }
 
-WRITE32_MEMBER( next_state::fdc_control_w )
+void next_state::fdc_control_w(uint32_t data)
 {
-	logerror("FDC write %02x (%08x)\n", data >> 24, space.device().safe_pc());
+	logerror("FDC write %02x (%08x)\n", data >> 24, maincpu->pc());
 }
 
-READ32_MEMBER( next_state::fdc_control_r )
+uint32_t next_state::fdc_control_r()
 {
 	// Type of floppy present
 	// 0 = no floppy in drive
@@ -638,9 +627,9 @@ READ32_MEMBER( next_state::fdc_control_r )
 	// reason.  The kernel otoh behaves as expected.
 
 	if(fdc) {
-		floppy_image_device *fdev = machine().device<floppy_connector>(":fdc:0")->get_device();
+		floppy_image_device *fdev = floppy0->get_device();
 		if(fdev->exists()) {
-			UINT32 variant = fdev->get_variant();
+			uint32_t variant = fdev->get_variant();
 			switch(variant) {
 			case floppy_image::SSSD:
 			case floppy_image::SSDD:
@@ -659,16 +648,16 @@ READ32_MEMBER( next_state::fdc_control_r )
 	return 0 << 24;
 }
 
-READ32_MEMBER( next_state::phy_r )
+uint32_t next_state::phy_r(offs_t offset)
 {
-	logerror("phy_r %d %08x (%08x)\n", offset, phy[offset], space.device().safe_pc());
+	logerror("phy_r %d %08x (%08x)\n", offset, phy[offset], maincpu->pc());
 	return phy[offset] | (0 << 24);
 }
 
-WRITE32_MEMBER( next_state::phy_w )
+void next_state::phy_w(offs_t offset, uint32_t data, uint32_t mem_mask)
 {
 	COMBINE_DATA(phy+offset);
-	logerror("phy_w %d %08x (%08x)\n", offset, phy[offset], space.device().safe_pc());
+	logerror("phy_w %d %08x (%08x)\n", offset, phy[offset], maincpu->pc());
 }
 
 void next_state::device_timer(emu_timer &timer, device_timer_id id, int param, void *ptr)
@@ -681,14 +670,14 @@ void next_state::device_timer(emu_timer &timer, device_timer_id id, int param, v
 		timer_ctrl &= 0x7fffffff;
 }
 
-READ32_MEMBER( next_state::timer_data_r )
+uint32_t next_state::timer_data_r()
 {
 	if(timer_ctrl & 0x80000000)
 		timer_update();
 	return timer_data;
 }
 
-WRITE32_MEMBER( next_state::timer_data_w )
+void next_state::timer_data_w(offs_t offset, uint32_t data, uint32_t mem_mask)
 {
 	if(timer_ctrl & 0x80000000) {
 		COMBINE_DATA(&timer_next_data);
@@ -699,13 +688,13 @@ WRITE32_MEMBER( next_state::timer_data_w )
 	}
 }
 
-READ32_MEMBER( next_state::timer_ctrl_r )
+uint32_t next_state::timer_ctrl_r()
 {
 	irq_set(29, false);
 	return timer_ctrl;
 }
 
-WRITE32_MEMBER( next_state::timer_ctrl_w )
+void next_state::timer_ctrl_w(offs_t offset, uint32_t data, uint32_t mem_mask)
 {
 	bool oldact = timer_ctrl & 0x80000000;
 	COMBINE_DATA(&timer_ctrl);
@@ -806,7 +795,7 @@ WRITE_LINE_MEMBER(next_state::scsi_drq)
 	dma_drq_w(1, state);
 }
 
-WRITE8_MEMBER(next_state::ramdac_w)
+void next_state::ramdac_w(offs_t offset, uint8_t data)
 {
 	switch(offset) {
 	case 0:
@@ -824,18 +813,18 @@ WRITE8_MEMBER(next_state::ramdac_w)
 			break;
 
 		default:
-			fprintf(stderr, "ramdac_w %d, %02x\n", offset, data);
+			logerror("ramdac_w %d, %02x\n", offset, data);
 			break;
 		}
 		break;
 
 	default:
-		fprintf(stderr, "ramdac_w %d, %02x\n", offset, data);
+		logerror("ramdac_w %d, %02x\n", offset, data);
 		break;
 	}
 }
 
-void next_state::setup(UINT32 _scr1, int size_x, int size_y, int skip, bool color)
+void next_state::setup(uint32_t _scr1, int size_x, int size_y, int skip, bool color)
 {
 	scr1 = _scr1;
 	screen_sx = size_x;
@@ -874,10 +863,6 @@ void next_state::machine_start()
 	}
 
 	timer_tm = timer_alloc(0);
-
-	system_time systime;
-	machine().base_datetime(systime);
-	rtc->set_counter(systime.time);
 }
 
 void next_state::machine_reset()
@@ -899,250 +884,343 @@ void next_state::machine_reset()
 	dma_drq_w(4, true); // soundout
 }
 
-void next_state::vblank_w(screen_device &screen, bool vblank_state)
+WRITE_LINE_MEMBER(next_state::vblank_w)
 {
 	if(vbl_enabled) {
 		if(screen_color)
-			irq_set(13, vblank_state);
+			irq_set(13, state);
 		else
-			irq_set(5, vblank_state);
+			irq_set(5, state);
 	}
 }
 
-static ADDRESS_MAP_START( next_mem, AS_PROGRAM, 32, next_state )
-	AM_RANGE(0x00000000, 0x0001ffff) AM_ROM AM_REGION("user1", 0)
-	AM_RANGE(0x01000000, 0x0101ffff) AM_ROM AM_REGION("user1", 0)
-	AM_RANGE(0x02000000, 0x020001ff) AM_MIRROR(0x300200) AM_READWRITE(dma_ctrl_r, dma_ctrl_w)
-	AM_RANGE(0x02004000, 0x020041ff) AM_MIRROR(0x300200) AM_READWRITE(dma_regs_r, dma_regs_w)
-	AM_RANGE(0x02006000, 0x0200600f) AM_MIRROR(0x300000) AM_DEVICE8("net", mb8795_device, map, 0xffffffff)
-//  AM_RANGE(0x02006010, 0x02006013) AM_MIRROR(0x300000) memory timing
-	AM_RANGE(0x02007000, 0x02007003) AM_MIRROR(0x300000) AM_READ(irq_status_r)
-	AM_RANGE(0x02007800, 0x02007803) AM_MIRROR(0x300000) AM_READWRITE(irq_mask_r,irq_mask_w)
-	AM_RANGE(0x02008000, 0x02008003) AM_MIRROR(0x300000) AM_READ(dsp_r)
-	AM_RANGE(0x0200c000, 0x0200c003) AM_MIRROR(0x300000) AM_READ(scr1_r)
-	AM_RANGE(0x0200c800, 0x0200c803) AM_MIRROR(0x300000) AM_READ(rom_map_r)
-	AM_RANGE(0x0200d000, 0x0200d003) AM_MIRROR(0x300000) AM_READWRITE(scr2_r,scr2_w)
-//  AM_RANGE(0x0200d800, 0x0200d803) AM_MIRROR(0x300000) RMTINT
-	AM_RANGE(0x0200e000, 0x0200e00b) AM_MIRROR(0x300000) AM_DEVICE("keyboard", nextkbd_device, amap)
-//  AM_RANGE(0x0200f000, 0x0200f003) AM_MIRROR(0x300000) printer
-//  AM_RANGE(0x02010000, 0x02010003) AM_MIRROR(0x300000) brightness
-	AM_RANGE(0x02012000, 0x0201201f) AM_MIRROR(0x300000) AM_DEVICE8("mo", nextmo_device, map, 0xffffffff)
-	AM_RANGE(0x02014000, 0x0201400f) AM_MIRROR(0x300000) AM_DEVICE8("scsibus:7:ncr5390", ncr5390_device, map, 0xffffffff)
-	AM_RANGE(0x02014020, 0x02014023) AM_MIRROR(0x300000) AM_READWRITE(scsictrl_r, scsictrl_w)
-	AM_RANGE(0x02016000, 0x02016003) AM_MIRROR(0x300000) AM_READWRITE(timer_data_r, timer_data_w)
-	AM_RANGE(0x02016004, 0x02016007) AM_MIRROR(0x300000) AM_READWRITE(timer_ctrl_r, timer_ctrl_w)
-	AM_RANGE(0x02018000, 0x02018003) AM_MIRROR(0x300000) AM_DEVREADWRITE8("scc", scc8530_t, reg_r, reg_w, 0xffffffff)
-//  AM_RANGE(0x02018004, 0x02018007) AM_MIRROR(0x300000) SCC CLK
-//  AM_RANGE(0x02018190, 0x02018197) AM_MIRROR(0x300000) warp 9c DRAM timing
-//  AM_RANGE(0x02018198, 0x0201819f) AM_MIRROR(0x300000) warp 9c VRAM timing
-	AM_RANGE(0x0201a000, 0x0201a003) AM_MIRROR(0x300000) AM_READ(event_counter_r) // EVENTC
-//  AM_RANGE(0x020c0000, 0x020c0004) AM_MIRROR(0x300000) BMAP
-	AM_RANGE(0x020c0030, 0x020c0037) AM_MIRROR(0x300000) AM_READWRITE(phy_r, phy_w)
-	AM_RANGE(0x04000000, 0x07ffffff) AM_RAM //work ram
-//  AM_RANGE(0x0c000000, 0x0c03ffff) video RAM w A+B-AB function
-//  AM_RANGE(0x0d000000, 0x0d03ffff) video RAM w (1-A)B function
-//  AM_RANGE(0x0e000000, 0x0e03ffff) video RAM w ceil(A+B) function
-//  AM_RANGE(0x0f000000, 0x0f03ffff) video RAM w AB function
-//  AM_RANGE(0x10000000, 0x1003ffff) main RAM w A+B-AB function
-//  AM_RANGE(0x14000000, 0x1403ffff) main RAM w (1-A)B function
-//  AM_RANGE(0x18000000, 0x1803ffff) main RAM w ceil(A+B) function
-//  AM_RANGE(0x1c000000, 0x1c03ffff) main RAM w AB function
-ADDRESS_MAP_END
+void next_state::next_mem(address_map &map)
+{
+	map(0x00000000, 0x0001ffff).rom().region("user1", 0);
+	map(0x01000000, 0x0101ffff).rom().region("user1", 0);
+	map(0x02000000, 0x020001ff).mirror(0x300200).rw(FUNC(next_state::dma_ctrl_r), FUNC(next_state::dma_ctrl_w));
+	map(0x02004000, 0x020041ff).mirror(0x300200).rw(FUNC(next_state::dma_regs_r), FUNC(next_state::dma_regs_w));
+	map(0x02006000, 0x0200600f).mirror(0x300000).m(net, FUNC(mb8795_device::map));
+//  map(0x02006010, 0x02006013).mirror(0x300000); memory timing
+	map(0x02007000, 0x02007003).mirror(0x300000).r(FUNC(next_state::irq_status_r));
+	map(0x02007800, 0x02007803).mirror(0x300000).rw(FUNC(next_state::irq_mask_r), FUNC(next_state::irq_mask_w));
+	map(0x02008000, 0x02008003).mirror(0x300000).r(FUNC(next_state::dsp_r));
+	map(0x0200c000, 0x0200c003).mirror(0x300000).r(FUNC(next_state::scr1_r));
+	map(0x0200c800, 0x0200c803).mirror(0x300000).r(FUNC(next_state::rom_map_r));
+	map(0x0200d000, 0x0200d003).mirror(0x300000).rw(FUNC(next_state::scr2_r), FUNC(next_state::scr2_w));
+//  map(0x0200d800, 0x0200d803).mirror(0x300000); RMTINT
+	map(0x0200e000, 0x0200e00b).mirror(0x300000).m(keyboard, FUNC(nextkbd_device::amap));
+//  map(0x0200f000, 0x0200f003).mirror(0x300000); printer
+//  map(0x02010000, 0x02010003).mirror(0x300000); brightness
+	map(0x02014000, 0x0201400f).mirror(0x300000).m(scsi, FUNC(ncr5390_device::map));
+	map(0x02014020, 0x02014023).mirror(0x300000).rw(FUNC(next_state::scsictrl_r), FUNC(next_state::scsictrl_w));
+	map(0x02016000, 0x02016003).mirror(0x300000).rw(FUNC(next_state::timer_data_r), FUNC(next_state::timer_data_w));
+	map(0x02016004, 0x02016007).mirror(0x300000).rw(FUNC(next_state::timer_ctrl_r), FUNC(next_state::timer_ctrl_w));
+	map(0x02018000, 0x02018003).mirror(0x300000).rw(scc, FUNC(scc8530_legacy_device::reg_r), FUNC(scc8530_legacy_device::reg_w));
+//  map(0x02018004, 0x02018007).mirror(0x300000); SCC CLK
+//  map(0x02018190, 0x02018197).mirror(0x300000); warp 9c DRAM timing
+//  map(0x02018198, 0x0201819f).mirror(0x300000); warp 9c VRAM timing
+	map(0x0201a000, 0x0201a003).mirror(0x300000).r(FUNC(next_state::event_counter_r)); // EVENTC
+//  map(0x020c0000, 0x020c0004).mirror(0x300000); BMAP
+	map(0x020c0030, 0x020c0037).mirror(0x300000).rw(FUNC(next_state::phy_r), FUNC(next_state::phy_w));
+	map(0x04000000, 0x07ffffff).ram(); //work ram
+//  map(0x0c000000, 0x0c03ffff) video RAM w A+B-AB function
+//  map(0x0d000000, 0x0d03ffff) video RAM w (1-A)B function
+//  map(0x0e000000, 0x0e03ffff) video RAM w ceil(A+B) function
+//  map(0x0f000000, 0x0f03ffff) video RAM w AB function
+//  map(0x10000000, 0x1003ffff) main RAM w A+B-AB function
+//  map(0x14000000, 0x1403ffff) main RAM w (1-A)B function
+//  map(0x18000000, 0x1803ffff) main RAM w ceil(A+B) function
+//  map(0x1c000000, 0x1c03ffff) main RAM w AB function
+}
 
-static ADDRESS_MAP_START( next_0b_m_nofdc_mem, AS_PROGRAM, 32, next_state )
-	AM_RANGE(0x0b000000, 0x0b03ffff) AM_RAM AM_SHARE("vram")
+void next_state::next_mo_mem(address_map &map)
+{
+	map(0x02012000, 0x0201201f).mirror(0x300000).m(mo, FUNC(nextmo_device::map));
+}
 
-	AM_IMPORT_FROM(next_mem)
-ADDRESS_MAP_END
+void next_state::next_0b_m_nofdc_mem(address_map &map)
+{
+	next_mem(map);
+	next_mo_mem(map);
+	map(0x0b000000, 0x0b03ffff).ram().share("vram");
+}
 
-static ADDRESS_MAP_START( next_fdc_mem, AS_PROGRAM, 32, next_state )
-	AM_RANGE(0x02014100, 0x02014107) AM_MIRROR(0x300000) AM_DEVICE8("fdc", n82077aa_device, map, 0xffffffff)
-	AM_RANGE(0x02014108, 0x0201410b) AM_MIRROR(0x300000) AM_READWRITE(fdc_control_r, fdc_control_w)
+void next_state::next_fdc_mem(address_map &map)
+{
+	next_mem(map);
+	map(0x02014100, 0x02014107).mirror(0x300000).m(fdc, FUNC(n82077aa_device::map));
+	map(0x02014108, 0x0201410b).mirror(0x300000).rw(FUNC(next_state::fdc_control_r), FUNC(next_state::fdc_control_w));
+}
 
-	AM_IMPORT_FROM(next_mem)
-ADDRESS_MAP_END
+void next_state::next_0b_m_mem(address_map &map)
+{
+	next_fdc_mem(map);
+	map(0x0b000000, 0x0b03ffff).ram().share("vram");
+}
 
-static ADDRESS_MAP_START( next_0b_m_mem, AS_PROGRAM, 32, next_state )
-	AM_RANGE(0x0b000000, 0x0b03ffff) AM_RAM AM_SHARE("vram")
+void next_state::next_0b_m_mo_mem(address_map &map)
+{
+	next_fdc_mem(map);
+	next_mo_mem(map);
+	map(0x0b000000, 0x0b03ffff).ram().share("vram");
+}
 
-	AM_IMPORT_FROM(next_fdc_mem)
-ADDRESS_MAP_END
+void next_state::next_0c_m_mem(address_map &map)
+{
+	next_fdc_mem(map);
+	map(0x0c000000, 0x0c1fffff).ram().share("vram");
+}
 
-static ADDRESS_MAP_START( next_0c_m_mem, AS_PROGRAM, 32, next_state )
-	AM_RANGE(0x0c000000, 0x0c1fffff) AM_RAM AM_SHARE("vram")
+void next_state::next_0c_c_mem(address_map &map)
+{
+	next_fdc_mem(map);
+	map(0x0c000000, 0x0c1fffff).ram().share("vram");
+	map(0x02018180, 0x02018183).mirror(0x300000).w(FUNC(next_state::ramdac_w));
+}
 
-	AM_IMPORT_FROM(next_fdc_mem)
-ADDRESS_MAP_END
+void next_state::next_0c_m_mo_mem(address_map &map)
+{
+	next_fdc_mem(map);
+	next_mo_mem(map);
+	map(0x0c000000, 0x0c1fffff).ram().share("vram");
+}
 
-static ADDRESS_MAP_START( next_0c_c_mem, AS_PROGRAM, 32, next_state )
-	AM_RANGE(0x0c000000, 0x0c1fffff) AM_RAM AM_SHARE("vram")
-	AM_RANGE(0x02018180, 0x02018183) AM_MIRROR(0x300000) AM_WRITE8(ramdac_w, 0xffffffff)
+void next_state::next_0c_c_mo_mem(address_map &map)
+{
+	next_fdc_mem(map);
+	next_mo_mem(map);
+	map(0x0c000000, 0x0c1fffff).ram().share("vram");
+	map(0x02018180, 0x02018183).mirror(0x300000).w(FUNC(next_state::ramdac_w));
+}
 
-	AM_IMPORT_FROM(next_fdc_mem)
-ADDRESS_MAP_END
-
-static ADDRESS_MAP_START( next_2c_c_mem, AS_PROGRAM, 32, next_state )
-	AM_RANGE(0x2c000000, 0x2c1fffff) AM_RAM AM_SHARE("vram")
-	AM_RANGE(0x02018180, 0x02018183) AM_MIRROR(0x300000) AM_WRITE8(ramdac_w, 0xffffffff)
-
-	AM_IMPORT_FROM(next_fdc_mem)
-ADDRESS_MAP_END
+void next_state::next_2c_c_mem(address_map &map)
+{
+	next_fdc_mem(map);
+	map(0x2c000000, 0x2c1fffff).ram().share("vram");
+	map(0x02018180, 0x02018183).mirror(0x300000).w(FUNC(next_state::ramdac_w));
+}
 
 
 /* Input ports */
 static INPUT_PORTS_START( next )
 INPUT_PORTS_END
 
-FLOPPY_FORMATS_MEMBER( next_state::floppy_formats )
-	FLOPPY_PC_FORMAT
-FLOPPY_FORMATS_END
+static void next_floppies(device_slot_interface &device)
+{
+	device.option_add("35ed", FLOPPY_35_ED);
+}
 
-static SLOT_INTERFACE_START( next_floppies )
-	SLOT_INTERFACE( "35ed", FLOPPY_35_ED )
-SLOT_INTERFACE_END
+static void next_scsi_devices(device_slot_interface &device)
+{
+	device.option_add("cdrom", NSCSI_CDROM);
+	device.option_add("harddisk", NSCSI_HARDDISK);
+	device.option_add_internal("ncr5390", NCR5390);
+}
 
-static SLOT_INTERFACE_START( next_scsi_devices )
-	SLOT_INTERFACE("cdrom", NSCSI_CDROM)
-	SLOT_INTERFACE("harddisk", NSCSI_HARDDISK)
-	SLOT_INTERFACE_INTERNAL("ncr5390", NCR5390)
-SLOT_INTERFACE_END
+void next_state::ncr5390(device_t *device)
+{
+	ncr5390_device &adapter = downcast<ncr5390_device &>(*device);
 
-static MACHINE_CONFIG_FRAGMENT( ncr5390 )
-	MCFG_DEVICE_CLOCK(10000000)
-	MCFG_NCR5390_IRQ_HANDLER(DEVWRITELINE(":", next_state, scsi_irq))
-	MCFG_NCR5390_DRQ_HANDLER(DEVWRITELINE(":", next_state, scsi_drq))
-MACHINE_CONFIG_END
+	adapter.set_clock(10000000);
+	adapter.irq_handler_cb().set(*this, FUNC(next_state::scsi_irq));
+	adapter.drq_handler_cb().set(*this, FUNC(next_state::scsi_drq));
+}
 
-static MACHINE_CONFIG_START( next_base, next_state )
-
+void next_state::next_base(machine_config &config)
+{
 	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_REFRESH_RATE(60)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(2500)) /* not accurate */
-	MCFG_SCREEN_UPDATE_DRIVER(next_state, screen_update)
-	MCFG_SCREEN_SIZE(1120, 900)
-	MCFG_SCREEN_VISIBLE_AREA(0, 1120-1, 0, 832-1)
-	MCFG_SCREEN_VBLANK_DRIVER(next_state, vblank_w)
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_RASTER));
+	screen.set_refresh_hz(60);
+	screen.set_vblank_time(ATTOSECONDS_IN_USEC(2500)); /* not accurate */
+	screen.set_screen_update(FUNC(next_state::screen_update));
+	screen.set_size(1120, 900);
+	screen.set_visarea(0, 1120-1, 0, 832-1);
+	screen.screen_vblank().set(FUNC(next_state::vblank_w));
 
 	// devices
-	MCFG_NSCSI_BUS_ADD("scsibus")
-	MCFG_DEVICE_ADD("rtc", MCCS1850, XTAL_32_768kHz)
-	MCFG_DEVICE_ADD("scc", SCC8530, XTAL_25MHz)
-	MCFG_Z8530_INTRQ_CALLBACK(WRITELINE(next_state, scc_irq))
-	MCFG_DEVICE_ADD("keyboard", NEXTKBD, 0)
-	MCFG_NEXTKBD_INT_CHANGE_CALLBACK(WRITELINE(next_state, keyboard_irq))
-	MCFG_NEXTKBD_INT_POWER_CALLBACK(WRITELINE(next_state, power_irq))
-	MCFG_NEXTKBD_INT_NMI_CALLBACK(WRITELINE(next_state, nmi_irq))
-	MCFG_NSCSI_ADD("scsibus:0", next_scsi_devices, "harddisk", false)
-	MCFG_NSCSI_ADD("scsibus:1", next_scsi_devices, "cdrom", false)
-	MCFG_NSCSI_ADD("scsibus:2", next_scsi_devices, nullptr, false)
-	MCFG_NSCSI_ADD("scsibus:3", next_scsi_devices, nullptr, false)
-	MCFG_NSCSI_ADD("scsibus:4", next_scsi_devices, nullptr, false)
-	MCFG_NSCSI_ADD("scsibus:5", next_scsi_devices, nullptr, false)
-	MCFG_NSCSI_ADD("scsibus:6", next_scsi_devices, nullptr, false)
-	MCFG_NSCSI_ADD("scsibus:7", next_scsi_devices, "ncr5390", true)
-	MCFG_DEVICE_CARD_MACHINE_CONFIG("ncr5390", ncr5390)
+	NSCSI_BUS(config, "scsibus");
 
-	MCFG_DEVICE_ADD("net", MB8795, 0)
-	MCFG_MB8795_TX_IRQ_CALLBACK(WRITELINE(next_state, net_tx_irq))
-	MCFG_MB8795_RX_IRQ_CALLBACK(WRITELINE(next_state, net_rx_irq))
-	MCFG_MB8795_TX_DRQ_CALLBACK(WRITELINE(next_state, net_tx_drq))
-	MCFG_MB8795_RX_DRQ_CALLBACK(WRITELINE(next_state, net_rx_drq))
+	MCCS1850(config, rtc, XTAL(32'768));
 
-	MCFG_DEVICE_ADD("mo", NEXTMO, 0)
-	MCFG_NEXTMO_IRQ_CALLBACK(WRITELINE(next_state, mo_irq))
-	MCFG_NEXTMO_DRQ_CALLBACK(WRITELINE(next_state, mo_drq))
-MACHINE_CONFIG_END
+	SCC8530(config, scc, XTAL(25'000'000));
+	scc->intrq_callback().set(FUNC(next_state::scc_irq));
 
-static MACHINE_CONFIG_DERIVED( next, next_base )
-	MCFG_CPU_ADD("maincpu", M68030, XTAL_25MHz)
-	MCFG_CPU_PROGRAM_MAP(next_0b_m_nofdc_mem)
-MACHINE_CONFIG_END
+	NEXTKBD(config, keyboard, 0);
+	keyboard->int_change_wr_callback().set(FUNC(next_state::keyboard_irq));
+	keyboard->int_power_wr_callback().set(FUNC(next_state::power_irq));
+	keyboard->int_nmi_wr_callback().set(FUNC(next_state::nmi_irq));
 
-static MACHINE_CONFIG_DERIVED( next_fdc_base, next_base )
-	MCFG_N82077AA_ADD("fdc", n82077aa_device::MODE_PS2)
-	MCFG_UPD765_INTRQ_CALLBACK(WRITELINE(next_state, fdc_irq))
-	MCFG_UPD765_DRQ_CALLBACK(WRITELINE(next_state, fdc_drq))
-	MCFG_FLOPPY_DRIVE_ADD("fdc:0", next_floppies, "35ed", next_state::floppy_formats)
+	NSCSI_CONNECTOR(config, "scsibus:0", next_scsi_devices, "harddisk");
+	NSCSI_CONNECTOR(config, "scsibus:1", next_scsi_devices, "cdrom");
+	NSCSI_CONNECTOR(config, "scsibus:2", next_scsi_devices, nullptr);
+	NSCSI_CONNECTOR(config, "scsibus:3", next_scsi_devices, nullptr);
+	NSCSI_CONNECTOR(config, "scsibus:4", next_scsi_devices, nullptr);
+	NSCSI_CONNECTOR(config, "scsibus:5", next_scsi_devices, nullptr);
+	NSCSI_CONNECTOR(config, "scsibus:6", next_scsi_devices, nullptr);
+	NSCSI_CONNECTOR(config, "scsibus:7", next_scsi_devices, "ncr5390", true).set_option_machine_config("ncr5390", [this] (device_t *device) { ncr5390(device); });
+
+	MB8795(config, net, 0);
+	net->tx_irq().set(FUNC(next_state::net_tx_irq));
+	net->rx_irq().set(FUNC(next_state::net_rx_irq));
+	net->tx_drq().set(FUNC(next_state::net_tx_drq));
+	net->rx_drq().set(FUNC(next_state::net_rx_drq));
+
+	SOFTWARE_LIST(config, "cdrom_list").set_original("next_cdrom");
+	SOFTWARE_LIST(config, "hdd_list").set_original("next_hdd");
+}
+
+void next_state::next_mo_config(machine_config &config)
+{
+	NEXTMO(config, mo, 0);
+	mo->irq_wr_callback().set(FUNC(next_state::mo_irq));
+	mo->drq_wr_callback().set(FUNC(next_state::mo_drq));
+}
+
+void next_state::next_fdc_config(machine_config &config)
+{
+	N82077AA(config, fdc, 24'000'000, n82077aa_device::mode_t::PS2);
+	fdc->intrq_wr_callback().set(FUNC(next_state::fdc_irq));
+	fdc->drq_wr_callback().set(FUNC(next_state::fdc_drq));
+	FLOPPY_CONNECTOR(config, "fdc:0", next_floppies, "35ed", floppy_image_device::default_pc_floppy_formats);
 
 	// software list
-	MCFG_SOFTWARE_LIST_ADD("flop_list", "next")
-MACHINE_CONFIG_END
+	SOFTWARE_LIST(config, "flop_list").set_original("next");
+}
 
-static MACHINE_CONFIG_DERIVED( nexts, next_fdc_base )
-	MCFG_CPU_ADD("maincpu", M68040, XTAL_25MHz)
-	MCFG_CPU_PROGRAM_MAP(next_0b_m_mem)
-MACHINE_CONFIG_END
+void next_state::next_mo_base(machine_config &config)
+{
+	next_base(config);
+	next_mo_config(config);
+}
 
-static MACHINE_CONFIG_DERIVED( nexts2, next_fdc_base )
-	MCFG_CPU_ADD("maincpu", M68040, XTAL_25MHz)
-	MCFG_CPU_PROGRAM_MAP(next_0b_m_mem)
-MACHINE_CONFIG_END
+void next_state::next_fdc_base(machine_config &config)
+{
+	next_base(config);
+	next_fdc_config(config);
+}
 
-static MACHINE_CONFIG_DERIVED( nextsc, next_fdc_base )
-	MCFG_CPU_ADD("maincpu", M68040, XTAL_25MHz)
-	MCFG_CPU_PROGRAM_MAP(next_2c_c_mem)
-MACHINE_CONFIG_END
+void next_state::next_mo_fdc_base(machine_config &config)
+{
+	next_base(config);
+	next_mo_config(config);
+	next_fdc_config(config);
+}
 
-static MACHINE_CONFIG_DERIVED( nextst, next_fdc_base )
-	MCFG_CPU_ADD("maincpu", M68040, XTAL_33MHz)
-	MCFG_CPU_PROGRAM_MAP(next_0b_m_mem)
-MACHINE_CONFIG_END
+void next_state::next(machine_config &config)
+{
+	next_mo_base(config);
+	M68030(config, maincpu, XTAL(25'000'000));
+	maincpu->set_addrmap(AS_PROGRAM, &next_state::next_0b_m_nofdc_mem);
+}
 
-static MACHINE_CONFIG_DERIVED( nextstc, next_fdc_base )
-	MCFG_CPU_ADD("maincpu", M68040, XTAL_33MHz)
-	MCFG_CPU_PROGRAM_MAP(next_0c_c_mem)
-	MCFG_SCREEN_MODIFY("screen")
-	MCFG_SCREEN_VISIBLE_AREA(0, 832-1, 0, 624-1)
-MACHINE_CONFIG_END
+void next_state::nextc(machine_config &config)
+{
+	next_mo_fdc_base(config);
+	M68040(config, maincpu, XTAL(25'000'000));
+	maincpu->set_addrmap(AS_PROGRAM, &next_state::next_0b_m_mo_mem);
+}
 
-static MACHINE_CONFIG_DERIVED( nextct, next_fdc_base )
-	MCFG_CPU_ADD("maincpu", M68040, XTAL_33MHz)
-	MCFG_CPU_PROGRAM_MAP(next_0c_m_mem)
-MACHINE_CONFIG_END
+void next_state::nexts(machine_config &config)
+{
+	next_fdc_base(config);
+	M68040(config, maincpu, XTAL(25'000'000));
+	maincpu->set_addrmap(AS_PROGRAM, &next_state::next_0b_m_mem);
+}
 
-static MACHINE_CONFIG_DERIVED( nextctc, next_fdc_base )
-	MCFG_CPU_ADD("maincpu", M68040, XTAL_33MHz)
-	MCFG_CPU_PROGRAM_MAP(next_0c_c_mem)
-	MCFG_SCREEN_MODIFY("screen")
-	MCFG_SCREEN_VISIBLE_AREA(0, 832-1, 0, 624-1)
-MACHINE_CONFIG_END
+void next_state::nexts2(machine_config &config)
+{
+	next_fdc_base(config);
+	M68040(config, maincpu, XTAL(25'000'000));
+	maincpu->set_addrmap(AS_PROGRAM, &next_state::next_0b_m_mem);
+}
+
+void next_state::nextsc(machine_config &config)
+{
+	next_fdc_base(config);
+	M68040(config, maincpu, XTAL(25'000'000));
+	maincpu->set_addrmap(AS_PROGRAM, &next_state::next_2c_c_mem);
+}
+
+void next_state::nextst(machine_config &config)
+{
+	next_fdc_base(config);
+	M68040(config, maincpu, XTAL(33'000'000));
+	maincpu->set_addrmap(AS_PROGRAM, &next_state::next_0b_m_mem);
+}
+
+void next_state::nextstc(machine_config &config)
+{
+	next_fdc_base(config);
+	M68040(config, maincpu, XTAL(33'000'000));
+	maincpu->set_addrmap(AS_PROGRAM, &next_state::next_0c_c_mem);
+	subdevice<screen_device>("screen")->set_visarea(0, 832-1, 0, 624-1);
+}
+
+void next_state::nextct(machine_config &config)
+{
+	next_mo_fdc_base(config);
+	M68040(config, maincpu, XTAL(33'000'000));
+	maincpu->set_addrmap(AS_PROGRAM, &next_state::next_0c_m_mo_mem);
+}
+
+void next_state::nextctc(machine_config &config)
+{
+	next_mo_fdc_base(config);
+	M68040(config, maincpu, XTAL(33'000'000));
+	maincpu->set_addrmap(AS_PROGRAM, &next_state::next_0c_c_mo_mem);
+	subdevice<screen_device>("screen")->set_visarea(0, 832-1, 0, 624-1);
+}
 
 /* ROM definition */
 #define ROM_NEXT_V1 \
 	ROM_REGION32_BE( 0x20000, "user1", ROMREGION_ERASEFF ) \
 	ROM_SYSTEM_BIOS( 0, "v12", "v1.2" ) /* MAC address/serial number word at 0xC: 005AD0 */ \
-	ROMX_LOAD( "rev_1.2.bin",     0x0000, 0x10000, CRC(7070bd78) SHA1(e34418423da61545157e36b084e2068ad41c9e24), ROM_BIOS(1)) /* Label: "(C) 1990 NeXT, Inc. // All Rights Reserved. // Release 1.2 // 1142.02", underlabel exists but unknown */ \
-	ROM_SYSTEM_BIOS( 1, "v10", "v1.0 v41" ) /* MAC address/serial number word at 0xC: 003090 */ \
+	ROMX_LOAD( "rev_1.2.bin",     0x0000, 0x10000, CRC(7070bd78) SHA1(e34418423da61545157e36b084e2068ad41c9e24), ROM_BIOS(0)) /* Label: "(C) 1990 NeXT, Inc. // All Rights Reserved. // Release 1.2 // 1142.02", underlabel exists but unknown */ \
+	ROM_SYSTEM_BIOS( 1, "v11", "v1.1 v42" ) /* MAC address/serial number word at 0xC: 0052D2 */ \
+	ROMX_LOAD( "rev_1.1_v42.bin",     0x0000, 0x10000, CRC(6cabe43e) SHA1(19ca721af5e637a94bf96ff19729abd0c79e1638), ROM_BIOS(1)) \
+	ROM_SYSTEM_BIOS( 2, "v10", "v1.0 v41" ) /* MAC address/serial number word at 0xC: 003090 */ \
 	ROMX_LOAD( "rev_1.0_v41.bin", 0x0000, 0x10000, CRC(54df32b9) SHA1(06e3ecf09ab67a571186efd870e6b44028612371), ROM_BIOS(2)) /* Label: "(C) 1989 NeXT, Inc. // All Rights Reserved. // Release 1.0 // 1142.00", underlabel: "MYF // 1.0.41 // 0D5C" */ \
-	ROM_SYSTEM_BIOS( 2, "v10p", "v1.0 v41 alternate" ) /* MAC address/serial number word at 0xC: 0023D9 */ \
-	ROMX_LOAD( "rev_1.0_proto.bin", 0x0000, 0x10000, CRC(f44974f9) SHA1(09eaf9f5d47e379cfa0e4dc377758a97d2869ddc), ROM_BIOS(3)) /* Label: "(C) 1989 NeXT, Inc. // All Rights Reserved. // Release 1.0 // 1142.00", no underlabel */
+	ROM_SYSTEM_BIOS( 3, "v10p", "v1.0 v41 alternate" ) /* MAC address/serial number word at 0xC: 0023D9 */ \
+	ROMX_LOAD( "rev_1.0_proto.bin", 0x0000, 0x10000, CRC(f44974f9) SHA1(09eaf9f5d47e379cfa0e4dc377758a97d2869ddc), ROM_BIOS(3)) /* Label: "(C) 1989 NeXT, Inc. // All Rights Reserved. // Release 1.0 // 1142.00", no underlabel */ \
+	ROM_SYSTEM_BIOS( 4, "v10q", "v1.0 v40" ) /* MAC address/serial number word at 0xC: 001ED0 */ \
+	ROMX_LOAD( "rev_1.0_v40.bin", 0x0000, 0x10000, CRC(9effb1b9) SHA1(94a3e30a92f7a9c7d44b90ac7954ed8ec5b7f6ca), ROM_BIOS(4)) \
+	ROM_SYSTEM_BIOS( 5, "v08", "v0.8 v31" ) /* MAC address/serial number word at 0xC: 001A3D */ \
+	ROMX_LOAD( "rev_0.8_v31.bin", 0x0000, 0x10000, CRC(907ee077) SHA1(cfd853c8b22b1a41d6b35609fc029a905482ad6d), ROM_BIOS(5))
 
 #define ROM_NEXT_V2 \
 	ROM_REGION32_BE( 0x20000, "user1", ROMREGION_ERASEFF ) \
 	ROM_SYSTEM_BIOS( 0, "v25", "v2.5 v66" ) /* MAC address/serial number word at 0xC: 00F302 */ \
-	ROMX_LOAD( "rev_2.5_v66.bin", 0x0000, 0x20000, CRC(f47e0bfe) SHA1(b3534796abae238a0111299fc406a9349f7fee24), ROM_BIOS(1)) \
+	ROMX_LOAD( "rev_2.5_v66.bin", 0x0000, 0x20000, CRC(f47e0bfe) SHA1(b3534796abae238a0111299fc406a9349f7fee24), ROM_BIOS(0)) \
 	ROM_SYSTEM_BIOS( 1, "v24", "v2.4 v65" ) /* MAC address/serial number word at 0xC: 00A634 */ \
-	ROMX_LOAD( "rev_2.4_v65.bin", 0x0000, 0x20000, CRC(74e9e541) SHA1(67d195351288e90818336c3a84d55e6a070960d2), ROM_BIOS(2)) \
+	ROMX_LOAD( "rev_2.4_v65.bin", 0x0000, 0x20000, CRC(74e9e541) SHA1(67d195351288e90818336c3a84d55e6a070960d2), ROM_BIOS(1)) \
 	ROM_SYSTEM_BIOS( 2, "v22", "v2.2 v63" ) /* MAC address/serial number word at 0xC: 00894C */ \
-	ROMX_LOAD( "rev_2.2_v63.bin", 0x0000, 0x20000, CRC(739d7c07) SHA1(48ffe54cf2038782a92a0850337c5c6213c98571), ROM_BIOS(3)) /* Label: "(C) 1990 NeXT Computer, Inc. // All Rights Reserved. // Release 2.1 // 2918.AB" */ \
+	ROMX_LOAD( "rev_2.2_v63.bin", 0x0000, 0x20000, CRC(739d7c07) SHA1(48ffe54cf2038782a92a0850337c5c6213c98571), ROM_BIOS(2)) /* Label: "(C) 1990 NeXT Computer, Inc. // All Rights Reserved. // Release 2.1 // 2918.AB" */ \
 	ROM_SYSTEM_BIOS( 3, "v21", "v2.1 v59" ) /* MAC address/serial number word at 0xC: 0072FE */ \
-	ROMX_LOAD( "rev_2.1_v59.bin", 0x0000, 0x20000, CRC(f20ef956) SHA1(09586c6de1ca73995f8c9b99870ee3cc9990933a), ROM_BIOS(4)) \
-	ROM_SYSTEM_BIOS( 4, "v12", "v1.2 v58" ) /* MAC address/serial number word at 0xC: 006372 */ \
+	ROMX_LOAD( "rev_2.1_v59.bin", 0x0000, 0x20000, CRC(f20ef956) SHA1(09586c6de1ca73995f8c9b99870ee3cc9990933a), ROM_BIOS(3)) \
+	ROM_SYSTEM_BIOS( 4, "v20", "v2.0 v58" ) /* MAC address/serial number word at 0xC: 0063E4 */ \
+	ROMX_LOAD( "rev_2.0_v58.bin", 0x0000, 0x20000, CRC(52a26b78) SHA1(6f168fbc354199ad5a6bfc82be00673751fc0119), ROM_BIOS(3)) \
+	ROM_SYSTEM_BIOS( 5, "v12", "v1.2 v58" ) /* MAC address/serial number word at 0xC: 006372 */ \
 	ROMX_LOAD( "rev_1.2_v58.bin", 0x0000, 0x20000, CRC(b815b6a4) SHA1(97d8b09d03616e1487e69d26609487486db28090), ROM_BIOS(5)) /* Label: "V58 // (C) 1990 NeXT, Inc. // All Rights Reserved // Release 1.2 // 1142.02" */
 
 #define ROM_NEXT_V3 \
 	ROM_REGION32_BE( 0x20000, "user1", ROMREGION_ERASEFF ) \
 	ROM_SYSTEM_BIOS( 0, "v33", "v3.3 v74" ) /* MAC address/serial number word at 0xC: 123456 */ \
-	ROMX_LOAD( "rev_3.3_v74.bin", 0x0000, 0x20000, CRC(fbc3a2cd) SHA1(a9bef655f26f97562de366e4a33bb462e764c929), ROM_BIOS(1)) \
-	ROM_SYSTEM_BIOS( 1, "v32", "v3.2 v72" ) /* MAC address/serial number word at 0xC: 012f31 */ \
-	ROMX_LOAD( "rev_3.2_v72.bin", 0x0000, 0x20000, CRC(e750184f) SHA1(ccebf03ed090a79c36f761265ead6cd66fb04329), ROM_BIOS(2)) \
-	ROM_SYSTEM_BIOS( 2, "v30", "v3.0 v70" ) /* MAC address/serial number word at 0xC: 0106e8 */ \
-	ROMX_LOAD( "rev_3.0_v70.bin", 0x0000, 0x20000, CRC(37250453) SHA1(a7e42bd6a25c61903c8ca113d0b9a624325ee6cf), ROM_BIOS(3))
+	ROMX_LOAD( "rev_3.3_v74.bin", 0x0000, 0x20000, CRC(fbc3a2cd) SHA1(a9bef655f26f97562de366e4a33bb462e764c929), ROM_BIOS(0)) /* Label: NeXT Computer // (C) 1992 // Rev 3.3 v74 */ \
+	ROM_SYSTEM_BIOS( 1, "v32", "v3.2 v72" ) /* MAC address/serial number word at 0xC: 012F31 */ \
+	ROMX_LOAD( "rev_3.2_v72.bin", 0x0000, 0x20000, CRC(e750184f) SHA1(ccebf03ed090a79c36f761265ead6cd66fb04329), ROM_BIOS(1)) /* Label: MYF // 2919 // REV 3.2V72 */ \
+	ROM_SYSTEM_BIOS( 2, "v31", "v3.1 v71" ) /* MAC address/serial number word at 0xC: 0129F2 */ \
+	ROMX_LOAD( "rev_3.1_v71.bin", 0x0000, 0x20000, CRC(0371daa7) SHA1(61fc4bec520022ff7a20e2c930d59fd9883e8917), ROM_BIOS(2)) \
+	ROM_SYSTEM_BIOS( 3, "v30", "v3.0 v70" ) /* MAC address/serial number word at 0xC: 0106E8 */ \
+	ROMX_LOAD( "rev_3.0_v70.bin", 0x0000, 0x20000, CRC(37250453) SHA1(a7e42bd6a25c61903c8ca113d0b9a624325ee6cf), ROM_BIOS(3)) /* Label: NeXT Computer, // Inc. (C) 1991 // Rev 3.0 v70 M */
 
 
 ROM_START(next)
 	ROM_NEXT_V1
+ROM_END
+
+ROM_START(nextc)
+	ROM_NEXT_V2
 ROM_END
 
 ROM_START(nexts)
@@ -1173,54 +1251,60 @@ ROM_START(nextctc)
 	ROM_NEXT_V3
 ROM_END
 
-DRIVER_INIT_MEMBER(next_state,next)
+void next_state::init_next()
 {
 	setup(0x00010002, 1120, 832, 2, false);
 }
 
-DRIVER_INIT_MEMBER(next_state,nexts)
+void next_state::init_nextc()
+{
+	setup(0x00010002, 1120, 832, 2, false);
+}
+
+void next_state::init_nexts()
 {
 	setup(0x00011002, 1120, 832, 2, false);
 }
 
-DRIVER_INIT_MEMBER(next_state,nexts2)
+void next_state::init_nexts2()
 {
 	setup(0x00012102, 1120, 832, 2, false);
 }
 
-DRIVER_INIT_MEMBER(next_state,nextsc)
+void next_state::init_nextsc()
 {
 	setup(0x00013102, 1120, 832, 16, true);
 }
 
-DRIVER_INIT_MEMBER(next_state,nextst)
+void next_state::init_nextst()
 {
 	setup(0x00014103, 1120, 832, 2, false);
 }
 
-DRIVER_INIT_MEMBER(next_state,nextstc)
+void next_state::init_nextstc()
 {
 	setup(0x00015103,  832, 624, 0, true);
 }
 
-DRIVER_INIT_MEMBER(next_state,nextct)
+void next_state::init_nextct()
 {
 	setup(0x00018103, 1120, 832, 0, false);
 }
 
-DRIVER_INIT_MEMBER(next_state,nextctc)
+void next_state::init_nextctc()
 {
 	setup(0x00019103,  832, 624, 0, true);
 }
 
 /* Driver */
 
-/*    YEAR  NAME     PARENT  COMPAT   MACHINE    INPUT    INIT    COMPANY                 FULLNAME                      FLAGS */
-COMP( 1987, next,    0,      0,       next,      next, next_state,    next,    "Next Software Inc",   "NeXT Cube",                  MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
-COMP( 1990, nexts,   0,      0,       nexts,     next, next_state,    nexts,   "Next Software Inc",   "NeXTstation",                MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
-COMP( 1990, nexts2,  nexts,  0,       nexts2,    next, next_state,    nexts2,  "Next Software Inc",   "NeXTstation (X15 variant)",  MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
-COMP( 1990, nextsc,  nexts,  0,       nextsc,    next, next_state,    nextsc,  "Next Software Inc",   "NeXTstation color",          MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
-COMP( 1990, nextst,  0,      0,       nextst,    next, next_state,    nextst,  "Next Software Inc",   "NeXTstation turbo",          MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
-COMP( 1990, nextstc, nextst, 0,       nextstc,   next, next_state,    nextstc, "Next Software Inc",   "NeXTstation turbo color",    MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
-COMP( ????, nextct,  nextst, 0,       nextct,    next, next_state,    nextct,  "Next Software Inc",   "NeXT Cube turbo",            MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
-COMP( ????, nextctc, nextst, 0,       nextctc,   next, next_state,    nextctc, "Next Software Inc",   "NeXT Cube turbo color",      MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
+//    YEAR  NAME     PARENT  COMPAT  MACHINE  INPUT  CLASS       INIT          COMPANY              FULLNAME                     FLAGS
+COMP( 1987, next,    0,      0,      next,    next,  next_state, init_next,    "Next Software Inc", "NeXT Computer",             MACHINE_NOT_WORKING | MACHINE_NO_SOUND )
+COMP( 1990, nexts,   0,      0,      nexts,   next,  next_state, init_nexts,   "Next Software Inc", "NeXTstation",               MACHINE_NOT_WORKING | MACHINE_NO_SOUND )
+COMP( 1990, nextc,   nexts,  0,      next,    next,  next_state, init_nextc,   "Next Software Inc", "NeXTcube",                  MACHINE_NOT_WORKING | MACHINE_NO_SOUND )
+COMP( 1990, nexts2,  nexts,  0,      nexts2,  next,  next_state, init_nexts2,  "Next Software Inc", "NeXTstation (X15 variant)", MACHINE_NOT_WORKING | MACHINE_NO_SOUND )
+COMP( 1990, nextsc,  nexts,  0,      nextsc,  next,  next_state, init_nextsc,  "Next Software Inc", "NeXTstation Color",         MACHINE_NOT_WORKING | MACHINE_NO_SOUND )
+COMP( 1990, nextst,  0,      0,      nextst,  next,  next_state, init_nextst,  "Next Software Inc", "NeXTstation Turbo",         MACHINE_NOT_WORKING | MACHINE_NO_SOUND )
+COMP( 1990, nextstc, nextst, 0,      nextstc, next,  next_state, init_nextstc, "Next Software Inc", "NeXTstation Turbo Color",   MACHINE_NOT_WORKING | MACHINE_NO_SOUND )
+COMP( 1992, nextct,  nextst, 0,      nextct,  next,  next_state, init_nextct,  "Next Software Inc", "NeXTcube Turbo",            MACHINE_NOT_WORKING | MACHINE_NO_SOUND )
+COMP( 1992, nextctc, nextst, 0,      nextctc, next,  next_state, init_nextctc, "Next Software Inc", "NeXTcube Turbo Color",      MACHINE_NOT_WORKING | MACHINE_NO_SOUND )

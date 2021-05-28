@@ -1,231 +1,95 @@
-// license:GPL-2.0+
+// license:BSD-3-Clause
 // copyright-holders:Couriersud
-/*
- * nld_solver.h
- *
- */
 
 #ifndef NLD_SOLVER_H_
 #define NLD_SOLVER_H_
 
-#include "nl_setup.h"
-#include "nl_base.h"
+///
+/// \file nld_solver.h
+///
 
-//#define ATTR_ALIGNED(N) __attribute__((aligned(N)))
-#define ATTR_ALIGNED(N) ATTR_ALIGN
+#include "../nl_base.h"
+#include "../plib/pstream.h"
+#include "nld_matrix_solver.h"
 
-// ----------------------------------------------------------------------------------------
-// Macros
-// ----------------------------------------------------------------------------------------
-
-#define SOLVER(_name, _freq)                                                 \
-		NET_REGISTER_DEV(SOLVER, _name)                                      \
-		PARAM(_name.FREQ, _freq)
+#include <map>
+#include <memory>
+#include <vector>
 
 // ----------------------------------------------------------------------------------------
 // solver
 // ----------------------------------------------------------------------------------------
 
-NETLIB_NAMESPACE_DEVICES_START()
-
-class NETLIB_NAME(solver);
-
-/* FIXME: these should become proper devices */
-
-struct solver_parameters_t
+namespace netlist
 {
-	int m_pivot;
-	nl_double m_accuracy;
-	nl_double m_lte;
-	nl_double m_min_timestep;
-	nl_double m_max_timestep;
-	nl_double m_sor;
-	bool m_dynamic;
-	int m_gs_loops;
-	int m_nr_loops;
-	netlist_time m_nt_sync_delay;
-	bool m_log_stats;
-};
-
-
-class terms_t
+namespace devices
 {
-	P_PREVENT_COPYING(terms_t)
-
+	NETLIB_OBJECT(solver)
+	{
 	public:
-	ATTR_COLD terms_t() : m_railstart(0)
-	{}
+		using queue_type = detail::queue_base<solver::matrix_solver_t, false>;
+		using solver_arena = device_arena;
 
-	ATTR_COLD void clear()
-	{
-		m_term.clear();
-		m_net_other.clear();
-		m_gt.clear();
-		m_go.clear();
-		m_Idr.clear();
-		m_other_curanalog.clear();
-	}
+		NETLIB_CONSTRUCTOR(solver)
+		, m_fb_step(*this, "FB_step", NETLIB_DELEGATE(fb_step<false>))
+		, m_Q_step(*this, "Q_step")
+		, m_params(*this, "", solver::solver_parameter_defaults::get_instance())
+		, m_queue(config::MAX_SOLVER_QUEUE_SIZE::value,
+			queue_type::id_delegate(&NETLIB_NAME(solver) :: get_solver_id, this),
+			queue_type::obj_delegate(&NETLIB_NAME(solver) :: solver_by_id, this))
+		{
+			// internal stuff
+			state().save(*this, static_cast<plib::state_manager_t::callback_t &>(m_queue), this->name(), "m_queue");
 
-	ATTR_COLD void add(terminal_t *term, int net_other, bool sorted);
+			connect("FB_step", "Q_step");
+		}
 
-	ATTR_HOT inline unsigned count() { return m_term.size(); }
+		void post_start();
+		void stop();
 
-	ATTR_HOT inline terminal_t **terms() { return m_term.data(); }
-	ATTR_HOT inline int *net_other() { return m_net_other.data(); }
-	ATTR_HOT inline nl_double *gt() { return m_gt.data(); }
-	ATTR_HOT inline nl_double *go() { return m_go.data(); }
-	ATTR_HOT inline nl_double *Idr() { return m_Idr.data(); }
-	ATTR_HOT inline nl_double **other_curanalog() { return m_other_curanalog.data(); }
+		auto gmin() const -> decltype(solver::solver_parameters_t::m_gmin()) { return m_params.m_gmin(); }
 
-	ATTR_COLD void set_pointers();
+		solver::static_compile_container create_solver_code(solver::static_compile_target target);
 
-	unsigned m_railstart;
+		NETLIB_RESETI();
+		// NETLIB_UPDATE_PARAMI();
 
-	plist_t<unsigned> m_nz;   /* all non zero for multiplication */
-	plist_t<unsigned> m_nzrd; /* non zero right of the diagonal for elimination */
-	plist_t<unsigned> m_nzbd; /* non zero below of the diagonal for elimination */
-private:
-	plist_t<terminal_t *> m_term;
-	plist_t<int> m_net_other;
-	plist_t<nl_double> m_go;
-	plist_t<nl_double> m_gt;
-	plist_t<nl_double> m_Idr;
-	plist_t<nl_double *> m_other_curanalog;
-};
+		using solver_ptr = solver_arena::unique_ptr<solver::matrix_solver_t>;
 
-class matrix_solver_t : public device_t
-{
-public:
-	typedef plist_t<matrix_solver_t *> list_t;
-	typedef core_device_t::list_t dev_list_t;
+		using net_list_t = solver::matrix_solver_t::net_list_t;
 
-	enum eSolverType
-	{
-		GAUSSIAN_ELIMINATION,
-		GAUSS_SEIDEL
+		void reschedule(solver::matrix_solver_t *solv, netlist_time ts);
+
+	private:
+		using params_uptr = solver_arena::unique_ptr<solver::solver_parameters_t>;
+
+		template<bool KEEP_STATS>
+		NETLIB_HANDLERI(fb_step);
+
+		logic_input_t m_fb_step;
+		logic_output_t m_Q_step;
+
+		// FIXME: these should be created in device space
+		std::vector<params_uptr> m_mat_params;
+		std::vector<solver_ptr> m_mat_solvers;
+
+		solver::solver_parameters_t m_params;
+		queue_type m_queue;
+
+		template <typename FT, int SIZE>
+		solver_ptr create_solver(std::size_t size, const pstring &solvername,
+			const solver::solver_parameters_t *params,net_list_t &nets);
+
+		template <typename FT>
+		solver_ptr create_solvers(const pstring &sname,
+			const solver::solver_parameters_t *params, net_list_t &nets);
+
+		std::size_t get_solver_id(const solver::matrix_solver_t *net) const;
+		solver::matrix_solver_t *solver_by_id(std::size_t id) const;
+
 	};
 
-	ATTR_COLD matrix_solver_t(const eSolverType type, const solver_parameters_t *params);
-	virtual ~matrix_solver_t();
+} // namespace devices
+} // namespace netlist
 
-	virtual void vsetup(analog_net_t::list_t &nets) = 0;
-
-	template<class C>
-	void solve_base(C *p);
-
-	ATTR_HOT nl_double solve();
-
-	ATTR_HOT inline bool is_dynamic() { return m_dynamic_devices.size() > 0; }
-	ATTR_HOT inline bool is_timestep() { return m_step_devices.size() > 0; }
-
-	ATTR_HOT void update_forced();
-	ATTR_HOT inline void update_after(const netlist_time after)
-	{
-		m_Q_sync.net().reschedule_in_queue(after);
-	}
-
-	/* netdevice functions */
-	ATTR_HOT  virtual void update() override;
-	virtual void start() override;
-	virtual void reset() override;
-
-	ATTR_COLD int get_net_idx(net_t *net);
-
-	inline eSolverType type() const { return m_type; }
-	plog_base<NL_DEBUG> &log() { return netlist().log(); }
-
-	virtual void log_stats();
-
-protected:
-
-	ATTR_COLD void setup(analog_net_t::list_t &nets);
-	ATTR_HOT void update_dynamic();
-
-	// should return next time step
-	ATTR_HOT virtual nl_double vsolve() = 0;
-
-	virtual void  add_term(int net_idx, terminal_t *term) = 0;
-
-	plist_t<analog_net_t *> m_nets;
-	plist_t<analog_output_t *> m_inps;
-
-	int m_stat_calculations;
-	int m_stat_newton_raphson;
-	int m_stat_vsolver_calls;
-	int m_iterative_fail;
-	int m_iterative_total;
-
-	const solver_parameters_t &m_params;
-
-	ATTR_HOT inline nl_double current_timestep() { return m_cur_ts; }
-private:
-
-	netlist_time m_last_step;
-	nl_double m_cur_ts;
-	dev_list_t m_step_devices;
-	dev_list_t m_dynamic_devices;
-
-	logic_input_t m_fb_sync;
-	logic_output_t m_Q_sync;
-
-	ATTR_HOT void step(const netlist_time delta);
-
-	ATTR_HOT void update_inputs();
-
-	const eSolverType m_type;
-};
-
-
-
-class NETLIB_NAME(solver) : public device_t
-{
-public:
-	NETLIB_NAME(solver)()
-	: device_t()    { }
-
-	virtual ~NETLIB_NAME(solver)();
-
-	ATTR_COLD void post_start();
-	ATTR_COLD void stop() override;
-
-	ATTR_HOT inline nl_double gmin() { return m_gmin.Value(); }
-
-protected:
-	ATTR_HOT void update() override;
-	ATTR_HOT void start() override;
-	ATTR_HOT void reset() override;
-	ATTR_HOT void update_param() override;
-
-	logic_input_t m_fb_step;
-	logic_output_t m_Q_step;
-
-	param_logic_t  m_pivot;
-	param_double_t m_freq;
-	param_double_t m_sync_delay;
-	param_double_t m_accuracy;
-	param_double_t m_gmin;
-	param_double_t m_lte;
-	param_double_t m_sor;
-	param_logic_t  m_dynamic;
-	param_double_t m_min_timestep;
-
-	param_str_t m_iterative_solver;
-	param_int_t m_nr_loops;
-	param_int_t m_gs_loops;
-	param_int_t m_gs_threshold;
-	param_int_t m_parallel;
-
-	param_logic_t  m_log_stats;
-
-	matrix_solver_t::list_t m_mat_solvers;
-private:
-
-	solver_parameters_t m_params;
-
-	template <int m_N, int _storage_N>
-	matrix_solver_t *create_solver(int size, bool use_specific);
-};
-
-NETLIB_NAMESPACE_DEVICES_END()
-
-#endif /* NLD_SOLVER_H_ */
+#endif // NLD_SOLVER_H_

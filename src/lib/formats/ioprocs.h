@@ -7,11 +7,13 @@
     File IO abstraction layer
 
 *********************************************************************/
+#ifndef MAME_FORMATS_IOPROCS_H
+#define MAME_FORMATS_IOPROCS_H
 
-#ifndef IOPROCS_H
-#define IOPROCS_H
+#pragma once
 
-#include <stdlib.h>
+#include <cstdint>
+#include <cstdlib>
 
 
 
@@ -23,20 +25,20 @@
 
 struct io_procs
 {
-	void (*closeproc)(void *file);
-	int (*seekproc)(void *file, INT64 offset, int whence);
-	size_t (*readproc)(void *file, void *buffer, size_t length);
-	size_t (*writeproc)(void *file, const void *buffer, size_t length);
-	UINT64 (*filesizeproc)(void *file);
+	void (*closeproc)(void *file) = nullptr;
+	int (*seekproc)(void *file, int64_t offset, int whence) = nullptr;
+	size_t (*readproc)(void *file, void *buffer, size_t length) = nullptr;
+	size_t (*writeproc)(void *file, const void *buffer, size_t length) = nullptr;
+	uint64_t (*filesizeproc)(void *file) = nullptr;
 };
 
 
 
 struct io_generic
 {
-	const struct io_procs *procs;
-	void *file;
-	UINT8 filler;
+	const struct io_procs *procs = nullptr;
+	void *file = nullptr;
+	uint8_t filler = 0;
 };
 
 
@@ -46,10 +48,10 @@ struct io_generic
 
 ***************************************************************************/
 
-extern const struct io_procs stdio_ioprocs;
-extern const struct io_procs stdio_ioprocs_noclose;
-extern const struct io_procs corefile_ioprocs;
-extern const struct io_procs corefile_ioprocs_noclose;
+extern const io_procs stdio_ioprocs;
+extern const io_procs stdio_ioprocs_noclose;
+extern const io_procs corefile_ioprocs;
+extern const io_procs corefile_ioprocs_noclose;
 
 
 
@@ -59,14 +61,10 @@ extern const struct io_procs corefile_ioprocs_noclose;
 
 ***************************************************************************/
 
+void io_generic_close(struct io_generic *genio);
+void io_generic_read(struct io_generic *genio, void *buffer, uint64_t offset, size_t length);
+void io_generic_write(struct io_generic *genio, const void *buffer, uint64_t offset, size_t length);
+void io_generic_write_filler(struct io_generic *genio, uint8_t filler, uint64_t offset, size_t length);
+uint64_t io_generic_size(struct io_generic *genio);
 
-
-void io_generic_close(struct io_generic *generic);
-void io_generic_read(struct io_generic *generic, void *buffer, UINT64 offset, size_t length);
-void io_generic_write(struct io_generic *generic, const void *buffer, UINT64 offset, size_t length);
-void io_generic_write_filler(struct io_generic *generic, UINT8 filler, UINT64 offset, size_t length);
-UINT64 io_generic_size(struct io_generic *generic);
-
-
-
-#endif /* IOPROCS_H */
+#endif // MAME_FORMATS_IOPROCS_H

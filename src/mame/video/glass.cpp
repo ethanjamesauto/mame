@@ -33,23 +33,14 @@
       1  | xxxxxxxx -------- | not used
 */
 
-TILE_GET_INFO_MEMBER(glass_state::get_tile_info_glass_screen0)
+template<int Layer>
+TILE_GET_INFO_MEMBER(glass_state::get_tile_info)
 {
-	int data = m_videoram[tile_index << 1];
-	int data2 = m_videoram[(tile_index << 1) + 1];
+	int data = m_videoram[(Layer * 0x1000 / 2) + (tile_index << 1)];
+	int data2 = m_videoram[(Layer * 0x1000 / 2) + (tile_index << 1) + 1];
 	int code = ((data & 0x03) << 14) | ((data & 0x0fffc) >> 2);
 
-	SET_TILE_INFO_MEMBER(0, code, 0x20 + (data2 & 0x1f), TILE_FLIPYX((data2 & 0xc0) >> 6));
-}
-
-
-TILE_GET_INFO_MEMBER(glass_state::get_tile_info_glass_screen1)
-{
-	int data = m_videoram[(0x1000 / 2) + (tile_index << 1)];
-	int data2 = m_videoram[(0x1000 / 2) + (tile_index << 1) + 1];
-	int code = ((data & 0x03) << 14) | ((data & 0x0fffc) >> 2);
-
-	SET_TILE_INFO_MEMBER(0, code, 0x20 + (data2 & 0x1f), TILE_FLIPYX((data2 & 0xc0) >> 6));
+	tileinfo.set(0, code, 0x20 + (data2 & 0x1f), TILE_FLIPYX((data2 & 0xc0) >> 6));
 }
 
 /***************************************************************************
@@ -67,36 +58,28 @@ TILE_GET_INFO_MEMBER(glass_state::get_tile_info_glass_screen1)
     B2B1B0 selects the picture (there are 8 pictures in each half of the ROM)
 */
 
-WRITE16_MEMBER(glass_state::glass_blitter_w)
+void glass_state::blitter_w(uint16_t data)
 {
-	m_blitter_serial_buffer[m_current_bit] = data & 0x01;
+	m_blitter_command = ((m_blitter_command << 1) | (data & 0x01)) & 0x1f;
 	m_current_bit++;
 
 	if (m_current_bit == 5)
 	{
-		m_current_command = (m_blitter_serial_buffer[0] << 4) |
-							(m_blitter_serial_buffer[1] << 3) |
-							(m_blitter_serial_buffer[2] << 2) |
-							(m_blitter_serial_buffer[3] << 1) |
-							(m_blitter_serial_buffer[4] << 0);
 		m_current_bit = 0;
 
 		/* fill the screen bitmap with the current picture */
 		{
-			int i, j;
-			UINT8 *gfx = (UINT8 *)memregion("gfx3")->base();
+			uint8_t const *gfx = m_bmap + (m_blitter_command & 0x07) * 0x10000 + (m_blitter_command & 0x08) * 0x10000 + 0x140;
 
-			gfx = gfx + (m_current_command & 0x07) * 0x10000 + (m_current_command & 0x08) * 0x10000 + 0x140;
-
-			if ((m_current_command & 0x18) != 0)
+			if ((m_blitter_command & 0x18) != 0)
 			{
-				for (j = 0; j < 200; j++)
+				for (int j = 0; j < 200; j++)
 				{
-					for (i = 0; i < 320; i++)
+					for (int i = 0; i < 320; i++)
 					{
-						int color = *gfx;
+						int const color = *gfx;
 						gfx++;
-						m_screen_bitmap->pix16(j, i) = color & 0xff;
+						m_screen_bitmap->pix(j, i) = color & 0xff;
 					}
 				}
 			}
@@ -112,7 +95,7 @@ WRITE16_MEMBER(glass_state::glass_blitter_w)
 
 ***************************************************************************/
 
-WRITE16_MEMBER(glass_state::glass_vram_w)
+void glass_state::vram_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	COMBINE_DATA(&m_videoram[offset]);
 	m_pant[offset >> 11]->mark_tile_dirty(((offset << 1) & 0x0fff) >> 2);
@@ -127,8 +110,8 @@ WRITE16_MEMBER(glass_state::glass_vram_w)
 
 void glass_state::video_start()
 {
-	m_pant[0] = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(glass_state::get_tile_info_glass_screen0),this), TILEMAP_SCAN_ROWS, 16, 16, 32, 32);
-	m_pant[1] = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(glass_state::get_tile_info_glass_screen1),this), TILEMAP_SCAN_ROWS, 16, 16, 32, 32);
+	m_pant[0] = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(glass_state::get_tile_info<0>)), TILEMAP_SCAN_ROWS, 16, 16, 32, 32);
+	m_pant[1] = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(glass_state::get_tile_info<1>)), TILEMAP_SCAN_ROWS, 16, 16, 32, 32);
 	m_screen_bitmap = std::make_unique<bitmap_ind16>(320, 200);
 
 	save_item(NAME(*m_screen_bitmap));
@@ -191,7 +174,7 @@ void glass_state::draw_sprites( bitmap_ind16 &bitmap, const rectangle &cliprect 
 
 ****************************************************************************/
 
-UINT32 glass_state::screen_update_glass(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t glass_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	/* set scroll registers */
 	m_pant[0]->set_scrolly(0, m_vregs[0]);

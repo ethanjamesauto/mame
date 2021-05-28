@@ -1,23 +1,15 @@
 // license:BSD-3-Clause
 // copyright-holders:Carl,Olivier Galibert
-#ifndef I8271N_H_
-#define I8271N_H_
+#ifndef MAME_MACHINE_I8271_H
+#define MAME_MACHINE_I8271_H
 
-#include "emu.h"
-#include "imagedev/floppy.h"
+#pragma once
+
 #include "fdc_pll.h"
+#include "imagedev/floppy.h"
 
-#define MCFG_I8271_IRQ_CALLBACK(_write) \
-	devcb = &i8271_device::set_intrq_wr_callback(*device, DEVCB_##_write);
+class floppy_image_device;
 
-#define MCFG_I8271_DRQ_CALLBACK(_write) \
-	devcb = &i8271_device::set_drq_wr_callback(*device, DEVCB_##_write);
-
-#define MCFG_I8271_HDL_CALLBACK(_write) \
-	devcb = &i8271_device::set_hdl_wr_callback(*device, DEVCB_##_write);
-
-#define MCFG_I8271_OPT_CALLBACK(_write) \
-	devcb = &i8271_device::set_opt_wr_callback(*device, DEVCB_##_write);
 
 /***************************************************************************
     MACROS
@@ -26,22 +18,17 @@
 class i8271_device : public device_t
 {
 public:
-	i8271_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
-	~i8271_device() {}
+	i8271_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
-	template<class _Object> static devcb_base &set_intrq_wr_callback(device_t &device, _Object object) { return downcast<i8271_device &>(device).intrq_cb.set_callback(object); }
-	template<class _Object> static devcb_base &set_drq_wr_callback(device_t &device, _Object object) { return downcast<i8271_device &>(device).drq_cb.set_callback(object); }
-	template<class _Object> static devcb_base &set_hdl_wr_callback(device_t &device, _Object object) { return downcast<i8271_device &>(device).hdl_cb.set_callback(object); }
-	template<class _Object> static devcb_base &set_opt_wr_callback(device_t &device, _Object object) { return downcast<i8271_device &>(device).opt_cb.set_callback(object); }
+	auto intrq_wr_callback() { return intrq_cb.bind(); }
+	auto drq_wr_callback() { return drq_cb.bind(); }
+	auto hdl_wr_callback() { return hdl_cb.bind(); }
+	auto opt_wr_callback() { return opt_cb.bind(); }
 
-	DECLARE_READ8_MEMBER (sr_r);
-	DECLARE_READ8_MEMBER (rr_r);
-	DECLARE_WRITE8_MEMBER(reset_w) { if(data == 1) soft_reset(); }
-	DECLARE_WRITE8_MEMBER(cmd_w);
-	DECLARE_WRITE8_MEMBER(param_w);
-	DECLARE_READ8_MEMBER (data_r);
-	DECLARE_WRITE8_MEMBER(data_w);
-	DECLARE_ADDRESS_MAP(map, 8);
+	uint8_t read(offs_t offset);
+	void write(offs_t offset, uint8_t data);
+	uint8_t data_r();
+	void data_w(uint8_t data);
 
 	void ready_w(bool val);
 
@@ -49,8 +36,10 @@ public:
 
 	void set_ready_line_connected(bool ready);
 	void set_select_lines_connected(bool select);
-	void set_floppy(floppy_image_device *image);
+	void set_floppies(floppy_connector* f0, floppy_connector* f1);
 	void soft_reset();
+
+	void map(address_map &map);
 
 protected:
 	virtual void device_start() override;
@@ -177,7 +166,7 @@ private:
 		int id;
 		int main_state, sub_state;
 		int dir, counter;
-		UINT8 pcn, badtrack[2];
+		uint8_t pcn, badtrack[2];
 		bool live, index, ready;
 	};
 
@@ -187,12 +176,12 @@ private:
 		attotime tm;
 		int state, next_state;
 		floppy_info *fi;
-		UINT16 shift_reg;
-		UINT16 crc;
+		uint16_t shift_reg;
+		uint16_t crc;
 		int bit_counter, byte_counter, previous_type;
 		bool data_separator_phase, data_bit_context;
-		UINT8 data_reg;
-		UINT8 idbuf[6];
+		uint8_t data_reg;
+		uint8_t idbuf[6];
 		fdc_pll_t pll;
 	};
 
@@ -209,15 +198,15 @@ private:
 	floppy_info flopi[2];
 
 	int command_pos, sectors_read, scan_len;
-	UINT8 command[6], dma_data, oport;
-	UINT8 rr, scan_sec, moder;
-	UINT8 precomp, perpmode, scan_cnt[2];
-	UINT8 srate, hset, icnt, hload;
+	uint8_t command[6], dma_data, oport;
+	uint8_t rr, scan_sec, moder;
+	uint8_t precomp, perpmode, scan_cnt[2];
+	uint8_t srate, hset, icnt, hload;
 	int sector_size;
 	int cur_rate;
+	int idle_icnt;
 
-	static std::string tts(attotime t);
-	std::string ttsn();
+	std::string ttsn() const;
 
 	enum {
 		C_FORMAT_TRACK,
@@ -239,14 +228,18 @@ private:
 		C_INCOMPLETE
 	};
 
+	uint8_t sr_r();
+	uint8_t rr_r();
+	void reset_w(uint8_t data) { if(data == 1) soft_reset(); }
+	void cmd_w(uint8_t data);
+	void param_w(uint8_t data);
+
 	void delay_cycles(emu_timer *tm, int cycles);
 	void set_drq(bool state);
 	void set_irq(bool state);
 	bool get_ready(int fid);
 
-	void enable_transfer();
-	void disable_transfer();
-	int calc_sector_size(UINT8 size);
+	int calc_sector_size(uint8_t size);
 
 	int check_command();
 	void start_command(int cmd);
@@ -282,15 +275,15 @@ private:
 	void live_delay(int state);
 	void live_sync();
 	void live_run(attotime limit = attotime::never);
-	void live_write_raw(UINT16 raw);
-	void live_write_fm(UINT8 fm);
+	void live_write_raw(uint16_t raw);
+	void live_write_fm(uint8_t fm);
 
 	bool read_one_bit(const attotime &limit);
 	bool write_one_bit(const attotime &limit);
-	bool set_output(UINT8 data);
-	bool get_input(UINT8 *data);
+	bool set_output(uint8_t data);
+	bool get_input(uint8_t *data);
 };
 
-extern const device_type I8271;
+DECLARE_DEVICE_TYPE(I8271, i8271_device)
 
-#endif
+#endif // MAME_MACHINE_I8271_H

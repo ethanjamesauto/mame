@@ -8,9 +8,9 @@
 
 *********************************************************************/
 
+#include "emu.h"
 #include "a2sam.h"
-#include "includes/apple2.h"
-#include "sound/dac.h"
+#include "speaker.h"
 
 /***************************************************************************
     PARAMETERS
@@ -20,45 +20,30 @@
 //  GLOBAL VARIABLES
 //**************************************************************************
 
-const device_type A2BUS_SAM = &device_creator<a2bus_sam_device>;
-
-#define DAC_TAG         "dac"
-
-MACHINE_CONFIG_FRAGMENT( a2sam )
-	MCFG_SPEAKER_STANDARD_MONO("samspkr")
-	MCFG_SOUND_ADD(DAC_TAG, DAC, 0)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "samspkr", 1.00)
-MACHINE_CONFIG_END
+DEFINE_DEVICE_TYPE(A2BUS_SAM, a2bus_sam_device, "a2sam", "Don't Ask Software S.A.M.")
 
 /***************************************************************************
     FUNCTION PROTOTYPES
 ***************************************************************************/
 
 //-------------------------------------------------
-//  machine_config_additions - device-specific
-//  machine configurations
+//  device_add_mconfig - add device configuration
 //-------------------------------------------------
 
-machine_config_constructor a2bus_sam_device::device_mconfig_additions() const
+void a2bus_sam_device::device_add_mconfig(machine_config &config)
 {
-	return MACHINE_CONFIG_NAME( a2sam );
+	SPEAKER(config, "speaker").front_center();
+	DAC_8BIT_R2R(config, m_dac, 0).add_route(ALL_OUTPUTS, "speaker", 0.5); // unknown DAC
 }
 
 //**************************************************************************
 //  LIVE DEVICE
 //**************************************************************************
 
-a2bus_sam_device::a2bus_sam_device(const machine_config &mconfig, device_type type, const char *name, const char *tag, device_t *owner, UINT32 clock, const char *shortname, const char *source) :
-	device_t(mconfig, type, name, tag, owner, clock, shortname, source),
+a2bus_sam_device::a2bus_sam_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock) :
+	device_t(mconfig, A2BUS_SAM, tag, owner, clock),
 	device_a2bus_card_interface(mconfig, *this),
-	m_dac(*this, DAC_TAG)
-{
-}
-
-a2bus_sam_device::a2bus_sam_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock) :
-	device_t(mconfig, A2BUS_SAM, "Don't Ask Software SAM", tag, owner, clock, "a2sam", __FILE__),
-	device_a2bus_card_interface(mconfig, *this),
-	m_dac(*this, DAC_TAG)
+	m_dac(*this, "dac")
 {
 }
 
@@ -68,17 +53,15 @@ a2bus_sam_device::a2bus_sam_device(const machine_config &mconfig, const char *ta
 
 void a2bus_sam_device::device_start()
 {
-	// set_a2bus_device makes m_slot valid
-	set_a2bus_device();
 }
 
 void a2bus_sam_device::device_reset()
 {
 }
 
-void a2bus_sam_device::write_c0nx(address_space &space, UINT8 offset, UINT8 data)
+void a2bus_sam_device::write_c0nx(uint8_t offset, uint8_t data)
 {
-	m_dac->write_unsigned8(data);
+	m_dac->write(data);
 }
 
 bool a2bus_sam_device::take_c800()

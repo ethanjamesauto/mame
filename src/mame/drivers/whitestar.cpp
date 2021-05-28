@@ -9,7 +9,6 @@
 #include "video/mc6845.h"
 #include "audio/decobsmt.h"
 #include "video/decodmd2.h"
-#include "rendlay.h"
 
 class whitestar_state : public driver_device
 {
@@ -21,35 +20,27 @@ public:
 		m_decodmd(*this, "decodmd")
 	{ }
 
+	void whitestar(machine_config &config);
+	void whitestarm(machine_config &config);
+
+private:
 	required_device<cpu_device> m_maincpu;
 	//required_device<cpu_device> m_dmdcpu;
 	//required_device<mc6845_device> m_mc6845;
-	required_device<decobsmt_device> m_decobsmt;
+	optional_device<decobsmt_device> m_decobsmt;
 	required_device<decodmd_type2_device> m_decodmd;
 
-	UINT8 m_dmd_latch;
-	UINT8 m_dmd_ctrl;
-	UINT8 m_dmd_status;
-	UINT8 m_dmd_busy;
+	void bank_w(uint8_t data);
+	void dmddata_w(uint8_t data);
 
-	DECLARE_WRITE8_MEMBER(dmd_latch_w);
-	DECLARE_READ8_MEMBER(dmd_latch_r);
-	DECLARE_WRITE8_MEMBER(dmd_ctrl_w);
-	DECLARE_READ8_MEMBER(dmd_ctrl_r);
-	DECLARE_READ8_MEMBER(dmd_status_r);
-	DECLARE_WRITE8_MEMBER(dmd_status_w);
-
-	DECLARE_WRITE8_MEMBER(bank_w);
-	DECLARE_WRITE8_MEMBER(dmd_bank_w);
-	DECLARE_WRITE8_MEMBER(dmddata_w);
-
-	DECLARE_READ8_MEMBER(dips_r);
-	DECLARE_READ8_MEMBER(switch_r);
-	DECLARE_WRITE8_MEMBER(switch_w);
-	DECLARE_READ8_MEMBER(dedicated_switch_r);
-	DECLARE_DRIVER_INIT(whitestar);
-	virtual void machine_reset() override;
+	uint8_t switch_r();
+	void switch_w(uint8_t data);
+	virtual void machine_start() override;
 	INTERRUPT_GEN_MEMBER(whitestar_firq_interrupt);
+
+	void whitestar_base_map(address_map &map);
+	void whitestar_map(address_map &map);
+	void whitestarm_map(address_map &map);
 };
 
 static INPUT_PORTS_START( whitestar )
@@ -76,49 +67,58 @@ static INPUT_PORTS_START( whitestar )
 	PORT_BIT( 0xff, IP_ACTIVE_LOW, IPT_UNUSED )
 INPUT_PORTS_END
 
-static ADDRESS_MAP_START( whitestar_map, AS_PROGRAM, 8, whitestar_state )
-	AM_RANGE(0x0000, 0x1fff) AM_RAM
-	AM_RANGE(0x3000, 0x3000) AM_READ_PORT("DEDICATED")
-	AM_RANGE(0x3100, 0x3100) AM_READ_PORT("DSW0")
-	AM_RANGE(0x3200, 0x3200) AM_WRITE(bank_w)
-	AM_RANGE(0x3300, 0x3300) AM_WRITE(switch_w)
-	AM_RANGE(0x3400, 0x3400) AM_READ(switch_r)
-	AM_RANGE(0x3600, 0x3600) AM_WRITE(dmddata_w)
-	AM_RANGE(0x3601, 0x3601) AM_DEVREADWRITE("decodmd",decodmd_type2_device,ctrl_r, ctrl_w)
-	AM_RANGE(0x3700, 0x3700) AM_DEVREAD("decodmd",decodmd_type2_device,busy_r)
-	AM_RANGE(0x3800, 0x3800) AM_DEVWRITE(DECOBSMT_TAG, decobsmt_device, bsmt_comms_w)
-	AM_RANGE(0x4000, 0x7fff) AM_ROMBANK("bank1")
-	AM_RANGE(0x8000, 0xffff) AM_ROM AM_REGION("user1", 0x18000)
-ADDRESS_MAP_END
+void whitestar_state::whitestar_base_map(address_map &map)
+{
+	map(0x0000, 0x1fff).ram();
+	map(0x3000, 0x3000).portr("DEDICATED");
+	map(0x3100, 0x3100).portr("DSW0");
+	map(0x3200, 0x3200).w(FUNC(whitestar_state::bank_w));
+	map(0x3300, 0x3300).w(FUNC(whitestar_state::switch_w));
+	map(0x3400, 0x3400).r(FUNC(whitestar_state::switch_r));
+	map(0x3600, 0x3600).w(FUNC(whitestar_state::dmddata_w));
+	map(0x3601, 0x3601).rw(m_decodmd, FUNC(decodmd_type2_device::ctrl_r), FUNC(decodmd_type2_device::ctrl_w));
+	map(0x3700, 0x3700).r(m_decodmd, FUNC(decodmd_type2_device::busy_r));
+	map(0x4000, 0x7fff).bankr("bank1");
+	map(0x8000, 0xffff).rom().region("user1", 0x18000);
+}
 
-READ8_MEMBER(whitestar_state::switch_r)
+void whitestar_state::whitestar_map(address_map &map)
+{
+	whitestar_base_map(map);
+	map(0x3800, 0x3800).w(m_decobsmt, FUNC(decobsmt_device::bsmt_comms_w));
+}
+
+void whitestar_state::whitestarm_map(address_map &map)
+{
+	whitestar_base_map(map);
+	// TODO: sound writes
+}
+
+uint8_t whitestar_state::switch_r()
 {
 	return 0;
 }
 
-WRITE8_MEMBER(whitestar_state::switch_w)
+void whitestar_state::switch_w(uint8_t data)
 {
 }
 
-WRITE8_MEMBER(whitestar_state::bank_w)
+void whitestar_state::bank_w(uint8_t data)
 {
-	membank("bank1")->set_base(memregion("user1")->base() + (data & 0x1f) * 0x4000);
+	membank("bank1")->set_entry(data & 0x1f);
 }
 
 // Whitestar automatically pulses the DMD IRQ line?  DE hardware doesn't do that...
-WRITE8_MEMBER(whitestar_state::dmddata_w)
+void whitestar_state::dmddata_w(uint8_t data)
 {
-	m_decodmd->data_w(space,offset,data);
-	m_decodmd->ctrl_w(space,0,1);
-	m_decodmd->ctrl_w(space,0,0);
+	m_decodmd->data_w(data);
+	m_decodmd->ctrl_w(1);
+	m_decodmd->ctrl_w(0);
 }
-void whitestar_state::machine_reset()
+void whitestar_state::machine_start()
 {
-	membank("bank1")->set_base(memregion("user1")->base());
-}
-
-DRIVER_INIT_MEMBER(whitestar_state,whitestar)
-{
+	membank("bank1")->configure_entries(0, 32, memregion("user1")->base(), 0x4000);
+	membank("bank1")->set_entry(0);
 }
 
 // the appropriate device is passed in, so we can share this routine
@@ -127,17 +127,27 @@ INTERRUPT_GEN_MEMBER(whitestar_state::whitestar_firq_interrupt)
 	device.execute().set_input_line(M6809_FIRQ_LINE, HOLD_LINE);
 }
 
-static MACHINE_CONFIG_START( whitestar, whitestar_state )
+void whitestar_state::whitestar(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", M6809, 2000000)
-	MCFG_CPU_PROGRAM_MAP(whitestar_map)
-	MCFG_CPU_PERIODIC_INT_DRIVER(whitestar_state, whitestar_firq_interrupt,  976) // value taken from PinMAME
+	MC6809E(config, m_maincpu, 2000000);
+	m_maincpu->set_addrmap(AS_PROGRAM, &whitestar_state::whitestar_map);
+	m_maincpu->set_periodic_int(FUNC(whitestar_state::whitestar_firq_interrupt), attotime::from_hz(976));  // value taken from PinMAME
 
 	/* sound hardware */
-	MCFG_DECOBSMT_ADD(DECOBSMT_TAG)
+	DECOBSMT(config, m_decobsmt, 0);
 
-	MCFG_DECODMD_TYPE2_ADD("decodmd",":dmdcpu")
-MACHINE_CONFIG_END
+	DECODMD2(config, m_decodmd, 0, "dmdcpu");
+}
+
+void whitestar_state::whitestarm(machine_config &config)
+{
+	whitestar(config);
+	config.device_remove("decobsmt");
+	m_maincpu->set_addrmap(AS_PROGRAM, &whitestar_state::whitestarm_map);
+
+	// TODO: ARM7 sound board
+}
 
 // 8Mbit ROMs are mapped oddly: the first 4Mbit of each of the ROMs goes in order u17, u21, u36, u37
 // then the second 4Mbit of each of the ROMs in the same order starting at 0x200000
@@ -156,6 +166,38 @@ ROM_START(apollo13)
 	ROM_RELOAD(0x60000, 0x20000)
 	ROM_REGION(0x80000, "dmdcpu", 0)
 	ROM_LOAD("a13dspa.500", 0x00000, 0x80000, CRC(bf8e3249) SHA1(5e04681901ca794feb970f5388cb355427cf9a9a))
+	ROM_REGION(0x010000, "soundcpu", 0)
+	ROM_LOAD("apollo13.u7", 0x0000, 0x10000, CRC(e58a36b8) SHA1(ae60470a7b6c41cd40dbb7c0bea6f2f148f7b088))
+	ROM_REGION(0x1000000, "bsmt", 0 )
+	ROM_LOAD("apollo13.u17", 0x000000, 0x80000, CRC(4e863aca) SHA1(264f9176a1abf758b7a894d83883330ef91b7388))
+	ROM_LOAD("apollo13.u21", 0x080000, 0x80000, CRC(28169e37) SHA1(df5209d24187b546a4296fc4629c58bf729349d2))
+	ROM_LOAD("apollo13.u36", 0x100000, 0x80000, CRC(cede5e0f) SHA1(fa3b5820ed58e57b3c6185d91e9aea28aebc28d7))
+ROM_END
+
+ROM_START(apollo13_d4)
+	ROM_REGION(0x80000, "user1", 0)
+	ROM_LOAD("apolcpu.501", 0x00000, 0x20000, CRC(5afb8801) SHA1(65608148817f487c384dd36c221138962f1d9824))
+	ROM_RELOAD(0x20000, 0x20000)
+	ROM_RELOAD(0x40000, 0x20000)
+	ROM_RELOAD(0x60000, 0x20000)
+	ROM_REGION(0x80000, "dmdcpu", 0)
+	ROM_LOAD("a13dspa.401", 0x00000, 0x80000, CRC(6516ee16) SHA1(17011df142707917af2e0ec77c0e5ae78df91c0d))
+	ROM_REGION(0x010000, "soundcpu", 0)
+	ROM_LOAD("apollo13.u7", 0x0000, 0x10000, CRC(e58a36b8) SHA1(ae60470a7b6c41cd40dbb7c0bea6f2f148f7b088))
+	ROM_REGION(0x1000000, "bsmt", 0 )
+	ROM_LOAD("apollo13.u17", 0x000000, 0x80000, CRC(4e863aca) SHA1(264f9176a1abf758b7a894d83883330ef91b7388))
+	ROM_LOAD("apollo13.u21", 0x080000, 0x80000, CRC(28169e37) SHA1(df5209d24187b546a4296fc4629c58bf729349d2))
+	ROM_LOAD("apollo13.u36", 0x100000, 0x80000, CRC(cede5e0f) SHA1(fa3b5820ed58e57b3c6185d91e9aea28aebc28d7))
+ROM_END
+
+ROM_START(apollo13_20)
+	ROM_REGION(0x80000, "user1", 0)
+	ROM_LOAD("a13cpu.203", 0x00000, 0x20000, CRC(4af048fc) SHA1(c82459247707a6cf07a10cc884f1391d0ca536a3))
+	ROM_RELOAD(0x20000, 0x20000)
+	ROM_RELOAD(0x40000, 0x20000)
+	ROM_RELOAD(0x60000, 0x20000)
+	ROM_REGION(0x80000, "dmdcpu", 0)
+	ROM_LOAD("a13dps.201", 0x00000, 0x80000, CRC(ab97a71c) SHA1(1e01d3c2ac1b9153fb4f3f888fe01fcebbf853d7))
 	ROM_REGION(0x010000, "soundcpu", 0)
 	ROM_LOAD("apollo13.u7", 0x0000, 0x10000, CRC(e58a36b8) SHA1(ae60470a7b6c41cd40dbb7c0bea6f2f148f7b088))
 	ROM_REGION(0x1000000, "bsmt", 0 )
@@ -347,12 +389,61 @@ ROM_START(godzillp)
 	ROM_LOAD("gdzu37.100", 0x180000, 0x80000, CRC(2c1acb14) SHA1(4d710e09f5500da937932b4b01d862abb4a89e5a))
 ROM_END
 
+ROM_START(godzillp_100)
+	ROM_REGION(0x80000, "user1", 0)
+	ROM_LOAD("gdzcpu.100", 0x00000, 0x20000, CRC(55c46a98) SHA1(535c363fed2359add260149b6407dc95da32a1e3))
+	ROM_RELOAD(0x20000, 0x20000)
+	ROM_RELOAD(0x40000, 0x20000)
+	ROM_RELOAD(0x60000, 0x20000)
+	ROM_REGION(0x80000, "dmdcpu", 0)
+	ROM_LOAD("gzdspa.100", 0x00000, 0x80000, CRC(9b97cd98) SHA1(6fd002a6986aa32832c0628899ba1bafe3642354))
+	ROM_REGION(0x010000, "soundcpu", 0)
+	ROM_LOAD("gdzu7.100", 0x0000, 0x10000, CRC(a0afe8b7) SHA1(33e4a824b26b58e8f963fa8a525a64f4779b45db))
+	ROM_REGION(0x1000000, "bsmt", 0 )
+	ROM_LOAD("gdzu17.100", 0x000000, 0x80000, CRC(6bba69c8) SHA1(51341e188b4191eb1836349dfdd456163d464ad6))
+	ROM_LOAD("gdzu21.100", 0x080000, 0x80000, CRC(db738958) SHA1(23082cf98bbcc6d356145414267da887a5ca9305))
+	ROM_LOAD("gdzu36.100", 0x100000, 0x80000, CRC(e3f24234) SHA1(eb123200928221a647e10839ebb7f4628501c581))
+	ROM_LOAD("gdzu37.100", 0x180000, 0x80000, CRC(2c1acb14) SHA1(4d710e09f5500da937932b4b01d862abb4a89e5a))
+ROM_END
+
+ROM_START(godzillp_090)
+	ROM_REGION(0x80000, "user1", 0)
+	ROM_LOAD("gdzcpu.090", 0x00000, 0x20000, CRC(54e3b6d7) SHA1(c11cf71140c00c96c7feea569fa04f75061b9af7))
+	ROM_RELOAD(0x20000, 0x20000)
+	ROM_RELOAD(0x40000, 0x20000)
+	ROM_RELOAD(0x60000, 0x20000)
+	ROM_REGION(0x80000, "dmdcpu", 0)
+	ROM_LOAD("gzdspa.090", 0x00000, 0x80000, CRC(56dde3a4) SHA1(332f09ade962e07a2979ad7bf743f632ea942440))
+	ROM_REGION(0x010000, "soundcpu", 0)
+	ROM_LOAD("gdzu7.090", 0x0000, 0x10000, CRC(076401a9) SHA1(17aa63c2b26e6fc4849a5101ff9704606de3de65))
+	ROM_REGION(0x1000000, "bsmt", 0 )
+	ROM_LOAD("gdzu17.090", 0x000000, 0x80000, CRC(b15be745) SHA1(395631df3fef80641c189e57cddfc0ec5dcdbcef))
+	ROM_LOAD("gdzu21.090", 0x080000, 0x80000, CRC(019207d5) SHA1(a98d191d686d4a04f7fad90dd0e86e8b48ff3a3b))
+	ROM_LOAD("gdzu36.090", 0x100000, 0x80000, CRC(3913ccb9) SHA1(ddce224661894438a12135306484f711d10ce8be))
+	ROM_LOAD("gdzu37.090", 0x180000, 0x80000, CRC(1410ae6b) SHA1(28d025403fd60b1bb132cffcc14be21be48d808c))
+ROM_END
+
 /*-------------------------------------------------------------------
 / Goldeneye
 /-------------------------------------------------------------------*/
 ROM_START(gldneye)
 	ROM_REGION(0x80000, "user1", 0)
 	ROM_LOAD("bondcpu.404", 0x00000, 0x20000, CRC(5aa6ffcc) SHA1(0c8ffcfe008a650060c42d385e91addf44f5d88e))
+	ROM_RELOAD(0x20000, 0x20000)
+	ROM_RELOAD(0x40000, 0x20000)
+	ROM_RELOAD(0x60000, 0x20000)
+	ROM_REGION(0x80000, "dmdcpu", 0)
+	ROM_LOAD("bondispa.400", 0x00000, 0x80000, CRC(9cc0c710) SHA1(3c6df97d881aed9d1d08cc2a5d0c4ec020295902))
+	ROM_REGION(0x010000, "soundcpu", 0)
+	ROM_LOAD("bondu7.bin", 0x0000, 0x10000, CRC(7581a349) SHA1(493236bdc52b601a08009f9b03d64b6047d52661))
+	ROM_REGION(0x1000000, "bsmt", 0 )
+	ROM_LOAD("bondu17.bin", 0x000000, 0x80000, CRC(d9c56b9d) SHA1(df8cde0b63d6a8437a1cb239094547262c3f8774))
+	ROM_LOAD("bondu21.bin", 0x080000, 0x80000, CRC(5be0f205) SHA1(aaef8f6ee6c8d5ebf08f90368061288adf850a18))
+ROM_END
+
+ROM_START(gldneye_402)
+	ROM_REGION(0x80000, "user1", 0)
+	ROM_LOAD("bondcpu.402", 0x00000, 0x20000, CRC(6faad064) SHA1(c598e9073670f0aa27e61b728c85a8ff54691b20))
 	ROM_RELOAD(0x20000, 0x20000)
 	ROM_RELOAD(0x40000, 0x20000)
 	ROM_RELOAD(0x60000, 0x20000)
@@ -894,6 +985,21 @@ ROM_START(id4)
 	ROM_LOAD("id4sdu21.400", 0x080000, 0x80000, CRC(f384a9ab) SHA1(06bd607e7efd761017a7b605e0294a34e4c6255c))
 ROM_END
 
+ROM_START(id4f)
+	ROM_REGION(0x80000, "user1", 0)
+	ROM_LOAD("id4cpu.202", 0x00000, 0x20000, CRC(108d88fd) SHA1(8317944201acfb97dadfdd364696c9e81a21d2c5))
+	ROM_RELOAD(0x20000, 0x20000)
+	ROM_RELOAD(0x40000, 0x20000)
+	ROM_RELOAD(0x60000, 0x20000)
+	ROM_REGION(0x80000, "dmdcpu", 0)
+	ROM_LOAD("id4dspf.200", 0x00000, 0x80000, CRC(4b52676b) SHA1(a881efb28d8bab424d8c12be2c16b8afc7472208))
+	ROM_REGION(0x010000, "soundcpu", 0)
+	ROM_LOAD("id4sndu7.512", 0x0000, 0x10000, CRC(deeaed37) SHA1(06d79967a25af0b90a5f1d6360a5b5fdbb972d5a))
+	ROM_REGION(0x1000000, "bsmt", 0 )
+	ROM_LOAD("id4sdu17.400", 0x000000, 0x80000, CRC(89ffeca3) SHA1(b94c60e3a433f797d6c5ea793c3ecff0a3b6ba60))
+	ROM_LOAD("id4sdu21.400", 0x080000, 0x80000, CRC(f384a9ab) SHA1(06bd607e7efd761017a7b605e0294a34e4c6255c))
+ROM_END
+
 ROM_START(id4_201)
 	ROM_REGION(0x80000, "user1", 0)
 	ROM_LOAD("id4cpu.201", 0x00000, 0x20000, CRC(c0cd47a1) SHA1(63bb6da28b4f6fcc8525a8f1a6d262e35931efc9))
@@ -902,6 +1008,21 @@ ROM_START(id4_201)
 	ROM_RELOAD(0x60000, 0x20000)
 	ROM_REGION(0x80000, "dmdcpu", 0)
 	ROM_LOAD("id4dspa.200", 0x00000, 0x80000, CRC(2d3fbcc4) SHA1(0bd69ebb68ae880ac9aae40916f13e1ff84ecfaa))
+	ROM_REGION(0x010000, "soundcpu", 0)
+	ROM_LOAD("id4sndu7.512", 0x0000, 0x10000, CRC(deeaed37) SHA1(06d79967a25af0b90a5f1d6360a5b5fdbb972d5a))
+	ROM_REGION(0x1000000, "bsmt", 0 )
+	ROM_LOAD("id4sdu17.400", 0x000000, 0x80000, CRC(89ffeca3) SHA1(b94c60e3a433f797d6c5ea793c3ecff0a3b6ba60))
+	ROM_LOAD("id4sdu21.400", 0x080000, 0x80000, CRC(f384a9ab) SHA1(06bd607e7efd761017a7b605e0294a34e4c6255c))
+ROM_END
+
+ROM_START(id4f_201)
+	ROM_REGION(0x80000, "user1", 0)
+	ROM_LOAD("id4cpu.201", 0x00000, 0x20000, CRC(c0cd47a1) SHA1(63bb6da28b4f6fcc8525a8f1a6d262e35931efc9))
+	ROM_RELOAD(0x20000, 0x20000)
+	ROM_RELOAD(0x40000, 0x20000)
+	ROM_RELOAD(0x60000, 0x20000)
+	ROM_REGION(0x80000, "dmdcpu", 0)
+	ROM_LOAD("id4dspf.200", 0x00000, 0x80000, CRC(4b52676b) SHA1(a881efb28d8bab424d8c12be2c16b8afc7472208))
 	ROM_REGION(0x010000, "soundcpu", 0)
 	ROM_LOAD("id4sndu7.512", 0x0000, 0x10000, CRC(deeaed37) SHA1(06d79967a25af0b90a5f1d6360a5b5fdbb972d5a))
 	ROM_REGION(0x1000000, "bsmt", 0 )
@@ -924,6 +1045,57 @@ ROM_START(lostspc)
 	ROM_RELOAD(0x60000, 0x20000)
 	ROM_REGION(0x80000, "dmdcpu", 0)
 	ROM_LOAD("lisdspa.102", 0x00000, 0x80000, CRC(e8bf4a58) SHA1(572313fb79e5a0c0034938a09b04ef43fc235c84))
+	ROM_REGION(0x010000, "soundcpu", 0)
+	ROM_LOAD("lisu7.100", 0x0000, 0x10000, CRC(96e6b3c4) SHA1(5cfb43b8c182aed4b49ad1b8803812a18c6c8b6f))
+	ROM_REGION(0x1000000, "bsmt", 0 )
+	ROM_LOAD("lisu17.100", 0x000000, 0x80000, CRC(69076939) SHA1(f2cdf61a2b469d1a69eb3f08fc6e511d72336586))
+	ROM_LOAD("lisu21.100", 0x080000, 0x80000, CRC(56eede09) SHA1(9ff53d7a188bd7293ad92089d143bd54623a50d4))
+	ROM_LOAD("lisu36.100", 0x100000, 0x80000, CRC(56f2c53b) SHA1(5c2daf17116016fbead1320eb150cf655984662b))
+	ROM_LOAD("lisu37.100", 0x180000, 0x80000, CRC(f9430c59) SHA1(f0f7169e63fc12d29fe39cd24dd67c5fb17779f7))
+ROM_END
+
+ROM_START(lostspcf)
+	ROM_REGION(0x80000, "user1", 0)
+	ROM_LOAD("liscpu.101", 0x00000, 0x20000, CRC(81b2ced8) SHA1(a1933e2686b2a4e48d0f327593df95a927b132cb))
+	ROM_RELOAD(0x20000, 0x20000)
+	ROM_RELOAD(0x40000, 0x20000)
+	ROM_RELOAD(0x60000, 0x20000)
+	ROM_REGION(0x80000, "dmdcpu", 0)
+	ROM_LOAD("lis_f-102.bin", 0x00000, 0x80000, CRC(422ba6d5) SHA1(0cd09b14a953fda39f8c7e5521c4115d2ada9186))
+	ROM_REGION(0x010000, "soundcpu", 0)
+	ROM_LOAD("lisu7.100", 0x0000, 0x10000, CRC(96e6b3c4) SHA1(5cfb43b8c182aed4b49ad1b8803812a18c6c8b6f))
+	ROM_REGION(0x1000000, "bsmt", 0 )
+	ROM_LOAD("lisu17.100", 0x000000, 0x80000, CRC(69076939) SHA1(f2cdf61a2b469d1a69eb3f08fc6e511d72336586))
+	ROM_LOAD("lisu21.100", 0x080000, 0x80000, CRC(56eede09) SHA1(9ff53d7a188bd7293ad92089d143bd54623a50d4))
+	ROM_LOAD("lisu36.100", 0x100000, 0x80000, CRC(56f2c53b) SHA1(5c2daf17116016fbead1320eb150cf655984662b))
+	ROM_LOAD("lisu37.100", 0x180000, 0x80000, CRC(f9430c59) SHA1(f0f7169e63fc12d29fe39cd24dd67c5fb17779f7))
+ROM_END
+
+ROM_START(lostspcg)
+	ROM_REGION(0x80000, "user1", 0)
+	ROM_LOAD("liscpu.101", 0x00000, 0x20000, CRC(81b2ced8) SHA1(a1933e2686b2a4e48d0f327593df95a927b132cb))
+	ROM_RELOAD(0x20000, 0x20000)
+	ROM_RELOAD(0x40000, 0x20000)
+	ROM_RELOAD(0x60000, 0x20000)
+	ROM_REGION(0x80000, "dmdcpu", 0)
+	ROM_LOAD("lisdspg.102", 0x00000, 0x80000, CRC(66f3feb7) SHA1(a1f718193998f3210fb25c1353e4ae6703802311))
+	ROM_REGION(0x010000, "soundcpu", 0)
+	ROM_LOAD("lisu7.100", 0x0000, 0x10000, CRC(96e6b3c4) SHA1(5cfb43b8c182aed4b49ad1b8803812a18c6c8b6f))
+	ROM_REGION(0x1000000, "bsmt", 0 )
+	ROM_LOAD("lisu17.100", 0x000000, 0x80000, CRC(69076939) SHA1(f2cdf61a2b469d1a69eb3f08fc6e511d72336586))
+	ROM_LOAD("lisu21.100", 0x080000, 0x80000, CRC(56eede09) SHA1(9ff53d7a188bd7293ad92089d143bd54623a50d4))
+	ROM_LOAD("lisu36.100", 0x100000, 0x80000, CRC(56f2c53b) SHA1(5c2daf17116016fbead1320eb150cf655984662b))
+	ROM_LOAD("lisu37.100", 0x180000, 0x80000, CRC(f9430c59) SHA1(f0f7169e63fc12d29fe39cd24dd67c5fb17779f7))
+ROM_END
+
+ROM_START(lostspc_d1)
+	ROM_REGION(0x80000, "user1", 0)
+	ROM_LOAD("liscpu.101", 0x00000, 0x20000, CRC(81b2ced8) SHA1(a1933e2686b2a4e48d0f327593df95a927b132cb))
+	ROM_RELOAD(0x20000, 0x20000)
+	ROM_RELOAD(0x40000, 0x20000)
+	ROM_RELOAD(0x60000, 0x20000)
+	ROM_REGION(0x80000, "dmdcpu", 0)
+	ROM_LOAD("lisdspa.101", 0x00000, 0x80000, CRC(a8bfa71f) SHA1(45886ae8edcfd26a2225914aaf96eb960fc7e988))
 	ROM_REGION(0x010000, "soundcpu", 0)
 	ROM_LOAD("lisu7.100", 0x0000, 0x10000, CRC(96e6b3c4) SHA1(5cfb43b8c182aed4b49ad1b8803812a18c6c8b6f))
 	ROM_REGION(0x1000000, "bsmt", 0 )
@@ -2136,7 +2308,7 @@ ROM_START(sprk_096)
 	ROM_RELOAD(0x40000, 0x20000)
 	ROM_RELOAD(0x60000, 0x20000)
 	ROM_REGION(0x80000, "dmdcpu", 0)
-	ROM_LOAD("spdspa.090", 0x00000, 0x80000, CRC(c333dd48) SHA1(fe2be9274c06b2f39fa2e14e0d44ce7213282f3b))
+	ROM_LOAD("spdspa.101", 0x00000, 0x80000, CRC(48ca598d) SHA1(0827ac7bb5cf12b0e63860b73a808273d984509e))
 	ROM_REGION(0x010000, "soundcpu", 0)
 	ROM_LOAD("spku7.090",0x0000,0x10000,CRC(19937fbd) SHA1(ebd7c8f1604accbeb7c00066ecf811193a2cb588))
 	ROM_REGION(0x1000000, "bsmt", 0 )
@@ -2180,6 +2352,23 @@ ROM_START(spacejam)
 	ROM_LOAD("spcjam.u21", 0x080000, 0x80000, CRC(14cb71cb) SHA1(46752c1792c26345abb4d5219917a1cda50c600b))
 	ROM_LOAD("spcjam.u36", 0x100000, 0x80000, CRC(7f61143c) SHA1(40695d1d14695d3e4991ed39f4a354c16227975e))
 ROM_END
+
+ROM_START(spacejam_200)
+	ROM_REGION(0x80000, "user1", 0)
+	ROM_LOAD("jamcpu.200", 0x00000, 0x20000, CRC(d80c069b) SHA1(bf6e96100b158f058b5f07f537ad0fa0a0fbe31d))
+	ROM_RELOAD(0x20000, 0x20000)
+	ROM_RELOAD(0x40000, 0x20000)
+	ROM_RELOAD(0x60000, 0x20000)
+	ROM_REGION(0x80000, "dmdcpu", 0)
+	ROM_LOAD("jamdspa.200", 0x00000, 0x80000, CRC(4a05ec31) SHA1(eb962f5f2160508e0f81b252e8644d8aa833d7fd))
+	ROM_REGION(0x010000, "soundcpu", 0)
+	ROM_LOAD("spcjam.u7", 0x0000, 0x10000, CRC(c693d853) SHA1(3e81e60967dff496c681962f3ff8c7c1fbb7746a))
+	ROM_REGION(0x1000000, "bsmt", 0 )
+	ROM_LOAD("spcjam.u17", 0x000000, 0x80000, CRC(ccefe457) SHA1(4186dee689fbfc08e5070ccfe8d4be95220cd87b))
+	ROM_LOAD("spcjam.u21", 0x080000, 0x80000, CRC(14cb71cb) SHA1(46752c1792c26345abb4d5219917a1cda50c600b))
+	ROM_LOAD("spcjam.u36", 0x100000, 0x80000, CRC(7f61143c) SHA1(40695d1d14695d3e4991ed39f4a354c16227975e))
+ROM_END
+
 ROM_START(spacejmg)
 	ROM_REGION(0x80000, "user1", 0)
 	ROM_LOAD("jamcpu.300", 0x00000, 0x20000, CRC(9dc8df2e) SHA1(b3b111afb5b1f1236be73e899b34a5d5a73813e9))
@@ -2277,12 +2466,44 @@ ROM_START(startrp)
 	ROM_LOAD("u36_95a7.040", 0x100000, 0x80000, CRC(c1e4ca6a) SHA1(487de78ebf1ee8cc721f2ef7b1bd42d2f7b27456))
 ROM_END
 
+ROM_START(startrp2)
+	ROM_REGION(0x80000, "user1", 0)
+	ROM_LOAD("sstcpu.200", 0x00000, 0x20000, CRC(1bd865a5) SHA1(770d87d5108b58e214e551cfdcd4b75a11d6b88b))
+	ROM_RELOAD(0x20000, 0x20000)
+	ROM_RELOAD(0x40000, 0x20000)
+	ROM_RELOAD(0x60000, 0x20000)
+	ROM_REGION(0x80000, "dmdcpu", 0)
+	ROM_LOAD("sstdspa.200", 0x00000, 0x80000, CRC(76a0e09e) SHA1(a4103aeee752d824a3811124079e40acc7286271))
+	ROM_REGION(0x010000, "soundcpu", 0)
+	ROM_LOAD("u7_b130.512", 0x0000, 0x10000, CRC(f1559e4f) SHA1(82b56f097412052bc1638a3f1c1319009df707f4))
+	ROM_REGION(0x1000000, "bsmt", 0 )
+	ROM_LOAD("u17_152a.040", 0x000000, 0x80000, CRC(8caeccdb) SHA1(390f07e48a176a24fe99a202f3fa2b9767d84230))
+	ROM_LOAD("u21_0291.040", 0x080000, 0x80000, CRC(0c5321f6) SHA1(4a51daa16d489ab61d462d44f887c8422f863c5c))
+	ROM_LOAD("u36_95a7.040", 0x100000, 0x80000, CRC(c1e4ca6a) SHA1(487de78ebf1ee8cc721f2ef7b1bd42d2f7b27456))
+ROM_END
+
 /*-------------------------------------------------------------------
 / Striker Extreme
 /-------------------------------------------------------------------*/
 ROM_START(strikext)
 	ROM_REGION(0x80000, "user1", 0)
 	ROM_LOAD("sxcpua.102", 0x00000, 0x20000, CRC(5e5f0fb8) SHA1(1425d66064e59193ce7cacb496c12ae956670435))
+	ROM_RELOAD(0x20000, 0x20000)
+	ROM_RELOAD(0x40000, 0x20000)
+	ROM_RELOAD(0x60000, 0x20000)
+	ROM_REGION(0x80000, "dmdcpu", 0)
+	ROM_LOAD("sxdispa.103", 0x00000, 0x80000, CRC(e4cf849f) SHA1(27b61f1659762b396ca3af375e28f9c56500f79e))
+	ROM_REGION(0x010000, "soundcpu", 0)
+	ROM_LOAD("sxsnda.u7",0x0000,0x10000,CRC(e7e1a0cb) SHA1(be8b3e4d4232519db8344ae9e75f77d159bb1911))
+	ROM_REGION(0x1000000, "bsmt", 0 )
+	ROM_LOAD_SND_8M("sxsnda.u17", 0x000000, CRC(aeeed88f) SHA1(e150fd243feffcdc5d66487e840cefdfb50213da))
+	ROM_LOAD_SND_8M("sxsnda.u21", 0x080000, CRC(62c9bfe3) SHA1(14a65a673a33b7e3d3005f76acf3098dc37958f8))
+	ROM_LOAD_SND_8M("sxsnda.u36", 0x100000, CRC(a0bc0edb) SHA1(1025a28fe9a0e3681e8e99b513da29ec294da045))
+	ROM_LOAD_SND_8M("sxsnda.u37", 0x180000, CRC(4c08c33c) SHA1(36bfad0c59fd228db76a6ff36698edd929c11336))
+ROM_END
+ROM_START(strikext_100)
+	ROM_REGION(0x80000, "user1", 0)
+	ROM_LOAD("sxcpua.100", 0x00000, 0x20000, CRC(ee4742dd) SHA1(1b334f857ccb34f09eba69f3a40b589f6a712811))
 	ROM_RELOAD(0x20000, 0x20000)
 	ROM_RELOAD(0x40000, 0x20000)
 	ROM_RELOAD(0x60000, 0x20000)
@@ -2366,6 +2587,22 @@ ROM_END
 ROM_START(strxt_it)
 	ROM_REGION(0x80000, "user1", 0)
 	ROM_LOAD("sxcpui.102", 0x00000, 0x20000, CRC(f955d0ef) SHA1(0f4ee87715bc085e2fb05e9ebdc89403f6bac444))
+	ROM_RELOAD(0x20000, 0x20000)
+	ROM_RELOAD(0x40000, 0x20000)
+	ROM_RELOAD(0x60000, 0x20000)
+	ROM_REGION(0x80000, "dmdcpu", 0)
+	ROM_LOAD("sxdispi.103", 0x00000, 0x80000, CRC(40be3fe2) SHA1(a5e37ecf3b9772736ac88256c470f785dc113aa1))
+	ROM_REGION(0x010000, "soundcpu", 0)
+	ROM_LOAD("sxsndi.u7",0x0000,0x10000,CRC(81caf0a7) SHA1(5bb05c5bb49d12417b3ad49398623c3c222fd63b))
+	ROM_REGION(0x1000000, "bsmt", 0 )
+	ROM_LOAD_SND_8M("sxsndi.u17", 0x000000, CRC(d0b21193) SHA1(2e5f92a67f0f18913e5d0af9936ab8694d095c66))
+	ROM_LOAD_SND_8M("sxsndi.u21", 0x080000, CRC(5ab3f8f4) SHA1(44982725eb31b0b144e3ad6549734b5fc46cd8c5))
+	ROM_LOAD_SND_8M("sxsndi.u36", 0x100000, CRC(4ee21ade) SHA1(1887f81b5f6753ce75ddcd0d7557c1644a925fcf))
+	ROM_LOAD_SND_8M("sxsndi.u37", 0x180000, CRC(4427e364) SHA1(7046b65086aafc4c14793d7036bc5130fe1e7dbc))
+ROM_END
+ROM_START(strxt_it_101)
+	ROM_REGION(0x80000, "user1", 0)
+	ROM_LOAD("sxcpui.101", 0x00000, 0x20000, CRC(121e04de) SHA1(90c222106c3422a7cd10a493b2290315d8d7009f))
 	ROM_RELOAD(0x20000, 0x20000)
 	ROM_RELOAD(0x40000, 0x20000)
 	ROM_RELOAD(0x60000, 0x20000)
@@ -3018,6 +3255,21 @@ ROM_START(xfilesp)
 	ROM_LOAD("xfsndu21.c40", 0x080000, 0x80000, CRC(b56a5ca6) SHA1(5fa23a8bb57e45aca159882226e603d9a6be078b))
 ROM_END
 
+ROM_START(xfilespf)
+	ROM_REGION(0x80000, "user1", 0)
+	ROM_LOAD("xfcpu.303", 0x00000, 0x20000, CRC(c7ab5efe) SHA1(dcb4b89adfb5ba39e59c1118a00b29941d3ea4e9))
+	ROM_RELOAD(0x20000, 0x20000)
+	ROM_RELOAD(0x40000, 0x20000)
+	ROM_RELOAD(0x60000, 0x20000)
+	ROM_REGION(0x80000, "dmdcpu", 0)
+	ROM_LOAD("xfildspf.300", 0x00000, 0x80000, CRC(fe9b1292) SHA1(ead40d2cdff060829008f468e08512c4f5f9e055))
+	ROM_REGION(0x010000, "soundcpu", 0)
+	ROM_LOAD("xfsndu7.512", 0x0000, 0x10000, CRC(01d65239) SHA1(9e680de940a15ef85a5615b789c58cd5973ff11b))
+	ROM_REGION(0x1000000, "bsmt", 0)
+	ROM_LOAD("xfsndu17.c40", 0x000000, 0x80000, CRC(40bfc835) SHA1(2d6ac82acbbf9645bcb84fab7f285f2373e516a8))
+	ROM_LOAD("xfsndu21.c40", 0x080000, 0x80000, CRC(b56a5ca6) SHA1(5fa23a8bb57e45aca159882226e603d9a6be078b))
+ROM_END
+
 ROM_START(xfiles2)
 	ROM_REGION(0x80000, "user1", 0)
 	ROM_LOAD("xfcpu.204", 0x00000, 0x20000, CRC(a4913128) SHA1(1fe348725e13fd5dc56b6b2dbd173d0b49953483))
@@ -3026,6 +3278,21 @@ ROM_START(xfiles2)
 	ROM_RELOAD(0x60000, 0x20000)
 	ROM_REGION(0x80000, "dmdcpu", 0)
 	ROM_LOAD("xfildspa.201", 0x00000, 0x80000, CRC(bb015f24) SHA1(ca539d978ef0b8244227ea0c60087da5e7f0ee9e))
+	ROM_REGION(0x010000, "soundcpu", 0)
+	ROM_LOAD("xfsndu7.512", 0x0000, 0x10000, CRC(01d65239) SHA1(9e680de940a15ef85a5615b789c58cd5973ff11b))
+	ROM_REGION(0x1000000, "bsmt", 0)
+	ROM_LOAD("xfsndu17.c40", 0x000000, 0x80000, CRC(40bfc835) SHA1(2d6ac82acbbf9645bcb84fab7f285f2373e516a8))
+	ROM_LOAD("xfsndu21.c40", 0x080000, 0x80000, CRC(b56a5ca6) SHA1(5fa23a8bb57e45aca159882226e603d9a6be078b))
+ROM_END
+
+ROM_START(xfiles20)
+	ROM_REGION(0x80000, "user1", 0)
+	ROM_LOAD("xfcpu.200", 0x00000, 0x20000, CRC(fd9e8ae8) SHA1(7f904eaae437bf938f01e9df875b9415167fc4c5))
+	ROM_RELOAD(0x20000, 0x20000)
+	ROM_RELOAD(0x40000, 0x20000)
+	ROM_RELOAD(0x60000, 0x20000)
+	ROM_REGION(0x80000, "dmdcpu", 0)
+	ROM_LOAD("xfildspa.200", 0x00000, 0x80000, CRC(3fb161c3) SHA1(ea00c5c5a1e4908fcc34b0558b89325db091595d))
 	ROM_REGION(0x010000, "soundcpu", 0)
 	ROM_LOAD("xfsndu7.512", 0x0000, 0x10000, CRC(01d65239) SHA1(9e680de940a15ef85a5615b789c58cd5973ff11b))
 	ROM_REGION(0x1000000, "bsmt", 0)
@@ -3090,6 +3357,23 @@ ROM_START(viprsega)
 	ROM_RELOAD(0x60000, 0x20000)
 	ROM_REGION(0x80000, "dmdcpu", 0)
 	ROM_LOAD("vipdspa.201", 0x00000, 0x80000, CRC(24b1dc21) SHA1(73d92083c4795e143e7c34f52032292a142534f4))
+	ROM_REGION(0x010000, "soundcpu", 0)
+	ROM_LOAD("vpru7.dat", 0x0000, 0x10000, CRC(f21617d7) SHA1(78d1ade400b83c62bb6288bccf386ef34050dd04))
+	ROM_REGION(0x1000000, "bsmt", 0)
+	ROM_LOAD("vpru17.dat", 0x000000, 0x80000, CRC(47b1317c) SHA1(32259965b5a12f63267af96eef8396bf71895a65))
+	ROM_LOAD("vpru21.dat", 0x080000, 0x80000, CRC(0e0e2dd6) SHA1(b409c837a52eb399c9a4896ca0c502360c93dcc9))
+	ROM_LOAD("vpru36.dat", 0x100000, 0x80000, CRC(7b482876) SHA1(c8960c2d45a77a35d22408c7bb8ba322e7af36f0))
+	ROM_LOAD("vpru37.dat", 0x180000, 0x80000, CRC(0bf23e0e) SHA1(b5724ed6cfe791320a8cf208cc20a2d3f0db85c8))
+ROM_END
+
+ROM_START(viprsega_102)
+	ROM_REGION(0x80000, "user1", 0)
+	ROM_LOAD("vipcpu.102", 0x00000, 0x20000, CRC(6046974b) SHA1(56e3de5ccb5a04d6ee5555ee6755835e75e7454f))
+	ROM_RELOAD(0x20000, 0x20000)
+	ROM_RELOAD(0x40000, 0x20000)
+	ROM_RELOAD(0x60000, 0x20000)
+	ROM_REGION(0x80000, "dmdcpu", 0)
+	ROM_LOAD("vipdspa.100", 0x00000, 0x80000, CRC(25acf3db) SHA1(3476f2b95cfff9dfb4fe9cf7c5cccae85f23343a))
 	ROM_REGION(0x010000, "soundcpu", 0)
 	ROM_LOAD("vpru7.dat", 0x0000, 0x10000, CRC(f21617d7) SHA1(78d1ade400b83c62bb6288bccf386ef34050dd04))
 	ROM_REGION(0x1000000, "bsmt", 0)
@@ -3172,183 +3456,200 @@ ROM_END
 
 #define MACHINE_IS_PINBALL MACHINE_NOT_WORKING | MACHINE_NO_SOUND | MACHINE_MECHANICAL
 
-GAME(1995,  apollo13,   0,          whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Sega",     "Apollo 13 (5.01)",                MACHINE_IS_PINBALL)
-GAME(1995,  apollo13_10,apollo13,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Sega",     "Apollo 13 (1.00)",                MACHINE_IS_PINBALL)
-GAME(2001,  austin,     0,          whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Austin Powers (3.02)",             MACHINE_IS_PINBALL)
-GAME(2001,  aust301,    austin,     whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Austin Powers (3.01)",             MACHINE_IS_PINBALL)
-GAME(2001,  aust300,    austin,     whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Austin Powers (3.00)",             MACHINE_IS_PINBALL)
-GAME(2001,  aust201,    austin,     whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Austin Powers (2.01)",             MACHINE_IS_PINBALL)
-GAME(2001,  austnew,    austin,     whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Austin Powers (ARM7 Sound Board)",             MACHINE_IS_PINBALL)
-GAME(2001,  austinf,    austin,     whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Austin Powers (France)",               MACHINE_IS_PINBALL)
-GAME(2001,  austing,    austin,     whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Austin Powers (Germany)",              MACHINE_IS_PINBALL)
-GAME(2001,  austini,    austin,     whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Austin Powers (Italy)",                MACHINE_IS_PINBALL)
-GAME(1998,  godzillp,   0,          whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Sega",     "Godzilla (Pinball)",               MACHINE_IS_PINBALL)
-GAME(1996,  gldneye,    0,          whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Sega",     "Goldeneye",                MACHINE_IS_PINBALL)
-GAME(1998,  goldcue,    0,          whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Sega",     "Golden Cue",               MACHINE_IS_PINBALL)
-GAME(1999,  harl_a13,   0,          whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Sega",     "Harley Davidson (1.03)",               MACHINE_IS_PINBALL)
-GAME(1999,  harl_u13,   harl_a13,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Sega",     "Harley Davidson (1.03 UK)",             MACHINE_IS_PINBALL)
-GAME(1999,  harl_a10,   harl_a13,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Sega",     "Harley Davidson (1.03 Display rev. 1.00)",             MACHINE_IS_PINBALL)
-GAME(1999,  harl_f13,   harl_a13,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Sega",     "Harley Davidson (1.03 France)",                MACHINE_IS_PINBALL)
-GAME(1999,  harl_g13,   harl_a13,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Sega",     "Harley Davidson (1.03 Germany)",               MACHINE_IS_PINBALL)
-GAME(1999,  harl_i13,   harl_a13,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Sega",     "Harley Davidson (1.03 Italy)",             MACHINE_IS_PINBALL)
-GAME(1999,  harl_l13,   harl_a13,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Sega",     "Harley Davidson (1.03 Spain)",             MACHINE_IS_PINBALL)
-GAME(2004,  harl_a40,   0,          whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Harley Davidson (4.00)",               MACHINE_IS_PINBALL)
-GAME(2004,  harl_f40,   harl_a40,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Harley Davidson (4.00 France)",                MACHINE_IS_PINBALL)
-GAME(2004,  harl_g40,   harl_a40,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Harley Davidson (4.00 Germany)",               MACHINE_IS_PINBALL)
-GAME(2004,  harl_i40,   harl_a40,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Harley Davidson (4.00 Italy)",             MACHINE_IS_PINBALL)
-GAME(2004,  harl_l40,   harl_a40,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Harley Davidson (4.00 Spain)",             MACHINE_IS_PINBALL)
-GAME(2004,  harl_a30,   harl_a40,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Harley Davidson (3.00)",               MACHINE_IS_PINBALL)
-GAME(2004,  harl_f30,   harl_a40,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Harley Davidson (3.00 France)",                MACHINE_IS_PINBALL)
-GAME(2004,  harl_g30,   harl_a40,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Harley Davidson (3.00 Germany)",               MACHINE_IS_PINBALL)
-GAME(2004,  harl_i30,   harl_a40,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Harley Davidson (3.00 Italy)",             MACHINE_IS_PINBALL)
-GAME(2004,  harl_l30,   harl_a40,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Harley Davidson (3.00 Spain)",             MACHINE_IS_PINBALL)
-GAME(2003,  harl_a18,   harl_a40,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Harley Davidson (1.08)",               MACHINE_IS_PINBALL)
-GAME(2003,  harl_f18,   harl_a40,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Harley Davidson (1.08 France)",                MACHINE_IS_PINBALL)
-GAME(2003,  harl_g18,   harl_a40,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Harley Davidson (1.08 Germany)",               MACHINE_IS_PINBALL)
-GAME(2003,  harl_i18,   harl_a40,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Harley Davidson (1.08 Italy)",             MACHINE_IS_PINBALL)
-GAME(2003,  harl_l18,   harl_a40,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Harley Davidson (1.08 Spain)",             MACHINE_IS_PINBALL)
-GAME(2001,  hirolcas,   0,          whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "High Roller Casino (3.00)",                MACHINE_IS_PINBALL)
-GAME(2001,  hironew,    hirolcas,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "High Roller Casino (ARM7 Sound Board)",                MACHINE_IS_PINBALL)
-GAME(2001,  hirolcat,   hirolcas,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "High Roller Casino (3.00) TEST",               MACHINE_IS_PINBALL)
-GAME(2001,  hirolcas_210,hirolcas,  whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "High Roller Casino (2.10)",                MACHINE_IS_PINBALL)
-GAME(2001,  hirol_fr,   hirolcas,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "High Roller Casino (3.00 France)",             MACHINE_IS_PINBALL)
-GAME(2001,  hirol_gr,   hirolcas,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "High Roller Casino (3.00 Germany)",                MACHINE_IS_PINBALL)
-GAME(2001,  hirol_gr_210,hirolcas,  whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "High Roller Casino (2.10 Germany)",                MACHINE_IS_PINBALL)
-GAME(2001,  hirol_it,   hirolcas,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "High Roller Casino (3.00 Italy)",              MACHINE_IS_PINBALL)
-GAME(1996,  id4,        0,          whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Sega",     "Independence Day",             MACHINE_IS_PINBALL)
-GAME(1996,  id4_201,    id4,        whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Sega",     "Independence Day (v2.01)",             MACHINE_IS_PINBALL)
-GAME(1998,  lostspc,    0,          whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Sega",     "Lost in Space",                MACHINE_IS_PINBALL)
-GAME(2001,  monopolp,   0,          whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Monopoly (3.20)",              MACHINE_IS_PINBALL)
-GAME(2002,  monop303,   monopolp,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Monopoly (3.03)",              MACHINE_IS_PINBALL)
-GAME(2002,  monop301,   monopolp,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Monopoly (3.01)",              MACHINE_IS_PINBALL)
-GAME(2002,  monop251,   monopolp,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Monopoly (2.51)",              MACHINE_IS_PINBALL)
-GAME(2002,  monop233,   monopolp,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Monopoly (2.33)",              MACHINE_IS_PINBALL)
-GAME(2002,  monopolf,   monopolp,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Monopoly (France)",                MACHINE_IS_PINBALL)
-GAME(2002,  monopolg,   monopolp,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Monopoly (Germany)",               MACHINE_IS_PINBALL)
-GAME(2002,  monopoli,   monopolp,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Monopoly (Italy)",             MACHINE_IS_PINBALL)
-GAME(2002,  monopoll,   monopolp,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Monopoly (Spain)",             MACHINE_IS_PINBALL)
-GAME(2002,  mononew,    monopolp,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Monopoly (ARM7 Sound Board)",              MACHINE_IS_PINBALL)
-GAME(2001,  nfl,        0,          whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "NFL",              MACHINE_IS_PINBALL)
-GAME(2002,  playboys,   0,          whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Playboy (5.00)",               MACHINE_IS_PINBALL)
-GAME(2002,  playboys_401,playboys,  whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Playboy (4.01)",               MACHINE_IS_PINBALL)
-GAME(2002,  playboys_303,playboys,  whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Playboy (3.03)",               MACHINE_IS_PINBALL)
-GAME(2002,  playboys_302,playboys,  whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Playboy (3.02)",               MACHINE_IS_PINBALL)
-GAME(2002,  playboys_300,playboys,  whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Playboy (3.00)",               MACHINE_IS_PINBALL)
-GAME(2002,  playboys_203,playboys,  whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Playboy (2.03)",               MACHINE_IS_PINBALL)
-GAME(2002,  playnew,    playboys,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Playboy (ARM7 Sound Board)",               MACHINE_IS_PINBALL)
-GAME(2002,  playboyf,   0,          whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Playboy (5.00 France)",                MACHINE_IS_PINBALL)
-GAME(2002,  playboyf_401,playboyf,  whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Playboy (4.01 France)",                MACHINE_IS_PINBALL)
-GAME(2002,  playboyf_303,playboyf,  whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Playboy (3.03 France)",                MACHINE_IS_PINBALL)
-GAME(2002,  playboyf_302,playboyf,  whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Playboy (3.02 France)",                MACHINE_IS_PINBALL)
-GAME(2002,  playboyf_300,playboyf,  whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Playboy (3.00 France)",                MACHINE_IS_PINBALL)
-GAME(2002,  playboyf_203,playboyf,  whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Playboy (2.03 France)",                MACHINE_IS_PINBALL)
-GAME(2002,  playboyg,   0,          whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Playboy (5.00 Germany)",               MACHINE_IS_PINBALL)
-GAME(2002,  playboyg_401,playboyg,  whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Playboy (4.01 Germany)",               MACHINE_IS_PINBALL)
-GAME(2002,  playboyg_303,playboyg,  whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Playboy (3.03 Germany)",               MACHINE_IS_PINBALL)
-GAME(2002,  playboyg_302,playboyg,  whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Playboy (3.02 Germany)",               MACHINE_IS_PINBALL)
-GAME(2002,  playboyg_300,playboyg,  whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Playboy (3.00 Germany)",               MACHINE_IS_PINBALL)
-GAME(2002,  playboyg_203,playboyg,  whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Playboy (2.03 Germany)",               MACHINE_IS_PINBALL)
-GAME(2002,  playboyi,   0,          whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Playboy (5.00 Italy)",             MACHINE_IS_PINBALL)
-GAME(2002,  playboyi_401,playboyi,  whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Playboy (4.01 Italy)",             MACHINE_IS_PINBALL)
-GAME(2002,  playboyi_303,playboyi,  whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Playboy (3.03 Italy)",             MACHINE_IS_PINBALL)
-GAME(2002,  playboyi_302,playboyi,  whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Playboy (3.02 Italy)",             MACHINE_IS_PINBALL)
-GAME(2002,  playboyi_300,playboyi,  whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Playboy (3.00 Italy)",             MACHINE_IS_PINBALL)
-GAME(2002,  playboyi_203,playboyi,  whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Playboy (2.03 Italy)",             MACHINE_IS_PINBALL)
-GAME(2002,  playboyl,   0,          whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Playboy (5.00 Spain)",             MACHINE_IS_PINBALL)
-GAME(2002,  playboyl_401,playboyl,  whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Playboy (4.01 Spain)",             MACHINE_IS_PINBALL)
-GAME(2002,  playboyl_303,playboyl,  whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Playboy (3.03 Spain)",             MACHINE_IS_PINBALL)
-GAME(2002,  playboyl_302,playboyl,  whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Playboy (3.02 Spain)",             MACHINE_IS_PINBALL)
-GAME(2002,  playboyl_300,playboyl,  whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Playboy (3.00 Spain)",             MACHINE_IS_PINBALL)
-GAME(2002,  playboyl_203,playboyl,  whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Playboy (2.03 Spain)",             MACHINE_IS_PINBALL)
-GAME(2002,  rctycn,     0,          whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Roller Coaster Tycoon (7.02)",             MACHINE_IS_PINBALL)
-GAME(2002,  rctycn_701, rctycn,     whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Roller Coaster Tycoon (7.01)",             MACHINE_IS_PINBALL)
-GAME(2002,  rctycn_600, rctycn,     whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Roller Coaster Tycoon (6.00)",             MACHINE_IS_PINBALL)
-GAME(2002,  rctycn_400, rctycn,     whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Roller Coaster Tycoon (4.00)",             MACHINE_IS_PINBALL)
-GAME(2002,  rctnew,     rctycn,     whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Roller Coaster Tycoon (ARM7 Sound Board)",             MACHINE_IS_PINBALL)
-GAME(2002,  rctycng,    0,          whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Roller Coaster Tycoon (7.02 Germany)",             MACHINE_IS_PINBALL)
-GAME(2002,  rctycng_701,rctycng,    whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Roller Coaster Tycoon (7.01 Germany)",             MACHINE_IS_PINBALL)
-GAME(2002,  rctycng_400,rctycng,    whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Roller Coaster Tycoon (4.00 Germany)",             MACHINE_IS_PINBALL)
-GAME(2002,  rctycnf,    0,          whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Roller Coaster Tycoon (7.02 France)",              MACHINE_IS_PINBALL)
-GAME(2002,  rctycnf_701,rctycnf,    whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Roller Coaster Tycoon (7.01 France)",              MACHINE_IS_PINBALL)
-GAME(2002,  rctycnf_600,rctycnf,    whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Roller Coaster Tycoon (6.00 France)",              MACHINE_IS_PINBALL)
-GAME(2002,  rctycnf_400,rctycnf,    whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Roller Coaster Tycoon (4.00 France)",              MACHINE_IS_PINBALL)
-GAME(2002,  rctycni,    0,          whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Roller Coaster Tycoon (7.02 Italy)",               MACHINE_IS_PINBALL)
-GAME(2002,  rctycni_701,rctycni,    whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Roller Coaster Tycoon (7.01 Italy)",               MACHINE_IS_PINBALL)
-GAME(2002,  rctycni_600,rctycni,    whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Roller Coaster Tycoon (6.00 Italy)",               MACHINE_IS_PINBALL)
-GAME(2002,  rctycni_400,rctycni,    whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Roller Coaster Tycoon (4.00 Italy)",               MACHINE_IS_PINBALL)
-GAME(2002,  rctycnl,    0,          whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Roller Coaster Tycoon (7.02 Spain)",               MACHINE_IS_PINBALL)
-GAME(2002,  rctycnl_701,rctycnl,    whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Roller Coaster Tycoon (7.01 Spain)",               MACHINE_IS_PINBALL)
-GAME(2002,  rctycnl_600,rctycnl,    whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Roller Coaster Tycoon (6.00 Spain)",               MACHINE_IS_PINBALL)
-GAME(2002,  rctycnl_400,rctycnl,    whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Roller Coaster Tycoon (4.00 Spain)",               MACHINE_IS_PINBALL)
-GAME(2000,  shrkysht,   0,          whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Sharkey's Shootout (2.11)",                MACHINE_IS_PINBALL)
-GAME(2000,  shrky_207,  shrkysht,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Sharkey's Shootout (2.07)",                MACHINE_IS_PINBALL)
-GAME(2001,  shrknew,    shrkysht,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Sharkey's Shootout (ARM7 Sound Board)",                MACHINE_IS_PINBALL)
-GAME(2001,  shrkygr,    shrkysht,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Sharkey's Shootout (2.11 Germany)",                MACHINE_IS_PINBALL)
-GAME(2001,  shrkygr_207,shrkysht,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Sharkey's Shootout (2.07 Germany)",                MACHINE_IS_PINBALL)
-GAME(2001,  shrkyfr,    shrkysht,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Sharkey's Shootout (2.11 France)",             MACHINE_IS_PINBALL)
-GAME(2001,  shrkyfr_207,shrkysht,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Sharkey's Shootout (2.07 France)",             MACHINE_IS_PINBALL)
-GAME(2001,  shrkyit,    shrkysht,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Sharkey's Shootout (2.11 Italy)",              MACHINE_IS_PINBALL)
-GAME(2001,  shrkyit_207,shrkysht,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Sharkey's Shootout (2.07 Italy)",              MACHINE_IS_PINBALL)
-GAME(1999,  sprk_103,   0,          whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Sega",     "South Park (1.03)",                MACHINE_IS_PINBALL)
-GAME(1999,  sprk_096,   sprk_103,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Sega",     "South Park (0.96)",                MACHINE_IS_PINBALL)
-GAME(1999,  sprk_090,   sprk_103,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Sega",     "South Park (0.90)",                MACHINE_IS_PINBALL)
-GAME(1997,  spacejam,   0,          whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Sega",     "Space Jam",                MACHINE_IS_PINBALL)
-GAME(1997,  spacejmg,   spacejam,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Sega",     "Space Jam (Germany)",              MACHINE_IS_PINBALL)
-GAME(1997,  spacejmf,   spacejam,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Sega",     "Space Jam (France)",               MACHINE_IS_PINBALL)
-GAME(1997,  spacejmi,   spacejam,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Sega",     "Space Jam (Italy)",                MACHINE_IS_PINBALL)
-GAME(1997,  swtril43,   0,          whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Sega",     "Star Wars Trilogy (4.03)",             MACHINE_IS_PINBALL)
-GAME(1997,  swtril41,   swtril43,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Sega",     "Star Wars Trilogy (4.01)",             MACHINE_IS_PINBALL)
-GAME(1997,  startrp,    0,          whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Sega",     "Starship Troopers",                MACHINE_IS_PINBALL)
-GAME(1999,  strikext,   0,          whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Striker Xtreme (1.02)",                MACHINE_IS_PINBALL)
-GAME(1999,  strknew,    strikext,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Striker Xtreme (ARM7 Sound Board)",                MACHINE_IS_PINBALL)
-GAME(1999,  strxt_uk,   strikext,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Striker Xtreme (UK)",              MACHINE_IS_PINBALL)
-GAME(1999,  strxt_gr,   strikext,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Striker Xtreme (Germany)",             MACHINE_IS_PINBALL)
-GAME(1999,  strxt_fr,   strikext,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Striker Xtreme (France)",              MACHINE_IS_PINBALL)
-GAME(1999,  strxt_it,   strikext,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Striker Xtreme (Italy)",               MACHINE_IS_PINBALL)
-GAME(1999,  strxt_sp,   strikext,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Striker Xtreme (Spain)",               MACHINE_IS_PINBALL)
-GAME(2003,  term3,      0,          whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Terminator 3: Rise of the Machines (4.00)",                MACHINE_IS_PINBALL)
-GAME(2003,  term3_301,  term3,      whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Terminator 3: Rise of the Machines (3.01)",                MACHINE_IS_PINBALL)
-GAME(2003,  term3_205,  term3,      whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Terminator 3: Rise of the Machines (2.05)",                MACHINE_IS_PINBALL)
-GAME(2003,  t3new,      term3,      whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Terminator 3: Rise of the Machines (ARM7 Sound Board)",                MACHINE_IS_PINBALL)
-GAME(2003,  term3g,     term3,      whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Terminator 3: Rise of the Machines (4.00 Germany)",                MACHINE_IS_PINBALL)
-GAME(2003,  term3g_301, term3,      whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Terminator 3: Rise of the Machines (3.01 Germany)",              MACHINE_IS_PINBALL)
-GAME(2003,  term3l,     term3,      whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Terminator 3: Rise of the Machines (4.00 Spain)",              MACHINE_IS_PINBALL)
-GAME(2003,  term3l_301, term3,      whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Terminator 3: Rise of the Machines (3.01 Spain)",              MACHINE_IS_PINBALL)
-GAME(2003,  term3l_205, term3,      whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Terminator 3: Rise of the Machines (2.05 Spain)",              MACHINE_IS_PINBALL)
-GAME(2003,  term3f,     term3,      whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Terminator 3: Rise of the Machines (4.00 France)",             MACHINE_IS_PINBALL)
-GAME(2003,  term3f_301, term3,      whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Terminator 3: Rise of the Machines (3.01 France)",             MACHINE_IS_PINBALL)
-GAME(2003,  term3f_205, term3,      whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Terminator 3: Rise of the Machines (2.05 France)",             MACHINE_IS_PINBALL)
-GAME(2003,  term3i,     term3,      whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Terminator 3: Rise of the Machines (4.00 Italy)",              MACHINE_IS_PINBALL)
-GAME(2003,  term3i_301, term3,      whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Terminator 3: Rise of the Machines (3.01 Italy)",              MACHINE_IS_PINBALL)
-GAME(2003,  term3i_205, term3,      whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Terminator 3: Rise of the Machines (2.05 Italy)",              MACHINE_IS_PINBALL)
-GAME(1997,  jplstw22,   0,          whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Sega",     "The Lost World: Jurassic Park (2.02)",                MACHINE_IS_PINBALL)
-GAME(1997,  jplstw20,   jplstw22,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Sega",     "The Lost World: Jurassic Park (2.00)",                MACHINE_IS_PINBALL)
-GAME(2003,  simpprty,   0,          whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "The Simpsons Pinball Party (5.00)",               MACHINE_IS_PINBALL)
-GAME(2003,  simpprty_400,simpprty,  whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "The Simpsons Pinball Party (4.00)",               MACHINE_IS_PINBALL)
-GAME(2003,  simpprty_300,simpprty,  whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "The Simpsons Pinball Party (3.00)",               MACHINE_IS_PINBALL)
-GAME(2003,  simpprty_204,simpprty,  whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "The Simpsons Pinball Party (2.04)",               MACHINE_IS_PINBALL)
-GAME(2003,  simpnew,    simpprty,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "The Simpsons Pinball Party (ARM7 Sound Board)",               MACHINE_IS_PINBALL)
-GAME(2003,  simpprtg,   0,          whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "The Simpsons Pinball Party (5.00 Germany)",               MACHINE_IS_PINBALL)
-GAME(2003,  simpprtg_400,simpprtg,  whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "The Simpsons Pinball Party (4.00 Germany)",               MACHINE_IS_PINBALL)
-GAME(2003,  simpprtl,   0,          whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "The Simpsons Pinball Party (5.00 Spain)",             MACHINE_IS_PINBALL)
-GAME(2003,  simpprtl_400,simpprtl,  whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "The Simpsons Pinball Party (4.00 Spain)",             MACHINE_IS_PINBALL)
-GAME(2003,  simpprtl_300,simpprtl,  whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "The Simpsons Pinball Party (3.00 Spain)",             MACHINE_IS_PINBALL)
-GAME(2003,  simpprtl_204,simpprtl,  whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "The Simpsons Pinball Party (2.04 Spain)",             MACHINE_IS_PINBALL)
-GAME(2003,  simpprtf,   0,          whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "The Simpsons Pinball Party (5.00 France)",                MACHINE_IS_PINBALL)
-GAME(2003,  simpprtf_400,simpprtf,  whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "The Simpsons Pinball Party (4.00 France)",                MACHINE_IS_PINBALL)
-GAME(2003,  simpprtf_300,simpprtf,  whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "The Simpsons Pinball Party (3.00 France)",                MACHINE_IS_PINBALL)
-GAME(2003,  simpprtf_204,simpprtf,  whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "The Simpsons Pinball Party (2.04 France)",                MACHINE_IS_PINBALL)
-GAME(2003,  simpprti,   0,          whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "The Simpsons Pinball Party (5.00 Italy)",             MACHINE_IS_PINBALL)
-GAME(2003,  simpprti_400,simpprti,  whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "The Simpsons Pinball Party (4.00 Italy)",             MACHINE_IS_PINBALL)
-GAME(2003,  simpprti_300,simpprti,  whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "The Simpsons Pinball Party (3.00 Italy)",             MACHINE_IS_PINBALL)
-GAME(2003,  simpprti_204,simpprti,  whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "The Simpsons Pinball Party (2.04 Italy)",             MACHINE_IS_PINBALL)
-GAME(1997,  xfilesp,    0,          whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Sega",     "X-Files (3.03)",               MACHINE_IS_PINBALL)
-GAME(1997,  xfiles2,    xfilesp,    whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Sega",     "X-Files (2.04)",               MACHINE_IS_PINBALL)
-GAME(1996,  twst_405,   0,          whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Sega",     "Twister (4.05)",               MACHINE_IS_PINBALL)
-GAME(1996,  twst_404,   twst_405,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Sega",     "Twister (4.04)",               MACHINE_IS_PINBALL)
-GAME(1996,  twst_300,   twst_405,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Sega",     "Twister (3.00)",               MACHINE_IS_PINBALL)
-GAME(1998,  viprsega,   0,          whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Sega",     "Viper Night Drivin'",              MACHINE_IS_PINBALL)
-GAME(1998,  ctchzdlx,   ctcheese,   whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Sega",     "Cut The Cheese Deluxe (Redemption)",               MACHINE_IS_PINBALL)
-GAME(1998,  titanic,    0,          whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Sega",     "Titanic (Coin dropper)",               MACHINE_IS_PINBALL)
-GAME(2002,  monopred,   0,          whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Stern",    "Monopoly (Coin dropper)",              MACHINE_IS_PINBALL)
-GAME(1998,  wackadoo,   0,          whitestar,  whitestar, whitestar_state, whitestar,  ROT0,   "Sega",     "Wack-A-Doodle-Doo (Redemption)",               MACHINE_IS_PINBALL)
+GAME(1995,  apollo13,     0,          whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Sega",     "Apollo 13 (5.01)",                                         MACHINE_IS_PINBALL)
+GAME(1995,  apollo13_d4,  apollo13,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Sega",     "Apollo 13 (5.01, Display 4.01)",                           MACHINE_IS_PINBALL)
+GAME(1995,  apollo13_20,  apollo13,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Sega",     "Apollo 13 (2.03)",                                         MACHINE_IS_PINBALL)
+GAME(1995,  apollo13_10,  apollo13,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Sega",     "Apollo 13 (1.00)",                                         MACHINE_IS_PINBALL)
+GAME(2001,  austin,       0,          whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Austin Powers (3.02)",                                     MACHINE_IS_PINBALL)
+GAME(2001,  aust301,      austin,     whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Austin Powers (3.01)",                                     MACHINE_IS_PINBALL)
+GAME(2001,  aust300,      austin,     whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Austin Powers (3.00)",                                     MACHINE_IS_PINBALL)
+GAME(2001,  aust201,      austin,     whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Austin Powers (2.01)",                                     MACHINE_IS_PINBALL)
+GAME(2001,  austnew,      austin,     whitestarm, whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Austin Powers (ARM7 Sound Board)",                         MACHINE_IS_PINBALL)
+GAME(2001,  austinf,      austin,     whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Austin Powers (France)",                                   MACHINE_IS_PINBALL)
+GAME(2001,  austing,      austin,     whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Austin Powers (Germany)",                                  MACHINE_IS_PINBALL)
+GAME(2001,  austini,      austin,     whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Austin Powers (Italy)",                                    MACHINE_IS_PINBALL)
+GAME(1998,  godzillp,     0,          whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Sega",     "Godzilla (Pinball, 2.05)",                                 MACHINE_IS_PINBALL)
+GAME(1998,  godzillp_100, godzillp,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Sega",     "Godzilla (Pinball, 1.00)",                                 MACHINE_IS_PINBALL)
+GAME(1998,  godzillp_090, godzillp,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Sega",     "Godzilla (Pinball, 0.90)",                                 MACHINE_IS_PINBALL)
+GAME(1996,  gldneye,      0,          whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Sega",     "Goldeneye (4.04)",                                         MACHINE_IS_PINBALL)
+GAME(1996,  gldneye_402,  gldneye,    whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Sega",     "Goldeneye (4.02)",                                         MACHINE_IS_PINBALL)
+GAME(1998,  goldcue,      0,          whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Sega",     "Golden Cue",                                               MACHINE_IS_PINBALL)
+GAME(1999,  harl_a13,     0,          whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Sega",     "Harley Davidson (1.03)",                                   MACHINE_IS_PINBALL)
+GAME(1999,  harl_u13,     harl_a13,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Sega",     "Harley Davidson (1.03 UK)",                                MACHINE_IS_PINBALL)
+GAME(1999,  harl_a10,     harl_a13,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Sega",     "Harley Davidson (1.03 Display rev. 1.00)",                 MACHINE_IS_PINBALL)
+GAME(1999,  harl_f13,     harl_a13,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Sega",     "Harley Davidson (1.03 France)",                            MACHINE_IS_PINBALL)
+GAME(1999,  harl_g13,     harl_a13,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Sega",     "Harley Davidson (1.03 Germany)",                           MACHINE_IS_PINBALL)
+GAME(1999,  harl_i13,     harl_a13,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Sega",     "Harley Davidson (1.03 Italy)",                             MACHINE_IS_PINBALL)
+GAME(1999,  harl_l13,     harl_a13,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Sega",     "Harley Davidson (1.03 Spain)",                             MACHINE_IS_PINBALL)
+GAME(2004,  harl_a40,     0,          whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Harley Davidson (4.00)",                                   MACHINE_IS_PINBALL)
+GAME(2004,  harl_f40,     harl_a40,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Harley Davidson (4.00 France)",                            MACHINE_IS_PINBALL)
+GAME(2004,  harl_g40,     harl_a40,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Harley Davidson (4.00 Germany)",                           MACHINE_IS_PINBALL)
+GAME(2004,  harl_i40,     harl_a40,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Harley Davidson (4.00 Italy)",                             MACHINE_IS_PINBALL)
+GAME(2004,  harl_l40,     harl_a40,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Harley Davidson (4.00 Spain)",                             MACHINE_IS_PINBALL)
+GAME(2004,  harl_a30,     harl_a40,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Harley Davidson (3.00)",                                   MACHINE_IS_PINBALL)
+GAME(2004,  harl_f30,     harl_a40,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Harley Davidson (3.00 France)",                            MACHINE_IS_PINBALL)
+GAME(2004,  harl_g30,     harl_a40,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Harley Davidson (3.00 Germany)",                           MACHINE_IS_PINBALL)
+GAME(2004,  harl_i30,     harl_a40,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Harley Davidson (3.00 Italy)",                             MACHINE_IS_PINBALL)
+GAME(2004,  harl_l30,     harl_a40,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Harley Davidson (3.00 Spain)",                             MACHINE_IS_PINBALL)
+GAME(2003,  harl_a18,     harl_a40,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Harley Davidson (1.08)",                                   MACHINE_IS_PINBALL)
+GAME(2003,  harl_f18,     harl_a40,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Harley Davidson (1.08 France)",                            MACHINE_IS_PINBALL)
+GAME(2003,  harl_g18,     harl_a40,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Harley Davidson (1.08 Germany)",                           MACHINE_IS_PINBALL)
+GAME(2003,  harl_i18,     harl_a40,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Harley Davidson (1.08 Italy)",                             MACHINE_IS_PINBALL)
+GAME(2003,  harl_l18,     harl_a40,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Harley Davidson (1.08 Spain)",                             MACHINE_IS_PINBALL)
+GAME(2001,  hirolcas,     0,          whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "High Roller Casino (3.00)",                                MACHINE_IS_PINBALL)
+GAME(2001,  hironew,      hirolcas,   whitestarm, whitestar, whitestar_state, empty_init, ROT0, "Stern",    "High Roller Casino (ARM7 Sound Board)",                    MACHINE_IS_PINBALL)
+GAME(2001,  hirolcat,     hirolcas,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "High Roller Casino (3.00) TEST",                           MACHINE_IS_PINBALL)
+GAME(2001,  hirolcas_210, hirolcas,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "High Roller Casino (2.10)",                                MACHINE_IS_PINBALL)
+GAME(2001,  hirol_fr,     hirolcas,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "High Roller Casino (3.00 France)",                         MACHINE_IS_PINBALL)
+GAME(2001,  hirol_gr,     hirolcas,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "High Roller Casino (3.00 Germany)",                        MACHINE_IS_PINBALL)
+GAME(2001,  hirol_gr_210, hirolcas,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "High Roller Casino (2.10 Germany)",                        MACHINE_IS_PINBALL)
+GAME(2001,  hirol_it,     hirolcas,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "High Roller Casino (3.00 Italy)",                          MACHINE_IS_PINBALL)
+GAME(1996,  id4,          0,          whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Sega",     "Independence Day (v2.02)",                                 MACHINE_IS_PINBALL)
+GAME(1996,  id4f,         id4,        whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Sega",     "Independence Day (v2.02 France)",                          MACHINE_IS_PINBALL)
+GAME(1996,  id4_201,      id4,        whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Sega",     "Independence Day (v2.01)",                                 MACHINE_IS_PINBALL)
+GAME(1996,  id4f_201,     id4,        whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Sega",     "Independence Day (v2.01 France)",                          MACHINE_IS_PINBALL)
+GAME(1998,  lostspc,      0,          whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Sega",     "Lost in Space (1.01)",                                     MACHINE_IS_PINBALL)
+GAME(1998,  lostspcf,     lostspc,    whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Sega",     "Lost in Space (1.01 France)",                              MACHINE_IS_PINBALL)
+GAME(1998,  lostspcg,     lostspc,    whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Sega",     "Lost in Space (1.01 Germany)",                             MACHINE_IS_PINBALL)
+GAME(1998,  lostspc_d1,   lostspc,    whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Sega",     "Lost in Space (1.01, Display 1.01)",                       MACHINE_IS_PINBALL)
+GAME(2001,  monopolp,     0,          whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Monopoly (3.20)",                                          MACHINE_IS_PINBALL)
+GAME(2002,  monop303,     monopolp,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Monopoly (3.03)",                                          MACHINE_IS_PINBALL)
+GAME(2002,  monop301,     monopolp,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Monopoly (3.01)",                                          MACHINE_IS_PINBALL)
+GAME(2002,  monop251,     monopolp,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Monopoly (2.51)",                                          MACHINE_IS_PINBALL)
+GAME(2002,  monop233,     monopolp,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Monopoly (2.33)",                                          MACHINE_IS_PINBALL)
+GAME(2002,  monopolf,     monopolp,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Monopoly (France)",                                        MACHINE_IS_PINBALL)
+GAME(2002,  monopolg,     monopolp,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Monopoly (Germany)",                                       MACHINE_IS_PINBALL)
+GAME(2002,  monopoli,     monopolp,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Monopoly (Italy)",                                         MACHINE_IS_PINBALL)
+GAME(2002,  monopoll,     monopolp,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Monopoly (Spain)",                                         MACHINE_IS_PINBALL)
+GAME(2002,  mononew,      monopolp,   whitestarm, whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Monopoly (ARM7 Sound Board)",                              MACHINE_IS_PINBALL)
+GAME(2001,  nfl,          0,          whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "NFL",                                                      MACHINE_IS_PINBALL)
+GAME(2002,  playboys,     0,          whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Playboy (5.00)",                                           MACHINE_IS_PINBALL)
+GAME(2002,  playboys_401, playboys,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Playboy (4.01)",                                           MACHINE_IS_PINBALL)
+GAME(2002,  playboys_303, playboys,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Playboy (3.03)",                                           MACHINE_IS_PINBALL)
+GAME(2002,  playboys_302, playboys,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Playboy (3.02)",                                           MACHINE_IS_PINBALL)
+GAME(2002,  playboys_300, playboys,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Playboy (3.00)",                                           MACHINE_IS_PINBALL)
+GAME(2002,  playboys_203, playboys,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Playboy (2.03)",                                           MACHINE_IS_PINBALL)
+GAME(2002,  playnew,      playboys,   whitestarm, whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Playboy (ARM7 Sound Board)",                               MACHINE_IS_PINBALL)
+GAME(2002,  playboyf,     0,          whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Playboy (5.00 France)",                                    MACHINE_IS_PINBALL)
+GAME(2002,  playboyf_401, playboyf,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Playboy (4.01 France)",                                    MACHINE_IS_PINBALL)
+GAME(2002,  playboyf_303, playboyf,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Playboy (3.03 France)",                                    MACHINE_IS_PINBALL)
+GAME(2002,  playboyf_302, playboyf,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Playboy (3.02 France)",                                    MACHINE_IS_PINBALL)
+GAME(2002,  playboyf_300, playboyf,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Playboy (3.00 France)",                                    MACHINE_IS_PINBALL)
+GAME(2002,  playboyf_203, playboyf,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Playboy (2.03 France)",                                    MACHINE_IS_PINBALL)
+GAME(2002,  playboyg,     0,          whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Playboy (5.00 Germany)",                                   MACHINE_IS_PINBALL)
+GAME(2002,  playboyg_401, playboyg,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Playboy (4.01 Germany)",                                   MACHINE_IS_PINBALL)
+GAME(2002,  playboyg_303, playboyg,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Playboy (3.03 Germany)",                                   MACHINE_IS_PINBALL)
+GAME(2002,  playboyg_302, playboyg,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Playboy (3.02 Germany)",                                   MACHINE_IS_PINBALL)
+GAME(2002,  playboyg_300, playboyg,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Playboy (3.00 Germany)",                                   MACHINE_IS_PINBALL)
+GAME(2002,  playboyg_203, playboyg,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Playboy (2.03 Germany)",                                   MACHINE_IS_PINBALL)
+GAME(2002,  playboyi,     0,          whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Playboy (5.00 Italy)",                                     MACHINE_IS_PINBALL)
+GAME(2002,  playboyi_401, playboyi,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Playboy (4.01 Italy)",                                     MACHINE_IS_PINBALL)
+GAME(2002,  playboyi_303, playboyi,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Playboy (3.03 Italy)",                                     MACHINE_IS_PINBALL)
+GAME(2002,  playboyi_302, playboyi,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Playboy (3.02 Italy)",                                     MACHINE_IS_PINBALL)
+GAME(2002,  playboyi_300, playboyi,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Playboy (3.00 Italy)",                                     MACHINE_IS_PINBALL)
+GAME(2002,  playboyi_203, playboyi,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Playboy (2.03 Italy)",                                     MACHINE_IS_PINBALL)
+GAME(2002,  playboyl,     0,          whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Playboy (5.00 Spain)",                                     MACHINE_IS_PINBALL)
+GAME(2002,  playboyl_401, playboyl,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Playboy (4.01 Spain)",                                     MACHINE_IS_PINBALL)
+GAME(2002,  playboyl_303, playboyl,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Playboy (3.03 Spain)",                                     MACHINE_IS_PINBALL)
+GAME(2002,  playboyl_302, playboyl,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Playboy (3.02 Spain)",                                     MACHINE_IS_PINBALL)
+GAME(2002,  playboyl_300, playboyl,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Playboy (3.00 Spain)",                                     MACHINE_IS_PINBALL)
+GAME(2002,  playboyl_203, playboyl,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Playboy (2.03 Spain)",                                     MACHINE_IS_PINBALL)
+GAME(2002,  rctycn,       0,          whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "RollerCoaster Tycoon (7.02)",                             MACHINE_IS_PINBALL)
+GAME(2002,  rctycn_701,   rctycn,     whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "RollerCoaster Tycoon (7.01)",                             MACHINE_IS_PINBALL)
+GAME(2002,  rctycn_600,   rctycn,     whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "RollerCoaster Tycoon (6.00)",                             MACHINE_IS_PINBALL)
+GAME(2002,  rctycn_400,   rctycn,     whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "RollerCoaster Tycoon (4.00)",                             MACHINE_IS_PINBALL)
+GAME(2002,  rctnew,       rctycn,     whitestarm, whitestar, whitestar_state, empty_init, ROT0, "Stern",    "RollerCoaster Tycoon (ARM7 Sound Board)",                 MACHINE_IS_PINBALL)
+GAME(2002,  rctycng,      0,          whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "RollerCoaster Tycoon (7.02 Germany)",                     MACHINE_IS_PINBALL)
+GAME(2002,  rctycng_701,  rctycng,    whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "RollerCoaster Tycoon (7.01 Germany)",                     MACHINE_IS_PINBALL)
+GAME(2002,  rctycng_400,  rctycng,    whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "RollerCoaster Tycoon (4.00 Germany)",                     MACHINE_IS_PINBALL)
+GAME(2002,  rctycnf,      0,          whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "RollerCoaster Tycoon (7.02 France)",                      MACHINE_IS_PINBALL)
+GAME(2002,  rctycnf_701,  rctycnf,    whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "RollerCoaster Tycoon (7.01 France)",                      MACHINE_IS_PINBALL)
+GAME(2002,  rctycnf_600,  rctycnf,    whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "RollerCoaster Tycoon (6.00 France)",                      MACHINE_IS_PINBALL)
+GAME(2002,  rctycnf_400,  rctycnf,    whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "RollerCoaster Tycoon (4.00 France)",                      MACHINE_IS_PINBALL)
+GAME(2002,  rctycni,      0,          whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "RollerCoaster Tycoon (7.02 Italy)",                       MACHINE_IS_PINBALL)
+GAME(2002,  rctycni_701,  rctycni,    whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "RollerCoaster Tycoon (7.01 Italy)",                       MACHINE_IS_PINBALL)
+GAME(2002,  rctycni_600,  rctycni,    whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "RollerCoaster Tycoon (6.00 Italy)",                       MACHINE_IS_PINBALL)
+GAME(2002,  rctycni_400,  rctycni,    whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "RollerCoaster Tycoon (4.00 Italy)",                       MACHINE_IS_PINBALL)
+GAME(2002,  rctycnl,      0,          whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "RollerCoaster Tycoon (7.02 Spain)",                       MACHINE_IS_PINBALL)
+GAME(2002,  rctycnl_701,  rctycnl,    whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "RollerCoaster Tycoon (7.01 Spain)",                       MACHINE_IS_PINBALL)
+GAME(2002,  rctycnl_600,  rctycnl,    whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "RollerCoaster Tycoon (6.00 Spain)",                       MACHINE_IS_PINBALL)
+GAME(2002,  rctycnl_400,  rctycnl,    whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "RollerCoaster Tycoon (4.00 Spain)",                       MACHINE_IS_PINBALL)
+GAME(2000,  shrkysht,     0,          whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Sharkey's Shootout (2.11)",                                MACHINE_IS_PINBALL)
+GAME(2000,  shrky_207,    shrkysht,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Sharkey's Shootout (2.07)",                                MACHINE_IS_PINBALL)
+GAME(2001,  shrknew,      shrkysht,   whitestarm, whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Sharkey's Shootout (ARM7 Sound Board)",                    MACHINE_IS_PINBALL)
+GAME(2001,  shrkygr,      shrkysht,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Sharkey's Shootout (2.11 Germany)",                        MACHINE_IS_PINBALL)
+GAME(2001,  shrkygr_207,  shrkysht,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Sharkey's Shootout (2.07 Germany)",                        MACHINE_IS_PINBALL)
+GAME(2001,  shrkyfr,      shrkysht,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Sharkey's Shootout (2.11 France)",                         MACHINE_IS_PINBALL)
+GAME(2001,  shrkyfr_207,  shrkysht,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Sharkey's Shootout (2.07 France)",                         MACHINE_IS_PINBALL)
+GAME(2001,  shrkyit,      shrkysht,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Sharkey's Shootout (2.11 Italy)",                          MACHINE_IS_PINBALL)
+GAME(2001,  shrkyit_207,  shrkysht,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Sharkey's Shootout (2.07 Italy)",                          MACHINE_IS_PINBALL)
+GAME(1999,  sprk_103,     0,          whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Sega",     "South Park (1.03)",                                        MACHINE_IS_PINBALL)
+GAME(1999,  sprk_096,     sprk_103,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Sega",     "South Park (0.96)",                                        MACHINE_IS_PINBALL)
+GAME(1999,  sprk_090,     sprk_103,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Sega",     "South Park (0.90)",                                        MACHINE_IS_PINBALL)
+GAME(1997,  spacejam,     0,          whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Sega",     "Space Jam (3.00)",                                         MACHINE_IS_PINBALL)
+GAME(1997,  spacejam_200  ,spacejam,  whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Sega",     "Space Jam (2.00)",                                         MACHINE_IS_PINBALL)
+GAME(1997,  spacejmg,     spacejam,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Sega",     "Space Jam (3.00 Germany)",                                 MACHINE_IS_PINBALL)
+GAME(1997,  spacejmf,     spacejam,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Sega",     "Space Jam (3.00 France)",                                  MACHINE_IS_PINBALL)
+GAME(1997,  spacejmi,     spacejam,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Sega",     "Space Jam (3.00 Italy)",                                   MACHINE_IS_PINBALL)
+GAME(1997,  swtril43,     0,          whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Sega",     "Star Wars Trilogy (4.03)",                                 MACHINE_IS_PINBALL)
+GAME(1997,  swtril41,     swtril43,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Sega",     "Star Wars Trilogy (4.01)",                                 MACHINE_IS_PINBALL)
+GAME(1997,  startrp,      0,          whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Sega",     "Starship Troopers (2.01)",                                 MACHINE_IS_PINBALL)
+GAME(1997,  startrp2,     startrp,    whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Sega",     "Starship Troopers (2.00)",                                 MACHINE_IS_PINBALL)
+GAME(2000,  strikext,     0,          whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Striker Xtreme (1.02)",                                    MACHINE_IS_PINBALL)
+GAME(2000,  strikext_100, strikext,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Striker Xtreme (1.00)",                                    MACHINE_IS_PINBALL)
+GAME(1999,  strknew,      strikext,   whitestarm, whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Striker Xtreme (ARM7 Sound Board)",                        MACHINE_IS_PINBALL)
+GAME(2000,  strxt_uk,     strikext,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Striker Xtreme (1.01 UK)",                                 MACHINE_IS_PINBALL)
+GAME(2000,  strxt_gr,     strikext,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Striker Xtreme (1.03 Germany)",                            MACHINE_IS_PINBALL)
+GAME(2000,  strxt_fr,     strikext,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Striker Xtreme (1.02 France)",                             MACHINE_IS_PINBALL)
+GAME(2000,  strxt_it,     strikext,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Striker Xtreme (1.02 Italy)",                              MACHINE_IS_PINBALL)
+GAME(2000,  strxt_it_101, strikext,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Striker Xtreme (1.01 Italy)",                              MACHINE_IS_PINBALL)
+GAME(2000,  strxt_sp,     strikext,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Striker Xtreme (1.02 Spain)",                              MACHINE_IS_PINBALL)
+GAME(2003,  term3,        0,          whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Terminator 3: Rise of the Machines (4.00)",                MACHINE_IS_PINBALL)
+GAME(2003,  term3_301,    term3,      whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Terminator 3: Rise of the Machines (3.01)",                MACHINE_IS_PINBALL)
+GAME(2003,  term3_205,    term3,      whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Terminator 3: Rise of the Machines (2.05)",                MACHINE_IS_PINBALL)
+GAME(2003,  t3new,        term3,      whitestarm, whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Terminator 3: Rise of the Machines (ARM7 Sound Board)",    MACHINE_IS_PINBALL)
+GAME(2003,  term3g,       term3,      whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Terminator 3: Rise of the Machines (4.00 Germany)",        MACHINE_IS_PINBALL)
+GAME(2003,  term3g_301,   term3,      whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Terminator 3: Rise of the Machines (3.01 Germany)",        MACHINE_IS_PINBALL)
+GAME(2003,  term3l,       term3,      whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Terminator 3: Rise of the Machines (4.00 Spain)",          MACHINE_IS_PINBALL)
+GAME(2003,  term3l_301,   term3,      whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Terminator 3: Rise of the Machines (3.01 Spain)",          MACHINE_IS_PINBALL)
+GAME(2003,  term3l_205,   term3,      whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Terminator 3: Rise of the Machines (2.05 Spain)",          MACHINE_IS_PINBALL)
+GAME(2003,  term3f,       term3,      whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Terminator 3: Rise of the Machines (4.00 France)",         MACHINE_IS_PINBALL)
+GAME(2003,  term3f_301,   term3,      whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Terminator 3: Rise of the Machines (3.01 France)",         MACHINE_IS_PINBALL)
+GAME(2003,  term3f_205,   term3,      whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Terminator 3: Rise of the Machines (2.05 France)",         MACHINE_IS_PINBALL)
+GAME(2003,  term3i,       term3,      whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Terminator 3: Rise of the Machines (4.00 Italy)",          MACHINE_IS_PINBALL)
+GAME(2003,  term3i_301,   term3,      whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Terminator 3: Rise of the Machines (3.01 Italy)",          MACHINE_IS_PINBALL)
+GAME(2003,  term3i_205,   term3,      whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Terminator 3: Rise of the Machines (2.05 Italy)",          MACHINE_IS_PINBALL)
+GAME(1997,  jplstw22,     0,          whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Sega",     "The Lost World: Jurassic Park (2.02)",                     MACHINE_IS_PINBALL)
+GAME(1997,  jplstw20,     jplstw22,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Sega",     "The Lost World: Jurassic Park (2.00)",                     MACHINE_IS_PINBALL)
+GAME(2003,  simpprty,     0,          whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "The Simpsons Pinball Party (5.00)",                        MACHINE_IS_PINBALL)
+GAME(2003,  simpprty_400, simpprty,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "The Simpsons Pinball Party (4.00)",                        MACHINE_IS_PINBALL)
+GAME(2003,  simpprty_300, simpprty,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "The Simpsons Pinball Party (3.00)",                        MACHINE_IS_PINBALL)
+GAME(2003,  simpprty_204, simpprty,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "The Simpsons Pinball Party (2.04)",                        MACHINE_IS_PINBALL)
+GAME(2003,  simpnew,      simpprty,   whitestarm, whitestar, whitestar_state, empty_init, ROT0, "Stern",    "The Simpsons Pinball Party (ARM7 Sound Board)",            MACHINE_IS_PINBALL)
+GAME(2003,  simpprtg,     0,          whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "The Simpsons Pinball Party (5.00 Germany)",                MACHINE_IS_PINBALL)
+GAME(2003,  simpprtg_400, simpprtg,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "The Simpsons Pinball Party (4.00 Germany)",                MACHINE_IS_PINBALL)
+GAME(2003,  simpprtl,     0,          whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "The Simpsons Pinball Party (5.00 Spain)",                  MACHINE_IS_PINBALL)
+GAME(2003,  simpprtl_400, simpprtl,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "The Simpsons Pinball Party (4.00 Spain)",                  MACHINE_IS_PINBALL)
+GAME(2003,  simpprtl_300, simpprtl,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "The Simpsons Pinball Party (3.00 Spain)",                  MACHINE_IS_PINBALL)
+GAME(2003,  simpprtl_204, simpprtl,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "The Simpsons Pinball Party (2.04 Spain)",                  MACHINE_IS_PINBALL)
+GAME(2003,  simpprtf,     0,          whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "The Simpsons Pinball Party (5.00 France)",                 MACHINE_IS_PINBALL)
+GAME(2003,  simpprtf_400, simpprtf,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "The Simpsons Pinball Party (4.00 France)",                 MACHINE_IS_PINBALL)
+GAME(2003,  simpprtf_300, simpprtf,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "The Simpsons Pinball Party (3.00 France)",                 MACHINE_IS_PINBALL)
+GAME(2003,  simpprtf_204, simpprtf,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "The Simpsons Pinball Party (2.04 France)",                 MACHINE_IS_PINBALL)
+GAME(2003,  simpprti,     0,          whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "The Simpsons Pinball Party (5.00 Italy)",                  MACHINE_IS_PINBALL)
+GAME(2003,  simpprti_400, simpprti,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "The Simpsons Pinball Party (4.00 Italy)",                  MACHINE_IS_PINBALL)
+GAME(2003,  simpprti_300, simpprti,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "The Simpsons Pinball Party (3.00 Italy)",                  MACHINE_IS_PINBALL)
+GAME(2003,  simpprti_204, simpprti,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "The Simpsons Pinball Party (2.04 Italy)",                  MACHINE_IS_PINBALL)
+GAME(1997,  xfilesp,      0,          whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Sega",     "X-Files (3.03)",                                           MACHINE_IS_PINBALL)
+GAME(1997,  xfilespf,     xfilesp,    whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Sega",     "X-Files (3.03 France)",                                    MACHINE_IS_PINBALL)
+GAME(1997,  xfiles2,      xfilesp,    whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Sega",     "X-Files (2.04)",                                           MACHINE_IS_PINBALL)
+GAME(1997,  xfiles20,     xfilesp,    whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Sega",     "X-Files (2.00)",                                           MACHINE_IS_PINBALL)
+GAME(1996,  twst_405,     0,          whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Sega",     "Twister (4.05)",                                           MACHINE_IS_PINBALL)
+GAME(1996,  twst_404,     twst_405,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Sega",     "Twister (4.04)",                                           MACHINE_IS_PINBALL)
+GAME(1996,  twst_300,     twst_405,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Sega",     "Twister (3.00)",                                           MACHINE_IS_PINBALL)
+GAME(1998,  viprsega,     0,          whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Sega",     "Viper Night Drivin' (2.01)",                               MACHINE_IS_PINBALL)
+GAME(1998,  viprsega_102, viprsega,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Sega",     "Viper Night Drivin' (1.02)",                               MACHINE_IS_PINBALL)
+GAME(1998,  ctchzdlx,     ctcheese,   whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Sega",     "Cut The Cheese Deluxe (Redemption)",                       MACHINE_IS_PINBALL)
+GAME(1998,  titanic,      0,          whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Sega",     "Titanic (Coin dropper)",                                   MACHINE_IS_PINBALL)
+GAME(2002,  monopred,     0,          whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Stern",    "Monopoly (Coin dropper)",                                  MACHINE_IS_PINBALL)
+GAME(1998,  wackadoo,     0,          whitestar,  whitestar, whitestar_state, empty_init, ROT0, "Sega",     "Wack-A-Doodle-Doo (Redemption)",                           MACHINE_IS_PINBALL)

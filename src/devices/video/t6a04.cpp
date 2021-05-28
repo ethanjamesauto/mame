@@ -15,7 +15,7 @@
 #include "video/t6a04.h"
 
 // devices
-const device_type T6A04 = &device_creator<t6a04_device>;
+DEFINE_DEVICE_TYPE(T6A04, t6a04_device, "t6a04", "Toshiba T6A04 LCD Controller")
 
 //-------------------------------------------------
 //  device_validity_check - perform validity checks
@@ -36,11 +36,13 @@ void t6a04_device::device_validity_check(validity_checker &valid) const
 //  t6a04_device - constructor
 //-------------------------------------------------
 
-t6a04_device::t6a04_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock) :
-	device_t(mconfig, T6A04, "T6A04", tag, owner, clock, "t6a04", __FILE__), m_busy_flag(0), m_display_on(0), m_contrast(0), m_xpos(0), m_ypos(0), m_zpos(0), m_direction(0),
-	m_active_counter(0), m_word_len(0), m_opa1(0), m_opa2(0), m_output_reg(0),
-	m_height(0),
-	m_width(0)
+t6a04_device::t6a04_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock) :
+	device_t(mconfig, T6A04, tag, owner, clock),
+	m_busy_flag(0), m_display_on(0), m_contrast(0),
+	m_xpos(0), m_ypos(0), m_zpos(0),
+	m_direction(0), m_active_counter(0), m_word_len(0),
+	m_opa1(0), m_opa2(0), m_output_reg(0),
+	m_height(0), m_width(0)
 {
 }
 
@@ -94,21 +96,21 @@ void t6a04_device::device_reset()
 //  device interface
 //**************************************************************************
 
-UINT32 t6a04_device::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t t6a04_device::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
-	UINT8 ypages = m_width>>3;
-	UINT8 last_line = m_zpos + m_height;
+	uint8_t ypages = m_width>>3;
+	uint8_t last_line = m_zpos + m_height;
 
 	if (m_display_on)
 	{
 		for (int y=0; y<ypages; y++)
 			for (int x=m_zpos; x<last_line; x++)
 			{
-				UINT8 data = m_lcd_ram[(x&0x3f)*15 + y];
+				uint8_t data = m_lcd_ram[(x&0x3f)*15 + y];
 
 				for (int b=7; b>=0; b--)
 				{
-					bitmap.pix16(x&0x3f, y*8+b) = data & 1;
+					bitmap.pix(x&0x3f, y*8+b) = data & 1;
 					data>>=1;
 				}
 			}
@@ -121,7 +123,7 @@ UINT32 t6a04_device::screen_update(screen_device &screen, bitmap_ind16 &bitmap, 
 	return 0;
 }
 
-WRITE8_MEMBER(t6a04_device::control_write)
+void t6a04_device::control_write(uint8_t data)
 {
 	if ((data & 0xc0) == 0xc0) // SCE (set contrast)
 	{
@@ -166,7 +168,7 @@ WRITE8_MEMBER(t6a04_device::control_write)
 	}
 }
 
-READ8_MEMBER(t6a04_device::control_read)
+uint8_t t6a04_device::control_read()
 {
 	/*
 	    status read
@@ -182,7 +184,7 @@ READ8_MEMBER(t6a04_device::control_read)
 	return (m_busy_flag<<7) | (m_word_len<<6) | (m_display_on<<5) | (m_active_counter<<1) | (m_direction == 1 ? 1 : 0);
 }
 
-WRITE8_MEMBER(t6a04_device::data_write)
+void t6a04_device::data_write(uint8_t data)
 {
 	if (m_word_len)
 	{
@@ -193,9 +195,9 @@ WRITE8_MEMBER(t6a04_device::data_write)
 	{
 		//6bit mode
 		data = data<<0x02;
-		UINT8 start_bit = m_ypos * 6;
-		UINT8 pos_bit = start_bit & 0x07;
-		UINT8 *ti82_video = &m_lcd_ram[(m_xpos*15)+(start_bit>>3)];
+		uint8_t start_bit = m_ypos * 6;
+		uint8_t pos_bit = start_bit & 0x07;
+		uint8_t *ti82_video = &m_lcd_ram[(m_xpos*15)+(start_bit>>3)];
 
 		ti82_video[0] = (ti82_video[0] & ~(0xFC>>pos_bit)) | (data>>pos_bit);
 		if(pos_bit>0x02)
@@ -209,10 +211,10 @@ WRITE8_MEMBER(t6a04_device::data_write)
 
 }
 
-READ8_MEMBER(t6a04_device::data_read)
+uint8_t t6a04_device::data_read()
 {
-	UINT8 data = m_output_reg;
-	UINT8 output_reg;
+	uint8_t data = m_output_reg;
+	uint8_t output_reg;
 
 	if (m_word_len)
 	{
@@ -222,14 +224,14 @@ READ8_MEMBER(t6a04_device::data_read)
 	else
 	{
 		//6bit mode
-		UINT8 start_bit = m_ypos * 6;
-		UINT8 pos_bit = start_bit & 7;
-		UINT8 *ti82_video = &m_lcd_ram[(m_xpos*15)+(start_bit>>3)];
+		uint8_t start_bit = m_ypos * 6;
+		uint8_t pos_bit = start_bit & 7;
+		uint8_t *ti82_video = &m_lcd_ram[(m_xpos*15)+(start_bit>>3)];
 
 		output_reg = ((((*ti82_video)<<8)+ti82_video[1])>>(10-pos_bit));
 	}
 
-	if (!space.debugger_access())
+	if (!machine().side_effects_disabled())
 	{
 		m_output_reg = output_reg;
 

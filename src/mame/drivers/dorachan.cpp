@@ -1,4 +1,4 @@
-// license:LGPL-2.1+
+// license:BSD-3-Clause
 // copyright-holders:Tomasz Slanina
 /*
 Dorachan (Dora-Chan ?) (c) 1980 Craul Denshi
@@ -8,42 +8,58 @@ Similar to Beam Invader
 Todo:
 - discrete sound
 - dips (if any) - bits 5,6,7 of input port 0 ?
+
+Gameplay: run over dots in lower half while avoiding monsters and trees. This draws
+back the red curtain blocking access to top part of the screen. Go through and new dots
+below are worth more points.
+
+It appears that unused bits in port 03 are to operate the discrete sound channels.
+
 */
 
 #include "emu.h"
 #include "cpu/z80/z80.h"
+#include "emupal.h"
+#include "screen.h"
 
 
 class dorachan_state : public driver_device
 {
 public:
 	dorachan_state(const machine_config &mconfig, device_type type, const char *tag)
-		: driver_device(mconfig, type, tag),
-		m_maincpu(*this, "maincpu"),
-		m_screen(*this, "screen"),
-		m_palette(*this, "palette"),
-		m_videoram(*this, "videoram"),
-		m_colors(*this, "colors")
+		: driver_device(mconfig, type, tag)
+		, m_maincpu(*this, "maincpu")
+		, m_screen(*this, "screen")
+		, m_palette(*this, "palette")
+		, m_videoram(*this, "videoram")
+		, m_colors(*this, "colors")
 	{ }
+
+	void dorachan(machine_config &config);
+
+private:
+	void control_w(uint8_t data);
+	void protection_w(uint8_t data);
+	uint8_t protection_r();
+	uint8_t v128_r();
+	uint32_t screen_update_dorachan(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect);
+	void dorachan_io_map(address_map &map);
+	void dorachan_map(address_map &map);
+
+	// internal state
+	uint8_t m_flip_screen;
+	uint16_t m_prot_value;
+
+	virtual void machine_start() override;
+	virtual void machine_reset() override;
 
 	// devices, memory pointers
 	required_device<cpu_device> m_maincpu;
 	required_device<screen_device> m_screen;
 	required_device<palette_device> m_palette;
 
-	required_shared_ptr<UINT8> m_videoram;
-	required_region_ptr<UINT8> m_colors;
-
-	// internal state
-	UINT8 m_flip_screen;
-
-	DECLARE_WRITE8_MEMBER(control_w);
-	DECLARE_READ8_MEMBER(protection_r);
-	DECLARE_READ8_MEMBER(v128_r);
-	UINT32 screen_update_dorachan(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect);
-
-	virtual void machine_start() override;
-	virtual void machine_reset() override;
+	required_shared_ptr<uint8_t> m_videoram;
+	required_region_ptr<uint8_t> m_colors;
 };
 
 
@@ -54,20 +70,19 @@ public:
  *
  *************************************/
 
-UINT32 dorachan_state::screen_update_dorachan(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
+uint32_t dorachan_state::screen_update_dorachan(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
 {
 	for (offs_t offs = 0; offs < m_videoram.bytes(); offs++)
 	{
-		UINT8 fore_color;
-
-		UINT8 x = offs >> 8 << 3;
-		UINT8 y = offs & 0xff;
+		uint8_t x = offs >> 8 << 3;
+		uint8_t y = offs & 0xff;
 
 		/* the need for +1 is extremely unusual, but definitely correct */
 		offs_t color_address = ((((offs << 2) & 0x03e0) | (offs >> 8)) + 1) & 0x03ff;
 
-		UINT8 data = m_videoram[offs];
+		uint8_t data = m_videoram[offs];
 
+		uint8_t fore_color;
 		if (m_flip_screen)
 			fore_color = (m_colors[color_address] >> 3) & 0x07;
 		else
@@ -75,11 +90,8 @@ UINT32 dorachan_state::screen_update_dorachan(screen_device &screen, bitmap_rgb3
 
 		for (int i = 0; i < 8; i++)
 		{
-			UINT8 color = (data & 0x01) ? fore_color : 0;
-			bitmap.pix32(y, x) = m_palette->pen_color(color);
-
-			data = data >> 1;
-			x = x + 1;
+			uint8_t color = BIT(data, i) ? fore_color : 0;
+			bitmap.pix(y, x++) = m_palette->pen_color(color);
 		}
 	}
 
@@ -94,56 +106,68 @@ UINT32 dorachan_state::screen_update_dorachan(screen_device &screen, bitmap_rgb3
  *
  *************************************/
 
-READ8_MEMBER(dorachan_state::protection_r)
+void dorachan_state::protection_w(uint8_t data)
 {
-	UINT8 ret = 0;
-
-	switch (m_maincpu->pcbase())
+	// e0 seems like some sort of control byte?
+	// ignore f3 writes, written after every command?
+	if (data != 0xf3)
 	{
-	case 0x70ce: ret = 0xf2; break;
-	case 0x72a2: ret = 0xd5; break;
-	case 0x72b5: ret = 0xcb; break;
+		m_prot_value <<= 8;
+		m_prot_value |= data;
+	}
+}
 
-	default:
-		osd_printf_debug("unhandled $2400 read @ %x\n", m_maincpu->pcbase());
-		break;
+uint8_t dorachan_state::protection_r()
+{
+	switch (m_prot_value)
+	{
+	case 0xfbf7:
+		return 0xf2;
+
+	case 0xf9f7:
+		return 0xd5;
+
+	case 0xf7f4:
+		return 0xcb;
 	}
 
-	return ret;
+	return 0;
 }
 
-READ8_MEMBER(dorachan_state::v128_r)
+uint8_t dorachan_state::v128_r()
 {
 	// to avoid resetting (when player 2 starts) bit 0 need to be inverted when screen is flipped
-	return 0xfe | ((m_screen->vpos() >> 7 & 1) ^ m_flip_screen);
+	return 0xfe | (BIT(m_screen->vpos(), 7) ^ m_flip_screen);
 }
 
-WRITE8_MEMBER(dorachan_state::control_w)
+void dorachan_state::control_w(uint8_t data)
 {
 	// d6: flip screen
 	// other: ?
-	m_flip_screen = data >> 6 & 1;
+	m_flip_screen = BIT(data, 6);
 }
 
 
-static ADDRESS_MAP_START( dorachan_map, AS_PROGRAM, 8, dorachan_state )
-	AM_RANGE(0x0000, 0x17ff) AM_ROM
-	AM_RANGE(0x1800, 0x1fff) AM_RAM
-	AM_RANGE(0x2000, 0x23ff) AM_ROM
-	AM_RANGE(0x2400, 0x2400) AM_MIRROR(0x03ff) AM_READ(protection_r)
-	AM_RANGE(0x2800, 0x2800) AM_MIRROR(0x03ff) AM_READ_PORT("IN0")
-	AM_RANGE(0x2c00, 0x2c00) AM_MIRROR(0x03ff) AM_READ_PORT("IN1")
-	AM_RANGE(0x3800, 0x3800) AM_MIRROR(0x03ff) AM_READ(v128_r)
-	AM_RANGE(0x4000, 0x5fff) AM_RAM AM_SHARE("videoram")
-	AM_RANGE(0x6000, 0x77ff) AM_ROM
-ADDRESS_MAP_END
+void dorachan_state::dorachan_map(address_map &map)
+{
+	map(0x0000, 0x17ff).rom();
+	map(0x1800, 0x1fff).ram();
+	map(0x2000, 0x23ff).rom();
+	map(0x2400, 0x2400).mirror(0x03ff).r(FUNC(dorachan_state::protection_r));
+	map(0x2800, 0x2800).mirror(0x03ff).portr("IN0");
+	map(0x2c00, 0x2c00).mirror(0x03ff).portr("IN1");
+	map(0x3800, 0x3800).mirror(0x03ff).r(FUNC(dorachan_state::v128_r));
+	map(0x4000, 0x5fff).ram().share("videoram");
+	map(0x6000, 0x77ff).rom();
+}
 
-static ADDRESS_MAP_START( dorachan_io_map, AS_IO, 8, dorachan_state )
-	ADDRESS_MAP_GLOBAL_MASK(0xff)
-	AM_RANGE(0x01, 0x01) AM_WRITENOP
-	AM_RANGE(0x02, 0x02) AM_WRITENOP
-	AM_RANGE(0x03, 0x03) AM_WRITE(control_w)
-ADDRESS_MAP_END
+void dorachan_state::dorachan_io_map(address_map &map)
+{
+	map.global_mask(0xff);
+	map(0x01, 0x01).nopw();
+	map(0x02, 0x02).w(FUNC(dorachan_state::protection_w));
+	map(0x03, 0x03).w(FUNC(dorachan_state::control_w));
+}
 
 
 
@@ -192,30 +216,32 @@ INPUT_PORTS_END
 void dorachan_state::machine_start()
 {
 	save_item(NAME(m_flip_screen));
+	save_item(NAME(m_prot_value));
 }
 
 void dorachan_state::machine_reset()
 {
 	m_flip_screen = 0;
+	m_prot_value = 0;
 }
 
-static MACHINE_CONFIG_START( dorachan, dorachan_state )
-
+void dorachan_state::dorachan(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", Z80, 2000000)
-	MCFG_CPU_PROGRAM_MAP(dorachan_map)
-	MCFG_CPU_IO_MAP(dorachan_io_map)
-	MCFG_CPU_PERIODIC_INT_DRIVER(dorachan_state, irq0_line_hold, 2*60)
+	Z80(config, m_maincpu, 2000000);
+	m_maincpu->set_addrmap(AS_PROGRAM, &dorachan_state::dorachan_map);
+	m_maincpu->set_addrmap(AS_IO, &dorachan_state::dorachan_io_map);
+	m_maincpu->set_periodic_int(FUNC(dorachan_state::irq0_line_hold), attotime::from_hz(2*60));
 
 	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_SIZE(32*8, 32*8)
-	MCFG_SCREEN_VISIBLE_AREA(0*8, 32*8-1, 1*8, 31*8-1)
-	MCFG_SCREEN_REFRESH_RATE(60)
-	MCFG_SCREEN_UPDATE_DRIVER(dorachan_state, screen_update_dorachan)
+	SCREEN(config, m_screen, SCREEN_TYPE_RASTER);
+	m_screen->set_size(32*8, 32*8);
+	m_screen->set_visarea(0*8, 32*8-1, 1*8, 31*8-1);
+	m_screen->set_refresh_hz(60);
+	m_screen->set_screen_update(FUNC(dorachan_state::screen_update_dorachan));
 
-	MCFG_PALETTE_ADD_3BIT_BGR("palette")
-MACHINE_CONFIG_END
+	PALETTE(config, m_palette, palette_device::BGR_3BIT);
+}
 
 
 
@@ -253,4 +279,4 @@ ROM_END
  *
  *************************************/
 
-GAME( 1980, dorachan, 0, dorachan, dorachan, driver_device, 0, ROT270, "Alpha Denshi Co. / Craul Denshi", "Dora-chan (Japan)", MACHINE_NO_SOUND | MACHINE_SUPPORTS_SAVE )
+GAME( 1980, dorachan, 0, dorachan, dorachan, dorachan_state, empty_init, ROT270, "Alpha Denshi Co. / Craul Denshi", "Dora-chan (Japan)", MACHINE_NO_SOUND | MACHINE_SUPPORTS_SAVE )

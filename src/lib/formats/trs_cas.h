@@ -7,12 +7,14 @@
     Format code for TRS80 (level 2) cassette files.
 
 *********************************************************************/
+#ifndef MAME_FORMATS_TRS_CAS_H
+#define MAME_FORMATS_TRS_CAS_H
 
-#ifndef __TRS_CAS_H
-#define __TRS_CAS_H
+#pragma once
 
 #include "cassimg.h"
 
+CASSETTE_FORMATLIST_EXTERN(trs80l1_cassette_formats);
 CASSETTE_FORMATLIST_EXTERN(trs80l2_cassette_formats);
 
-#endif /* __TRS_CAS_H */
+#endif // MAME_FORMATS_TRS_CAS_H

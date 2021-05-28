@@ -125,6 +125,20 @@ This test writes 00 to all the crtc registers and checks to be sure an rst7.5
 Not sure exactly what this tests, likely tries firing the vector generator
 state machine and sees if the GO bit ever finishes and goes back to 0
 */
+#include "emu.h"
+
+#include "bus/rs232/rs232.h"
+#include "cpu/i8085/i8085.h"
+#include "sound/beep.h"
+#include "video/mc6845.h"
+#include "machine/com8116.h"
+#include "machine/i8251.h"
+
+#include "screen.h"
+#include "speaker.h"
+
+#include "vk100.lh"
+
 
 // named timer IDs
 #define TID_I8251_RX 1
@@ -148,46 +162,48 @@ state machine and sees if the GO bit ever finishes and goes back to 0
 // debug state dump for the vector generator
 #undef DEBUG_VG_STATE
 
-#include "bus/rs232/rs232.h"
-#include "cpu/i8085/i8085.h"
-#include "sound/beep.h"
-#include "video/mc6845.h"
-#include "machine/com8116.h"
-#include "machine/i8251.h"
-#include "vk100.lh"
-
 #define RS232_TAG       "rs232"
 #define COM5016T_TAG    "com5016t"
 
 class vk100_state : public driver_device
 {
 public:
-	enum
-	{
-		TIMER_EXECUTE_VG
-	};
-
 	vk100_state(const machine_config &mconfig, device_type type, const char *tag) :
 		driver_device(mconfig, type, tag),
 		m_maincpu(*this, "maincpu"),
 		m_crtc(*this, "crtc"),
 		m_speaker(*this, "beeper"),
 		m_uart(*this, "i8251"),
-		m_dbrg(*this, COM5016T_TAG),
-		//m_i8251_rx_timer(NULL),
-		//m_i8251_tx_timer(NULL),
-		//m_sync_timer(NULL),
+		//m_i8251_rx_timer(nullptr),
+		//m_i8251_tx_timer(nullptr),
+		//m_sync_timer(nullptr),
 
 		m_capsshift(*this, "CAPSSHIFT"),
-		m_dipsw(*this, "SWITCHES")
+		m_dipsw(*this, "SWITCHES"),
+		m_online_led(*this, "online_led"),
+		m_local_led(*this, "local_led"),
+		m_noscroll_led(*this, "noscroll_led"),
+		m_basic_led(*this, "basic_led"),
+		m_hardcopy_led(*this, "hardcopy_led"),
+		m_l1_led(*this, "l1_led"),
+		m_l2_led(*this, "l2_led")
 	{
 	}
+
+	void vk100(machine_config &config);
+
+	void init_vk100();
+
+private:
+	enum
+	{
+		TIMER_EXECUTE_VG
+	};
 
 	required_device<cpu_device> m_maincpu;
 	required_device<mc6845_device> m_crtc;
 	required_device<beep_device> m_speaker;
 	required_device<i8251_device> m_uart;
-	required_device<com8116_device> m_dbrg;
 	//required_device<> m_i8251_rx_timer;
 	//required_device<> m_i8251_tx_timer;
 	//required_device<> m_sync_timer;
@@ -195,50 +211,57 @@ public:
 	required_ioport m_capsshift;
 	required_ioport m_dipsw;
 
-	UINT8* m_vram;
-	UINT8* m_trans;
-	UINT8* m_pattern;
-	UINT8* m_dir;
-	UINT8* m_sync;
-	UINT8* m_vector;
-	UINT8* m_ras_erase;
-	UINT8 m_dir_a6; // latched a6 of dir rom
-	UINT8 m_cout; // carry out from vgERR adder
-	UINT8 m_vsync; // vsync pin of crtc
-	UINT16 m_vgX; // 12 bit X value for vector draw position
-	UINT16 m_vgY; // 12 bit Y value for vector draw position
-	UINT16 m_vgERR; // error register can cause carries which need to be caught
-	UINT8 m_vgSOPS;
-	UINT8 m_vgPAT;
-	UINT16 m_vgPAT_Mask; // current mask for PAT
-	UINT8 m_vgPMUL; // reload value for PMUL_Count
-	UINT8 m_vgPMUL_Count;
-	UINT8 m_vgDownCount; // down counter = number of pixels, loaded from vgDU on execute
+	output_finder<> m_online_led;
+	output_finder<> m_local_led;
+	output_finder<> m_noscroll_led;
+	output_finder<> m_basic_led;
+	output_finder<> m_hardcopy_led;
+	output_finder<> m_l1_led;
+	output_finder<> m_l2_led;
+
+	uint8_t* m_vram;
+	uint8_t* m_trans;
+	uint8_t* m_pattern;
+	uint8_t* m_dir;
+	uint8_t* m_sync;
+	uint8_t* m_vector;
+	uint8_t* m_ras_erase;
+	uint8_t m_dir_a6; // latched a6 of dir rom
+	uint8_t m_cout; // carry out from vgERR adder
+	uint8_t m_vsync; // vsync pin of crtc
+	uint16_t m_vgX; // 12 bit X value for vector draw position
+	uint16_t m_vgY; // 12 bit Y value for vector draw position
+	uint16_t m_vgERR; // error register can cause carries which need to be caught
+	uint8_t m_vgSOPS;
+	uint8_t m_vgPAT;
+	uint16_t m_vgPAT_Mask; // current mask for PAT
+	uint8_t m_vgPMUL; // reload value for PMUL_Count
+	uint8_t m_vgPMUL_Count;
+	uint8_t m_vgDownCount; // down counter = number of pixels, loaded from vgDU on execute
 #define VG_DU m_vgRegFile[0]
 #define VG_DVM m_vgRegFile[1]
 #define VG_DIR m_vgRegFile[2]
 #define VG_WOPS m_vgRegFile[3]
-	UINT8 m_vgRegFile[4];
-	UINT8 m_VG_MODE; // 2 bits, latched on EXEC
-	UINT8 m_vgGO; // activated on next SYNC pulse after EXEC
-	UINT8 m_ACTS;
-	UINT8 m_ADSR;
+	uint8_t m_vgRegFile[4];
+	uint8_t m_VG_MODE; // 2 bits, latched on EXEC
+	uint8_t m_vgGO; // activated on next SYNC pulse after EXEC
+	uint8_t m_ACTS;
+	uint8_t m_ADSR;
 	ioport_port* m_col_array[16];
 
-	DECLARE_WRITE8_MEMBER(vgLD_X);
-	DECLARE_WRITE8_MEMBER(vgLD_Y);
-	DECLARE_WRITE8_MEMBER(vgERR);
-	DECLARE_WRITE8_MEMBER(vgSOPS);
-	DECLARE_WRITE8_MEMBER(vgPAT);
-	DECLARE_WRITE8_MEMBER(vgPMUL);
-	DECLARE_WRITE8_MEMBER(vgREG);
-	DECLARE_WRITE8_MEMBER(vgEX);
-	DECLARE_WRITE8_MEMBER(KBDW);
-	DECLARE_WRITE8_MEMBER(BAUD);
-	DECLARE_READ8_MEMBER(vk100_keyboard_column_r);
-	DECLARE_READ8_MEMBER(SYSTAT_A);
-	DECLARE_READ8_MEMBER(SYSTAT_B);
-	DECLARE_DRIVER_INIT(vk100);
+	void vgLD_X(offs_t offset, uint8_t data);
+	void vgLD_Y(offs_t offset, uint8_t data);
+	void vgERR(uint8_t data);
+	void vgSOPS(uint8_t data);
+	void vgPAT(uint8_t data);
+	void vgPMUL(uint8_t data);
+	void vgREG(offs_t offset, uint8_t data);
+	void vgEX(offs_t offset, uint8_t data);
+	void KBDW(uint8_t data);
+	uint8_t vk100_keyboard_column_r(offs_t offset);
+	uint8_t SYSTAT_A(offs_t offset);
+	uint8_t SYSTAT_B();
+
 	virtual void machine_start() override;
 	virtual void video_start() override;
 	TIMER_CALLBACK_MEMBER(execute_vg);
@@ -246,12 +269,14 @@ public:
 	DECLARE_WRITE_LINE_MEMBER(i8251_rxrdy_int);
 	DECLARE_WRITE_LINE_MEMBER(i8251_txrdy_int);
 	DECLARE_WRITE_LINE_MEMBER(i8251_rts);
-	UINT8 vram_read();
-	UINT8 vram_attr_read();
+	uint8_t vram_read();
+	uint8_t vram_attr_read();
 	MC6845_UPDATE_ROW(crtc_update_row);
-	void vram_write(UINT8 data);
+	void vram_write(uint8_t data);
 
-protected:
+	void vk100_io(address_map &map);
+	void vk100_mem(address_map &map);
+
 	virtual void device_timer(emu_timer &timer, device_timer_id id, int param, void *ptr) override;
 };
 
@@ -277,49 +302,49 @@ protected:
 	 */
 
 // returns one nybble from vram array based on X and Y regs
-UINT8 vk100_state::vram_read()
+uint8_t vk100_state::vram_read()
 {
 	// XFinal is (X'&0x3FC)|(X&0x3)
-	UINT16 XFinal = m_trans[(m_vgX&0x3FC)>>2]<<2|(m_vgX&0x3); // appears correct
+	uint16_t XFinal = m_trans[(m_vgX&0x3FC)>>2]<<2|(m_vgX&0x3); // appears correct
 	// EA is the effective ram address for a 16-bit block
-	UINT16 EA = ((m_vgY&0x1FE)<<5)|(XFinal>>4); // appears correct
+	uint16_t EA = ((m_vgY&0x1FE)<<5)|(XFinal>>4); // appears correct
 	// block is the 16 bit block directly (note EA has to be <<1 to correctly index a byte)
-	UINT16 block = m_vram[(EA<<1)+1] | (m_vram[(EA<<1)]<<8);
+	uint16_t block = m_vram[(EA<<1)+1] | (m_vram[(EA<<1)]<<8);
 	// nybbleNum is which of the four nybbles within the block to address. should NEVER be 3!
-	UINT8 nybbleNum = (XFinal&0xC)>>2;
+	uint8_t nybbleNum = (XFinal&0xC)>>2;
 	return (block>>(4*nybbleNum))&0xF;
 }
 
 // returns the attribute nybble for the current pixel based on X and Y regs
-UINT8 vk100_state::vram_attr_read()
+uint8_t vk100_state::vram_attr_read()
 {
 	// XFinal is (X'&0x3FC)|(X&0x3)
-	UINT16 XFinal = m_trans[(m_vgX&0x3FC)>>2]<<2|(m_vgX&0x3); // appears correct
+	uint16_t XFinal = m_trans[(m_vgX&0x3FC)>>2]<<2|(m_vgX&0x3); // appears correct
 	// EA is the effective ram address for a 16-bit block
-	UINT16 EA = ((m_vgY&0x1FE)<<5)|(XFinal>>4); // appears correct
+	uint16_t EA = ((m_vgY&0x1FE)<<5)|(XFinal>>4); // appears correct
 	// block is the 16 bit block directly (note EA has to be <<1 to correctly index a byte)
-	UINT16 block = m_vram[(EA<<1)+1] | (m_vram[(EA<<1)]<<8);
+	uint16_t block = m_vram[(EA<<1)+1] | (m_vram[(EA<<1)]<<8);
 	// nybbleNum is the attribute nybble, which in this case is always 3
-	UINT8 nybbleNum = 3;
+	uint8_t nybbleNum = 3;
 	return (block>>(4*nybbleNum))&0xF;
 }
 
 // writes one nybble to vram array based on X and Y regs, and updates the attrib ram if needed
-void vk100_state::vram_write(UINT8 data)
+void vk100_state::vram_write(uint8_t data)
 {
 	// XFinal is (X'&0x3FC)|(X&0x3)
-	UINT16 XFinal = m_trans[(m_vgX&0x3FC)>>2]<<2|(m_vgX&0x3); // appears correct
+	uint16_t XFinal = m_trans[(m_vgX&0x3FC)>>2]<<2|(m_vgX&0x3); // appears correct
 	// EA is the effective ram address for a 16-bit block
-	UINT16 EA = ((m_vgY&0x1FE)<<5)|(XFinal>>4); // appears correct
+	uint16_t EA = ((m_vgY&0x1FE)<<5)|(XFinal>>4); // appears correct
 	// block is the 16 bit block directly (note EA has to be <<1 to correctly index a byte)
-	UINT16 block = m_vram[(EA<<1)+1] | (m_vram[(EA<<1)]<<8);
+	uint16_t block = m_vram[(EA<<1)+1] | (m_vram[(EA<<1)]<<8);
 	// nybbleNum is which of the four nybbles within the block to address. should NEVER be 3!
-	UINT8 nybbleNum = (XFinal&0xC)>>2;
-	block &= ~((UINT16)0xF<<(nybbleNum*4)); // mask out the part we want to replace
+	uint8_t nybbleNum = (XFinal&0xC)>>2;
+	block &= ~((uint16_t)0xF<<(nybbleNum*4)); // mask out the part we want to replace
 	block |= data<<(nybbleNum*4); // write the new part
 	// NOTE: this next part may have to be made conditional on VG_MODE
 	// check if the attribute nybble is supposed to be modified, and if so do so
-	if (VG_WOPS&0x08) block = (block&0x0FFF)|(((UINT16)VG_WOPS&0xF0)<<8);
+	if (VG_WOPS&0x08) block = (block&0x0FFF)|(((uint16_t)VG_WOPS&0xF0)<<8);
 	m_vram[(EA<<1)+1] = block&0xFF; // write block back to vram
 	m_vram[(EA<<1)] = (block&0xFF00)>>8; // ''
 }
@@ -332,7 +357,7 @@ void vk100_state::device_timer(emu_timer &timer, device_timer_id id, int param, 
 		execute_vg(ptr, param);
 		break;
 	default:
-		assert_always(FALSE, "Unknown id in vk100_state::device_timer");
+		throw emu_fatalerror("Unknown id in vk100_state::device_timer");
 	}
 }
 
@@ -363,7 +388,7 @@ void vk100_state::device_timer(emu_timer &timer, device_timer_id id, int param, 
 TIMER_CALLBACK_MEMBER(vk100_state::execute_vg)
 {
 	m_cout = 1; // hack for now
-	UINT8 dirbyte = m_dir[(m_dir_a6<<6)|((m_vgY&1)<<5)|(m_cout<<4)|VG_DIR];
+	uint8_t dirbyte = m_dir[(m_dir_a6<<6)|((m_vgY&1)<<5)|(m_cout<<4)|VG_DIR];
 #ifdef DEBUG_VG_STATE
 	static const char *const vg_functions[] = { "Move", "Dot", "Vector", "Erase" };
 	fprintf(stderr, "VGMODE: %s; DIR: A:%02x; D:%02x; X: %03X; Y: %03X; DownCount: %02X\n", vg_functions[m_VG_MODE], ((m_dir_a6<<6)|((m_vgY&1)<<5)|(m_cout<<4)|VG_DIR), dirbyte, m_vgX, m_vgY, m_vgDownCount);
@@ -380,9 +405,9 @@ TIMER_CALLBACK_MEMBER(vk100_state::execute_vg)
 		else m_vgY++;
 	}
 	if (dirbyte&0x10) m_vgDownCount--; // decrement the down counter
-	UINT8 thisNyb = vram_read(); // read in the nybble
+	uint8_t thisNyb = vram_read(); // read in the nybble
 	// pattern rom addressing is a complex mess. see the pattern rom def later in this file.
-	UINT8 newNyb = m_pattern[((m_vgPAT&m_vgPAT_Mask)?0x200:0)|((VG_WOPS&7)<<6)|((m_vgX&3)<<4)|thisNyb]; // calculate new nybble based on pattern rom
+	uint8_t newNyb = m_pattern[((m_vgPAT&m_vgPAT_Mask)?0x200:0)|((VG_WOPS&7)<<6)|((m_vgX&3)<<4)|thisNyb]; // calculate new nybble based on pattern rom
 	// finally write the block back to ram depending on the VG_MODE (sort of a hack until we get the vector and sync and dir roms all hooked up)
 	// but only do it if the direction rom said so!
 	switch (m_VG_MODE)
@@ -416,31 +441,31 @@ TIMER_CALLBACK_MEMBER(vk100_state::execute_vg)
 		m_vgPAT_Mask >>= 1; // shift the mask
 		if (m_vgPAT_Mask == 0) m_vgPAT_Mask = 0x80; // reset mask if it hits 0
 	}
-	if (m_vgGO) timer_set(attotime::from_hz(XTAL_45_6192Mhz/3/12/2), TIMER_EXECUTE_VG); // /3/12/2 is correct. the sync counter is clocked by the dot clock, despite the error on figure 5-21
+	if (m_vgGO) timer_set(attotime::from_hz(XTAL(45'619'200)/3/12/2), TIMER_EXECUTE_VG); // /3/12/2 is correct. the sync counter is clocked by the dot clock, despite the error on figure 5-21
 }
 
 /* ports 0x40 and 0x41: load low and high bytes of vector gen X register */
-WRITE8_MEMBER(vk100_state::vgLD_X)
+void vk100_state::vgLD_X(offs_t offset, uint8_t data)
 {
 	m_vgX &= 0xFF << ((1-offset)*8);
-	m_vgX |= ((UINT16)data) << (offset*8);
+	m_vgX |= ((uint16_t)data) << (offset*8);
 #ifdef VG40_VERBOSE
-	logerror("VG: 0x%02X: X Reg loaded with %04X, new X value is %04X\n", 0x40+offset, ((UINT16)data) << (offset*8), m_vgX);
+	logerror("VG: 0x%02X: X Reg loaded with %04X, new X value is %04X\n", 0x40+offset, ((uint16_t)data) << (offset*8), m_vgX);
 #endif
 }
 
 /* ports 0x42 and 0x43: load low and high bytes of vector gen Y register */
-WRITE8_MEMBER(vk100_state::vgLD_Y)
+void vk100_state::vgLD_Y(offs_t offset, uint8_t data)
 {
 	m_vgY &= 0xFF << ((1-offset)*8);
-	m_vgY |= ((UINT16)data) << (offset*8);
+	m_vgY |= ((uint16_t)data) << (offset*8);
 #ifdef VG40_VERBOSE
-	logerror("VG: 0x%02X: Y Reg loaded with %04X, new Y value is %04X\n", 0x42+offset, ((UINT16)data) << (offset*8), m_vgY);
+	logerror("VG: 0x%02X: Y Reg loaded with %04X, new Y value is %04X\n", 0x42+offset, ((uint16_t)data) << (offset*8), m_vgY);
 #endif
 }
 
 /* port 0x44: "ERR" load bresenham line algorithm 'error' count */
-WRITE8_MEMBER(vk100_state::vgERR)
+void vk100_state::vgERR(uint8_t data)
 {
 	m_vgERR = data;
 #ifdef VG40_VERBOSE
@@ -464,7 +489,7 @@ WRITE8_MEMBER(vk100_state::vgERR)
  * 1   1      8251TXD   ACTS(loop) 8251RXD    J6 /DTR     J7 URTS     GND        8251RTS(loop)  J6 /DSR
  *                      * and UCTS, the pin drives both pins on J7
  */
-WRITE8_MEMBER(vk100_state::vgSOPS)
+void vk100_state::vgSOPS(uint8_t data)
 {
 	m_vgSOPS = data;
 #ifdef VG40_VERBOSE
@@ -474,7 +499,7 @@ WRITE8_MEMBER(vk100_state::vgSOPS)
 }
 
 /* port 0x46: "PAT" load vg Pattern register */
-WRITE8_MEMBER(vk100_state::vgPAT)
+void vk100_state::vgPAT(uint8_t data)
 {
 	m_vgPAT = data;
 #ifdef PAT_DEBUG
@@ -494,7 +519,7 @@ WRITE8_MEMBER(vk100_state::vgPAT)
    the pattern register and increments on each one. if it overflows from
    1111 to 0000 the pattern register is shifted right one bit and the
    counter is reloaded from PMUL */
-WRITE8_MEMBER(vk100_state::vgPMUL)
+void vk100_state::vgPMUL(uint8_t data)
 {
 	m_vgPMUL = data;
 #ifdef VG40_VERBOSE
@@ -511,7 +536,7 @@ WRITE8_MEMBER(vk100_state::vgPMUL)
  *                             Change
  * d7     d6     d5     d4     d3     d2     d1     d0
  */
-WRITE8_MEMBER(vk100_state::vgREG)
+void vk100_state::vgREG(offs_t offset, uint8_t data)
 {
 	m_vgRegFile[offset] = data;
 #ifdef VG60_VERBOSE
@@ -527,7 +552,7 @@ WRITE8_MEMBER(vk100_state::vgREG)
 /* port 0x65: "EX DOT" execute a dot (draw a dot at x,y?) */
 /* port 0x66: "EX VEC" execute a vector (draw a vector from x,y to a destination using du/dvm/dir/err ) */
 /* port 0x67: "EX ER" execute an erase (clear the screen to the bg color, i.e. fill vram with zeroes) */
-WRITE8_MEMBER(vk100_state::vgEX)
+void vk100_state::vgEX(offs_t offset, uint8_t data)
 {
 #ifdef VG60_VERBOSE
 	static const char *const ex_functions[] = { "Move", "Dot", "Vector", "Erase" };
@@ -544,15 +569,15 @@ WRITE8_MEMBER(vk100_state::vgEX)
 
 
 /* port 0x68: "KBDW" d7 is beeper, d6 is keyclick, d5-d0 are keyboard LEDS */
-WRITE8_MEMBER(vk100_state::KBDW)
+void vk100_state::KBDW(uint8_t data)
 {
-	output_set_value("online_led",BIT(data, 5) ? 1 : 0);
-	output_set_value("local_led", BIT(data, 5) ? 0 : 1);
-	output_set_value("noscroll_led",BIT(data, 4) ? 1 : 0);
-	output_set_value("basic_led", BIT(data, 3) ? 1 : 0);
-	output_set_value("hardcopy_led", BIT(data, 2) ? 1 : 0);
-	output_set_value("l1_led", BIT(data, 1) ? 1 : 0);
-	output_set_value("l2_led", BIT(data, 0) ? 1 : 0);
+	m_online_led = BIT(data, 5) ? 1 : 0;
+	m_local_led = BIT(data, 5) ? 0 : 1;
+	m_noscroll_led = BIT(data, 4) ? 1 : 0;
+	m_basic_led = BIT(data, 3) ? 1 : 0;
+	m_hardcopy_led = BIT(data, 2) ? 1 : 0;
+	m_l1_led = BIT(data, 1) ? 1 : 0;
+	m_l2_led = BIT(data, 0) ? 1 : 0;
 #ifdef LED_VERBOSE
 	if (BIT(data, 6)) logerror("kb keyclick bit 6 set: not emulated yet (multivibrator)!\n");
 #endif
@@ -608,11 +633,6 @@ WRITE8_MEMBER(vk100_state::KBDW)
  * 1 1 1 0 - 33   (5068800 / 33 = 16*9600)        = 9600 baud
  * 1 1 1 1 - 16   (5068800 / 16 = 16*19800)      ~= 19200 baud
  */
-WRITE8_MEMBER(vk100_state::BAUD)
-{
-	m_dbrg->str_w(data & 0x0f);
-	m_dbrg->stt_w(data >> 4);
-}
 
 /* port 0x40-0x47: "SYSTAT A"; various status bits, poorly documented in the tech manual
  * /GO    VDM1   VDM1   VDM1   VDM1   Dip     RST7.5 GND***
@@ -634,9 +654,9 @@ WRITE8_MEMBER(vk100_state::BAUD)
  299 reads, rotates result right 3 times and ANDs the result with 0x0F
  2A4 reads, rotates result left 1 time and ANDS the result with 0xF0
 */
-READ8_MEMBER(vk100_state::SYSTAT_A)
+uint8_t vk100_state::SYSTAT_A(offs_t offset)
 {
-	UINT8 dipswitchLUT[8] = { 1,3,5,7,6,4,2,0 }; // the dipswitches map in a weird order to offsets
+	uint8_t dipswitchLUT[8] = { 1,3,5,7,6,4,2,0 }; // the dipswitches map in a weird order to offsets
 #ifdef SYSTAT_A_VERBOSE
 	if (m_maincpu->pc() != 0x31D) logerror("0x%04X: SYSTAT_A Read!\n", m_maincpu->pc());
 #endif
@@ -661,7 +681,7 @@ READ8_MEMBER(vk100_state::SYSTAT_A)
  * The 4 attribute ram bits for the cell being pointed at by the X and Y regs are readable as the low nybble.
  * The DSR pin is readable as bit 6.
  */
-READ8_MEMBER(vk100_state::SYSTAT_B)
+uint8_t vk100_state::SYSTAT_B()
 {
 #ifdef SYSTAT_B_VERBOSE
 	logerror("0x%04X: SYSTAT_B Read!\n", m_maincpu->pc());
@@ -669,21 +689,22 @@ READ8_MEMBER(vk100_state::SYSTAT_B)
 	return (m_ACTS<<7)|(m_ADSR<<6)|vram_attr_read();
 }
 
-READ8_MEMBER(vk100_state::vk100_keyboard_column_r)
+uint8_t vk100_state::vk100_keyboard_column_r(offs_t offset)
 {
-	UINT8 code = m_col_array[offset&0xF]->read() | m_capsshift->read();
+	uint8_t code = m_col_array[offset&0xF]->read() | m_capsshift->read();
 #ifdef KBD_VERBOSE
 	logerror("Keyboard column %X read, returning %02X\n", offset&0xF, code);
 #endif
 	return code;
 }
 
-static ADDRESS_MAP_START(vk100_mem, AS_PROGRAM, 8, vk100_state)
-	ADDRESS_MAP_UNMAP_HIGH
-	AM_RANGE( 0x0000, 0x6fff ) AM_ROM
-	AM_RANGE( 0x7000, 0x700f ) AM_MIRROR(0x0ff0) AM_READ(vk100_keyboard_column_r)
-	AM_RANGE( 0x8000, 0xbfff ) AM_RAM
-ADDRESS_MAP_END
+void vk100_state::vk100_mem(address_map &map)
+{
+	map.unmap_value_high();
+	map(0x0000, 0x6fff).rom();
+	map(0x7000, 0x700f).mirror(0x0ff0).r(FUNC(vk100_state::vk100_keyboard_column_r));
+	map(0x8000, 0xbfff).ram();
+}
 
 /*
  * 8085 IO address map (x = ignored; * = selects address within this range; ? = not sure; ** = subparts check this bit)
@@ -694,7 +715,7 @@ ADDRESS_MAP_END
    x   0   x   x   x   x   x   1     RW    CRTC register r/w
    x   1   *   *   *   **  **  **        read area (rightmost 74ls138):
    x   1   0   0   0   *   *   *     R     SYSTAT_A (a0-a3 chooses the bit of the dipswitches read via d3)
-   x   1   0   0   1   x   x   x    R     SYSTAT_B
+   x   1   0   0   1   x   x   x     R     SYSTAT_B
    x   1   0   1   0   x   x   0     R     i8251 UART data
    x   1   0   1   0   x   x   1     R     i8251 UART status
    x   1   0   1   1   x   x   x     R     unused
@@ -726,37 +747,36 @@ ADDRESS_MAP_END
    x   1   1   1   1   0   x   x     W     unused
    x   1   1   1   1   1   x   x     W     unused
 */
-static ADDRESS_MAP_START(vk100_io, AS_IO, 8, vk100_state)
-	ADDRESS_MAP_UNMAP_HIGH
-	ADDRESS_MAP_GLOBAL_MASK(0x7f) // guess, probably correct
-	AM_RANGE(0x00, 0x00) AM_MIRROR(0xBE) AM_DEVWRITE("crtc", mc6845_device, address_w)
-	AM_RANGE(0x01, 0x01) AM_MIRROR(0xBE) AM_DEVREADWRITE("crtc", mc6845_device, register_r, register_w)
+void vk100_state::vk100_io(address_map &map)
+{
+	map.unmap_value_high();
+	map.global_mask(0xff); // guess, probably correct
+	map(0x00, 0x00).mirror(0xBE).w(m_crtc, FUNC(mc6845_device::address_w));
+	map(0x01, 0x01).mirror(0xBE).rw(m_crtc, FUNC(mc6845_device::register_r), FUNC(mc6845_device::register_w));
 	// Comments are from page 118 (5-14) of http://web.archive.org/web/20091015205827/http://www.computer.museum.uq.edu.au/pdf/EK-VK100-TM-001%20VK100%20Technical%20Manual.pdf
-	AM_RANGE (0x40, 0x41) AM_MIRROR(0x98) AM_WRITE(vgLD_X)  //LD X LO + HI 12 bits
-	AM_RANGE (0x42, 0x43) AM_MIRROR(0x98) AM_WRITE(vgLD_Y)  //LD Y LO + HI 12 bits
-	AM_RANGE (0x44, 0x44) AM_MIRROR(0x98) AM_WRITE(vgERR)    //LD ERR ('error' in bresenham algorithm)
-	AM_RANGE (0x45, 0x45) AM_MIRROR(0x98) AM_WRITE(vgSOPS)   //LD SOPS (screen options (plus uart dest))
-	AM_RANGE (0x46, 0x46) AM_MIRROR(0x98) AM_WRITE(vgPAT)    //LD PAT (pattern register)
-	AM_RANGE (0x47, 0x47) AM_MIRROR(0x98) AM_WRITE(vgPMUL)   //LD PMUL (pattern multiplier)
-	AM_RANGE (0x60, 0x63) AM_MIRROR(0x80) AM_WRITE(vgREG)     //LD DU, DVM, DIR, WOPS (register file)
-	AM_RANGE (0x64, 0x67) AM_MIRROR(0x80) AM_WRITE(vgEX)    //EX MOV, DOT, VEC, ER
-	AM_RANGE (0x68, 0x68) AM_MIRROR(0x83) AM_WRITE(KBDW)   //KBDW (probably AM_MIRROR(0x03))
-	AM_RANGE (0x6C, 0x6C) AM_MIRROR(0x83) AM_WRITE(BAUD)   //LD BAUD (baud rate clock divider setting for i8251 tx and rx clocks) (probably AM_MIRROR(0x03))
-	AM_RANGE (0x70, 0x70) AM_MIRROR(0x82) AM_DEVWRITE("i8251", i8251_device, data_w) //LD COMD (i8251 data reg)
-	AM_RANGE (0x71, 0x71) AM_MIRROR(0x82) AM_DEVWRITE("i8251", i8251_device, control_w) //LD COM (i8251 control reg)
-	//AM_RANGE (0x74, 0x74) AM_MIRROR(0x83) AM_WRITE(unknown_74)
-	//AM_RANGE (0x78, 0x78) AM_MIRROR(0x83) AM_WRITE(kbdw)   //KBDW ?(mirror?)
-	//AM_RANGE (0x7C, 0x7C) AM_MIRROR(0x83) AM_WRITE(unknown_7C)
-	AM_RANGE (0x40, 0x47) AM_MIRROR(0x80) AM_READ(SYSTAT_A) // SYSTAT A (state machine done and last 4 bits of vram, as well as dipswitches)
-	AM_RANGE (0x48, 0x48) AM_MIRROR(0x87/*0x80*/) AM_READ(SYSTAT_B) // SYSTAT B (uart stuff)
-	AM_RANGE (0x50, 0x50) AM_MIRROR(0x86) AM_DEVREAD("i8251", i8251_device, data_r) // UART O
-	AM_RANGE (0x51, 0x51) AM_MIRROR(0x86) AM_DEVREAD("i8251", i8251_device, status_r) // UAR
-	//AM_RANGE (0x58, 0x58) AM_MIRROR(0x87) AM_READ(unknown_58)
-	//AM_RANGE (0x60, 0x60) AM_MIRROR(0x87) AM_READ(unknown_60)
-	//AM_RANGE (0x68, 0x68) AM_MIRROR(0x87) AM_READ(unknown_68) // NOT USED
-	//AM_RANGE (0x70, 0x70) AM_MIRROR(0x87) AM_READ(unknown_70)
-	//AM_RANGE (0x78, 0x7f) AM_MIRROR(0x87) AM_READ(unknown_78)
-ADDRESS_MAP_END
+	map(0x40, 0x41).mirror(0x98).w(FUNC(vk100_state::vgLD_X));  //LD X LO + HI 12 bits
+	map(0x42, 0x43).mirror(0x98).w(FUNC(vk100_state::vgLD_Y));  //LD Y LO + HI 12 bits
+	map(0x44, 0x44).mirror(0x98).w(FUNC(vk100_state::vgERR));    //LD ERR ('error' in bresenham algorithm)
+	map(0x45, 0x45).mirror(0x98).w(FUNC(vk100_state::vgSOPS));   //LD SOPS (screen options (plus uart dest))
+	map(0x46, 0x46).mirror(0x98).w(FUNC(vk100_state::vgPAT));    //LD PAT (pattern register)
+	map(0x47, 0x47).mirror(0x98).w(FUNC(vk100_state::vgPMUL));   //LD PMUL (pattern multiplier)
+	map(0x60, 0x63).mirror(0x80).w(FUNC(vk100_state::vgREG));     //LD DU, DVM, DIR, WOPS (register file)
+	map(0x64, 0x67).mirror(0x80).w(FUNC(vk100_state::vgEX));    //EX MOV, DOT, VEC, ER
+	map(0x68, 0x68).mirror(0x83).w(FUNC(vk100_state::KBDW));   //KBDW (probably mirror(0x03))
+	map(0x6C, 0x6C).mirror(0x83).w(COM5016T_TAG, FUNC(com8116_device::stt_str_w));   //LD BAUD (baud rate clock divider setting for i8251 tx and rx clocks) (probably mirror(0x03))
+	map(0x70, 0x71).mirror(0x82).w(m_uart, FUNC(i8251_device::write)); //LD COMD
+	//map(0x74, 0x74).mirror(0x83).w(FUNC(vk100_state::unknown_74));
+	//map(0x78, 0x78).mirror(0x83).w(FUNC(vk100_state::kbdw));   //KBDW ?(mirror?)
+	//map(0x7C, 0x7C).mirror(0x83).w(FUNC(vk100_state::unknown_7C));
+	map(0x40, 0x47).mirror(0x80).r(FUNC(vk100_state::SYSTAT_A)); // SYSTAT A (state machine done and last 4 bits of vram, as well as dipswitches)
+	map(0x48, 0x48).mirror(0x87/*0x80*/).r(FUNC(vk100_state::SYSTAT_B)); // SYSTAT B (uart stuff)
+	map(0x50, 0x51).mirror(0x86).r(m_uart, FUNC(i8251_device::read)); // UART O
+	//map(0x58, 0x58).mirror(0x87).r(FUNC(vk100_state::unknown_58));
+	//map(0x60, 0x60).mirror(0x87).r(FUNC(vk100_state::unknown_60));
+	//map(0x68, 0x68).mirror(0x87).r(FUNC(vk100_state::unknown_68)); // NOT USED
+	//map(0x70, 0x70).mirror(0x87).r(FUNC(vk100_state::unknown_70));
+	//map(0x78, 0x7f).mirror(0x87).r(FUNC(vk100_state::unknown_78));
+}
 
 /* Input ports */
 static INPUT_PORTS_START( vk100 )
@@ -918,14 +938,21 @@ INPUT_PORTS_END
 
 void vk100_state::machine_start()
 {
-	m_speaker->set_frequency(116); //116 hz (page 172 of TM), but duty cycle is wrong here!
-	output_set_value("online_led",1);
-	output_set_value("local_led", 0);
-	output_set_value("noscroll_led",1);
-	output_set_value("basic_led", 1);
-	output_set_value("hardcopy_led", 1);
-	output_set_value("l1_led", 1);
-	output_set_value("l2_led", 1);
+	m_online_led.resolve();
+	m_local_led.resolve();
+	m_noscroll_led.resolve();
+	m_basic_led.resolve();
+	m_hardcopy_led.resolve();
+	m_l1_led.resolve();
+	m_l2_led.resolve();
+
+	m_online_led = 1;
+	m_local_led = 0;
+	m_noscroll_led = 1;
+	m_basic_led = 1;
+	m_hardcopy_led = 1;
+	m_l1_led = 1;
+	m_l2_led = 1;
 	m_vsync = 0;
 	m_dir_a6 = 1;
 	m_cout = 0;
@@ -978,7 +1005,7 @@ WRITE_LINE_MEMBER(vk100_state::i8251_rts)
 	m_ACTS = state;
 }
 
-DRIVER_INIT_MEMBER(vk100_state,vk100)
+void vk100_state::init_vk100()
 {
 	// figure out how the heck to initialize the timers here
 	//m_i8251_rx_timer = timer_alloc(TID_I8251_RX);
@@ -1000,10 +1027,10 @@ void vk100_state::video_start()
 
 MC6845_UPDATE_ROW( vk100_state::crtc_update_row )
 {
-	static const UINT32 colorTable[16] = {
+	static const uint32_t colorTable[16] = {
 	0x000000, 0x0000FF, 0xFF0000, 0xFF00FF, 0x00FF00, 0x00FFFF, 0xFFFF00, 0xFFFFFF,
 	0x000000, 0x0000FF, 0xFF0000, 0xFF00FF, 0x00FF00, 0x00FFFF, 0xFFFF00, 0xFFFFFF };
-	static const UINT32 colorTable2[16] = {
+	static const uint32_t colorTable2[16] = {
 	0x000000, 0x0000FF, 0xFF0000, 0xFF00FF, 0x00FF00, 0x00FFFF, 0xFFFF00, 0xFFFFFF,
 	0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000 };
 	//printf("y=%d, ma=%04x, ra=%02x, x_count=%02x ", y, ma, ra, x_count);
@@ -1011,61 +1038,62 @@ MC6845_UPDATE_ROW( vk100_state::crtc_update_row )
 	 * real address to 16-bit chunk a13  a12  a11 a10 a9  a8  a7  a6  a5  a4  a3  a2  a1  a0
 	 * crtc input                  MA11 MA10 MA9 MA8 MA7 MA6 RA1 RA0 MA5 MA4 MA3 MA2 MA1 MA0
 	 */
-	UINT16 EA = ((ma&0xfc0)<<2)|((ra&0x3)<<6)|(ma&0x3F);
+	uint16_t EA = ((ma&0xfc0)<<2)|((ra&0x3)<<6)|(ma&0x3F);
 	// display the 64 different 12-bit-wide chunks
 	for (int i = 0; i < 64; i++)
 	{
-		UINT16 block = m_vram[(EA<<1)+(2*i)+1] | (m_vram[(EA<<1)+(2*i)]<<8);
-		UINT32 fgColor = (m_vgSOPS&0x08)?colorTable[(block&0xF000)>>12]:colorTable2[(block&0xF000)>>12];
-		UINT32 bgColor = (m_vgSOPS&0x08)?colorTable[(m_vgSOPS&0xF0)>>4]:colorTable2[(m_vgSOPS&0xF0)>>4];
+		uint16_t block = m_vram[(EA<<1)+(2*i)+1] | (m_vram[(EA<<1)+(2*i)]<<8);
+		uint32_t fgColor = (m_vgSOPS&0x08)?colorTable[(block&0xF000)>>12]:colorTable2[(block&0xF000)>>12];
+		uint32_t bgColor = (m_vgSOPS&0x08)?colorTable[(m_vgSOPS&0xF0)>>4]:colorTable2[(m_vgSOPS&0xF0)>>4];
 		// display a 12-bit wide chunk
 		for (int j = 0; j < 12; j++)
 		{
-			bitmap.pix32(y, (12*i)+j) = (((block&(0x0001<<j))?1:0)^(m_vgSOPS&1))?fgColor:bgColor;
+			bitmap.pix(y, (12*i)+j) = (((block&(0x0001<<j))?1:0)^(m_vgSOPS&1))?fgColor:bgColor;
 		}
 	}
 }
 
 
-static MACHINE_CONFIG_START( vk100, vk100_state )
+void vk100_state::vk100(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", I8085A, XTAL_5_0688MHz)
-	MCFG_CPU_PROGRAM_MAP(vk100_mem)
-	MCFG_CPU_IO_MAP(vk100_io)
+	I8085A(config, m_maincpu, XTAL(5'068'800));
+	m_maincpu->set_addrmap(AS_PROGRAM, &vk100_state::vk100_mem);
+	m_maincpu->set_addrmap(AS_IO, &vk100_state::vk100_io);
 
 	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_RAW_PARAMS(XTAL_45_6192Mhz/3, 882, 0, 720, 370, 0, 350 ) // fake screen timings for startup until 6845 sets real ones
-	MCFG_SCREEN_UPDATE_DEVICE( "crtc", mc6845_device, screen_update )
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_RASTER));
+	screen.set_raw(XTAL(45'619'200)/3, 882, 0, 720, 370, 0, 350 ); // fake screen timings for startup until 6845 sets real ones
+	screen.set_screen_update("crtc", FUNC(mc6845_device::screen_update));
 
-	MCFG_MC6845_ADD( "crtc", H46505, "screen", XTAL_45_6192Mhz/3/12)
-	MCFG_MC6845_SHOW_BORDER_AREA(false)
-	MCFG_MC6845_CHAR_WIDTH(12)
-	MCFG_MC6845_UPDATE_ROW_CB(vk100_state, crtc_update_row)
-	MCFG_MC6845_OUT_VSYNC_CB(WRITELINE(vk100_state, crtc_vsync))
+	MC6845(config, m_crtc, 45.6192_MHz_XTAL/3/12); // unknown variant
+	m_crtc->set_screen("screen");
+	m_crtc->set_show_border_area(false);
+	m_crtc->set_char_width(12);
+	m_crtc->set_update_row_callback(FUNC(vk100_state::crtc_update_row));
+	m_crtc->out_vsync_callback().set(FUNC(vk100_state::crtc_vsync));
 
 	/* i8251 uart */
-	MCFG_DEVICE_ADD("i8251", I8251, 0)
-	MCFG_I8251_TXD_HANDLER(DEVWRITELINE(RS232_TAG, rs232_port_device, write_txd))
-	MCFG_I8251_DTR_HANDLER(DEVWRITELINE(RS232_TAG, rs232_port_device, write_dtr))
-	MCFG_I8251_RTS_HANDLER(DEVWRITELINE(RS232_TAG, rs232_port_device, write_rts))
-	MCFG_I8251_RXRDY_HANDLER(WRITELINE(vk100_state, i8251_rxrdy_int))
-	MCFG_I8251_TXRDY_HANDLER(WRITELINE(vk100_state, i8251_txrdy_int))
+	I8251(config, m_uart, 0);
+	m_uart->txd_handler().set(RS232_TAG, FUNC(rs232_port_device::write_txd));
+	m_uart->dtr_handler().set(RS232_TAG, FUNC(rs232_port_device::write_dtr));
+	m_uart->rts_handler().set(RS232_TAG, FUNC(rs232_port_device::write_rts));
+	m_uart->rxrdy_handler().set(FUNC(vk100_state::i8251_rxrdy_int));
+	m_uart->txrdy_handler().set(FUNC(vk100_state::i8251_txrdy_int));
 
-	MCFG_RS232_PORT_ADD(RS232_TAG, default_rs232_devices, nullptr)
-	MCFG_RS232_RXD_HANDLER(DEVWRITELINE("i8251", i8251_device, write_rxd))
-	MCFG_RS232_DSR_HANDLER(DEVWRITELINE("i8251", i8251_device, write_dsr))
+	rs232_port_device &rs232(RS232_PORT(config, RS232_TAG, default_rs232_devices, nullptr));
+	rs232.rxd_handler().set(m_uart, FUNC(i8251_device::write_rxd));
+	rs232.dsr_handler().set(m_uart, FUNC(i8251_device::write_dsr));
 
-	MCFG_DEVICE_ADD(COM5016T_TAG, COM8116, XTAL_5_0688MHz)
-	MCFG_COM8116_FR_HANDLER(DEVWRITELINE("i8251", i8251_device, write_rxc))
-	MCFG_COM8116_FT_HANDLER(DEVWRITELINE("i8251", i8251_device, write_txc))
+	com8116_device &dbrg(COM8116(config, COM5016T_TAG, 5.0688_MHz_XTAL));
+	dbrg.fr_handler().set(m_uart, FUNC(i8251_device::write_rxc));
+	dbrg.ft_handler().set(m_uart, FUNC(i8251_device::write_txc));
 
-	MCFG_DEFAULT_LAYOUT( layout_vk100 )
+	config.set_default_layout(layout_vk100);
 
-	MCFG_SPEAKER_STANDARD_MONO( "mono" )
-	MCFG_SOUND_ADD( "beeper", BEEP, 0 )
-	MCFG_SOUND_ROUTE( ALL_OUTPUTS, "mono", 0.25 )
-MACHINE_CONFIG_END
+	SPEAKER(config, "mono").front_center();
+	BEEP(config, m_speaker, 116).add_route(ALL_OUTPUTS, "mono", 0.25); // 116 hz (page 172 of TM), but duty cycle is wrong here!
+}
 
 /* ROM definition */
 /* according to http://www.computer.museum.uq.edu.au/pdf/EK-VK100-TM-001%20VK100%20Technical%20Manual.pdf
@@ -1261,5 +1289,5 @@ ROM_END
 
 /* Driver */
 
-/*    YEAR  NAME    PARENT  COMPAT   MACHINE    INPUT    INIT    COMPANY                       FULLNAME       FLAGS */
-COMP( 1980, vk100,  0,      0,       vk100,     vk100, vk100_state,   vk100,  "Digital Equipment Corporation", "VK100 'GIGI'", MACHINE_NOT_WORKING | MACHINE_IMPERFECT_SOUND)
+/*    YEAR  NAME   PARENT  COMPAT  MACHINE  INPUT  STATE        INIT        COMPANY                          FULLNAME        FLAGS */
+COMP( 1980, vk100, 0,      0,      vk100,   vk100, vk100_state, init_vk100, "Digital Equipment Corporation", "VK100 'GIGI'", MACHINE_NOT_WORKING | MACHINE_IMPERFECT_SOUND)

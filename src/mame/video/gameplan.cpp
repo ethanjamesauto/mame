@@ -47,11 +47,8 @@ void gameplan_state::device_timer(emu_timer &timer, device_timer_id id, int para
 	case TIMER_VIA_IRQ_DELAYED:
 		via_irq_delayed(ptr, param);
 		break;
-	case TIMER_VIA_0_CAL:
-		via_0_ca1_timer_callback(ptr, param);
-		break;
 	default:
-		assert_always(FALSE, "Unknown id in gameplan_state::device_timer");
+		throw emu_fatalerror("Unknown id in gameplan_state::device_timer");
 	}
 }
 
@@ -79,10 +76,10 @@ void gameplan_state::leprechn_get_pens( pen_t *pens )
 
 	for (i = 0; i < LEPRECHN_NUM_PENS; i++)
 	{
-		UINT8 bk = (i & 8) ? 0x40 : 0x00;
-		UINT8 r = (i & 1) ? 0xff : bk;
-		UINT8 g = (i & 2) ? 0xff : bk;
-		UINT8 b = (i & 4) ? 0xff : bk;
+		uint8_t bk = (i & 8) ? 0x40 : 0x00;
+		uint8_t r = (i & 1) ? 0xff : bk;
+		uint8_t g = (i & 2) ? 0xff : bk;
+		uint8_t b = (i & 4) ? 0xff : bk;
 
 		pens[i] = rgb_t(r, g, b);
 	}
@@ -96,38 +93,36 @@ void gameplan_state::leprechn_get_pens( pen_t *pens )
  *
  *************************************/
 
-UINT32 gameplan_state::screen_update_gameplan(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
+uint32_t gameplan_state::screen_update_gameplan(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
 {
 	pen_t pens[GAMEPLAN_NUM_PENS];
-	offs_t offs;
 
 	gameplan_get_pens(pens);
 
-	for (offs = 0; offs < m_videoram_size; offs++)
+	for (offs_t offs = 0; offs < m_videoram_size; offs++)
 	{
-		UINT8 y = offs >> 8;
-		UINT8 x = offs & 0xff;
+		uint8_t y = offs >> 8;
+		uint8_t x = offs & 0xff;
 
-		bitmap.pix32(y, x) = pens[m_videoram[offs] & 0x07];
+		bitmap.pix(y, x) = pens[m_videoram[offs] & 0x07];
 	}
 
 	return 0;
 }
 
 
-UINT32 gameplan_state::screen_update_leprechn(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
+uint32_t gameplan_state::screen_update_leprechn(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
 {
 	pen_t pens[LEPRECHN_NUM_PENS];
-	offs_t offs;
 
 	leprechn_get_pens(pens);
 
-	for (offs = 0; offs < m_videoram_size; offs++)
+	for (offs_t offs = 0; offs < m_videoram_size; offs++)
 	{
-		UINT8 y = offs >> 8;
-		UINT8 x = offs & 0xff;
+		uint8_t y = offs >> 8;
+		uint8_t x = offs & 0xff;
 
-		bitmap.pix32(y, x) = pens[m_videoram[offs] & (LEPRECHN_NUM_PENS-1)];
+		bitmap.pix(y, x) = pens[m_videoram[offs] & (LEPRECHN_NUM_PENS-1)];
 	}
 
 	return 0;
@@ -141,25 +136,25 @@ UINT32 gameplan_state::screen_update_leprechn(screen_device &screen, bitmap_rgb3
  *
  *************************************/
 
-WRITE8_MEMBER(gameplan_state::video_data_w)
+void gameplan_state::video_data_w(uint8_t data)
 {
 	m_video_data = data;
 }
 
 
-WRITE8_MEMBER(gameplan_state::gameplan_video_command_w)
+void gameplan_state::gameplan_video_command_w(uint8_t data)
 {
 	m_video_command = data & 0x07;
 }
 
 
-WRITE8_MEMBER(gameplan_state::leprechn_video_command_w)
+void gameplan_state::leprechn_video_command_w(uint8_t data)
 {
 	m_video_command = (data >> 3) & 0x07;
 }
 
 
-READ8_MEMBER(gameplan_state::leprechn_videoram_r)
+uint8_t gameplan_state::leprechn_videoram_r()
 {
 	return m_videoram[m_video_y * (HBSTART - HBEND) + m_video_x];
 }
@@ -247,64 +242,19 @@ WRITE_LINE_MEMBER(gameplan_state::via_irq)
 }
 
 
-TIMER_CALLBACK_MEMBER(gameplan_state::via_0_ca1_timer_callback)
-{
-	/* !VBLANK is connected to CA1 */
-	m_via_0->write_ca1(param);
-
-	if (param)
-		m_via_0_ca1_timer->adjust(m_screen->time_until_pos(VBSTART));
-	else
-		m_via_0_ca1_timer->adjust(m_screen->time_until_pos(VBEND), 1);
-}
-
-
 /*************************************
  *
  *  Start
  *
  *************************************/
 
-VIDEO_START_MEMBER(gameplan_state,common)
+void gameplan_state::video_start()
 {
 	m_videoram_size = (HBSTART - HBEND) * (VBSTART - VBEND);
-	m_videoram = std::make_unique<UINT8[]>(m_videoram_size);
-
-	m_via_0_ca1_timer = timer_alloc(TIMER_VIA_0_CAL);
+	m_videoram = std::make_unique<uint8_t[]>(m_videoram_size);
 
 	/* register for save states */
-	save_pointer(NAME(m_videoram.get()), m_videoram_size);
-}
-
-
-VIDEO_START_MEMBER(gameplan_state,gameplan)
-{
-	VIDEO_START_CALL_MEMBER(common);
-}
-
-
-VIDEO_START_MEMBER(gameplan_state,leprechn)
-{
-	VIDEO_START_CALL_MEMBER(common);
-}
-
-
-VIDEO_START_MEMBER(gameplan_state,trvquest)
-{
-	VIDEO_START_CALL_MEMBER(common);
-}
-
-
-
-/*************************************
- *
- *  Reset
- *
- *************************************/
-
-VIDEO_RESET_MEMBER(gameplan_state,gameplan)
-{
-	m_via_0_ca1_timer->adjust(m_screen->time_until_pos(VBSTART));
+	save_pointer(NAME(m_videoram), m_videoram_size);
 }
 
 
@@ -315,25 +265,22 @@ VIDEO_RESET_MEMBER(gameplan_state,gameplan)
  *
  *************************************/
 
-MACHINE_CONFIG_FRAGMENT( gameplan_video )
-	MCFG_VIDEO_START_OVERRIDE(gameplan_state,gameplan)
-	MCFG_VIDEO_RESET_OVERRIDE(gameplan_state,gameplan)
+void gameplan_state::gameplan_video(machine_config &config)
+{
+	SCREEN(config, m_screen, SCREEN_TYPE_RASTER);
+	m_screen->set_raw(GAMEPLAN_PIXEL_CLOCK, HTOTAL, HBEND, HBSTART, VTOTAL, VBEND, VBSTART);
+	m_screen->set_screen_update(FUNC(gameplan_state::screen_update_gameplan));
+	m_screen->screen_vblank().set(m_via_0, FUNC(via6522_device::write_ca1)).invert(); // !VBLANK is connected to CA1
+}
 
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_RAW_PARAMS(GAMEPLAN_PIXEL_CLOCK, HTOTAL, HBEND, HBSTART, VTOTAL, VBEND, VBSTART)
-	MCFG_SCREEN_UPDATE_DRIVER(gameplan_state, screen_update_gameplan)
-MACHINE_CONFIG_END
+void gameplan_state::leprechn_video(machine_config &config)
+{
+	m_screen->set_screen_update(FUNC(gameplan_state::screen_update_leprechn));
+}
 
-
-MACHINE_CONFIG_FRAGMENT( leprechn_video )
-	MCFG_VIDEO_START_OVERRIDE(gameplan_state,leprechn)
-	MCFG_SCREEN_MODIFY("screen")
-	MCFG_SCREEN_UPDATE_DRIVER(gameplan_state, screen_update_leprechn)
-MACHINE_CONFIG_END
-
-
-MACHINE_CONFIG_DERIVED( trvquest_video, gameplan_video )
-	MCFG_VIDEO_START_OVERRIDE(gameplan_state,trvquest)
-	MCFG_SCREEN_MODIFY("screen")
-	MCFG_SCREEN_UPDATE_DRIVER(gameplan_state, screen_update_gameplan)
-MACHINE_CONFIG_END
+void trvquest_state::trvquest_video(machine_config &config)
+{
+	gameplan_video(config);
+	m_screen->set_screen_update(FUNC(trvquest_state::screen_update_gameplan));
+	m_screen->screen_vblank().set(m_via_2, FUNC(via6522_device::write_ca1));
+}

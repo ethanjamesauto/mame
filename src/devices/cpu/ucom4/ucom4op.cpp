@@ -3,20 +3,21 @@
 
 // uCOM-4 opcode handlers
 
+#include "emu.h"
 #include "ucom4.h"
 
 
 // internal helpers
 
-inline UINT8 ucom4_cpu_device::ram_r()
+inline u8 ucom4_cpu_device::ram_r()
 {
-	UINT16 address = m_dph << 4 | m_dpl;
+	u16 address = m_dph << 4 | m_dpl;
 	return m_data->read_byte(address & m_datamask) & 0xf;
 }
 
-inline void ucom4_cpu_device::ram_w(UINT8 data)
+inline void ucom4_cpu_device::ram_w(u8 data)
 {
-	UINT16 address = m_dph << 4 | m_dpl;
+	u16 address = m_dph << 4 | m_dpl;
 	m_data->write_byte(address & m_datamask, data & 0xf);
 }
 
@@ -40,7 +41,7 @@ void ucom4_cpu_device::push_stack()
 
 void ucom4_cpu_device::op_illegal()
 {
-	logerror("%s unknown opcode $%02X at $%03X\n", tag(), m_op, m_prev_pc);
+	logerror("unknown opcode $%02X at $%03X\n", m_op, m_prev_pc);
 }
 
 
@@ -105,7 +106,7 @@ void ucom4_cpu_device::op_tla()
 void ucom4_cpu_device::op_xm()
 {
 	// XM X: Exchange ACC with RAM, xor DPh with X
-	UINT8 old_acc = m_acc;
+	u8 old_acc = m_acc;
 	m_acc = ram_r();
 	ram_w(old_acc);
 	m_dph ^= (m_op & 0x03);
@@ -260,14 +261,14 @@ void ucom4_cpu_device::op_reb()
 {
 	// REB B: Reset a single bit of output port E
 	m_icount--;
-	output_w(NEC_UCOM4_PORTE, m_port_out[NEC_UCOM4_PORTE] & ~m_bitmask);
+	output_w(PORTE, m_port_out[PORTE] & ~m_bitmask);
 }
 
 void ucom4_cpu_device::op_seb()
 {
 	// SEB B: Set a single bit of output port E
 	m_icount--;
-	output_w(NEC_UCOM4_PORTE, m_port_out[NEC_UCOM4_PORTE] | m_bitmask);
+	output_w(PORTE, m_port_out[PORTE] | m_bitmask);
 }
 
 void ucom4_cpu_device::op_rpb()
@@ -336,7 +337,7 @@ void ucom4_cpu_device::op_ci()
 	m_skip = (m_acc == (m_arg & 0x0f));
 
 	if ((m_arg & 0xf0) != 0xc0)
-		logerror("%s CI opcode unexpected upper arg $%02X at $%03X\n", tag(), m_arg & 0xf0, m_prev_pc);
+		logerror("CI opcode unexpected upper arg $%02X at $%03X\n", m_arg & 0xf0, m_prev_pc);
 }
 
 void ucom4_cpu_device::op_cm()
@@ -363,7 +364,7 @@ void ucom4_cpu_device::op_cli()
 	m_skip = (m_dpl == (m_arg & 0x0f));
 
 	if ((m_arg & 0xf0) != 0xe0)
-		logerror("%s CLI opcode unexpected upper arg $%02X at $%03X\n", tag(), m_arg & 0xf0, m_prev_pc);
+		logerror("CLI opcode unexpected upper arg $%02X at $%03X\n", m_arg & 0xf0, m_prev_pc);
 }
 
 void ucom4_cpu_device::op_tmb()
@@ -375,7 +376,7 @@ void ucom4_cpu_device::op_tmb()
 void ucom4_cpu_device::op_tpa()
 {
 	// TPA B: skip next on bit(input port A)
-	m_skip = ((input_r(NEC_UCOM4_PORTA) & m_bitmask) != 0);
+	m_skip = ((input_r(PORTA) & m_bitmask) != 0);
 }
 
 void ucom4_cpu_device::op_tpb()
@@ -401,7 +402,7 @@ void ucom4_cpu_device::op_ia()
 {
 	// IA: Input port A to ACC
 	m_icount--;
-	m_acc = input_r(NEC_UCOM4_PORTA);
+	m_acc = input_r(PORTA);
 }
 
 void ucom4_cpu_device::op_ip()
@@ -414,7 +415,7 @@ void ucom4_cpu_device::op_oe()
 {
 	// OE: Output ACC to port E
 	m_icount--;
-	output_w(NEC_UCOM4_PORTE, m_acc);
+	output_w(PORTE, m_acc);
 }
 
 void ucom4_cpu_device::op_op()
@@ -426,8 +427,8 @@ void ucom4_cpu_device::op_op()
 void ucom4_cpu_device::op_ocd()
 {
 	// OCD X: Output X to ports C and D
-	output_w(NEC_UCOM4_PORTD, m_arg >> 4);
-	output_w(NEC_UCOM4_PORTC, m_arg & 0xf);
+	output_w(PORTD, m_arg >> 4);
+	output_w(PORTC, m_arg & 0xf);
 }
 
 
@@ -446,7 +447,7 @@ inline bool ucom4_cpu_device::check_op_43()
 {
 	// these opcodes are officially only supported on uCOM-43
 	if (m_family != NEC_UCOM43)
-		logerror("%s using uCOM-43 opcode $%02X at $%03X\n", tag(), m_op, m_prev_pc);
+		logerror("using uCOM-43 opcode $%02X at $%03X\n", m_op, m_prev_pc);
 
 	return (m_family == NEC_UCOM43);
 }
@@ -468,12 +469,12 @@ enum
 	UCOM43_F
 };
 
-inline UINT8 ucom4_cpu_device::ucom43_reg_r(int index)
+inline u8 ucom4_cpu_device::ucom43_reg_r(int index)
 {
 	return m_data->read_byte(m_datamask - index) & 0xf;
 }
 
-inline void ucom4_cpu_device::ucom43_reg_w(int index, UINT8 data)
+inline void ucom4_cpu_device::ucom43_reg_w(int index, u8 data)
 {
 	m_data->write_byte(m_datamask - index, data & 0xf);
 }
@@ -527,7 +528,7 @@ void ucom4_cpu_device::op_xaw()
 
 	// XAW: Exchange ACC with W
 	m_icount--;
-	UINT8 old_acc = m_acc;
+	u8 old_acc = m_acc;
 	m_acc = ucom43_reg_r(UCOM43_W);
 	ucom43_reg_w(UCOM43_W, old_acc);
 }
@@ -538,7 +539,7 @@ void ucom4_cpu_device::op_xaz()
 
 	// XAZ: Exchange ACC with Z
 	m_icount--;
-	UINT8 old_acc = m_acc;
+	u8 old_acc = m_acc;
 	m_acc = ucom43_reg_r(UCOM43_Z);
 	ucom43_reg_w(UCOM43_Z, old_acc);
 }
@@ -549,7 +550,7 @@ void ucom4_cpu_device::op_xhr()
 
 	// XHR: Exchange DPh with R
 	m_icount--;
-	UINT8 old_dph = m_dph;
+	u8 old_dph = m_dph;
 	m_dph = ucom43_reg_r(UCOM43_R);
 	ucom43_reg_w(UCOM43_R, old_dph);
 }
@@ -560,7 +561,7 @@ void ucom4_cpu_device::op_xhx()
 
 	// XHX: Exchange DPh with X
 	m_icount--;
-	UINT8 old_dph = m_dph;
+	u8 old_dph = m_dph;
 	m_dph = ucom43_reg_r(UCOM43_X);
 	ucom43_reg_w(UCOM43_X, old_dph);
 }
@@ -571,7 +572,7 @@ void ucom4_cpu_device::op_xls()
 
 	// XLS: Exchange DPl with S
 	m_icount--;
-	UINT8 old_dpl = m_dpl;
+	u8 old_dpl = m_dpl;
 	m_dpl = ucom43_reg_r(UCOM43_S);
 	ucom43_reg_w(UCOM43_S, old_dpl);
 }
@@ -582,7 +583,7 @@ void ucom4_cpu_device::op_xly()
 
 	// XLY: Exchange DPl with Y
 	m_icount--;
-	UINT8 old_dpl = m_dpl;
+	u8 old_dpl = m_dpl;
 	m_dpl = ucom43_reg_r(UCOM43_Y);
 	ucom43_reg_w(UCOM43_Y, old_dpl);
 }
@@ -592,7 +593,7 @@ void ucom4_cpu_device::op_xc()
 	if (!check_op_43()) return;
 
 	// XC: Exchange Carry F/F with Carry Save F/F
-	UINT8 c = m_carry_f;
+	u8 c = m_carry_f;
 	m_carry_f = m_carry_s_f;
 	m_carry_s_f = c;
 }
@@ -644,7 +645,7 @@ void ucom4_cpu_device::op_rar()
 	if (!check_op_43()) return;
 
 	// RAR: Rotate ACC Right through Carry F/F
-	UINT8 c = m_acc & 1;
+	u8 c = m_acc & 1;
 	m_acc = m_acc >> 1 | m_carry_f << 3;
 	m_carry_f = c;
 }
@@ -657,7 +658,7 @@ void ucom4_cpu_device::op_inm()
 	if (!check_op_43()) return;
 
 	// INM: Increment RAM, skip next on carry
-	UINT8 val = (ram_r() + 1) & 0xf;
+	u8 val = (ram_r() + 1) & 0xf;
 	ram_w(val);
 	m_skip = (val == 0);
 }
@@ -667,7 +668,7 @@ void ucom4_cpu_device::op_dem()
 	if (!check_op_43()) return;
 
 	// DEM: Decrement RAM, skip next on carry
-	UINT8 val = (ram_r() - 1) & 0xf;
+	u8 val = (ram_r() - 1) & 0xf;
 	ram_w(val);
 	m_skip = (val == 0xf);
 }
@@ -688,7 +689,7 @@ void ucom4_cpu_device::op_stm()
 	m_timer->adjust(base * ((m_arg & 0x3f) + 1));
 
 	if ((m_arg & 0xc0) != 0x80)
-		logerror("%s STM opcode unexpected upper arg $%02X at $%03X\n", tag(), m_arg & 0xc0, m_prev_pc);
+		logerror("STM opcode unexpected upper arg $%02X at $%03X\n", m_arg & 0xc0, m_prev_pc);
 }
 
 void ucom4_cpu_device::op_ttm()

@@ -104,6 +104,8 @@ TEST.TXT - suggests the content of a prototype version, which was expanded to ma
 #include "emu.h"
 #include "machine/68340.h"
 #include "sound/ymz280b.h"
+#include "screen.h"
+#include "speaker.h"
 
 class bfm_swp_state : public driver_device
 {
@@ -113,64 +115,63 @@ public:
 			m_maincpu(*this, "maincpu")
 	{ }
 
-	UINT32* m_cpuregion;
-	std::unique_ptr<UINT32[]> m_mainram;
+	uint32_t* m_cpuregion;
+	std::unique_ptr<uint32_t[]> m_mainram;
 
-	DECLARE_READ32_MEMBER(bfm_swp_mem_r);
-	DECLARE_WRITE32_MEMBER(bfm_swp_mem_w);
+	uint32_t bfm_swp_mem_r(offs_t offset, uint32_t mem_mask = ~0);
+	void bfm_swp_mem_w(offs_t offset, uint32_t data, uint32_t mem_mask = ~0);
 
 
-	UINT32 screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
+	uint32_t screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
 	{
 		return 0;
 	}
 
+	void bfm_swp(machine_config &config);
+	void bfm_swp_map(address_map &map);
 protected:
 
 	// devices
-	required_device<m68340cpu_device> m_maincpu;
+	required_device<m68340_cpu_device> m_maincpu;
 
 	virtual void machine_start() override;
 };
 
-READ32_MEMBER(bfm_swp_state::bfm_swp_mem_r)
+uint32_t bfm_swp_state::bfm_swp_mem_r(offs_t offset, uint32_t mem_mask)
 {
-	int pc = space.device().safe_pc();
-	int cs = m68340_get_cs(m_maincpu, offset * 4);
+	int pc = m_maincpu->pc();
+	int cs = m_maincpu->get_cs(offset * 4);
 
 	switch ( cs )
 	{
 		case 1:
-			if (offset<0x100000/4) return m_cpuregion[offset];
-
+			if (offset<0x100000/4)
+				return m_cpuregion[offset];
+			[[fallthrough]]; // FIXME: really?
 		case 2:
 			offset&=0x3fff;
 			return m_mainram[offset];
 
 		default:
 			logerror("%08x maincpu read access offset %08x mem_mask %08x cs %d\n", pc, offset*4, mem_mask, cs);
-
 	}
 
 	return 0x0000;
 }
 
-WRITE32_MEMBER(bfm_swp_state::bfm_swp_mem_w)
+void bfm_swp_state::bfm_swp_mem_w(offs_t offset, uint32_t data, uint32_t mem_mask)
 {
-	int pc = space.device().safe_pc();
-	int cs = m68340_get_cs(m_maincpu, offset * 4);
+	int pc = m_maincpu->pc();
+	int cs = m_maincpu->get_cs(offset * 4);
 
 	switch ( cs )
 	{
 		default:
 			logerror("%08x maincpu write access offset %08x data %08x mem_mask %08x cs %d\n", pc, offset*4, data, mem_mask, cs);
-
+			[[fallthrough]];
 		case 2:
 			offset&=0x3fff;
 			COMBINE_DATA(&m_mainram[offset]);
-			break;
-
-
 	}
 
 }
@@ -178,10 +179,11 @@ WRITE32_MEMBER(bfm_swp_state::bfm_swp_mem_w)
 
 
 
-static ADDRESS_MAP_START( bfm_swp_map, AS_PROGRAM, 32, bfm_swp_state )
-	AM_RANGE(0x00000000, 0x000fffff) AM_ROM
-	AM_RANGE(0x00000000, 0xffffffff) AM_READWRITE(bfm_swp_mem_r, bfm_swp_mem_w)
-ADDRESS_MAP_END
+void bfm_swp_state::bfm_swp_map(address_map &map)
+{
+	map(0x00000000, 0xffffffff).rw(FUNC(bfm_swp_state::bfm_swp_mem_r), FUNC(bfm_swp_state::bfm_swp_mem_w));
+	map(0x00000000, 0x000fffff).rom();
+}
 
 
 static INPUT_PORTS_START( bfm_swp )
@@ -190,31 +192,30 @@ INPUT_PORTS_END
 
 void bfm_swp_state::machine_start()
 {
-	m_cpuregion = (UINT32*)memregion( "maincpu" )->base();
-	m_mainram = make_unique_clear<UINT32[]>(0x10000);
+	m_cpuregion = (uint32_t*)memregion( "maincpu" )->base();
+	m_mainram = make_unique_clear<uint32_t[]>(0x10000);
 
 }
 
 
-static MACHINE_CONFIG_START( bfm_swp, bfm_swp_state )
-
+void bfm_swp_state::bfm_swp(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", M68340, 16000000)
-	MCFG_CPU_PROGRAM_MAP(bfm_swp_map)
+	M68340(config, m_maincpu, 16000000);
+	m_maincpu->set_addrmap(AS_PROGRAM, &bfm_swp_state::bfm_swp_map);
 
 
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_REFRESH_RATE(60)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(0))
-	MCFG_SCREEN_UPDATE_DRIVER(bfm_swp_state, screen_update)
-	MCFG_SCREEN_SIZE(64*8, 64*8)
-	MCFG_SCREEN_VISIBLE_AREA(0*8, 32*8-1, 0*8, 32*8-1)
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_RASTER));
+	screen.set_refresh_hz(60);
+	screen.set_vblank_time(ATTOSECONDS_IN_USEC(0));
+	screen.set_screen_update(FUNC(bfm_swp_state::screen_update));
+	screen.set_size(64*8, 64*8);
+	screen.set_visarea(0*8, 32*8-1, 0*8, 32*8-1);
 
-	MCFG_SPEAKER_STANDARD_MONO("mono")
+	SPEAKER(config, "mono").front_center();
 
-	MCFG_SOUND_ADD("ymz", YMZ280B, 10000000 )
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 1.0)
-MACHINE_CONFIG_END
+	YMZ280B(config, "ymz", 10000000).add_route(ALL_OUTPUTS, "mono", 1.0);
+}
 
 ROM_START( c3_rtime )
 	ROM_REGION( 0x100000, "maincpu", 0 )
@@ -299,7 +300,7 @@ ROM_END
 
 
 
-GAME( 199?, c3_rtime        , 0         , bfm_swp, bfm_swp, driver_device, 0, ROT0, "BFM", "Radio Times (Bellfruit) (Cobra 3)", MACHINE_IS_SKELETON )
-GAME( 199?, c3_telly        , 0         , bfm_swp, bfm_swp, driver_device, 0, ROT0, "BFM", "Telly Addicts (Bellfruit) (Cobra 3)", MACHINE_IS_SKELETON )
-GAME( 199?, c3_totp         , 0         , bfm_swp, bfm_swp, driver_device, 0, ROT0, "BFM", "Top of the Pops (Bellfruit) (Cobra 3?)", MACHINE_IS_SKELETON )
-GAME( 199?, c3_ppays        , 0         , bfm_swp, bfm_swp, driver_device, 0, ROT0, "BFM", "The Phrase That Pays (Bellfruit) (Cobra 3?)", MACHINE_IS_SKELETON )
+GAME( 199?, c3_rtime, 0, bfm_swp, bfm_swp, bfm_swp_state, empty_init, ROT0, "BFM", "Radio Times (Bellfruit) (Cobra 3)", MACHINE_IS_SKELETON )
+GAME( 199?, c3_telly, 0, bfm_swp, bfm_swp, bfm_swp_state, empty_init, ROT0, "BFM", "Telly Addicts (Bellfruit) (Cobra 3)", MACHINE_IS_SKELETON )
+GAME( 199?, c3_totp,  0, bfm_swp, bfm_swp, bfm_swp_state, empty_init, ROT0, "BFM", "Top of the Pops (Bellfruit) (Cobra 3?)", MACHINE_IS_SKELETON )
+GAME( 199?, c3_ppays, 0, bfm_swp, bfm_swp, bfm_swp_state, empty_init, ROT0, "BFM", "The Phrase That Pays (Bellfruit) (Cobra 3?)", MACHINE_IS_SKELETON )

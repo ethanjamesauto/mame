@@ -10,67 +10,28 @@
 
 #include "emu.h"
 #include "i8xc196.h"
+#include "i8xc196d.h"
 
-i8xc196_device::i8xc196_device(const machine_config &mconfig, device_type type, const char *name, const char *tag, device_t *owner, UINT32 clock, const char *shortname, const char *source) :
-	mcs96_device(mconfig, type, name, tag, owner, clock, 16, shortname, source)
+i8xc196_device::i8xc196_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock) :
+	mcs96_device(mconfig, type, tag, owner, clock, 16, address_map_constructor(FUNC(i8xc196_device::internal_regs), this))
 {
 }
 
-offs_t i8xc196_device::disasm_disassemble(char *buffer, offs_t pc, const UINT8 *oprom, const UINT8 *opram, UINT32 options)
+std::unique_ptr<util::disasm_interface> i8xc196_device::create_disassembler()
 {
-	return disasm_generic(buffer, pc, oprom, opram, options, disasm_entries);
+	return std::make_unique<i8xc196_disassembler>();
 }
 
-void i8xc196_device::io_w8(UINT8 adr, UINT8 data)
+void i8xc196_device::internal_regs(address_map &map)
 {
-	switch(adr) {
-	case 0:
-		break;
-	case 1:
-		break;
-	default:
-		logerror("%s: io_w8 %02x, %02x (%04x)\n", tag(), adr, data, PPC);
-	}
-	return;
-}
-
-void i8xc196_device::io_w16(UINT8 adr, UINT16 data)
-{
-	switch(adr) {
-	case 0:
-		break;
-	default:
-		io_w8(adr, data);
-		io_w8(adr+1, data>>8);
-		break;
-	}
-	return;
-}
-
-UINT8 i8xc196_device::io_r8(UINT8 adr)
-{
-	switch(adr) {
-	case 0x00:
-		return 0x00;
-	case 0x01:
-		return 0x00;
-	}
-	UINT8 data = 0x00;
-	logerror("%s: io_r8 %02x, %02x (%04x)\n", tag(), adr, data, PPC);
-	return data;
-}
-
-UINT16 i8xc196_device::io_r16(UINT8 adr)
-{
-	if(adr < 2)
-		return 0x0000;
-	UINT16 data = 0x0000;
-	logerror("%s: io_r16 %02x, %04x (%04x)\n", tag(), adr, data, PPC);
-	return data;
+	map(0x00, 0x01).lr16([] () -> u16 { return 0; }, "r0").nopw();
+	map(0x08, 0x08).rw(FUNC(i8xc196_device::int_mask_r), FUNC(i8xc196_device::int_mask_w));
+	map(0x09, 0x09).rw(FUNC(i8xc196_device::int_pending_r), FUNC(i8xc196_device::int_pending_w));
+	map(0x18, 0xff).ram().share("register_file");
 }
 
 void i8xc196_device::do_exec_partial()
 {
 }
 
-#include "cpu/mcs96/i8xc196.inc"
+#include "cpu/mcs96/i8xc196.hxx"

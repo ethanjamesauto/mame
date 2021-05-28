@@ -1,39 +1,42 @@
 // license:BSD-3-Clause
 // copyright-holders:Sergey Svishchev
 #include "emu.h"
-#include "includes/genpc.h"
-#include "machine/pc_fdc.h"
+#include "machine/genpc.h"
+
 #include "cpu/i86/i86.h"
-#include "bus/isa/isa.h"
-#include "bus/isa/isa_cards.h"
-#include "formats/asst128_dsk.h"
+#include "bus/pc_joy/pc_joy.h"
 #include "bus/pc_kbd/keyboards.h"
+#include "bus/pc_kbd/pc_kbdc.h"
+#include "imagedev/floppy.h"
+#include "machine/pc_fdc.h"
+
+#include "formats/asst128_dsk.h"
+
+
+DECLARE_DEVICE_TYPE(ASST128_MOTHERBOARD, asst128_mb_device)
 
 class asst128_mb_device : public ibm5150_mb_device
 {
 public:
 	// construction/destruction
-	asst128_mb_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-		: ibm5150_mb_device(mconfig, tag, owner, clock) { }
+	asst128_mb_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock = 0)
+		: ibm5150_mb_device(mconfig, ASST128_MOTHERBOARD, tag, owner, clock)
+	{
+	}
 
-protected:
-	// device-level overrides
-	void device_start() override;
+	void map(address_map &map);
 };
 
-void asst128_mb_device::device_start()
+void asst128_mb_device::map(address_map &map)
 {
-	install_device(0x0020, 0x0021, 0, 0, read8_delegate(FUNC(pic8259_device::read), (pic8259_device*)m_pic8259), write8_delegate(FUNC(pic8259_device::write), (pic8259_device*)m_pic8259) );
-	install_device(0x0040, 0x0043, 0, 0, read8_delegate(FUNC(pit8253_device::read), (pit8253_device*)m_pit8253), write8_delegate(FUNC(pit8253_device::write), (pit8253_device*)m_pit8253) );
-	install_device(0x0060, 0x0063, 0, 0, read8_delegate(FUNC(i8255_device::read),   (i8255_device*)m_ppi8255),   write8_delegate(FUNC(i8255_device::write),   (i8255_device*)m_ppi8255)   );
-	install_device(0x0080, 0x0087, 0, 0, read8_delegate(FUNC(ibm5160_mb_device::pc_page_r), this), write8_delegate(FUNC(ibm5160_mb_device::pc_page_w),this) );
-	install_device(0x00a0, 0x00a1, 0, 0, read8_delegate(), write8_delegate(FUNC(ibm5160_mb_device::nmi_enable_w),this));
-	/* MESS managed RAM */
-	if ( m_ram->pointer() )
-		membank( "bank10" )->set_base( m_ram->pointer() );
+	map(0x0020, 0x002f).rw("pic8259", FUNC(pic8259_device::read), FUNC(pic8259_device::write));
+	map(0x0040, 0x004f).rw("pit8253", FUNC(pit8253_device::read), FUNC(pit8253_device::write));
+	map(0x0060, 0x006f).rw("ppi8255", FUNC(i8255_device::read), FUNC(i8255_device::write));
+	map(0x0080, 0x008f).w(FUNC(asst128_mb_device::pc_page_w));
+	map(0x00a0, 0x00a1).w(FUNC(asst128_mb_device::nmi_enable_w));
 }
 
-const device_type ASST128_MOTHERBOARD = &device_creator<asst128_mb_device>;
+DEFINE_DEVICE_TYPE(ASST128_MOTHERBOARD, asst128_mb_device, "asst128_mb", "ASST128_MOTHERBOARD")
 
 class asst128_state : public driver_device
 {
@@ -42,104 +45,111 @@ public:
 	asst128_state(const machine_config &mconfig, device_type type, const char *tag)
 		: driver_device(mconfig, type, tag)
 		, m_maincpu(*this, "maincpu")
-		, m_mb(*this, "mb")
 		, m_fdc(*this, "fdc")
 	{ }
 
-	required_device<cpu_device>  m_maincpu;
-	required_device<asst128_mb_device>  m_mb;
+	void asst128(machine_config &config);
+
+private:
+	required_device<cpu_device> m_maincpu;
 	required_device<pc_fdc_xt_device> m_fdc;
 
-	DECLARE_FLOPPY_FORMATS( asst128_formats );
-	DECLARE_WRITE8_MEMBER(asst128_fdc_dor_w);
+	static void asst128_formats(format_registration &fr);
+	void asst128_fdc_dor_w(uint8_t data);
 
 	void machine_start() override;
+	void asst128_io(address_map &map);
+	void asst128_map(address_map &map);
 };
 
 void asst128_state::machine_start()
 {
-	memory_region* font = memregion(":board0:cga_mc1502:gfx1");
-	memcpy(font->base(), memregion("maincpu")->base()+0xffa6e, 0x0400);
-	memcpy(font->base()+0x0400, memregion("maincpu")->base()+0xf4000, 0x0400);
+	memory_region *font = memregion(":board0:cga_mc1502:gfx1");
+	memcpy(font->base(), memregion("bios")->base() + 0xfa6e, 0x0400);
+	memcpy(font->base() + 0x0400, memregion("bios")->base() + 0x4000, 0x0400);
 }
 
-WRITE8_MEMBER(asst128_state::asst128_fdc_dor_w)
+void asst128_state::asst128_fdc_dor_w(uint8_t data)
 {
 	m_fdc->tc_w((data & 0x80) == 0x80);
-	m_fdc->dor_w(space, offset, data, mem_mask);
+	m_fdc->dor_w(data);
 }
 
-static ADDRESS_MAP_START( asst128_map, AS_PROGRAM, 16, asst128_state)
-	ADDRESS_MAP_UNMAP_HIGH
-	AM_RANGE(0x00000, 0x7ffff) AM_RAMBANK("bank10")
-	AM_RANGE(0xa0000, 0xbffff) AM_NOP
-	AM_RANGE(0xc0000, 0xc7fff) AM_ROM
-	AM_RANGE(0xc8000, 0xcffff) AM_ROM
-	AM_RANGE(0xd0000, 0xeffff) AM_NOP
-	AM_RANGE(0xf0000, 0xfffff) AM_ROM
-ADDRESS_MAP_END
+void asst128_state::asst128_map(address_map &map)
+{
+	map.unmap_value_high();
+	map(0xf0000, 0xfffff).rom().region("bios", 0);
+}
 
-static ADDRESS_MAP_START(asst128_io, AS_IO, 16, asst128_state)
-	ADDRESS_MAP_UNMAP_HIGH
-	AM_RANGE(0x0200, 0x0207) AM_DEVREADWRITE8("pc_joy", pc_joy_device, joy_port_r, joy_port_w, 0xffff)
-	AM_RANGE(0x03f2, 0x03f3) AM_WRITE8(asst128_fdc_dor_w, 0xffff)
-	AM_RANGE(0x03f4, 0x03f5) AM_DEVICE8("fdc:upd765", upd765a_device, map, 0xffff)
-ADDRESS_MAP_END
+void asst128_state::asst128_io(address_map &map)
+{
+	map.unmap_value_high();
+	map(0x0000, 0x00ff).m("mb", FUNC(asst128_mb_device::map));
+	map(0x0200, 0x0207).rw("pc_joy", FUNC(pc_joy_device::joy_port_r), FUNC(pc_joy_device::joy_port_w));
+	map(0x03f2, 0x03f3).w(FUNC(asst128_state::asst128_fdc_dor_w));
+	map(0x03f4, 0x03f5).m("fdc:upd765", FUNC(upd765a_device::map));
+}
 
-static SLOT_INTERFACE_START( asst128_floppies )
-	SLOT_INTERFACE( "525ssqd", FLOPPY_525_SSQD )
-SLOT_INTERFACE_END
+static void asst128_floppies(device_slot_interface &device)
+{
+	device.option_add("525ssqd", FLOPPY_525_SSQD);
+}
 
-FLOPPY_FORMATS_MEMBER( asst128_state::asst128_formats )
-	FLOPPY_ASST128_FORMAT
-FLOPPY_FORMATS_END
+void asst128_state::asst128_formats(format_registration &fr)
+{
+	fr.add_mfm_containers();
+	fr.add(FLOPPY_ASST128_FORMAT);
+}
 
 static DEVICE_INPUT_DEFAULTS_START( asst128 )
 	DEVICE_INPUT_DEFAULTS("DSW0", 0x30, 0x20)
 DEVICE_INPUT_DEFAULTS_END
 
-static MACHINE_CONFIG_START( asst128, asst128_state )
-	MCFG_CPU_ADD("maincpu", I8086, 4772720)
-	MCFG_CPU_PROGRAM_MAP(asst128_map)
-	MCFG_CPU_IO_MAP(asst128_io)
-	MCFG_CPU_IRQ_ACKNOWLEDGE_DEVICE("mb:pic8259", pic8259_device, inta_cb)
+void asst128_state::asst128(machine_config &config)
+{
+	I8086(config, m_maincpu, 4772720);
+	m_maincpu->set_addrmap(AS_PROGRAM, &asst128_state::asst128_map);
+	m_maincpu->set_addrmap(AS_IO, &asst128_state::asst128_io);
+	m_maincpu->set_irq_acknowledge_callback("mb:pic8259", FUNC(pic8259_device::inta_cb));
 
-	MCFG_DEVICE_ADD("mb", ASST128_MOTHERBOARD, 0)
-	asst128_mb_device::static_set_cputag(*device, "maincpu");
-	MCFG_DEVICE_INPUT_DEFAULTS(asst128)
+	asst128_mb_device &mb(ASST128_MOTHERBOARD(config, "mb"));
+	mb.set_cputag(m_maincpu);
+	mb.int_callback().set_inputline(m_maincpu, 0);
+	mb.nmi_callback().set_inputline(m_maincpu, INPUT_LINE_NMI);
+	mb.kbdclk_callback().set("kbd", FUNC(pc_kbdc_device::clock_write_from_mb));
+	mb.kbddata_callback().set("kbd", FUNC(pc_kbdc_device::data_write_from_mb));
+	mb.set_input_default(DEVICE_INPUT_DEFAULTS_NAME(asst128));
 
-//  MCFG_DEVICE_REMOVE("mb:dma8237")
+	subdevice<cassette_image_device>("mb:cassette")->set_default_state(CASSETTE_STOPPED | CASSETTE_MOTOR_ENABLED | CASSETTE_SPEAKER_ENABLED);
 
-	MCFG_DEVICE_REMOVE("mb:cassette")
-	MCFG_CASSETTE_ADD("mb:cassette")
-	MCFG_CASSETTE_DEFAULT_STATE(CASSETTE_STOPPED | CASSETTE_MOTOR_ENABLED | CASSETTE_SPEAKER_ENABLED)
+	// FIXME: determine ISA bus clock
+	ISA8_SLOT(config, "board0", 0, "mb:isa", pc_isa8_cards, "cga_mc1502", true);
+	ISA8_SLOT(config, "board1", 0, "mb:isa", pc_isa8_cards, "lpt", true);
 
-	MCFG_ISA8_SLOT_ADD("mb:isa", "board0", pc_isa8_cards, "cga_mc1502", true)
-	MCFG_ISA8_SLOT_ADD("mb:isa", "board1", pc_isa8_cards, "lpt", true)
+	pc_kbdc_device &kbd(PC_KBDC(config, "kbd", pc_xt_keyboards, STR_KBD_IBM_PC_XT_83));
+	kbd.out_clock_cb().set("mb", FUNC(asst128_mb_device::keyboard_clock_w));
+	kbd.out_data_cb().set("mb", FUNC(asst128_mb_device::keyboard_data_w));
 
-	MCFG_PC_KBDC_SLOT_ADD("mb:pc_kbdc", "kbd", pc_xt_keyboards, STR_KBD_IBM_PC_XT_83)
+	PC_FDC_XT(config, m_fdc, 0);
+	m_fdc->intrq_wr_callback().set("mb:pic8259", FUNC(pic8259_device::ir6_w));
+	FLOPPY_CONNECTOR(config, "fdc:0", asst128_floppies, "525ssqd", asst128_state::asst128_formats);
+	FLOPPY_CONNECTOR(config, "fdc:1", asst128_floppies, "525ssqd", asst128_state::asst128_formats);
 
-	MCFG_PC_FDC_XT_ADD("fdc")
-	MCFG_PC_FDC_INTRQ_CALLBACK(DEVWRITELINE("mb:pic8259", pic8259_device, ir6_w))
-	MCFG_FLOPPY_DRIVE_ADD("fdc:0", asst128_floppies, "525ssqd", asst128_state::asst128_formats)
-	MCFG_FLOPPY_DRIVE_ADD("fdc:1", asst128_floppies, "525ssqd", asst128_state::asst128_formats)
+	PC_JOY(config, "pc_joy");
 
-	MCFG_PC_JOY_ADD("pc_joy")
-
-	MCFG_RAM_ADD(RAM_TAG)
-	MCFG_RAM_DEFAULT_SIZE("640K")
-MACHINE_CONFIG_END
+	RAM(config, RAM_TAG).set_default_size("512K").set_extra_options("64K, 128K, 256K");
+}
 
 ROM_START( asst128 )
-	ROM_REGION16_LE(0x100000,"maincpu", 0)
-	ROM_LOAD( "extbios.bin",      0xf4000, 0x2000, CRC(e3bf22de) SHA1(d4319edc82c0015ca0adc6c8771e887659717e62))
-	ROM_LOAD( "basic.bin",        0xf6000, 0x8000, CRC(a4ec66f6) SHA1(80e934986022681ccde180e92aa108e716c4f19b))
-	ROM_LOAD( "mainbios.bin",     0xfe000, 0x2000, CRC(8426cbf5) SHA1(41d14137ffa651977041da22aa8071c0f7854158))
+	ROM_REGION16_LE(0x10000,"bios", 0)
+	ROM_LOAD( "extbios.bin",      0x4000, 0x2000, CRC(e3bf22de) SHA1(d4319edc82c0015ca0adc6c8771e887659717e62))
+	ROM_LOAD( "basic.bin",        0x6000, 0x8000, CRC(a4ec66f6) SHA1(80e934986022681ccde180e92aa108e716c4f19b))
+	ROM_LOAD( "mainbios.bin",     0xe000, 0x2000, CRC(8426cbf5) SHA1(41d14137ffa651977041da22aa8071c0f7854158))
 
 	// XXX needs dumping
 	ROM_REGION(0x2000,"gfx1", ROMREGION_ERASE00)
 	ROM_LOAD( "asst128cg.bin", 0, 0x2000, NO_DUMP )
 ROM_END
 
-/*    YEAR  NAME        PARENT      COMPAT      MACHINE     INPUT       INIT        COMPANY            FULLNAME */
-COMP( 198?, asst128,    ibm5150,    0,          asst128,    0,      driver_device, 0,   "Schetmash", "Assistent 128", MACHINE_NOT_WORKING)
+//    YEAR  NAME     PARENT   COMPAT  MACHINE  INPUT  CLASS          INIT        COMPANY      FULLNAME         FLAGS
+COMP( 198?, asst128, ibm5150, 0,      asst128, 0,     asst128_state, empty_init, "Schetmash", "Assistent 128", MACHINE_NOT_WORKING)

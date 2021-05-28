@@ -1,5 +1,6 @@
 // license:BSD-3-Clause
 // copyright-holders:Curt Coder
+#include "emu.h"
 #include "includes/pc8401a.h"
 
 /*
@@ -44,7 +45,7 @@ void pc8401a_state::scan_keyboard()
 	/* scan keyboard */
 	for (int row = 0; row < 10; row++)
 	{
-		UINT8 data = m_io_y[row]->read();
+		uint8_t data = m_io_y[row]->read();
 
 		if (data != 0xff)
 		{
@@ -56,7 +57,7 @@ void pc8401a_state::scan_keyboard()
 	if (!m_key_strobe && strobe)
 	{
 		/* trigger interrupt */
-		m_maincpu->set_input_line_and_vector(INPUT_LINE_IRQ0, ASSERT_LINE, 0x28);
+		m_maincpu->set_input_line_and_vector(INPUT_LINE_IRQ0, ASSERT_LINE, 0xef); // Z80 - RST 28h
 		logerror("INTERRUPT\n");
 	}
 
@@ -70,7 +71,7 @@ TIMER_DEVICE_CALLBACK_MEMBER(pc8401a_state::pc8401a_keyboard_tick)
 
 /* Read/Write Handlers */
 
-void pc8401a_state::bankswitch(UINT8 data)
+void pc8401a_state::bankswitch(uint8_t data)
 {
 	address_space &program = m_maincpu->space(AS_PROGRAM);
 
@@ -84,14 +85,14 @@ void pc8401a_state::bankswitch(UINT8 data)
 		if (rombank < 3)
 		{
 			/* internal ROM */
-			program.install_read_bank(0x0000, 0x7fff, "bank1");
+			program.install_read_bank(0x0000, 0x7fff, membank("bank1"));
 			program.unmap_write(0x0000, 0x7fff);
 			membank("bank1")->set_entry(rombank);
 		}
 		else if (m_cart_rom)
 		{
 			/* ROM cartridge */
-			program.install_read_bank(0x0000, 0x7fff, "bank1");
+			program.install_read_bank(0x0000, 0x7fff, membank("bank1"));
 			program.unmap_write(0x0000, 0x7fff);
 			membank("bank1")->set_entry(6);
 		}
@@ -101,13 +102,13 @@ void pc8401a_state::bankswitch(UINT8 data)
 		break;
 
 	case 1: /* RAM 0000H to 7FFFH */
-		program.install_readwrite_bank(0x0000, 0x7fff, "bank1");
+		program.install_readwrite_bank(0x0000, 0x7fff, membank("bank1"));
 		membank("bank1")->set_entry(4);
 		//logerror("0x0000-0x7fff = RAM 0-7fff\n");
 		break;
 
 	case 2: /* RAM 8000H to FFFFH */
-		program.install_readwrite_bank(0x0000, 0x7fff, "bank1");
+		program.install_readwrite_bank(0x0000, 0x7fff, membank("bank1"));
 		membank("bank1")->set_entry(5);
 		//logerror("0x0000-0x7fff = RAM 8000-ffff\n");
 		break;
@@ -120,19 +121,19 @@ void pc8401a_state::bankswitch(UINT8 data)
 	switch (ram8000)
 	{
 	case 0: /* cell addresses 0000H to 3FFFH */
-		program.install_readwrite_bank(0x8000, 0xbfff, "bank3");
+		program.install_readwrite_bank(0x8000, 0xbfff, membank("bank3"));
 		membank("bank3")->set_entry(0);
 		//logerror("0x8000-0xbfff = RAM 0-3fff\n");
 		break;
 
 	case 1: /* cell addresses 4000H to 7FFFH */
-		program.install_readwrite_bank(0x8000, 0xbfff, "bank3");
+		program.install_readwrite_bank(0x8000, 0xbfff, membank("bank3"));
 		membank("bank3")->set_entry(1);
 		//logerror("0x8000-0xbfff = RAM 4000-7fff\n");
 		break;
 
 	case 2: /* cell addresses 8000H to BFFFH */
-		program.install_readwrite_bank(0x8000, 0xbfff, "bank3");
+		program.install_readwrite_bank(0x8000, 0xbfff, membank("bank3"));
 		membank("bank3")->set_entry(2);
 		//logerror("0x8000-0xbfff = RAM 8000-bfff\n");
 		break;
@@ -140,7 +141,7 @@ void pc8401a_state::bankswitch(UINT8 data)
 	case 3: /* RAM cartridge */
 		if (m_ram->size() > 64)
 		{
-			program.install_readwrite_bank(0x8000, 0xbfff, "bank3");
+			program.install_readwrite_bank(0x8000, 0xbfff, membank("bank3"));
 			membank("bank3")->set_entry(3); // TODO or 4
 		}
 		else
@@ -154,7 +155,7 @@ void pc8401a_state::bankswitch(UINT8 data)
 	if (BIT(data, 6))
 	{
 		/* CRT video RAM */
-		program.install_readwrite_bank(0xc000, 0xdfff, "bank4");
+		program.install_readwrite_bank(0xc000, 0xdfff, membank("bank4"));
 		program.unmap_readwrite(0xe000, 0xe7ff);
 		membank("bank4")->set_entry(1);
 		//logerror("0xc000-0xdfff = video RAM\n");
@@ -162,13 +163,13 @@ void pc8401a_state::bankswitch(UINT8 data)
 	else
 	{
 		/* RAM */
-		program.install_readwrite_bank(0xc000, 0xe7ff, "bank4");
+		program.install_readwrite_bank(0xc000, 0xe7ff, membank("bank4"));
 		membank("bank4")->set_entry(0);
 		//logerror("0xc000-0e7fff = RAM c000-e7fff\n");
 	}
 }
 
-WRITE8_MEMBER( pc8401a_state::mmr_w )
+void pc8401a_state::mmr_w(uint8_t data)
 {
 	/*
 
@@ -193,12 +194,12 @@ WRITE8_MEMBER( pc8401a_state::mmr_w )
 	m_mmr = data;
 }
 
-READ8_MEMBER( pc8401a_state::mmr_r )
+uint8_t pc8401a_state::mmr_r()
 {
 	return m_mmr;
 }
 
-READ8_MEMBER( pc8401a_state::rtc_r )
+uint8_t pc8401a_state::rtc_r()
 {
 	/*
 
@@ -218,7 +219,7 @@ READ8_MEMBER( pc8401a_state::rtc_r )
 	return (m_rtc->data_out_r() << 1) | (m_rtc->tp_r() << 2);
 }
 
-WRITE8_MEMBER( pc8401a_state::rtc_cmd_w )
+void pc8401a_state::rtc_cmd_w(uint8_t data)
 {
 	/*
 
@@ -241,7 +242,7 @@ WRITE8_MEMBER( pc8401a_state::rtc_cmd_w )
 	m_rtc->data_in_w(BIT(data, 3));
 }
 
-WRITE8_MEMBER( pc8401a_state::rtc_ctrl_w )
+void pc8401a_state::rtc_ctrl_w(uint8_t data)
 {
 	/*
 
@@ -263,13 +264,13 @@ WRITE8_MEMBER( pc8401a_state::rtc_ctrl_w )
 	m_rtc->clk_w(BIT(data, 2));
 }
 
-READ8_MEMBER( pc8401a_state::io_rom_data_r )
+uint8_t pc8401a_state::io_rom_data_r()
 {
 	//logerror("I/O ROM read from %05x\n", m_io_addr);
-	return m_io_cart->read_rom(space, m_io_addr);
+	return m_io_cart->read_rom(m_io_addr);
 }
 
-WRITE8_MEMBER( pc8401a_state::io_rom_addr_w )
+void pc8401a_state::io_rom_addr_w(offs_t offset, uint8_t data)
 {
 	switch (offset)
 	{
@@ -291,7 +292,7 @@ WRITE8_MEMBER( pc8401a_state::io_rom_addr_w )
 	}
 }
 
-READ8_MEMBER( pc8401a_state::port70_r )
+uint8_t pc8401a_state::port70_r()
 {
 	/*
 
@@ -311,17 +312,17 @@ READ8_MEMBER( pc8401a_state::port70_r )
 	return 0x10 | m_key_strobe;
 }
 
-READ8_MEMBER( pc8401a_state::port71_r )
+uint8_t pc8401a_state::port71_r()
 {
 	return m_key_latch;
 }
 
-WRITE8_MEMBER( pc8401a_state::port70_w )
+void pc8401a_state::port70_w(uint8_t data)
 {
 	m_key_strobe = 0;
 }
 
-WRITE8_MEMBER( pc8401a_state::port71_w )
+void pc8401a_state::port71_w(uint8_t data)
 {
 	m_maincpu->set_input_line(INPUT_LINE_IRQ0, CLEAR_LINE);
 
@@ -330,55 +331,57 @@ WRITE8_MEMBER( pc8401a_state::port71_w )
 
 /* Memory Maps */
 
-static ADDRESS_MAP_START( pc8401a_mem, AS_PROGRAM, 8, pc8401a_state )
-	ADDRESS_MAP_UNMAP_HIGH
-	AM_RANGE(0x0000, 0x7fff) AM_RAMBANK("bank1")
-	AM_RANGE(0x8000, 0xbfff) AM_RAMBANK("bank3")
-	AM_RANGE(0xc000, 0xe7ff) AM_RAMBANK("bank4")
-	AM_RANGE(0xe800, 0xffff) AM_RAMBANK("bank5")
-ADDRESS_MAP_END
+void pc8401a_state::pc8401a_mem(address_map &map)
+{
+	map.unmap_value_high();
+	map(0x0000, 0x7fff).bankrw("bank1");
+	map(0x8000, 0xbfff).bankrw("bank3");
+	map(0xc000, 0xe7ff).bankrw("bank4");
+	map(0xe800, 0xffff).bankrw("bank5");
+}
 
-static ADDRESS_MAP_START( pc8401a_io, AS_IO, 8, pc8401a_state )
-	ADDRESS_MAP_UNMAP_HIGH
-	ADDRESS_MAP_GLOBAL_MASK(0xff)
-ADDRESS_MAP_END
+void pc8401a_state::pc8401a_io(address_map &map)
+{
+	map.unmap_value_high();
+	map.global_mask(0xff);
+}
 
-static ADDRESS_MAP_START( pc8500_io, AS_IO, 8, pc8401a_state )
-	ADDRESS_MAP_UNMAP_HIGH
-	ADDRESS_MAP_GLOBAL_MASK(0xff)
-	AM_RANGE(0x00, 0x00) AM_READ_PORT("Y.0")
-	AM_RANGE(0x01, 0x01) AM_READ_PORT("Y.1")
-	AM_RANGE(0x02, 0x02) AM_READ_PORT("Y.2")
-	AM_RANGE(0x03, 0x03) AM_READ_PORT("Y.3")
-	AM_RANGE(0x04, 0x04) AM_READ_PORT("Y.4")
-	AM_RANGE(0x05, 0x05) AM_READ_PORT("Y.5")
-	AM_RANGE(0x06, 0x06) AM_READ_PORT("Y.6")
-	AM_RANGE(0x07, 0x07) AM_READ_PORT("Y.7")
-	AM_RANGE(0x08, 0x08) AM_READ_PORT("Y.8")
-	AM_RANGE(0x09, 0x09) AM_READ_PORT("Y.9")
-	AM_RANGE(0x10, 0x10) AM_WRITE(rtc_cmd_w)
-	AM_RANGE(0x20, 0x20) AM_DEVREADWRITE(I8251_TAG, i8251_device, data_r, data_w)
-	AM_RANGE(0x21, 0x21) AM_DEVREADWRITE(I8251_TAG, i8251_device, status_r, control_w)
-	AM_RANGE(0x30, 0x30) AM_READWRITE(mmr_r, mmr_w)
-//  AM_RANGE(0x31, 0x31)
-	AM_RANGE(0x40, 0x40) AM_READWRITE(rtc_r, rtc_ctrl_w)
-//  AM_RANGE(0x41, 0x41)
-//  AM_RANGE(0x50, 0x51)
-	AM_RANGE(0x60, 0x60) AM_DEVREADWRITE(SED1330_TAG, sed1330_device, status_r, data_w)
-	AM_RANGE(0x61, 0x61) AM_DEVREADWRITE(SED1330_TAG, sed1330_device, data_r, command_w)
-	AM_RANGE(0x70, 0x70) AM_READWRITE(port70_r, port70_w)
-	AM_RANGE(0x71, 0x71) AM_READWRITE(port71_r, port71_w)
-//  AM_RANGE(0x80, 0x80) modem status, set to 0xff to boot
-//  AM_RANGE(0x8b, 0x8b)
-//  AM_RANGE(0x90, 0x93)
-//  AM_RANGE(0xa0, 0xa1)
-	AM_RANGE(0x98, 0x98) AM_DEVWRITE(MC6845_TAG, mc6845_device, address_w)
-	AM_RANGE(0x99, 0x99) AM_DEVREADWRITE(MC6845_TAG, mc6845_device, register_r, register_w)
-	AM_RANGE(0xb0, 0xb3) AM_WRITE(io_rom_addr_w)
-	AM_RANGE(0xb3, 0xb3) AM_READ(io_rom_data_r)
-//  AM_RANGE(0xc8, 0xc8)
-	AM_RANGE(0xfc, 0xff) AM_DEVREADWRITE(I8255A_TAG, i8255_device, read, write)
-ADDRESS_MAP_END
+void pc8401a_state::pc8500_io(address_map &map)
+{
+	map.unmap_value_high();
+	map.global_mask(0xff);
+	map(0x00, 0x00).portr("Y.0");
+	map(0x01, 0x01).portr("Y.1");
+	map(0x02, 0x02).portr("Y.2");
+	map(0x03, 0x03).portr("Y.3");
+	map(0x04, 0x04).portr("Y.4");
+	map(0x05, 0x05).portr("Y.5");
+	map(0x06, 0x06).portr("Y.6");
+	map(0x07, 0x07).portr("Y.7");
+	map(0x08, 0x08).portr("Y.8");
+	map(0x09, 0x09).portr("Y.9");
+	map(0x10, 0x10).w(FUNC(pc8401a_state::rtc_cmd_w));
+	map(0x20, 0x21).rw(I8251_TAG, FUNC(i8251_device::read), FUNC(i8251_device::write));
+	map(0x30, 0x30).rw(FUNC(pc8401a_state::mmr_r), FUNC(pc8401a_state::mmr_w));
+//  map(0x31, 0x31)
+	map(0x40, 0x40).rw(FUNC(pc8401a_state::rtc_r), FUNC(pc8401a_state::rtc_ctrl_w));
+//  map(0x41, 0x41)
+//  map(0x50, 0x51)
+	map(0x60, 0x60).rw(m_lcdc, FUNC(sed1330_device::status_r), FUNC(sed1330_device::data_w));
+	map(0x61, 0x61).rw(m_lcdc, FUNC(sed1330_device::data_r), FUNC(sed1330_device::command_w));
+	map(0x70, 0x70).rw(FUNC(pc8401a_state::port70_r), FUNC(pc8401a_state::port70_w));
+	map(0x71, 0x71).rw(FUNC(pc8401a_state::port71_r), FUNC(pc8401a_state::port71_w));
+//  map(0x80, 0x80) modem status, set to 0xff to boot
+//  map(0x8b, 0x8b)
+//  map(0x90, 0x93)
+//  map(0xa0, 0xa1)
+	map(0x98, 0x98).w(m_crtc, FUNC(mc6845_device::address_w));
+	map(0x99, 0x99).rw(m_crtc, FUNC(mc6845_device::register_r), FUNC(mc6845_device::register_w));
+	map(0xb0, 0xb3).w(FUNC(pc8401a_state::io_rom_addr_w));
+	map(0xb3, 0xb3).r(FUNC(pc8401a_state::io_rom_data_r));
+//  map(0xc8, 0xc8)
+	map(0xfc, 0xff).rw(I8255A_TAG, FUNC(i8255_device::read), FUNC(i8255_device::write));
+}
 
 /* Input Ports */
 
@@ -494,10 +497,7 @@ void pc8401a_state::machine_start()
 	/* initialize RTC */
 	m_rtc->cs_w(1);
 
-	/* allocate CRT video RAM */
-	m_crt_ram.allocate(PC8401A_CRT_VIDEORAM_SIZE);
-
-	UINT8 *ram = m_ram->pointer();
+	uint8_t *ram = m_ram->pointer();
 
 	/* set up A0/A1 memory banking */
 	membank("bank1")->configure_entries(0, 4, m_rom->base(), 0x8000);
@@ -527,7 +527,7 @@ void pc8401a_state::machine_start()
 	save_item(NAME(m_io_addr));
 }
 
-READ8_MEMBER( pc8401a_state::ppi_pc_r )
+uint8_t pc8401a_state::ppi_pc_r()
 {
 	/*
 
@@ -547,7 +547,7 @@ READ8_MEMBER( pc8401a_state::ppi_pc_r )
 	return 0;
 }
 
-WRITE8_MEMBER( pc8401a_state::ppi_pc_w )
+void pc8401a_state::ppi_pc_w(uint8_t data)
 {
 	/*
 
@@ -567,89 +567,83 @@ WRITE8_MEMBER( pc8401a_state::ppi_pc_w )
 
 /* Machine Drivers */
 
-static MACHINE_CONFIG_START( pc8401a, pc8401a_state )
+void pc8401a_state::pc8401a(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD(Z80_TAG, Z80, 4000000) // NEC uPD70008C
-	MCFG_CPU_PROGRAM_MAP(pc8401a_mem)
-	MCFG_CPU_IO_MAP(pc8401a_io)
+	Z80(config, m_maincpu, 7.987_MHz_XTAL / 2); // NEC uPD70008C
+	m_maincpu->set_addrmap(AS_PROGRAM, &pc8401a_state::pc8401a_mem);
+	m_maincpu->set_addrmap(AS_IO, &pc8401a_state::pc8401a_io);
 
 	/* fake keyboard */
-	MCFG_TIMER_DRIVER_ADD_PERIODIC("keyboard", pc8401a_state, pc8401a_keyboard_tick, attotime::from_hz(64))
+	TIMER(config, "keyboard").configure_periodic(FUNC(pc8401a_state::pc8401a_keyboard_tick), attotime::from_hz(64));
 
 	/* devices */
-	MCFG_UPD1990A_ADD(UPD1990A_TAG, XTAL_32_768kHz, NULL, NULL)
+	UPD1990A(config, m_rtc);
 
-	MCFG_DEVICE_ADD(I8255A_TAG, I8255A, 0)
-	MCFG_I8255_IN_PORTC_CB(READ8(pc8401a_state, ppi_pc_r))
-	MCFG_I8255_OUT_PORTC_CB(WRITE8(pc8401a_state, ppi_pc_w))
+	i8255_device &ppi(I8255A(config, I8255A_TAG));
+	ppi.in_pc_callback().set(FUNC(pc8401a_state::ppi_pc_r));
+	ppi.out_pc_callback().set(FUNC(pc8401a_state::ppi_pc_w));
 
-	MCFG_DEVICE_ADD(I8251_TAG, I8251, 0)
-	MCFG_I8251_TXD_HANDLER(DEVWRITELINE(RS232_TAG, rs232_port_device, write_txd))
-	MCFG_I8251_DTR_HANDLER(DEVWRITELINE(RS232_TAG, rs232_port_device, write_dtr))
-	MCFG_I8251_RTS_HANDLER(DEVWRITELINE(RS232_TAG, rs232_port_device, write_rts))
+	i8251_device &uart(I8251(config, I8251_TAG, 0));
+	uart.txd_handler().set(RS232_TAG, FUNC(rs232_port_device::write_txd));
+	uart.dtr_handler().set(RS232_TAG, FUNC(rs232_port_device::write_dtr));
+	uart.rts_handler().set(RS232_TAG, FUNC(rs232_port_device::write_rts));
 
-	MCFG_RS232_PORT_ADD(RS232_TAG, default_rs232_devices, nullptr)
-	MCFG_RS232_RXD_HANDLER(DEVWRITELINE(I8251_TAG, i8251_device, write_rxd))
-	MCFG_RS232_DSR_HANDLER(DEVWRITELINE(I8251_TAG, i8251_device, write_dsr))
+	rs232_port_device &rs232(RS232_PORT(config, RS232_TAG, default_rs232_devices, nullptr));
+	rs232.rxd_handler().set(I8251_TAG, FUNC(i8251_device::write_rxd));
+	rs232.dsr_handler().set(I8251_TAG, FUNC(i8251_device::write_dsr));
 
 	/* video hardware */
-	MCFG_FRAGMENT_ADD(pc8401a_video)
+	pc8401a_video(config);
 
 	/* option ROM cartridge */
-	MCFG_GENERIC_CARTSLOT_ADD("cartslot", generic_plain_slot, nullptr)
-	MCFG_GENERIC_EXTENSIONS("bin,rom")
+	GENERIC_CARTSLOT(config, m_cart, generic_plain_slot, nullptr, "bin,rom");
 
 	/* I/O ROM cartridge */
-	MCFG_GENERIC_CARTSLOT_ADD("io_cart", generic_linear_slot, nullptr)
-	MCFG_GENERIC_EXTENSIONS("bin,rom")
+	GENERIC_CARTSLOT(config, m_io_cart, generic_linear_slot, nullptr, "bin,rom");
 
 	/* internal ram */
-	MCFG_RAM_ADD(RAM_TAG)
-	MCFG_RAM_DEFAULT_SIZE("64K")
-	MCFG_RAM_EXTRA_OPTIONS("96K")
-MACHINE_CONFIG_END
+	RAM(config, RAM_TAG).set_default_size("64K").set_extra_options("96K");
+}
 
-static MACHINE_CONFIG_START( pc8500, pc8500_state )
+void pc8500_state::pc8500(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD(Z80_TAG, Z80, 4000000) // NEC uPD70008C
-	MCFG_CPU_PROGRAM_MAP(pc8401a_mem)
-	MCFG_CPU_IO_MAP(pc8500_io)
+	Z80(config, m_maincpu, 4000000); // NEC uPD70008C
+	m_maincpu->set_addrmap(AS_PROGRAM, &pc8500_state::pc8401a_mem);
+	m_maincpu->set_addrmap(AS_IO, &pc8500_state::pc8500_io);
 
 	/* fake keyboard */
-	MCFG_TIMER_DRIVER_ADD_PERIODIC("keyboard", pc8401a_state, pc8401a_keyboard_tick, attotime::from_hz(64))
+	TIMER(config, "keyboard").configure_periodic(FUNC(pc8401a_state::pc8401a_keyboard_tick), attotime::from_hz(64));
 
 	/* devices */
-	MCFG_UPD1990A_ADD(UPD1990A_TAG, XTAL_32_768kHz, NULL, NULL)
+	UPD1990A(config, m_rtc);
 
-	MCFG_DEVICE_ADD(I8255A_TAG, I8255A, 0)
-	MCFG_I8255_IN_PORTC_CB(READ8(pc8401a_state, ppi_pc_r))
-	MCFG_I8255_OUT_PORTC_CB(WRITE8(pc8401a_state, ppi_pc_w))
+	i8255_device &ppi(I8255A(config, I8255A_TAG));
+	ppi.in_pc_callback().set(FUNC(pc8401a_state::ppi_pc_r));
+	ppi.out_pc_callback().set(FUNC(pc8401a_state::ppi_pc_w));
 
-	MCFG_DEVICE_ADD(I8251_TAG, I8251, 0)
-	MCFG_I8251_TXD_HANDLER(DEVWRITELINE(RS232_TAG, rs232_port_device, write_txd))
-	MCFG_I8251_DTR_HANDLER(DEVWRITELINE(RS232_TAG, rs232_port_device, write_dtr))
-	MCFG_I8251_RTS_HANDLER(DEVWRITELINE(RS232_TAG, rs232_port_device, write_rts))
+	i8251_device &uart(I8251(config, I8251_TAG, 0));
+	uart.txd_handler().set(RS232_TAG, FUNC(rs232_port_device::write_txd));
+	uart.dtr_handler().set(RS232_TAG, FUNC(rs232_port_device::write_dtr));
+	uart.rts_handler().set(RS232_TAG, FUNC(rs232_port_device::write_rts));
 
-	MCFG_RS232_PORT_ADD(RS232_TAG, default_rs232_devices, nullptr)
-	MCFG_RS232_RXD_HANDLER(DEVWRITELINE(I8251_TAG, i8251_device, write_rxd))
-	MCFG_RS232_DSR_HANDLER(DEVWRITELINE(I8251_TAG, i8251_device, write_dsr))
+	rs232_port_device &rs232(RS232_PORT(config, RS232_TAG, default_rs232_devices, nullptr));
+	rs232.rxd_handler().set(I8251_TAG, FUNC(i8251_device::write_rxd));
+	rs232.dsr_handler().set(I8251_TAG, FUNC(i8251_device::write_dsr));
 
 	/* video hardware */
-	MCFG_FRAGMENT_ADD(pc8500_video)
+	pc8500_video(config);
 
 	/* option ROM cartridge */
-	MCFG_GENERIC_CARTSLOT_ADD("cartslot", generic_plain_slot, nullptr)
-	MCFG_GENERIC_EXTENSIONS("bin,rom")
+	GENERIC_CARTSLOT(config, m_cart, generic_plain_slot, nullptr, "bin,rom");
 
 	/* I/O ROM cartridge */
-	MCFG_GENERIC_CARTSLOT_ADD("io_cart", generic_linear_slot, nullptr)
-	MCFG_GENERIC_EXTENSIONS("bin,rom")
+	GENERIC_CARTSLOT(config, m_io_cart, generic_linear_slot, nullptr, "bin,rom");
 
 	/* internal ram */
-	MCFG_RAM_ADD(RAM_TAG)
-	MCFG_RAM_DEFAULT_SIZE("64K")
-	MCFG_RAM_EXTRA_OPTIONS("96K")
-MACHINE_CONFIG_END
+	RAM(config, RAM_TAG).set_default_size("64K").set_extra_options("96K");
+}
 
 /* ROMs */
 
@@ -671,7 +665,7 @@ ROM_END
 
 /* System Drivers */
 
-/*    YEAR  NAME        PARENT  COMPAT  MACHINE     INPUT       INIT    COMPANY FULLNAME */
-COMP( 1984, pc8401a,    0,      0,      pc8401a,    pc8401a, driver_device, 0,      "Nippon Electronic Company",    "PC-8401A-LS", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
-//COMP( 1984, pc8401bd,   pc8401a,0,      pc8401a,    pc8401a, driver_device, 0,      "Nippon Electronic Company",    "PC-8401BD", MACHINE_NOT_WORKING)
-COMP( 1985, pc8500,     0,      0,      pc8500,     pc8401a, driver_device, 0,      "Nippon Electronic Company",    "PC-8500", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
+/*    YEAR  NAME      PARENT   COMPAT  MACHINE  INPUT    CLASS          INIT        COMPANY  FULLNAME */
+COMP( 1984, pc8401a,  0,       0,      pc8401a, pc8401a, pc8401a_state, empty_init, "NEC",   "PC-8401A-LS", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
+//COMP( 1984, pc8401bd, pc8401a, 0,      pc8401a, pc8401a, pc8401a_state, empty_init, "NEC",   "PC-8401BD", MACHINE_NOT_WORKING)
+COMP( 1985, pc8500,   0,       0,      pc8500,  pc8401a, pc8500_state,  empty_init, "NEC",   "PC-8500", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)

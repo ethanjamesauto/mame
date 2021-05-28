@@ -6,6 +6,7 @@
 
 **********************************************************************/
 
+#include "emu.h"
 #include "compis_fdc.h"
 
 
@@ -21,7 +22,7 @@
 //  DEVICE DEFINITIONS
 //**************************************************************************
 
-const device_type COMPIS_FDC = &device_creator<compis_fdc_device>;
+DEFINE_DEVICE_TYPE(COMPIS_FDC, compis_fdc_device, "compis_fdc", "Compis FDC")
 
 
 //-------------------------------------------------
@@ -38,36 +39,30 @@ WRITE_LINE_MEMBER( compis_fdc_device::fdc_drq )
 	m_slot->mdrqt_w(state);
 }
 
-FLOPPY_FORMATS_MEMBER( compis_fdc_device::floppy_formats )
-	FLOPPY_CPIS_FORMAT
-FLOPPY_FORMATS_END
-
-static SLOT_INTERFACE_START( compis_floppies )
-	SLOT_INTERFACE( "525qd", FLOPPY_525_QD )
-SLOT_INTERFACE_END
-
-
-//-------------------------------------------------
-//  MACHINE_DRIVER( compis_fdc )
-//-------------------------------------------------
-
-static MACHINE_CONFIG_FRAGMENT( compis_fdc )
-	MCFG_I8272A_ADD(I8272_TAG, true)
-	MCFG_UPD765_INTRQ_CALLBACK(WRITELINE(compis_fdc_device, fdc_irq))
-	MCFG_UPD765_DRQ_CALLBACK(WRITELINE(compis_fdc_device, fdc_drq))
-	MCFG_FLOPPY_DRIVE_ADD(I8272_TAG":0", compis_floppies, "525qd", compis_fdc_device::floppy_formats)
-	MCFG_FLOPPY_DRIVE_ADD(I8272_TAG":1", compis_floppies, "525qd", compis_fdc_device::floppy_formats)
-MACHINE_CONFIG_END
-
-
-//-------------------------------------------------
-//  machine_config_additions - device-specific
-//  machine configurations
-//-------------------------------------------------
-
-machine_config_constructor compis_fdc_device::device_mconfig_additions() const
+void compis_fdc_device::floppy_formats(format_registration &fr)
 {
-	return MACHINE_CONFIG_NAME( compis_fdc );
+	fr.add_mfm_containers();
+	fr.add(FLOPPY_CPIS_FORMAT);
+}
+
+static void compis_floppies(device_slot_interface &device)
+{
+	device.option_add("525qd", FLOPPY_525_QD);
+	device.option_add("525hd", FLOPPY_525_HD);
+}
+
+
+//-------------------------------------------------
+//  device_add_mconfig - add device configuration
+//-------------------------------------------------
+
+void compis_fdc_device::device_add_mconfig(machine_config &config)
+{
+	I8272A(config, m_fdc, 8'000'000, true);
+	m_fdc->intrq_wr_callback().set(FUNC(compis_fdc_device::fdc_irq));
+	m_fdc->drq_wr_callback().set(FUNC(compis_fdc_device::fdc_drq));
+	FLOPPY_CONNECTOR(config, m_floppy0, compis_floppies, "525qd", compis_fdc_device::floppy_formats);
+	FLOPPY_CONNECTOR(config, m_floppy1, compis_floppies, "525qd", compis_fdc_device::floppy_formats);
 }
 
 
@@ -80,8 +75,8 @@ machine_config_constructor compis_fdc_device::device_mconfig_additions() const
 //  compis_fdc_device - constructor
 //-------------------------------------------------
 
-compis_fdc_device::compis_fdc_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock) :
-	device_t(mconfig, COMPIS_FDC, "Compis FDC", tag, owner, clock, "compis_fdc", __FILE__),
+compis_fdc_device::compis_fdc_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock) :
+	device_t(mconfig, COMPIS_FDC, tag, owner, clock),
 	device_isbx_card_interface(mconfig, *this),
 	m_fdc(*this, I8272_TAG),
 	m_floppy0(*this, I8272_TAG":0"),
@@ -113,14 +108,14 @@ void compis_fdc_device::device_reset()
 //  mcs0_r - chip select 0 read
 //-------------------------------------------------
 
-UINT8 compis_fdc_device::mcs0_r(address_space &space, offs_t offset)
+uint8_t compis_fdc_device::mcs0_r(offs_t offset)
 {
-	UINT8 data = 0xff;
+	uint8_t data = 0xff;
 
 	switch (BIT(offset, 0))
 	{
-	case 0: data = m_fdc->msr_r(space, 0); break;
-	case 1: data = m_fdc->fifo_r(space, 0); break;
+	case 0: data = m_fdc->msr_r(); break;
+	case 1: data = m_fdc->fifo_r(); break;
 	}
 
 	return data;
@@ -131,11 +126,11 @@ UINT8 compis_fdc_device::mcs0_r(address_space &space, offs_t offset)
 //  mcs0_w - chip select 0 write
 //-------------------------------------------------
 
-void compis_fdc_device::mcs0_w(address_space &space, offs_t offset, UINT8 data)
+void compis_fdc_device::mcs0_w(offs_t offset, uint8_t data)
 {
 	switch (BIT(offset, 0))
 	{
-	case 1: m_fdc->fifo_w(space, 0, data); break;
+	case 1: m_fdc->fifo_w(data); break;
 	}
 }
 
@@ -144,7 +139,7 @@ void compis_fdc_device::mcs0_w(address_space &space, offs_t offset, UINT8 data)
 //  mdack_r - DMA acknowledge read
 //-------------------------------------------------
 
-UINT8 compis_fdc_device::mdack_r(address_space &space, offs_t offset)
+uint8_t compis_fdc_device::mdack_r(offs_t offset)
 {
 	return m_fdc->dma_r();
 }
@@ -154,7 +149,7 @@ UINT8 compis_fdc_device::mdack_r(address_space &space, offs_t offset)
 //  mdack_w - DMA acknowledge write
 //-------------------------------------------------
 
-void compis_fdc_device::mdack_w(address_space &space, offs_t offset, UINT8 data)
+void compis_fdc_device::mdack_w(offs_t offset, uint8_t data)
 {
 	m_fdc->dma_w(data);
 }

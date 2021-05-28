@@ -1,5 +1,5 @@
 // license:BSD-3-Clause
-// copyright-holders:Mariusz Wojcieszek, Stephh
+// copyright-holders:Mariusz Wojcieszek
 /****************************************************************************
 
     TourVision
@@ -11,72 +11,14 @@
 
     Todo: complete jamma interface emulation.
 
-    By now, three known BIOS versions, U4-52 (dumped from a board with-subboard PCB),
-    U4-55 (dumped from an integrated PCB) and U4-60 (dumped from a board with-subboard PCB).
+    By now, ten known BIOS versions.
+    U4-52 (dumped from a board with-subboard PCB).
+    U4-55 (dumped from an integrated PCB).
+    U4-60 (dumped from a board with-subboard PCB).
 
-    Known games:
+    Known games list can be found in hash/pce_tourvision.xml.
 
-    1943
-    Aero Blaster (label shows "Vol. 33") [dumped]
-    After Burner
-    Ankoku Densetu
-    Ballistix
-    Bomberman (label shows "Vol. 34")
-    Columns [dumped]
-    Cyber Core
-    Daisempuu
-    Dead Moon
-    Die Hard
-    Dodge Ball
-    Doraemon Meikyuu Daisakusen
-    Doramon II
-    Down Load
-    Dragon Spirit
-    Dungeon Explorer [dumped]
-    Final Blaster
-    Final Lap Twin [dumped]
-    Final Match Tennis
-    Formation Soccer [dumped]
-    Gomola Speed [dumped]
-    Jackie Chan [dumped]
-    Jinmu Densho
-    Kiki Kaikai
-    Legend Of Hero Tomna
-    Legendary Axe [dumped]
-    Liquid Kids
-    Mr. Heli
-    Out Run
-    Pac-Land
-    PC Denjin Punkic Cyborg
-    PC Genjin
-    PC Genjin 2 [dumped]
-    Power Eleven [dumped]
-    Power Golf
-    Power League IV [dumped]
-    Power Sports
-    Psycho Chaser
-    Puzzle Boy
-    Rastan Saga II [dumped]
-    Saigo no Nindou
-    Salamander
-    Shinobi
-    Side Arms
-    Skweek
-    Son Son II
-    Special Criminal Investigation [dumped]
-    Super Star Soldier (label shows "Vol. 30") [dumped]
-    Super Volley ball [dumped]
-    Tatsujin
-    Terra Cresta II
-    Thunder Blade [dumped]
-    Toy Shop Boys
-    Tricky
-    USA Pro Basketball [dumped]
-    Veigues
-    Vigilante
-    Volfied [dumped]
-    W-Ring
-    Xevious
+* Denotes Not Dumped
 
  _______________________________________________________________________________________________________________________________________________
 |                                                                                                                                               |
@@ -152,31 +94,31 @@ Games are dumped directly from the cartridge edge connector using the following 
  ----------------------------------------------------------------------------
 
                        +----------+
-                (N.C.) |01      01| +5V
-                   +5V |02      02| +5V
-                   A18 |03      03| +5V
-                   A14 |04      04| A17
-                    A8 |05      05| A13
-                   A11 |06      06| A9
-                   A10 |07      07| OE#
-                    D7 |08      08| CE#
-(front of           D5 |09      09| D6               (rear of
- cartridge)         D3 |10      10| D4                cartridge)
-                    D2 |11      11| GND
-                    D0 |12      12| D1
-                    A1 |13      13| A0
-                    A3 |14      14| A2
-                    A5 |15      15| A4
-                    A7 |16      16| A6
-                   A15 |17      17| A12
-                   A19 |18      18| A16
-                   GND |19      19| (N.C.)
-                   GND |20      20| (N.C.)
-                 (KEY) |21------21| (KEY)
-                (N.C.) |22      22| (N.C.)
-                (N.C.) |23      23| (N.C.)
-                (N.C.) |24      24| (N.C.)
-                (N.C.) |25      25| (N.C.)
+                (N.C.) |50      49| +5V
+                   +5V |48      47| +5V
+                   A18 |46      45| +5V
+                   A14 |44      43| A17
+                    A8 |42      41| A13
+                   A11 |40      39| A9
+                   A10 |38      37| OE#
+                    D7 |36      35| CE#
+(front of           D5 |34      33| D6               (rear of
+ cartridge)         D3 |32      31| D4                cartridge)
+                    D2 |30      29| GND
+                    D0 |28      27| D1
+                    A1 |26      25| A0
+                    A3 |24      23| A2
+                    A5 |22      21| A4
+                    A7 |20      19| A6
+                   A15 |18      17| A12
+                   A19 |16      15| A16
+                   GND |14      13| (N.C.)
+                   GND |12      11| GND)
+                 (KEY) |10------09| (KEY)
+                   ID7 |08      07| ID6
+                   ID5 |06      05| ID4
+                   ID3 |04      03| ID2
+                   ID1 |02      01| ID0
                        +----------+
 
  ----------------------------------------------------------------------------
@@ -222,44 +164,112 @@ coin 2 triggers code at 0x028f
 in each coin insertion routine, you need to insert n coins (based on DSW settings) then you are awarded u units of time (also based on DSW settings)
 I can't tell ATM if units are seconds (even if values in tables seem very related to them)
 
+****************************************************************************
+Notes from system11:
+Game ID is configured on carts using pins 1 -> 8, these form a single byte integer, known IDs are tagged above.  IDs can be shared between games.  Game handling is defined based on data tables in the BIOS, using offset + ID*data block size.  Data block starts in 6.0 BIOS as follows:
+
+1184   1284   1384   1484   1584   3584   5d84   5684
+
+For full information see:
+http://blog.system11.org/?p=1943
+
 ****************************************************************************/
 
 #include "emu.h"
-#include "cpu/i8085/i8085.h"
 #include "machine/pcecommn.h"
+
+#include "cpu/h6280/h6280.h"
+#include "cpu/i8085/i8085.h"
 #include "video/huc6260.h"
 #include "video/huc6270.h"
-#include "cpu/h6280/h6280.h"
-#include "sound/c6280.h"
 #include "machine/i8155.h"
+
+#include "bus/generic/slot.h"
+#include "bus/generic/carts.h"
+
+#include "screen.h"
+#include "softlist.h"
+#include "speaker.h"
+
 
 class tourvision_state : public pce_common_state
 {
 public:
 	tourvision_state(const machine_config &mconfig, device_type type, const char *tag)
-		: pce_common_state(mconfig, type, tag),
-		m_subcpu(*this, "subcpu") { }
+		: pce_common_state(mconfig, type, tag)
+		, m_subcpu(*this, "subcpu")
+		, m_cart(*this, "cartslot")
+	{ }
 
-	DECLARE_WRITE8_MEMBER(tourvision_8085_d000_w);
-	DECLARE_WRITE8_MEMBER(tourvision_i8155_a_w);
-	DECLARE_WRITE8_MEMBER(tourvision_i8155_b_w);
-	DECLARE_WRITE8_MEMBER(tourvision_i8155_c_w);
+	void tourvision(machine_config &config);
+
+private:
+	void tourvision_8085_d000_w(uint8_t data);
+	void tourvision_i8155_a_w(uint8_t data);
+	void tourvision_i8155_b_w(uint8_t data);
+	void tourvision_i8155_c_w(uint8_t data);
 	DECLARE_WRITE_LINE_MEMBER(tourvision_timer_out);
-	DECLARE_WRITE_LINE_MEMBER(pce_irq_changed);
+
+	DECLARE_DEVICE_IMAGE_LOAD_MEMBER(cart_load);
+
+	void pce_io(address_map &map);
+	void pce_mem(address_map &map);
+	void tourvision_8085_map(address_map &map);
+
 	required_device<cpu_device> m_subcpu;
+	required_device<generic_slot_device> m_cart;
+	uint32_t  m_rom_size;
 };
 
+DEVICE_IMAGE_LOAD_MEMBER( tourvision_state::cart_load )
+{
+	m_rom_size = m_cart->common_get_size("rom");
+	m_cart->rom_alloc(m_rom_size, GENERIC_ROM8_WIDTH, ENDIANNESS_LITTLE);
+	m_cart->common_load_rom(m_cart->get_rom_base(), m_rom_size, "rom");
+
+	uint8_t* rgn = memregion("maincpu")->base();
+	uint8_t* base = m_cart->get_rom_base();
+
+	if (m_rom_size == 0x0c0000)
+	{
+		memcpy(rgn+0x000000, base+0x000000, 0x0c0000 );
+		memcpy(rgn+0x0c0000, base+0x080000, 0x040000 );
+	}
+	else
+	if (m_rom_size == 0x060000)
+	{
+		memcpy(rgn+0x000000, base+0x000000, 0x040000 );
+		memcpy(rgn+0x040000, base+0x000000, 0x040000 );
+		memcpy(rgn+0x080000, base+0x040000, 0x020000 );
+		memcpy(rgn+0x0a0000, base+0x040000, 0x020000 );
+		memcpy(rgn+0x0c0000, base+0x040000, 0x020000 );
+		memcpy(rgn+0x0e0000, base+0x040000, 0x020000 );
+	}
+	else
+	{
+		for (int i=0;i<0x100000;i+=m_rom_size)
+			memcpy(rgn+i, base+0x000000, m_rom_size );
+	}
+
+#if 0
+	{
+		FILE *fp;
+		fp=fopen("tourvision.bin", "w+b");
+		if (fp)
+		{
+			fwrite(rgn, 0x100000, 1, fp);
+			fclose(fp);
+		}
+	}
+#endif
+
+	return image_init_result::PASS;
+}
+
+/* note from system11 - this system actually supports 2 players */
 
 static INPUT_PORTS_START( tourvision )
-	PORT_START( "JOY" )
-	PORT_BIT( 0x01, IP_ACTIVE_LOW, IPT_BUTTON2 ) /* button I */
-	PORT_BIT( 0x02, IP_ACTIVE_LOW, IPT_BUTTON1 ) /* button II */
-	PORT_BIT( 0x04, IP_ACTIVE_LOW, IPT_BUTTON3 ) /* select */
-	PORT_BIT( 0x08, IP_ACTIVE_LOW, IPT_START1 ) /* run */
-	PORT_BIT( 0x10, IP_ACTIVE_LOW, IPT_JOYSTICK_UP )
-	PORT_BIT( 0x40, IP_ACTIVE_LOW, IPT_JOYSTICK_DOWN )
-	PORT_BIT( 0x80, IP_ACTIVE_LOW, IPT_JOYSTICK_LEFT )
-	PORT_BIT( 0x20, IP_ACTIVE_LOW, IPT_JOYSTICK_RIGHT )
+	PCE_STANDARD_INPUT_PORT_P1
 
 	PORT_START( "DSW1" )
 	PORT_DIPNAME( 0x07, 0x07, "Coins needed 1" )
@@ -288,9 +298,9 @@ static INPUT_PORTS_START( tourvision )
 	PORT_DIPSETTING(    0x10, "120" )
 	PORT_DIPSETTING(    0x08, "90" )
 	PORT_DIPSETTING(    0x00, "60" )
-	PORT_DIPUNKNOWN( 0x80, 0x00 )
-// I can't tell what DSW1 bit 7 is really supposed to do, but it has an effect only when no "Free Play" and [0x8005] = [0x8006] = 0 (code at 0x0a58) :
-// Since these conditions seem to be true only in "attract mode" when there is no time left, this bit could enable/disable sounds.
+	PORT_DIPNAME( 0x80, 0x00, DEF_STR( Demo_Sounds ) )
+	PORT_DIPSETTING(    0x80, DEF_STR( Off ))
+	PORT_DIPSETTING(    0x00, DEF_STR( On ))
 
 	PORT_START( "DSW2" )
 	PORT_DIPNAME( 0x03, 0x03, "Coins needed 2" )
@@ -323,54 +333,53 @@ static INPUT_PORTS_START( tourvision )
 	PORT_START("SYSTEM")
 	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_COIN1 )
 	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_COIN2 )
-	PORT_BIT( 0xf0, IP_ACTIVE_HIGH, IPT_SPECIAL ) // games slot status in bits 3 to 7
+	PORT_BIT( 0xf0, IP_ACTIVE_HIGH, IPT_CUSTOM ) // games slot status in bits 3 to 7
 INPUT_PORTS_END
 
-static ADDRESS_MAP_START( pce_mem , AS_PROGRAM, 8, tourvision_state )
-	AM_RANGE( 0x000000, 0x0FFFFF) AM_ROM
-	AM_RANGE( 0x1F0000, 0x1F1FFF) AM_RAM AM_MIRROR(0x6000)
-	AM_RANGE( 0x1FE000, 0x1FE3FF) AM_DEVREADWRITE( "huc6270", huc6270_device, read, write )
-	AM_RANGE( 0x1FE400, 0x1FE7FF) AM_DEVREADWRITE( "huc6260", huc6260_device, read, write )
-	AM_RANGE( 0x1FE800, 0x1FEBFF) AM_DEVREADWRITE("c6280", c6280_device, c6280_r, c6280_w )
-	AM_RANGE( 0x1FEC00, 0x1FEFFF) AM_DEVREADWRITE("maincpu", h6280_device, timer_r, timer_w )
-	AM_RANGE( 0x1FF000, 0x1FF3FF) AM_READWRITE(pce_joystick_r, pce_joystick_w )
-	AM_RANGE( 0x1FF400, 0x1FF7FF) AM_DEVREADWRITE("maincpu", h6280_device, irq_status_r, irq_status_w )
-ADDRESS_MAP_END
+void tourvision_state::pce_mem(address_map &map)
+{
+	map(0x000000, 0x0FFFFF).rom();
+	map(0x1F0000, 0x1F1FFF).ram().mirror(0x6000);
+	map(0x1FE000, 0x1FE3FF).rw("huc6270", FUNC(huc6270_device::read), FUNC(huc6270_device::write));
+	map(0x1FE400, 0x1FE7FF).rw(m_huc6260, FUNC(huc6260_device::read), FUNC(huc6260_device::write));
+}
 
-static ADDRESS_MAP_START( pce_io , AS_IO, 8, tourvision_state )
-	AM_RANGE( 0x00, 0x03) AM_DEVREADWRITE( "huc6270", huc6270_device, read, write )
-ADDRESS_MAP_END
+void tourvision_state::pce_io(address_map &map)
+{
+	map(0x00, 0x03).rw("huc6270", FUNC(huc6270_device::read), FUNC(huc6270_device::write));
+}
 
-WRITE8_MEMBER(tourvision_state::tourvision_8085_d000_w)
+void tourvision_state::tourvision_8085_d000_w(uint8_t data)
 {
 	//logerror( "D000 (8085) write %02x\n", data );
 }
 
-static ADDRESS_MAP_START(tourvision_8085_map, AS_PROGRAM, 8, tourvision_state )
-	AM_RANGE(0x0000, 0x7fff) AM_ROM
-	AM_RANGE(0x8000, 0x80ff) AM_DEVREADWRITE("i8155", i8155_device, memory_r, memory_w)
-	AM_RANGE(0x8100, 0x8107) AM_DEVREADWRITE("i8155", i8155_device, io_r, io_w)
-	AM_RANGE(0x9000, 0x9000) AM_READ_PORT("DSW1")
-	AM_RANGE(0xa000, 0xa000) AM_READ_PORT("DSW2")
-	AM_RANGE(0xb000, 0xb000) AM_READNOP // unknown (must NOT be == 0x03 ? code at 0x1154)
-	AM_RANGE(0xc000, 0xc000) AM_READ_PORT("SYSTEM")
-	AM_RANGE(0xd000, 0xd000) AM_WRITE(tourvision_8085_d000_w )
-	AM_RANGE(0xe000, 0xe1ff) AM_RAM
-	AM_RANGE(0xf000, 0xf000) AM_READNOP // protection or internal counter ? there is sometimes some data in BIOS0 which is replaced by 0xff in BIOS1
-ADDRESS_MAP_END
+void tourvision_state::tourvision_8085_map(address_map &map)
+{
+	map(0x0000, 0x7fff).rom();
+	map(0x8000, 0x80ff).rw("i8155", FUNC(i8155_device::memory_r), FUNC(i8155_device::memory_w));
+	map(0x8100, 0x8107).rw("i8155", FUNC(i8155_device::io_r), FUNC(i8155_device::io_w));
+	map(0x9000, 0x9000).portr("DSW1");
+	map(0xa000, 0xa000).portr("DSW2");
+	map(0xb000, 0xb000).nopr(); // unknown (must NOT be == 0x03 ? code at 0x1154)
+	map(0xc000, 0xc000).portr("SYSTEM");
+	map(0xd000, 0xd000).w(FUNC(tourvision_state::tourvision_8085_d000_w));
+	map(0xe000, 0xe1ff).ram();
+	map(0xf000, 0xf000).nopr(); // protection or internal counter ? there is sometimes some data in BIOS0 which is replaced by 0xff in BIOS1
+}
 
-WRITE8_MEMBER(tourvision_state::tourvision_i8155_a_w)
+void tourvision_state::tourvision_i8155_a_w(uint8_t data)
 {
 	//logerror("i8155 Port A: %02X\n", data);
 }
 
-WRITE8_MEMBER(tourvision_state::tourvision_i8155_b_w)
+void tourvision_state::tourvision_i8155_b_w(uint8_t data)
 {
 	// Selects game slot in bits 0 - 1
 	//logerror("i8155 Port B: %02X\n", data);
 }
 
-WRITE8_MEMBER(tourvision_state::tourvision_i8155_c_w)
+void tourvision_state::tourvision_i8155_c_w(uint8_t data)
 {
 	//logerror("i8155 Port C: %02X\n", data);
 }
@@ -381,281 +390,84 @@ WRITE_LINE_MEMBER(tourvision_state::tourvision_timer_out)
 	//logerror("Timer out %d\n", state);
 }
 
-WRITE_LINE_MEMBER(tourvision_state::pce_irq_changed)
+
+void tourvision_state::tourvision(machine_config &config)
 {
-	m_maincpu->set_input_line(0, state);
-}
-
-static MACHINE_CONFIG_START( tourvision, tourvision_state )
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", H6280, PCE_MAIN_CLOCK/3)
-	MCFG_CPU_PROGRAM_MAP(pce_mem)
-	MCFG_CPU_IO_MAP(pce_io)
-	MCFG_QUANTUM_TIME(attotime::from_hz(60))
+	H6280(config, m_maincpu, PCE_MAIN_CLOCK/3);
+	m_maincpu->set_addrmap(AS_PROGRAM, &tourvision_state::pce_mem);
+	m_maincpu->set_addrmap(AS_IO, &tourvision_state::pce_io);
+	m_maincpu->port_in_cb().set(FUNC(tourvision_state::pce_joystick_r));
+	m_maincpu->port_out_cb().set(FUNC(tourvision_state::pce_joystick_w));
+	m_maincpu->add_route(0, "lspeaker", 1.00);
+	m_maincpu->add_route(1, "rspeaker", 1.00);
 
-	MCFG_CPU_ADD("subcpu", I8085A, 18000000/3 /*?*/)
-	MCFG_CPU_PROGRAM_MAP(tourvision_8085_map)
+	config.set_maximum_quantum(attotime::from_hz(60));
+
+	I8085A(config, m_subcpu, 18000000/3 /*?*/);
+	m_subcpu->set_addrmap(AS_PROGRAM, &tourvision_state::tourvision_8085_map);
 
 	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_RAW_PARAMS(PCE_MAIN_CLOCK, HUC6260_WPF, 64, 64 + 1024 + 64, HUC6260_LPF, 18, 18 + 242)
-	MCFG_SCREEN_UPDATE_DRIVER( pce_common_state, screen_update )
-	MCFG_SCREEN_PALETTE("huc6260:palette")
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_RASTER));
+	screen.set_raw(PCE_MAIN_CLOCK, huc6260_device::WPF, 64, 64 + 1024 + 64, huc6260_device::LPF, 18, 18 + 242);
+	screen.set_screen_update(FUNC(pce_common_state::screen_update));
+	screen.set_palette(m_huc6260);
 
-	MCFG_DEVICE_ADD( "huc6260", HUC6260, PCE_MAIN_CLOCK )
-	MCFG_HUC6260_NEXT_PIXEL_DATA_CB(DEVREAD16("huc6270", huc6270_device, next_pixel))
-	MCFG_HUC6260_TIME_TIL_NEXT_EVENT_CB(DEVREAD16("huc6270", huc6270_device, time_until_next_event))
-	MCFG_HUC6260_VSYNC_CHANGED_CB(DEVWRITELINE("huc6270", huc6270_device, vsync_changed))
-	MCFG_HUC6260_HSYNC_CHANGED_CB(DEVWRITELINE("huc6270", huc6270_device, hsync_changed))
-	MCFG_DEVICE_ADD( "huc6270", HUC6270, 0 )
-	MCFG_HUC6270_VRAM_SIZE(0x10000)
-	MCFG_HUC6270_IRQ_CHANGED_CB(WRITELINE(tourvision_state, pce_irq_changed))
+	HUC6260(config, m_huc6260, PCE_MAIN_CLOCK);
+	m_huc6260->next_pixel_data().set("huc6270", FUNC(huc6270_device::next_pixel));
+	m_huc6260->time_til_next_event().set("huc6270", FUNC(huc6270_device::time_until_next_event));
+	m_huc6260->vsync_changed().set("huc6270", FUNC(huc6270_device::vsync_changed));
+	m_huc6260->hsync_changed().set("huc6270", FUNC(huc6270_device::hsync_changed));
 
-	MCFG_DEVICE_ADD("i8155", I8155, 1000000 /*?*/)
-	MCFG_I8155_OUT_PORTA_CB(WRITE8(tourvision_state, tourvision_i8155_a_w))
-	MCFG_I8155_OUT_PORTB_CB(WRITE8(tourvision_state, tourvision_i8155_b_w))
-	MCFG_I8155_OUT_PORTC_CB(WRITE8(tourvision_state, tourvision_i8155_c_w))
-	MCFG_I8155_OUT_TIMEROUT_CB(WRITELINE(tourvision_state, tourvision_timer_out))
+	huc6270_device &huc6270(HUC6270(config, "huc6270", 0));
+	huc6270.set_vram_size(0x10000);
+	huc6270.irq().set_inputline(m_maincpu, 0);
 
-	MCFG_SPEAKER_STANDARD_STEREO("lspeaker","rspeaker")
-	MCFG_SOUND_ADD("c6280", C6280, PCE_MAIN_CLOCK/6)
-	MCFG_C6280_CPU("maincpu")
-	MCFG_SOUND_ROUTE(0, "lspeaker", 1.00)
-	MCFG_SOUND_ROUTE(1, "rspeaker", 1.00)
+	i8155_device &i8155(I8155(config, "i8155", 1000000 /*?*/));
+	i8155.out_pa_callback().set(FUNC(tourvision_state::tourvision_i8155_a_w));
+	i8155.out_pb_callback().set(FUNC(tourvision_state::tourvision_i8155_b_w));
+	i8155.out_pc_callback().set(FUNC(tourvision_state::tourvision_i8155_c_w));
+	i8155.out_to_callback().set(FUNC(tourvision_state::tourvision_timer_out));
 
-MACHINE_CONFIG_END
+	SPEAKER(config, "lspeaker").front_left();
+	SPEAKER(config, "rspeaker").front_right();
+
+	generic_cartslot_device &cartslot(GENERIC_CARTSLOT(config, "cartslot", generic_plain_slot, "tourvision_cart", "bin"));
+	cartslot.set_device_load(FUNC(tourvision_state::cart_load));
+	cartslot.set_must_be_loaded(true);
+
+	SOFTWARE_LIST(config, "tv_list").set_original("pce_tourvision");
+}
 
 #define TOURVISION_BIOS \
 	ROM_REGION( 0x8000, "subcpu", 0 ) \
-	ROM_SYSTEM_BIOS( 0, "60", "U4-60" ) \
-	ROMX_LOAD( "u4-60.ic29", 0x0000, 0x8000, CRC(1fd27e22) SHA1(b103d365eac3fa447c2e9addddf6974b4403ed41), ROM_BIOS(1) ) \
-	ROM_SYSTEM_BIOS( 1, "55", "U4-55" ) \
-	ROMX_LOAD( "u4-55.ic29", 0x0000, 0x8000, CRC(87cf66c1) SHA1(d6b42137be7a07a0e299c2d922328a6a9a2b7b8f), ROM_BIOS(2) ) \
-	ROM_SYSTEM_BIOS( 2, "53", "U4-53" ) \
-	ROMX_LOAD( "u4-53.ic29", 0x0000, 0x8000, CRC(bccb53c9) SHA1(a27113d70cf348c7eafa39fc7a76f55f63723ad7), ROM_BIOS(3) ) \
-	ROM_SYSTEM_BIOS( 3, "52", "U4-52" ) \
-	ROMX_LOAD( "u4-52.ic29", 0x0000, 0x8000, CRC(ffd7b0fe) SHA1(d1804865c91e925a01b05cf441e8458a3db23f50), ROM_BIOS(4) ) \
-	ROM_SYSTEM_BIOS( 4, "43", "U4-43" ) \
-	ROMX_LOAD( "u4-43.ic29", 0x0000, 0x8000, CRC(88da23f3) SHA1(9d24faa116129783e55c7f79a4a08902a236d5a6), ROM_BIOS(5) )
-
+	ROM_SYSTEM_BIOS( 0, "60", "V4-60" ) \
+	ROMX_LOAD( "v4-60.ic29", 0x0000, 0x8000, CRC(1fd27e22) SHA1(b103d365eac3fa447c2e9addddf6974b4403ed41), ROM_BIOS(0) ) \
+	ROM_SYSTEM_BIOS( 1, "55", "V4-55" ) \
+	ROMX_LOAD( "v4-55.ic29", 0x0000, 0x8000, CRC(87cf66c1) SHA1(d6b42137be7a07a0e299c2d922328a6a9a2b7b8f), ROM_BIOS(1) ) \
+	ROM_SYSTEM_BIOS( 2, "54", "V4-54" ) \
+	ROMX_LOAD( "v4-54.ic29", 0x0000, 0x8000, CRC(125e7a6e) SHA1(6f03c49acaad4feb9c2187f84fc1cb5451d0eb2b), ROM_BIOS(2) ) \
+	ROM_SYSTEM_BIOS( 3, "53", "V4-53" ) \
+	ROMX_LOAD( "v4-53.ic29", 0x0000, 0x8000, CRC(bccb53c9) SHA1(a27113d70cf348c7eafa39fc7a76f55f63723ad7), ROM_BIOS(3) ) \
+	ROM_SYSTEM_BIOS( 4, "52", "V4-52" ) \
+	ROMX_LOAD( "v4-52.ic29", 0x0000, 0x8000, CRC(ffd7b0fe) SHA1(d1804865c91e925a01b05cf441e8458a3db23f50), ROM_BIOS(4) ) \
+	ROM_SYSTEM_BIOS( 5, "51", "V4-51" ) \
+	ROMX_LOAD( "v4-51.ic29", 0x0000, 0x8000, CRC(2de0b946) SHA1(c13051453aff3a2329f18ebade75c69aa3b1c28d), ROM_BIOS(5) ) \
+	ROM_SYSTEM_BIOS( 6, "43", "V4-43" ) \
+	ROMX_LOAD( "v4-43.ic29", 0x0000, 0x8000, CRC(88da23f3) SHA1(9d24faa116129783e55c7f79a4a08902a236d5a6), ROM_BIOS(6) ) \
+	ROM_SYSTEM_BIOS( 7, "42", "V4-42" ) \
+	ROMX_LOAD( "v4-42.ic29", 0x0000, 0x8000, CRC(0372606d) SHA1(8c6a63865b0b4951ea032725cf022d353115b93b), ROM_BIOS(7) ) \
+	ROM_SYSTEM_BIOS( 8, "40", "V4-40" ) \
+	ROMX_LOAD( "v4-40.ic29", 0x0000, 0x8000, CRC(ba6290cc) SHA1(92b0e9f55791e892ec209de4fadd80faef370622), ROM_BIOS(8) ) \
+	ROM_SYSTEM_BIOS( 9, "20", "VT-20" ) \
+	ROMX_LOAD( "vt_2.0.bin", 0x0000, 0x8000, CRC(36012f88) SHA1(5bd42fb51aa48ff65e704ea06a9181bb87ed2137), ROM_BIOS(9) ) \
+	ROM_SYSTEM_BIOS(10, "11", "VT-11" ) \
+	ROMX_LOAD( "vt_1.1.bin", 0x0000, 0x8000, CRC(27abbc36) SHA1(881ea7802b9e241473bc8ced0472e0f1851c9886), ROM_BIOS(10) )
 
 ROM_START(tourvis)
 	ROM_REGION( 0x100000, "maincpu", ROMREGION_ERASE00 )
 
-	TOURVISION_BIOS /* BIOS rom type is 27C256 */
+	TOURVISION_BIOS // BIOS rom type is 27C256
 ROM_END
 
-
-/*
-Aicom USA Pro Basketball Tourvision cart.
-
-Notes:
- -4 identical 256KB parts, left unsplit for reference.
- -Cart's A19 and A18 lines seems not connected to anything.
- -CRC of split ROM ("1CAD4B7F") matches the common PC Engine Hu-Card ROM dump.
-*/
-
-
-ROM_START(tvusapb)
-	ROM_REGION( 0x100000, "maincpu", 0 )
-	ROM_LOAD( "tourv_usaprobasketball.bin", 0x00000, 0x100000, CRC(f9a86270) SHA1(45f33fd80a0fa16a9271d258d8e827c3d5e8c98d) )
-
-	TOURVISION_BIOS
-ROM_END
-
-/*
-Hudson / Atlus Dungeon Explorer TourVision cart.
-
-Notes:
- -Cart's A18 line (pin 32) seems not connected to anything.
-*/
-
-ROM_START(tvdunexp)
-	ROM_REGION( 0x100000, "maincpu", 0 )
-	ROM_LOAD( "tourv_dungeonexplorer.bin", 0x00000, 0x100000, CRC(6ecc87f4) SHA1(02eb3ae0b336dbcda12166b10c9f19486fb177e0) )
-
-	TOURVISION_BIOS
-ROM_END
-
-/*
-Sega Thunder Blade Tourvision cart.
-
-Notes:
- -1st and 2nd halfs are identical, left unsplit for reference.
- -Cart's A19 line seems not connected to anything.
- -CRC of split ROM ("DDC3E809") matches the common PC Engine Hu-Card ROM dump.
-*/
-
-ROM_START(tvthbld)
-	ROM_REGION( 0x100000, "maincpu", 0 )
-	ROM_LOAD( "tourv_thunderblade.bin", 0x00000, 0x100000, CRC(0b93b85b) SHA1(b7d9fc2f46f95d305aa24326eded13abbe93738c) )
-
-	TOURVISION_BIOS
-ROM_END
-
-/*
-Taito Rastan Saga II Tourvision cart.
-
-Notes:
- -Cart's A18 line seems not connected to anything.
-
-*/
-
-ROM_START(tvrs2)
-	ROM_REGION( 0x100000, "maincpu", 0 )
-	ROM_LOAD( "tourv_rastansagaii.bin", 0x00000, 0x100000, CRC(cfe4c2f1) SHA1(1e39276b7d4bdb49421cc1102ad2fbba946127da) )
-
-	TOURVISION_BIOS
-ROM_END
-
-
-/*
-Hudson Power League IV Tourvision cart.
-
-Notes:
- -1st and 2nd halfs are identical, left unsplit for reference.
- -Cart's A19 line seems not connected to anything.
- -CRC of split ROM ("30cc3563") matches the common PC Engine Hu-Card ROM dump.
-*/
-
-ROM_START(tvpwlg4)
-	ROM_REGION( 0x100000, "maincpu", 0 )
-	ROM_LOAD( "tourv_powerleague4.bin", 0x00000, 0x100000, CRC(0a6e65f8) SHA1(88adf3f5b9a6d139f216bdb73abf8606bb8e5b16) )
-
-	TOURVISION_BIOS
-ROM_END
-
-
-/*
-Taito Scene Crime Investigation (SCI) Tourvision cart.
-
-Notes:
- -1st and 2nd halfs are identical, left unsplit for reference.
- -Cart's A19 line seems not connected to anything.
- -CRC of split ROM ("09a0bfcc") matches the common English language PC Engine Hu-Card ROM dump.
-
-*/
-
-ROM_START(tvsci)
-	ROM_REGION( 0x100000, "maincpu", 0 )
-	ROM_LOAD( "tourv_sci.bin", 0x00000, 0x100000, CRC(4baac6d8) SHA1(4c2431d9553e2bd952cf816e78fc1e3387376ef4) )
-
-	TOURVISION_BIOS
-ROM_END
-
-
-ROM_START(tvlegaxe)
-	ROM_REGION( 0x100000, "maincpu", 0 )
-	ROM_LOAD( "tourv_makyodensetsuthelegendaryaxe.bin", 0x00000, 0x100000, CRC(50ec3f97) SHA1(d583fa240a4dfd14b0d53ff78762fbac52694dd2) )
-
-	TOURVISION_BIOS
-ROM_END
-
-
-ROM_START(tvsvball)
-	ROM_REGION( 0x100000, "maincpu", 0 )
-	ROM_LOAD( "tourv_supervolleyball.bin", 0x00000, 0x100000, CRC(8a32a1ca) SHA1(80144fb4035415eb9b2c67d78d55757ed0d641a1) )
-
-	TOURVISION_BIOS
-ROM_END
-
-
-ROM_START(tvablast)
-	ROM_REGION( 0x100000, "maincpu", 0 )
-	ROM_LOAD( "tourv_ablast.bin", 0x00000, 0x100000, CRC(9302f6d0) SHA1(76ef27a6d639514ed261b9d65f37217f2989d1c0) )
-
-	TOURVISION_BIOS
-ROM_END
-
-
-ROM_START(tvcolumn)
-	ROM_REGION( 0x100000, "maincpu", 0 )
-	ROM_LOAD( "tourv_column.bin", 0x00000, 0x100000, CRC(bb01dea8) SHA1(24e00aee5117e996becb56b59851e54e3f2fa11f) )
-
-	TOURVISION_BIOS
-ROM_END
-
-
-ROM_START(tvflaptw)
-	ROM_REGION( 0x100000, "maincpu", 0 )
-	ROM_LOAD( "tourv_flaptw.bin", 0x00000, 0x100000, CRC(3ca56272) SHA1(9b5417ae9a9400fead170e882d3dae19edfd7157) )
-
-	TOURVISION_BIOS
-ROM_END
-
-
-ROM_START(tvfsoc90)
-	ROM_REGION( 0x100000, "maincpu", 0 )
-	ROM_LOAD( "tourv_fsoc90.bin", 0x00000, 0x100000, CRC(428ffeb1) SHA1(5d12f3ed7f42b2b6da4d8eba95a16e2d34616846) )
-
-	TOURVISION_BIOS
-ROM_END
-
-
-ROM_START(tvgomola)
-	ROM_REGION( 0x100000, "maincpu", 0 )
-	ROM_LOAD( "tourv_gomola.bin", 0x00000, 0x100000, CRC(41e8e18f) SHA1(210e511b85056bf216fc0d2540ed379a9dc7c18f) )
-
-	TOURVISION_BIOS
-ROM_END
-
-
-ROM_START(tvjchan)
-	ROM_REGION( 0x100000, "maincpu", 0 )
-	ROM_LOAD( "tourv_jchan.bin", 0x00000, 0x100000, CRC(7fe2b77c) SHA1(f27251451301dfb800e454c09fbb82d43b518592) )
-
-	TOURVISION_BIOS
-ROM_END
-
-
-ROM_START(tvpcgen2)
-	ROM_REGION( 0x100000, "maincpu", 0 )
-	ROM_LOAD( "tourv_pckid2.bin", 0x00000, 0x100000, CRC(57fab9ee) SHA1(07c8b18905fceac73c3e18b747e8cf92d8a5f515) )
-
-	TOURVISION_BIOS
-ROM_END
-
-
-ROM_START(tvpow11)
-	ROM_REGION( 0x100000, "maincpu", 0 )
-	ROM_LOAD( "tourv_pow11.bin", 0x00000, 0x100000, CRC(375114a3) SHA1(845633345886b335e6c82b3f56ef012d9820e64d) )
-
-	TOURVISION_BIOS
-ROM_END
-
-
-ROM_START(tvsssold)
-	ROM_REGION( 0x100000, "maincpu", 0 )
-	ROM_LOAD( "tourv_sssold.bin", 0x00000, 0x100000, CRC(bb2a0b14) SHA1(5380d25b4d5bb3e0048ed857fd36a8206e81a234) )
-
-	TOURVISION_BIOS
-ROM_END
-
-
-ROM_START(tvvolfd)
-	ROM_REGION( 0x100000, "maincpu", 0 )
-	ROM_LOAD( "tourv_volfd.bin", 0x00000, 0x100000, BAD_DUMP CRC(c33efba5) SHA1(41ad4f85e551321487be61e2adbeae67e65c47de) )
-
-	TOURVISION_BIOS
-ROM_END
-
-
-GAME( 19??, tourvis,  0,       tourvision, tourvision, pce_common_state, pce_common, ROT0, "bootleg (Tourvision)", "Tourvision PCE bootleg", MACHINE_IS_BIOS_ROOT | MACHINE_NOT_WORKING )
-GAME( 1988, tvlegaxe, tourvis, tourvision, tourvision, pce_common_state, pce_common, ROT0, "bootleg (Tourvision) / Victor Musical Industries, Inc.", "Makyo Densetsu - The Legenary Axe (Tourvision PCE bootleg)", MACHINE_IMPERFECT_SOUND | MACHINE_NOT_WORKING )
-GAME( 1989, tvflaptw, tourvis, tourvision, tourvision, pce_common_state, pce_common, ROT0, "bootleg (Tourvision) / Namco", "Final Lap Twin (Tourvision PCE bootleg)", MACHINE_IMPERFECT_SOUND | MACHINE_NOT_WORKING )
-GAME( 1989, tvusapb,  tourvis, tourvision, tourvision, pce_common_state, pce_common, ROT0, "bootleg (Tourvision) / Aicom", "USA Pro Basketball (Tourvision PCE bootleg)", MACHINE_IMPERFECT_SOUND | MACHINE_NOT_WORKING )
-GAME( 1989, tvvolfd,  tourvis, tourvision, tourvision, pce_common_state, pce_common, ROT0, "bootleg (Tourvision) / Taito", "Volfied (Tourvision PCE bootleg)", MACHINE_IMPERFECT_SOUND | MACHINE_NOT_WORKING )
-GAME( 1989, tvdunexp, tourvis, tourvision, tourvision, pce_common_state, pce_common, ROT0, "bootleg (Tourvision) / Hudson / Atlus", "Dungeon Explorer (Tourvision PCE bootleg)", MACHINE_IMPERFECT_SOUND | MACHINE_NOT_WORKING )
-GAME( 1990, tvablast, tourvis, tourvision, tourvision, pce_common_state, pce_common, ROT0, "bootleg (Tourvision) / Hudson / Kaneko", "Aero Blasters (Tourvision PCE bootleg)", MACHINE_IMPERFECT_SOUND | MACHINE_NOT_WORKING )
-GAME( 1990, tvfsoc90, tourvis, tourvision, tourvision, pce_common_state, pce_common, ROT0, "bootleg (Tourvision) / Human", "Formation Soccer - Human Cup '90 (Tourvision PCE bootleg)", MACHINE_IMPERFECT_SOUND | MACHINE_NOT_WORKING )
-GAME( 1990, tvgomola, tourvis, tourvision, tourvision, pce_common_state, pce_common, ROT0, "bootleg (Tourvision) / Human", "Gomola Speed (Tourvision PCE bootleg)", MACHINE_IMPERFECT_SOUND | MACHINE_NOT_WORKING )
-GAME( 1990, tvsssold, tourvis, tourvision, tourvision, pce_common_state, pce_common, ROT0, "bootleg (Tourvision) / Hudson / Kaneko", "Super Star Soldier (Tourvision PCE bootleg)", MACHINE_IMPERFECT_SOUND | MACHINE_NOT_WORKING )
-GAME( 1990, tvthbld,  tourvis, tourvision, tourvision, pce_common_state, pce_common, ROT0, "bootleg (Tourvision) / Sega / NEC Avenue", "Thunder Blade (Tourvision PCE bootleg)", MACHINE_IMPERFECT_SOUND | MACHINE_NOT_WORKING )
-GAME( 1990, tvrs2,    tourvis, tourvision, tourvision, pce_common_state, pce_common, ROT0, "bootleg (Tourvision) / Taito", "Rastan Saga II (Tourvision PCE bootleg)", MACHINE_IMPERFECT_SOUND | MACHINE_NOT_WORKING )
-GAME( 1990, tvsvball, tourvis, tourvision, tourvision, pce_common_state, pce_common, ROT0, "bootleg (Tourvision) / Video System", "Super Volley ball (Tourvision PCE bootleg)", MACHINE_IMPERFECT_SOUND | MACHINE_NOT_WORKING )
-GAME( 1991, tvcolumn, tourvis, tourvision, tourvision, pce_common_state, pce_common, ROT0, "bootleg (Tourvision) / Telenet Japan", "Columns (Tourvision PCE bootleg)", MACHINE_IMPERFECT_SOUND | MACHINE_NOT_WORKING )
-GAME( 1991, tvjchan,  tourvis, tourvision, tourvision, pce_common_state, pce_common, ROT0, "bootleg (Tourvision) / Hudson", "Jackie Chan (Tourvision PCE bootleg)", MACHINE_IMPERFECT_SOUND | MACHINE_NOT_WORKING )
-GAME( 1991, tvpcgen2, tourvis, tourvision, tourvision, pce_common_state, pce_common, ROT0, "bootleg (Tourvision) / Hudson", "PC Genjin 2 - Pithecanthropus Computerurus (Tourvision PCE bootleg)", MACHINE_IMPERFECT_SOUND | MACHINE_NOT_WORKING )
-GAME( 1991, tvpow11,  tourvis, tourvision, tourvision, pce_common_state, pce_common, ROT0, "bootleg (Tourvision) / Hudson", "Power Eleven (Tourvision PCE bootleg)", MACHINE_IMPERFECT_SOUND | MACHINE_NOT_WORKING )
-GAME( 1991, tvpwlg4,  tourvis, tourvision, tourvision, pce_common_state, pce_common, ROT0, "bootleg (Tourvision) / Hudson", "Power League IV (Tourvision PCE bootleg)", MACHINE_IMPERFECT_SOUND | MACHINE_NOT_WORKING )
-GAME( 1991, tvsci,    tourvis, tourvision, tourvision, pce_common_state, pce_common, ROT0, "bootleg (Tourvision) / Taito", "Special Criminal Investigation (Tourvision PCE bootleg)", MACHINE_IMPERFECT_SOUND | MACHINE_NOT_WORKING )
+GAME( 19??, tourvis, 0, tourvision, tourvision, tourvision_state, init_pce_common, ROT0, "bootleg (Tourvision)", "Tourvision PCE bootleg", MACHINE_IS_BIOS_ROOT | MACHINE_NOT_WORKING )

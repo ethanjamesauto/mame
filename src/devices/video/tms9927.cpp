@@ -9,65 +9,68 @@
 #include "emu.h"
 #include "video/tms9927.h"
 
+#include "screen.h"
 
-static const UINT8 chars_per_row_value[8] = { 20, 32, 40, 64, 72, 80, 96, 132 };
-static const UINT8 skew_bits_value[4] = { 0, 1, 2, 2 };
+
+static constexpr uint8_t chars_per_row_value[8] = { 20, 32, 40, 64, 72, 80, 96, 132 };
+static constexpr uint8_t skew_bits_value[4] = { 0, 1, 2, 2 };
 
 
 #define HCOUNT               (m_reg[0] + 1)
 #define INTERLACED           ((m_reg[1] >> 7) & 0x01)
-#define HSYNC_WIDTH          ((m_reg[1] >> 4) & 0x0f)
-#define HSYNC_DELAY          ((m_reg[1] >> 0) & 0x07)
+#define HSYNC_WIDTH          (((m_reg[1] >> 3) & 0x0f) + 1)
+#define HSYNC_DELAY          (((m_reg[1] >> 0) & 0x07) + 1)
 #define SCANS_PER_DATA_ROW   (((m_reg[2] >> 3) & 0x0f) + 1)
 #define CHARS_PER_DATA_ROW   (chars_per_row_value[(m_reg[2] >> 0) & 0x07])
 #define SKEW_BITS            (skew_bits_value[(m_reg[3] >> 6) & 0x03])
-#define DATA_ROWS_PER_FRAME  (((m_reg[3] >> 0) & 0x3f) + 1)
-#define SCAN_LINES_PER_FRAME ((m_reg[4] * 2) + 256)
+#define DATA_ROWS_PER_FRAME  ((m_reg[3] & 0x3f) + 1)
+#define SCAN_LINES_PER_FRAME ((m_reg[4] * 2) + 256 + (((m_reg[1] >> 7) & 0x01) * 257))
 #define VERTICAL_DATA_START  (m_reg[5])
 #define LAST_DISP_DATA_ROW   (m_reg[6] & 0x3f)
 #define CURSOR_CHAR_ADDRESS  (m_reg[7])
 #define CURSOR_ROW_ADDRESS   (m_reg[8] & 0x3f)
 
 
-const device_type TMS9927 = &device_creator<tms9927_device>;
-const device_type CRT5027 = &device_creator<crt5027_device>;
-const device_type CRT5037 = &device_creator<crt5037_device>;
-const device_type CRT5057 = &device_creator<crt5057_device>;
+DEFINE_DEVICE_TYPE(TMS9927, tms9927_device, "tms9927", "TMS9927 VTC")
+DEFINE_DEVICE_TYPE(CRT5027, crt5027_device, "crt5027", "CRT5027 VTAC")
+DEFINE_DEVICE_TYPE(CRT5037, crt5037_device, "crt5037", "CRT5037 VTAC")
+DEFINE_DEVICE_TYPE(CRT5057, crt5057_device, "crt5057", "CRT5057 VTAC")
 
-tms9927_device::tms9927_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-				: device_t(mconfig, TMS9927, "TMS9927 VTC", tag, owner, clock, "tms9927", __FILE__),
-					device_video_interface(mconfig, *this),
-					m_write_vsyn(*this),
-					m_hpixels_per_column(0),
-					m_selfload_region(nullptr),
-					m_reset(0)
-{
-	memset(m_reg, 0x00, sizeof(m_reg));
-}
-
-tms9927_device::tms9927_device(const machine_config &mconfig, device_type type, const char *name, const char *tag, device_t *owner, UINT32 clock, const char *shortname, const char *source)
-				: device_t(mconfig, type, name, tag, owner, clock, shortname, source),
-					device_video_interface(mconfig, *this),
-					m_write_vsyn(*this),
-					m_hpixels_per_column(0),
-					m_selfload_region(nullptr),
-					m_reset(0)
-{
-	memset(m_reg, 0x00, sizeof(m_reg));
-}
-
-crt5027_device::crt5027_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-				: tms9927_device(mconfig, CRT5027, "CRT5027", tag, owner, clock, "crt5027", __FILE__)
+tms9927_device::tms9927_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: tms9927_device(mconfig, TMS9927, tag, owner, clock)
 {
 }
 
-crt5037_device::crt5037_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-				: tms9927_device(mconfig, CRT5037, "CRT5037", tag, owner, clock, "crt5037", __FILE__)
+tms9927_device::tms9927_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock)
+	: device_t(mconfig, type, tag, owner, clock)
+	, device_video_interface(mconfig, *this)
+	, m_write_vsyn(*this)
+	, m_write_hsyn(*this)
+	, m_hpixels_per_column(0)
+	, m_overscan_left(0)
+	, m_overscan_right(0)
+	, m_overscan_top(0)
+	, m_overscan_bottom(0)
+	, m_selfload(*this, finder_base::DUMMY_TAG)
+	, m_reset(false)
+	, m_valid_config(false)
+	, m_custom_visarea(0, 0, 0, 0)
+{
+	std::fill(std::begin(m_reg), std::end(m_reg), 0x00);
+}
+
+crt5027_device::crt5027_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: tms9927_device(mconfig, CRT5027, tag, owner, clock)
 {
 }
 
-crt5057_device::crt5057_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-				: tms9927_device(mconfig, CRT5057, "CRT5057", tag, owner, clock, "crt5057", __FILE__)
+crt5037_device::crt5037_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: tms9927_device(mconfig, CRT5037, tag, owner, clock)
+{
+}
+
+crt5057_device::crt5057_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: tms9927_device(mconfig, CRT5057, tag, owner, clock)
 {
 }
 
@@ -79,30 +82,22 @@ crt5057_device::crt5057_device(const machine_config &mconfig, const char *tag, d
 void tms9927_device::device_start()
 {
 	assert(clock() > 0);
-	assert(m_hpixels_per_column > 0);
-
-	/* copy the initial parameters */
-	m_clock = clock();
-
-	/* get the self-load PROM */
-	if (m_selfload_region != nullptr)
-	{
-		m_selfload = machine().root_device().memregion(m_selfload_region)->base();
-		assert(m_selfload != nullptr);
-	}
+	if (!(m_hpixels_per_column > 0)) fatalerror("TMS9927: number of pixels per column must be explicitly set using set_char_width()!\n");
 
 	// resolve callbacks
 	m_write_vsyn.resolve_safe();
+	m_write_hsyn.resolve();
 
 	// allocate timers
 	m_vsync_timer = timer_alloc(TIMER_VSYNC);
+	m_hsync_timer = timer_alloc(TIMER_HSYNC);
 
-	/* register for state saving */
-	machine().save().register_postload(save_prepost_delegate(FUNC(tms9927_device::state_postload), this));
-
+	// register for state saving
 	save_item(NAME(m_reg));
 	save_item(NAME(m_start_datarow));
 	save_item(NAME(m_reset));
+	save_item(NAME(m_vsyn));
+	save_item(NAME(m_hsyn));
 }
 
 //-------------------------------------------------
@@ -111,6 +106,18 @@ void tms9927_device::device_start()
 
 void tms9927_device::device_reset()
 {
+	m_start_datarow = 0;
+}
+
+//-------------------------------------------------
+//  device_clock_changed - called when the
+//  device clock is altered in any way
+//-------------------------------------------------
+
+void tms9927_device::device_clock_changed()
+{
+	if (m_valid_config && !m_reset)
+		recompute_parameters(false);
 }
 
 //-------------------------------------------------
@@ -119,8 +126,8 @@ void tms9927_device::device_reset()
 
 void tms9927_device::device_stop()
 {
-	osd_printf_debug("TMS9937: Final params: (%d, %d, %d, %d, %d, %d, %d)\n",
-						m_clock,
+	osd_printf_debug("TMS9927: Final params: (%d, %d, %d, %d, %d, %d, %d)\n",
+						clock() * m_hpixels_per_column,
 						m_total_hpix,
 						0, m_visible_hpix,
 						m_total_vpix,
@@ -139,39 +146,58 @@ void tms9927_device::device_timer(emu_timer &timer, device_timer_id id, int para
 	{
 	case TIMER_VSYNC:
 		m_vsyn = !m_vsyn;
-
-		m_write_vsyn(m_vsyn);
+		m_write_vsyn(m_vsyn ? 1 : 0);
 
 		if (m_vsyn)
 		{
-			m_vsync_timer->adjust(m_screen->time_until_pos(3));
+			m_vsync_timer->adjust(screen().time_until_pos(m_vsyn_end, m_hsyn_start));
 		}
 		else
 		{
-			m_vsync_timer->adjust(m_screen->time_until_pos(0));
+			m_vsync_timer->adjust(screen().time_until_pos(m_vsyn_start, m_hsyn_start));
+		}
+		break;
+
+	case TIMER_HSYNC:
+		m_hsyn = !m_hsyn;
+		m_write_hsyn(m_hsyn ? 1 : 0);
+
+		uint16_t vpos = screen().vpos();
+		if (m_hsyn)
+		{
+			screen().update_now();
+			if (screen().hpos() > m_hsyn_end)
+				vpos = (vpos + 1) % m_total_vpix;
+			m_hsync_timer->adjust(screen().time_until_pos(vpos, m_hsyn_end));
+		}
+		else
+		{
+			if (screen().hpos() > m_hsyn_start)
+				vpos = (vpos + 1) % m_total_vpix;
+			m_hsync_timer->adjust(screen().time_until_pos(vpos, m_hsyn_start));
 		}
 		break;
 	}
 }
 
-void tms9927_device::state_postload()
+void tms9927_device::device_post_load()
 {
-	recompute_parameters(TRUE);
+	recompute_parameters(true);
 }
 
 
-void tms9927_device::generic_access(address_space &space, offs_t offset)
+void tms9927_device::generic_access(offs_t offset)
 {
 	switch (offset)
 	{
 		case 0x07:  /* Processor Self Load */
 		case 0x0f:  /* Non-processor self-load */
-			if (m_selfload != nullptr)
+			if (m_selfload.found())
 			{
 				for (int cur = 0; cur < 7; cur++)
-					write(space, cur, m_selfload[cur]);
+					write(cur, m_selfload[cur]);
 				for (int cur = 0; cur < 1; cur++)
-					write(space, cur + 0xc, m_selfload[cur + 7]);
+					write(cur + 0xc, m_selfload[cur + 7]);
 			}
 			else
 				popmessage("tms9927: self-load initiated with no PROM!");
@@ -184,30 +210,28 @@ void tms9927_device::generic_access(address_space &space, offs_t offset)
 		case 0x0a:  /* Reset */
 			if (!m_reset)
 			{
-				m_screen->update_now();
-				m_reset = TRUE;
+				screen().update_now();
+				m_reset = true;
 			}
 			break;
 
 		case 0x0b:  /* Up scroll */
-osd_printf_debug("Up scroll\n");
-			m_screen->update_now();
+			screen().update_now();
 			m_start_datarow = (m_start_datarow + 1) % DATA_ROWS_PER_FRAME;
 			break;
 
 		case 0x0e:  /* Start timing chain */
 			if (m_reset)
 			{
-				m_screen->update_now();
-				m_reset = FALSE;
-				recompute_parameters(FALSE);
+				screen().update_now();
+				m_reset = false;
+				recompute_parameters(false);
 			}
 			break;
 	}
 }
 
-
-WRITE8_MEMBER( tms9927_device::write )
+void tms9927_device::write(offs_t offset, uint8_t data)
 {
 	switch (offset)
 	{
@@ -217,26 +241,35 @@ WRITE8_MEMBER( tms9927_device::write )
 		case 0x03:  /* SKEW BITS / DATA ROWS PER FRAME */
 		case 0x04:  /* SCAN LINES / FRAME */
 		case 0x05:  /* VERTICAL DATA START */
-		case 0x06:  /* LAST DISPLAYED DATA ROW */
 			m_reg[offset] = data;
-			recompute_parameters(FALSE);
+			recompute_parameters(false);
+			break;
+
+		case 0x06:  /* LAST DISPLAYED DATA ROW */
+			// TVI-912 writes to this register frequently
+			if (m_reg[offset] != data)
+			{
+				m_reg[offset] = data;
+				recompute_parameters(false);
+			}
 			break;
 
 		case 0x0c:  /* LOAD CURSOR CHARACTER ADDRESS */
 		case 0x0d:  /* LOAD CURSOR ROW ADDRESS */
-osd_printf_debug("Cursor address changed\n");
 			m_reg[offset - 0x0c + 7] = data;
-			recompute_parameters(FALSE);
+			/* Recomputing parameters here will break the scrollup on the Attachè
+			   and probably other machines due to m_start_datarow being reset ! */
+			//recompute_parameters(false);
 			break;
 
 		default:
-			generic_access(space, offset);
+			generic_access(offset);
 			break;
 	}
 }
 
 
-READ8_MEMBER( tms9927_device::read )
+uint8_t tms9927_device::read(offs_t offset)
 {
 	switch (offset)
 	{
@@ -245,29 +278,24 @@ READ8_MEMBER( tms9927_device::read )
 			return m_reg[offset - 0x08 + 7];
 
 		default:
-			generic_access(space, offset);
+			if (!machine().side_effects_disabled())
+				generic_access(offset);
 			break;
 	}
 	return 0xff;
 }
 
 
-int tms9927_device::screen_reset()
+int tms9927_device::bl_r()
 {
-	return m_reset;
+	return (m_reset || screen().vblank() || screen().hblank()) ? 1 : 0;
 }
 
 
-int tms9927_device::upscroll_offset()
-{
-	return m_start_datarow;
-}
-
-
-int tms9927_device::cursor_bounds(rectangle &bounds)
+bool tms9927_device::cursor_bounds(rectangle &bounds) const
 {
 	int cursorx = CURSOR_CHAR_ADDRESS;
-	int cursory = CURSOR_ROW_ADDRESS;
+	int cursory = (CURSOR_ROW_ADDRESS + DATA_ROWS_PER_FRAME - m_start_datarow) % DATA_ROWS_PER_FRAME;
 
 	bounds.min_x = cursorx * m_hpixels_per_column;
 	bounds.max_x = bounds.min_x + m_hpixels_per_column - 1;
@@ -278,12 +306,8 @@ int tms9927_device::cursor_bounds(rectangle &bounds)
 }
 
 
-void tms9927_device::recompute_parameters(int postload)
+void tms9927_device::recompute_parameters(bool postload)
 {
-	UINT16 offset_hpix, offset_vpix;
-	attoseconds_t refresh;
-	rectangle visarea;
-
 	if (m_reset)
 		return;
 
@@ -293,20 +317,29 @@ void tms9927_device::recompute_parameters(int postload)
 
 	/* determine the visible area, avoid division by 0 */
 	m_visible_hpix = CHARS_PER_DATA_ROW * m_hpixels_per_column;
-	m_visible_vpix = (LAST_DISP_DATA_ROW + 1) * SCANS_PER_DATA_ROW;
+	m_visible_vpix = DATA_ROWS_PER_FRAME * SCANS_PER_DATA_ROW;
 
-	/* determine the horizontal/vertical offsets */
-	offset_hpix = HSYNC_DELAY * m_hpixels_per_column;
-	offset_vpix = VERTICAL_DATA_START;
+	m_start_datarow = (LAST_DISP_DATA_ROW + 1) % DATA_ROWS_PER_FRAME;
 
-	osd_printf_debug("TMS9937: Total = %dx%d, Visible = %dx%d, Offset=%dx%d, Skew=%d\n", m_total_hpix, m_total_vpix, m_visible_hpix, m_visible_vpix, offset_hpix, offset_vpix, SKEW_BITS);
+	m_hsyn_start = (m_visible_hpix + m_overscan_left + HSYNC_DELAY * m_hpixels_per_column) % m_total_hpix;
+	m_hsyn_end = (m_hsyn_start + HSYNC_WIDTH * m_hpixels_per_column) % m_total_hpix;
+
+	m_vsyn_start = (m_total_vpix + m_overscan_top - VERTICAL_DATA_START) % m_total_vpix;
+	m_vsyn_end = (m_vsyn_start + 3) % m_total_vpix;
 
 	/* see if it all makes sense */
-	m_valid_config = TRUE;
-	if (m_visible_hpix > m_total_hpix || m_visible_vpix > m_total_vpix)
+	m_valid_config = true;
+	if ( (m_visible_hpix > m_total_hpix || m_visible_vpix > m_total_vpix) || (((m_visible_hpix-1)<=0) || ((m_visible_vpix-1)<=0)) || ((m_total_hpix * m_total_vpix) == 0) )
 	{
-		m_valid_config = FALSE;
+		m_valid_config = false;
 		logerror("tms9927: invalid visible size (%dx%d) versus total size (%dx%d)\n", m_visible_hpix, m_visible_vpix, m_total_hpix, m_total_vpix);
+	}
+
+	if (clock() == 0)
+	{
+		m_valid_config = false;
+		// TODO: make the screen refresh never, and disable the vblank and odd/even interrupts here!
+		logerror("tms9927: invalid clock rate of zero defined!\n");
 	}
 
 	/* update */
@@ -314,13 +347,26 @@ void tms9927_device::recompute_parameters(int postload)
 		return;
 
 	/* create a visible area */
-	/* fix me: how do the offsets fit in here? */
-	visarea.set(0, m_visible_hpix - 1, 0, m_visible_vpix - 1);
+	rectangle visarea(0, m_overscan_left + m_visible_hpix + m_overscan_right - 1,
+				0, m_overscan_top + m_visible_vpix + m_overscan_bottom - 1);
 
-	refresh = HZ_TO_ATTOSECONDS(m_clock) * m_total_hpix * m_total_vpix;
+	if (m_custom_visarea.width() > 1 && m_custom_visarea.height() > 1)
+		visarea = m_custom_visarea;
 
-	m_screen->configure(m_total_hpix, m_total_vpix, visarea, refresh);
+	attotime refresh = clocks_to_attotime(HCOUNT * m_total_vpix);
 
-	m_vsyn = 0;
-	m_vsync_timer->adjust(m_screen->time_until_pos(0, 0));
+	osd_printf_debug("TMS9927: Total = %dx%d, Visible = %dx%d, HSync = %d-%d, VSync = %d-%d, Skew=%d, Upscroll=%d, Period=%f Hz\n", m_total_hpix, m_total_vpix, m_visible_hpix, m_visible_vpix, m_hsyn_start, m_hsyn_end, m_vsyn_start, m_vsyn_end, SKEW_BITS, m_start_datarow, refresh.as_hz());
+
+	screen().configure(m_total_hpix, m_total_vpix, visarea, refresh.as_attoseconds());
+
+	m_hsyn = false;
+	if (!m_write_hsyn.isnull())
+	{
+		m_write_hsyn(0);
+		m_hsync_timer->adjust(screen().time_until_pos(m_vsyn_start, m_hsyn_start));
+	}
+
+	m_vsyn = false;
+	m_write_vsyn(0);
+	m_vsync_timer->adjust(screen().time_until_pos(m_vsyn_start, m_hsyn_start));
 }

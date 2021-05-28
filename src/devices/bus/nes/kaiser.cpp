@@ -15,14 +15,15 @@
  * Kaiser KS7022
  * Kaiser KS7032
  * Kaiser KS7058
+ * Kaiser KS7016
+ * Kaiser KS7037
 
- The Kaiser KS7057 bootleg board is emulated in nes_mmc3_clones.c
+ The Kaiser KS7057 bootleg board is emulated in nes_mmc3_clones.cpp
 
 
  TODO:
  - FCEUmm lists more Kaiser PCBs:
    * KS7030 (for Yume Koujou Doki Doki Panic by Kaiser?)
-   * KS7037
    but there seem to be no available dumps...
 
  ***********************************************************************************************************/
@@ -30,8 +31,6 @@
 
 #include "emu.h"
 #include "kaiser.h"
-
-#include "cpu/m6502/m6502.h"
 
 
 #ifdef NES_PCB_DEBUG
@@ -47,58 +46,70 @@
 //  constructor
 //-------------------------------------------------
 
-const device_type NES_KS7058 = &device_creator<nes_ks7058_device>;
-const device_type NES_KS7022 = &device_creator<nes_ks7022_device>;
-const device_type NES_KS7032 = &device_creator<nes_ks7032_device>;
-const device_type NES_KS202 = &device_creator<nes_ks202_device>;
-const device_type NES_KS7017 = &device_creator<nes_ks7017_device>;
-const device_type NES_KS7012 = &device_creator<nes_ks7012_device>;
-const device_type NES_KS7013B = &device_creator<nes_ks7013b_device>;
-const device_type NES_KS7031 = &device_creator<nes_ks7031_device>;
+DEFINE_DEVICE_TYPE(NES_KS7058,  nes_ks7058_device,  "nes_ks7058",  "NES Cart Kaiser KS-7058 PCB")
+DEFINE_DEVICE_TYPE(NES_KS7022,  nes_ks7022_device,  "nes_ks7022",  "NES Cart Kaiser KS-7022 PCB")
+DEFINE_DEVICE_TYPE(NES_KS7032,  nes_ks7032_device,  "nes_ks7032",  "NES Cart Kaiser KS-7032 PCB")
+DEFINE_DEVICE_TYPE(NES_KS202,   nes_ks202_device,   "nes_ks202",   "NES Cart Kaiser KS-202 PCB")
+DEFINE_DEVICE_TYPE(NES_KS7017,  nes_ks7017_device,  "nes_ks7017",  "NES Cart Kaiser KS-7017 PCB")
+DEFINE_DEVICE_TYPE(NES_KS7012,  nes_ks7012_device,  "nes_ks7012",  "NES Cart Kaiser KS-7012 PCB")
+DEFINE_DEVICE_TYPE(NES_KS7013B, nes_ks7013b_device, "nes_ks7013b", "NES Cart Kaiser KS-7013B PCB")
+DEFINE_DEVICE_TYPE(NES_KS7031,  nes_ks7031_device,  "nes_ks7031",  "NES Cart Kaiser KS-7031 PCB")
+DEFINE_DEVICE_TYPE(NES_KS7016,  nes_ks7016_device,  "nes_ks7016",  "NES Cart Kaiser KS-7016 PCB")
+DEFINE_DEVICE_TYPE(NES_KS7037,  nes_ks7037_device,  "nes_ks7037",  "NES Cart Kaiser KS-7037 PCB")
 
 
-nes_ks7058_device::nes_ks7058_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-					: nes_nrom_device(mconfig, NES_KS7058, "NES Cart Kaiser KS-7058 PCB", tag, owner, clock, "nes_ks7058", __FILE__)
+nes_ks7058_device::nes_ks7058_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: nes_nrom_device(mconfig, NES_KS7058, tag, owner, clock)
 {
 }
 
-nes_ks7022_device::nes_ks7022_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-					: nes_nrom_device(mconfig, NES_KS7022, "NES Cart Kaiser KS-7022 PCB", tag, owner, clock, "nes_ks7022", __FILE__), m_latch(0)
-				{
-}
-
-nes_ks7032_device::nes_ks7032_device(const machine_config &mconfig, device_type type, const char *name, const char *tag, device_t *owner, UINT32 clock, const char *shortname, const char *source)
-					: nes_nrom_device(mconfig, type, name, tag, owner, clock, shortname, source), m_latch(0), m_irq_count(0), m_irq_enable(0), irq_timer(nullptr)
-				{
-}
-
-nes_ks7032_device::nes_ks7032_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-					: nes_nrom_device(mconfig, NES_KS7032, "NES Cart Kaiser KS-7032 PCB", tag, owner, clock, "nes_ks7032", __FILE__), m_latch(0), m_irq_count(0), m_irq_enable(0), irq_timer(nullptr)
-				{
-}
-
-nes_ks202_device::nes_ks202_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-					: nes_ks7032_device(mconfig, NES_KS202, "NES Cart Kaiser KS-202 PCB", tag, owner, clock, "nes_ks202", __FILE__)
+nes_ks7022_device::nes_ks7022_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: nes_nrom_device(mconfig, NES_KS7022, tag, owner, clock), m_latch(0)
 {
 }
 
-nes_ks7017_device::nes_ks7017_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-					: nes_nrom_device(mconfig, NES_KS7017, "NES Cart Kaiser KS-7017 PCB", tag, owner, clock, "nes_ks7017", __FILE__), m_latch(0), m_irq_count(0), m_irq_status(0), m_irq_enable(0), irq_timer(nullptr)
-				{
-}
-
-nes_ks7012_device::nes_ks7012_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-					: nes_nrom_device(mconfig, NES_KS7012, "NES Cart Kaiser KS-7012 PCB", tag, owner, clock, "nes_ks7012", __FILE__)
+nes_ks7032_device::nes_ks7032_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock)
+	: nes_nrom_device(mconfig, type, tag, owner, clock), m_latch(0), m_irq_count(0), m_irq_enable(0), irq_timer(nullptr)
 {
 }
 
-nes_ks7013b_device::nes_ks7013b_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-					: nes_nrom_device(mconfig, NES_KS7013B, "NES Cart Kaiser KS-7013B PCB", tag, owner, clock, "nes_ks7013b", __FILE__)
+nes_ks7032_device::nes_ks7032_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: nes_ks7032_device(mconfig, NES_KS7032, tag, owner, clock)
 {
 }
 
-nes_ks7031_device::nes_ks7031_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-					: nes_nrom_device(mconfig, NES_KS7031, "NES Cart Kaiser KS-7031 PCB", tag, owner, clock, "nes_ks7031", __FILE__)
+nes_ks202_device::nes_ks202_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: nes_ks7032_device(mconfig, NES_KS202, tag, owner, clock)
+{
+}
+
+nes_ks7017_device::nes_ks7017_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: nes_nrom_device(mconfig, NES_KS7017, tag, owner, clock), m_latch(0), m_irq_count(0), m_irq_status(0), m_irq_enable(0), irq_timer(nullptr)
+{
+}
+
+nes_ks7012_device::nes_ks7012_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: nes_nrom_device(mconfig, NES_KS7012, tag, owner, clock)
+{
+}
+
+nes_ks7013b_device::nes_ks7013b_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: nes_nrom_device(mconfig, NES_KS7013B, tag, owner, clock)
+{
+}
+
+nes_ks7031_device::nes_ks7031_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: nes_nrom_device(mconfig, NES_KS7031, tag, owner, clock)
+{
+}
+
+nes_ks7016_device::nes_ks7016_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: nes_nrom_device(mconfig, NES_KS7016, tag, owner, clock)
+{
+}
+
+nes_ks7037_device::nes_ks7037_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: nes_nrom_device(mconfig, NES_KS7037, tag, owner, clock)
 {
 }
 
@@ -137,7 +148,7 @@ void nes_ks7032_device::device_start()
 {
 	common_start();
 	irq_timer = timer_alloc(TIMER_IRQ);
-	irq_timer->adjust(attotime::zero, 0, machine().device<cpu_device>("maincpu")->cycles_to_attotime(1));
+	irq_timer->adjust(attotime::zero, 0, clocks_to_attotime(1));
 
 	save_item(NAME(m_latch));
 	save_item(NAME(m_irq_enable));
@@ -163,7 +174,7 @@ void nes_ks7017_device::device_start()
 {
 	common_start();
 	irq_timer = timer_alloc(TIMER_IRQ);
-	irq_timer->adjust(attotime::zero, 0, machine().device<cpu_device>("maincpu")->cycles_to_attotime(1));
+	irq_timer->adjust(attotime::zero, 0, clocks_to_attotime(1));
 
 	save_item(NAME(m_latch));
 	save_item(NAME(m_irq_enable));
@@ -226,7 +237,41 @@ void nes_ks7031_device::pcb_reset()
 	m_reg[3] = 0;
 }
 
+void nes_ks7016_device::device_start()
+{
+	common_start();
+	save_item(NAME(m_reg));
+}
 
+void nes_ks7016_device::pcb_reset()
+{
+	prg8_89(0xc);
+	prg8_ab(0xd);
+	prg8_cd(0xe);
+	prg8_ef(0xf);
+	chr8(0, CHRRAM);
+
+	m_reg = 4;
+}
+
+void nes_ks7037_device::device_start()
+{
+	common_start();
+	save_item(NAME(m_latch));
+	save_item(NAME(m_reg));
+}
+
+void nes_ks7037_device::pcb_reset()
+{
+	prg8_89(0);
+	prg8_ab(0x1e);
+	prg8_cd(0);
+	prg8_ef(0x1f);
+	chr8(0, CHRRAM);
+
+	memset(m_reg, 0, sizeof(m_reg));
+	m_latch = 0;
+}
 
 
 
@@ -250,7 +295,7 @@ void nes_ks7031_device::pcb_reset()
 
  -------------------------------------------------*/
 
-WRITE8_MEMBER(nes_ks7058_device::write_h)
+void nes_ks7058_device::write_h(offs_t offset, uint8_t data)
 {
 	LOG_MMC(("ks7058 write_h, offset: %04x, data: %02x\n", offset, data));
 
@@ -277,7 +322,7 @@ WRITE8_MEMBER(nes_ks7058_device::write_h)
 
  -------------------------------------------------*/
 
-WRITE8_MEMBER(nes_ks7022_device::write_h)
+void nes_ks7022_device::write_h(offs_t offset, uint8_t data)
 {
 	LOG_MMC(("ks7022 write_h, offset: %04x, data: %02x\n", offset, data));
 
@@ -288,7 +333,7 @@ WRITE8_MEMBER(nes_ks7022_device::write_h)
 		m_latch = data & 0x0f;
 }
 
-READ8_MEMBER(nes_ks7022_device::read_h)
+uint8_t nes_ks7022_device::read_h(offs_t offset)
 {
 	LOG_MMC(("ks7022 read_h, offset: %04x\n", offset));
 
@@ -328,7 +373,7 @@ void nes_ks7032_device::device_timer(emu_timer &timer, device_timer_id id, int p
 			{
 				m_irq_enable = 0;
 				m_irq_count = 0;
-				m_maincpu->set_input_line(M6502_IRQ_LINE, HOLD_LINE);
+				hold_irq_line();
 			}
 			else
 				m_irq_count++;
@@ -343,7 +388,7 @@ void nes_ks7032_device::prg_update()
 	prg8_cd(m_reg[3]);
 }
 
-WRITE8_MEMBER(nes_ks7032_device::ks7032_write)
+void nes_ks7032_device::ks7032_write(offs_t offset, uint8_t data)
 {
 	LOG_MMC(("ks7032_write, offset: %04x, data: %02x\n", offset, data));
 
@@ -374,7 +419,7 @@ WRITE8_MEMBER(nes_ks7032_device::ks7032_write)
 	}
 }
 
-READ8_MEMBER(nes_ks7032_device::read_m)
+uint8_t nes_ks7032_device::read_m(offs_t offset)
 {
 	LOG_MMC(("ks7032 read_m, offset: %04x\n", offset));
 	return m_prg[((m_reg[4] * 0x2000) + (offset & 0x1fff)) & (m_prg_size - 1)];
@@ -393,7 +438,7 @@ READ8_MEMBER(nes_ks7032_device::read_m)
  -------------------------------------------------*/
 
 
-WRITE8_MEMBER(nes_ks202_device::write_h)
+void nes_ks202_device::write_h(offs_t offset, uint8_t data)
 {
 	LOG_MMC(("ks202 write_h, offset: %04x, data: %02x\n", offset, data));
 
@@ -413,12 +458,12 @@ WRITE8_MEMBER(nes_ks202_device::write_h)
 			}
 			break;
 		default:
-			ks7032_write(space, offset, data, mem_mask);
+			ks7032_write(offset, data);
 			break;
 	}
 }
 
-READ8_MEMBER(nes_ks202_device::read_m)
+uint8_t nes_ks202_device::read_m(offs_t offset)
 {
 	LOG_MMC(("ks202 read_m, offset: %04x\n", offset));
 	return m_prgram[offset & 0x1fff];
@@ -444,7 +489,7 @@ void nes_ks7017_device::device_timer(emu_timer &timer, device_timer_id id, int p
 		{
 			if (!m_irq_count)
 			{
-				m_maincpu->set_input_line(M6502_IRQ_LINE, HOLD_LINE);
+				hold_irq_line();
 				m_irq_enable = 0;
 				m_irq_status |= 0x01;
 			}
@@ -454,7 +499,7 @@ void nes_ks7017_device::device_timer(emu_timer &timer, device_timer_id id, int p
 	}
 }
 
-WRITE8_MEMBER(nes_ks7017_device::write_l)
+void nes_ks7017_device::write_l(offs_t offset, uint8_t data)
 {
 	LOG_MMC(("ks7017 write_l, offset: %04x, data: %02x\n", offset, data));
 
@@ -467,7 +512,7 @@ WRITE8_MEMBER(nes_ks7017_device::write_l)
 		prg16_89ab(m_latch);
 }
 
-WRITE8_MEMBER(nes_ks7017_device::write_ex)
+void nes_ks7017_device::write_ex(offs_t offset, uint8_t data)
 {
 	LOG_MMC(("ks7017 write_ex, offset: %04x, data: %02x\n", offset, data));
 	offset += 0x20;
@@ -485,7 +530,7 @@ WRITE8_MEMBER(nes_ks7017_device::write_ex)
 		set_nt_mirroring(BIT(data, 3) ? PPU_MIRROR_HORZ : PPU_MIRROR_VERT);
 }
 
-READ8_MEMBER(nes_ks7017_device::read_ex)
+uint8_t nes_ks7017_device::read_ex(offs_t offset)
 {
 	LOG_MMC(("ks7017 read_ex, offset: %04x\n", offset));
 	offset += 0x20;
@@ -497,7 +542,7 @@ READ8_MEMBER(nes_ks7017_device::read_ex)
 		return temp;
 	}
 
-	return m_open_bus;   // open bus
+	return get_open_bus();   // open bus
 }
 
 /*-------------------------------------------------
@@ -512,7 +557,7 @@ READ8_MEMBER(nes_ks7017_device::read_ex)
 
  -------------------------------------------------*/
 
-WRITE8_MEMBER(nes_ks7012_device::write_h)
+void nes_ks7012_device::write_h(offs_t offset, uint8_t data)
 {
 	LOG_MMC(("ks7012 write_h, offset: %04x, data: %02x\n", offset, data));
 
@@ -535,13 +580,13 @@ WRITE8_MEMBER(nes_ks7012_device::write_h)
 
  -------------------------------------------------*/
 
-WRITE8_MEMBER(nes_ks7013b_device::write_m)
+void nes_ks7013b_device::write_m(offs_t offset, uint8_t data)
 {
 	LOG_MMC(("ks7013b write_l, offset: %04x, data: %02x\n", offset, data));
 	prg16_89ab(data);
 }
 
-WRITE8_MEMBER(nes_ks7013b_device::write_h)
+void nes_ks7013b_device::write_h(offs_t offset, uint8_t data)
 {
 	LOG_MMC(("ks7013b write_h, offset: %04x, data: %02x\n", offset, data));
 	set_nt_mirroring((data & 1) ? PPU_MIRROR_HORZ : PPU_MIRROR_VERT);
@@ -568,21 +613,128 @@ WRITE8_MEMBER(nes_ks7013b_device::write_h)
 
  -------------------------------------------------*/
 
-READ8_MEMBER(nes_ks7031_device::read_m)
+uint8_t nes_ks7031_device::read_m(offs_t offset)
 {
 //  LOG_MMC(("ks7031 read_m, offset: %04x\n", offset));
 	return m_prg[(m_reg[(offset >> 11) & 3] * 0x0800) + (offset & 0x7ff)];
 }
 
-READ8_MEMBER(nes_ks7031_device::read_h)
+uint8_t nes_ks7031_device::read_h(offs_t offset)
 {
 	// here the first 32K are accessed, but in 16x2K blocks loaded in reverse order
 	int accessed_2k = (offset >> 11) & 0x0f;
 	return m_prg[((0x0f - accessed_2k) * 0x0800) + (offset & 0x7ff)];
 }
 
-WRITE8_MEMBER(nes_ks7031_device::write_h)
+void nes_ks7031_device::write_h(offs_t offset, uint8_t data)
 {
 	LOG_MMC(("ks7031 write_h, offset: %04x, data: %02x\n", offset, data));
 	m_reg[(offset >> 11) & 3] = data & 0x3f;
+}
+
+
+
+/*-------------------------------------------------
+
+ Kaiser Board KS7016
+
+ Games: Exciting Basket FDS Conversion
+
+ iNES:
+
+ In MESS: Unsupported.
+
+ -------------------------------------------------*/
+
+uint8_t nes_ks7016_device::read_m(offs_t offset)
+{
+//  LOG_MMC(("ks7016 read_m, offset: %04x\n", offset));
+	return m_prg[((m_reg * 0x2000) + (offset & 0x1fff)) & (m_prg_size - 1)];
+}
+
+void nes_ks7016_device::write_h(offs_t offset, uint8_t data)
+{
+	LOG_MMC(("ks7016 write_h, offset: %04x, data: %02x\n", offset, data));
+	uint8_t mask = offset & 0x30;
+	if ((offset & 0x5943) == 0x5943)
+		m_reg = (mask == 0x30) ? 0xb : (((offset >> 2) & 0x0f) << 1);
+	if ((offset & 0x5943) == 0x5903)
+		m_reg = (mask != 0x30) ? 0xb : (((offset >> 2) & 0x0f) << 1);
+}
+
+
+/*-------------------------------------------------
+
+ Kaiser Board KS7037
+
+ Games: Metroid (FDS conversion)
+
+ This PCB maps PRG in 0x7000-0x7fff in a very
+ similar fashion to LH10 (see bootleg.cpp)
+ but with WRAM split between 0x6000-0x6fff
+ and 0xb000-0xbfff.
+
+ iNES:
+
+ In MESS: Unsupported.
+
+ -------------------------------------------------*/
+
+void nes_ks7037_device::update_prg()
+{
+	prg8_89(m_reg[6]);
+	prg8_ab(0xfe);
+	prg8_cd(m_reg[7]);
+	prg8_ef(0xff);
+	set_nt_page(0, CIRAM, m_reg[2] & 1, 1);
+	set_nt_page(1, CIRAM, m_reg[3] & 1, 1);
+	set_nt_page(2, CIRAM, m_reg[4] & 1, 1);
+	set_nt_page(3, CIRAM, m_reg[5] & 1, 1);
+}
+
+uint8_t nes_ks7037_device::read_m(offs_t offset)
+{
+//  LOG_MMC(("ks7037 read_m, offset: %04x\n", offset));
+	if (offset < 0x1000)
+		return m_prgram[offset & 0x0fff];
+	else
+		return m_prg[(0x1e * 0x1000) + (offset & 0x0fff)];
+}
+
+void nes_ks7037_device::write_m(offs_t offset, uint8_t data)
+{
+	LOG_MMC(("ks7037 write_m, offset: %04x, data: %02x\n", offset, data));
+	if (offset < 0x1000)
+		m_prgram[offset & 0x0fff] = data;
+}
+
+uint8_t nes_ks7037_device::read_h(offs_t offset)
+{
+//  LOG_MMC(("ks7037 read_h, offset: %04x\n", offset));
+
+	if (offset >= 0x3000 && offset < 0x4000)
+		return m_prgram[0x1000 + (offset & 0x0fff)];
+
+	return hi_access_rom(offset);
+}
+
+void nes_ks7037_device::write_h(offs_t offset, uint8_t data)
+{
+	LOG_MMC(("ks7037 write_h, offset: %04x, data: %02x\n", offset, data));
+
+	if (offset >= 0x3000 && offset < 0x4000)
+		m_prgram[0x1000 + (offset & 0x0fff)] = data;
+	else
+	{
+		switch (offset & 0x6001)
+		{
+			case 0x0000:
+				m_latch = data & 7;
+				break;
+			case 0x0001:
+				m_reg[m_latch] = data;
+				update_prg();
+				break;
+		}
+	}
 }

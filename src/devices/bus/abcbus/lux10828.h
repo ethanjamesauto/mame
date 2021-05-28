@@ -6,16 +6,16 @@
 
 *********************************************************************/
 
+#ifndef MAME_BUS_ABCBUS_LUXOR10828_H
+#define MAME_BUS_ABCBUS_LUXOR10828_H
+
 #pragma once
 
-#ifndef __LUXOR_55_10828__
-#define __LUXOR_55_10828__
-
-#include "emu.h"
 #include "abcbus.h"
 #include "cpu/z80/z80.h"
-#include "cpu/z80/z80daisy.h"
+#include "machine/z80daisy.h"
 #include "formats/abc800_dsk.h"
+#include "imagedev/floppy.h"
 #include "machine/wd_fdc.h"
 #include "machine/z80pio.h"
 
@@ -54,53 +54,56 @@ class luxor_55_10828_device :  public device_t,
 {
 public:
 	// construction/destruction
-	luxor_55_10828_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
-
-	DECLARE_WRITE8_MEMBER( ctrl_w );
-	DECLARE_WRITE8_MEMBER( status_w );
-	DECLARE_READ8_MEMBER( fdc_r );
-	DECLARE_WRITE8_MEMBER( fdc_w );
-
-	DECLARE_READ8_MEMBER( pio_pa_r );
-	DECLARE_WRITE8_MEMBER( pio_pa_w );
-	DECLARE_READ8_MEMBER( pio_pb_r );
-	DECLARE_WRITE8_MEMBER( pio_pb_w );
-
-	DECLARE_WRITE_LINE_MEMBER( fdc_intrq_w );
-	DECLARE_WRITE_LINE_MEMBER( fdc_drq_w );
-
-	DECLARE_FLOPPY_FORMATS( floppy_formats );
-
-	// optional information overrides
-	virtual const rom_entry *device_rom_region() const override;
-	virtual machine_config_constructor device_mconfig_additions() const override;
-	virtual ioport_constructor device_input_ports() const override;
+	luxor_55_10828_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
 protected:
 	// device-level overrides
 	virtual void device_start() override;
 	virtual void device_reset() override;
 
+	// optional information overrides
+	virtual const tiny_rom_entry *device_rom_region() const override;
+	virtual void device_add_mconfig(machine_config &config) override;
+	virtual ioport_constructor device_input_ports() const override;
+
 	// device_abcbus_interface overrides
-	virtual void abcbus_cs(UINT8 data) override;
-	virtual UINT8 abcbus_inp() override;
-	virtual void abcbus_out(UINT8 data) override;
-	virtual UINT8 abcbus_stat() override;
-	virtual void abcbus_c1(UINT8 data) override;
-	virtual void abcbus_c3(UINT8 data) override;
+	virtual void abcbus_cs(uint8_t data) override;
+	virtual uint8_t abcbus_inp() override;
+	virtual void abcbus_out(uint8_t data) override;
+	virtual uint8_t abcbus_stat() override;
+	virtual void abcbus_c1(uint8_t data) override;
+	virtual void abcbus_c3(uint8_t data) override;
 
 private:
-	required_device<cpu_device> m_maincpu;
+	uint8_t pio_pa_r();
+	void pio_pa_w(uint8_t data);
+	uint8_t pio_pb_r();
+	void pio_pb_w(uint8_t data);
+
+	DECLARE_WRITE_LINE_MEMBER( fdc_intrq_w );
+	DECLARE_WRITE_LINE_MEMBER( fdc_drq_w );
+
+	void ctrl_w(uint8_t data);
+	void status_w(uint8_t data);
+	uint8_t fdc_r(offs_t offset);
+	void fdc_w(offs_t offset, uint8_t data);
+
+	static void floppy_formats(format_registration &fr);
+
+	void luxor_55_10828_io(address_map &map);
+	void luxor_55_10828_mem(address_map &map);
+
+	required_device<z80_device> m_maincpu;
 	required_device<z80pio_device> m_pio;
-	required_device<mb8876_t> m_fdc;
+	required_device<mb8876_device> m_fdc;
 	required_device<floppy_connector> m_floppy0;
 	required_device<floppy_connector> m_floppy1;
 	required_ioport m_sw1;
 	required_ioport m_s1;
 
 	bool m_cs;              // card selected
-	UINT8 m_status;         // ABC BUS status
-	UINT8 m_data;           // ABC BUS data
+	uint8_t m_status;         // ABC BUS status
+	uint8_t m_data;           // ABC BUS data
 	bool m_fdc_irq;         // floppy interrupt
 	bool m_fdc_drq;         // floppy data request
 	int m_wait_enable;      // wait enable
@@ -110,6 +113,6 @@ private:
 
 
 // device type definition
-extern const device_type LUXOR_55_10828;
+DECLARE_DEVICE_TYPE(LUXOR_55_10828, luxor_55_10828_device)
 
-#endif
+#endif // MAME_BUS_ABCBUS_LUXOR10828_H

@@ -9,12 +9,10 @@
 
     original driver by Tomasz Slanina, Steve Ellenoff, Nicola Salmoria
     rewrite to use AA functions by R. Belmont & Angelo Salese
-    special thanks to Tom Walker (author of the Acorn Archimedes Arculator emulator)
+    special thanks to Sarah Walker (author of the Acorn Archimedes Arculator emulator)
 
     TODO (specific issues only):
     - Sound is currently ugly in both games, recognizable but still nowhere near perfection
-    - ertictac: 'music' dip-sw makes the game to just hang, BGM doesn't play either for
-                whatever reason (should be triggered as soon as it executes the POST)
     - poizone: video timings are off, causing various glitches.
     - Does this Arcade conversion have I2C device? It seems unused afaik.
     - Need PCB for identify the exact model of AA, available RAM, what kind of i/o "podule"
@@ -23,33 +21,51 @@
 PCB has a single OSC at 24MHz
 
 *******************************************************************************************/
+
 #include "emu.h"
 #include "cpu/arm/arm.h"
-#include "sound/dac.h"
-#include "includes/archimds.h"
-#include "machine/i2cmem.h"
-#include "machine/aakart.h"
+#include "machine/acorn_ioc.h"
+#include "machine/acorn_memc.h"
+#include "machine/acorn_vidc.h"
+#include "machine/pcf8583.h"
+#include "screen.h"
 
 
-class ertictac_state : public archimedes_state
+class ertictac_state : public driver_device
 {
 public:
 	ertictac_state(const machine_config &mconfig, device_type type, const char *tag)
-		: archimedes_state(mconfig, type, tag) { }
+		: driver_device(mconfig, type, tag)
+		, m_maincpu(*this, "maincpu")
+		, m_ioc(*this, "ioc")
+		, m_memc(*this, "memc")
+		, m_vidc10(*this, "vidc")
+		{ }
 
-	DECLARE_READ32_MEMBER(ertictac_podule_r);
-	DECLARE_DRIVER_INIT(ertictac);
+	void ertictac(machine_config &config);
+
+	void init_ertictac();
+
+private:
+	uint32_t ertictac_podule_r(offs_t offset);
 	virtual void machine_start() override;
 	virtual void machine_reset() override;
 	INTERRUPT_GEN_MEMBER(ertictac_podule_irq);
+	void ertictac_arm_map(address_map &map);
+	void ertictac_map(address_map &map);
+
+	required_device<arm_cpu_device> m_maincpu;
+	required_device<acorn_ioc_device> m_ioc;
+	required_device<acorn_memc_device> m_memc;
+	required_device<acorn_vidc10_device> m_vidc10;
 };
 
 
-READ32_MEMBER(ertictac_state::ertictac_podule_r)
+uint32_t ertictac_state::ertictac_podule_r(offs_t offset)
 {
-	archimedes_clear_irq_b(ARCHIMEDES_IRQB_PODULE_IRQ);
+	m_ioc->il5_w(CLEAR_LINE);
 
-	switch(offset)
+	switch(offset & 0x3fff)
 	{
 		case 0x04/4: return ioport("DSW1")->read() & 0xff;
 		case 0x08/4: return ioport("DSW2")->read() & 0xff;
@@ -61,18 +77,23 @@ READ32_MEMBER(ertictac_state::ertictac_podule_r)
 	return 0;
 }
 
-static ADDRESS_MAP_START( ertictac_map, AS_PROGRAM, 32, ertictac_state )
-	AM_RANGE(0x00000000, 0x01ffffff) AM_READWRITE(archimedes_memc_logical_r, archimedes_memc_logical_w)
-	AM_RANGE(0x02000000, 0x02ffffff) AM_RAM AM_SHARE("physicalram") /* physical RAM - 16 MB for now, should be 512k for the A310 */
 
-	AM_RANGE(0x03340000, 0x0334001f) AM_READ(ertictac_podule_r)
-	AM_RANGE(0x033c0000, 0x033c001f) AM_READ(ertictac_podule_r)
+void ertictac_state::ertictac_arm_map(address_map &map)
+{
+	map(0x00000000, 0x01ffffff).rw(m_memc, FUNC(acorn_memc_device::logical_r), FUNC(acorn_memc_device::logical_w));
+	map(0x02000000, 0x03ffffff).rw(m_memc, FUNC(acorn_memc_device::high_mem_r), FUNC(acorn_memc_device::high_mem_w));
+}
 
-	AM_RANGE(0x03000000, 0x033fffff) AM_READWRITE(archimedes_ioc_r, archimedes_ioc_w)
-	AM_RANGE(0x03400000, 0x035fffff) AM_READWRITE(archimedes_vidc_r, archimedes_vidc_w)
-	AM_RANGE(0x03600000, 0x037fffff) AM_READWRITE(archimedes_memc_r, archimedes_memc_w)
-	AM_RANGE(0x03800000, 0x03ffffff) AM_ROM AM_REGION("maincpu", 0) AM_WRITE(archimedes_memc_page_w)
-ADDRESS_MAP_END
+void ertictac_state::ertictac_map(address_map &map)
+{
+	map(0x00000000, 0x01ffffff).rw(m_memc, FUNC(acorn_memc_device::logical_r), FUNC(acorn_memc_device::logical_w));
+	map(0x02000000, 0x02ffffff).ram().share("physicalram"); /* physical RAM - 16 MB for now, should be 512k for the A310 */
+
+	map(0x03000000, 0x033fffff).m(m_ioc, FUNC(acorn_ioc_device::map));
+	map(0x03400000, 0x035fffff).w(m_vidc10, FUNC(acorn_vidc10_device::write));
+	map(0x03600000, 0x037fffff).w(m_memc, FUNC(acorn_memc_device::registers_w));
+	map(0x03800000, 0x03ffffff).rom().region("maincpu", 0).w(m_memc, FUNC(acorn_memc_device::page_w));
+}
 
 static INPUT_PORTS_START( ertictac )
 	PORT_START("SYSTEM")
@@ -107,7 +128,7 @@ static INPUT_PORTS_START( ertictac )
 	PORT_DIPNAME( 0x04, 0x04, "Test Mode" )     PORT_DIPLOCATION("DSW1:1")
 	PORT_DIPSETTING(    0x04, DEF_STR( No ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( Yes ) )
-	PORT_DIPNAME( 0x08, 0x00, "Music" )     PORT_DIPLOCATION("DSW1:4")
+	PORT_DIPNAME( 0x08, 0x08, "Music" )     PORT_DIPLOCATION("DSW1:4")
 	PORT_DIPSETTING(    0x00, DEF_STR( No ) )
 	PORT_DIPSETTING(    0x08, DEF_STR( Yes ) )
 	PORT_DIPNAME( 0x30, 0x30, "Game Timing" )   PORT_DIPLOCATION("DSW1:5,6")
@@ -156,6 +177,7 @@ static INPUT_PORTS_START( poizone )
 	PORT_BIT( 0x0001, IP_ACTIVE_LOW, IPT_BUTTON2 ) PORT_PLAYER(1)
 	PORT_BIT( 0x0004, IP_ACTIVE_LOW, IPT_BUTTON2 ) PORT_PLAYER(2)
 
+	// TODO: default settings
 	PORT_MODIFY("DSW1")
 	PORT_DIPUNKNOWN_DIPLOC( 0x02, 0x02, "DSW1:3" )
 	PORT_DIPNAME( 0x30, 0x40, "Coinage 1" ) PORT_DIPLOCATION("DSW1:5,6")
@@ -173,7 +195,7 @@ static INPUT_PORTS_START( poizone )
 	PORT_DIPNAME( 0x01, 0x01, "Setting 1" ) PORT_DIPLOCATION("DSW2:2")
 	PORT_DIPSETTING(    0x01, "Manual" )
 	PORT_DIPSETTING(    0x00, "Automatic" )
-	PORT_DIPNAME( 0x1A, 0x00, "Setting 2" )  PORT_DIPLOCATION("DSW2:3,4,5")
+	PORT_DIPNAME( 0x1A, 0x1A, "Setting 2" )  PORT_DIPLOCATION("DSW2:3,4,5")
 	PORT_DIPSETTING(    0x00, "Extremely Easy - 2:00")  PORT_CONDITION("DSW2", 0x01, EQUALS, 0x00)
 	PORT_DIPSETTING(    0x02, "Very Easy - 1:30")   PORT_CONDITION("DSW2", 0x01, EQUALS, 0x00)
 	PORT_DIPSETTING(    0x08, "Easy - 2:00")    PORT_CONDITION("DSW2", 0x01, EQUALS, 0x00)
@@ -194,78 +216,51 @@ static INPUT_PORTS_START( poizone )
 	PORT_DIPUNKNOWN_DIPLOC( 0x20, 0x20, "DSW2:6" )
 INPUT_PORTS_END
 
-DRIVER_INIT_MEMBER(ertictac_state,ertictac)
+void ertictac_state::init_ertictac()
 {
-	archimedes_driver_init();
 }
 
 void ertictac_state::machine_start()
 {
-	archimedes_init();
-
-	// reset the DAC to centerline
-	//m_dac->write_signed8(0x80);
 }
 
 void ertictac_state::machine_reset()
 {
-	archimedes_reset();
 }
 
 INTERRUPT_GEN_MEMBER(ertictac_state::ertictac_podule_irq)
 {
-	archimedes_request_irq_b(ARCHIMEDES_IRQB_PODULE_IRQ);
+	m_ioc->il5_w(ASSERT_LINE);
 }
 
-/* TODO: Are we sure that this HW have I2C device? */
-#define NVRAM_SIZE 256
-#define NVRAM_PAGE_SIZE 0   /* max size of one write request */
+void ertictac_state::ertictac(machine_config &config)
+{
+	ARM(config, m_maincpu, 24_MHz_XTAL/3); /* guess, 12MHz 8MHz or 6MHz, what's the correct divider 2, 3 or 4? */
+	m_maincpu->set_addrmap(AS_PROGRAM, &ertictac_state::ertictac_arm_map);
+	m_maincpu->set_periodic_int(FUNC(ertictac_state::ertictac_podule_irq), attotime::from_hz(60)); // FIXME: timing of this
 
-static MACHINE_CONFIG_START( ertictac, ertictac_state )
+	PCF8583(config, "i2cmem", 32.768_kHz_XTAL); // TODO: Are we sure that this HW have I2C device?
 
-	MCFG_CPU_ADD("maincpu", ARM, XTAL_24MHz/3) /* guess, 12MHz 8MHz or 6MHz, what's the correct divider 2, 3 or 4? */
-	MCFG_CPU_PROGRAM_MAP(ertictac_map)
-	MCFG_CPU_PERIODIC_INT_DRIVER(ertictac_state, ertictac_podule_irq, 60) // FIXME: timing of this
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_RASTER));
+	screen.screen_vblank().set(m_ioc, FUNC(acorn_ioc_device::ir_w));
+	screen.screen_vblank().append(m_memc, FUNC(acorn_memc_device::vidrq_w));
 
-	MCFG_I2CMEM_ADD("i2cmem")
-	MCFG_I2CMEM_PAGE_SIZE(NVRAM_PAGE_SIZE)
-	MCFG_I2CMEM_DATA_SIZE(NVRAM_SIZE)
-//  MCFG_AAKART_ADD("kart", XTAL_24MHz/3) // TODO: frequency
+	ACORN_MEMC(config, m_memc, 24_MHz_XTAL/3, m_vidc10);
+	m_memc->set_addrmap(0, &ertictac_state::ertictac_map);
+	m_memc->sirq_w().set(m_ioc, FUNC(acorn_ioc_device::il1_w));
 
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_REFRESH_RATE(60)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(2500)) /* not accurate */
-	MCFG_SCREEN_SIZE(1280, 1024)
-	MCFG_SCREEN_VISIBLE_AREA(0, 1280-1, 0, 1024-1)
-	MCFG_SCREEN_UPDATE_DRIVER(archimedes_state, screen_update)
+	ACORN_IOC(config, m_ioc, 24_MHz_XTAL/3);
+	m_ioc->fiq_w().set_inputline(m_maincpu, ARM_FIRQ_LINE);
+	m_ioc->irq_w().set_inputline(m_maincpu, ARM_IRQ_LINE);
+	m_ioc->peripheral_r<4>().set(FUNC(ertictac_state::ertictac_podule_r));
+	m_ioc->gpio_r<0>().set("i2cmem", FUNC(pcf8583_device::sda_r));
+	m_ioc->gpio_w<0>().set("i2cmem", FUNC(pcf8583_device::sda_w));
+	m_ioc->gpio_w<1>().set("i2cmem", FUNC(pcf8583_device::scl_w));
 
-	MCFG_PALETTE_ADD("palette", 0x200)
-
-	MCFG_SPEAKER_STANDARD_MONO("mono")
-	MCFG_DAC_ADD("dac0")
-	MCFG_SOUND_ROUTE(0, "mono", 0.05)
-
-	MCFG_DAC_ADD("dac1")
-	MCFG_SOUND_ROUTE(0, "mono", 0.05)
-
-	MCFG_DAC_ADD("dac2")
-	MCFG_SOUND_ROUTE(0, "mono", 0.05)
-
-	MCFG_DAC_ADD("dac3")
-	MCFG_SOUND_ROUTE(0, "mono", 0.05)
-
-	MCFG_DAC_ADD("dac4")
-	MCFG_SOUND_ROUTE(0, "mono", 0.05)
-
-	MCFG_DAC_ADD("dac5")
-	MCFG_SOUND_ROUTE(0, "mono", 0.05)
-
-	MCFG_DAC_ADD("dac6")
-	MCFG_SOUND_ROUTE(0, "mono", 0.05)
-
-	MCFG_DAC_ADD("dac7")
-	MCFG_SOUND_ROUTE(0, "mono", 0.05)
-MACHINE_CONFIG_END
+	ACORN_VIDC10(config, m_vidc10, 24_MHz_XTAL);
+	m_vidc10->set_screen("screen");
+	m_vidc10->sound_drq().set(m_memc, FUNC(acorn_memc_device::sndrq_w));
+}
 
 ROM_START( ertictac )
 	ROM_REGION(0x800000, "maincpu", 0 )
@@ -285,8 +280,6 @@ ROM_START( ertictac )
 	ROM_LOAD32_BYTE( "eroti_ver01_-14-", 0xc0001, 0x10000, CRC(3029567c) SHA1(6d49bea3a3f6f11f4182a602d37b53f1f896c154) )
 	ROM_LOAD32_BYTE( "eroti_ver01_-15-", 0xc0002, 0x10000, CRC(500997ab) SHA1(028c7b3ca03141e5b596ab1e2ab98d0ccd9bf93a) )
 	ROM_LOAD32_BYTE( "eroti_ver01_-16-", 0xc0003, 0x10000, CRC(70a8d136) SHA1(50b11f5701ed5b79a5d59c9a3c7d5b7528e66a4d) )
-
-	ROM_REGION(0x200000, "vram", ROMREGION_ERASE00)
 ROM_END
 
 
@@ -308,8 +301,6 @@ ROM_START( ertictaca ) /* PCB had sticker printed "092121 EROTICTAC" */
 	ROM_LOAD32_BYTE( "eroti_ver01_-14-", 0xc0001, 0x10000, CRC(3029567c) SHA1(6d49bea3a3f6f11f4182a602d37b53f1f896c154) )
 	ROM_LOAD32_BYTE( "eroti_ver01_-15-", 0xc0002, 0x10000, CRC(500997ab) SHA1(028c7b3ca03141e5b596ab1e2ab98d0ccd9bf93a) )
 	ROM_LOAD32_BYTE( "eroti_ver01_-16-", 0xc0003, 0x10000, CRC(70a8d136) SHA1(50b11f5701ed5b79a5d59c9a3c7d5b7528e66a4d) )
-
-	ROM_REGION(0x200000, "vram", ROMREGION_ERASE00)
 ROM_END
 
 ROM_START( ertictacb )
@@ -330,8 +321,6 @@ ROM_START( ertictacb )
 	ROM_LOAD32_BYTE( "eroti_ver01_-14-", 0xc0001, 0x10000, CRC(3029567c) SHA1(6d49bea3a3f6f11f4182a602d37b53f1f896c154) )
 	ROM_LOAD32_BYTE( "eroti_ver01_-15-", 0xc0002, 0x10000, CRC(500997ab) SHA1(028c7b3ca03141e5b596ab1e2ab98d0ccd9bf93a) )
 	ROM_LOAD32_BYTE( "eroti_ver01_-16-", 0xc0003, 0x10000, CRC(70a8d136) SHA1(50b11f5701ed5b79a5d59c9a3c7d5b7528e66a4d) )
-
-	ROM_REGION(0x200000, "vram", ROMREGION_ERASE00)
 ROM_END
 
 
@@ -354,11 +343,9 @@ ROM_START( poizone )
 	ROM_LOAD32_BYTE( "p_son22.bin", 0x140001, 0x10000, CRC(16f0bb52) SHA1(893ab1e72b84de7a38f88f9d713769968ebd4553) )
 	ROM_LOAD32_BYTE( "p_son23.bin", 0x140002, 0x10000, CRC(e9c118b2) SHA1(110d9a204e701b9b54d89f027f8892c3f3a819c7) )
 	ROM_LOAD32_BYTE( "p_son24.bin", 0x140003, 0x10000, CRC(a09d7f55) SHA1(e0d562c655c16034b40db93de801b98b7948beb2) )
-
-	ROM_REGION(0x200000, "vram", ROMREGION_ERASE00)
 ROM_END
 
-GAME( 1990, ertictac,         0, ertictac, ertictac, ertictac_state, ertictac, ROT0, "Sisteme", "Erotictac/Tactic" ,MACHINE_IMPERFECT_SOUND)
-GAME( 1990, ertictaca, ertictac, ertictac, ertictac, ertictac_state, ertictac, ROT0, "Sisteme", "Erotictac/Tactic (ver 01)" ,MACHINE_IMPERFECT_SOUND)
-GAME( 1990, ertictacb, ertictac, ertictac, ertictac, ertictac_state, ertictac, ROT0, "Sisteme", "Erotictac/Tactic (set 2)" ,MACHINE_IMPERFECT_SOUND)
-GAME( 1991, poizone,          0, ertictac, poizone, ertictac_state, ertictac,  ROT0, "Eterna" ,"Poizone" ,MACHINE_IMPERFECT_SOUND|MACHINE_IMPERFECT_GRAPHICS)
+GAME( 1990, ertictac,         0, ertictac, ertictac, ertictac_state, init_ertictac, ROT0, "Sisteme", "Erotictac/Tactic",          MACHINE_IMPERFECT_SOUND)
+GAME( 1990, ertictaca, ertictac, ertictac, ertictac, ertictac_state, init_ertictac, ROT0, "Sisteme", "Erotictac/Tactic (ver 01)", MACHINE_IMPERFECT_SOUND)
+GAME( 1990, ertictacb, ertictac, ertictac, ertictac, ertictac_state, init_ertictac, ROT0, "Sisteme", "Erotictac/Tactic (set 2)",  MACHINE_IMPERFECT_SOUND)
+GAME( 1991, poizone,          0, ertictac, poizone,  ertictac_state, init_ertictac, ROT0, "Eterna",  "Poizone",                   MACHINE_IMPERFECT_SOUND|MACHINE_IMPERFECT_GRAPHICS)

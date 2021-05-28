@@ -1,5 +1,9 @@
-#ifndef __ATOM_DSK_H__
-#define __ATOM_DSK_H__
+// license:BSD-3-Clause
+// copyright-holders:Carl
+#ifndef MAME_FORMATS_ATOM_DSK_H
+#define MAME_FORMATS_ATOM_DSK_H
+
+#pragma once
 
 #include "flopimg.h"
 #include "wd177x_dsk.h"
@@ -19,4 +23,4 @@ private:
 
 extern const floppy_format_type FLOPPY_ATOM_FORMAT;
 
-#endif
+#endif // MAME_FORMATS_ATOM_DSK_H

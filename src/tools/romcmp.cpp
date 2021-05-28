@@ -9,11 +9,12 @@
 ***************************************************************************/
 
 #include "unzip.h"
-#include "osdcore.h"
+#include "osdfile.h"
 #include "osdcomm.h"
+#include "hash.h"
 
-#include <stdarg.h>
-#include <stdlib.h>
+#include <cstdarg>
+#include <cstdlib>
 
 
 #define MAX_FILES 1000
@@ -114,23 +115,51 @@ static fileinfo files[2][MAX_FILES];
 static float matchscore[MAX_FILES][MAX_FILES][TOTAL_MODES][TOTAL_MODES];
 
 
-static void checkintegrity(const fileinfo *file,int side)
+static bool is_ascii_char(int ch)
 {
-	int i;
-	int mask0,mask1;
-	int addrbit;
+	return (ch >= 0x20 && ch < 0x7f) || (ch == '\n') || (ch == '\r') || (ch == '\t');
+}
 
+static void checkintegrity(const fileinfo *file, int side, bool all_hashes)
+{
 	if (file->buf == nullptr) return;
 
-	/* check for bad data lines */
-	mask0 = 0x0000;
-	mask1 = 0xffff;
-
-	for (i = 0;i < file->size;i+=2)
+	if (all_hashes)
 	{
-		mask0 |= ((file->buf[i] << 8) | file->buf[i+1]);
-		mask1 &= ((file->buf[i] << 8) | file->buf[i+1]);
+		util::crc32_creator crc32;
+		util::sha1_creator sha1;
+		util::sum16_creator sum16;
+		crc32.append(file->buf, file->size);
+		sha1.append(file->buf, file->size);
+		sum16.append(file->buf, file->size);
+		printf("%-23s %-23s [0x%x] CRC(%s) SHA1(%s) SUM(%s)\n", (side & 1) ? file->name : "", (side & 2) ? file->name : "", file->size,
+				crc32.finish().as_string().c_str(), sha1.finish().as_string().c_str(), sum16.finish().as_string().c_str());
+		side = 0;
+	}
+
+	/* check for bad data lines */
+	unsigned mask0 = 0x0000;
+	unsigned mask1 = 0xffff;
+
+	bool is_ascii = true;
+	for (unsigned i = 0; i < file->size; i += 2)
+	{
+		is_ascii = is_ascii && is_ascii_char(file->buf[i]);
+		mask0 |= file->buf[i] << 8;
+		mask1 &= (file->buf[i] << 8) | 0x00ff;
+		if (i < file->size - 1)
+		{
+			is_ascii = is_ascii && is_ascii_char(file->buf[i+1]);
+			mask0 |= file->buf[i+1];
+			mask1 &= file->buf[i+1] | 0xff00;
+		}
 		if (mask0 == 0xffff && mask1 == 0x0000) break;
+	}
+
+	if (is_ascii && mask0 == 0x7f7f && mask1 == 0)
+	{
+		printf("%-23s %-23s ASCII TEXT FILE\n", (side & 1) ? file->name : "", (side & 2) ? file->name : "");
+		return;
 	}
 
 	if (mask0 != 0xffff || mask1 != 0x0000)
@@ -138,15 +167,14 @@ static void checkintegrity(const fileinfo *file,int side)
 		int fixedmask;
 		int bits;
 
-
 		fixedmask = (~mask0 | mask1) & 0xffff;
 
 		if (((mask0 >> 8) & 0xff) == (mask0 & 0xff) && ((mask1 >> 8) & 0xff) == (mask1 & 0xff))
 			bits = 8;
 		else bits = 16;
 
-		printf("%-23s %-23s FIXED BITS (",side ? "" : file->name,side ? file->name : "");
-		for (i = 0;i < bits;i++)
+		printf("%-23s %-23s FIXED BITS (", (side & 1) ? file->name : "", (side & 2) ? file->name : "");
+		for (int i = 0; i < bits; i++)
 		{
 			if (~mask0 & 0x8000) printf("0");
 			else if (mask1 & 0x8000) printf("1");
@@ -163,57 +191,68 @@ static void checkintegrity(const fileinfo *file,int side)
 			return;
 	}
 
-
-	addrbit = 1;
-	mask0 = 0;
+	unsigned addrbit = 1;
+	unsigned addrmirror = 0;
 	while (addrbit <= file->size/2)
 	{
-		for (i = 0;i < file->size;i++)
+		unsigned i = 0;
+		for (i = 0; i < file->size; i++)
 		{
-			if (file->buf[i] != file->buf[i ^ addrbit]) break;
+			if ((i ^ addrbit) < file->size && file->buf[i] != file->buf[i ^ addrbit]) break;
 		}
 
 		if (i == file->size)
-			mask0 |= addrbit;
+			addrmirror |= addrbit;
 
 		addrbit <<= 1;
 	}
 
-	if (mask0)
+	if (addrmirror != 0)
 	{
-		if (mask0 == file->size/2)
-			printf("%-23s %-23s 1ST AND 2ND HALF IDENTICAL\n",side ? "" : file->name,side ? file->name : "");
+		if (addrmirror == file->size/2)
+		{
+			printf("%-23s %-23s 1ST AND 2ND HALF IDENTICAL\n", (side & 1) ? file->name : "", (side & 2) ? file->name : "");
+			util::hash_collection hash;
+			hash.begin();
+			hash.buffer(file->buf, file->size / 2);
+			hash.end();
+			printf("%-23s %-23s                  %s\n", (side & 1) ? file->name : "", (side & 2) ? file->name : "", hash.attribute_string().c_str());
+		}
 		else
 		{
-			printf("%-23s %-23s BADADDR",side ? "" : file->name,side ? file->name : "");
-			for (i = 0;i < 24;i++)
+			printf("%-23s %-23s BADADDR", (side & 1) ? file->name : "", (side & 2) ? file->name : "");
+			for (int i = 0; i < 24; i++)
 			{
 				if (file->size <= (1<<(23-i))) printf(" ");
-				else if (mask0 & 0x800000) printf("-");
+				else if (addrmirror & 0x800000) printf("-");
 				else printf("x");
-				mask0 <<= 1;
+				addrmirror <<= 1;
 			}
 			printf("\n");
 		}
 		return;
 	}
 
+	unsigned sizemask = 1;
+	while (sizemask < file->size - 1)
+		sizemask = (sizemask << 1) | 1;
+
 	mask0 = 0x000000;
-	mask1 = file->size-1;
-	for (i = 0;i < file->size;i++)
+	mask1 = sizemask;
+	for (unsigned i = 0; i < file->size; i++)
 	{
 		if (file->buf[i] != 0xff)
 		{
 			mask0 |= i;
 			mask1 &= i;
-			if (mask0 == file->size-1 && mask1 == 0x00) break;
+			if (mask0 == sizemask && mask1 == 0x00) break;
 		}
 	}
 
-	if (mask0 != file->size-1 || mask1 != 0x00)
+	if (mask0 != sizemask || mask1 != 0x00)
 	{
-		printf("%-23s %-23s ",side ? "" : file->name,side ? file->name : "");
-		for (i = 0;i < 24;i++)
+		printf("%-23s %-23s ", (side & 1) ? file->name : "", (side & 2) ? file->name : "");
+		for (int i = 0; i < 24; i++)
 		{
 			if (file->size <= (1<<(23-i))) printf(" ");
 			else if (~mask0 & 0x800000) printf("1");
@@ -229,21 +268,21 @@ static void checkintegrity(const fileinfo *file,int side)
 
 
 	mask0 = 0x000000;
-	mask1 = file->size-1;
-	for (i = 0;i < file->size;i++)
+	mask1 = sizemask;
+	for (unsigned i = 0; i < file->size; i++)
 	{
 		if (file->buf[i] != 0x00)
 		{
 			mask0 |= i;
 			mask1 &= i;
-			if (mask0 == file->size-1 && mask1 == 0x00) break;
+			if (mask0 == sizemask && mask1 == 0x00) break;
 		}
 	}
 
-	if (mask0 != file->size-1 || mask1 != 0x00)
+	if (mask0 != sizemask || mask1 != 0x00)
 	{
-		printf("%-23s %-23s ",side ? "" : file->name,side ? file->name : "");
-		for (i = 0;i < 24;i++)
+		printf("%-23s %-23s ", (side & 1) ? file->name : "", (side & 2) ? file->name : "");
+		for (int i = 0; i < 24; i++)
 		{
 			if (file->size <= (1<<(23-i))) printf(" ");
 			else if ((mask0 & 0x800000) == 0) printf("1");
@@ -257,9 +296,8 @@ static void checkintegrity(const fileinfo *file,int side)
 		return;
 	}
 
-
 	mask0 = 0xff;
-	for (i = 0;i < file->size/4 && mask0;i++)
+	for (unsigned i = 0; i < file->size/4 && mask0 != 0x00; i++)
 	{
 		if (file->buf[               2*i  ] != 0x00) mask0 &= ~0x01;
 		if (file->buf[               2*i  ] != 0xff) mask0 &= ~0x02;
@@ -271,14 +309,14 @@ static void checkintegrity(const fileinfo *file,int side)
 		if (file->buf[file->size/2 + 2*i+1] != 0xff) mask0 &= ~0x80;
 	}
 
-	if (mask0 & 0x01) printf("%-23s %-23s 1ST HALF = 00xx\n",side ? "" : file->name,side ? file->name : "");
-	if (mask0 & 0x02) printf("%-23s %-23s 1ST HALF = FFxx\n",side ? "" : file->name,side ? file->name : "");
-	if (mask0 & 0x04) printf("%-23s %-23s 1ST HALF = xx00\n",side ? "" : file->name,side ? file->name : "");
-	if (mask0 & 0x08) printf("%-23s %-23s 1ST HALF = xxFF\n",side ? "" : file->name,side ? file->name : "");
-	if (mask0 & 0x10) printf("%-23s %-23s 2ND HALF = 00xx\n",side ? "" : file->name,side ? file->name : "");
-	if (mask0 & 0x20) printf("%-23s %-23s 2ND HALF = FFxx\n",side ? "" : file->name,side ? file->name : "");
-	if (mask0 & 0x40) printf("%-23s %-23s 2ND HALF = xx00\n",side ? "" : file->name,side ? file->name : "");
-	if (mask0 & 0x80) printf("%-23s %-23s 2ND HALF = xxFF\n",side ? "" : file->name,side ? file->name : "");
+	if (mask0 & 0x01) printf("%-23s %-23s 1ST HALF = 00xx\n", (side & 1) ? file->name : "", (side & 2) ? file->name : "");
+	if (mask0 & 0x02) printf("%-23s %-23s 1ST HALF = FFxx\n", (side & 1) ? file->name : "", (side & 2) ? file->name : "");
+	if (mask0 & 0x04) printf("%-23s %-23s 1ST HALF = xx00\n", (side & 1) ? file->name : "", (side & 2) ? file->name : "");
+	if (mask0 & 0x08) printf("%-23s %-23s 1ST HALF = xxFF\n", (side & 1) ? file->name : "", (side & 2) ? file->name : "");
+	if (mask0 & 0x10) printf("%-23s %-23s 2ND HALF = 00xx\n", (side & 1) ? file->name : "", (side & 2) ? file->name : "");
+	if (mask0 & 0x20) printf("%-23s %-23s 2ND HALF = FFxx\n", (side & 1) ? file->name : "", (side & 2) ? file->name : "");
+	if (mask0 & 0x40) printf("%-23s %-23s 2ND HALF = xx00\n", (side & 1) ? file->name : "", (side & 2) ? file->name : "");
+	if (mask0 & 0x80) printf("%-23s %-23s 2ND HALF = xxFF\n", (side & 1) ? file->name : "", (side & 2) ? file->name : "");
 }
 
 
@@ -393,11 +431,11 @@ static float filecompare(const fileinfo *file1,const fileinfo *file2,int mode1,i
 
 static void readfile(const char *path,fileinfo *file)
 {
-	file_error filerr;
-	UINT64 filesize;
-	UINT32 actual;
+	osd_file::error filerr;
+	uint64_t filesize;
+	uint32_t actual;
 	char fullname[256];
-	osd_file *f = nullptr;
+	osd_file::ptr f;
 
 	if (path)
 	{
@@ -414,22 +452,19 @@ static void readfile(const char *path,fileinfo *file)
 		return;
 	}
 
-	filerr = osd_open(fullname, OPEN_FLAG_READ, &f, &filesize);
-	if (filerr != FILERR_NONE)
+	filerr = osd_file::open(fullname, OPEN_FLAG_READ, f, filesize);
+	if (filerr != osd_file::error::NONE)
 	{
-		printf("%s: error %d\n", fullname, filerr);
+		printf("%s: error %d\n", fullname, int(filerr));
 		return;
 	}
 
-	filerr = osd_read(f, file->buf, 0, file->size, &actual);
-	if (filerr != FILERR_NONE)
+	filerr = f->read(file->buf, 0, file->size, actual);
+	if (filerr != osd_file::error::NONE)
 	{
-		printf("%s: error %d\n", fullname, filerr);
-		osd_close(f);
+		printf("%s: error %d\n", fullname, int(filerr));
 		return;
 	}
-
-	osd_close(f);
 }
 
 
@@ -451,24 +486,22 @@ static void printname(const fileinfo *file1,const fileinfo *file2,float score,in
 
 static int load_files(int i, int *found, const char *path)
 {
-	osd_directory *dir;
-
 	/* attempt to open as a directory first */
-	dir = osd_opendir(path);
-	if (dir != nullptr)
+	auto dir = osd::directory::open(path);
+	if (dir)
 	{
-		const osd_directory_entry *d;
+		const osd::directory::entry *d;
 
 		/* load all files in directory */
-		while ((d = osd_readdir(dir)) != nullptr)
+		while ((d = dir->read()) != nullptr)
 		{
 			const char *d_name = d->name;
 			char buf[255+1];
 
 			sprintf(buf, "%s%c%s", path, PATH_DELIM, d_name);
-			if (d->type == ENTTYPE_FILE)
+			if (d->type == osd::directory::entry::entry_type::FILE)
 			{
-				UINT64 size = d->size;
+				uint64_t size = d->size;
 				while (size && (size & 1) == 0) size >>= 1;
 				//if (size & ~1)
 				//  printf("%-23s %-23s ignored (not a ROM)\n",i ? "" : d_name,i ? d_name : "");
@@ -487,49 +520,51 @@ static int load_files(int i, int *found, const char *path)
 				}
 			}
 		}
-		osd_closedir(dir);
+		dir.reset();
 	}
 
 	/* if not, try to open as a ZIP file */
 	else
 	{
-		zip_file *zip;
-		const zip_file_header* zipent;
-		zip_error ziperr;
+		util::archive_file::ptr zip;
 
 		/* wasn't a directory, so try to open it as a zip file */
-		ziperr = zip_file_open(path, &zip);
-		if (ziperr != ZIPERR_NONE)
+		if ((util::archive_file::open_zip(path, zip) != util::archive_file::error::NONE) &&
+			(util::archive_file::open_7z(path, zip) != util::archive_file::error::NONE))
 		{
 			printf("Error, cannot open zip file '%s' !\n", path);
 			return 1;
 		}
 
 		/* load all files in zip file */
-		for (zipent = zip_file_first_file(zip); zipent != nullptr; zipent = zip_file_next_file(zip))
+		for (int zipent = zip->first_file(); zipent >= 0; zipent = zip->next_file())
 		{
+			if (zip->current_is_directory()) continue;
+
 			int size;
 
-			size = zipent->uncompressed_length;
+			size = zip->current_uncompressed_length();
 			while (size && (size & 1) == 0) size >>= 1;
-			if (zipent->uncompressed_length == 0) // || (size & ~1))
+			if (zip->current_uncompressed_length() == 0) // || (size & ~1))
+			{
 				printf("%-23s %-23s ignored (not a ROM)\n",
-					i ? "" : zipent->filename, i ? zipent->filename : "");
+					i ? "" : zip->current_name().c_str(), i ? zip->current_name().c_str() : "");
+			}
 			else
 			{
 				fileinfo *file = &files[i][found[i]];
-				const char *delim = strrchr(zipent->filename,'/');
+				const char *delim = strrchr(zip->current_name().c_str(), '/');
 
 				if (delim)
 					strcpy (file->name,delim+1);
 				else
-					strcpy(file->name,zipent->filename);
-				file->size = zipent->uncompressed_length;
+					strcpy(file->name,zip->current_name().c_str());
+				file->size = zip->current_uncompressed_length();
 				if ((file->buf = (unsigned char *)malloc(file->size)) == nullptr)
 					printf("%s: out of memory!\n",file->name);
 				else
 				{
-					if (zip_file_decompress(zip, (char *)file->buf, file->size) != ZIPERR_NONE)
+					if (zip->decompress(file->buf, file->size) != util::archive_file::error::NONE)
 					{
 						free(file->buf);
 						file->buf = nullptr;
@@ -545,7 +580,6 @@ static int load_files(int i, int *found, const char *path)
 				found[i]++;
 			}
 		}
-		zip_file_close(zip);
 	}
 	return 0;
 }
@@ -555,18 +589,25 @@ int CLIB_DECL main(int argc,char *argv[])
 {
 	int err;
 	int total_modes = MODE_NIB2;    /* by default, use only MODE_A, MODE_NIB1 and MODE_NIB2 */
+	bool all_hashes = false;
 
-	if (argc >= 2 && strcmp(argv[1],"-d") == 0)
+	while (argc >= 2)
 	{
+		if (strcmp(argv[1], "-d") == 0)
+			total_modes = TOTAL_MODES;
+		else if (strcmp(argv[1], "-h") == 0)
+			all_hashes = true;
+		else
+			break;
 		argc--;
 		argv++;
-		total_modes = TOTAL_MODES;
 	}
 
 	if (argc < 2)
 	{
-		printf("usage: romcmp [-d] [dir1 | zip1] [dir2 | zip2]\n");
+		printf("usage: romcmp [-d] [-h] [dir1 | zip1] [dir2 | zip2]\n");
 		printf("-d enables a slower, more comprehensive comparison.\n");
+		printf("-h prints hashes and sums for all files.\n");
 		return 0;
 	}
 
@@ -592,14 +633,12 @@ int CLIB_DECL main(int argc,char *argv[])
 		else
 			printf("%d files\n",found[0]);
 
-		for (i = 0;i < found[0];i++)
+		for (i = 0; i < 2; i++)
 		{
-			checkintegrity(&files[0][i],0);
-		}
-
-		for (j = 0;j < found[1];j++)
-		{
-			checkintegrity(&files[1][j],1);
+			for (j = 0; j < found[i]; j++)
+			{
+				checkintegrity(&files[i][j], 1 << i, all_hashes);
+			}
 		}
 
 		if (argc < 3)
@@ -747,6 +786,6 @@ int CLIB_DECL main(int argc,char *argv[])
 		}
 	}
 
-	zip_file_cache_clear();
+	util::archive_file::cache_clear();
 	return 0;
 }

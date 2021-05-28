@@ -15,13 +15,14 @@ Raiden later rev (probably the first game to use it)
 *Sky Smasher
 *D-Con
 *SD Gundam Psycho Salamander no Kyoui
-(all games in legionna.c)
-(all games in raiden2.c)
-(all games in seibuspi.c)
+(all games in legionna.cpp)
+(all games in raiden2.cpp)
+(all games in seibuspi.cpp)
 
 TODO:
 - Most registers are still a mystery;
-- Get the proper Seibu chip ID number;
+- Get the proper Seibu chip ID number.
+  Kold found that a Raiden alt set has irq request pin from a chip named SEI0160, which might be our man.
 
 preliminary memory map:
 (screen 0 -> Background)
@@ -30,7 +31,8 @@ preliminary memory map:
 (screen 3 -> Text layer)
 [0x00]: Total number of visible cells?
 [0x02]: Single cell H size +1?
-[0x1a]: Layer Dynamic Paging?
+[0x1a]: --x- Layer Dynamic Size?
+        ---x Flip Screen
 [0x1c]: Layer Enable
 ---x ---- sprite enable
 ---- x--- tilemap screen 3 enable
@@ -52,6 +54,13 @@ preliminary memory map:
 [0x38]: Tilemap Screen 3 base scroll X
 [0x3a]: Tilemap Screen 3 base scroll Y
 [0x3e]: OBJ Y base
+[0x40]: Semaphore for 0x4e register
+
+In later games using the SEI251, SEI252 and RISE sprite chips, registers
+0x40 through 0x4e appear to be either nonexistent or overridden. The aberrant
+mapping of these registers in some games is not unusual for Seibu customs,
+but it should be noted that SD Gundam Psycho Salamander relegates the
+initialization of these registers to a separate routine.
 
 ===========================================================================================
 
@@ -95,12 +104,40 @@ List of default vregs (title screen):
 0x1ff - 0xfc = 259
 0x1ff - 0xff = 256
 
-*SD Gundam Psycho Salamander no Kyoui (320 x 224 -> 0 - 224 v res)
+*Blood Bros. (sets 1 and 2, init routine at $620)
+0C0000:  000F 000F 00B2 00D7 00F9 000F 00F9 00FF
+0C0010:  0076 0006 0001 0002 0000 0000 0004 ****
+0C0020:  **** **** **** **** **** **** 01D8 01FF
+0C0030:  01DA 01FF **** **** 01D8 01FF 0034 003F
+0C0040:  0000 A8A8 0005 1830 0009 **** **** ****
+
+*Blood Bros. (set 3, init routine at $580)
+0C0000:  000F 000F 00B7 00BF 00FA 000F 00FA 00FF
+0C0010:  0076 0006 0001 0002 0000 0000 0004 ****
+0C0020:  **** **** **** **** **** **** 01C0 01FF
+0C0030:  01C2 01FF **** **** 00C0 01FF 0034 003F
+0C0040:  0000 A8A8 0004 1830 0009 **** **** ****
+
+*Sky Smasher (init routine at $1f5d0)
+0C0000:  000F 000F 00B2 00D7 00F9 000F 00F9 00FF
+0C0020:  0076 0006 0000 0002 0000 0000 0004 ****
+0C0010:  **** **** **** **** **** **** 01D9 01FF
+0C0030:  01DB 01FF **** **** 01D8 01FF 0034 003F
+0C0040:  0000 A8A8 0005 1830 0009 **** **** ****
+
+*Sky Smasher (unused init routine at $1f4ee)
+0C0000:  000F 000F 00AF 00BF 00F8 000F 00F8 00FF
+0C0020:  0076 0006 0000 0002 0000 0000 0004 ****
+0C0010:  **** **** **** **** **** **** 01C0 01FF
+0C0030:  01C2 01FF **** **** 00C0 01FF 0034 003F
+0C0040:  0000 A8A8 0006 1830 0009 **** **** ****
+
+*SD Gundam Psycho Salamander no Kyoui (init routines at $4b56 and $13fc; 320 x 224 -> 0 - 224 v res)
 0C0000:  000F 0013 009F 00BF 00FA 000F 00FA 00FF
 0C0010:  0076 0006 0000 0002 0000 0000 0000 0000
 0C0020:  0000 0000 0000 0000 0000 0000 0040 01FF
 0C0030:  0040 01FF 0040 01FF 0040 01FF 0034 003F
-0C0040:  0000 A8A8 0003 1C37 0009 0000 0000 0000
+0C0040:  **** A8A8 0003 1C37 0009 **** **** ****
 
 *D-Con (320 x 224 -> 0 - 224 v res)
 0C0000:  000F 0013 009F 00BF 00FA 000F 00FA 00FF
@@ -109,48 +146,68 @@ List of default vregs (title screen):
 0C0030:  FFC2 FFEF FFC1 FFEF FFC0 FFEF 0034 003F
 0C0040:  0000 A8A8 0013 1C37 0009 0000 0000 0000
 
-*SD Gundam Sangokushi Rainbow Tairiku Senki (320 x 224 normal -> 16 - 240 v res, @ service mode)
-100600:  000F 0013 00A7 00C7 00E0 000F 00E7 00F3
-100610:  007E 01FE 0000 0002 0000 0000 0017 0000
-100620:  0000 0000 0000 0000 0000 0000 01C8 01FF
-100630:  01CA 01FF 01C9 01FF 01C8 01FF 0034 003F
-100640:  0000 A8A8 001E 1C37 0008 0000 0000 FFFF
-(320 x 224, flipped)
-100600:  000F 0013 00A7 00C7 00E0 000F 00E7 00F3
-100610:  007E 01FE 0000 0002 0000 0001 0017 0000
-100620:  0001 0000 0000 0000 0000 0000 0177 0100
-100630:  0175 0100 0176 0100 0177 0100 0034 003F
-100640:  0000 A8A8 00E1 1C37 0018 0000 013F FFFF
-(320 x 256, normal)
-100600:  000F 0013 00A7 00C7 00E0 000F 00E1 00E9
-100610:  0076 01FE 0000 0002 0000 0000 0017 0000
-100620:  0002 0000 0000 0000 0000 0000 01C8 0207
-100630:  01CA 0207 01C9 0207 01C8 0207 0034 003F
-100640:  0000 A8A8 0016 1C37 0008 0000 0000 FFFF
-(320 x 256, flipped)
-100600:  000F 0013 00A7 00C7 00E0 000F 00E1 00E9
-100610:  0076 01FE 0000 0002 0000 0001 0017 0000
-100620:  0003 0000 0000 0000 0000 0000 0178 02F8
-100630:  0175 02F8 0176 02F8 0177 02F8 0034 003F
-100640:  0000 A8A8 00E9 1C37 0018 0000 013F FFFF
-(320 x 240, normal)
+*SD Gundam Sangokushi Rainbow Tairiku Senki (320 x 224; Incorrect resolution between service mode and actual in-game value)
+(320 x 224 at service mode = 320 x 256 actually)
+(320 x 256 at service mode = 320 x 240 actually)
+(320 x 240 at service mode = 320 x 224 actually)
+(normal)
 100600:  000F 0013 00A7 00C7 00FA 000F 00FA 00FF
 100610:  0076 0006 0000 0002 0000 0000 0017 0000
 100620:  0004 0000 0000 0000 0000 0000 01D8 01FF
 100630:  01DA 01FF 01D9 01FF 01D8 01FF 0034 003F
 100640:  0000 A8A8 0004 1C37 0008 0000 0000 FFFF
-(320 x 240, flipped)
+(flipped)
 100600:  000F 0013 00A7 00C7 00FA 000F 00FA 00FF
 100610:  0076 0006 0000 0002 0000 0001 0017 0000
 100620:  0005 0000 0000 0000 0000 0000 0187 0300
 100630:  0185 0300 0186 0300 0185 0300 0034 003F
 100640:  0000 A8A8 00FB 1C37 0018 0000 013F FFFF
+
+*Seibu Cup Soccer (320 x 240 normal -> 0 - 240 v res, @ service mode; Undefined registers only)
+100600:  000F 0013 00A7 00C7 00E0 000F 00E1 00E9
+100610:  0076 01FE 0000 0002 0000 0000 **** 0000
+100620:  **** **** **** **** **** **** **** ****
+100630:  **** **** **** **** **** **** 0034 003F
+100640:  0000 A8A8 0016 1C37 0009 0000 0000 FFFF
+(320 x 240, flipped)
+100600:  000F 0013 00A7 00C7 00E0 000F 00E1 00E9
+100610:  0076 01FE 0000 0002 0000 0001 **** 0000
+100620:  **** **** **** **** **** **** **** ****
+100630:  **** **** **** **** **** **** 0034 003F
+100640:  0000 A8A8 00E9 1C37 0019 0000 013F FFFF
+(320 x 224, normal)
+100600:  000F 0013 00A7 00C7 00FA 000F 00FA 00FF
+100610:  0076 0006 0000 0002 0000 0000 **** 0000
+100620:  **** **** **** **** **** **** **** ****
+100630:  **** **** **** **** **** **** 0034 003F
+100640:  0000 A8A8 0004 1C37 0009 0000 0000 FFFF
+(320 x 224, flipped)
+100600:  000F 0013 00A7 00C7 00FA 000F 00FA 00FF
+100610:  0076 0006 0000 0002 0000 0001 **** 0000
+100620:  **** **** **** **** **** **** **** ****
+100630:  **** **** **** **** **** **** 0034 003F
+100640:  0000 A8A8 010B 1C37 0019 0000 013F FFFF
+(320 x 256, normal)
+100600:  000F 0013 00A7 00C7 00E0 000F 00E7 00F3
+100610:  007E 01FE 0000 0002 0000 0000 **** 0000
+100620:  **** **** **** **** **** **** **** ****
+100630:  **** **** **** **** **** **** 0034 003F
+100640:  0000 A8A8 001E 1C37 0009 0000 0000 FFFF
+(320 x 256, flipped)
+100600:  000F 0013 00A7 00C7 00E0 000F 00E7 00F3
+100610:  007E 01FE 0000 0002 0000 0001 **** 0000
+100620:  **** **** **** **** **** **** **** ****
+100630:  **** **** **** **** **** **** 0034 003F
+100640:  0000 A8A8 00E1 1C37 0019 0000 013F FFFF
+
 *Legionnaire (attract mode, that definitely runs with an horizontal res of 256)
 100600:  000F 000F 00B0 00D7 00FA 000F 00FA 00FF
 100610:  0076 0006 0000 0002 0000 0000 0000 0000
 100620:  0000 0000 0000 0000 0000 0000 01D8 01FF
 100630:  01DA 01FF 01D9 01FF 01D8 01FF 0034 003F
 100640:  0000 A8A8 0004 1830 0009 0000 0000 FFFF
+*Godzilla, 320 x 224 (455 x 258 hvtotal)
+100600:  000f 0013 00a0 00d7 00fa 000f 00fa 00ff
 
 *Seibu SPI is a newer CRTC?
 00000400: 013F007F - hblank start(-1), hblank length(-1)
@@ -161,7 +218,6 @@ List of default vregs (title screen):
 00000414: related to decryption
 00000418: fg layer bank, rowscroll enable, ...
 0000041C-0000043F: same as other chips (layer enable, scrollregs, base)
-00000440-0000044F: unused, not written to at all
 
 ***************************************************************************/
 
@@ -175,24 +231,53 @@ List of default vregs (title screen):
 //**************************************************************************
 
 // device type definition
-const device_type SEIBU_CRTC = &device_creator<seibu_crtc_device>;
+DEFINE_DEVICE_TYPE(SEIBU_CRTC, seibu_crtc_device, "seibu_crtc", "Seibu CRT Controller")
 
-static ADDRESS_MAP_START( seibu_crtc_vregs, AS_0, 16, seibu_crtc_device )
-	AM_RANGE(0x001c, 0x001d) AM_WRITE(layer_en_w)
-	AM_RANGE(0x0020, 0x002b) AM_WRITE(layer_scroll_w)
-	AM_RANGE(0x0000, 0x004f) AM_RAM // debug
-ADDRESS_MAP_END
+void seibu_crtc_device::seibu_crtc_vregs(address_map &map)
+{
+	map(0x0000, 0x004f).ram(); // debug
+	map(0x0014, 0x0015).w(FUNC(seibu_crtc_device::decrypt_key_w));
+	map(0x001a, 0x001b).rw(FUNC(seibu_crtc_device::reg_1a_r), FUNC(seibu_crtc_device::reg_1a_w));
+	map(0x001c, 0x001d).w(FUNC(seibu_crtc_device::layer_en_w));
+	map(0x0020, 0x002b).w(FUNC(seibu_crtc_device::layer_scroll_w));
+	map(0x002c, 0x003b).w(FUNC(seibu_crtc_device::layer_scroll_base_w));
+}
 
-WRITE16_MEMBER( seibu_crtc_device::layer_en_w)
+void seibu_crtc_device::decrypt_key_w(offs_t offset, uint16_t data, uint16_t mem_mask)
+{
+	if (!m_decrypt_key_cb.isnull())
+		m_decrypt_key_cb(0, data, mem_mask);
+}
+
+void seibu_crtc_device::layer_en_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	if (!m_layer_en_cb.isnull())
 		m_layer_en_cb(0,data,mem_mask);
 }
 
-WRITE16_MEMBER( seibu_crtc_device::layer_scroll_w)
+void seibu_crtc_device::layer_scroll_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	if (!m_layer_scroll_cb.isnull())
 		m_layer_scroll_cb(offset,data,mem_mask);
+}
+
+uint16_t seibu_crtc_device::reg_1a_r()
+{
+	// SPI needs read/write access to this
+	return m_reg_1a;
+}
+
+void seibu_crtc_device::reg_1a_w(offs_t offset, uint16_t data, uint16_t mem_mask)
+{
+	COMBINE_DATA(&m_reg_1a);
+	if (!m_reg_1a_cb.isnull())
+		m_reg_1a_cb(offset,data,mem_mask);
+}
+
+void seibu_crtc_device::layer_scroll_base_w(offs_t offset, uint16_t data, uint16_t mem_mask)
+{
+	if (!m_layer_scroll_base_cb.isnull())
+		m_layer_scroll_base_cb(offset,data,mem_mask);
 }
 
 //**************************************************************************
@@ -203,13 +288,16 @@ WRITE16_MEMBER( seibu_crtc_device::layer_scroll_w)
 //  seibu_crtc_device - constructor
 //-------------------------------------------------
 
-seibu_crtc_device::seibu_crtc_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: device_t(mconfig, SEIBU_CRTC, "Seibu CRT Controller", tag, owner, clock, "seibu_crtc", __FILE__),
+seibu_crtc_device::seibu_crtc_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: device_t(mconfig, SEIBU_CRTC, tag, owner, clock),
 		device_memory_interface(mconfig, *this),
 		device_video_interface(mconfig, *this),
+		m_decrypt_key_cb(*this),
 		m_layer_en_cb(*this),
 		m_layer_scroll_cb(*this),
-		m_space_config("vregs", ENDIANNESS_LITTLE, 16, 7, 0, nullptr, *ADDRESS_MAP_NAME(seibu_crtc_vregs))
+		m_reg_1a_cb(*this),
+		m_layer_scroll_base_cb(*this),
+		m_space_config("vregs", ENDIANNESS_LITTLE, 16, 7, 0, address_map_constructor(FUNC(seibu_crtc_device::seibu_crtc_vregs), this))
 {
 }
 
@@ -229,8 +317,13 @@ void seibu_crtc_device::device_validity_check(validity_checker &valid) const
 
 void seibu_crtc_device::device_start()
 {
+	m_decrypt_key_cb.resolve();
 	m_layer_en_cb.resolve();
 	m_layer_scroll_cb.resolve();
+	m_reg_1a_cb.resolve();
+	m_layer_scroll_base_cb.resolve();
+
+	save_item(NAME(m_reg_1a));
 }
 
 
@@ -240,6 +333,7 @@ void seibu_crtc_device::device_start()
 
 void seibu_crtc_device::device_reset()
 {
+	m_reg_1a = 0;
 }
 
 //-------------------------------------------------
@@ -247,9 +341,11 @@ void seibu_crtc_device::device_reset()
 //  any address spaces owned by this device
 //-------------------------------------------------
 
-const address_space_config *seibu_crtc_device::memory_space_config(address_spacenum spacenum) const
+device_memory_interface::space_config_vector seibu_crtc_device::memory_space_config() const
 {
-	return (spacenum == AS_0) ? &m_space_config : nullptr;
+	return space_config_vector {
+		std::make_pair(0, &m_space_config)
+	};
 }
 
 
@@ -262,7 +358,7 @@ const address_space_config *seibu_crtc_device::memory_space_config(address_space
 //  read_word - read a word at the given address
 //-------------------------------------------------
 
-inline UINT16 seibu_crtc_device::read_word(offs_t address)
+inline uint16_t seibu_crtc_device::read_word(offs_t address)
 {
 	return space().read_word(address << 1);
 }
@@ -271,7 +367,7 @@ inline UINT16 seibu_crtc_device::read_word(offs_t address)
 //  write_word - write a word at the given address
 //-------------------------------------------------
 
-inline void seibu_crtc_device::write_word(offs_t address, UINT16 data)
+inline void seibu_crtc_device::write_word(offs_t address, uint16_t data)
 {
 	space().write_word(address << 1, data);
 }
@@ -280,34 +376,23 @@ inline void seibu_crtc_device::write_word(offs_t address, UINT16 data)
 //  READ/WRITE HANDLERS
 //**************************************************************************
 
-READ16_MEMBER( seibu_crtc_device::read )
+uint16_t seibu_crtc_device::read(offs_t offset)
 {
 	return read_word(offset);
 }
 
-WRITE16_MEMBER( seibu_crtc_device::write )
+void seibu_crtc_device::write(offs_t offset, uint16_t data)
 {
 	write_word(offset,data);
 }
 
 /* Sky Smasher / Raiden DX swaps registers [0x10] with [0x20] */
-READ16_MEMBER( seibu_crtc_device::read_alt )
+uint16_t seibu_crtc_device::read_alt(offs_t offset)
 {
-	return read_word(BITSWAP16(offset,15,14,13,12,11,10,9,8,7,6,5,3,4,2,1,0));
+	return read_word(bitswap<16>(offset,15,14,13,12,11,10,9,8,7,6,5,3,4,2,1,0));
 }
 
-WRITE16_MEMBER( seibu_crtc_device::write_alt )
+void seibu_crtc_device::write_alt(offs_t offset, uint16_t data)
 {
-	write_word(BITSWAP16(offset,15,14,13,12,11,10,9,8,7,6,5,3,4,2,1,0),data);
-}
-
-/* Good E Jang / Seibu Cup Soccer Selection XOR bit 6 of the address bus */
-READ16_MEMBER( seibu_crtc_device::read_xor )
-{
-	return read_word(offset ^ 0x20);
-}
-
-WRITE16_MEMBER( seibu_crtc_device::write_xor )
-{
-	write_word(offset ^ 0x20,data);
+	write_word(bitswap<16>(offset,15,14,13,12,11,10,9,8,7,6,5,3,4,2,1,0),data);
 }

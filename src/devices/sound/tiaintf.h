@@ -1,19 +1,9 @@
 // license:GPL-2.0+
 // copyright-holders:Ron Fries,Dan Boris
+#ifndef MAME_SOUND_TIAINTF_H
+#define MAME_SOUND_TIAINTF_H
+
 #pragma once
-
-#ifndef __TIAINTF_H__
-#define __TIAINTF_H__
-
-//**************************************************************************
-//  INTERFACE CONFIGURATION MACROS
-//**************************************************************************
-
-#define MCFG_SOUND_TIA_ADD(_tag, _clock) \
-	MCFG_DEVICE_ADD(_tag, TIA, _clock)
-#define MCFG_SOUND_TIA_REPLACE(_tag, _clock) \
-	MCFG_DEVICE_REPLACE(_tag, TIA, _clock)
-
 
 //**************************************************************************
 //  TYPE DEFINITIONS
@@ -21,12 +11,12 @@
 
 // ======================> tia_device
 
-class tia_device : public device_t,
-					public device_sound_interface
+class tia_device : public device_t, public device_sound_interface
 {
 public:
-	tia_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
-	~tia_device() { }
+	tia_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
+
+	void tia_sound_w(offs_t offset, uint8_t data);
 
 protected:
 	// device-level overrides
@@ -34,17 +24,13 @@ protected:
 	virtual void device_stop() override;
 
 	// sound stream update overrides
-	virtual void sound_stream_update(sound_stream &stream, stream_sample_t **inputs, stream_sample_t **outputs, int samples) override;
-
-public:
-	DECLARE_WRITE8_MEMBER( tia_sound_w );
+	virtual void sound_stream_update(sound_stream &stream, std::vector<read_stream_view> const &inputs, std::vector<write_stream_view> &outputs) override;
 
 private:
 	sound_stream *m_channel;
 	void *m_chip;
 };
 
-extern const device_type TIA;
+DECLARE_DEVICE_TYPE(TIA, tia_device)
 
-
-#endif /* __TIAINTF_H__ */
+#endif // MAME_SOUND_TIAINTF_H

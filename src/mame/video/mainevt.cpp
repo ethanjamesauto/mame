@@ -10,6 +10,7 @@
 
 #include "emu.h"
 #include "includes/mainevt.h"
+#include "screen.h"
 
 /***************************************************************************
 
@@ -66,6 +67,9 @@ K051960_CB_MEMBER(mainevt_state::dv_sprite_callback)
 {
 	enum { sprite_colorbase = 128 / 16 };
 
+	// enable shadow if upper bits are 0
+	*shadow = ((*color & 0xe0) >> 5) == 0;
+
 	/* TODO: the priority/shadow handling (bits 5-7) seems to be quite complex (see PROM) */
 	*color = sprite_colorbase + (*color & 0x07);
 }
@@ -73,7 +77,7 @@ K051960_CB_MEMBER(mainevt_state::dv_sprite_callback)
 
 /*****************************************************************************/
 
-UINT32 mainevt_state::screen_update_mainevt(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t mainevt_state::screen_update_mainevt(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	m_k052109->tilemap_update();
 
@@ -87,7 +91,7 @@ UINT32 mainevt_state::screen_update_mainevt(screen_device &screen, bitmap_ind16 
 	return 0;
 }
 
-UINT32 mainevt_state::screen_update_dv(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t mainevt_state::screen_update_dv(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	m_k052109->tilemap_update();
 

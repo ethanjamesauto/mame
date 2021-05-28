@@ -4,28 +4,28 @@
 
     Game Driver for Video System Mahjong series.
 
-    Idol-Mahjong Final Romance (Japan)
+    Idol-Mahjong Final Romance (アイドル麻雀ファイナルロマンス)
     (c)1991 Video System Co.,Ltd.
 
-    Nekketsu Mahjong Sengen! AFTER 5 (Japan)
+    Nekketsu Mahjong Sengen! AFTER 5 (熱血麻雀宣言! AFTER 5)
     (c)1991 Video System Co.,Ltd.
 
-    Mahjong Daiyogen (Japan)
+    Mahjong Daiyogen (麻雀大予言)
     (c)1990 Video System Co.,Ltd.
 
-    Mahjong Fun Club - Idol Saizensen (Japan)
+    Mahjong Fun Club - Idol Saizensen (麻雀ファンクラブ アイドル最前線)
     (c)1989 Video System Co.,Ltd.
 
-    Mahjong Natsu Monogatari (Mahjong Summer Story) (Japan)
+    Mahjong Natsu Monogatari (Mahjong Summer Story) (麻雀夏物語)
     (c)1989 Video System Co.,Ltd.
 
-    Natsuiro Mahjong (Mahjong Summer Story) (Japan)
+    Natsuiro Mahjong (Mahjong Summer Color) (夏色麻雀)
     (c)1989 Video System Co.,Ltd.
 
-    Idol-Mahjong Housoukyoku (Japan)
+    Idol-Mahjong Housoukyoku (アイドル麻雀放送局)
     (c)1988 System Service Co.,Ltd.
 
-    Rettou Juudan Nekkyoku Janshi - Higashi Nippon Hen (Japan)
+    Rettou Juudan Nekkyoku Janshi - Higashi Nippon Hen (列島縦断熱局雀士 東日本編)
     (c)1988 Video System Co.,Ltd.
 
     Driver by Takahiro Nogi <nogi@kt.rim.or.jp> 2001/02/04 -
@@ -36,6 +36,15 @@
 Memo:
 
 - 2player's input is not supported.
+
+- Identify CRT Controller and fix layer misalignment in nekkyoku due of dynamic
+  changes. Actually same custom component as other V-System games of the era,
+  @seealso aerofgt.cpp
+
+- nekkyoku: soft reset enables flip screen without any real reason.
+
+- nekkyoku writes to a VRAM mirror for showing the OL gal, I guess ROM mirroring
+  is the same for all empty slots for this HW.
 
 - Communication between MAIN CPU and SUB CPU can be wrong.
 
@@ -71,11 +80,14 @@ with the following code:
 ******************************************************************************/
 
 #include "emu.h"
+#include "includes/fromance.h"
+
 #include "cpu/z80/z80.h"
 #include "sound/ay8910.h"
-#include "sound/2413intf.h"
 #include "sound/msm5205.h"
-#include "includes/fromance.h"
+#include "sound/ymopl.h"
+#include "video/vsystem_gga.h"
+#include "speaker.h"
 
 
 /*************************************
@@ -84,50 +96,24 @@ with the following code:
  *
  *************************************/
 
-READ8_MEMBER(fromance_state::fromance_commanddata_r)
-{
-	return m_commanddata;
-}
-
-
-TIMER_CALLBACK_MEMBER(fromance_state::deferred_commanddata_w)
-{
-	m_commanddata = param;
-	m_directionflag = 1;
-}
-
-
-WRITE8_MEMBER(fromance_state::fromance_commanddata_w)
-{
-	/* do this on a timer to let the slave CPU synchronize */
-	machine().scheduler().synchronize(timer_expired_delegate(FUNC(fromance_state::deferred_commanddata_w),this), data);
-}
-
-
-READ8_MEMBER(fromance_state::fromance_busycheck_main_r)
+uint8_t fromance_state::fromance_busycheck_main_r()
 {
 	/* set a timer to force synchronization after the read */
 	machine().scheduler().synchronize();
 
-	if (!m_directionflag)
+	if (!m_sublatch->pending_r())
 		return 0x00;        // standby
 	else
 		return 0xff;        // busy
 }
 
 
-READ8_MEMBER(fromance_state::fromance_busycheck_sub_r)
+uint8_t fromance_state::fromance_busycheck_sub_r()
 {
-	if (m_directionflag)
+	if (m_sublatch->pending_r())
 		return 0xff;        // standby
 	else
 		return 0x00;        // busy
-}
-
-
-WRITE8_MEMBER(fromance_state::fromance_busycheck_sub_w)
-{
-	m_directionflag = 0;
 }
 
 
@@ -138,9 +124,9 @@ WRITE8_MEMBER(fromance_state::fromance_busycheck_sub_w)
  *
  *************************************/
 
-WRITE8_MEMBER(fromance_state::fromance_rombank_w)
+void fromance_state::fromance_rombank_w(uint8_t data)
 {
-	membank("bank1")->set_entry(data);
+	m_rombank->set_entry(data);
 }
 
 
@@ -151,7 +137,7 @@ WRITE8_MEMBER(fromance_state::fromance_rombank_w)
  *
  *************************************/
 
-WRITE8_MEMBER(fromance_state::fromance_adpcm_reset_w)
+void fromance_state::fromance_adpcm_reset_w(uint8_t data)
 {
 	m_adpcm_reset = (data & 0x01);
 	m_vclk_left = 0;
@@ -160,7 +146,7 @@ WRITE8_MEMBER(fromance_state::fromance_adpcm_reset_w)
 }
 
 
-WRITE8_MEMBER(fromance_state::fromance_adpcm_w)
+void fromance_state::fromance_adpcm_w(uint8_t data)
 {
 	m_adpcm_data = data;
 	m_vclk_left = 2;
@@ -183,7 +169,7 @@ WRITE_LINE_MEMBER(fromance_state::fromance_adpcm_int)
 
 	/* generate an NMI if we're out of data */
 	if (!m_vclk_left)
-		m_subcpu->set_input_line(INPUT_LINE_NMI, PULSE_LINE);
+		m_subcpu->pulse_input_line(INPUT_LINE_NMI, attotime::zero);
 }
 
 
@@ -194,13 +180,13 @@ WRITE_LINE_MEMBER(fromance_state::fromance_adpcm_int)
  *
  *************************************/
 
-WRITE8_MEMBER(fromance_state::fromance_portselect_w)
+void fromance_state::fromance_portselect_w(uint8_t data)
 {
 	m_portselect = data;
 }
 
 
-READ8_MEMBER(fromance_state::fromance_keymatrix_r)
+uint8_t fromance_state::fromance_keymatrix_r()
 {
 	int ret = 0xff;
 
@@ -226,7 +212,7 @@ READ8_MEMBER(fromance_state::fromance_keymatrix_r)
  *
  *************************************/
 
-WRITE8_MEMBER(fromance_state::fromance_coinctr_w)
+void fromance_state::fromance_coinctr_w(uint8_t data)
 {
 	//
 }
@@ -239,28 +225,30 @@ WRITE8_MEMBER(fromance_state::fromance_coinctr_w)
  *
  *************************************/
 
-static ADDRESS_MAP_START( nekkyoku_main_map, AS_PROGRAM, 8, fromance_state )
-	AM_RANGE(0x0000, 0xbfff) AM_ROM
-	AM_RANGE(0xc000, 0xdfff) AM_RAM
-	AM_RANGE(0xf000, 0xf000) AM_READ_PORT("SERVICE") AM_WRITE(fromance_portselect_w)
-	AM_RANGE(0xf001, 0xf001) AM_READ(fromance_keymatrix_r) AM_WRITENOP
-	AM_RANGE(0xf002, 0xf002) AM_READ_PORT("COIN") AM_WRITE(fromance_coinctr_w)
-	AM_RANGE(0xf003, 0xf003) AM_READWRITE(fromance_busycheck_main_r, fromance_commanddata_w)
-	AM_RANGE(0xf004, 0xf004) AM_READ_PORT("DSW2")
-	AM_RANGE(0xf005, 0xf005) AM_READ_PORT("DSW1")
-ADDRESS_MAP_END
+void fromance_state::nekkyoku_main_map(address_map &map)
+{
+	map(0x0000, 0xbfff).rom();
+	map(0xc000, 0xdfff).ram();
+	map(0xf000, 0xf000).portr("SERVICE").w(FUNC(fromance_state::fromance_portselect_w));
+	map(0xf001, 0xf001).r(FUNC(fromance_state::fromance_keymatrix_r)).nopw();
+	map(0xf002, 0xf002).portr("COIN").w(FUNC(fromance_state::fromance_coinctr_w));
+	map(0xf003, 0xf003).r(FUNC(fromance_state::fromance_busycheck_main_r)).w(m_sublatch, FUNC(generic_latch_8_device::write));
+	map(0xf004, 0xf004).portr("DSW2");
+	map(0xf005, 0xf005).portr("DSW1");
+}
 
-static ADDRESS_MAP_START( fromance_main_map, AS_PROGRAM, 8, fromance_state )
-	AM_RANGE(0x0000, 0x7fff) AM_ROM
-	AM_RANGE(0xc000, 0xdfff) AM_RAM
-	AM_RANGE(0x9e89, 0x9e89) AM_READNOP         // unknown (idolmj)
-	AM_RANGE(0xe000, 0xe000) AM_READ_PORT("SERVICE") AM_WRITE(fromance_portselect_w)
-	AM_RANGE(0xe001, 0xe001) AM_READ(fromance_keymatrix_r)
-	AM_RANGE(0xe002, 0xe002) AM_READ_PORT("COIN") AM_WRITE(fromance_coinctr_w)
-	AM_RANGE(0xe003, 0xe003) AM_READWRITE(fromance_busycheck_main_r, fromance_commanddata_w)
-	AM_RANGE(0xe004, 0xe004) AM_READ_PORT("DSW2")
-	AM_RANGE(0xe005, 0xe005) AM_READ_PORT("DSW1")
-ADDRESS_MAP_END
+void fromance_state::fromance_main_map(address_map &map)
+{
+	map(0x0000, 0x7fff).rom();
+	map(0xc000, 0xdfff).ram();
+	map(0x9e89, 0x9e89).nopr();         // unknown (idolmj)
+	map(0xe000, 0xe000).portr("SERVICE").w(FUNC(fromance_state::fromance_portselect_w));
+	map(0xe001, 0xe001).r(FUNC(fromance_state::fromance_keymatrix_r));
+	map(0xe002, 0xe002).portr("COIN").w(FUNC(fromance_state::fromance_coinctr_w));
+	map(0xe003, 0xe003).r(FUNC(fromance_state::fromance_busycheck_main_r)).w(m_sublatch, FUNC(generic_latch_8_device::write));
+	map(0xe004, 0xe004).portr("DSW2");
+	map(0xe005, 0xe005).portr("DSW1");
+}
 
 
 
@@ -270,21 +258,23 @@ ADDRESS_MAP_END
  *
  *************************************/
 
-static ADDRESS_MAP_START( nekkyoku_sub_map, AS_PROGRAM, 8, fromance_state )
-	AM_RANGE(0x0000, 0x7fff) AM_ROM
-	AM_RANGE(0x8000, 0xbfff) AM_ROMBANK("bank1")
-	AM_RANGE(0xc000, 0xefff) AM_READWRITE(fromance_videoram_r, fromance_videoram_w)
-	AM_RANGE(0xf000, 0xf7ff) AM_RAM
-	AM_RANGE(0xf800, 0xffff) AM_READWRITE(fromance_paletteram_r, fromance_paletteram_w)
-ADDRESS_MAP_END
+void fromance_state::nekkyoku_sub_map(address_map &map)
+{
+	map(0x0000, 0x7fff).rom();
+	map(0x8000, 0xbfff).bankr(m_rombank);
+	map(0xc000, 0xefff).rw(FUNC(fromance_state::fromance_videoram_r), FUNC(fromance_state::fromance_videoram_w));
+	map(0xf000, 0xf7ff).ram();
+	map(0xf800, 0xffff).rw(FUNC(fromance_state::fromance_paletteram_r), FUNC(fromance_state::fromance_paletteram_w));
+}
 
-static ADDRESS_MAP_START( fromance_sub_map, AS_PROGRAM, 8, fromance_state )
-	AM_RANGE(0x0000, 0x7fff) AM_ROM
-	AM_RANGE(0x8000, 0xbfff) AM_ROMBANK("bank1")
-	AM_RANGE(0xc000, 0xc7ff) AM_RAM
-	AM_RANGE(0xc800, 0xcfff) AM_READWRITE(fromance_paletteram_r, fromance_paletteram_w)
-	AM_RANGE(0xd000, 0xffff) AM_READWRITE(fromance_videoram_r, fromance_videoram_w)
-ADDRESS_MAP_END
+void fromance_state::fromance_sub_map(address_map &map)
+{
+	map(0x0000, 0x7fff).rom();
+	map(0x8000, 0xbfff).bankr(m_rombank);
+	map(0xc000, 0xc7ff).ram();
+	map(0xc800, 0xcfff).rw(FUNC(fromance_state::fromance_paletteram_r), FUNC(fromance_state::fromance_paletteram_w));
+	map(0xd000, 0xffff).rw(FUNC(fromance_state::fromance_videoram_r), FUNC(fromance_state::fromance_videoram_w));
+}
 
 
 
@@ -294,47 +284,47 @@ ADDRESS_MAP_END
  *
  *************************************/
 
-static ADDRESS_MAP_START( nekkyoku_sub_io_map, AS_IO, 8, fromance_state )
-	ADDRESS_MAP_GLOBAL_MASK(0xff)
-	AM_RANGE(0x10, 0x10) AM_WRITE(fromance_crtc_data_w)
-	AM_RANGE(0x11, 0x11) AM_WRITE(fromance_crtc_register_w)
-	AM_RANGE(0x12, 0x12) AM_READNOP             // unknown
-	AM_RANGE(0xe0, 0xe0) AM_WRITE(fromance_rombank_w)
-	AM_RANGE(0xe1, 0xe1) AM_READ(fromance_busycheck_sub_r) AM_WRITE(fromance_gfxreg_w)
-	AM_RANGE(0xe2, 0xe5) AM_WRITE(fromance_scroll_w)
-	AM_RANGE(0xe6, 0xe6) AM_READWRITE(fromance_commanddata_r, fromance_busycheck_sub_w)
-	AM_RANGE(0xe7, 0xe7) AM_WRITE(fromance_adpcm_reset_w)
-	AM_RANGE(0xe8, 0xe8) AM_WRITE(fromance_adpcm_w)
-	AM_RANGE(0xe9, 0xea) AM_DEVWRITE("aysnd", ay8910_device, data_address_w)
-ADDRESS_MAP_END
+void fromance_state::nekkyoku_sub_io_map(address_map &map)
+{
+	map.global_mask(0xff);
+	map(0x10, 0x11).w(m_gga, FUNC(vsystem_gga_device::write));
+	map(0x12, 0x12).nopr();             // unknown
+	map(0xe0, 0xe0).w(FUNC(fromance_state::fromance_rombank_w));
+	map(0xe1, 0xe1).r(FUNC(fromance_state::fromance_busycheck_sub_r)).w(FUNC(fromance_state::fromance_gfxreg_w));
+	map(0xe2, 0xe5).w(FUNC(fromance_state::fromance_scroll_w));
+	map(0xe6, 0xe6).rw(m_sublatch, FUNC(generic_latch_8_device::read), FUNC(generic_latch_8_device::acknowledge_w));
+	map(0xe7, 0xe7).w(FUNC(fromance_state::fromance_adpcm_reset_w));
+	map(0xe8, 0xe8).w(FUNC(fromance_state::fromance_adpcm_w));
+	map(0xe9, 0xea).w("aysnd", FUNC(ay8910_device::data_address_w));
+}
 
-static ADDRESS_MAP_START( idolmj_sub_io_map, AS_IO, 8, fromance_state )
-	ADDRESS_MAP_GLOBAL_MASK(0xff)
-	AM_RANGE(0x10, 0x10) AM_WRITE(fromance_crtc_data_w)
-	AM_RANGE(0x11, 0x11) AM_WRITE(fromance_crtc_register_w)
-	AM_RANGE(0x12, 0x12) AM_READNOP             // unknown
-	AM_RANGE(0x20, 0x20) AM_WRITE(fromance_rombank_w)
-	AM_RANGE(0x21, 0x21) AM_READ(fromance_busycheck_sub_r) AM_WRITE(fromance_gfxreg_w)
-	AM_RANGE(0x22, 0x25) AM_WRITE(fromance_scroll_w)
-	AM_RANGE(0x26, 0x26) AM_READWRITE(fromance_commanddata_r, fromance_busycheck_sub_w)
-	AM_RANGE(0x27, 0x27) AM_WRITE(fromance_adpcm_reset_w)
-	AM_RANGE(0x28, 0x28) AM_WRITE(fromance_adpcm_w)
-	AM_RANGE(0x29, 0x2a) AM_DEVWRITE("aysnd", ay8910_device, data_address_w)
-ADDRESS_MAP_END
+void fromance_state::idolmj_sub_io_map(address_map &map)
+{
+	map.global_mask(0xff);
+	map(0x10, 0x11).w(m_gga, FUNC(vsystem_gga_device::write));
+	map(0x12, 0x12).nopr();             // unknown
+	map(0x20, 0x20).w(FUNC(fromance_state::fromance_rombank_w));
+	map(0x21, 0x21).r(FUNC(fromance_state::fromance_busycheck_sub_r)).w(FUNC(fromance_state::fromance_gfxreg_w));
+	map(0x22, 0x25).w(FUNC(fromance_state::fromance_scroll_w));
+	map(0x26, 0x26).rw(m_sublatch, FUNC(generic_latch_8_device::read), FUNC(generic_latch_8_device::acknowledge_w));
+	map(0x27, 0x27).w(FUNC(fromance_state::fromance_adpcm_reset_w));
+	map(0x28, 0x28).w(FUNC(fromance_state::fromance_adpcm_w));
+	map(0x29, 0x2a).w("aysnd", FUNC(ym2149_device::data_address_w));
+}
 
-static ADDRESS_MAP_START( fromance_sub_io_map, AS_IO, 8, fromance_state )
-	ADDRESS_MAP_GLOBAL_MASK(0xff)
-	AM_RANGE(0x10, 0x10) AM_WRITE(fromance_crtc_data_w)
-	AM_RANGE(0x11, 0x11) AM_WRITE(fromance_crtc_register_w)
-	AM_RANGE(0x12, 0x12) AM_READNOP             // unknown
-	AM_RANGE(0x20, 0x20) AM_WRITE(fromance_rombank_w)
-	AM_RANGE(0x21, 0x21) AM_READ(fromance_busycheck_sub_r) AM_WRITE(fromance_gfxreg_w)
-	AM_RANGE(0x22, 0x25) AM_WRITE(fromance_scroll_w)
-	AM_RANGE(0x26, 0x26) AM_READWRITE(fromance_commanddata_r, fromance_busycheck_sub_w)
-	AM_RANGE(0x27, 0x27) AM_WRITE(fromance_adpcm_reset_w)
-	AM_RANGE(0x28, 0x28) AM_WRITE(fromance_adpcm_w)
-	AM_RANGE(0x2a, 0x2b) AM_DEVWRITE("ymsnd", ym2413_device, write)
-ADDRESS_MAP_END
+void fromance_state::fromance_sub_io_map(address_map &map)
+{
+	map.global_mask(0xff);
+	map(0x10, 0x11).w(m_gga, FUNC(vsystem_gga_device::write));
+	map(0x12, 0x12).nopr();             // unknown
+	map(0x20, 0x20).w(FUNC(fromance_state::fromance_rombank_w));
+	map(0x21, 0x21).r(FUNC(fromance_state::fromance_busycheck_sub_r)).w(FUNC(fromance_state::fromance_gfxreg_w));
+	map(0x22, 0x25).w(FUNC(fromance_state::fromance_scroll_w));
+	map(0x26, 0x26).rw(m_sublatch, FUNC(generic_latch_8_device::read), FUNC(generic_latch_8_device::acknowledge_w));
+	map(0x27, 0x27).w(FUNC(fromance_state::fromance_adpcm_reset_w));
+	map(0x28, 0x28).w(FUNC(fromance_state::fromance_adpcm_w));
+	map(0x2a, 0x2b).w("ymsnd", FUNC(ym2413_device::write));
+}
 
 
 /*************************************
@@ -476,7 +466,7 @@ INPUT_PORTS_END
 static INPUT_PORTS_START( idolmj )
 	PORT_START("SERVICE")
 	PORT_BIT( 0x01, IP_ACTIVE_LOW, IPT_UNUSED )
-	PORT_BIT( 0x02, IP_ACTIVE_LOW, IPT_SERVICE3 )   // MEMORY RESET
+	PORT_BIT( 0x02, IP_ACTIVE_LOW, IPT_MEMORY_RESET ) // MEMORY RESET
 	PORT_BIT( 0x04, IP_ACTIVE_LOW, IPT_UNUSED )
 	PORT_SERVICE_NO_TOGGLE( 0x08, IP_ACTIVE_LOW)    // TEST
 	PORT_BIT( 0x10, IP_ACTIVE_LOW, IPT_UNUSED )
@@ -553,7 +543,7 @@ INPUT_PORTS_END
 static INPUT_PORTS_START( fromance )
 	PORT_START("SERVICE")
 	PORT_BIT( 0x01, IP_ACTIVE_LOW, IPT_UNUSED )
-	PORT_BIT( 0x02, IP_ACTIVE_LOW, IPT_SERVICE3 )   // MEMORY RESET
+	PORT_BIT( 0x02, IP_ACTIVE_LOW, IPT_MEMORY_RESET ) // MEMORY RESET
 	PORT_BIT( 0x04, IP_ACTIVE_LOW, IPT_UNUSED )
 	PORT_SERVICE_NO_TOGGLE( 0x08, IP_ACTIVE_LOW)    // TEST
 	PORT_BIT( 0x10, IP_ACTIVE_LOW, IPT_UNUSED )
@@ -628,7 +618,7 @@ INPUT_PORTS_END
 static INPUT_PORTS_START( nmsengen )
 	PORT_START("SERVICE")
 	PORT_BIT( 0x01, IP_ACTIVE_LOW, IPT_UNUSED )
-	PORT_BIT( 0x02, IP_ACTIVE_LOW, IPT_SERVICE3 )   // MEMORY RESET
+	PORT_BIT( 0x02, IP_ACTIVE_LOW, IPT_MEMORY_RESET ) // MEMORY RESET
 	PORT_BIT( 0x04, IP_ACTIVE_LOW, IPT_UNUSED )
 	PORT_SERVICE_NO_TOGGLE( 0x08, IP_ACTIVE_LOW)    // TEST
 	PORT_BIT( 0x10, IP_ACTIVE_LOW, IPT_UNUSED )
@@ -703,7 +693,7 @@ INPUT_PORTS_END
 static INPUT_PORTS_START( daiyogen )
 	PORT_START("SERVICE")
 	PORT_BIT( 0x01, IP_ACTIVE_LOW, IPT_UNUSED )
-	PORT_BIT( 0x02, IP_ACTIVE_LOW, IPT_SERVICE3 )   // MEMORY RESET
+	PORT_BIT( 0x02, IP_ACTIVE_LOW, IPT_MEMORY_RESET ) // MEMORY RESET
 	PORT_BIT( 0x04, IP_ACTIVE_LOW, IPT_UNUSED )
 	PORT_SERVICE_NO_TOGGLE( 0x08, IP_ACTIVE_LOW)    // TEST
 	PORT_BIT( 0x10, IP_ACTIVE_LOW, IPT_UNUSED )
@@ -722,131 +712,49 @@ static INPUT_PORTS_START( daiyogen )
 	PORT_BIT( 0x80, IP_ACTIVE_LOW, IPT_UNUSED )
 
 	PORT_START("DSW1")
-	PORT_DIPNAME( 0x01, 0x00, "DIPSW 1-1" )
-	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x01, DEF_STR( On ) )
-	PORT_DIPNAME( 0x02, 0x00, "DIPSW 1-2" )
-	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x02, DEF_STR( On ) )
-	PORT_DIPNAME( 0x04, 0x00, "DIPSW 1-3" )
-	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x04, DEF_STR( On ) )
-	PORT_DIPNAME( 0x08, 0x00, "DIPSW 1-4" )
-	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x08, DEF_STR( On ) )
-	PORT_DIPNAME( 0x10, 0x00, "DIPSW 1-5" )
-	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x10, DEF_STR( On ) )
-	PORT_DIPNAME( 0x20, 0x00, DEF_STR( Demo_Sounds ) )
+	PORT_DIPNAME( 0x01, 0x00, DEF_STR( Allow_Continue ) )   PORT_DIPLOCATION("SW1:!1")
+	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
+	PORT_DIPSETTING(    0x01, DEF_STR( Off ) )
+	PORT_DIPNAME( 0x06, 0x00, "Player Initial Score" )  PORT_DIPLOCATION("SW1:!2,!3")
+	PORT_DIPSETTING(    0x00, "1,000" )
+	PORT_DIPSETTING(    0x04, "1,500" )
+	PORT_DIPSETTING(    0x02, "2,000" )
+	PORT_DIPSETTING(    0x06, "3,000" )
+	PORT_DIPNAME( 0x18, 0x00, "Computer Difficulty" )   PORT_DIPLOCATION("SW1:!4,!5")
+	PORT_DIPSETTING(    0x10, DEF_STR( Easy ) )
+	PORT_DIPSETTING(    0x00, DEF_STR( Normal ) )
+	PORT_DIPSETTING(    0x08, DEF_STR( Hard ) )
+	PORT_DIPSETTING(    0x18, DEF_STR( Very_Hard ) )
+	PORT_DIPNAME( 0x20, 0x00, DEF_STR( Demo_Sounds ) )  PORT_DIPLOCATION("SW1:!6")
 	PORT_DIPSETTING(    0x20, DEF_STR( Off ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
-	PORT_DIPNAME( 0x40, 0x00, "DIPSW 1-7" )
-	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x40, DEF_STR( On ) )
-	PORT_DIPNAME( 0x80, 0x00, "DIPSW 1-8" )
+	PORT_DIPUNUSED_DIPLOC( 0x40, 0x40, "SW1:!7" )
+	PORT_DIPNAME( 0x80, 0x00, "YAKUMAN STOP" )      PORT_DIPLOCATION("SW1:!8") // not sure what this is supposed to mean
 	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
 	PORT_DIPSETTING(    0x80, DEF_STR( On ) )
 
 	PORT_START("DSW2")
-	PORT_DIPNAME( 0x01, 0x00, "DIPSW 2-1" )
-	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x01, DEF_STR( On ) )
-	PORT_DIPNAME( 0x02, 0x00, "DIPSW 2-2" )
-	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x02, DEF_STR( On ) )
-	PORT_DIPNAME( 0x04, 0x00, "DIPSW 2-3" )
-	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x04, DEF_STR( On ) )
-	PORT_DIPNAME( 0x08, 0x00, "DIPSW 2-4" )
-	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x08, DEF_STR( On ) )
-	PORT_DIPNAME( 0x10, 0x00, "DIPSW 2-5" )
-	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x10, DEF_STR( On ) )
-	PORT_DIPNAME( 0x20, 0x00, "DIPSW 2-6" )
-	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x20, DEF_STR( On ) )
-	PORT_DIPNAME( 0x40, 0x00, "DIPSW 2-7" )
-	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x40, DEF_STR( On ) )
-	PORT_DIPNAME( 0x80, 0x00, DEF_STR( Flip_Screen ) )
-	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x80, DEF_STR( On ) )
-
-	PORT_INCLUDE( mahjong_panel )
-INPUT_PORTS_END
-
-
-static INPUT_PORTS_START( mfunclub )
-	PORT_START("SERVICE")
-	PORT_BIT( 0x01, IP_ACTIVE_LOW, IPT_UNUSED )
-	PORT_BIT( 0x02, IP_ACTIVE_LOW, IPT_SERVICE3 )   // MEMORY RESET
-	PORT_BIT( 0x04, IP_ACTIVE_LOW, IPT_UNUSED )
-	PORT_SERVICE_NO_TOGGLE( 0x08, IP_ACTIVE_LOW)    // TEST
-	PORT_BIT( 0x10, IP_ACTIVE_LOW, IPT_UNUSED )
-	PORT_BIT( 0x20, IP_ACTIVE_LOW, IPT_UNUSED )
-	PORT_BIT( 0x40, IP_ACTIVE_LOW, IPT_UNUSED )
-	PORT_BIT( 0x80, IP_ACTIVE_LOW, IPT_UNUSED )
-
-	PORT_START("COIN")
-	PORT_BIT( 0x01, IP_ACTIVE_LOW, IPT_UNUSED )
-	PORT_BIT( 0x02, IP_ACTIVE_LOW, IPT_UNUSED )
-	PORT_BIT( 0x04, IP_ACTIVE_LOW, IPT_UNUSED )
-	PORT_BIT( 0x08, IP_ACTIVE_LOW, IPT_UNUSED )
-	PORT_BIT( 0x10, IP_ACTIVE_LOW, IPT_UNUSED )
-	PORT_BIT( 0x20, IP_ACTIVE_LOW, IPT_UNUSED )
-	PORT_BIT( 0x40, IP_ACTIVE_LOW, IPT_COIN1 )      // COIN1
-	PORT_BIT( 0x80, IP_ACTIVE_LOW, IPT_UNUSED )
-
-	PORT_START("DSW1")
-	PORT_DIPNAME( 0x01, 0x00, "DIPSW 1-1" )
-	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x01, DEF_STR( On ) )
-	PORT_DIPNAME( 0x02, 0x00, "DIPSW 1-2" )
-	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x02, DEF_STR( On ) )
-	PORT_DIPNAME( 0x04, 0x00, "DIPSW 1-3" )
-	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x04, DEF_STR( On ) )
-	PORT_DIPNAME( 0x08, 0x00, "DIPSW 1-4" )
-	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x08, DEF_STR( On ) )
-	PORT_DIPNAME( 0x10, 0x00, "Voices" )
-	PORT_DIPSETTING(    0x10, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
-	PORT_DIPNAME( 0x20, 0x00, "DIPSW 1-6" )
+	PORT_DIPNAME( 0x07, 0x00, DEF_STR( Difficulty ) )   PORT_DIPLOCATION("SW2:!1,!2,!3")
+	PORT_DIPSETTING(    0x00, "1" )
+		PORT_DIPSETTING(    0x04, "2" )
+	PORT_DIPSETTING(    0x02, "3" )
+		PORT_DIPSETTING(    0x06, "4" )
+		PORT_DIPSETTING(    0x01, "5" )
+	PORT_DIPSETTING(    0x05, "6" )
+		PORT_DIPSETTING(    0x03, "7" )
+	PORT_DIPSETTING(    0x07, "8" )
+	PORT_DIPNAME( 0x18, 0x00, DEF_STR( Coinage ) )      PORT_DIPLOCATION("SW2:!4,!5")
+	PORT_DIPSETTING(    0x00, DEF_STR( 1C_1C ) )
+	PORT_DIPSETTING(    0x10, DEF_STR( 1C_2C ) )
+	PORT_DIPSETTING(    0x08, DEF_STR( 2C_1C ) )
+	PORT_DIPSETTING(    0x18, DEF_STR( 3C_1C ) )
+	PORT_DIPNAME( 0x20, 0x00, "Ignore FURITEN" )        PORT_DIPLOCATION("SW2:!6")
 	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
 	PORT_DIPSETTING(    0x20, DEF_STR( On ) )
-	PORT_DIPNAME( 0x40, 0x00, "DIPSW 1-7" )
+	PORT_DIPNAME( 0x40, 0x00, "PINFU with TSUMO" )      PORT_DIPLOCATION("SW2:!7")
 	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
 	PORT_DIPSETTING(    0x40, DEF_STR( On ) )
-	PORT_DIPNAME( 0x80, 0x00, "DIPSW 1-8" )
-	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x80, DEF_STR( On ) )
-
-	PORT_START("DSW2")
-	PORT_DIPNAME( 0x01, 0x00, "DIPSW 2-1" )
-	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x01, DEF_STR( On ) )
-	PORT_DIPNAME( 0x02, 0x00, "DIPSW 2-2" )
-	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x02, DEF_STR( On ) )
-	PORT_DIPNAME( 0x04, 0x00, "DIPSW 2-3" )
-	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x04, DEF_STR( On ) )
-	PORT_DIPNAME( 0x08, 0x00, "DIPSW 2-4" )
-	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x08, DEF_STR( On ) )
-	PORT_DIPNAME( 0x10, 0x00, "DIPSW 2-5" )
-	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x10, DEF_STR( On ) )
-	PORT_DIPNAME( 0x20, 0x00, "DIPSW 2-6" )
-	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x20, DEF_STR( On ) )
-	PORT_DIPNAME( 0x40, 0x00, "DIPSW 2-7" )
-	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x40, DEF_STR( On ) )
-	PORT_DIPNAME( 0x80, 0x00, DEF_STR( Flip_Screen ) )
+	PORT_DIPNAME( 0x80, 0x00, DEF_STR( Flip_Screen ) )  PORT_DIPLOCATION("SW2:!8")
 	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
 	PORT_DIPSETTING(    0x80, DEF_STR( On ) )
 
@@ -857,7 +765,7 @@ INPUT_PORTS_END
 static INPUT_PORTS_START( mjnatsu )
 	PORT_START("SERVICE")
 	PORT_BIT( 0x01, IP_ACTIVE_LOW, IPT_UNUSED )
-	PORT_BIT( 0x02, IP_ACTIVE_LOW, IPT_SERVICE3 )   // MEMORY RESET
+	PORT_BIT( 0x02, IP_ACTIVE_LOW, IPT_MEMORY_RESET ) // MEMORY RESET
 	PORT_BIT( 0x04, IP_ACTIVE_LOW, IPT_UNUSED )
 	PORT_SERVICE_NO_TOGGLE( 0x08, IP_ACTIVE_LOW)    // TEST
 	PORT_BIT( 0x10, IP_ACTIVE_LOW, IPT_UNUSED )
@@ -875,57 +783,51 @@ static INPUT_PORTS_START( mjnatsu )
 	PORT_BIT( 0x40, IP_ACTIVE_LOW, IPT_COIN1 )      // COIN1
 	PORT_BIT( 0x80, IP_ACTIVE_LOW, IPT_UNUSED )
 
-	PORT_START("DSW1")
-	PORT_DIPNAME( 0x01, 0x00, "DIPSW 1-1" )
-	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x01, DEF_STR( On ) )
-	PORT_DIPNAME( 0x02, 0x00, "DIPSW 1-2" )
-	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x02, DEF_STR( On ) )
-	PORT_DIPNAME( 0x04, 0x00, "DIPSW 1-3" )
-	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x04, DEF_STR( On ) )
-	PORT_DIPNAME( 0x08, 0x00, "DIPSW 1-4" )
-	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x08, DEF_STR( On ) )
-	PORT_DIPNAME( 0x10, 0x00, "Voices" )
-	PORT_DIPSETTING(    0x10, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
-	PORT_DIPNAME( 0x20, 0x00, "DIPSW 1-6" )
-	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x20, DEF_STR( On ) )
-	PORT_DIPNAME( 0x40, 0x00, "DIPSW 1-7" )
-	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x40, DEF_STR( On ) )
-	PORT_DIPNAME( 0x80, 0x00, "DIPSW 1-8" )
-	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x80, DEF_STR( On ) )
+		PORT_START("DSW2")
+		PORT_DIPNAME( 0x07, 0x00, DEF_STR( Difficulty ) )   PORT_DIPLOCATION("SW1:!1,!2,!3")
+		PORT_DIPSETTING(    0x00, "1" )
+		PORT_DIPSETTING(    0x04, "2" )
+		PORT_DIPSETTING(    0x02, "3" )
+		PORT_DIPSETTING(    0x06, "4" )
+		PORT_DIPSETTING(    0x01, "5" )
+		PORT_DIPSETTING(    0x05, "6" )
+		PORT_DIPSETTING(    0x03, "7" )
+		PORT_DIPSETTING(    0x07, "8" )
+		PORT_DIPNAME( 0x18, 0x00, DEF_STR( Coinage ) )      PORT_DIPLOCATION("SW1:!4,!5")
+		PORT_DIPSETTING(    0x00, DEF_STR( 1C_1C ) )
+		PORT_DIPSETTING(    0x10, DEF_STR( 1C_2C ) )
+		PORT_DIPSETTING(    0x08, DEF_STR( 2C_1C ) )
+		PORT_DIPSETTING(    0x18, DEF_STR( 3C_1C ) )
+		PORT_DIPNAME( 0x20, 0x00, "Ignore FURITEN" )        PORT_DIPLOCATION("SW1:!6")
+		PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
+		PORT_DIPSETTING(    0x20, DEF_STR( On ) )
+		PORT_DIPNAME( 0x40, 0x00, "PINFU with TSUMO" )      PORT_DIPLOCATION("SW1:!7")
+		PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
+		PORT_DIPSETTING(    0x40, DEF_STR( On ) )
+		PORT_DIPNAME( 0x80, 0x00, DEF_STR( Flip_Screen ) )  PORT_DIPLOCATION("SW1:!8")
+		PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
+		PORT_DIPSETTING(    0x80, DEF_STR( On ) )
 
-	PORT_START("DSW2")
-	PORT_DIPNAME( 0x01, 0x00, "DIPSW 2-1" )
-	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x01, DEF_STR( On ) )
-	PORT_DIPNAME( 0x02, 0x00, "DIPSW 2-2" )
-	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x02, DEF_STR( On ) )
-	PORT_DIPNAME( 0x04, 0x00, "DIPSW 2-3" )
-	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x04, DEF_STR( On ) )
-	PORT_DIPNAME( 0x08, 0x00, "DIPSW 2-4" )
-	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x08, DEF_STR( On ) )
-	PORT_DIPNAME( 0x10, 0x00, "DIPSW 2-5" )
-	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x10, DEF_STR( On ) )
-	PORT_DIPNAME( 0x20, 0x00, "DIPSW 2-6" )
-	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x20, DEF_STR( On ) )
-	PORT_DIPNAME( 0x40, 0x00, "DIPSW 2-7" )
-	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x40, DEF_STR( On ) )
-	PORT_DIPNAME( 0x80, 0x00, DEF_STR( Flip_Screen ) )
-	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x80, DEF_STR( On ) )
+		PORT_START("DSW1")
+		PORT_DIPNAME( 0x01, 0x00, DEF_STR( Allow_Continue ) )   PORT_DIPLOCATION("SW2:!1")
+		PORT_DIPSETTING(    0x00, DEF_STR( On ) )
+		PORT_DIPSETTING(    0x01, DEF_STR( Off ) )
+		PORT_DIPNAME( 0x06, 0x00, "Player Initial Score" )  PORT_DIPLOCATION("SW2:!2,!3")
+		PORT_DIPSETTING(    0x00, "1,000" )
+		PORT_DIPSETTING(    0x04, "2,000" )
+		PORT_DIPSETTING(    0x02, "3,000" )
+		PORT_DIPSETTING(    0x06, "5,000" )
+		PORT_DIPNAME( 0x08, 0x00, "Start GOLD" )        PORT_DIPLOCATION("SW2:!4")
+		PORT_DIPSETTING(    0x00, "1,000" )
+		PORT_DIPSETTING(    0x08, "6,000" )
+	PORT_DIPNAME( 0x10, 0x00, "Item Shop Voice" )       PORT_DIPLOCATION("SW2:!5")
+		PORT_DIPSETTING(    0x10, DEF_STR( Off ) )
+		PORT_DIPSETTING(    0x00, DEF_STR( On ) )
+		PORT_DIPNAME( 0x20, 0x00, "Stop Button (N)" )       PORT_DIPLOCATION("SW2:!6")
+		PORT_DIPSETTING(    0x20, DEF_STR( Off ) )
+		PORT_DIPSETTING(    0x00, DEF_STR( On ) )
+		PORT_DIPUNUSED_DIPLOC( 0x40, 0x00, "SW2:!7" )
+	PORT_DIPUNUSED_DIPLOC( 0x80, 0x00, "SW2:!8" )
 
 	PORT_INCLUDE( mahjong_panel )
 INPUT_PORTS_END
@@ -950,7 +852,7 @@ static const gfx_layout bglayout =
 };
 
 
-static GFXDECODE_START( fromance )
+static GFXDECODE_START( gfx_fromance )
 	GFXDECODE_ENTRY( "gfx1", 0, bglayout,   0, 128 )
 	GFXDECODE_ENTRY( "gfx2", 0, bglayout,   0, 128 )
 GFXDECODE_END
@@ -962,15 +864,12 @@ GFXDECODE_END
  *
  *************************************/
 
-MACHINE_START_MEMBER(fromance_state,fromance)
+void fromance_state::machine_start()
 {
-	UINT8 *ROM = memregion("sub")->base();
+	uint8_t *ROM = memregion("sub")->base();
 
-	membank("bank1")->configure_entries(0, 0x100, &ROM[0x10000], 0x4000);
+	m_rombank->configure_entries(0, 0x100, &ROM[0x10000], 0x4000);
 
-
-	save_item(NAME(m_directionflag));
-	save_item(NAME(m_commanddata));
 	save_item(NAME(m_portselect));
 
 	save_item(NAME(m_adpcm_reset));
@@ -980,12 +879,8 @@ MACHINE_START_MEMBER(fromance_state,fromance)
 	/* video-related elements are saved in video_start */
 }
 
-MACHINE_RESET_MEMBER(fromance_state,fromance)
+void fromance_state::machine_reset()
 {
-	int i;
-
-	m_directionflag = 0;
-	m_commanddata = 0;
 	m_portselect = 0;
 
 	m_adpcm_reset = 0;
@@ -1003,130 +898,131 @@ MACHINE_RESET_MEMBER(fromance_state,fromance)
 	m_scrolly[1] = 0;
 	m_gfxreg = 0;
 	m_flipscreen = 0;
-	m_crtc_register = 0;
-
-	for (i = 0; i < 0x10; i++)
-		m_crtc_data[i] = 0;
 }
 
-static MACHINE_CONFIG_START( nekkyoku, fromance_state )
-
+void fromance_state::nekkyoku(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", Z80,12000000/2)     /* 6.00 Mhz ? */
-	MCFG_CPU_PROGRAM_MAP(nekkyoku_main_map)
-	MCFG_CPU_VBLANK_INT_DRIVER("screen", fromance_state,  irq0_line_hold)
+	Z80(config, m_maincpu, 12000000/2); /* 6.00 Mhz ? */
+	m_maincpu->set_addrmap(AS_PROGRAM, &fromance_state::nekkyoku_main_map);
+	m_maincpu->set_vblank_int("screen", FUNC(fromance_state::irq0_line_hold));
 
-	MCFG_CPU_ADD("sub", Z80,12000000/2)     /* 6.00 Mhz ? */
-	MCFG_CPU_PROGRAM_MAP(nekkyoku_sub_map)
-	MCFG_CPU_IO_MAP(nekkyoku_sub_io_map)
+	Z80(config, m_subcpu, 12000000/2);  /* 6.00 Mhz ? */
+	m_subcpu->set_addrmap(AS_PROGRAM, &fromance_state::nekkyoku_sub_map);
+	m_subcpu->set_addrmap(AS_IO, &fromance_state::nekkyoku_sub_io_map);
 
-	MCFG_MACHINE_START_OVERRIDE(fromance_state,fromance)
-	MCFG_MACHINE_RESET_OVERRIDE(fromance_state,fromance)
+	GENERIC_LATCH_8(config, m_sublatch);
+	m_sublatch->set_separate_acknowledge(true);
 
 	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_REFRESH_RATE(60)
-	MCFG_SCREEN_SIZE(512, 256)
-	MCFG_SCREEN_VISIBLE_AREA(0, 352-1, 0, 240-1)
-	MCFG_SCREEN_UPDATE_DRIVER(fromance_state, screen_update_fromance)
-	MCFG_SCREEN_PALETTE("palette")
+	SCREEN(config, m_screen, SCREEN_TYPE_RASTER);
+	m_screen->set_refresh_hz(60);
+	m_screen->set_size(512, 256);
+	m_screen->set_visarea(0, 352-1, 0, 240-1);
+	m_screen->set_screen_update(FUNC(fromance_state::screen_update_fromance));
+	m_screen->set_palette(m_palette);
 
-	MCFG_GFXDECODE_ADD("gfxdecode", "palette", fromance)
-	MCFG_PALETTE_ADD("palette", 1024)
+	GFXDECODE(config, m_gfxdecode, m_palette, gfx_fromance);
+	PALETTE(config, m_palette).set_entries(1024);
+
+	VSYSTEM_GGA(config, m_gga, 14318181 / 2); // clock not verified
+	m_gga->write_cb().set(FUNC(fromance_state::fromance_gga_data_w));
 
 	MCFG_VIDEO_START_OVERRIDE(fromance_state,nekkyoku)
 
 	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_MONO("mono")
+	SPEAKER(config, "mono").front_center();
 
-	MCFG_SOUND_ADD("aysnd", AY8910, 12000000/6)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.15)
+	AY8910(config, "aysnd", 12000000/6).add_route(ALL_OUTPUTS, "mono", 0.15); // type not verified
 
-	MCFG_SOUND_ADD("msm", MSM5205, 384000)
-	MCFG_MSM5205_VCLK_CB(WRITELINE(fromance_state, fromance_adpcm_int)) /* IRQ handler */
-	MCFG_MSM5205_PRESCALER_SELECTOR(MSM5205_S48_4B)      /* 8 KHz */
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.80)
-MACHINE_CONFIG_END
+	MSM5205(config, m_msm, 384000);
+	m_msm->vck_legacy_callback().set(FUNC(fromance_state::fromance_adpcm_int)); /* IRQ handler */
+	m_msm->set_prescaler_selector(msm5205_device::S48_4B);  /* 8 KHz */
+	m_msm->add_route(ALL_OUTPUTS, "mono", 0.80);
+}
 
-
-static MACHINE_CONFIG_START( idolmj, fromance_state )
-
+void fromance_state::idolmj(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", Z80,12000000/2)     /* 6.00 Mhz ? */
-	MCFG_CPU_PROGRAM_MAP(fromance_main_map)
-	MCFG_CPU_VBLANK_INT_DRIVER("screen", fromance_state,  irq0_line_hold)
+	Z80(config, m_maincpu, 12_MHz_XTAL / 2);   /* 6.00 Mhz ? */
+	m_maincpu->set_addrmap(AS_PROGRAM, &fromance_state::fromance_main_map);
+	m_maincpu->set_vblank_int("screen", FUNC(fromance_state::irq0_line_hold));
 
-	MCFG_CPU_ADD("sub", Z80,12000000/2)     /* 6.00 Mhz ? */
-	MCFG_CPU_PROGRAM_MAP(fromance_sub_map)
-	MCFG_CPU_IO_MAP(idolmj_sub_io_map)
+	Z80(config, m_subcpu, 12_MHz_XTAL / 2);    /* 6.00 Mhz ? */
+	m_subcpu->set_addrmap(AS_PROGRAM, &fromance_state::fromance_sub_map);
+	m_subcpu->set_addrmap(AS_IO, &fromance_state::idolmj_sub_io_map);
 
-	MCFG_MACHINE_START_OVERRIDE(fromance_state,fromance)
-	MCFG_MACHINE_RESET_OVERRIDE(fromance_state,fromance)
+	GENERIC_LATCH_8(config, m_sublatch);
+	m_sublatch->set_separate_acknowledge(true);
 
 	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_REFRESH_RATE(60)
-	MCFG_SCREEN_SIZE(512, 256)
-	MCFG_SCREEN_VISIBLE_AREA(0, 352-1, 0, 240-1)
-	MCFG_SCREEN_UPDATE_DRIVER(fromance_state, screen_update_fromance)
-	MCFG_SCREEN_PALETTE("palette")
+	SCREEN(config, m_screen, SCREEN_TYPE_RASTER);
+	m_screen->set_refresh_hz(60);
+	m_screen->set_size(512, 256);
+	m_screen->set_visarea(0, 352-1, 0, 240-1);
+	m_screen->set_screen_update(FUNC(fromance_state::screen_update_fromance));
+	m_screen->set_palette(m_palette);
 
-	MCFG_GFXDECODE_ADD("gfxdecode", "palette", fromance)
-	MCFG_PALETTE_ADD("palette", 2048)
+	GFXDECODE(config, m_gfxdecode, m_palette, gfx_fromance);
+	PALETTE(config, m_palette).set_entries(2048);
+
+	VSYSTEM_GGA(config, m_gga, XTAL(14'318'181) / 2); // divider not verified
+	m_gga->write_cb().set(FUNC(fromance_state::fromance_gga_data_w));
 
 	MCFG_VIDEO_START_OVERRIDE(fromance_state,fromance)
 
 	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_MONO("mono")
+	SPEAKER(config, "mono").front_center();
 
-	MCFG_SOUND_ADD("aysnd", AY8910, 12000000/6)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.15)
+	YM2149(config, "aysnd", 12_MHz_XTAL / 6).add_route(ALL_OUTPUTS, "mono", 0.15);
 
-	MCFG_SOUND_ADD("msm", MSM5205, 384000)
-	MCFG_MSM5205_VCLK_CB(WRITELINE(fromance_state, fromance_adpcm_int)) /* IRQ handler */
-	MCFG_MSM5205_PRESCALER_SELECTOR(MSM5205_S48_4B)      /* 8 KHz */
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.80)
-MACHINE_CONFIG_END
+	MSM5205(config, m_msm, 384000);
+	m_msm->vck_legacy_callback().set(FUNC(fromance_state::fromance_adpcm_int)); /* IRQ handler */
+	m_msm->set_prescaler_selector(msm5205_device::S48_4B);  /* 8 KHz */
+	m_msm->add_route(ALL_OUTPUTS, "mono", 0.80);
+}
 
 
-static MACHINE_CONFIG_START( fromance, fromance_state )
-
+void fromance_state::fromance(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", Z80,12000000/2)     /* 6.00 Mhz ? */
-	MCFG_CPU_PROGRAM_MAP(fromance_main_map)
-	MCFG_CPU_VBLANK_INT_DRIVER("screen", fromance_state,  irq0_line_hold)
+	Z80(config, m_maincpu, XTAL(12'000'000) / 2);   /* 6.00 Mhz ? */
+	m_maincpu->set_addrmap(AS_PROGRAM, &fromance_state::fromance_main_map);
+	m_maincpu->set_vblank_int("screen", FUNC(fromance_state::irq0_line_hold));
 
-	MCFG_CPU_ADD("sub", Z80,12000000/2)     /* 6.00 Mhz ? */
-	MCFG_CPU_PROGRAM_MAP(fromance_sub_map)
-	MCFG_CPU_IO_MAP(fromance_sub_io_map)
+	Z80(config, m_subcpu, XTAL(12'000'000) / 2);    /* 6.00 Mhz ? */
+	m_subcpu->set_addrmap(AS_PROGRAM, &fromance_state::fromance_sub_map);
+	m_subcpu->set_addrmap(AS_IO, &fromance_state::fromance_sub_io_map);
 
-	MCFG_MACHINE_START_OVERRIDE(fromance_state,fromance)
-	MCFG_MACHINE_RESET_OVERRIDE(fromance_state,fromance)
+	GENERIC_LATCH_8(config, m_sublatch);
+	m_sublatch->set_separate_acknowledge(true);
 
 	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_REFRESH_RATE(60)
-	MCFG_SCREEN_SIZE(512, 256)
-	MCFG_SCREEN_VISIBLE_AREA(0, 352-1, 0, 240-1)
-	MCFG_SCREEN_UPDATE_DRIVER(fromance_state, screen_update_fromance)
-	MCFG_SCREEN_PALETTE("palette")
+	SCREEN(config, m_screen, SCREEN_TYPE_RASTER);
+	m_screen->set_refresh_hz(60);
+	m_screen->set_size(512, 256);
+	m_screen->set_visarea(0, 352-1, 0, 240-1);
+	m_screen->set_screen_update(FUNC(fromance_state::screen_update_fromance));
+	m_screen->set_palette(m_palette);
 
-	MCFG_GFXDECODE_ADD("gfxdecode", "palette", fromance)
-	MCFG_PALETTE_ADD("palette", 2048)
+	GFXDECODE(config, m_gfxdecode, m_palette, gfx_fromance);
+	PALETTE(config, m_palette).set_entries(2048);
+
+	VSYSTEM_GGA(config, m_gga, XTAL(14'318'181) / 2); // divider not verified
+	m_gga->write_cb().set(FUNC(fromance_state::fromance_gga_data_w));
 
 	MCFG_VIDEO_START_OVERRIDE(fromance_state,fromance)
 
 	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_MONO("mono")
+	SPEAKER(config, "mono").front_center();
 
-	MCFG_SOUND_ADD("ymsnd", YM2413, 3579545)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.90)
+	YM2413(config, "ymsnd", 3579545).add_route(ALL_OUTPUTS, "mono", 0.90);
 
-	MCFG_SOUND_ADD("msm", MSM5205, 384000)
-	MCFG_MSM5205_VCLK_CB(WRITELINE(fromance_state, fromance_adpcm_int)) /* IRQ handler */
-	MCFG_MSM5205_PRESCALER_SELECTOR(MSM5205_S48_4B)      /* 8 KHz */
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.10)
-MACHINE_CONFIG_END
+	MSM5205(config, m_msm, 384000);
+	m_msm->vck_legacy_callback().set(FUNC(fromance_state::fromance_adpcm_int)); /* IRQ handler */
+	m_msm->set_prescaler_selector(msm5205_device::S48_4B);  /* 8 KHz */
+	m_msm->add_route(ALL_OUTPUTS, "mono", 0.10);
+}
 
 
 
@@ -1159,7 +1055,14 @@ ROM_START( nekkyoku )
 	ROM_LOAD( "ic8a.bin",    0x000000, 0x080000, CRC(599790d8) SHA1(4e4ade1a89d6cb93b0808867883d70c4c7ed78dd) )
 	ROM_LOAD( "ic9a.bin",    0x080000, 0x040000, CRC(78c1906f) SHA1(54459e0120ec58a962d3f4a1287e68d2fbb28be9) )
 	ROM_LOAD( "5-ic10a.bin", 0x0c0000, 0x008000, CRC(2e78515f) SHA1(397985c082ffc0df07cd44d54e4fef909c30a4f1) )
-	ROM_FILL(                0x0c8000, 0x038000, 0xff )
+	// 'D' OL girl is displayed via one of these mirrors
+	ROM_RELOAD(              0x0c8000, 0x008000 )
+	ROM_RELOAD(              0x0d0000, 0x008000 )
+	ROM_RELOAD(              0x0d8000, 0x008000 )
+	ROM_RELOAD(              0x0e0000, 0x008000 )
+	ROM_RELOAD(              0x0e8000, 0x008000 )
+	ROM_RELOAD(              0x0f0000, 0x008000 )
+	ROM_RELOAD(              0x0f8000, 0x008000 )
 	ROM_FILL(                0x100000, 0x100000, 0xff )
 ROM_END
 
@@ -1341,11 +1244,11 @@ ROM_END
  *
  *************************************/
 
-GAME( 1988, nekkyoku,  0,       nekkyoku, nekkyoku, driver_device, 0, ROT0, "Video System Co.", "Rettou Juudan Nekkyoku Janshi - Higashi Nippon Hen (Japan)", MACHINE_IMPERFECT_GRAPHICS | MACHINE_SUPPORTS_SAVE )
-GAME( 1988, idolmj,    0,       idolmj,   idolmj, driver_device,   0, ROT0, "System Service", "Idol-Mahjong Housoukyoku (Japan)", MACHINE_SUPPORTS_SAVE )
-GAME( 1989, mjnatsu,   0,       fromance, mjnatsu, driver_device,  0, ROT0, "Video System Co.", "Mahjong Natsu Monogatari (Japan)", MACHINE_SUPPORTS_SAVE )
-GAME( 1989, natsuiro,  mjnatsu, fromance, mjnatsu, driver_device,  0, ROT0, "Video System Co.", "Natsuiro Mahjong (Japan)", MACHINE_SUPPORTS_SAVE )
-GAME( 1989, mfunclub,  0,       fromance, mfunclub, driver_device, 0, ROT0, "Video System Co.", "Mahjong Fun Club - Idol Saizensen (Japan)", MACHINE_SUPPORTS_SAVE )
-GAME( 1990, daiyogen,  0,       fromance, daiyogen, driver_device, 0, ROT0, "Video System Co.", "Mahjong Daiyogen (Japan)", MACHINE_SUPPORTS_SAVE )
-GAME( 1991, nmsengen,  0,       fromance, nmsengen, driver_device, 0, ROT0, "Video System Co.", "Nekketsu Mahjong Sengen! AFTER 5 (Japan)", MACHINE_SUPPORTS_SAVE )
-GAME( 1991, fromance,  0,       fromance, fromance, driver_device, 0, ROT0, "Video System Co.", "Idol-Mahjong Final Romance (Japan)", MACHINE_SUPPORTS_SAVE )
+GAME( 1988, nekkyoku, 0,       nekkyoku, nekkyoku, fromance_state, empty_init, ROT0, "Video System Co.", "Rettou Juudan Nekkyoku Janshi - Higashi Nippon Hen (Japan)", MACHINE_SUPPORTS_SAVE | MACHINE_IMPERFECT_GRAPHICS )
+GAME( 1988, idolmj,   0,       idolmj,   idolmj,   fromance_state, empty_init, ROT0, "System Service",   "Idol-Mahjong Housoukyoku (Japan)", MACHINE_SUPPORTS_SAVE )
+GAME( 1989, mjnatsu,  0,       fromance, mjnatsu,  fromance_state, empty_init, ROT0, "Video System Co.", "Mahjong Natsu Monogatari (Japan)", MACHINE_SUPPORTS_SAVE )
+GAME( 1989, natsuiro, mjnatsu, fromance, mjnatsu,  fromance_state, empty_init, ROT0, "Video System Co.", "Natsuiro Mahjong (Japan)", MACHINE_SUPPORTS_SAVE )
+GAME( 1989, mfunclub, 0,       fromance, mjnatsu,  fromance_state, empty_init, ROT0, "Video System Co.", "Mahjong Fun Club - Idol Saizensen (Japan)", MACHINE_SUPPORTS_SAVE )
+GAME( 1990, daiyogen, 0,       fromance, daiyogen, fromance_state, empty_init, ROT0, "Video System Co.", "Mahjong Daiyogen (Japan)", MACHINE_SUPPORTS_SAVE )
+GAME( 1991, nmsengen, 0,       fromance, nmsengen, fromance_state, empty_init, ROT0, "Video System Co.", "Nekketsu Mahjong Sengen! AFTER 5 (Japan)", MACHINE_SUPPORTS_SAVE )
+GAME( 1991, fromance, 0,       fromance, fromance, fromance_state, empty_init, ROT0, "Video System Co.", "Idol-Mahjong Final Romance (Japan)", MACHINE_SUPPORTS_SAVE )

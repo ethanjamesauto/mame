@@ -33,10 +33,10 @@
 */
 
 #include "emu.h"
-#include "includes/decocrpt.h"
+#include "machine/deco156.h"
 
 
-static void decrypt(UINT32 *src, UINT32 *dst, int length)
+static void decrypt(uint32_t *src, uint32_t *dst, int length)
 {
 	int a;
 
@@ -87,7 +87,7 @@ static void decrypt(UINT32 *src, UINT32 *dst, int length)
 		switch (a & 3)
 		{
 			case 0:
-				dword = BITSWAP32( dword ^ 0xec63197a,
+				dword = bitswap<32>( dword ^ 0xec63197a,
 						1,   4,  7, 28, 22, 18, 20,  9,
 					16, 10, 30,  2, 31, 24, 19, 29,
 						6,  21, 23, 11, 12, 13,  5,  0,
@@ -95,7 +95,7 @@ static void decrypt(UINT32 *src, UINT32 *dst, int length)
 				break;
 
 			case 1:
-				dword = BITSWAP32( dword ^ 0x58a5a55f,
+				dword = bitswap<32>( dword ^ 0x58a5a55f,
 					14, 23, 28, 29,  6, 24, 10,  1,
 						5,  16,  7,  2, 30,  8, 18,  3,
 					31, 22, 25, 20, 17,  0, 19, 27,
@@ -103,7 +103,7 @@ static void decrypt(UINT32 *src, UINT32 *dst, int length)
 				break;
 
 			case 2:
-				dword = BITSWAP32( dword ^ 0xe3a65f16,
+				dword = bitswap<32>( dword ^ 0xe3a65f16,
 					19, 30, 21,  4,  2, 18, 15,  1,
 					12, 25,  8,  0, 24, 20, 17, 23,
 					22, 26, 28, 16,  9, 27,  6, 11,
@@ -111,7 +111,7 @@ static void decrypt(UINT32 *src, UINT32 *dst, int length)
 				break;
 
 			case 3:
-				dword = BITSWAP32( dword ^ 0x28d93783,
+				dword = bitswap<32>( dword ^ 0x28d93783,
 					30,  6, 15,  0, 31, 18, 26, 22,
 					14, 23, 19, 17, 10,  8, 11, 20,
 						1,  28,  2,  4,  9, 24, 25, 27,
@@ -126,9 +126,9 @@ static void decrypt(UINT32 *src, UINT32 *dst, int length)
 
 void deco156_decrypt(running_machine &machine)
 {
-	UINT32 *rom = (UINT32 *)machine.root_device().memregion("maincpu")->base();
+	uint32_t *rom = (uint32_t *)machine.root_device().memregion("maincpu")->base();
 	int length = machine.root_device().memregion("maincpu")->bytes();
-	std::vector<UINT32> buf(length/4);
+	std::vector<uint32_t> buf(length/4);
 
 	memcpy(&buf[0], rom, length);
 	decrypt(&buf[0], rom, length);

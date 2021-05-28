@@ -1,7 +1,9 @@
 // license:BSD-3-Clause
 // copyright-holders:Nicola Salmoria
+
 #include "emu.h"
 #include "includes/bottom9.h"
+#include "screen.h"
 
 
 /***************************************************************************
@@ -61,7 +63,7 @@ K051316_CB_MEMBER(bottom9_state::zoom_callback)
 
 ***************************************************************************/
 
-UINT32 bottom9_state::screen_update_bottom9(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t bottom9_state::screen_update_bottom9(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	m_k052109->tilemap_update();
 

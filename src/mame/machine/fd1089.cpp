@@ -66,19 +66,19 @@
         {
             if ("we must encrypt this data table position")
             {
-                UINT8 byteval;
+                uint8_t byteval;
 
                 do
                 {
                     byteval = rnd();
-                } while (byteval == 0x40);
+                } while (byteval == 0x00);
 
                 opcode_key[i] = byteval;
 
                 do
                 {
                     byteval = rnd();
-                } while (byteval == 0x40);
+                } while (byteval == 0x00);
 
                 data_key[i] = byteval;
             }
@@ -88,15 +88,15 @@
         {
             if ("we mustn't encrypt this data table position")
             {
-                UINT8 byteval;
+                uint8_t byteval;
 
                 do
                 {
                     byteval = rnd();
-                } while (byteval == 0x40);
+                } while (byteval == 0x00);
 
                 opcode_key[i] = byteval;
-                data_key[i] = 0x40;
+                data_key[i] = 0x00;
             }
         }
     }
@@ -107,24 +107,24 @@
 
     Known games that use this CPU:
 
-    CPU #     Type  Status   Game              Seed   Unencrypted data range
-    --------- ------- --- -------------------- ------ -----------------------------------
-    317-0013A FD1089B [1] Enduro Racer         400001 030000-04ffff + 100000-1fffff
-    317-0016  FD1089? ??? Fantasy Zone         400005 ?
-    317-0018  FD1089A [1] Action Fighter       400003 400000-4fffff + 840000-8dffff + c00000-c4ffff + ff0000-ffffff
-    317-0019  FD1089A [1] Outrun               400007 000000-03ffff
-    317-0021  FD1089A [2] Alex Kidd            40000b ?
-    317-0022  FD1089A [1] Dunk Shot            40000d 030000-ffffff
-    317-0024  FD1089B [1] Time Scanner         40000f 000000-02ffff
-    317-0027  FD1089B [1] SDI                  400011 000000-03ffff
-    317-0028  FD1089A [2] Defense              400011 ?
-    317-0033  FD1089A [1] Alien Syndrome       400013 030000-ffffff
-    317-0037  FD1089B [2] Alien Syndrome       400013 030000-ffffff
-    317-0034  FD1089B [1] Super Hang-On        400015 030000-06ffff + 100000-2fffff + ff0000-ffffff
-    317-0086  FD1089A [2] Wonder Boy III       400043 ?
-    317-0167  FD1089A [2] Aurail               400030 010000-ffffff
-    317-0168  FD1089B [1] Aurail               400030 010000-ffffff
-    317-5021  FD1089B [1] Sukeban Jansi Ryuko  40004b 000000-00ffff
+    CPU #     Type  Status   Game             Seed    Unencrypted data range
+    --------- ------- --- -------------------- -- -----------------------------------
+    317-0013A FD1089B [1] Enduro Racer         01 030000-04ffff + 100000-1fffff
+    317-0016  FD1089B [2] Fantasy Zone         05 ?
+    317-0018  FD1089A [1] Action Fighter       03 400000-4fffff + 840000-8dffff + c00000-c4ffff + ff0000-ffffff
+    317-0019  FD1089A [1] Outrun               07 000000-03ffff
+    317-0021  FD1089A [2] Alex Kidd            0b ?
+    317-0022  FD1089A [1] Dunk Shot            0d 030000-ffffff
+    317-0024  FD1089B [1] Time Scanner         0f 000000-02ffff
+    317-0027  FD1089B [1] SDI                  11 000000-03ffff
+    317-0028  FD1089A [2] Defense              11 ?
+    317-0033  FD1089A [1] Alien Syndrome       13 030000-ffffff
+    317-0037  FD1089B [2] Alien Syndrome       13 030000-ffffff
+    317-0034  FD1089B [1] Super Hang-On        15 030000-06ffff + 100000-2fffff + ff0000-ffffff
+    317-0086  FD1089A [2] Wonder Boy III       43 ?
+    317-0167  FD1089A [2] Aurail               30 010000-ffffff
+    317-0168  FD1089B [1] Aurail               30 010000-ffffff
+    317-5021  FD1089B [1] Sukeban Jansi Ryuko  4b 000000-00ffff
 
 
     [1] Complete
@@ -142,11 +142,11 @@
 //**************************************************************************
 
 // device type definition
-const device_type FD1089A = &device_creator<fd1089a_device>;
-const device_type FD1089B = &device_creator<fd1089b_device>;
+DEFINE_DEVICE_TYPE(FD1089A, fd1089a_device, "fd1089a", "Hitachi FD1089A Encrypted CPU")
+DEFINE_DEVICE_TYPE(FD1089B, fd1089b_device, "fd1089b", "Hitachi FD1089B Encrypted CPU")
 
 // common base lookup table, shared between A and B variants
-const UINT8 fd1089_base_device::s_basetable_fd1089[0x100] =
+const uint8_t fd1089_base_device::s_basetable_fd1089[0x100] =
 {
 	0x00,0x1c,0x76,0x6a,0x5e,0x42,0x24,0x38,0x4b,0x67,0xad,0x81,0xe9,0xc5,0x03,0x2f,
 	0x45,0x69,0xaf,0x83,0xe7,0xcb,0x01,0x2d,0x02,0x1e,0x78,0x64,0x5c,0x40,0x2a,0x36,
@@ -208,9 +208,10 @@ const fd1089_base_device::decrypt_parameters fd1089_base_device::s_data_params_a
 	{ 0xac, 1,6,3,5,0,7,4,2 },
 };
 
-static ADDRESS_MAP_START( decrypted_opcodes_map, AS_DECRYPTED_OPCODES, 16, fd1094_device )
-	AM_RANGE(0x00000, 0xfffff) AM_ROM AM_SHARE(":fd1089_decrypted_opcodes")
-ADDRESS_MAP_END
+void fd1089_base_device::decrypted_opcodes_map(address_map &map)
+{
+	map(0x00000, 0xfffff).rom().share(":fd1089_decrypted_opcodes");
+}
 
 
 //**************************************************************************
@@ -221,24 +222,23 @@ ADDRESS_MAP_END
 //  fd1089_base_device - constructor
 //-------------------------------------------------
 
-fd1089_base_device::fd1089_base_device(const machine_config &mconfig, device_type type, const char *name, const char *tag, device_t *owner, UINT32 clock, const char *shortname, const char *source)
-	: m68000_device(mconfig, tag, owner, clock, shortname, source),
+fd1089_base_device::fd1089_base_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock)
+	: m68000_device(mconfig, type, tag, owner, clock),
+		m_region(*this, DEVICE_SELF),
+		m_key(*this, "key"),
 		m_decrypted_opcodes(*this, ":fd1089_decrypted_opcodes")
 {
-	// override the name after the m68000 initializes
-	m_name.assign(name);
-
 	// add the decrypted opcodes map
-	m_address_map[AS_DECRYPTED_OPCODES] = ADDRESS_MAP_NAME(decrypted_opcodes_map);
+	set_addrmap(AS_OPCODES, address_map_constructor(FUNC(fd1089_base_device::decrypted_opcodes_map), this));
 }
 
-fd1089a_device::fd1089a_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: fd1089_base_device(mconfig, FD1089A, "FD1089A", tag, owner, clock, "fd1089a", __FILE__)
+fd1089a_device::fd1089a_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: fd1089_base_device(mconfig, FD1089A, tag, owner, clock)
 {
 }
 
-fd1089b_device::fd1089b_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: fd1089_base_device(mconfig, FD1089B, "FD1089B", tag, owner, clock, "fd1089b", __FILE__)
+fd1089b_device::fd1089b_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: fd1089_base_device(mconfig, FD1089B, tag, owner, clock)
 {
 }
 
@@ -251,18 +251,11 @@ void fd1089_base_device::device_start()
 	// start the base device
 	m68000_device::device_start();
 
-	// find the key
-	m_key = memregion("key")->base();
-	if (m_key == nullptr)
-		throw emu_fatalerror("FD1089 key region not found!");
-
 	// get a pointer to the ROM region
-	UINT16 *rombase = reinterpret_cast<UINT16 *>(region()->base());
-	if (rombase == nullptr)
-		throw emu_fatalerror("FD1089 found no ROM data to decrypt!");
+	uint16_t *rombase = reinterpret_cast<uint16_t *>(m_region->base());
 
 	// determine length and resize our internal buffers
-	UINT32 romsize = region()->bytes();
+	uint32_t romsize = m_region->bytes();
 	m_plaintext.resize(romsize/2);
 
 	// copy the plaintext
@@ -284,24 +277,20 @@ void fd1089_base_device::device_start()
 //  decode
 //-------------------------------------------------
 
-UINT8 fd1089_base_device::rearrange_key(UINT8 table, bool opcode)
+uint8_t fd1089_base_device::rearrange_key(uint8_t table, bool opcode)
 {
 	if (!opcode)
 	{
 		table ^= (1<<4);
 		table ^= (1<<5);
-		table ^= (1<<6);
 
 		if (BIT(~table,3))
 			table ^= (1<<1);
 
-		if (BIT(table,6))
-			table ^= (1<<7);
-
-		table = BITSWAP8(table,1,0,6,4,3,5,2,7);
+		table = bitswap<8>(table,1,0,6,4,3,5,2,7);
 
 		if (BIT(table,6))
-			table = BITSWAP8(table,7,6,2,4,5,3,1,0);
+			table = bitswap<8>(table,7,6,2,4,5,3,1,0);
 	}
 	else
 	{
@@ -312,13 +301,13 @@ UINT8 fd1089_base_device::rearrange_key(UINT8 table, bool opcode)
 		if (BIT(~table,3))
 			table ^= (1<<5);
 
-		if (BIT(~table,7))
+		if (BIT(table,7))
 			table ^= (1<<6);
 
-		table = BITSWAP8(table,5,6,7,4,2,3,1,0);
+		table = bitswap<8>(table,5,7,6,4,2,3,1,0);
 
 		if (BIT(table,6))
-			table = BITSWAP8(table,7,6,5,3,2,4,1,0);
+			table = bitswap<8>(table,7,6,5,3,2,4,1,0);
 	}
 
 	if (BIT(table,6))
@@ -341,16 +330,16 @@ UINT8 fd1089_base_device::rearrange_key(UINT8 table, bool opcode)
 //  according to FD1089A rules
 //-------------------------------------------------
 
-UINT8 fd1089a_device::decode(UINT8 val, UINT8 key, bool opcode)
+uint8_t fd1089a_device::decode(uint8_t val, uint8_t key, bool opcode)
 {
 	// special case - don't decrypt
-	if (key == 0x40)
+	if (key == 0x00)
 		return val;
 
-	UINT8 table = rearrange_key(key, opcode);
+	uint8_t table = rearrange_key(key, opcode);
 
 	const decrypt_parameters &p = s_addr_params[table >> 4];
-	val = BITSWAP8(val, p.s7,p.s6,p.s5,p.s4,p.s3,p.s2,p.s1,p.s0) ^ p.xorval;
+	val = bitswap<8>(val, p.s7,p.s6,p.s5,p.s4,p.s3,p.s2,p.s1,p.s0) ^ p.xorval;
 
 	if (BIT(table,3)) val ^= 0x01;
 	if (BIT(table,0)) val ^= 0xb1;
@@ -361,7 +350,7 @@ UINT8 fd1089a_device::decode(UINT8 val, UINT8 key, bool opcode)
 
 	val = s_basetable_fd1089[val];
 
-	UINT8 family = table & 0x07;
+	uint8_t family = table & 0x07;
 	if (opcode == 0)
 	{
 		if (BIT(~table,6) & BIT(table,2)) family ^= 8;
@@ -377,20 +366,20 @@ UINT8 fd1089a_device::decode(UINT8 val, UINT8 key, bool opcode)
 	{
 		if (BIT(val,0)) val ^= 0xc0;
 		if (BIT(~val,6) ^ BIT(val,4))
-			val = BITSWAP8(val, 7,6,5,4,1,0,2,3);
+			val = bitswap<8>(val, 7,6,5,4,1,0,2,3);
 	}
 	else
 	{
 		if (BIT(~val,6) ^ BIT(val,4))
-			val = BITSWAP8(val, 7,6,5,4,0,1,3,2);
+			val = bitswap<8>(val, 7,6,5,4,0,1,3,2);
 	}
 	if (BIT(~val,6))
-		val = BITSWAP8(val, 7,6,5,4,2,3,0,1);
+		val = bitswap<8>(val, 7,6,5,4,2,3,0,1);
 
 	const decrypt_parameters &q = s_data_params_a[family];
 
 	val ^= q.xorval;
-	val = BITSWAP8(val, q.s7,q.s6,q.s5,q.s4,q.s3,q.s2,q.s1,q.s0);
+	val = bitswap<8>(val, q.s7,q.s6,q.s5,q.s4,q.s3,q.s2,q.s1,q.s0);
 
 	return val;
 }
@@ -401,16 +390,16 @@ UINT8 fd1089a_device::decode(UINT8 val, UINT8 key, bool opcode)
 //  according to FD1089B rules
 //-------------------------------------------------
 
-UINT8 fd1089b_device::decode(UINT8 val, UINT8 key, bool opcode)
+uint8_t fd1089b_device::decode(uint8_t val, uint8_t key, bool opcode)
 {
 	// special case - don't decrypt
-	if (key == 0x40)
+	if (key == 0x00)
 		return val;
 
-	UINT8 table = rearrange_key(key, opcode);
+	uint8_t table = rearrange_key(key, opcode);
 
 	const decrypt_parameters &p = s_addr_params[table >> 4];
-	val = BITSWAP8(val, p.s7,p.s6,p.s5,p.s4,p.s3,p.s2,p.s1,p.s0) ^ p.xorval;
+	val = bitswap<8>(val, p.s7,p.s6,p.s5,p.s4,p.s3,p.s2,p.s1,p.s0) ^ p.xorval;
 
 	if (BIT(table,3)) val ^= 0x01;
 	if (BIT(table,0)) val ^= 0xb1;
@@ -421,7 +410,7 @@ UINT8 fd1089b_device::decode(UINT8 val, UINT8 key, bool opcode)
 
 	val = s_basetable_fd1089[val];
 
-	UINT8 xorval = 0;
+	uint8_t xorval = 0;
 	if (opcode == 0)
 	{
 		if (BIT(~table,6) & BIT(table,2)) xorval ^= 0x01;
@@ -437,17 +426,17 @@ UINT8 fd1089b_device::decode(UINT8 val, UINT8 key, bool opcode)
 
 	if (BIT(table,2))
 	{
-		val = BITSWAP8(val, 7,6,5,4,1,0,3,2);
+		val = bitswap<8>(val, 7,6,5,4,1,0,3,2);
 
 		if (BIT(table,0) ^ BIT(table,1))
-			val = BITSWAP8(val, 7,6,5,4,0,1,3,2);
+			val = bitswap<8>(val, 7,6,5,4,0,1,3,2);
 	}
 	else
 	{
-		val = BITSWAP8(val, 7,6,5,4,3,2,0,1);
+		val = bitswap<8>(val, 7,6,5,4,3,2,0,1);
 
 		if (BIT(table,0) ^ BIT(table,1))
-			val = BITSWAP8(val, 7,6,5,4,1,0,2,3);
+			val = bitswap<8>(val, 7,6,5,4,1,0,2,3);
 	}
 
 	return val;
@@ -460,7 +449,7 @@ UINT8 fd1089b_device::decode(UINT8 val, UINT8 key, bool opcode)
 //  as either an opcode or as data
 //-------------------------------------------------
 
-UINT16 fd1089_base_device::decrypt_one(offs_t addr, UINT16 val, const UINT8 *key, bool opcode)
+uint16_t fd1089_base_device::decrypt_one(offs_t addr, uint16_t val, const uint8_t *key, bool opcode)
 {
 	// pick the translation table from bits ff022a of the address
 	int tbl_num =   ((addr & 0x000002) >> 1) |
@@ -469,7 +458,7 @@ UINT16 fd1089_base_device::decrypt_one(offs_t addr, UINT16 val, const UINT8 *key
 					((addr & 0x000200) >> 6) |
 					((addr & 0xff0000) >> 12);
 
-	UINT16 src =    ((val & 0x0008) >> 3) |
+	uint16_t src =    ((val & 0x0008) >> 3) |
 					((val & 0x0040) >> 5) |
 					((val & 0xfc00) >> 8);
 
@@ -488,12 +477,12 @@ UINT16 fd1089_base_device::decrypt_one(offs_t addr, UINT16 val, const UINT8 *key
 //  and data
 //-------------------------------------------------
 
-void fd1089_base_device::decrypt(offs_t baseaddr, UINT32 size, const UINT16 *srcptr, UINT16 *opcodesptr, UINT16 *dataptr)
+void fd1089_base_device::decrypt(offs_t baseaddr, uint32_t size, const uint16_t *srcptr, uint16_t *opcodesptr, uint16_t *dataptr)
 {
 	for (offs_t offset = 0; offset < size; offset += 2)
 	{
-		UINT16 src = srcptr[offset / 2];
-		opcodesptr[offset / 2] = decrypt_one(baseaddr + offset, src, m_key, true);
-		dataptr[offset / 2] = decrypt_one(baseaddr + offset, src, m_key, false);
+		uint16_t src = srcptr[offset / 2];
+		opcodesptr[offset / 2] = decrypt_one(baseaddr + offset, src, &m_key[0], true);
+		dataptr[offset / 2] = decrypt_one(baseaddr + offset, src, &m_key[0], false);
 	}
 }

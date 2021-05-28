@@ -7,20 +7,22 @@
     Commodore 1541/1571 GCR disk image format
 
 *********************************************************************/
+#ifndef MAME_FORMATS_G64_DSK_H
+#define MAME_FORMATS_G64_DSK_H
 
-#ifndef G64_DSK_H_
-#define G64_DSK_H_
+#pragma once
 
 #include "flopimg.h"
 #include "imageutl.h"
 
-class g64_format : public floppy_image_format_t {
+class g64_format : public floppy_image_format_t
+{
 public:
 	g64_format();
 
-	virtual int identify(io_generic *io, UINT32 form_factor) override;
-	virtual bool load(io_generic *io, UINT32 form_factor, floppy_image *image) override;
-	virtual bool save(io_generic *io, floppy_image *image) override;
+	virtual int identify(io_generic *io, uint32_t form_factor, const std::vector<uint32_t> &variants) override;
+	virtual bool load(io_generic *io, uint32_t form_factor, const std::vector<uint32_t> &variants, floppy_image *image) override;
+	virtual bool save(io_generic *io, const std::vector<uint32_t> &variants, floppy_image *image) override;
 
 	virtual const char *name() const override;
 	virtual const char *description() const override;
@@ -43,11 +45,11 @@ protected:
 		TRACK_COUNT = 84
 	};
 
-	static const UINT32 c1541_cell_size[];
+	static const uint32_t c1541_cell_size[];
 
-	int generate_bitstream(int track, int head, int speed_zone, UINT8 *trackbuf, int &track_size, floppy_image *image);
+	int generate_bitstream(int track, int head, int speed_zone, std::vector<bool> &trackbuf, floppy_image *image);
 };
 
 extern const floppy_format_type FLOPPY_G64_FORMAT;
 
-#endif
+#endif // MAME_FORMATS_G64_DSK_H

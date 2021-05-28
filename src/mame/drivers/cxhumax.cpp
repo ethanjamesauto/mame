@@ -15,6 +15,10 @@
 #include "emu.h"
 #include "includes/cxhumax.h"
 
+#include "emupal.h"
+#include "screen.h"
+
+
 #define VERBOSE_LEVEL ( 0 )
 
 static inline void ATTR_PRINTF(3,4) verboselog( device_t &device, int n_level, const char *s_fmt, ...)
@@ -30,11 +34,11 @@ static inline void ATTR_PRINTF(3,4) verboselog( device_t &device, int n_level, c
 	}
 }
 
-READ32_MEMBER ( cxhumax_state::cx_gxa_r )
+uint32_t cxhumax_state::cx_gxa_r(offs_t offset)
 {
-	UINT32 res = m_gxa_cmd_regs[offset];
+	uint32_t res = m_gxa_cmd_regs[offset];
 	verboselog(*this, 9, "(GXA) %08X -> %08X\n", 0xE0600000 + (offset << 2), res);
-/*  UINT8 gxa_command_number = (offset >> 9) & 0x7F;
+/*  uint8_t gxa_command_number = (offset >> 9) & 0x7F;
     verboselog(*this, 9, "      Command: %08X\n", gxa_command_number);
     switch (gxa_command_number) {
         case GXA_CMD_RW_REGISTER:
@@ -54,10 +58,10 @@ READ32_MEMBER ( cxhumax_state::cx_gxa_r )
 	return res;
 }
 
-WRITE32_MEMBER( cxhumax_state::cx_gxa_w )
+void cxhumax_state::cx_gxa_w(offs_t offset, uint32_t data, uint32_t mem_mask)
 {
 	verboselog(*this, 9, "(GXA) %08X <- %08X\n", 0xE0600000 + (offset << 2), data);
-	UINT8 gxa_command_number = (offset >> 9) & 0x7F;
+	uint8_t gxa_command_number = (offset >> 9) & 0x7F;
 	verboselog(*this, 9, "      Command: %08X\n", gxa_command_number);
 
 	/* Clear non persistent data */
@@ -112,7 +116,7 @@ WRITE32_MEMBER( cxhumax_state::cx_gxa_w )
 	}
 }
 
-WRITE32_MEMBER ( cxhumax_state::flash_w )
+void cxhumax_state::flash_w(offs_t offset, uint32_t data, uint32_t mem_mask)
 {
 	offset *= 2;
 	if(ACCESSING_BITS_0_15)
@@ -122,9 +126,9 @@ WRITE32_MEMBER ( cxhumax_state::flash_w )
 	verboselog(*this, 9, "(FLASH) %08X <- %08X\n", 0xF0000000 + (offset << 2), data);
 }
 
-READ32_MEMBER ( cxhumax_state::flash_r )
+uint32_t cxhumax_state::flash_r(offs_t offset, uint32_t mem_mask)
 {
-	UINT32 res = 0;
+	uint32_t res = 0;
 	offset *= 2;
 	if(ACCESSING_BITS_0_15)
 		res |= m_flash->read(offset);
@@ -134,12 +138,12 @@ READ32_MEMBER ( cxhumax_state::flash_r )
 	return res;
 }
 
-READ32_MEMBER ( cxhumax_state::dummy_flash_r )
+uint32_t cxhumax_state::dummy_flash_r()
 {
 	return 0xFFFFFFFF;
 }
 
-WRITE32_MEMBER ( cxhumax_state::cx_remap_w )
+void cxhumax_state::cx_remap_w(offs_t offset, uint32_t data)
 {
 	if(!(data&1)) {
 		verboselog(*this, 9, "(REMAP) %08X -> %08X\n", 0xE0400014 + (offset << 2), data);
@@ -147,9 +151,9 @@ WRITE32_MEMBER ( cxhumax_state::cx_remap_w )
 	}
 }
 
-READ32_MEMBER( cxhumax_state::cx_scratch_r )
+uint32_t cxhumax_state::cx_scratch_r(offs_t offset)
 {
-	UINT32 data = m_scratch_reg;
+	uint32_t data = m_scratch_reg;
 	verboselog(*this, 9, "(SCRATCH) %08X -> %08X\n", 0xE0400024 + (offset << 2), data);
 
 	if((m_maincpu->pc()==0xF0003BB8) || (m_maincpu->pc()==0x01003724) || (m_maincpu->pc()==0x00005d8c)) { // HDCI-2000
@@ -163,7 +167,7 @@ READ32_MEMBER( cxhumax_state::cx_scratch_r )
 		int i = 0;
 		while ((temp=program.read_byte(m_maincpu->state_int(ARM7_R0)+i))) {
 			buf[i++]=temp;
-			//m_terminal->write(space, 0, temp);
+			//m_terminal->write(temp);
 		}
 		osd_printf_debug("%s", buf);
 		verboselog(*this, 9, "(DEBUG) %s", buf);
@@ -171,104 +175,104 @@ READ32_MEMBER( cxhumax_state::cx_scratch_r )
 	return data;
 }
 
-WRITE32_MEMBER( cxhumax_state::cx_scratch_w )
+void cxhumax_state::cx_scratch_w(offs_t offset, uint32_t data, uint32_t mem_mask)
 {
 	verboselog(*this, 9, "(SCRATCH) %08X <- %08X\n", 0xE0400024 + (offset << 2), data);
 	COMBINE_DATA(&m_scratch_reg);
 }
 
-READ32_MEMBER( cxhumax_state::cx_hsx_r )
+uint32_t cxhumax_state::cx_hsx_r(offs_t offset)
 {
-	UINT32 data = 0; // dummy
+	uint32_t data = 0; // dummy
 	verboselog(*this, 9, "(HSX) %08X -> %08X\n", 0xE0000000 + (offset << 2), data);
 	return data;
 }
 
-WRITE32_MEMBER( cxhumax_state::cx_hsx_w )
+void cxhumax_state::cx_hsx_w(offs_t offset, uint32_t data)
 {
 	verboselog(*this, 9, "(HSX) %08X <- %08X\n", 0xE0000000 + (offset << 2), data);
 }
 
-READ32_MEMBER( cxhumax_state::cx_romdescr_r )
+uint32_t cxhumax_state::cx_romdescr_r(offs_t offset)
 {
-	UINT32 data = m_romdescr_reg;
+	uint32_t data = m_romdescr_reg;
 	verboselog(*this, 9, "(ROMDESC0) %08X -> %08X\n", 0xE0010000 + (offset << 2), data);
 	return data;
 }
 
-WRITE32_MEMBER( cxhumax_state::cx_romdescr_w )
+void cxhumax_state::cx_romdescr_w(offs_t offset, uint32_t data, uint32_t mem_mask)
 {
 	verboselog(*this, 9, "(ROMDESC0) %08X <- %08X\n", 0xE0010000 + (offset << 2), data);
 	COMBINE_DATA(&m_romdescr_reg);
 }
 
-READ32_MEMBER( cxhumax_state::cx_isaromdescr_r )
+uint32_t cxhumax_state::cx_isaromdescr_r(offs_t offset)
 {
-	UINT32 data = m_isaromdescr_regs[offset];
+	uint32_t data = m_isaromdescr_regs[offset];
 	verboselog(*this, 9, "(ISAROMDESC%d) %08X -> %08X\n", offset+1, 0xE0010004 + (offset << 2), data);
 	return data;
 }
 
-WRITE32_MEMBER( cxhumax_state::cx_isaromdescr_w )
+void cxhumax_state::cx_isaromdescr_w(offs_t offset, uint32_t data, uint32_t mem_mask)
 {
 	verboselog(*this, 9, "(ISAROMDESC%d) %08X <- %08X\n", offset+1, 0xE0010004 + (offset << 2), data);
 	COMBINE_DATA(&m_isaromdescr_regs[offset]);
 }
 
-READ32_MEMBER( cxhumax_state::cx_isadescr_r )
+uint32_t cxhumax_state::cx_isadescr_r(offs_t offset)
 {
-	UINT32 data = m_isaromdescr_regs[offset];
+	uint32_t data = m_isaromdescr_regs[offset];
 	verboselog(*this, 9, "(ISA_DESC%d) %08X -> %08X\n", offset+4, 0xE0010010 + (offset << 2), data);
 	return data;
 }
 
-WRITE32_MEMBER( cxhumax_state::cx_isadescr_w )
+void cxhumax_state::cx_isadescr_w(offs_t offset, uint32_t data, uint32_t mem_mask)
 {
 	verboselog(*this, 9, "(ISA_DESC%d) %08X <- %08X\n", offset+4, 0xE0010010 + (offset << 2), data);
 	COMBINE_DATA(&m_isaromdescr_regs[offset]);
 }
 
-READ32_MEMBER( cxhumax_state::cx_rommap_r )
+uint32_t cxhumax_state::cx_rommap_r(offs_t offset)
 {
-	UINT32 data = 0;
+	uint32_t data = 0;
 	verboselog(*this, 9, "(ROM%d_MAP) %08X -> %08X\n", offset, 0xE0010020 + (offset << 2), data);
 	return data;
 }
 
-WRITE32_MEMBER( cxhumax_state::cx_rommap_w )
+void cxhumax_state::cx_rommap_w(offs_t offset, uint32_t data)
 {
 	verboselog(*this, 9, "(ROM%d_MAP) %08X <- %08X\n", offset, 0xE0010020 + (offset << 2), data);
 }
 
-READ32_MEMBER( cxhumax_state::cx_rommode_r )
+uint32_t cxhumax_state::cx_rommode_r(offs_t offset)
 {
-	UINT32 data = m_rommode_reg;
+	uint32_t data = m_rommode_reg;
 	verboselog(*this, 9, "(ROMMODE) %08X -> %08X\n", 0xE0010034 + (offset << 2), data);
 	return data;
 }
 
-WRITE32_MEMBER( cxhumax_state::cx_rommode_w )
+void cxhumax_state::cx_rommode_w(offs_t offset, uint32_t data, uint32_t mem_mask)
 {
 	verboselog(*this, 9, "(ROMMODE) %08X <- %08X\n", 0xE0010034 + (offset << 2), data);
 	COMBINE_DATA(&m_rommode_reg);
 }
 
-READ32_MEMBER( cxhumax_state::cx_xoemask_r )
+uint32_t cxhumax_state::cx_xoemask_r(offs_t offset)
 {
-	UINT32 data = m_xoemask_reg;
+	uint32_t data = m_xoemask_reg;
 	verboselog(*this, 9, "(XOEMASK) %08X -> %08X\n", 0xE0010034 + (offset << 2), data);
 	return data;
 }
 
-WRITE32_MEMBER( cxhumax_state::cx_xoemask_w )
+void cxhumax_state::cx_xoemask_w(offs_t offset, uint32_t data, uint32_t mem_mask)
 {
 	verboselog(*this, 9, "(XOEMASK) %08X <- %08X\n", 0xE0010034 + (offset << 2), data);
 	COMBINE_DATA(&m_xoemask_reg);
 }
 
-READ32_MEMBER( cxhumax_state::cx_pci_r )
+uint32_t cxhumax_state::cx_pci_r(offs_t offset)
 {
-	UINT32 data = 0;
+	uint32_t data = 0;
 	switch (offset) {
 		case PCI_CFG_ADDR_REG:
 			data = m_pci_regs[offset]; break;
@@ -284,20 +288,20 @@ READ32_MEMBER( cxhumax_state::cx_pci_r )
 	return data;
 }
 
-WRITE32_MEMBER( cxhumax_state::cx_pci_w )
+void cxhumax_state::cx_pci_w(offs_t offset, uint32_t data, uint32_t mem_mask)
 {
 	verboselog(*this, 9, "(PCI) %08X <- %08X\n", 0xE0010040 + (offset << 2), data);
 	COMBINE_DATA(&m_pci_regs[offset]);
 }
 
-READ32_MEMBER( cxhumax_state::cx_extdesc_r )
+uint32_t cxhumax_state::cx_extdesc_r(offs_t offset)
 {
-	UINT32 data = m_extdesc_regs[offset];
+	uint32_t data = m_extdesc_regs[offset];
 	verboselog(*this, 9, "(EXTDESC) %08X -> %08X\n", 0xE0010080 + (offset << 2), data);
 	return data;
 }
 
-WRITE32_MEMBER( cxhumax_state::cx_extdesc_w )
+void cxhumax_state::cx_extdesc_w(offs_t offset, uint32_t data, uint32_t mem_mask)
 {
 	verboselog(*this, 9, "(EXTDESC) %08X <- %08X\n", 0xE0010080 + (offset << 2), data);
 	COMBINE_DATA(&m_extdesc_regs[offset]);
@@ -326,14 +330,14 @@ TIMER_CALLBACK_MEMBER(cxhumax_state::timer_tick)
 				m_maincpu->set_input_line(ARM7_IRQ_LINE, ASSERT_LINE);
 		}
 	}
-	attotime period = attotime::from_hz(XTAL_54MHz)*m_timer_regs.timer[param].timebase;
+	attotime period = attotime::from_hz(XTAL(54'000'000))*m_timer_regs.timer[param].timebase;
 	m_timer_regs.timer[param].timer->adjust(period,param);
 }
 
-READ32_MEMBER( cxhumax_state::cx_timers_r )
+uint32_t cxhumax_state::cx_timers_r(offs_t offset)
 {
-	UINT32 data = 0;
-	UINT8 index = offset>>2;
+	uint32_t data = 0;
+	uint8_t index = offset>>2;
 	if(index==16) {
 		data = m_timer_regs.timer_irq;
 		//m_timer_regs.timer_irq=0;
@@ -355,9 +359,9 @@ READ32_MEMBER( cxhumax_state::cx_timers_r )
 	return data;
 }
 
-WRITE32_MEMBER( cxhumax_state::cx_timers_w )
+void cxhumax_state::cx_timers_w(offs_t offset, uint32_t data, uint32_t mem_mask)
 {
-	UINT8 index = offset>>2;
+	uint8_t index = offset>>2;
 	if(index==16) {
 		verboselog(*this, 9, "(TIMERIRQ) %08X <- %08X\n", 0xE0430000 + (offset << 2), data);
 		COMBINE_DATA(&m_timer_regs.timer_irq);
@@ -372,7 +376,7 @@ WRITE32_MEMBER( cxhumax_state::cx_timers_w )
 			case TIMER_MODE:
 				COMBINE_DATA(&m_timer_regs.timer[index].mode);
 				if(data&1) {
-					attotime period = attotime::from_hz(XTAL_54MHz)*m_timer_regs.timer[index].timebase;
+					attotime period = attotime::from_hz(XTAL(54'000'000))*m_timer_regs.timer[index].timebase;
 					m_timer_regs.timer[index].timer->adjust(period,index);
 				} else {
 					m_timer_regs.timer[index].timer->adjust(attotime::never,index);
@@ -387,9 +391,9 @@ WRITE32_MEMBER( cxhumax_state::cx_timers_w )
 	}
 }
 
-READ32_MEMBER( cxhumax_state::cx_uart2_r )
+uint32_t cxhumax_state::cx_uart2_r(offs_t offset)
 {
-	UINT32 data;
+	uint32_t data;
 	switch (offset) {
 		case UART_STAT_REG:
 			/* Transmitter Idle */
@@ -401,14 +405,14 @@ READ32_MEMBER( cxhumax_state::cx_uart2_r )
 	return data;
 }
 
-WRITE32_MEMBER( cxhumax_state::cx_uart2_w )
+void cxhumax_state::cx_uart2_w(offs_t offset, uint32_t data, uint32_t mem_mask)
 {
 	verboselog(*this, 9, "(UART2) %08X <- %08X\n", 0xE0411000 + (offset << 2), data);
 	switch (offset) {
 		case UART_FIFO_REG:
 			if(!(m_uart2_regs[UART_FRMC_REG]&UART_FRMC_BDS_BIT)) {
 				/* Sending byte... add logging */
-				m_terminal->write(space, 0, data);
+				m_terminal->write(data);
 
 				/* Transmitter Idle Interrupt Enable */
 				if(m_uart2_regs[UART_IRQE_REG]&UART_IRQE_TIDE_BIT) {
@@ -423,71 +427,72 @@ WRITE32_MEMBER( cxhumax_state::cx_uart2_w )
 					}
 				}
 			}
+			[[fallthrough]];
 		default:
 			COMBINE_DATA(&m_uart2_regs[offset]); break;
 	}
 }
 
-READ32_MEMBER( cxhumax_state::cx_pll_r )
+uint32_t cxhumax_state::cx_pll_r(offs_t offset)
 {
-	UINT32 data = m_pll_regs[offset];
+	uint32_t data = m_pll_regs[offset];
 	verboselog(*this, 9, "(PLL) %08X -> %08X\n", 0xE0440000 + (offset << 2), data);
 	return data;
 }
 
-WRITE32_MEMBER( cxhumax_state::cx_pll_w )
+void cxhumax_state::cx_pll_w(offs_t offset, uint32_t data, uint32_t mem_mask)
 {
 	verboselog(*this, 9, "(PLL) %08X <- %08X\n", 0xE0440000 + (offset << 2), data);
 	COMBINE_DATA(&m_pll_regs[offset]);
 }
 
-READ32_MEMBER( cxhumax_state::cx_pllprescale_r )
+uint32_t cxhumax_state::cx_pllprescale_r(offs_t offset)
 {
-	UINT32 data = m_pllprescale_reg;
+	uint32_t data = m_pllprescale_reg;
 	verboselog(*this, 9, "(PLLPRESCALE) %08X -> %08X\n", 0xE0440094 + (offset << 2), data);
 	return data;
 }
 
-WRITE32_MEMBER( cxhumax_state::cx_pllprescale_w )
+void cxhumax_state::cx_pllprescale_w(offs_t offset, uint32_t data, uint32_t mem_mask)
 {
 	verboselog(*this, 9, "(PLLPRESCALE) %08X <- %08X\n", 0xE0440094 + (offset << 2), data);
 	COMBINE_DATA(&m_pllprescale_reg);
 }
 
-READ32_MEMBER( cxhumax_state::cx_clkdiv_r )
+uint32_t cxhumax_state::cx_clkdiv_r(offs_t offset)
 {
-	UINT32 data = m_clkdiv_regs[offset];
+	uint32_t data = m_clkdiv_regs[offset];
 	verboselog(*this, 9, "(CLKDIV) %08X -> %08X\n", 0xE0440020 + (offset << 2), data);
 	return data;
 }
 
-WRITE32_MEMBER( cxhumax_state::cx_clkdiv_w )
+void cxhumax_state::cx_clkdiv_w(offs_t offset, uint32_t data, uint32_t mem_mask)
 {
 	verboselog(*this, 9, "(CLKDIV) %08X <- %08X\n", 0xE0440020 + (offset << 2), data);
 	COMBINE_DATA(&m_clkdiv_regs[offset]);
 }
 
-READ32_MEMBER( cxhumax_state::cx_chipcontrol_r )
+uint32_t cxhumax_state::cx_chipcontrol_r(offs_t offset)
 {
-	UINT32 data = m_chipcontrol_regs[offset];
+	uint32_t data = m_chipcontrol_regs[offset];
 	verboselog(*this, 9, "(CHIPCONTROL) %08X -> %08X\n", 0xE0440100 + (offset << 2), data);
 	return data;
 }
 
-WRITE32_MEMBER( cxhumax_state::cx_chipcontrol_w )
+void cxhumax_state::cx_chipcontrol_w(offs_t offset, uint32_t data, uint32_t mem_mask)
 {
 	verboselog(*this, 9, "(CHIPCONTROL) %08X <- %08X\n", 0xE0440100 + (offset << 2), data);
 	COMBINE_DATA(&m_chipcontrol_regs[offset]);
 }
 
-READ32_MEMBER( cxhumax_state::cx_intctrl_r )
+uint32_t cxhumax_state::cx_intctrl_r(offs_t offset)
 {
-	UINT32 data = m_intctrl_regs[offset];
+	uint32_t data = m_intctrl_regs[offset];
 	verboselog(*this, 9, "(INTCTRL) %08X -> %08X\n", 0xE0450000 + (offset << 2), data);
 	return data;
 }
 
-WRITE32_MEMBER( cxhumax_state::cx_intctrl_w )
+void cxhumax_state::cx_intctrl_w(offs_t offset, uint32_t data, uint32_t mem_mask)
 {
 	verboselog(*this, 9, "(INTCTRL) %08X <- %08X\n", 0xE0450000 + (offset << 2), data);
 	switch (offset >> 3) { // Decode the group
@@ -555,9 +560,9 @@ WRITE32_MEMBER( cxhumax_state::cx_intctrl_w )
 
 }
 
-READ32_MEMBER( cxhumax_state::cx_ss_r )
+uint32_t cxhumax_state::cx_ss_r(offs_t offset)
 {
-	UINT32 data = 0;
+	uint32_t data = 0;
 	switch(offset) {
 		case SS_FIFC_REG:
 			data = m_ss_regs[offset] & 0xFFF0;
@@ -570,14 +575,14 @@ READ32_MEMBER( cxhumax_state::cx_ss_r )
 	return data;
 }
 
-WRITE32_MEMBER( cxhumax_state::cx_ss_w )
+void cxhumax_state::cx_ss_w(offs_t offset, uint32_t data, uint32_t mem_mask)
 {
 	verboselog(*this, 9, "(SS) %08X <- %08X\n", 0xE0490000 + (offset << 2), data);
 	switch(offset) {
 		case SS_CNTL_REG:
 			if (data&1) {
 				// "Send" pending data
-				UINT8 tfd = (m_ss_regs[SS_STAT_REG]>>4) & 0xF;
+				uint8_t tfd = (m_ss_regs[SS_STAT_REG]>>4) & 0xF;
 				if ((tfd>1) && (m_ss_tx_fifo[0] == 0) && (m_ss_tx_fifo[1] != 0xFF)) {
 					// ASCII
 					printf("%s\n", &m_ss_tx_fifo[1]);
@@ -597,7 +602,7 @@ WRITE32_MEMBER( cxhumax_state::cx_ss_w )
 		case SS_FIFO_REG:
 			{
 				// Push data into TX FIFO (if it's not full) and adjust transmit FIFO depth
-				UINT8 tfd = (m_ss_regs[SS_STAT_REG]>>4) & 0xF;
+				uint8_t tfd = (m_ss_regs[SS_STAT_REG]>>4) & 0xF;
 				if (tfd<8) {
 					m_ss_tx_fifo[tfd++] = data;
 					m_ss_regs[SS_STAT_REG] = (m_ss_regs[SS_STAT_REG] & 0xFF0F) | (tfd<<4);
@@ -613,22 +618,22 @@ WRITE32_MEMBER( cxhumax_state::cx_ss_w )
 	};
 }
 
-READ32_MEMBER( cxhumax_state::cx_i2c0_r )
+uint32_t cxhumax_state::cx_i2c0_r(offs_t offset)
 {
-	UINT32 data = m_i2c0_regs[offset];
+	uint32_t data = m_i2c0_regs[offset];
 	verboselog(*this, 9, "(I2C0) %08X -> %08X\n", 0xE04E0000 + (offset << 2), data);
 	return data;
 }
 
-WRITE32_MEMBER( cxhumax_state::cx_i2c0_w )
+void cxhumax_state::cx_i2c0_w(offs_t offset, uint32_t data, uint32_t mem_mask)
 {
 	verboselog(*this, 9, "(I2C0) %08X <- %08X\n", 0xE04E0000 + (offset << 2), data);
 	COMBINE_DATA(&m_i2c0_regs[offset]);
 }
 
-UINT8 cxhumax_state::i2cmem_read_byte(int last)
+uint8_t cxhumax_state::i2cmem_read_byte(int last)
 {
-	UINT8 data = 0;
+	uint8_t data = 0;
 	int i;
 	m_i2cmem->write_sda(1);
 	for (i = 0; i < 8; i++)
@@ -643,7 +648,7 @@ UINT8 cxhumax_state::i2cmem_read_byte(int last)
 	return data;
 }
 
-void cxhumax_state::i2cmem_write_byte(UINT8 data)
+void cxhumax_state::i2cmem_write_byte(uint8_t data)
 {
 	int i;
 	for (i = 0; i < 8; i++)
@@ -674,13 +679,13 @@ void cxhumax_state::i2cmem_stop()
 	m_i2cmem->write_scl(0);
 }
 
-READ32_MEMBER( cxhumax_state::cx_i2c1_r )
+uint32_t cxhumax_state::cx_i2c1_r(offs_t offset)
 {
-	UINT32 data=0;
+	uint32_t data=0;
 	switch(offset) {
 		case I2C_STAT_REG:
 			data |= m_i2cmem->read_sda()<<3;
-			// fall
+			[[fallthrough]];
 		default:
 			data |= m_i2c1_regs[offset]; break;
 	}
@@ -688,7 +693,7 @@ READ32_MEMBER( cxhumax_state::cx_i2c1_r )
 	return data;
 }
 
-WRITE32_MEMBER( cxhumax_state::cx_i2c1_w )
+void cxhumax_state::cx_i2c1_w(offs_t offset, uint32_t data, uint32_t mem_mask)
 {
 	verboselog(*this, 9, "(I2C1) %08X <- %08X\n", 0xE04E1000 + (offset << 2), data);
 	switch(offset) {
@@ -741,41 +746,41 @@ WRITE32_MEMBER( cxhumax_state::cx_i2c1_w )
 		case I2C_STAT_REG:
 			/* The interrupt status bit may be cleared by writing (anything) to the status register, which also clears the acknowledge status. */
 			data&=~(I2C_WACK_BIT|I2C_INT_BIT);
-			// fall
+			[[fallthrough]];
 		default:
 			COMBINE_DATA(&m_i2c1_regs[offset]);
 	}
 }
 
-READ32_MEMBER( cxhumax_state::cx_i2c2_r )
+uint32_t cxhumax_state::cx_i2c2_r(offs_t offset)
 {
-	UINT32 data = m_i2c2_regs[offset];
+	uint32_t data = m_i2c2_regs[offset];
 	verboselog(*this, 9, "(I2C2) %08X -> %08X\n", 0xE04E2000 + (offset << 2), data);
 	return data;
 }
 
-WRITE32_MEMBER( cxhumax_state::cx_i2c2_w )
+void cxhumax_state::cx_i2c2_w(offs_t offset, uint32_t data, uint32_t mem_mask)
 {
 	verboselog(*this, 9, "(I2C2) %08X <- %08X\n", 0xE04E2000 + (offset << 2), data);
 	COMBINE_DATA(&m_i2c2_regs[offset]);
 }
 
-READ32_MEMBER( cxhumax_state::cx_mc_cfg_r )
+uint32_t cxhumax_state::cx_mc_cfg_r(offs_t offset)
 {
-	UINT32 data = m_mccfg_regs[offset];
+	uint32_t data = m_mccfg_regs[offset];
 	verboselog(*this, 9, "(MC_CFG) %08X -> %08X\n", 0xE0500300 + (offset << 2), data);
 	return data;
 }
 
-WRITE32_MEMBER( cxhumax_state::cx_mc_cfg_w )
+void cxhumax_state::cx_mc_cfg_w(offs_t offset, uint32_t data, uint32_t mem_mask)
 {
 	verboselog(*this, 9, "(MC_CFG) %08X <- %08X\n", 0xE0500300 + (offset << 2), data);
 	COMBINE_DATA(&m_mccfg_regs[offset]);
 }
 
-READ32_MEMBER( cxhumax_state::cx_drm0_r )
+uint32_t cxhumax_state::cx_drm0_r(offs_t offset)
 {
-	UINT32 data = m_drm0_regs[offset];
+	uint32_t data = m_drm0_regs[offset];
 	verboselog(*this, 9, "(DRM0) %08X -> %08X\n", 0xE0560000 + (offset << 2), data);
 	switch(offset) {
 		case 0x14/4: // DRM_STATUS_REG
@@ -785,33 +790,33 @@ READ32_MEMBER( cxhumax_state::cx_drm0_r )
 	return data;
 }
 
-WRITE32_MEMBER( cxhumax_state::cx_drm0_w )
+void cxhumax_state::cx_drm0_w(offs_t offset, uint32_t data, uint32_t mem_mask)
 {
 	verboselog(*this, 9, "(DRM0) %08X <- %08X\n", 0xE0560000 + (offset << 2), data);
 	COMBINE_DATA(&m_drm0_regs[offset]);
 }
 
-READ32_MEMBER( cxhumax_state::cx_drm1_r )
+uint32_t cxhumax_state::cx_drm1_r(offs_t offset)
 {
-	UINT32 data = m_drm1_regs[offset];
+	uint32_t data = m_drm1_regs[offset];
 	verboselog(*this, 9, "(DRM1) %08X -> %08X\n", 0xE0570000 + (offset << 2), data);
 	return data;
 }
 
-WRITE32_MEMBER( cxhumax_state::cx_drm1_w )
+void cxhumax_state::cx_drm1_w(offs_t offset, uint32_t data, uint32_t mem_mask)
 {
 	verboselog(*this, 9, "(DRM1) %08X <- %08X\n", 0xE0570000 + (offset << 2), data);
 	COMBINE_DATA(&m_drm1_regs[offset]);
 }
 
-READ32_MEMBER( cxhumax_state::cx_hdmi_r )
+uint32_t cxhumax_state::cx_hdmi_r(offs_t offset)
 {
-	UINT32 data = m_hdmi_regs[offset];
+	uint32_t data = m_hdmi_regs[offset];
 	verboselog(*this, 9, "(HDMI) %08X -> %08X\n", 0xE05D0800 + (offset << 2), data);
 	return data;
 }
 
-WRITE32_MEMBER( cxhumax_state::cx_hdmi_w )
+void cxhumax_state::cx_hdmi_w(offs_t offset, uint32_t data, uint32_t mem_mask)
 {
 	verboselog(*this, 9, "(HDMI) %08X <- %08X\n", 0xE05D0800 + (offset << 2), data);
 	switch(offset) {
@@ -835,12 +840,12 @@ void cxhumax_state::video_start()
     The document also contains the constants below as floats.
 --------------------------------------------------------------------------*/
 
-static inline UINT8 clamp16_shift8(UINT32 x)
+static inline uint8_t clamp16_shift8(uint32_t x)
 {
-	return (((INT32) x < 0) ? 0 : (x > 65535 ? 255: x >> 8));
+	return (((int32_t) x < 0) ? 0 : (x > 65535 ? 255: x >> 8));
 }
 
-static inline UINT32 ycc_to_rgb(UINT32 ycc)
+static inline uint32_t ycc_to_rgb(uint32_t ycc)
 {
 	/* original equations:
 
@@ -877,10 +882,10 @@ static inline UINT32 ycc_to_rgb(UINT32 ycc)
 	    B = clip(( common + 516 * Cb            - 13696) >> 8)
 
 	*/
-	UINT8 y = ycc;
-	UINT8 cb = ycc >> 8;
-	UINT8 cr = ycc >> 16;
-	UINT32 r, g, b, common;
+	uint8_t y = ycc;
+	uint8_t cb = ycc >> 8;
+	uint8_t cr = ycc >> 16;
+	uint32_t r, g, b, common;
 
 	common = 298 * y - 56992;
 	r = (common +            409 * cr);
@@ -891,46 +896,43 @@ static inline UINT32 ycc_to_rgb(UINT32 ycc)
 	return rgb_t(clamp16_shift8(r), clamp16_shift8(g), clamp16_shift8(b));
 }
 
-UINT32 cxhumax_state::screen_update_cxhumax(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
+uint32_t cxhumax_state::screen_update_cxhumax(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
 {
-	int i, j;
-
-
-	UINT32 osd_pointer = m_drm1_regs[DRM_OSD_PTR_REG];
+	uint32_t osd_pointer = m_drm1_regs[DRM_OSD_PTR_REG];
 
 	if(osd_pointer)
 	{
-		UINT32 *ram = m_ram;
-		UINT32 *osd_header = &ram[osd_pointer/4];
-		UINT8  *vbuf = (UINT8*)(&ram[osd_header[3]/4]);
-		UINT32 *palette = &ram[osd_header[7]/4];
+		uint32_t const *ram = m_ram;
+		uint32_t const *osd_header = &ram[osd_pointer/4];
+		uint8_t  const *vbuf = (uint8_t*)(&ram[osd_header[3]/4]);
+		uint32_t const *palette = &ram[osd_header[7]/4];
 
-		UINT32 x_disp_start_and_width = osd_header[1];
-		UINT32 xdisp_width = (x_disp_start_and_width >> 16) & 0x1fff;
-		UINT32 xdisp_start = x_disp_start_and_width & 0xfff;
+		uint32_t x_disp_start_and_width = osd_header[1];
+		uint32_t xdisp_width = (x_disp_start_and_width >> 16) & 0x1fff;
+		uint32_t xdisp_start = x_disp_start_and_width & 0xfff;
 
-		UINT32 image_height_and_width = osd_header[2];
-		UINT32 yimg_height = (image_height_and_width >> 16) & 0x7ff;
-		UINT32 ximg_width = image_height_and_width & 0x7ff;
+		uint32_t image_height_and_width = osd_header[2];
+		uint32_t yimg_height = (image_height_and_width >> 16) & 0x7ff;
+		uint32_t ximg_width = image_height_and_width & 0x7ff;
 
-		UINT32 y_position_and_region_alpha = osd_header[5];
-		UINT32 ydisp_last = (y_position_and_region_alpha >> 12) & 0x7ff;
-		UINT32 ydisp_start = y_position_and_region_alpha & 0x7ff;
+		uint32_t y_position_and_region_alpha = osd_header[5];
+		uint32_t ydisp_last = (y_position_and_region_alpha >> 12) & 0x7ff;
+		uint32_t ydisp_start = y_position_and_region_alpha & 0x7ff;
 
-	/*  UINT32 first_x = m_drm0_regs[DRM_ACTIVE_X_REG] & 0xffff;
-	    UINT32 last_x = (m_drm0_regs[DRM_ACTIVE_X_REG] >> 16) & 0xffff;
+	/*  uint32_t first_x = m_drm0_regs[DRM_ACTIVE_X_REG] & 0xffff;
+	    uint32_t last_x = (m_drm0_regs[DRM_ACTIVE_X_REG] >> 16) & 0xffff;
 
-	    UINT32 first_y = m_drm0_regs[DRM_ACTIVE_Y_REG] & 0xfff;
-	    UINT32 last_y = (m_drm0_regs[DRM_ACTIVE_Y_REG] >> 16) & 0xfff;*/
+	    uint32_t first_y = m_drm0_regs[DRM_ACTIVE_Y_REG] & 0xfff;
+	    uint32_t last_y = (m_drm0_regs[DRM_ACTIVE_Y_REG] >> 16) & 0xfff;*/
 
-		for (j=ydisp_start; j <= ydisp_last; j++)
+		for (int j=ydisp_start; j <= ydisp_last; j++)
 		{
-			UINT32 *bmp = &bitmap.pix32(j);
+			uint32_t *const bmp = &bitmap.pix(j);
 
-			for (i=xdisp_start; i <= (xdisp_start + xdisp_width); i++)
+			for (int i=xdisp_start; i <= (xdisp_start + xdisp_width); i++)
 			{
 				if ((i <= (xdisp_start + ximg_width)) && (j <= (ydisp_start + yimg_height))) {
-					bmp[i] = palette[vbuf[i+((j-ydisp_start)*ximg_width)]];
+					bmp[i] = palette[vbuf[i+((j-ydisp_start)*ximg_width)]]; // FIXME: need BYTE4_XOR_?E for endianness
 				} else {
 					bmp[i] = ycc_to_rgb(m_drm1_regs[DRM_BCKGND_REG]);
 				}
@@ -940,40 +942,41 @@ UINT32 cxhumax_state::screen_update_cxhumax(screen_device &screen, bitmap_rgb32 
 	return 0;
 }
 
-static ADDRESS_MAP_START(cxhumax_map, AS_PROGRAM, 32, cxhumax_state)
-	AM_RANGE(0x00000000, 0x03ffffff) AM_RAM AM_SHARE("ram") AM_MIRROR(0x40000000)           // 64?MB RAM
-	AM_RANGE(0xe0000000, 0xe000ffff) AM_READWRITE(cx_hsx_r, cx_hsx_w)                       // HSX
-	AM_RANGE(0xe0010000, 0xe0010003) AM_READWRITE(cx_romdescr_r, cx_romdescr_w)             // ROM Descriptor
-	AM_RANGE(0xe0010004, 0xe001000f) AM_READWRITE(cx_isaromdescr_r, cx_isaromdescr_w)       // ISA/ROM Descriptors
-	AM_RANGE(0xe0010010, 0xe001001f) AM_READWRITE(cx_isadescr_r, cx_isadescr_w)             // ISA Descriptors
-	AM_RANGE(0xe0010020, 0xe001002f) AM_READWRITE(cx_rommap_r, cx_rommap_w)                 // ROM Mapping
-	AM_RANGE(0xe0010030, 0xe0010033) AM_READWRITE(cx_rommode_r, cx_rommode_w)               // ISA Mode
-	AM_RANGE(0xe0010034, 0xe0010037) AM_READWRITE(cx_xoemask_r, cx_xoemask_w)               // XOE Mask
-	AM_RANGE(0xe0010040, 0xe0010047) AM_READWRITE(cx_pci_r, cx_pci_w)                       // PCI
-	AM_RANGE(0xe0010080, 0xe00100ff) AM_READWRITE(cx_extdesc_r, cx_extdesc_w)               // Extended Control
-	AM_RANGE(0xe0400014, 0xe0400017) AM_WRITE(cx_remap_w)                                   // RST_REMAP_REG
-	AM_RANGE(0xe0400024, 0xe0400027) AM_READWRITE(cx_scratch_r, cx_scratch_w)               // RST_SCRATCH_REG - System Scratch Register
-	AM_RANGE(0xe0430000, 0xe0430103) AM_READWRITE(cx_timers_r, cx_timers_w)                 // Timers
-	AM_RANGE(0xe0411000, 0xe0411033) AM_READWRITE(cx_uart2_r, cx_uart2_w)                   // UART2
-	AM_RANGE(0xe0440000, 0xe0440013) AM_READWRITE(cx_pll_r, cx_pll_w)                       // PLL Registers
-	AM_RANGE(0xe0440020, 0xe0440037) AM_READWRITE(cx_clkdiv_r, cx_clkdiv_w)                 // Clock Divider Registers
-	AM_RANGE(0xe0440094, 0xe0440097) AM_READWRITE(cx_pllprescale_r, cx_pllprescale_w)       // PLL Prescale
-	AM_RANGE(0xe0440100, 0xe0440173) AM_READWRITE(cx_chipcontrol_r, cx_chipcontrol_w)       // Chip Control Registers
-	AM_RANGE(0xe0450000, 0xe0450037) AM_READWRITE(cx_intctrl_r, cx_intctrl_w)               // Interrupt Controller Registers
-	AM_RANGE(0xe0490000, 0xe0490017) AM_READWRITE(cx_ss_r, cx_ss_w)                         // Synchronous Serial Port
-	AM_RANGE(0xe04e0000, 0xe04e001f) AM_READWRITE(cx_i2c0_r, cx_i2c0_w)                     // I2C0
-	AM_RANGE(0xe04e1000, 0xe04e101f) AM_READWRITE(cx_i2c1_r, cx_i2c1_w)                     // I2C1
-	AM_RANGE(0xe04e2000, 0xe04e201f) AM_READWRITE(cx_i2c2_r, cx_i2c2_w)                     // I2C2
-	AM_RANGE(0xe0500300, 0xe050030b) AM_READWRITE(cx_mc_cfg_r, cx_mc_cfg_w)                 // Memory Controller configuration
-	AM_RANGE(0xe0560000, 0xe05600fb) AM_READWRITE(cx_drm0_r, cx_drm0_w)                     // DRM0
-	AM_RANGE(0xe0570000, 0xe05700fb) AM_READWRITE(cx_drm1_r, cx_drm1_w)                     // DRM1
-	AM_RANGE(0xe05d0800, 0xe05d0bff) AM_READWRITE(cx_hdmi_r, cx_hdmi_w)                     // HDMI
-	AM_RANGE(0xe0600000, 0xe063ffff) AM_READWRITE(cx_gxa_r, cx_gxa_w)                       // GXA
-	AM_RANGE(0xe4017000, 0xe40173ff) AM_RAM                                                 // HSX - BSP - 1K Video Shared Dual Port RAM (shared with MVP)
-	AM_RANGE(0xe4080000, 0xe4083fff) AM_RAM                                                 // HSX - TSP 0 - 16K Private Instructions/Data and Host-Shared Data
-	AM_RANGE(0xf0000000, 0xf03fffff) AM_READWRITE(flash_r, flash_w) AM_MIRROR(0xf8000000)   // 4MB FLASH (INTEL 28F320J3D)
-	AM_RANGE(0xf4000000, 0xf43fffff) AM_READ(dummy_flash_r)                                 // do we need it?
-ADDRESS_MAP_END
+void cxhumax_state::cxhumax_map(address_map &map)
+{
+	map(0x00000000, 0x03ffffff).ram().share("ram").mirror(0x40000000);           // 64?MB RAM
+	map(0xe0000000, 0xe000ffff).rw(FUNC(cxhumax_state::cx_hsx_r), FUNC(cxhumax_state::cx_hsx_w));                       // HSX
+	map(0xe0010000, 0xe0010003).rw(FUNC(cxhumax_state::cx_romdescr_r), FUNC(cxhumax_state::cx_romdescr_w));             // ROM Descriptor
+	map(0xe0010004, 0xe001000f).rw(FUNC(cxhumax_state::cx_isaromdescr_r), FUNC(cxhumax_state::cx_isaromdescr_w));       // ISA/ROM Descriptors
+	map(0xe0010010, 0xe001001f).rw(FUNC(cxhumax_state::cx_isadescr_r), FUNC(cxhumax_state::cx_isadescr_w));             // ISA Descriptors
+	map(0xe0010020, 0xe001002f).rw(FUNC(cxhumax_state::cx_rommap_r), FUNC(cxhumax_state::cx_rommap_w));                 // ROM Mapping
+	map(0xe0010030, 0xe0010033).rw(FUNC(cxhumax_state::cx_rommode_r), FUNC(cxhumax_state::cx_rommode_w));               // ISA Mode
+	map(0xe0010034, 0xe0010037).rw(FUNC(cxhumax_state::cx_xoemask_r), FUNC(cxhumax_state::cx_xoemask_w));               // XOE Mask
+	map(0xe0010040, 0xe0010047).rw(FUNC(cxhumax_state::cx_pci_r), FUNC(cxhumax_state::cx_pci_w));                       // PCI
+	map(0xe0010080, 0xe00100ff).rw(FUNC(cxhumax_state::cx_extdesc_r), FUNC(cxhumax_state::cx_extdesc_w));               // Extended Control
+	map(0xe0400014, 0xe0400017).w(FUNC(cxhumax_state::cx_remap_w));                                   // RST_REMAP_REG
+	map(0xe0400024, 0xe0400027).rw(FUNC(cxhumax_state::cx_scratch_r), FUNC(cxhumax_state::cx_scratch_w));               // RST_SCRATCH_REG - System Scratch Register
+	map(0xe0430000, 0xe0430103).rw(FUNC(cxhumax_state::cx_timers_r), FUNC(cxhumax_state::cx_timers_w));                 // Timers
+	map(0xe0411000, 0xe0411033).rw(FUNC(cxhumax_state::cx_uart2_r), FUNC(cxhumax_state::cx_uart2_w));                   // UART2
+	map(0xe0440000, 0xe0440013).rw(FUNC(cxhumax_state::cx_pll_r), FUNC(cxhumax_state::cx_pll_w));                       // PLL Registers
+	map(0xe0440020, 0xe0440037).rw(FUNC(cxhumax_state::cx_clkdiv_r), FUNC(cxhumax_state::cx_clkdiv_w));                 // Clock Divider Registers
+	map(0xe0440094, 0xe0440097).rw(FUNC(cxhumax_state::cx_pllprescale_r), FUNC(cxhumax_state::cx_pllprescale_w));       // PLL Prescale
+	map(0xe0440100, 0xe0440173).rw(FUNC(cxhumax_state::cx_chipcontrol_r), FUNC(cxhumax_state::cx_chipcontrol_w));       // Chip Control Registers
+	map(0xe0450000, 0xe0450037).rw(FUNC(cxhumax_state::cx_intctrl_r), FUNC(cxhumax_state::cx_intctrl_w));               // Interrupt Controller Registers
+	map(0xe0490000, 0xe0490017).rw(FUNC(cxhumax_state::cx_ss_r), FUNC(cxhumax_state::cx_ss_w));                         // Synchronous Serial Port
+	map(0xe04e0000, 0xe04e001f).rw(FUNC(cxhumax_state::cx_i2c0_r), FUNC(cxhumax_state::cx_i2c0_w));                     // I2C0
+	map(0xe04e1000, 0xe04e101f).rw(FUNC(cxhumax_state::cx_i2c1_r), FUNC(cxhumax_state::cx_i2c1_w));                     // I2C1
+	map(0xe04e2000, 0xe04e201f).rw(FUNC(cxhumax_state::cx_i2c2_r), FUNC(cxhumax_state::cx_i2c2_w));                     // I2C2
+	map(0xe0500300, 0xe050030b).rw(FUNC(cxhumax_state::cx_mc_cfg_r), FUNC(cxhumax_state::cx_mc_cfg_w));                 // Memory Controller configuration
+	map(0xe0560000, 0xe05600fb).rw(FUNC(cxhumax_state::cx_drm0_r), FUNC(cxhumax_state::cx_drm0_w));                     // DRM0
+	map(0xe0570000, 0xe05700fb).rw(FUNC(cxhumax_state::cx_drm1_r), FUNC(cxhumax_state::cx_drm1_w));                     // DRM1
+	map(0xe05d0800, 0xe05d0bff).rw(FUNC(cxhumax_state::cx_hdmi_r), FUNC(cxhumax_state::cx_hdmi_w));                     // HDMI
+	map(0xe0600000, 0xe063ffff).rw(FUNC(cxhumax_state::cx_gxa_r), FUNC(cxhumax_state::cx_gxa_w));                       // GXA
+	map(0xe4017000, 0xe40173ff).ram();                                                 // HSX - BSP - 1K Video Shared Dual Port RAM (shared with MVP)
+	map(0xe4080000, 0xe4083fff).ram();                                                 // HSX - TSP 0 - 16K Private Instructions/Data and Host-Shared Data
+	map(0xf0000000, 0xf03fffff).rw(FUNC(cxhumax_state::flash_r), FUNC(cxhumax_state::flash_w)).mirror(0x08000000);   // 4MB FLASH (INTEL 28F320J3D)
+	map(0xf4000000, 0xf43fffff).r(FUNC(cxhumax_state::dummy_flash_r));                                 // do we need it?
+}
 
 static INPUT_PORTS_START( cxhumax )
 INPUT_PORTS_END
@@ -993,7 +996,7 @@ void cxhumax_state::machine_reset()
 	m_i2c0_regs[0x08/4] = 0x08; // SDA high
 	m_i2c2_regs[0x08/4] = 0x08; // SDA high
 
-	UINT8* FLASH = memregion("flash")->base();
+	uint8_t* FLASH = memregion("flash")->base();
 	memcpy(m_ram,FLASH,0x400000);
 
 	m_chipcontrol_regs[PIN_CONFIG_0_REG] =
@@ -1016,6 +1019,7 @@ void cxhumax_state::machine_reset()
 	m_rommode_reg=0;
 	m_xoemask_reg=0;
 	memset(m_extdesc_regs,0,sizeof(m_extdesc_regs));
+	memset(m_drm1_regs,0,sizeof(m_drm1_regs));
 
 	m_pll_regs[SREG_MPG_0_INTFRAC_REG] = (0x1A << 25) /* integer */ | 0x5D1764 /* fraction */;
 	m_pll_regs[SREG_MPG_1_INTFRAC_REG] = (0x1A << 25) /* integer */ | 0x5D1764 /* fraction */;
@@ -1050,36 +1054,36 @@ void cxhumax_state::machine_reset()
 	memset(m_gxa_cmd_regs,0,sizeof(m_gxa_cmd_regs));
 }
 
-static MACHINE_CONFIG_START( cxhumax, cxhumax_state )
-	MCFG_CPU_ADD("maincpu", ARM920T, 180000000) // CX24175 (RevC up?)
-	MCFG_CPU_PROGRAM_MAP(cxhumax_map)
+void cxhumax_state::cxhumax(machine_config &config)
+{
+	ARM920T(config, m_maincpu, 180000000); // CX24175 (RevC up?)
+	m_maincpu->set_addrmap(AS_PROGRAM, &cxhumax_state::cxhumax_map);
 
 
-	MCFG_INTEL_28F320J3D_ADD("flash")
-	MCFG_I2CMEM_ADD("eeprom")
-	MCFG_I2CMEM_DATA_SIZE(0x2000)
+	INTEL_28F320J3D(config, "flash");
+	I2C_24C64(config, "eeprom", 0); // 24LC64
 
 	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_REFRESH_RATE(50)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(2500)) /* not accurate */
-	MCFG_SCREEN_SIZE(1920, 1080)
-	MCFG_SCREEN_VISIBLE_AREA(0, 1920-1, 0, 1080-1)
-	MCFG_SCREEN_UPDATE_DRIVER(cxhumax_state, screen_update_cxhumax)
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_RASTER));
+	screen.set_refresh_hz(50);
+	screen.set_vblank_time(ATTOSECONDS_IN_USEC(2500)); /* not accurate */
+	screen.set_size(1920, 1080);
+	screen.set_visarea_full();
+	screen.set_screen_update(FUNC(cxhumax_state::screen_update_cxhumax));
 
-	MCFG_PALETTE_ADD_BLACK_AND_WHITE("palette")
+	PALETTE(config, "palette", palette_device::MONOCHROME);
 
-	MCFG_DEVICE_ADD(TERMINAL_TAG, GENERIC_TERMINAL, 0)
-MACHINE_CONFIG_END
+	GENERIC_TERMINAL(config, m_terminal, 0);
+}
 
 ROM_START( hxhdci2k )
 	ROM_REGION( 0x400000, "flash", 0 )
-	ROM_SYSTEM_BIOS( 0, "FW10005", "HDCI REV 1.0 RHDXSCI 1.00.05" ) /* 19 AUG 2008 */
+	ROM_SYSTEM_BIOS( 0, "fw10005", "HDCI REV 1.0 RHDXSCI 1.00.05" ) /* 19 AUG 2008 */
 	ROM_LOAD16_WORD_SWAP( "28f320j3d.bin", 0x000000, 0x400000, BAD_DUMP CRC(63d98942) SHA1(c5b8d701677a3edc25f203854f44953b19c9158d) )
 
-	ROM_REGION16_BE( 0x2000, "eeprom", 0 )
+	ROM_REGION( 0x2000, "eeprom", 0 )
 	ROM_LOAD( "24lc64.bin", 0x0000, 0x2000, NO_DUMP)
 ROM_END
 
-/*    YEAR  NAME    PARENT  COMPAT   MACHINE    INPUT    INIT     COMPANY   FULLNAME       FLAGS */
-SYST( 2008, hxhdci2k, 0,       0,   cxhumax,    cxhumax, driver_device,  0,   "HUMAX",   "HUMAX HDCI-2000",     MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
+//    YEAR  NAME      PARENT  COMPAT  MACHINE  INPUT    CLASS          INIT        COMPANY  FULLNAME           FLAGS
+SYST( 2008, hxhdci2k, 0,      0,      cxhumax, cxhumax, cxhumax_state, empty_init, "HUMAX", "HUMAX HDCI-2000", MACHINE_NOT_WORKING | MACHINE_NO_SOUND )

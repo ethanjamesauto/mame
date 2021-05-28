@@ -14,19 +14,19 @@
 #define SetZF(x)        (m_ZeroVal = (x))
 #define SetPF(x)        (m_ParityVal = (x))
 
-#define SetSZPF_Byte(x) (m_SignVal=m_ZeroVal=m_ParityVal=(INT8)(x))
-#define SetSZPF_Word(x) (m_SignVal=m_ZeroVal=m_ParityVal=(INT16)(x))
+#define SetSZPF_Byte(x) (m_SignVal=m_ZeroVal=m_ParityVal=(int8_t)(x))
+#define SetSZPF_Word(x) (m_SignVal=m_ZeroVal=m_ParityVal=(int16_t)(x))
 
 #define SetOFW_Add(x,y,z)   (m_OverVal = ((x) ^ (y)) & ((x) ^ (z)) & 0x8000)
 #define SetOFB_Add(x,y,z)   (m_OverVal = ((x) ^ (y)) & ((x) ^ (z)) & 0x80)
 #define SetOFW_Sub(x,y,z)   (m_OverVal = ((z) ^ (y)) & ((z) ^ (x)) & 0x8000)
 #define SetOFB_Sub(x,y,z)   (m_OverVal = ((z) ^ (y)) & ((z) ^ (x)) & 0x80)
 
-#define ADDB { UINT32 res=dst+src; SetCFB(res); SetOFB_Add(res,src,dst); SetAF(res,src,dst); SetSZPF_Byte(res); dst=(BYTE)res; }
-#define ADDW { UINT32 res=dst+src; SetCFW(res); SetOFW_Add(res,src,dst); SetAF(res,src,dst); SetSZPF_Word(res); dst=(WORD)res; }
+#define ADDB { uint32_t res=dst+src; SetCFB(res); SetOFB_Add(res,src,dst); SetAF(res,src,dst); SetSZPF_Byte(res); dst=(BYTE)res; }
+#define ADDW { uint32_t res=dst+src; SetCFW(res); SetOFW_Add(res,src,dst); SetAF(res,src,dst); SetSZPF_Word(res); dst=(WORD)res; }
 
-#define SUBB { UINT32 res=dst-src; SetCFB(res); SetOFB_Sub(res,src,dst); SetAF(res,src,dst); SetSZPF_Byte(res); dst=(BYTE)res; }
-#define SUBW { UINT32 res=dst-src; SetCFW(res); SetOFW_Sub(res,src,dst); SetAF(res,src,dst); SetSZPF_Word(res); dst=(WORD)res; }
+#define SUBB { uint32_t res=dst-src; SetCFB(res); SetOFB_Sub(res,src,dst); SetAF(res,src,dst); SetSZPF_Byte(res); dst=(BYTE)res; }
+#define SUBW { uint32_t res=dst-src; SetCFW(res); SetOFW_Sub(res,src,dst); SetAF(res,src,dst); SetSZPF_Word(res); dst=(WORD)res; }
 
 #define ORB dst|=src; m_CarryVal=m_OverVal=m_AuxVal=0; SetSZPF_Byte(dst)
 #define ORW dst|=src; m_CarryVal=m_OverVal=m_AuxVal=0; SetSZPF_Word(dst)
@@ -53,13 +53,29 @@
 	SetSZPF_Word(tmp1);                     \
 	Wreg(Reg)=tmp1
 
+#define IncByteReg(Reg)                     \
+	unsigned tmp = (unsigned)Breg(Reg); \
+	unsigned tmp1 = tmp+1;                  \
+	m_OverVal = (tmp == 0x7f);           \
+	SetAF(tmp1,tmp,1);                      \
+	SetSZPF_Byte(tmp1);                     \
+	Breg(Reg)=tmp1
+
+#define DecByteReg(Reg)                     \
+	unsigned tmp = (unsigned)Breg(Reg); \
+	unsigned tmp1 = tmp-1;                  \
+	m_OverVal = (tmp == 0x80);           \
+	SetAF(tmp1,tmp,1);                      \
+	SetSZPF_Byte(tmp1);                     \
+	Breg(Reg)=tmp1
+
 #define JMP(flag)                           \
 	int tmp;                                \
-	EMPTY_PREFETCH();                       \
-	tmp = (int)((INT8)FETCH());             \
+	EMPTY_PREfetch();                       \
+	tmp = (int)((int8_t)fetch());             \
 	if (flag)                               \
 	{                                       \
-		static const UINT8 table[3]={3,10,10};  \
+		static const uint8_t table[3]={3,10,10};  \
 		m_ip = (WORD)(m_ip+tmp);          \
 		m_icount-=table[m_chip_type/8];   \
 		CHANGE_PC;                          \
@@ -69,7 +85,7 @@
 #define ADJ4(param1,param2)                 \
 	if (AF || ((Breg(AL) & 0xf) > 9))   \
 	{                                       \
-		UINT16 tmp;                         \
+		uint16_t tmp;                         \
 		tmp = Breg(AL) + param1;        \
 		Breg(AL) = tmp;                 \
 		m_AuxVal = 1;                      \
@@ -98,7 +114,7 @@
 	Breg(AL) &= 0x0F
 
 #define BITOP_BYTE                          \
-	ModRM = FETCH();                            \
+	ModRM = fetch();                            \
 	if (ModRM >= 0xc0) {                    \
 		tmp=Breg(Mod_RM.RM.b[ModRM]);   \
 	}                                       \
@@ -108,7 +124,7 @@
 	}
 
 #define BITOP_WORD                          \
-	ModRM = FETCH();                            \
+	ModRM = fetch();                            \
 	if (ModRM >= 0xc0) {                    \
 		tmp=Wreg(Mod_RM.RM.w[ModRM]);   \
 	}                                       \
@@ -141,8 +157,8 @@
 #define SHL_WORD(c) m_icount-=c; dst <<= c;    SetCFW(dst); SetSZPF_Word(dst); PutbackRMWord(ModRM,(WORD)dst)
 #define SHR_BYTE(c) m_icount-=c; dst >>= c-1; m_CarryVal = dst & 0x1; dst >>= 1; SetSZPF_Byte(dst); PutbackRMByte(ModRM,(BYTE)dst)
 #define SHR_WORD(c) m_icount-=c; dst >>= c-1; m_CarryVal = dst & 0x1; dst >>= 1; SetSZPF_Word(dst); PutbackRMWord(ModRM,(WORD)dst)
-#define SHRA_BYTE(c) m_icount-=c; dst = ((INT8)dst) >> (c-1);  m_CarryVal = dst & 0x1;    dst = ((INT8)((BYTE)dst)) >> 1; SetSZPF_Byte(dst); PutbackRMByte(ModRM,(BYTE)dst)
-#define SHRA_WORD(c) m_icount-=c; dst = ((INT16)dst) >> (c-1); m_CarryVal = dst & 0x1;    dst = ((INT16)((WORD)dst)) >> 1; SetSZPF_Word(dst); PutbackRMWord(ModRM,(WORD)dst)
+#define SHRA_BYTE(c) m_icount-=c; dst = ((int8_t)dst) >> (c-1);  m_CarryVal = dst & 0x1;    dst = ((int8_t)((BYTE)dst)) >> 1; SetSZPF_Byte(dst); PutbackRMByte(ModRM,(BYTE)dst)
+#define SHRA_WORD(c) m_icount-=c; dst = ((int16_t)dst) >> (c-1); m_CarryVal = dst & 0x1;    dst = ((int16_t)((WORD)dst)) >> 1; SetSZPF_Word(dst); PutbackRMWord(ModRM,(WORD)dst)
 
 #define DIVUB                                               \
 	uresult = Wreg(AW);                                 \
@@ -155,9 +171,9 @@
 	}
 
 #define DIVB                                                \
-	result = (INT16)Wreg(AW);                           \
-	result2 = result % (INT16)((INT8)tmp);                  \
-	if ((result /= (INT16)((INT8)tmp)) > 0xff) {            \
+	result = (int16_t)Wreg(AW);                           \
+	result2 = result % (int16_t)((int8_t)tmp);                  \
+	if ((result /= (int16_t)((int8_t)tmp)) > 0xff) {            \
 		nec_interrupt(NEC_DIVIDE_VECTOR, BRK); break;                            \
 	} else {                                                \
 		Breg(AL) = result;                              \
@@ -165,7 +181,7 @@
 	}
 
 #define DIVUW                                               \
-	uresult = (((UINT32)Wreg(DW)) << 16) | Wreg(AW);\
+	uresult = (((uint32_t)Wreg(DW)) << 16) | Wreg(AW);\
 	uresult2 = uresult % tmp;                               \
 	if ((uresult /= tmp) > 0xffff) {                        \
 		nec_interrupt(NEC_DIVIDE_VECTOR, BRK); break;                            \
@@ -175,9 +191,9 @@
 	}
 
 #define DIVW                                                \
-	result = ((UINT32)Wreg(DW) << 16) + Wreg(AW);   \
-	result2 = result % (INT32)((INT16)tmp);                 \
-	if ((result /= (INT32)((INT16)tmp)) > 0xffff) {         \
+	result = ((uint32_t)Wreg(DW) << 16) + Wreg(AW);   \
+	result2 = result % (int32_t)((int16_t)tmp);                 \
+	if ((result /= (int32_t)((int16_t)tmp)) > 0xffff) {         \
 		nec_interrupt(NEC_DIVIDE_VECTOR, BRK); break;                            \
 	} else {                                                \
 		Wreg(AW)=result;                                \
@@ -189,7 +205,7 @@
 	int count = (Breg(CL)+1)/2;                         \
 	unsigned di = Wreg(IY);                             \
 	unsigned si = Wreg(IX);                             \
-	static const UINT8 table[3]={18,19,19};                 \
+	static const uint8_t table[3]={18,19,19};                 \
 	if (m_seg_prefix) logerror("%06x: Warning: seg_prefix defined for add4s\n",PC()); \
 	m_ZeroVal = m_CarryVal = 0;                               \
 	for (i=0;i<count;i++) {                                 \
@@ -214,7 +230,7 @@
 	int i,v1,v2,result;                                     \
 	unsigned di = Wreg(IY);                             \
 	unsigned si = Wreg(IX);                             \
-	static const UINT8 table[3]={18,19,19};                 \
+	static const uint8_t table[3]={18,19,19};                 \
 	if (m_seg_prefix) logerror("%06x: Warning: seg_prefix defined for sub4s\n",PC()); \
 	m_ZeroVal = m_CarryVal = 0;                               \
 	for (i=0;i<count;i++) {                                 \
@@ -244,7 +260,7 @@
 	int i,v1,v2,result;                                     \
 	unsigned di = Wreg(IY);                             \
 	unsigned si = Wreg(IX);                             \
-	static const UINT8 table[3]={14,19,19};                 \
+	static const uint8_t table[3]={14,19,19};                 \
 	if (m_seg_prefix) logerror("%06x: Warning: seg_prefix defined for cmp4s\n",PC()); \
 	m_ZeroVal = m_CarryVal = 0;                               \
 	for (i=0;i<count;i++) {                                 \

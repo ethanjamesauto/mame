@@ -1,20 +1,26 @@
 // license:BSD-3-Clause
 // copyright-holders:Andrew Gardner
-#define NO_MEM_TRACKING
-
+#include "emu.h"
 #include "dasmwindow.h"
 
 #include "debug/debugcon.h"
 #include "debug/debugcpu.h"
 #include "debug/dvdisasm.h"
+#include "debug/points.h"
+
+#include <QtWidgets/QHBoxLayout>
+#include <QtWidgets/QVBoxLayout>
+#include <QtWidgets/QAction>
+#include <QtWidgets/QMenu>
+#include <QtWidgets/QMenuBar>
 
 
-DasmWindow::DasmWindow(running_machine* machine, QWidget* parent) :
-	WindowQt(machine, NULL)
+DasmWindow::DasmWindow(running_machine &machine, QWidget *parent) :
+	WindowQt(machine, nullptr)
 {
 	setWindowTitle("Debug: Disassembly View");
 
-	if (parent != NULL)
+	if (parent)
 	{
 		QPoint parentPos = parent->pos();
 		setGeometry(parentPos.x()+100, parentPos.y()+100, 800, 400);
@@ -23,43 +29,40 @@ DasmWindow::DasmWindow(running_machine* machine, QWidget* parent) :
 	//
 	// The main frame and its input and log widgets
 	//
-	QFrame* mainWindowFrame = new QFrame(this);
+	QFrame *mainWindowFrame = new QFrame(this);
 
 	// The top frame & groupbox that contains the input widgets
-	QFrame* topSubFrame = new QFrame(mainWindowFrame);
+	QFrame *topSubFrame = new QFrame(mainWindowFrame);
 
 	// The input edit
 	m_inputEdit = new QLineEdit(topSubFrame);
-	connect(m_inputEdit, SIGNAL(returnPressed()), this, SLOT(expressionSubmitted()));
+	connect(m_inputEdit, &QLineEdit::returnPressed, this, &DasmWindow::expressionSubmitted);
 
 	// The cpu combo box
 	m_cpuComboBox = new QComboBox(topSubFrame);
 	m_cpuComboBox->setObjectName("cpu");
 	m_cpuComboBox->setMinimumWidth(300);
-	connect(m_cpuComboBox, SIGNAL(currentIndexChanged(int)), this, SLOT(cpuChanged(int)));
+	connect(m_cpuComboBox, static_cast<void (QComboBox::*)(int)>(&QComboBox::currentIndexChanged), this, &DasmWindow::cpuChanged);
 
 	// The main disasm window
 	m_dasmView = new DebuggerView(DVT_DISASSEMBLY, m_machine, this);
-	connect(m_dasmView, SIGNAL(updated()), this, SLOT(dasmViewUpdated()));
+	connect(m_dasmView, &DebuggerView::updated, this, &DasmWindow::dasmViewUpdated);
 
 	// Force a recompute of the disassembly region
-	downcast<debug_view_disasm*>(m_dasmView->view())->set_expression("curpc");
+	downcast<debug_view_disasm *>(m_dasmView->view())->set_expression("curpc");
 
-	// Populate the combo box & set the proper cpu
+	// Populate the combo box & set the proper CPU
 	populateComboBox();
-	//const debug_view_source *source = mem->views[0]->view->source_for_device(curcpu);
-	//gtk_combo_box_set_active(zone_w, mem->views[0]->view->source_list().indexof(*source));
-	//mem->views[0]->view->set_source(*source);
-
+	setToCurrentCpu();
 
 	// Layout
-	QHBoxLayout* subLayout = new QHBoxLayout(topSubFrame);
+	QHBoxLayout *subLayout = new QHBoxLayout(topSubFrame);
 	subLayout->addWidget(m_inputEdit);
 	subLayout->addWidget(m_cpuComboBox);
 	subLayout->setSpacing(3);
 	subLayout->setContentsMargins(2,2,2,2);
 
-	QVBoxLayout* vLayout = new QVBoxLayout(mainWindowFrame);
+	QVBoxLayout *vLayout = new QVBoxLayout(mainWindowFrame);
 	vLayout->setSpacing(3);
 	vLayout->setContentsMargins(2,2,2,2);
 	vLayout->addWidget(topSubFrame);
@@ -77,16 +80,16 @@ DasmWindow::DasmWindow(running_machine* machine, QWidget* parent) :
 	m_breakpointToggleAct->setShortcut(Qt::Key_F9);
 	m_breakpointEnableAct->setShortcut(Qt::SHIFT + Qt::Key_F9);
 	m_runToCursorAct->setShortcut(Qt::Key_F4);
-	connect(m_breakpointToggleAct, SIGNAL(triggered(bool)), this, SLOT(toggleBreakpointAtCursor(bool)));
-	connect(m_breakpointEnableAct, SIGNAL(triggered(bool)), this, SLOT(enableBreakpointAtCursor(bool)));
-	connect(m_runToCursorAct, SIGNAL(triggered(bool)), this, SLOT(runToCursor(bool)));
+	connect(m_breakpointToggleAct, &QAction::triggered, this, &DasmWindow::toggleBreakpointAtCursor);
+	connect(m_breakpointEnableAct, &QAction::triggered, this, &DasmWindow::enableBreakpointAtCursor);
+	connect(m_runToCursorAct, &QAction::triggered, this, &DasmWindow::runToCursor);
 
 	// Right bar options
-	QActionGroup* rightBarGroup = new QActionGroup(this);
+	QActionGroup *rightBarGroup = new QActionGroup(this);
 	rightBarGroup->setObjectName("rightbargroup");
-	QAction* rightActRaw = new QAction("Raw Opcodes", this);
-	QAction* rightActEncrypted = new QAction("Encrypted Opcodes", this);
-	QAction* rightActComments = new QAction("Comments", this);
+	QAction *rightActRaw = new QAction("Raw Opcodes", this);
+	QAction *rightActEncrypted = new QAction("Encrypted Opcodes", this);
+	QAction *rightActComments = new QAction("Comments", this);
 	rightActRaw->setCheckable(true);
 	rightActEncrypted->setCheckable(true);
 	rightActComments->setCheckable(true);
@@ -95,12 +98,12 @@ DasmWindow::DasmWindow(running_machine* machine, QWidget* parent) :
 	rightActComments->setActionGroup(rightBarGroup);
 	rightActRaw->setShortcut(QKeySequence("Ctrl+R"));
 	rightActEncrypted->setShortcut(QKeySequence("Ctrl+E"));
-	rightActComments->setShortcut(QKeySequence("Ctrl+C"));
+	rightActComments->setShortcut(QKeySequence("Ctrl+N"));
 	rightActRaw->setChecked(true);
-	connect(rightBarGroup, SIGNAL(triggered(QAction*)), this, SLOT(rightBarChanged(QAction*)));
+	connect(rightBarGroup, &QActionGroup::triggered, this, &DasmWindow::rightBarChanged);
 
 	// Assemble the options menu
-	QMenu* optionsMenu = menuBar()->addMenu("&Options");
+	QMenu *optionsMenu = menuBar()->addMenu("&Options");
 	optionsMenu->addAction(m_breakpointToggleAct);
 	optionsMenu->addAction(m_breakpointEnableAct);
 	optionsMenu->addAction(m_runToCursorAct);
@@ -116,15 +119,18 @@ DasmWindow::~DasmWindow()
 
 void DasmWindow::cpuChanged(int index)
 {
-	m_dasmView->view()->set_source(*m_dasmView->view()->source_list().find(index));
-	m_dasmView->viewport()->update();
+	if (index < m_dasmView->view()->source_count())
+	{
+		m_dasmView->view()->set_source(*m_dasmView->view()->source(index));
+		m_dasmView->viewport()->update();
+	}
 }
 
 
 void DasmWindow::expressionSubmitted()
 {
 	const QString expression = m_inputEdit->text();
-	downcast<debug_view_disasm*>(m_dasmView->view())->set_expression(expression.toLocal8Bit().data());
+	downcast<debug_view_disasm *>(m_dasmView->view())->set_expression(expression.toLocal8Bit().data());
 	m_dasmView->viewport()->update();
 }
 
@@ -138,31 +144,22 @@ void DasmWindow::toggleBreakpointAtCursor(bool changedTo)
 		device_debug *const cpuinfo = device->debug();
 
 		// Find an existing breakpoint at this address
-		INT32 bpindex = -1;
-		for (device_debug::breakpoint* bp = cpuinfo->breakpoint_first();
-				bp != NULL;
-				bp = bp->next())
-		{
-			if (address == bp->address())
-			{
-				bpindex = bp->index();
-				break;
-			}
-		}
+		const debug_breakpoint *bp = cpuinfo->breakpoint_find(address);
 
 		// If none exists, add a new one
-		if (bpindex == -1)
+		if (!bp)
 		{
-			bpindex = cpuinfo->breakpoint_set(address, NULL, NULL);
-			debug_console_printf(*m_machine, "Breakpoint %X set\n", bpindex);
+			int32_t bpindex = cpuinfo->breakpoint_set(address, nullptr, nullptr);
+			m_machine.debugger().console().printf("Breakpoint %X set\n", bpindex);
 		}
 		else
 		{
+			int32_t bpindex = bp->index();
 			cpuinfo->breakpoint_clear(bpindex);
-			debug_console_printf(*m_machine, "Breakpoint %X cleared\n", bpindex);
+			m_machine.debugger().console().printf("Breakpoint %X cleared\n", bpindex);
 		}
-		m_machine->debug_view().update_all();
-		debugger_refresh_display(*m_machine);
+		m_machine.debug_view().update_all();
+		m_machine.debugger().refresh_display();
 	}
 
 	refreshAll();
@@ -178,16 +175,14 @@ void DasmWindow::enableBreakpointAtCursor(bool changedTo)
 		device_debug *const cpuinfo = device->debug();
 
 		// Find an existing breakpoint at this address
-		device_debug::breakpoint* bp = cpuinfo->breakpoint_first();
-		while ((bp != NULL) && (bp->address() != address))
-			bp = bp->next();
+		const debug_breakpoint *bp = cpuinfo->breakpoint_find(address);
 
-		if (bp != NULL)
+		if (bp)
 		{
 			cpuinfo->breakpoint_enable(bp->index(), !bp->enabled());
-			debug_console_printf(*m_machine, "Breakpoint %X %s\n", (UINT32)bp->index(), bp->enabled() ? "enabled" : "disabled");
-			m_machine->debug_view().update_all();
-			debugger_refresh_display(*m_machine);
+			m_machine.debugger().console().printf("Breakpoint %X %s\n", (uint32_t)bp->index(), bp->enabled() ? "enabled" : "disabled");
+			m_machine.debug_view().update_all();
+			m_machine.debugger().refresh_display();
 		}
 	}
 
@@ -199,7 +194,7 @@ void DasmWindow::runToCursor(bool changedTo)
 {
 	if (m_dasmView->view()->cursor_visible())
 	{
-		offs_t const address = downcast<debug_view_disasm*>(m_dasmView->view())->selected_address();
+		offs_t const address = downcast<debug_view_disasm *>(m_dasmView->view())->selected_address();
 		m_dasmView->view()->source()->device()->debug()->go(address);
 	}
 }
@@ -236,11 +231,9 @@ void DasmWindow::dasmViewUpdated()
 		device_debug *const cpuinfo = device->debug();
 
 		// Find an existing breakpoint at this address
-		device_debug::breakpoint* bp = cpuinfo->breakpoint_first();
-		while ((bp != NULL) && (bp->address() != address))
-			bp = bp->next();
+		const debug_breakpoint *bp = cpuinfo->breakpoint_find(address);
 
-		if (bp != NULL)
+		if (bp)
 		{
 			haveBreakpoint = true;
 			breakpointEnabled = bp->enabled();
@@ -257,15 +250,28 @@ void DasmWindow::dasmViewUpdated()
 
 void DasmWindow::populateComboBox()
 {
-	if (m_dasmView == NULL)
+	if (!m_dasmView)
 		return;
 
 	m_cpuComboBox->clear();
-	for (const debug_view_source* source = m_dasmView->view()->first_source();
-			source != NULL;
-			source = source->next())
+	for (auto &source : m_dasmView->view()->source_list())
 	{
 		m_cpuComboBox->addItem(source->name());
+	}
+}
+
+
+void DasmWindow::setToCurrentCpu()
+{
+	device_t *curCpu = m_machine.debugger().console().get_visible_cpu();
+	if (curCpu)
+	{
+		const debug_view_source *source = m_dasmView->view()->source_for_device(curCpu);
+		if (source)
+		{
+			const int listIndex = m_dasmView->view()->source_index(*source);
+			m_cpuComboBox->setCurrentIndex(listIndex);
+		}
 	}
 }
 
@@ -273,14 +279,14 @@ void DasmWindow::populateComboBox()
 //=========================================================================
 //  DasmWindowQtConfig
 //=========================================================================
-void DasmWindowQtConfig::buildFromQWidget(QWidget* widget)
+void DasmWindowQtConfig::buildFromQWidget(QWidget *widget)
 {
 	WindowQtConfig::buildFromQWidget(widget);
-	DasmWindow* window = dynamic_cast<DasmWindow*>(widget);
-	QComboBox* cpu = window->findChild<QComboBox*>("cpu");
+	DasmWindow *window = dynamic_cast<DasmWindow *>(widget);
+	QComboBox *cpu = window->findChild<QComboBox *>("cpu");
 	m_cpu = cpu->currentIndex();
 
-	QActionGroup* rightBarGroup = window->findChild<QActionGroup*>("rightbargroup");
+	QActionGroup *rightBarGroup = window->findChild<QActionGroup *>("rightbargroup");
 	if (rightBarGroup->checkedAction()->text() == "Raw Opcodes")
 		m_rightBar = 0;
 	else if (rightBarGroup->checkedAction()->text() == "Encrypted Opcodes")
@@ -289,27 +295,27 @@ void DasmWindowQtConfig::buildFromQWidget(QWidget* widget)
 		m_rightBar = 2;
 }
 
-void DasmWindowQtConfig::applyToQWidget(QWidget* widget)
+void DasmWindowQtConfig::applyToQWidget(QWidget *widget)
 {
 	WindowQtConfig::applyToQWidget(widget);
-	DasmWindow* window = dynamic_cast<DasmWindow*>(widget);
-	QComboBox* cpu = window->findChild<QComboBox*>("cpu");
+	DasmWindow *window = dynamic_cast<DasmWindow *>(widget);
+	QComboBox *cpu = window->findChild<QComboBox *>("cpu");
 	cpu->setCurrentIndex(m_cpu);
 
-	QActionGroup* rightBarGroup = window->findChild<QActionGroup*>("rightbargroup");
+	QActionGroup *rightBarGroup = window->findChild<QActionGroup *>("rightbargroup");
 	rightBarGroup->actions()[m_rightBar]->trigger();
 }
 
-void DasmWindowQtConfig::addToXmlDataNode(xml_data_node* node) const
+void DasmWindowQtConfig::addToXmlDataNode(util::xml::data_node &node) const
 {
 	WindowQtConfig::addToXmlDataNode(node);
-	xml_set_attribute_int(node, "cpu", m_cpu);
-	xml_set_attribute_int(node, "rightbar", m_rightBar);
+	node.set_attribute_int("cpu", m_cpu);
+	node.set_attribute_int("rightbar", m_rightBar);
 }
 
-void DasmWindowQtConfig::recoverFromXmlNode(xml_data_node* node)
+void DasmWindowQtConfig::recoverFromXmlNode(util::xml::data_node const &node)
 {
 	WindowQtConfig::recoverFromXmlNode(node);
-	m_cpu = xml_get_attribute_int(node, "cpu", m_cpu);
-	m_rightBar = xml_get_attribute_int(node, "rightbar", m_rightBar);
+	m_cpu = node.get_attribute_int("cpu", m_cpu);
+	m_rightBar = node.get_attribute_int("rightbar", m_rightBar);
 }

@@ -21,6 +21,8 @@
     Notes:
         * The Sigma set has Japanese voice samples, while the Gottlieb
           one is English
+        * Taito T.T. New York New York's ROMs match the ones from the
+          Sigma set
         * In cocktail mode New York! New York! programs the CRTC with an
           incorrect value.  Interestingly, when the Flip Screen DIP
           is set, the value programmed is correct.  This bug does not
@@ -28,7 +30,7 @@
         * The Crosshatch switch only works on the title screen
         * The Service Mode switch, which displays the total number of
           credits stored in the NVRAM, only works on the "Start Game"
-          screen after a coin has been insered.  Hold down the key to
+          screen after a coin has been inserted.  Hold down the key to
           display the coin count
         * The schematics mixed up port A and B on both AY-8910
 
@@ -64,35 +66,39 @@
 ***************************************************************************/
 
 #include "emu.h"
-#include "machine/rescap.h"
-#include "machine/6821pia.h"
-#include "machine/74123.h"
-#include "video/mc6845.h"
+
 #include "cpu/m6800/m6800.h"
 #include "cpu/m6809/m6809.h"
+#include "machine/6821pia.h"
+#include "machine/74123.h"
+#include "machine/gen_latch.h"
+#include "machine/nvram.h"
+#include "machine/rescap.h"
 #include "sound/ay8910.h"
 #include "sound/dac.h"
-#include "machine/nvram.h"
+#include "video/mc6845.h"
+
+#include "emupal.h"
+#include "screen.h"
+#include "speaker.h"
 
 
-#define MAIN_CPU_MASTER_CLOCK       XTAL_11_2MHz
+#define MAIN_CPU_MASTER_CLOCK       XTAL(11'200'000)
 #define PIXEL_CLOCK                 (MAIN_CPU_MASTER_CLOCK / 2)
 #define CRTC_CLOCK                  (MAIN_CPU_MASTER_CLOCK / 16)
-#define AUDIO_1_MASTER_CLOCK        XTAL_4MHz
+#define AUDIO_1_MASTER_CLOCK        XTAL(4'000'000)
 #define AUDIO_CPU_1_CLOCK           AUDIO_1_MASTER_CLOCK
-#define AUDIO_2_MASTER_CLOCK        XTAL_4MHz
+#define AUDIO_2_MASTER_CLOCK        XTAL(4'000'000)
 #define AUDIO_CPU_2_CLOCK           AUDIO_2_MASTER_CLOCK
 
 
 class nyny_state : public driver_device
 {
 public:
-	nyny_state(const machine_config &mconfig, device_type type, const char *tag)
-		: driver_device(mconfig, type, tag),
-		m_videoram1(*this, "videoram1"),
-		m_colorram1(*this, "colorram1"),
-		m_videoram2(*this, "videoram2"),
-		m_colorram2(*this, "colorram2"),
+	nyny_state(const machine_config &mconfig, device_type type, const char *tag) :
+		driver_device(mconfig, type, tag),
+		m_videoram(*this, "videoram%u", 1U),
+		m_colorram(*this, "colorram%u", 1U),
 		m_maincpu(*this, "maincpu"),
 		m_audiocpu(*this, "audiocpu"),
 		m_audiocpu2(*this, "audio2"),
@@ -100,19 +106,25 @@ public:
 		m_mc6845(*this, "crtc"),
 		m_palette(*this, "palette"),
 		m_pia1(*this, "pia1"),
-		m_pia2(*this, "pia2") { }
+		m_pia2(*this, "pia2"),
+		m_soundlatch(*this, "soundlatch"),
+		m_soundlatch2(*this, "soundlatch2"),
+		m_soundlatch3(*this, "soundlatch3")
+	{ }
 
+	void nyny(machine_config &config);
+
+private:
 	/* memory pointers */
-	required_shared_ptr<UINT8> m_videoram1;
-	required_shared_ptr<UINT8> m_colorram1;
-	required_shared_ptr<UINT8> m_videoram2;
-	required_shared_ptr<UINT8> m_colorram2;
+	required_shared_ptr_array<uint8_t, 4> m_videoram;
+	required_shared_ptr_array<uint8_t, 2> m_colorram;
 
 	/* video-related */
-	int      m_flipscreen;
-	UINT8    m_star_enable;
-	UINT16   m_star_delay_counter;
-	UINT16   m_star_shift_reg;
+	bool     m_flipscreen;
+	bool     m_flipchars;
+	uint8_t    m_star_enable;
+	uint16_t   m_star_delay_counter;
+	uint16_t   m_star_shift_reg;
 
 	/* devices */
 	required_device<cpu_device> m_maincpu;
@@ -123,27 +135,33 @@ public:
 	required_device<palette_device> m_palette;
 	required_device<pia6821_device> m_pia1;
 	required_device<pia6821_device> m_pia2;
+	required_device<generic_latch_8_device> m_soundlatch;
+	required_device<generic_latch_8_device> m_soundlatch2;
+	required_device<generic_latch_8_device> m_soundlatch3;
 
-	DECLARE_WRITE8_MEMBER(audio_1_command_w);
-	DECLARE_WRITE8_MEMBER(audio_1_answer_w);
-	DECLARE_WRITE8_MEMBER(audio_2_command_w);
-	DECLARE_READ8_MEMBER(nyny_pia_1_2_r);
-	DECLARE_WRITE8_MEMBER(nyny_pia_1_2_w);
+	void audio_1_command_w(uint8_t data);
+	void audio_1_answer_w(uint8_t data);
+	void audio_2_command_w(uint8_t data);
+	uint8_t nyny_pia_1_2_r(offs_t offset);
+	void nyny_pia_1_2_w(offs_t offset, uint8_t data);
 	DECLARE_WRITE_LINE_MEMBER(main_cpu_irq);
 	DECLARE_WRITE_LINE_MEMBER(main_cpu_firq);
-	DECLARE_WRITE8_MEMBER(pia_2_port_a_w);
-	DECLARE_WRITE8_MEMBER(pia_2_port_b_w);
+	void pia_2_port_a_w(uint8_t data);
+	void pia_2_port_b_w(uint8_t data);
 	DECLARE_WRITE_LINE_MEMBER(flipscreen_w);
-	DECLARE_WRITE_LINE_MEMBER(display_enable_changed);
-	DECLARE_WRITE8_MEMBER(nyny_ay8910_37_port_a_w);
+	DECLARE_WRITE_LINE_MEMBER(flipchars_w);
+	void nyny_ay8910_37_port_a_w(uint8_t data);
 	virtual void machine_start() override;
 	virtual void machine_reset() override;
 	INTERRUPT_GEN_MEMBER(update_pia_1);
-	DECLARE_WRITE8_MEMBER(ic48_1_74123_output_changed);
+	DECLARE_WRITE_LINE_MEMBER(ic48_1_74123_output_changed);
 	inline void shift_star_generator(  );
 
 	MC6845_UPDATE_ROW(crtc_update_row);
 	MC6845_END_UPDATE(crtc_end_update);
+	void audio_1_map(address_map &map);
+	void audio_2_map(address_map &map);
+	void main_map(address_map &map);
 };
 
 
@@ -197,13 +215,13 @@ INTERRUPT_GEN_MEMBER(nyny_state::update_pia_1)
  *
  *************************************/
 
-WRITE8_MEMBER(nyny_state::pia_2_port_a_w)
+void nyny_state::pia_2_port_a_w(uint8_t data)
 {
 	m_star_delay_counter = (m_star_delay_counter & 0x0f00) | data;
 }
 
 
-WRITE8_MEMBER(nyny_state::pia_2_port_b_w)
+void nyny_state::pia_2_port_b_w(uint8_t data)
 {
 	/* bits 0-3 go to bits 8-11 of the star delay counter */
 	m_star_delay_counter = (m_star_delay_counter & 0x00ff) | ((data & 0x0f) << 8);
@@ -212,7 +230,7 @@ WRITE8_MEMBER(nyny_state::pia_2_port_b_w)
 	m_star_enable = data & 0x10;
 
 	/* bits 5-7 go to the music board connector */
-	audio_2_command_w(m_maincpu->space(AS_PROGRAM), 0, data & 0xe0);
+	audio_2_command_w(data & 0xe0);
 }
 
 
@@ -228,9 +246,9 @@ WRITE8_MEMBER(nyny_state::pia_2_port_b_w)
  *
  *************************************/
 
-WRITE8_MEMBER(nyny_state::ic48_1_74123_output_changed)
+WRITE_LINE_MEMBER(nyny_state::ic48_1_74123_output_changed)
 {
-	m_pia2->ca1_w(data);
+	m_pia2->ca1_w(state);
 }
 
 /*************************************
@@ -242,51 +260,52 @@ WRITE8_MEMBER(nyny_state::ic48_1_74123_output_changed)
 
 WRITE_LINE_MEMBER(nyny_state::flipscreen_w)
 {
-	m_flipscreen = state ? 0 : 1;
+	m_flipscreen = !state;
+}
+
+
+WRITE_LINE_MEMBER(nyny_state::flipchars_w)
+{
+	m_flipchars = state;
 }
 
 
 MC6845_UPDATE_ROW( nyny_state::crtc_update_row )
 {
-	UINT8 x = 0;
+	uint32_t *pix = &bitmap.pix(y);
 
-	for (UINT8 cx = 0; cx < x_count; cx++)
+	for (uint8_t cx = 0; cx < x_count; cx++)
 	{
-		UINT8 data1, data2, color1, color2;
-
 		/* the memory is hooked up to the MA, RA lines this way */
-		offs_t offs = ((ma << 5) & 0x8000) |
-						((ma << 3) & 0x1f00) |
+		offs_t offs = ((ma << 3) & 0x3f00) |
 						((ra << 5) & 0x00e0) |
 						((ma << 0) & 0x001f);
 
 		if (m_flipscreen)
-			offs = offs ^ 0x9fff;
+			offs ^= 0x3fff;
 
-		data1 = m_videoram1[offs];
-		data2 = m_videoram2[offs];
-		color1 = m_colorram1[offs] & 0x07;
-		color2 = m_colorram2[offs] & 0x07;
+		uint8_t data1 = m_videoram[offs >= 0x2000 ? 2 : 0][offs & 0x1fff];
+		uint8_t data2 = m_videoram[offs >= 0x2000 ? 3 : 1][offs & 0x1fff];
+		uint8_t color1 = offs >= 0x2000 ? 0 : m_colorram[0][offs] & 0x07;
+		uint8_t color2 = offs >= 0x2000 ? 0 : m_colorram[1][offs] & 0x07;
 
 		for (int i = 0; i < 8; i++)
 		{
-			UINT8 bit1, bit2, color;
+			uint8_t bit1, bit2, color;
 
-			if (m_flipscreen)
+			if (m_flipchars)
 			{
 				bit1 = BIT(data1, 7);
 				bit2 = BIT(data2, 7);
-
-				data1 = data1 << 1;
-				data2 = data2 << 1;
+				data1 <<= 1;
+				data2 <<= 1;
 			}
 			else
 			{
 				bit1 = BIT(data1, 0);
 				bit2 = BIT(data2, 0);
-
-				data1 = data1 >> 1;
-				data2 = data2 >> 1;
+				data1 >>= 1;
+				data2 >>= 1;
 			}
 
 			/* plane 1 has priority over plane 2 */
@@ -295,12 +314,10 @@ MC6845_UPDATE_ROW( nyny_state::crtc_update_row )
 			else
 				color = bit2 ? color2 : 0;
 
-			bitmap.pix32(y, x) = m_palette->pen_color(color);
-
-			x += 1;
+			*pix++ = m_palette->pen_color(color);
 		}
 
-		ma += 1;
+		ma++;
 	}
 }
 
@@ -314,22 +331,22 @@ void nyny_state::shift_star_generator(  )
 MC6845_END_UPDATE( nyny_state::crtc_end_update )
 {
 	/* draw the star field into the bitmap */
-	UINT16 delay_counter = m_star_delay_counter;
+	uint16_t delay_counter = m_star_delay_counter;
 
 	for (int y = cliprect.min_y; y <= cliprect.max_y; y++)
 	{
 		for (int x = cliprect.min_x; x <= cliprect.max_x; x++)
 		{
 			/* check if the star status */
-			if (m_star_enable && (bitmap.pix32(y, x) == m_palette->pen_color(0)) &&
+			if (m_star_enable && (bitmap.pix(y, x) == m_palette->pen_color(0)) &&
 				((m_star_shift_reg & 0x80ff) == 0x00ff) &&
 				(((y & 0x01) ^ m_flipscreen) ^ (((x & 0x08) >> 3) ^ m_flipscreen)))
 			{
-				UINT8 color = ((m_star_shift_reg & 0x0100) >>  8) |  /* R */
+				uint8_t color = ((m_star_shift_reg & 0x0100) >>  8) |  /* R */
 								((m_star_shift_reg & 0x0400) >>  9) |    /* G */
 								((m_star_shift_reg & 0x1000) >> 10);     /* B */
 
-				bitmap.pix32(y, x) = m_palette->pen_color(color);
+				bitmap.pix(y, x) = m_palette->pen_color(color);
 			}
 
 			if (delay_counter == 0)
@@ -341,11 +358,6 @@ MC6845_END_UPDATE( nyny_state::crtc_end_update )
 }
 
 
-WRITE_LINE_MEMBER(nyny_state::display_enable_changed)
-{
-	m_ic48_1->a_w(generic_space(), 0, state);
-}
-
 
 /*************************************
  *
@@ -353,25 +365,25 @@ WRITE_LINE_MEMBER(nyny_state::display_enable_changed)
  *
  *************************************/
 
-WRITE8_MEMBER(nyny_state::audio_1_command_w)
+void nyny_state::audio_1_command_w(uint8_t data)
 {
-	soundlatch_byte_w(space, 0, data);
-	m_audiocpu->set_input_line(M6800_IRQ_LINE, HOLD_LINE);
+	m_soundlatch->write(data);
+	m_audiocpu->set_input_line(M6802_IRQ_LINE, HOLD_LINE);
 }
 
 
-WRITE8_MEMBER(nyny_state::audio_1_answer_w)
+void nyny_state::audio_1_answer_w(uint8_t data)
 {
-	soundlatch3_byte_w(space, 0, data);
+	m_soundlatch3->write(data);
 	m_maincpu->set_input_line(M6809_IRQ_LINE, HOLD_LINE);
 }
 
 
-WRITE8_MEMBER(nyny_state::nyny_ay8910_37_port_a_w)
+void nyny_state::nyny_ay8910_37_port_a_w(uint8_t data)
 {
 	/* not sure what this does */
 
-	/*logerror("%x PORT A write %x at  Y=%x X=%x\n", space.device().safe_pc(), data, m_screen->vpos(), m_screen->hpos());*/
+	/*logerror("%s PORT A write %x at  Y=%x X=%x\n", machine().describe_context(), data, m_screen->vpos(), m_screen->hpos());*/
 }
 
 /*************************************
@@ -380,10 +392,10 @@ WRITE8_MEMBER(nyny_state::nyny_ay8910_37_port_a_w)
  *
  *************************************/
 
-WRITE8_MEMBER(nyny_state::audio_2_command_w)
+void nyny_state::audio_2_command_w(uint8_t data)
 {
-	soundlatch2_byte_w(space, 0, (data & 0x60) >> 5);
-	m_audiocpu2->set_input_line(M6800_IRQ_LINE, BIT(data, 7) ? CLEAR_LINE : ASSERT_LINE);
+	m_soundlatch2->write((data & 0x60) >> 5);
+	m_audiocpu2->set_input_line(M6802_IRQ_LINE, BIT(data, 7) ? CLEAR_LINE : ASSERT_LINE);
 }
 
 
@@ -394,71 +406,72 @@ WRITE8_MEMBER(nyny_state::audio_2_command_w)
  *
  *************************************/
 
-READ8_MEMBER(nyny_state::nyny_pia_1_2_r)
+uint8_t nyny_state::nyny_pia_1_2_r(offs_t offset)
 {
-	UINT8 ret = 0;
+	uint8_t ret = 0;
 
 	/* the address bits are directly connected to the chip selects */
-	if (BIT(offset, 2))  ret = m_pia1->read(space, offset & 0x03);
-	if (BIT(offset, 3))  ret = m_pia2->read_alt(space, offset & 0x03);
+	if (BIT(offset, 2))  ret = m_pia1->read(offset & 0x03);
+	if (BIT(offset, 3))  ret = m_pia2->read_alt(offset & 0x03);
 
 	return ret;
 }
 
 
-WRITE8_MEMBER(nyny_state::nyny_pia_1_2_w)
+void nyny_state::nyny_pia_1_2_w(offs_t offset, uint8_t data)
 {
 	/* the address bits are directly connected to the chip selects */
-	if (BIT(offset, 2))  m_pia1->write(space, offset & 0x03, data);
-	if (BIT(offset, 3))  m_pia2->write_alt(space, offset & 0x03, data);
+	if (BIT(offset, 2))  m_pia1->write(offset & 0x03, data);
+	if (BIT(offset, 3))  m_pia2->write_alt(offset & 0x03, data);
 }
 
 
-static ADDRESS_MAP_START( nyny_main_map, AS_PROGRAM, 8, nyny_state )
-	AM_RANGE(0x0000, 0x1fff) AM_RAM AM_SHARE("videoram1")
-	AM_RANGE(0x2000, 0x3fff) AM_RAM AM_SHARE("colorram1")
-	AM_RANGE(0x4000, 0x5fff) AM_RAM AM_SHARE("videoram2")
-	AM_RANGE(0x6000, 0x7fff) AM_RAM AM_SHARE("colorram2")
-	AM_RANGE(0x8000, 0x9fff) AM_RAM
-	AM_RANGE(0xa000, 0xa0ff) AM_RAM AM_SHARE("nvram") /* SRAM (coin counter, shown when holding F2) */
-	AM_RANGE(0xa100, 0xa100) AM_MIRROR(0x00fe) AM_DEVWRITE("crtc", mc6845_device, address_w)
-	AM_RANGE(0xa101, 0xa101) AM_MIRROR(0x00fe) AM_DEVWRITE("crtc", mc6845_device, register_w)
-	AM_RANGE(0xa200, 0xa20f) AM_MIRROR(0x00f0) AM_READWRITE(nyny_pia_1_2_r, nyny_pia_1_2_w)
-	AM_RANGE(0xa300, 0xa300) AM_MIRROR(0x00ff) AM_READ(soundlatch3_byte_r) AM_WRITE(audio_1_command_w)
-	AM_RANGE(0xa400, 0xa7ff) AM_NOP
-	AM_RANGE(0xa800, 0xbfff) AM_ROM
-	AM_RANGE(0xc000, 0xdfff) AM_RAM
-	AM_RANGE(0xe000, 0xffff) AM_ROM
-ADDRESS_MAP_END
+void nyny_state::main_map(address_map &map)
+{
+	map(0x0000, 0x1fff).ram().share("videoram1");
+	map(0x2000, 0x3fff).ram().share("colorram1");
+	map(0x4000, 0x5fff).ram().share("videoram2");
+	map(0x6000, 0x7fff).ram().share("colorram2");
+	map(0x8000, 0x9fff).ram().share("videoram3");
+	map(0xa000, 0xa0ff).ram().share("nvram"); /* SRAM (coin counter, shown when holding F2) */
+	map(0xa100, 0xa100).mirror(0x00fe).w(m_mc6845, FUNC(mc6845_device::address_w));
+	map(0xa101, 0xa101).mirror(0x00fe).w(m_mc6845, FUNC(mc6845_device::register_w));
+	map(0xa200, 0xa20f).mirror(0x00f0).rw(FUNC(nyny_state::nyny_pia_1_2_r), FUNC(nyny_state::nyny_pia_1_2_w));
+	map(0xa300, 0xa300).mirror(0x00ff).r(m_soundlatch3, FUNC(generic_latch_8_device::read)).w(FUNC(nyny_state::audio_1_command_w));
+	map(0xa400, 0xa7ff).noprw();
+	map(0xa800, 0xbfff).rom();
+	map(0xc000, 0xdfff).ram().share("videoram4");
+	map(0xe000, 0xffff).rom();
+}
 
 
-static ADDRESS_MAP_START( nyny_audio_1_map, AS_PROGRAM, 8, nyny_state )
-	ADDRESS_MAP_GLOBAL_MASK(0x7fff)
-	AM_RANGE(0x0000, 0x007f) AM_RAM     /* internal RAM */
-	AM_RANGE(0x0080, 0x0fff) AM_NOP
-	AM_RANGE(0x1000, 0x1000) AM_MIRROR(0x0fff) AM_READ(soundlatch_byte_r) AM_WRITE(audio_1_answer_w)
-	AM_RANGE(0x2000, 0x2000) AM_MIRROR(0x0fff) AM_READ_PORT("SW3")
-	AM_RANGE(0x3000, 0x3000) AM_MIRROR(0x0ffc) AM_DEVREAD("ay1", ay8910_device, data_r)
-	AM_RANGE(0x3000, 0x3001) AM_MIRROR(0x0ffc) AM_DEVWRITE("ay1", ay8910_device, data_address_w)
-	AM_RANGE(0x3002, 0x3002) AM_MIRROR(0x0ffc) AM_DEVREAD("ay2", ay8910_device, data_r)
-	AM_RANGE(0x3002, 0x3003) AM_MIRROR(0x0ffc) AM_DEVWRITE("ay2", ay8910_device, data_address_w)
-	AM_RANGE(0x4000, 0x4fff) AM_NOP
-	AM_RANGE(0x5000, 0x57ff) AM_MIRROR(0x0800) AM_ROM
-	AM_RANGE(0x6000, 0x67ff) AM_MIRROR(0x0800) AM_ROM
-	AM_RANGE(0x7000, 0x77ff) AM_MIRROR(0x0800) AM_ROM
-ADDRESS_MAP_END
+void nyny_state::audio_1_map(address_map &map)
+{
+	map.global_mask(0x7fff);
+	map(0x0080, 0x0fff).noprw();
+	map(0x1000, 0x1000).mirror(0x0fff).r(m_soundlatch, FUNC(generic_latch_8_device::read)).w(FUNC(nyny_state::audio_1_answer_w));
+	map(0x2000, 0x2000).mirror(0x0fff).portr("SW3");
+	map(0x3000, 0x3000).mirror(0x0ffc).r("ay1", FUNC(ay8910_device::data_r));
+	map(0x3000, 0x3001).mirror(0x0ffc).w("ay1", FUNC(ay8910_device::data_address_w));
+	map(0x3002, 0x3002).mirror(0x0ffc).r("ay2", FUNC(ay8910_device::data_r));
+	map(0x3002, 0x3003).mirror(0x0ffc).w("ay2", FUNC(ay8910_device::data_address_w));
+	map(0x4000, 0x4fff).noprw();
+	map(0x5000, 0x57ff).mirror(0x0800).rom();
+	map(0x6000, 0x67ff).mirror(0x0800).rom();
+	map(0x7000, 0x77ff).mirror(0x0800).rom();
+}
 
 
-static ADDRESS_MAP_START( nyny_audio_2_map, AS_PROGRAM, 8, nyny_state )
-	ADDRESS_MAP_GLOBAL_MASK(0x7fff)
-	AM_RANGE(0x0000, 0x007f) AM_RAM     /* internal RAM */
-	AM_RANGE(0x0080, 0x0fff) AM_NOP
-	AM_RANGE(0x1000, 0x1000) AM_MIRROR(0x0fff) AM_READ(soundlatch2_byte_r)
-	AM_RANGE(0x2000, 0x2000) AM_MIRROR(0x0ffe) AM_DEVREAD("ay3", ay8910_device, data_r)
-	AM_RANGE(0x2000, 0x2001) AM_MIRROR(0x0ffe) AM_DEVWRITE("ay3", ay8910_device, data_address_w)
-	AM_RANGE(0x3000, 0x6fff) AM_NOP
-	AM_RANGE(0x7000, 0x77ff) AM_MIRROR(0x0800) AM_ROM
-ADDRESS_MAP_END
+void nyny_state::audio_2_map(address_map &map)
+{
+	map.global_mask(0x7fff);
+	map(0x0080, 0x0fff).noprw();
+	map(0x1000, 0x1000).mirror(0x0fff).r(m_soundlatch2, FUNC(generic_latch_8_device::read));
+	map(0x2000, 0x2000).mirror(0x0ffe).r("ay3", FUNC(ay8910_device::data_r));
+	map(0x2000, 0x2001).mirror(0x0ffe).w("ay3", FUNC(ay8910_device::data_address_w));
+	map(0x3000, 0x6fff).noprw();
+	map(0x7000, 0x77ff).mirror(0x0800).rom();
+}
 
 
 
@@ -556,8 +569,12 @@ INPUT_PORTS_END
 
 void nyny_state::machine_start()
 {
+	m_flipscreen = false;
+	m_flipchars = false;
+
 	/* setup for save states */
 	save_item(NAME(m_flipscreen));
+	save_item(NAME(m_flipchars));
 	save_item(NAME(m_star_enable));
 	save_item(NAME(m_star_delay_counter));
 	save_item(NAME(m_star_shift_reg));
@@ -565,7 +582,6 @@ void nyny_state::machine_start()
 
 void nyny_state::machine_reset()
 {
-	m_flipscreen = 0;
 	m_star_enable = 0;
 	m_star_delay_counter = 0;
 	m_star_shift_reg = 0;
@@ -577,77 +593,81 @@ void nyny_state::machine_reset()
  *
  *************************************/
 
-static MACHINE_CONFIG_START( nyny, nyny_state )
-
+void nyny_state::nyny(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", M6809, 1400000) /* 1.40 MHz? The clock signal is generated by analog chips */
-	MCFG_CPU_PROGRAM_MAP(nyny_main_map)
-	MCFG_CPU_PERIODIC_INT_DRIVER(nyny_state, update_pia_1,  25)
+	MC6809(config, m_maincpu, 5600000); /* 1.40 MHz? The clock signal is generated by analog chips */
+	m_maincpu->set_addrmap(AS_PROGRAM, &nyny_state::main_map);
+	m_maincpu->set_periodic_int(FUNC(nyny_state::update_pia_1), attotime::from_hz(25));
 
-	MCFG_CPU_ADD("audiocpu", M6802, AUDIO_CPU_1_CLOCK)
-	MCFG_CPU_PROGRAM_MAP(nyny_audio_1_map)
+	M6802(config, m_audiocpu, AUDIO_CPU_1_CLOCK);
+	m_audiocpu->set_addrmap(AS_PROGRAM, &nyny_state::audio_1_map);
 
-	MCFG_CPU_ADD("audio2", M6802, AUDIO_CPU_2_CLOCK)
-	MCFG_CPU_PROGRAM_MAP(nyny_audio_2_map)
+	M6802(config, m_audiocpu2, AUDIO_CPU_2_CLOCK);
+	m_audiocpu2->set_addrmap(AS_PROGRAM, &nyny_state::audio_2_map);
 
-	MCFG_NVRAM_ADD_0FILL("nvram")
+	NVRAM(config, "nvram", nvram_device::DEFAULT_ALL_0);
 
 	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_RAW_PARAMS(PIXEL_CLOCK, 256, 0, 256, 256, 0, 256)   /* temporary, CRTC will configure screen */
-	MCFG_SCREEN_UPDATE_DEVICE("crtc", mc6845_device, screen_update)
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_RASTER));
+	screen.set_raw(PIXEL_CLOCK, 360, 0, 256, 276, 0, 224);
+	screen.set_screen_update("crtc", FUNC(mc6845_device::screen_update));
 
-	MCFG_PALETTE_ADD_3BIT_RGB("palette")
+	PALETTE(config, m_palette, palette_device::RGB_3BIT);
 
-	MCFG_MC6845_ADD("crtc", MC6845, "screen", CRTC_CLOCK)
-	MCFG_MC6845_SHOW_BORDER_AREA(false)
-	MCFG_MC6845_CHAR_WIDTH(8)
-	MCFG_MC6845_UPDATE_ROW_CB(nyny_state, crtc_update_row)
-	MCFG_MC6845_END_UPDATE_CB(nyny_state, crtc_end_update)
-	MCFG_MC6845_OUT_DE_CB(WRITELINE(nyny_state, display_enable_changed))
+	MC6845(config, m_mc6845, CRTC_CLOCK); // HD46505P
+	m_mc6845->set_screen("screen");
+	m_mc6845->set_show_border_area(false);
+	m_mc6845->set_char_width(8);
+	m_mc6845->set_update_row_callback(FUNC(nyny_state::crtc_update_row));
+	m_mc6845->set_end_update_callback(FUNC(nyny_state::crtc_end_update));
+	m_mc6845->out_de_callback().set(m_ic48_1, FUNC(ttl74123_device::a_w));
 
 	/* 74LS123 */
-	MCFG_DEVICE_ADD("ic48_1", TTL74123, 0)
-	MCFG_TTL74123_CONNECTION_TYPE(TTL74123_GROUNDED)    /* the hook up type */
-	MCFG_TTL74123_RESISTOR_VALUE(RES_K(22))               /* resistor connected to RCext */
-	MCFG_TTL74123_CAPACITOR_VALUE(CAP_U(0.01))               /* capacitor connected to Cext and RCext */
-	MCFG_TTL74123_A_PIN_VALUE(1)                  /* A pin - driven by the CRTC */
-	MCFG_TTL74123_B_PIN_VALUE(1)                  /* B pin - pulled high */
-	MCFG_TTL74123_CLEAR_PIN_VALUE(1)                  /* Clear pin - pulled high */
-	MCFG_TTL74123_OUTPUT_CHANGED_CB(WRITE8(nyny_state, ic48_1_74123_output_changed))
+	TTL74123(config, m_ic48_1, 0);
+	m_ic48_1->set_connection_type(TTL74123_GROUNDED);   /* the hook up type */
+	m_ic48_1->set_resistor_value(RES_K(22));            /* resistor connected to RCext */
+	m_ic48_1->set_capacitor_value(CAP_U(0.01));         /* capacitor connected to Cext and RCext */
+	m_ic48_1->set_a_pin_value(1);                       /* A pin - driven by the CRTC */
+	m_ic48_1->set_b_pin_value(1);                       /* B pin - pulled high */
+	m_ic48_1->set_clear_pin_value(1);                   /* Clear pin - pulled high */
+	m_ic48_1->out_cb().set(FUNC(nyny_state::ic48_1_74123_output_changed));
 
-	MCFG_DEVICE_ADD("pia1", PIA6821, 0)
-	MCFG_PIA_READPA_HANDLER(IOPORT("IN0"))
-	MCFG_PIA_READPB_HANDLER(IOPORT("IN1"))
-	MCFG_PIA_IRQA_HANDLER(WRITELINE(nyny_state, main_cpu_irq))
-	MCFG_PIA_IRQB_HANDLER(WRITELINE(nyny_state, main_cpu_irq))
+	PIA6821(config, m_pia1);
+	m_pia1->readpa_handler().set_ioport("IN0");
+	m_pia1->readpb_handler().set_ioport("IN1");
+	m_pia1->irqa_handler().set(FUNC(nyny_state::main_cpu_irq));
+	m_pia1->irqb_handler().set(FUNC(nyny_state::main_cpu_irq));
 
-	MCFG_DEVICE_ADD("pia2", PIA6821, 0)
-	MCFG_PIA_WRITEPA_HANDLER(WRITE8(nyny_state,pia_2_port_a_w))
-	MCFG_PIA_WRITEPB_HANDLER(WRITE8(nyny_state,pia_2_port_b_w))
-	MCFG_PIA_CA2_HANDLER(WRITELINE(nyny_state,flipscreen_w))
-	MCFG_PIA_IRQA_HANDLER(WRITELINE(nyny_state,main_cpu_firq))
-	MCFG_PIA_IRQB_HANDLER(WRITELINE(nyny_state,main_cpu_irq))
+	PIA6821(config, m_pia2);
+	m_pia2->writepa_handler().set(FUNC(nyny_state::pia_2_port_a_w));
+	m_pia2->writepb_handler().set(FUNC(nyny_state::pia_2_port_b_w));
+	m_pia2->ca2_handler().set(FUNC(nyny_state::flipscreen_w));
+	m_pia2->cb2_handler().set(FUNC(nyny_state::flipchars_w));
+	m_pia2->irqa_handler().set(FUNC(nyny_state::main_cpu_firq));
+	m_pia2->irqb_handler().set(FUNC(nyny_state::main_cpu_irq));
 
 	/* audio hardware */
-	MCFG_SPEAKER_STANDARD_MONO("mono")
+	SPEAKER(config, "speaker").front_center();
 
-	MCFG_SOUND_ADD("ay1", AY8910, AUDIO_CPU_1_CLOCK)
-	MCFG_AY8910_PORT_A_WRITE_CB(WRITE8(nyny_state, nyny_ay8910_37_port_a_w))
-	MCFG_AY8910_PORT_B_WRITE_CB(DEVWRITE8("dac", dac_device, write_unsigned8))
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.25)
+	GENERIC_LATCH_8(config, m_soundlatch);
+	GENERIC_LATCH_8(config, m_soundlatch2);
+	GENERIC_LATCH_8(config, m_soundlatch3);
 
-	MCFG_SOUND_ADD("ay2", AY8910, AUDIO_CPU_1_CLOCK)
-	MCFG_AY8910_PORT_A_READ_CB(IOPORT("SW2"))
-	MCFG_AY8910_PORT_B_READ_CB(IOPORT("SW1"))
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.25)
+	ay8910_device &ay1(AY8910(config, "ay1", AUDIO_CPU_1_CLOCK));
+	ay1.port_a_write_callback().set(FUNC(nyny_state::nyny_ay8910_37_port_a_w));
+	ay1.port_b_write_callback().set("dac", FUNC(dac_byte_interface::data_w));
+	ay1.add_route(ALL_OUTPUTS, "speaker", 0.25);
 
-	MCFG_SOUND_ADD("ay3", AY8910, AUDIO_CPU_2_CLOCK)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.03)
+	ay8910_device &ay2(AY8910(config, "ay2", AUDIO_CPU_1_CLOCK));
+	ay2.port_a_read_callback().set_ioport("SW2");
+	ay2.port_b_read_callback().set_ioport("SW1");
+	ay2.add_route(ALL_OUTPUTS, "speaker", 0.25);
 
-	MCFG_DAC_ADD("dac")
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.50)
-MACHINE_CONFIG_END
+	AY8910(config, "ay3", AUDIO_CPU_2_CLOCK).add_route(ALL_OUTPUTS, "speaker", 0.03);
+
+	DAC_8BIT_R2R(config, "dac", 0).add_route(ALL_OUTPUTS, "speaker", 0.25); // unknown DAC
+}
 
 
 
@@ -659,21 +679,21 @@ MACHINE_CONFIG_END
 
 ROM_START( nyny )
 	ROM_REGION(0x10000, "maincpu", 0)   /* main CPU */
-	ROM_LOAD( "nyny01s.100",  0xa800, 0x0800, CRC(a2b76eca) SHA1(e46717e6ad330be4c4e7d9fab4f055f89aa31bcc) )
-	ROM_LOAD( "nyny02s.099",  0xb000, 0x0800, CRC(ef2d4dae) SHA1(718c0ecf7770a780aebb1dc8bf4ca86ea0a5ea28) )
-	ROM_LOAD( "nyny03s.098",  0xb800, 0x0800, CRC(2734c229) SHA1(b028d057d26838bae50b8ddb90a3755b5315b4ee) )
-	ROM_LOAD( "nyny04s.097",  0xe000, 0x0800, CRC(bd94087f) SHA1(02dde604bb84097fcd95c434847c55198b4e4309) )
-	ROM_LOAD( "nyny05s.096",  0xe800, 0x0800, CRC(248b22c4) SHA1(d64d89bf78fa19d36e02720c296a60621ab8fe21) )
-	ROM_LOAD( "nyny06s.095",  0xf000, 0x0800, CRC(8c073052) SHA1(0ce103ac0e79124ac9f1e097dda1a0664b92b89b) )
-	ROM_LOAD( "nyny07s.094",  0xf800, 0x0800, CRC(d49d7429) SHA1(c12eaae7ba0b1d44c45a584232db03c5731c046a) )
+	ROM_LOAD( "nyny01s.100",  0xa800, 0x0800, CRC(a2b76eca) SHA1(e46717e6ad330be4c4e7d9fab4f055f89aa31bcc) ) // NE01.IC10.2716 on Taito PCB
+	ROM_LOAD( "nyny02s.099",  0xb000, 0x0800, CRC(ef2d4dae) SHA1(718c0ecf7770a780aebb1dc8bf4ca86ea0a5ea28) ) // NE02.IC99.2716 on Taito PCB
+	ROM_LOAD( "nyny03s.098",  0xb800, 0x0800, CRC(2734c229) SHA1(b028d057d26838bae50b8ddb90a3755b5315b4ee) ) // NE03.IC98.2716 on Taito PCB
+	ROM_LOAD( "nyny04s.097",  0xe000, 0x0800, CRC(bd94087f) SHA1(02dde604bb84097fcd95c434847c55198b4e4309) ) // NE04.IC97.2716 on Taito PCB
+	ROM_LOAD( "nyny05s.096",  0xe800, 0x0800, CRC(248b22c4) SHA1(d64d89bf78fa19d36e02720c296a60621ab8fe21) ) // NE05.IC96.2716 on Taito PCB
+	ROM_LOAD( "nyny06s.095",  0xf000, 0x0800, CRC(8c073052) SHA1(0ce103ac0e79124ac9f1e097dda1a0664b92b89b) ) // NE06.IC95.2716 on Taito PCB
+	ROM_LOAD( "nyny07s.094",  0xf800, 0x0800, CRC(d49d7429) SHA1(c12eaae7ba0b1d44c45a584232db03c5731c046a) ) // NE07.IC94.2716 on Taito PCB
 
 	ROM_REGION(0x10000, "audiocpu", 0)  /* first audio CPU */
-	ROM_LOAD( "nyny08.093",   0x5000, 0x0800, CRC(19ddb6c3) SHA1(0097fad542f9a33849565093c2fb106d90007b1a) )
-	ROM_LOAD( "nyny09.092",   0x6000, 0x0800, CRC(a359c6f1) SHA1(1bc7b487581399908c3cec823733810fb6d944ce) )
-	ROM_LOAD( "nyny10.091",   0x7000, 0x0800, CRC(a72a70fa) SHA1(deed7dec9cc43fa1d6c4854ba18169c894c9a2f0) )
+	ROM_LOAD( "nyny08.093",   0x5000, 0x0800, CRC(19ddb6c3) SHA1(0097fad542f9a33849565093c2fb106d90007b1a) ) // NE08.IC93.2716 on Taito PCB
+	ROM_LOAD( "nyny09.092",   0x6000, 0x0800, CRC(a359c6f1) SHA1(1bc7b487581399908c3cec823733810fb6d944ce) ) // NE09.IC92.2716 on Taito PCB
+	ROM_LOAD( "nyny10.091",   0x7000, 0x0800, CRC(a72a70fa) SHA1(deed7dec9cc43fa1d6c4854ba18169c894c9a2f0) ) // NE10.IC91.2716 on Taito PCB
 
 	ROM_REGION(0x10000, "audio2", 0) /* second audio CPU */
-	ROM_LOAD( "nyny11.snd",   0x7000, 0x0800, CRC(650450fc) SHA1(214693df394ca05eff5dbe1e800107d326ba80f6) )
+	ROM_LOAD( "nyny11.snd",   0x7000, 0x0800, CRC(650450fc) SHA1(214693df394ca05eff5dbe1e800107d326ba80f6) ) // NE11.IC2.2516 on Taito PCB
 ROM_END
 
 
@@ -726,6 +746,6 @@ ROM_END
  *
  *************************************/
 
-GAME( 1980, nyny,    0,    nyny, nyny, driver_device, 0, ROT270, "Sigma Enterprises Inc.", "New York! New York!", MACHINE_IMPERFECT_SOUND | MACHINE_SUPPORTS_SAVE )
-GAME( 1980, nynyg,   nyny, nyny, nyny, driver_device, 0, ROT270, "Sigma Enterprises Inc. (Gottlieb license)", "New York! New York! (Gottlieb)", MACHINE_IMPERFECT_SOUND  | MACHINE_SUPPORTS_SAVE )
-GAME( 1980, warcadia,nyny, nyny, nyny, driver_device, 0, ROT270, "Sigma Enterprises Inc.", "Waga Seishun no Arcadia", MACHINE_IMPERFECT_SOUND | MACHINE_SUPPORTS_SAVE )
+GAME( 1980, nyny,    0,    nyny, nyny, nyny_state, empty_init, ROT270, "Sigma Enterprises Inc.", "New York! New York!", MACHINE_IMPERFECT_SOUND | MACHINE_SUPPORTS_SAVE )
+GAME( 1980, nynyg,   nyny, nyny, nyny, nyny_state, empty_init, ROT270, "Sigma Enterprises Inc. (Gottlieb license)", "New York! New York! (Gottlieb)", MACHINE_IMPERFECT_SOUND  | MACHINE_SUPPORTS_SAVE )
+GAME( 1980, warcadia,nyny, nyny, nyny, nyny_state, empty_init, ROT270, "Sigma Enterprises Inc.", "Waga Seishun no Arcadia", MACHINE_IMPERFECT_SOUND | MACHINE_SUPPORTS_SAVE )

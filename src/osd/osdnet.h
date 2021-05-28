@@ -1,9 +1,11 @@
 // license:BSD-3-Clause
 // copyright-holders:Carl
-#include "emu.h"
+#ifndef MAME_OSD_OSDNET_H
+#define MAME_OSD_OSDNET_H
 
-#ifndef __OSDNET_H__
-#define __OSDNET_H__
+#pragma once
+
+#include <algorithm>
 
 class osd_netdev;
 
@@ -15,16 +17,23 @@ class osd_netdev
 public:
 	struct entry_t
 	{
-		int id;
+		entry_t()
+		{
+			std::fill(std::begin(name), std::end(name), 0);
+			std::fill(std::begin(description), std::end(description), 0);
+		}
+
+		int id = 0;
 		char name[256];
 		char description[256];
-		create_netdev func;
-		entry_t *m_next;
+		create_netdev func = nullptr;
 	};
 	osd_netdev(class device_network_interface *ifdev, int rate);
 	virtual ~osd_netdev();
+	void start();
+	void stop();
 
-	virtual int send(UINT8 *buf, int len);
+	virtual int send(uint8_t *buf, int len);
 	virtual void set_mac(const char *mac);
 	virtual void set_promisc(bool promisc);
 
@@ -32,19 +41,19 @@ public:
 	bool get_promisc();
 
 protected:
-	virtual int recv_dev(UINT8 **buf);
+	virtual int recv_dev(uint8_t **buf);
 
 private:
 	void recv(void *ptr, int param);
 
 	class device_network_interface *m_dev;
 	emu_timer *m_timer;
-	bool m_stop;
 };
 
 class osd_netdev *open_netdev(int id, class device_network_interface *ifdev, int rate);
 void add_netdev(const char *name, const char *description, create_netdev func);
 void clear_netdev();
-const osd_netdev::entry_t *netdev_first();
+const std::vector<std::unique_ptr<osd_netdev::entry_t>>& get_netdev_list();
 int netdev_count();
-#endif
+
+#endif // MAME_OSD_OSDNET_H

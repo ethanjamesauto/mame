@@ -2,71 +2,47 @@
 // copyright-holders:Aaron Giles
 //============================================================
 //
-//  winutil.c - Win32 OSD core utility functions
+//  winutil.cpp - Win32 OSD core utility functions
 //
 //============================================================
 
 // standard windows headers
-#define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <direct.h>
+
+// MAME headers
+#include "emu.h"
 
 // MAMEOS headers
 #include "winutil.h"
-
-//============================================================
-//  win_error_to_file_error
-//============================================================
-
-file_error win_error_to_file_error(DWORD error)
-{
-	file_error filerr;
-
-	// convert a Windows error to a file_error
-	switch (error)
-	{
-		case ERROR_SUCCESS:
-			filerr = FILERR_NONE;
-			break;
-
-		case ERROR_OUTOFMEMORY:
-			filerr = FILERR_OUT_OF_MEMORY;
-			break;
-
-		case ERROR_FILE_NOT_FOUND:
-		case ERROR_FILENAME_EXCED_RANGE:
-		case ERROR_PATH_NOT_FOUND:
-			filerr = FILERR_NOT_FOUND;
-			break;
-
-		case ERROR_ACCESS_DENIED:
-			filerr = FILERR_ACCESS_DENIED;
-			break;
-
-		case ERROR_SHARING_VIOLATION:
-			filerr = FILERR_ALREADY_OPEN;
-			break;
-
-		default:
-			filerr = FILERR_FAILURE;
-			break;
-	}
-	return filerr;
-}
-
+#include "strconv.h"
+#include "timeconv.h"
 
 
 //============================================================
 //  win_attributes_to_entry_type
 //============================================================
 
-osd_dir_entry_type win_attributes_to_entry_type(DWORD attributes)
+osd::directory::entry::entry_type win_attributes_to_entry_type(DWORD attributes)
 {
 	if (attributes == 0xFFFFFFFF)
-		return ENTTYPE_NONE;
+		return osd::directory::entry::entry_type::NONE;
 	else if (attributes & FILE_ATTRIBUTE_DIRECTORY)
-		return ENTTYPE_DIR;
+		return osd::directory::entry::entry_type::DIR;
 	else
-		return ENTTYPE_FILE;
+		return osd::directory::entry::entry_type::FILE;
+}
+
+
+
+//============================================================
+//  win_time_point_from_filetime
+//============================================================
+
+std::chrono::system_clock::time_point win_time_point_from_filetime(LPFILETIME file_time)
+{
+	auto converted_file_time = util::ntfs_duration_from_filetime(file_time->dwHighDateTime, file_time->dwLowDateTime);
+	return util::system_clock_time_point_from_ntfs_duration(converted_file_time);
 }
 
 
@@ -75,7 +51,7 @@ osd_dir_entry_type win_attributes_to_entry_type(DWORD attributes)
 //  win_is_gui_application
 //============================================================
 
-BOOL win_is_gui_application(void)
+BOOL win_is_gui_application()
 {
 	static BOOL is_gui_frontend;
 	static BOOL is_first_time = TRUE;
@@ -120,6 +96,26 @@ BOOL win_is_gui_application(void)
 		}
 	}
 	return is_gui_frontend;
+}
+
+//============================================================
+//  osd_subst_env
+//============================================================
+void osd_subst_env(std::string &dst, const std::string &src)
+{
+	std::wstring const w_src = osd::text::to_wstring(src);
+	std::vector<wchar_t> buffer(w_src.size() + 2);
+	DWORD length(ExpandEnvironmentStringsW(w_src.c_str(), &buffer[0], buffer.size()));
+	while (length && (buffer.size() < length))
+	{
+		buffer.clear();
+		buffer.resize(length + 1);
+		length = ExpandEnvironmentStringsW(w_src.c_str(), &buffer[0], buffer.size());
+	}
+	if (length)
+		osd::text::from_wstring(dst, &buffer[0]);
+	else
+		dst.clear();
 }
 
 //-------------------------------------------------

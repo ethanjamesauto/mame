@@ -2,14 +2,15 @@
 // copyright-holders:Aaron Giles
 /***************************************************************************
 
-    devcpu.c
+    devcpu.cpp
 
     CPU device definitions.
 
 ***************************************************************************/
 
 #include "emu.h"
-#include <ctype.h>
+#include "emuopts.h"
+#include <cctype>
 
 
 //**************************************************************************
@@ -20,12 +21,13 @@
 //  cpu_device - constructor
 //-------------------------------------------------
 
-cpu_device::cpu_device(const machine_config &mconfig, device_type type, const char *name, const char *tag, device_t *owner, UINT32 clock, const char *shortname, const char *source)
-	: device_t(mconfig, type, name, tag, owner, clock, shortname, source),
+cpu_device::cpu_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, u32 clock)
+	: device_t(mconfig, type, tag, owner, clock),
 		device_execute_interface(mconfig, *this),
 		device_memory_interface(mconfig, *this),
 		device_state_interface(mconfig, *this),
-		device_disasm_interface(mconfig, *this)
+		device_disasm_interface(mconfig, *this),
+		m_force_no_drc(false)
 {
 }
 
@@ -36,4 +38,14 @@ cpu_device::cpu_device(const machine_config &mconfig, device_type type, const ch
 
 cpu_device::~cpu_device()
 {
+}
+
+
+//-------------------------------------------------
+//  allow_drc - return true if DRC is allowed
+//-------------------------------------------------
+
+bool cpu_device::allow_drc() const
+{
+	return mconfig().options().drc() && !m_force_no_drc;
 }

@@ -17,7 +17,7 @@
  *
  *************************************/
 
-void exidy_state::exidy_video_config(UINT8 _collision_mask, UINT8 _collision_invert, int _is_2bpp)
+void exidy_state::exidy_video_config(uint8_t _collision_mask, uint8_t _collision_invert, int _is_2bpp)
 {
 	m_collision_mask   = _collision_mask;
 	m_collision_invert = _collision_invert;
@@ -76,7 +76,7 @@ INTERRUPT_GEN_MEMBER(exidy_state::exidy_vblank_interrupt)
 
 
 
-READ8_MEMBER(exidy_state::exidy_interrupt_r)
+uint8_t exidy_state::exidy_interrupt_r()
 {
 	/* clear any interrupts */
 	m_maincpu->set_input_line(0, CLEAR_LINE);
@@ -128,18 +128,17 @@ void exidy_state::set_colors()
 
 void exidy_state::draw_background()
 {
+	const u8 *cram = m_characterram ? (u8 *)m_characterram : memregion("maincpu")->base() + 0x4800;
 	offs_t offs;
 
 	pen_t off_pen = 0;
 
 	for (offs = 0; offs < 0x400; offs++)
 	{
-		UINT8 cy;
+		uint8_t y = offs >> 5 << 3;
+		uint8_t const code = m_videoram[offs];
+
 		pen_t on_pen_1, on_pen_2;
-
-		UINT8 y = offs >> 5 << 3;
-		UINT8 code = m_videoram[offs];
-
 		if (m_is_2bpp)
 		{
 			on_pen_1 = 4 + ((code >> 6) & 0x02);
@@ -151,43 +150,42 @@ void exidy_state::draw_background()
 			on_pen_2 = off_pen;  /* unused */
 		}
 
-		for (cy = 0; cy < 8; cy++)
+		for (uint8_t cy = 0; cy < 8; cy++)
 		{
-			int i;
-			UINT8 x = offs << 3;
+			uint8_t x = offs << 3;
 
 			if (m_is_2bpp)
 			{
-				UINT8 data1 = m_characterram[0x000 | (code << 3) | cy];
-				UINT8 data2 = m_characterram[0x800 | (code << 3) | cy];
+				uint8_t data1 = cram[0x000 | (code << 3) | cy];
+				uint8_t data2 = cram[0x800 | (code << 3) | cy];
 
-				for (i = 0; i < 8; i++)
+				for (int i = 0; i < 8; i++)
 				{
 					if (data1 & 0x80)
-						m_background_bitmap.pix16(y, x) = (data2 & 0x80) ? on_pen_2 : on_pen_1;
+						m_background_bitmap.pix(y, x) = (data2 & 0x80) ? on_pen_2 : on_pen_1;
 					else
-						m_background_bitmap.pix16(y, x) = off_pen;
+						m_background_bitmap.pix(y, x) = off_pen;
 
-					x = x + 1;
-					data1 = data1 << 1;
-					data2 = data2 << 1;
+					x++;
+					data1 <<= 1;
+					data2 <<= 1;
 				}
 			}
 			/* 1bpp */
 			else
 			{
-				UINT8 data = m_characterram[(code << 3) | cy];
+				uint8_t data = cram[(code << 3) | cy];
 
-				for (i = 0; i < 8; i++)
+				for (int i = 0; i < 8; i++)
 				{
-					m_background_bitmap.pix16(y, x) = (data & 0x80) ? on_pen_1 : off_pen;
+					m_background_bitmap.pix(y, x) = (data & 0x80) ? on_pen_1 : off_pen;
 
-					x = x + 1;
-					data = data << 1;
+					x++;
+					data <<= 1;
 				}
 			}
 
-			y = y + 1;
+			y++;
 		}
 	}
 }
@@ -270,19 +268,18 @@ void exidy_state::device_timer(emu_timer &timer, device_timer_id id, int param, 
 
 		break;
 	default:
-		assert_always(FALSE, "Unknown id in exidy_state::device_timer");
+		throw emu_fatalerror("Unknown id in exidy_state::device_timer");
 	}
 }
 
 
 void exidy_state::check_collision()
 {
-	UINT8 sprite_set_1 = ((*m_sprite_enable & 0x20) != 0);
-	UINT8 sprite_set_2 = ((*m_sprite_enable & 0x40) != 0);
+	uint8_t sprite_set_1 = ((*m_sprite_enable & 0x20) != 0);
+	uint8_t sprite_set_2 = ((*m_sprite_enable & 0x40) != 0);
 	const rectangle clip(0, 15, 0, 15);
 	int org_1_x = 0, org_1_y = 0;
 	int org_2_x = 0, org_2_y = 0;
-	int sx, sy;
 	int count = 0;
 
 	/* if there is nothing to detect, bail */
@@ -312,27 +309,27 @@ void exidy_state::check_collision()
 	m_motion_object_2_clip.fill(0xff, clip);
 	if (sprite_1_enabled())
 	{
-		sx = org_2_x - org_1_x;
-		sy = org_2_y - org_1_y;
+		int sx = org_2_x - org_1_x;
+		int sy = org_2_y - org_1_y;
 		m_gfxdecode->gfx(0)->transpen(m_motion_object_2_clip,clip,
 				((*m_spriteno >> 4) & 0x0f) + 32 + 16 * sprite_set_2, 0,
 				0, 0, sx, sy, 0);
 	}
 
 	/* scan for collisions */
-	for (sy = 0; sy < 16; sy++)
-		for (sx = 0; sx < 16; sx++)
+	for (int sy = 0; sy < 16; sy++)
+		for (int sx = 0; sx < 16; sx++)
 		{
-			if (m_motion_object_1_vid.pix16(sy, sx) != 0xff)
+			if (m_motion_object_1_vid.pix(sy, sx) != 0xff)
 			{
-				UINT8 current_collision_mask = 0;
+				uint8_t current_collision_mask = 0;
 
 				/* check for background collision (M1CHAR) */
-				if (m_background_bitmap.pix16(org_1_y + sy, org_1_x + sx) != 0)
+				if (m_background_bitmap.pix(org_1_y + sy, org_1_x + sx) != 0)
 					current_collision_mask |= 0x04;
 
 				/* check for motion object collision (M1M2) */
-				if (m_motion_object_2_clip.pix16(sy, sx) != 0xff)
+				if (m_motion_object_2_clip.pix(sy, sx) != 0xff)
 					current_collision_mask |= 0x10;
 
 				/* if we got one, trigger an interrupt */
@@ -340,10 +337,10 @@ void exidy_state::check_collision()
 					timer_set(m_screen->time_until_pos(org_1_x + sx, org_1_y + sy), TIMER_COLLISION_IRQ, current_collision_mask);
 			}
 
-			if (m_motion_object_2_vid.pix16(sy, sx) != 0xff)
+			if (m_motion_object_2_vid.pix(sy, sx) != 0xff)
 			{
 				/* check for background collision (M2CHAR) */
-				if (m_background_bitmap.pix16(org_2_y + sy, org_2_x + sx) != 0)
+				if (m_background_bitmap.pix(org_2_y + sy, org_2_x + sx) != 0)
 					if ((m_collision_mask & 0x08) && (count++ < 128))
 						timer_set(m_screen->time_until_pos(org_2_x + sx, org_2_y + sy), TIMER_COLLISION_IRQ, 0x08);
 			}
@@ -358,7 +355,7 @@ void exidy_state::check_collision()
  *
  *************************************/
 
-UINT32 exidy_state::screen_update_exidy(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t exidy_state::screen_update_exidy(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	/* refresh the colors from the palette (static or dynamic) */
 	set_colors();

@@ -19,6 +19,8 @@
 #include "emu.h"
 #include "cpu/z80/z80.h"
 #include "machine/i8255.h"
+#include "machine/watchdog.h"
+#include "screen.h"
 
 
 class clayshoo_state : public driver_device
@@ -27,25 +29,35 @@ public:
 	clayshoo_state(const machine_config &mconfig, device_type type, const char *tag)
 		: driver_device(mconfig, type, tag),
 		m_videoram(*this, "videoram"),
-		m_maincpu(*this, "maincpu") { }
+		m_maincpu(*this, "maincpu")
+	{ }
 
+	void clayshoo(machine_config &config);
+
+protected:
+	void analog_reset_w(uint8_t data);
+	uint8_t analog_r();
+	void input_port_select_w(uint8_t data);
+	uint8_t input_port_r();
+	uint32_t screen_update_clayshoo(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect);
+	TIMER_CALLBACK_MEMBER(reset_analog_bit);
+	uint8_t difficulty_input_port_r(int bit);
+	void create_analog_timers();
+
+	virtual void machine_start() override;
+	virtual void machine_reset() override;
+	void main_io_map(address_map &map);
+	void main_map(address_map &map);
+
+private:
 	/* memory pointers */
-	required_shared_ptr<UINT8> m_videoram;
+	required_shared_ptr<uint8_t> m_videoram;
 
 	/* misc */
 	emu_timer *m_analog_timer_1, *m_analog_timer_2;
-	UINT8 m_input_port_select;
-	UINT8 m_analog_port_val;
-	DECLARE_WRITE8_MEMBER(analog_reset_w);
-	DECLARE_READ8_MEMBER(analog_r);
-	DECLARE_WRITE8_MEMBER(input_port_select_w);
-	DECLARE_READ8_MEMBER(input_port_r);
-	virtual void machine_start() override;
-	virtual void machine_reset() override;
-	UINT32 screen_update_clayshoo(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect);
-	TIMER_CALLBACK_MEMBER(reset_analog_bit);
-	UINT8 difficulty_input_port_r( int bit );
-	void create_analog_timers(  );
+	uint8_t m_input_port_select;
+	uint8_t m_analog_port_val;
+
 	required_device<cpu_device> m_maincpu;
 };
 
@@ -56,18 +68,18 @@ public:
  *
  *************************************/
 
-WRITE8_MEMBER(clayshoo_state::input_port_select_w)
+void clayshoo_state::input_port_select_w(uint8_t data)
 {
 	m_input_port_select = data;
 }
 
 
-UINT8 clayshoo_state::difficulty_input_port_r( int bit )
+uint8_t clayshoo_state::difficulty_input_port_r( int bit )
 {
-	UINT8 ret = 0;
+	uint8_t ret = 0;
 
 	/* read fake port and remap the buttons to 2 bits */
-	UINT8   raw = ioport("FAKE")->read();
+	uint8_t   raw = ioport("FAKE")->read();
 
 	if (raw & (1 << (bit + 1)))
 		ret = 0x03;     /* expert */
@@ -80,9 +92,9 @@ UINT8 clayshoo_state::difficulty_input_port_r( int bit )
 }
 
 
-READ8_MEMBER(clayshoo_state::input_port_r)
+uint8_t clayshoo_state::input_port_r()
 {
-	UINT8 ret = 0;
+	uint8_t ret = 0;
 
 	switch (m_input_port_select)
 	{
@@ -120,7 +132,7 @@ static attotime compute_duration( device_t *device, int analog_pos )
 }
 
 
-WRITE8_MEMBER(clayshoo_state::analog_reset_w)
+void clayshoo_state::analog_reset_w(uint8_t data)
 {
 	/* reset the analog value, and start the two times that will fire
 	   off in a short period proportional to the position of the
@@ -128,12 +140,12 @@ WRITE8_MEMBER(clayshoo_state::analog_reset_w)
 
 	m_analog_port_val = 0xff;
 
-	m_analog_timer_1->adjust(compute_duration(&space.device(), ioport("AN1")->read()), 0x02);
-	m_analog_timer_2->adjust(compute_duration(&space.device(), ioport("AN2")->read()), 0x01);
+	m_analog_timer_1->adjust(compute_duration(m_maincpu.target(), ioport("AN1")->read()), 0x02);
+	m_analog_timer_2->adjust(compute_duration(m_maincpu.target(), ioport("AN2")->read()), 0x01);
 }
 
 
-READ8_MEMBER(clayshoo_state::analog_r)
+uint8_t clayshoo_state::analog_r()
 {
 	return m_analog_port_val;
 }
@@ -170,21 +182,21 @@ void clayshoo_state::machine_start()
  *
  *************************************/
 
-UINT32 clayshoo_state::screen_update_clayshoo(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
+uint32_t clayshoo_state::screen_update_clayshoo(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
 {
 	offs_t offs;
 
 	for (offs = 0; offs < m_videoram.bytes(); offs++)
 	{
 		int i;
-		UINT8 x = offs << 3;
-		UINT8 y = ~(offs >> 5);
-		UINT8 data = m_videoram[offs];
+		uint8_t x = offs << 3;
+		uint8_t y = ~(offs >> 5);
+		uint8_t data = m_videoram[offs];
 
 		for (i = 0; i < 8; i++)
 		{
-			pen_t pen = (data & 0x80) ? rgb_t::white : rgb_t::black;
-			bitmap.pix32(y, x) = pen;
+			pen_t pen = (data & 0x80) ? rgb_t::white() : rgb_t::black();
+			bitmap.pix(y, x) = pen;
 
 			data = data << 1;
 			x = x + 1;
@@ -202,14 +214,15 @@ UINT32 clayshoo_state::screen_update_clayshoo(screen_device &screen, bitmap_rgb3
  *
  *************************************/
 
-static ADDRESS_MAP_START( main_map, AS_PROGRAM, 8, clayshoo_state )
-	AM_RANGE(0x0000, 0x1fff) AM_ROM
-	AM_RANGE(0x2000, 0x23ff) AM_RAM
-	AM_RANGE(0x4000, 0x47ff) AM_ROM
-	AM_RANGE(0x8000, 0x97ff) AM_RAM AM_SHARE("videoram")    /* 6k of video ram according to readme */
-	AM_RANGE(0x9800, 0xa800) AM_WRITENOP      /* not really mapped, but cleared */
-	AM_RANGE(0xc800, 0xc800) AM_READWRITE(analog_r, analog_reset_w)
-ADDRESS_MAP_END
+void clayshoo_state::main_map(address_map &map)
+{
+	map(0x0000, 0x1fff).rom();
+	map(0x2000, 0x23ff).ram();
+	map(0x4000, 0x47ff).rom();
+	map(0x8000, 0x97ff).ram().share("videoram");    /* 6k of video ram according to readme */
+	map(0x9800, 0xa800).nopw();      /* not really mapped, but cleared */
+	map(0xc800, 0xc800).rw(FUNC(clayshoo_state::analog_r), FUNC(clayshoo_state::analog_reset_w));
+}
 
 
 
@@ -219,15 +232,16 @@ ADDRESS_MAP_END
  *
  *************************************/
 
-static ADDRESS_MAP_START( main_io_map, AS_IO, 8, clayshoo_state )
-	ADDRESS_MAP_GLOBAL_MASK(0xff)
-	AM_RANGE(0x00, 0x00) AM_WRITE(watchdog_reset_w)
-	AM_RANGE(0x20, 0x23) AM_DEVREADWRITE("ppi8255_0", i8255_device, read, write)
-	AM_RANGE(0x30, 0x33) AM_DEVREADWRITE("ppi8255_1", i8255_device, read, write)
-//  AM_RANGE(0x40, 0x43) AM_NOP // 8253 for sound?
-//  AM_RANGE(0x50, 0x50) AM_NOP // ?
-//  AM_RANGE(0x60, 0x60) AM_NOP // ?
-ADDRESS_MAP_END
+void clayshoo_state::main_io_map(address_map &map)
+{
+	map.global_mask(0xff);
+	map(0x00, 0x00).w("watchdog", FUNC(watchdog_timer_device::reset_w));
+	map(0x20, 0x23).rw("ppi8255_0", FUNC(i8255_device::read), FUNC(i8255_device::write));
+	map(0x30, 0x33).rw("ppi8255_1", FUNC(i8255_device::read), FUNC(i8255_device::write));
+//  map(0x40, 0x43).noprw(); // 8253 for sound?
+//  map(0x50, 0x50).noprw(); // ?
+//  map(0x60, 0x60).noprw(); // ?
+}
 
 
 
@@ -265,8 +279,8 @@ static INPUT_PORTS_START( clayshoo )
 	PORT_BIT( 0xf8, IP_ACTIVE_LOW, IPT_UNKNOWN )    /* doesn't appear to be used */
 
 	PORT_START("IN2")
-	PORT_BIT( 0x03, IP_ACTIVE_LOW, IPT_SPECIAL )    /* amateur/expert/pro Player 2 */
-	PORT_BIT( 0x0c, IP_ACTIVE_LOW, IPT_SPECIAL )    /* amateur/expert/pro Player 1 */
+	PORT_BIT( 0x03, IP_ACTIVE_LOW, IPT_CUSTOM )    /* amateur/expert/pro Player 2 */
+	PORT_BIT( 0x0c, IP_ACTIVE_LOW, IPT_CUSTOM )    /* amateur/expert/pro Player 1 */
 	PORT_BIT( 0x10, IP_ACTIVE_LOW, IPT_START1 )
 	PORT_BIT( 0x20, IP_ACTIVE_LOW, IPT_START2 )
 	PORT_BIT( 0x40, IP_ACTIVE_LOW, IPT_BUTTON1 ) PORT_PLAYER(2)
@@ -308,29 +322,30 @@ void clayshoo_state::machine_reset()
 	m_analog_port_val = 0;
 }
 
-static MACHINE_CONFIG_START( clayshoo, clayshoo_state )
-
+void clayshoo_state::clayshoo(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", Z80,5068000/4)      /* 5.068/4 Mhz (divider is a guess) */
-	MCFG_CPU_PROGRAM_MAP(main_map)
-	MCFG_CPU_IO_MAP(main_io_map)
-	MCFG_CPU_VBLANK_INT_DRIVER("screen", clayshoo_state,  irq0_line_hold)
+	Z80(config, m_maincpu, 5068000/4);      /* 5.068/4 Mhz (divider is a guess) */
+	m_maincpu->set_addrmap(AS_PROGRAM, &clayshoo_state::main_map);
+	m_maincpu->set_addrmap(AS_IO, &clayshoo_state::main_io_map);
+	m_maincpu->set_vblank_int("screen", FUNC(clayshoo_state::irq0_line_hold));
 
+	WATCHDOG_TIMER(config, "watchdog");
 
 	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_SIZE(256, 256)
-	MCFG_SCREEN_VISIBLE_AREA(0, 255, 64, 255)
-	MCFG_SCREEN_REFRESH_RATE(60)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(2500) /* not accurate */)
-	MCFG_SCREEN_UPDATE_DRIVER(clayshoo_state, screen_update_clayshoo)
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_RASTER));
+	screen.set_size(256, 256);
+	screen.set_visarea(0, 255, 64, 255);
+	screen.set_refresh_hz(60);
+	screen.set_vblank_time(ATTOSECONDS_IN_USEC(2500) /* not accurate */);
+	screen.set_screen_update(FUNC(clayshoo_state::screen_update_clayshoo));
 
-	MCFG_DEVICE_ADD("ppi8255_0", I8255A, 0)
+	I8255A(config, "ppi8255_0");
 
-	MCFG_DEVICE_ADD("ppi8255_1", I8255A, 0)
-	MCFG_I8255_OUT_PORTA_CB(WRITE8(clayshoo_state, input_port_select_w))
-	MCFG_I8255_IN_PORTB_CB(READ8(clayshoo_state, input_port_r))
-MACHINE_CONFIG_END
+	i8255_device &ppi1(I8255A(config, "ppi8255_1"));
+	ppi1.out_pa_callback().set(FUNC(clayshoo_state::input_port_select_w));
+	ppi1.in_pb_callback().set(FUNC(clayshoo_state::input_port_r));
+}
 
 
 
@@ -357,4 +372,4 @@ ROM_END
  *
  *************************************/
 
-GAME( 1979, clayshoo, 0, clayshoo, clayshoo, driver_device, 0, ROT0, "Allied Leisure", "Clay Shoot", MACHINE_NO_SOUND | MACHINE_SUPPORTS_SAVE )
+GAME( 1979, clayshoo, 0, clayshoo, clayshoo, clayshoo_state, empty_init, ROT0, "Allied Leisure", "Clay Shoot", MACHINE_NO_SOUND | MACHINE_SUPPORTS_SAVE )

@@ -25,34 +25,39 @@
 #include "emu.h"
 #include "cpu/m68000/m68000.h"
 #include "sound/okim6295.h"
-#include "rendlay.h"
 #include "machine/nvram.h"
+#include "emupal.h"
+#include "screen.h"
+#include "speaker.h"
 
 class cesclassic_state : public driver_device
 {
 public:
 	cesclassic_state(const machine_config &mconfig, device_type type, const char *tag)
-	: driver_device(mconfig, type, tag),
-	m_maincpu(*this, "maincpu"),
-	m_oki(*this, "oki"),
-	m_vram(*this, "vram"),
-	m_palette(*this, "palette") { }
+		: driver_device(mconfig, type, tag)
+		, m_maincpu(*this, "maincpu")
+		, m_oki(*this, "oki")
+		, m_vram(*this, "vram")
+		, m_palette(*this, "palette")
+	{ }
 
-	DECLARE_WRITE16_MEMBER(irq2_ack_w);
-	DECLARE_WRITE16_MEMBER(irq3_ack_w);
-	DECLARE_WRITE16_MEMBER(lamps_w);
-	DECLARE_WRITE16_MEMBER(outputs_w);
+	void irq2_ack_w(uint16_t data);
+	void irq3_ack_w(uint16_t data);
+	void lamps_w(uint16_t data);
+	void outputs_w(uint16_t data);
 
 
-	UINT32 screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect);
-	DECLARE_PALETTE_INIT(cesclassic);
+	uint32_t screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect);
+	void cesclassic_palette(palette_device &palette) const;
+	void cesclassic(machine_config &config);
+	void cesclassic_map(address_map &map);
 protected:
 
 	// devices
 	required_device<cpu_device> m_maincpu;
 	required_device<okim6295_device> m_oki;
 
-	required_shared_ptr<UINT16> m_vram;
+	required_shared_ptr<uint16_t> m_vram;
 	required_device<palette_device> m_palette;
 	// driver_device overrides
 	virtual void video_start() override;
@@ -64,27 +69,23 @@ void cesclassic_state::video_start()
 {
 }
 
-UINT32 cesclassic_state::screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
+uint32_t cesclassic_state::screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
 {
-	int x,y,xi;
-
 	bitmap.fill(m_palette->black_pen(), cliprect);
 
+	for(int y=0;y<64;y++)
 	{
-		for(y=0;y<64;y++)
+		for(int x=0;x<16;x++)
 		{
-			for(x=0;x<16;x++)
+			for(int xi=0;xi<16;xi++)
 			{
-				for(xi=0;xi<16;xi++)
-				{
-					UINT8 color;
+				uint8_t color;
 
-					color = (((m_vram[x+y*16+0x400])>>(15-xi)) & 1);
-					color |= (((m_vram[x+y*16])>>(15-xi)) & 1)<<1;
+				color = (((m_vram[x+y*16+0x400])>>(15-xi)) & 1);
+				color |= (((m_vram[x+y*16])>>(15-xi)) & 1)<<1;
 
-					if((x*16+xi)<256 && ((y)+0)<256)
-						bitmap.pix32(y, x*16+xi) = m_palette->pen(color);
-				}
+				if((x*16+xi)<256 && ((y)+0)<256)
+					bitmap.pix(y, x*16+xi) = m_palette->pen(color);
 			}
 		}
 	}
@@ -92,52 +93,53 @@ UINT32 cesclassic_state::screen_update(screen_device &screen, bitmap_rgb32 &bitm
 	return 0;
 }
 
-WRITE16_MEMBER( cesclassic_state::irq2_ack_w )
+void cesclassic_state::irq2_ack_w(uint16_t data)
 {
 	m_maincpu->set_input_line(2, CLEAR_LINE);
 }
 
-WRITE16_MEMBER( cesclassic_state::irq3_ack_w )
+void cesclassic_state::irq3_ack_w(uint16_t data)
 {
 	m_maincpu->set_input_line(3, CLEAR_LINE);
 }
 
-WRITE16_MEMBER( cesclassic_state::lamps_w )
+void cesclassic_state::lamps_w(uint16_t data)
 {
 	//popmessage("%04x",data);
 }
 
-WRITE16_MEMBER( cesclassic_state::outputs_w )
+void cesclassic_state::outputs_w(uint16_t data)
 {
 	/*
 	-x-- ---- OKI bankswitch
 	--x- ---- probably screen enable
 	---- --x- coin counter
 	*/
-	m_oki->set_bank_base((data & 0x40) ? 0x40000 : 0);
-	coin_counter_w(machine(), 0, data & 2);
+	m_oki->set_rom_bank((data & 0x40) >> 6);
+	machine().bookkeeping().coin_counter_w(0, data & 2);
 	if(data & ~0x62)
 	logerror("Output: %02x\n",data);
 }
 
-static ADDRESS_MAP_START( cesclassic_map, AS_PROGRAM, 16, cesclassic_state )
-	AM_RANGE(0x000000, 0x0fffff) AM_ROM
-	AM_RANGE(0x400000, 0x40cfff) AM_RAM
-	AM_RANGE(0x40d000, 0x40ffff) AM_RAM AM_SHARE("vram")
-	AM_RANGE(0x410000, 0x410001) AM_READ_PORT("VBLANK") //probably m68681 lies there instead
-	AM_RANGE(0x410004, 0x410005) AM_WRITE(irq3_ack_w)
-	AM_RANGE(0x410006, 0x410007) AM_WRITE(irq2_ack_w)
-	AM_RANGE(0x480000, 0x481fff) AM_RAM AM_SHARE("nvram") //8k according to schematics (games doesn't use that much tho)
-	AM_RANGE(0x600000, 0x600001) AM_READ_PORT("SYSTEM")
-	AM_RANGE(0x610000, 0x610001) AM_WRITE(outputs_w)
-//  AM_RANGE(0x640000, 0x640001) AM_WRITENOP
-	AM_RANGE(0x640040, 0x640041) AM_WRITE(lamps_w)
-	AM_RANGE(0x670000, 0x670001) AM_READ_PORT("DSW")
-	AM_RANGE(0x70ff00, 0x70ff01) AM_WRITENOP // writes 0xffff at irq 3 end of service, watchdog?
-	AM_RANGE(0x900000, 0x900001) AM_DEVREAD8("oki", okim6295_device, read,0x00ff) // unsure about this ...
-	AM_RANGE(0x900100, 0x900101) AM_DEVWRITE8("oki", okim6295_device, write,0x00ff)
-//  AM_RANGE(0x904000, 0x904001) AM_WRITENOP //some kind of serial
-ADDRESS_MAP_END
+void cesclassic_state::cesclassic_map(address_map &map)
+{
+	map(0x000000, 0x0fffff).rom();
+	map(0x400000, 0x40cfff).ram();
+	map(0x40d000, 0x40ffff).ram().share("vram");
+	map(0x410000, 0x410001).portr("VBLANK"); //probably m68681 lies there instead
+	map(0x410004, 0x410005).w(FUNC(cesclassic_state::irq3_ack_w));
+	map(0x410006, 0x410007).w(FUNC(cesclassic_state::irq2_ack_w));
+	map(0x480000, 0x481fff).ram().share("nvram"); //8k according to schematics (games doesn't use that much tho)
+	map(0x600000, 0x600001).portr("SYSTEM");
+	map(0x610000, 0x610001).w(FUNC(cesclassic_state::outputs_w));
+//  map(0x640000, 0x640001).nopw();
+	map(0x640040, 0x640041).w(FUNC(cesclassic_state::lamps_w));
+	map(0x670000, 0x670001).portr("DSW");
+	map(0x70ff00, 0x70ff01).nopw(); // writes 0xffff at irq 3 end of service, watchdog?
+	map(0x900001, 0x900001).r(m_oki, FUNC(okim6295_device::read)); // unsure about this ...
+	map(0x900101, 0x900101).w(m_oki, FUNC(okim6295_device::write));
+//  map(0x904000, 0x904001).nopw(); //some kind of serial
+}
 
 static INPUT_PORTS_START( cesclassic )
 	PORT_START("SYSTEM")
@@ -236,39 +238,34 @@ static INPUT_PORTS_START( cesclassic )
 	PORT_BIT( 0x08, IP_ACTIVE_LOW, IPT_CUSTOM ) PORT_VBLANK("l_lcd")
 INPUT_PORTS_END
 
-PALETTE_INIT_MEMBER(cesclassic_state, cesclassic)
+void cesclassic_state::cesclassic_palette(palette_device &palette) const
 {
-	int i;
-
-	for (i = 0; i < 4; i++)
+	for (int i = 0; i < 4; i++)
 		palette.set_pen_color(i, pal2bit(i), 0, 0);
 }
 
-static MACHINE_CONFIG_START( cesclassic, cesclassic_state )
+void cesclassic_state::cesclassic(machine_config &config)
+{
+	M68000(config, m_maincpu, 24000000/2);
+	m_maincpu->set_addrmap(AS_PROGRAM, &cesclassic_state::cesclassic_map);
+	m_maincpu->set_vblank_int("l_lcd", FUNC(cesclassic_state::irq2_line_assert));  // TODO: unknown sources
+	m_maincpu->set_periodic_int(FUNC(cesclassic_state::irq3_line_assert), attotime::from_hz(60*8));
 
-	MCFG_CPU_ADD("maincpu", M68000, 24000000/2 )
-	MCFG_CPU_PROGRAM_MAP(cesclassic_map)
-	MCFG_CPU_VBLANK_INT_DRIVER("l_lcd", cesclassic_state,  irq2_line_assert)  // TODO: unknown sources
-	MCFG_CPU_PERIODIC_INT_DRIVER(cesclassic_state, irq3_line_assert, 60*8)
-
-	MCFG_NVRAM_ADD_0FILL("nvram")
+	NVRAM(config, "nvram", nvram_device::DEFAULT_ALL_0);
 
 	/* video hardware */
-	MCFG_SCREEN_ADD("l_lcd", LCD)
-	MCFG_SCREEN_REFRESH_RATE(60)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(2500))
-	MCFG_SCREEN_UPDATE_DRIVER(cesclassic_state, screen_update)
-	MCFG_SCREEN_SIZE(8*16*2, 8*8+3*8)
-	MCFG_SCREEN_VISIBLE_AREA(0*8, 8*16*2-1, 0*8, 8*8-1)
-	MCFG_DEFAULT_LAYOUT( layout_lcd )
+	screen_device &screen(SCREEN(config, "l_lcd", SCREEN_TYPE_LCD));
+	screen.set_refresh_hz(60);
+	screen.set_vblank_time(ATTOSECONDS_IN_USEC(2500));
+	screen.set_screen_update(FUNC(cesclassic_state::screen_update));
+	screen.set_size(8*16*2, 8*8+3*8);
+	screen.set_visarea(0*8, 8*16*2-1, 0*8, 8*8-1);
 
-	MCFG_PALETTE_ADD("palette", 4)
-	MCFG_PALETTE_INIT_OWNER(cesclassic_state, cesclassic)
+	PALETTE(config, m_palette, FUNC(cesclassic_state::cesclassic_palette), 4);
 
-	MCFG_SPEAKER_STANDARD_MONO("mono")
-	MCFG_OKIM6295_ADD("oki", 24000000/16, OKIM6295_PIN7_LOW)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.5)
-MACHINE_CONFIG_END
+	SPEAKER(config, "mono").front_center();
+	OKIM6295(config, m_oki, 24000000/16, okim6295_device::PIN7_LOW).add_route(ALL_OUTPUTS, "mono", 0.5);
+}
 
 
 ROM_START(hrclass)
@@ -298,6 +295,6 @@ ROM_START(tsclass)
 ROM_END
 
 
-GAME(1997, hrclass, 0, cesclassic, cesclassic, driver_device, 0, ROT0, "Creative Electronics And Software", "Home Run Classic (v1.21 12-feb-1997)", MACHINE_NOT_WORKING | MACHINE_IMPERFECT_SOUND )
-GAME(1997, ccclass, 0, cesclassic, cesclassic, driver_device, 0, ROT0, "Creative Electronics And Software", "Country Club Classic (v1.10 03-apr-1997)", MACHINE_NOT_WORKING | MACHINE_IMPERFECT_SOUND )
-GAME(1997, tsclass, 0, cesclassic, cesclassic, driver_device, 0, ROT0, "Creative Electronics And Software", "Trap Shoot Classic (v1.0 21-mar-1997)", MACHINE_NOT_WORKING | MACHINE_IMPERFECT_SOUND )
+GAME(1997, hrclass, 0, cesclassic, cesclassic, cesclassic_state, empty_init, ROT0, "Creative Electronics And Software", "Home Run Classic (v1.21 12-feb-1997)",     MACHINE_NOT_WORKING | MACHINE_IMPERFECT_SOUND )
+GAME(1997, ccclass, 0, cesclassic, cesclassic, cesclassic_state, empty_init, ROT0, "Creative Electronics And Software", "Country Club Classic (v1.10 03-apr-1997)", MACHINE_NOT_WORKING | MACHINE_IMPERFECT_SOUND )
+GAME(1997, tsclass, 0, cesclassic, cesclassic, cesclassic_state, empty_init, ROT0, "Creative Electronics And Software", "Trap Shoot Classic (v1.0 21-mar-1997)",    MACHINE_NOT_WORKING | MACHINE_IMPERFECT_SOUND )

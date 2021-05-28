@@ -24,12 +24,11 @@
 
 **********************************************************************/
 
+#ifndef MAME_SOUND_LMC1992_H
+#define MAME_SOUND_LMC1992_H
+
 #pragma once
 
-#ifndef __LMC1992__
-#define __LMC1992__
-
-#include "emu.h"
 
 
 
@@ -50,16 +49,6 @@ enum
 };
 
 
-
-//**************************************************************************
-//  INTERFACE CONFIGURATION MACROS
-//**************************************************************************
-
-#define MCFG_LMC1992_ADD(_tag) \
-	MCFG_DEVICE_ADD(_tag, LMC1992, 0)
-
-
-
 //**************************************************************************
 //  TYPE DEFINITIONS
 //**************************************************************************
@@ -71,7 +60,7 @@ class lmc1992_device :  public device_t,
 {
 public:
 	// construction/destruction
-	lmc1992_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	lmc1992_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock = 0);
 
 	DECLARE_WRITE_LINE_MEMBER( clock_w );
 	DECLARE_WRITE_LINE_MEMBER( data_w );
@@ -82,7 +71,7 @@ protected:
 	virtual void device_start() override;
 
 	// internal callbacks
-	virtual void sound_stream_update(sound_stream &stream, stream_sample_t **inputs, stream_sample_t **outputs, int samples) override;
+	virtual void sound_stream_update(sound_stream &stream, std::vector<read_stream_view> const &inputs, std::vector<write_stream_view> &outputs) override;
 
 private:
 	inline void execute_command(int addr, int data);
@@ -92,7 +81,7 @@ private:
 	int m_enable;                   // enable latch
 	int m_data;                     // data latch
 	int m_clk;                      // clock latch
-	UINT16 m_si;                    // serial in shift register
+	uint16_t m_si;                    // serial in shift register
 
 	int m_input;                    // input select
 	int m_bass;                     // bass
@@ -106,8 +95,6 @@ private:
 
 
 // device type definition
-extern const device_type LMC1992;
+DECLARE_DEVICE_TYPE(LMC1992, lmc1992_device)
 
-
-
-#endif
+#endif // MAME_SOUND_LMC1992_H

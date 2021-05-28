@@ -19,12 +19,16 @@ Ver. 2.2 should exist
 #include "emu.h"
 
 #include "cpu/z80/z80.h"
-#include "sound/ay8910.h"
-#include "sound/msm5205.h"
 #include "machine/nvram.h"
 #include "machine/ticket.h"
+#include "machine/timer.h"
+#include "sound/ay8910.h"
 #include "sound/flt_rc.h"
+#include "sound/msm5205.h"
+#include "speaker.h"
+
 #include "mgavegas.lh"
+
 
 /****************************
 *    LOG defines            *
@@ -39,7 +43,7 @@ Ver. 2.2 should exist
 /****************************
 *    Clock defines          *
 ****************************/
-#define MAIN_XTAL XTAL_8MHz
+#define MAIN_XTAL XTAL(8'000'000)
 #define CPU_CLK MAIN_XTAL/2
 #define AY_CLK  CPU_CLK/2
 #define MSM_CLK   384000
@@ -48,98 +52,99 @@ Ver. 2.2 should exist
 class mgavegas_state : public driver_device
 {
 public:
-	mgavegas_state(const machine_config &mconfig, device_type type, const char *tag)
-		: driver_device(mconfig, type, tag),
+	mgavegas_state(const machine_config &mconfig, device_type type, const char *tag) :
+		driver_device(mconfig, type, tag),
 		m_maincpu(*this, "maincpu"),
 		m_ay(*this, "aysnd"),
 		m_msm(*this, "5205"),
 		m_ticket(*this, "hopper"),
 		m_filter1(*this, "filter1"),
 		m_filter2(*this, "filter2")
-
-
 	{ }
-	UINT8 m_int;
+
+	void mgavegas(machine_config &config);
+
+	void init_mgavegas();
+	void init_mgavegas21();
+	void init_mgavegas133();
+
+private:
+	uint8_t m_int;
 
 	//OUT1
-	UINT8 m_ckmod;
-	UINT8 m_dmod;
-	UINT8 m_emod;
-	UINT8 m_inh;
-	UINT8 m_hop;
-	UINT8 m_seg;
-	UINT8 m_printer;
-	UINT8 m_auxp;
+	uint8_t m_ckmod;
+	uint8_t m_dmod;
+	uint8_t m_emod;
+	uint8_t m_inh;
+	uint8_t m_hop;
+	uint8_t m_seg;
+	uint8_t m_printer;
+	uint8_t m_auxp;
 
 	//helper...
-	UINT8 m_old_ckmod;
-	UINT8 m_old_emod;
+	uint8_t m_old_ckmod;
+	uint8_t m_old_emod;
 
 	//OUT2
-	UINT8 m_bobina_ctrl;
-	UINT8 m_timbre;
-	UINT8 m_coil_1;
-	UINT8 m_coil_2;
-	UINT8 m_coil_3;
-	UINT8 m_cont_ent;
-	UINT8 m_cont_sal;
-	UINT8 m_cont_caj;
+	uint8_t m_bobina_ctrl;
+	uint8_t m_timbre;
+	uint8_t m_coil_1;
+	uint8_t m_coil_2;
+	uint8_t m_coil_3;
+	uint8_t m_cont_ent;
+	uint8_t m_cont_sal;
+	uint8_t m_cont_caj;
 
 	//lamps out
-	UINT64 m_custom_data;
-	UINT8 m_auxs;
-	UINT8 m_anal;
-	UINT8 m_anacl;
-	UINT8 m_anacr;
-	UINT8 m_anar;
-	UINT8 m_pl;
-	UINT8 m_pc;
-	UINT8 m_pr;
-	UINT8 m_luz_250_rul;
-	UINT8 m_luz_100_rul;
-	UINT8 m_luz_50_rlul;
-	UINT8 m_luz_25_lrul;
-	UINT8 m_luz_25_rrul;
-	UINT8 m_fl;
-	UINT8 m_fc;
-	UINT8 m_fr;
-	UINT8 m_insert_coin;
-	UINT8 m_no_cambio;
-	UINT8 m_fuse;
-	UINT8 m_falta;
-	UINT8 m_anag;
-	UINT8 m_cl;
-	UINT8 m_cc;
-	UINT8 m_cr;
-	UINT8 m_premio_s;
-	UINT8 m_100;
-	UINT8 m_200;
-	UINT8 m_300;
-	UINT8 m_500;
-	UINT8 m_ml;
-	UINT8 m_mc;
-	UINT8 m_mr;
+	uint64_t m_custom_data;
+	uint8_t m_auxs;
+	uint8_t m_anal;
+	uint8_t m_anacl;
+	uint8_t m_anacr;
+	uint8_t m_anar;
+	uint8_t m_pl;
+	uint8_t m_pc;
+	uint8_t m_pr;
+	uint8_t m_luz_250_rul;
+	uint8_t m_luz_100_rul;
+	uint8_t m_luz_50_rlul;
+	uint8_t m_luz_25_lrul;
+	uint8_t m_luz_25_rrul;
+	uint8_t m_fl;
+	uint8_t m_fc;
+	uint8_t m_fr;
+	uint8_t m_insert_coin;
+	uint8_t m_no_cambio;
+	uint8_t m_fuse;
+	uint8_t m_falta;
+	uint8_t m_anag;
+	uint8_t m_cl;
+	uint8_t m_cc;
+	uint8_t m_cr;
+	uint8_t m_premio_s;
+	uint8_t m_100;
+	uint8_t m_200;
+	uint8_t m_300;
+	uint8_t m_500;
+	uint8_t m_ml;
+	uint8_t m_mc;
+	uint8_t m_mr;
 
-	DECLARE_READ8_MEMBER(start_read);
+	uint8_t start_read();
 
-	DECLARE_WRITE8_MEMBER(w_a0);
-	DECLARE_READ8_MEMBER(r_a0);
-	DECLARE_WRITE8_MEMBER(cso1_w);
-	DECLARE_WRITE8_MEMBER(cso2_w);
-	DECLARE_WRITE8_MEMBER(csoki_w);
-	DECLARE_READ8_MEMBER(csoki_r);
+	void w_a0(offs_t offset, uint8_t data);
+	uint8_t r_a0(offs_t offset);
+	void cso1_w(uint8_t data);
+	void cso2_w(uint8_t data);
+	void csoki_w(offs_t offset, uint8_t data);
+	uint8_t csoki_r(offs_t offset);
 
-	DECLARE_READ8_MEMBER(ay8910_a_r);
-	DECLARE_READ8_MEMBER(ay8910_b_r);
-
-	DECLARE_DRIVER_INIT(mgavegas);
-	DECLARE_DRIVER_INIT(mgavegas21);
-	DECLARE_DRIVER_INIT(mgavegas133);
+	uint8_t ay8910_a_r();
+	uint8_t ay8910_b_r();
 
 	TIMER_DEVICE_CALLBACK_MEMBER(int_0);
 
-
-protected:
+	void mgavegas_map(address_map &map);
 
 	// devices
 	required_device<cpu_device> m_maincpu;
@@ -153,45 +158,42 @@ protected:
 	virtual void machine_reset() override;
 	void update_custom();
 	void update_lamp();
-
-
-private:
 };
 
 
 void mgavegas_state::update_lamp(){
-	//output_set_value("AUXS", m_auxs); //unused
-	output_set_value("MGA4", m_anal&0x01);
-	output_set_value("MGA3", m_anacl&0x01);
-	output_set_value("MGA2", m_anacr&0x01);
-	output_set_value("MGA", m_anar&0x01);
-	output_set_value("PL", m_pl&0x01);
-	output_set_value("PC", m_pc&0x01);
-	output_set_value("PR", m_pr&0x01);
-	output_set_value("250", m_luz_250_rul&0x01);
-	output_set_value("1002", m_luz_100_rul&0x01);
-	output_set_value("50", m_luz_50_rlul&0x01);
-	output_set_value("252", m_luz_25_lrul&0x01);
-	output_set_value("25", m_luz_25_rrul&0x01);
-	output_set_value("FL", m_fl&0x01);
-	output_set_value("FC", m_fc&0x01);
-	output_set_value("FR", m_fr&0x01);
-	output_set_value("INSERTCOIN", m_insert_coin&0x01);
-	output_set_value("NOCAMBIO", m_no_cambio&0x01);
-	output_set_value("FUSE", m_fuse&0x01);
-	output_set_value("FALTA", m_falta&0x01);
-	//output_set_value("ANAG", m_anag&0x01);    //unused
-	output_set_value("CL", m_cl&0x01);
-	output_set_value("CC", m_cc&0x01);
-	output_set_value("CR", m_cr&0x01);
-	output_set_value("PREMIOS", m_premio_s&0x01);
-	output_set_value("100", m_100&0x01);
-	output_set_value("200", m_200&0x01);
-	output_set_value("300", m_300&0x01);
-	output_set_value("500", m_500&0x01);
-	output_set_value("ML", m_ml&0x01);
-	output_set_value("MC", m_mc&0x01);
-	output_set_value("MR", m_mr&0x01);
+	//output().set_value("AUXS", m_auxs); //unused
+	output().set_value("MGA4", m_anal&0x01);
+	output().set_value("MGA3", m_anacl&0x01);
+	output().set_value("MGA2", m_anacr&0x01);
+	output().set_value("MGA", m_anar&0x01);
+	output().set_value("PL", m_pl&0x01);
+	output().set_value("PC", m_pc&0x01);
+	output().set_value("PR", m_pr&0x01);
+	output().set_value("250", m_luz_250_rul&0x01);
+	output().set_value("1002", m_luz_100_rul&0x01);
+	output().set_value("50", m_luz_50_rlul&0x01);
+	output().set_value("252", m_luz_25_lrul&0x01);
+	output().set_value("25", m_luz_25_rrul&0x01);
+	output().set_value("FL", m_fl&0x01);
+	output().set_value("FC", m_fc&0x01);
+	output().set_value("FR", m_fr&0x01);
+	output().set_value("INSERTCOIN", m_insert_coin&0x01);
+	output().set_value("NOCAMBIO", m_no_cambio&0x01);
+	output().set_value("FUSE", m_fuse&0x01);
+	output().set_value("FALTA", m_falta&0x01);
+	//output().set_value("ANAG", m_anag&0x01);    //unused
+	output().set_value("CL", m_cl&0x01);
+	output().set_value("CC", m_cc&0x01);
+	output().set_value("CR", m_cr&0x01);
+	output().set_value("PREMIOS", m_premio_s&0x01);
+	output().set_value("100", m_100&0x01);
+	output().set_value("200", m_200&0x01);
+	output().set_value("300", m_300&0x01);
+	output().set_value("500", m_500&0x01);
+	output().set_value("ML", m_ml&0x01);
+	output().set_value("MC", m_mc&0x01);
+	output().set_value("MR", m_mr&0x01);
 /*
     m_inh=BIT(data, 3);
     m_printer=BIT(data, 6); //not_used
@@ -210,7 +212,7 @@ void mgavegas_state::update_lamp(){
 
 
 void mgavegas_state::update_custom(){
-UINT64 tmp;
+uint64_t tmp;
 
 	if( (m_ckmod==1) & (m_old_ckmod==0) ){
 		//vadid clock, sample the data
@@ -267,7 +269,7 @@ UINT64 tmp;
 }
 
 
-READ8_MEMBER( mgavegas_state::start_read )
+uint8_t mgavegas_state::start_read()
 {
 //  in HW it look for /IOREQ going down to clear the IRQ line
 	if (m_int){
@@ -282,15 +284,15 @@ READ8_MEMBER( mgavegas_state::start_read )
 /****************************
 *    Read/Write Handlers    *
 ****************************/
-READ8_MEMBER(mgavegas_state::r_a0)
+uint8_t mgavegas_state::r_a0(offs_t offset)
 {
-UINT8 ret=0;
+uint8_t ret=0;
 
 
 	switch (offset&0x03)
 	{
 		case 1: //bdir=0    BC1=1
-				ret=m_ay->data_r(space,0);
+				ret=m_ay->data_r();
 				break;
 		default:
 				if (LOG_AY8910)
@@ -303,7 +305,7 @@ UINT8 ret=0;
 	return ret;
 }
 
-WRITE8_MEMBER(mgavegas_state::w_a0)
+void mgavegas_state::w_a0(offs_t offset, uint8_t data)
 {
 	if (LOG_AY8910)
 		logerror("write to %04X data = %02X \n",offset+0xa000,data);
@@ -311,10 +313,10 @@ WRITE8_MEMBER(mgavegas_state::w_a0)
 	switch (offset&0x03)
 	{
 		case 0: //bdir=1    bc1=1
-				m_ay->address_w(space,0,data );
+				m_ay->address_w(data);
 				break;
 		case 2: //bdir=1    bc1=0
-				m_ay->data_w(space,0,data );
+				m_ay->data_w(data);
 				break;
 /*
         case 1: //bdir=0    bc1=1
@@ -333,16 +335,16 @@ WRITE8_MEMBER(mgavegas_state::w_a0)
 
 
 
-READ8_MEMBER(mgavegas_state::csoki_r)
+uint8_t mgavegas_state::csoki_r(offs_t offset)
 {
-UINT8 ret=0;
+	uint8_t ret=0;
 
 	if (LOG_MSM5205)
 		logerror("read from %04X return %02X\n",offset+0xc800,ret);
 	return ret;
 }
 
-WRITE8_MEMBER(mgavegas_state::csoki_w)
+void mgavegas_state::csoki_w(offs_t offset, uint8_t data)
 {
 	if (LOG_MSM5205)
 		logerror("MSM5205 write to %04X data = %02X \n",offset+0xc800,data);
@@ -351,9 +353,8 @@ WRITE8_MEMBER(mgavegas_state::csoki_w)
 }
 
 
-WRITE8_MEMBER(mgavegas_state::cso1_w)
+void mgavegas_state::cso1_w(uint8_t data)
 {
-	int hopper_data = 0x00;
 	if (LOG_CSO1)
 		logerror("write to CSO1 data = %02X\n",data);
 
@@ -368,11 +369,10 @@ WRITE8_MEMBER(mgavegas_state::cso1_w)
 
 	update_custom();
 
-	hopper_data=(m_hop&0x01)<<7;
-	m_ticket->write(machine().driver_data()->generic_space(), 0, hopper_data);
+	m_ticket->motor_w(m_hop);
 }
 
-WRITE8_MEMBER(mgavegas_state::cso2_w)
+void mgavegas_state::cso2_w(uint8_t data)
 {
 	if (LOG_CSO2)
 		logerror("write to CSO2 data = %02X\n",data);
@@ -390,9 +390,9 @@ WRITE8_MEMBER(mgavegas_state::cso2_w)
 }
 
 
-READ8_MEMBER(mgavegas_state::ay8910_a_r)
+uint8_t mgavegas_state::ay8910_a_r()
 {
-	UINT8 ret=0xff;
+	uint8_t ret=0xff;
 
 	ret=ioport("INA")->read();
 
@@ -402,9 +402,9 @@ READ8_MEMBER(mgavegas_state::ay8910_a_r)
 	return ret;
 }
 
-READ8_MEMBER(mgavegas_state::ay8910_b_r)
+uint8_t mgavegas_state::ay8910_b_r()
 {
-	UINT8 ret=0xff;
+	uint8_t ret=0xff;
 
 	ret=ioport("DSW1")->read();
 
@@ -418,16 +418,17 @@ READ8_MEMBER(mgavegas_state::ay8910_b_r)
 * Memory Map Information *
 *************************/
 
-static ADDRESS_MAP_START( mgavegas_map, AS_PROGRAM, 8, mgavegas_state )
-	AM_RANGE(0x0000, 0x7fff) AM_ROM
-	AM_RANGE(0x8000, 0x9fff) AM_RAM AM_SHARE("nvram")
-	AM_RANGE(0xa000, 0xa003) AM_READWRITE(r_a0,w_a0)            // AY-3-8910
-	AM_RANGE(0xc000, 0xc001) AM_WRITE(cso1_w)                   // /CSout1
-	AM_RANGE(0xc400, 0xc401) AM_WRITE(cso2_w)                   // /CSout2
-	AM_RANGE(0xc800, 0xc801) AM_READWRITE(csoki_r,csoki_w)      // /CSoki
-	//AM_RANGE(0xcc00, 0xcc01) AM_READWRITE(cso3_r,cso3_w)      // /CSout3 unused
-	//AM_RANGE(0xe000, 0xe003) AM_READWRITE(r_e0,w_e0)          // /CSaux unused
-ADDRESS_MAP_END
+void mgavegas_state::mgavegas_map(address_map &map)
+{
+	map(0x0000, 0x7fff).rom();
+	map(0x8000, 0x9fff).ram().share("nvram");
+	map(0xa000, 0xa003).rw(FUNC(mgavegas_state::r_a0), FUNC(mgavegas_state::w_a0));            // AY-3-8910
+	map(0xc000, 0xc001).w(FUNC(mgavegas_state::cso1_w));                   // /CSout1
+	map(0xc400, 0xc401).w(FUNC(mgavegas_state::cso2_w));                   // /CSout2
+	map(0xc800, 0xc801).rw(FUNC(mgavegas_state::csoki_r), FUNC(mgavegas_state::csoki_w));      // /CSoki
+	//map(0xcc00, 0xcc01).rw(FUNC(mgavegas_state::cso3_r), FUNC(mgavegas_state::cso3_w));      // /CSout3 unused
+	//map(0xe000, 0xe003).rw(FUNC(mgavegas_state::r_e0), FUNC(mgavegas_state::w_e0));          // /CSaux unused
+}
 
 
 
@@ -443,7 +444,7 @@ static INPUT_PORTS_START( mgavegas )
 	PORT_BIT( 0x02, IP_ACTIVE_LOW, IPT_COIN2 ) //25 ptas in to play
 	PORT_BIT( 0x04, IP_ACTIVE_LOW, IPT_COIN3 ) //100ptas in for change with 4 25 ptas coins
 	PORT_BIT( 0x08, IP_ACTIVE_LOW, IPT_OTHER )
-	PORT_BIT( 0x10, IP_ACTIVE_LOW,IPT_SPECIAL ) PORT_READ_LINE_DEVICE_MEMBER("hopper", ticket_dispenser_device, line_r)
+	PORT_BIT( 0x10, IP_ACTIVE_LOW,IPT_CUSTOM ) PORT_READ_LINE_DEVICE_MEMBER("hopper", ticket_dispenser_device, line_r)
 	PORT_BIT( 0x20, IP_ACTIVE_HIGH, IPT_OTHER ) PORT_CODE(KEYCODE_Y) PORT_NAME("25 ptas level")     //"hack" hopper always full
 	PORT_BIT( 0x40, IP_ACTIVE_LOW, IPT_OTHER ) PORT_CODE(KEYCODE_U) PORT_NAME("Door")
 	PORT_BIT( 0x80, IP_ACTIVE_LOW, IPT_OTHER ) PORT_CODE(KEYCODE_I) PORT_NAME("Channel")
@@ -486,7 +487,7 @@ INPUT_PORTS_END
 void mgavegas_state::machine_reset()
 {
 	m_int=1;
-	m_custom_data=U64(0xffffffffffffffff);
+	m_custom_data=0xffffffffffffffffU;
 
 	m_old_ckmod=1;
 	m_old_emod=0;
@@ -543,8 +544,8 @@ void mgavegas_state::machine_reset()
 	m_mc=0;
 	m_mr=0;
 
-	m_filter1->filter_rc_set_RC(FLT_RC_LOWPASS, 1000, 0, 0, CAP_N(1) );     /* RC out of MSM5205 R=1K C=1nF */
-	m_filter2->filter_rc_set_RC(FLT_RC_HIGHPASS, 3846, 0, 0, CAP_N(100 ));  /*ALP3B active-hybrid filter fc=2.6Khz 2poles???*/
+	m_filter1->filter_rc_set_RC(filter_rc_device::LOWPASS, 1000, 0, 0, CAP_N(1) );     /* RC out of MSM5205 R=1K C=1nF */
+	m_filter2->filter_rc_set_RC(filter_rc_device::HIGHPASS, 3846, 0, 0, CAP_N(100 ));  /*ALP3B active-hybrid filter fc=2.6Khz 2poles???*/
 }
 
 
@@ -553,16 +554,16 @@ void mgavegas_state::machine_reset()
 *   machine init             *
 ******************************/
 
-DRIVER_INIT_MEMBER(mgavegas_state,mgavegas21)
+void mgavegas_state::init_mgavegas21()
 {
 	//hack to clear the irq on reti instruction
-	m_maincpu->space(AS_PROGRAM).install_read_handler(0x00ea, 0x00ea, read8_delegate(FUNC(mgavegas_state::start_read), this));
+	m_maincpu->space(AS_PROGRAM).install_read_handler(0x00ea, 0x00ea, read8smo_delegate(*this, FUNC(mgavegas_state::start_read)));
 }
 
-DRIVER_INIT_MEMBER(mgavegas_state,mgavegas)
+void mgavegas_state::init_mgavegas()
 {
 	//hack to clear the irq on reti instruction
-	m_maincpu->space(AS_PROGRAM).install_read_handler(0x00e2, 0x00e2, read8_delegate(FUNC(mgavegas_state::start_read), this));
+	m_maincpu->space(AS_PROGRAM).install_read_handler(0x00e2, 0x00e2, read8smo_delegate(*this, FUNC(mgavegas_state::start_read)));
 }
 
 
@@ -573,51 +574,45 @@ TIMER_DEVICE_CALLBACK_MEMBER( mgavegas_state::int_0 )
 	}
 }
 
-DRIVER_INIT_MEMBER(mgavegas_state,mgavegas133)
+void mgavegas_state::init_mgavegas133()
 {
 	//hack to clear the irq on reti instruction
-	m_maincpu->space(AS_PROGRAM).install_read_handler(0x00dd, 0x00dd, read8_delegate(FUNC(mgavegas_state::start_read), this));
+	m_maincpu->space(AS_PROGRAM).install_read_handler(0x00dd, 0x00dd, read8smo_delegate(*this, FUNC(mgavegas_state::start_read)));
 }
 
 /*************************
 *    Machine Drivers     *
 *************************/
 
-
-static MACHINE_CONFIG_START( mgavegas, mgavegas_state )
+void mgavegas_state::mgavegas(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", Z80, CPU_CLK)
-	MCFG_CPU_PROGRAM_MAP(mgavegas_map)
+	Z80(config, m_maincpu, CPU_CLK);
+	m_maincpu->set_addrmap(AS_PROGRAM, &mgavegas_state::mgavegas_map);
 
-	MCFG_TIMER_DRIVER_ADD_PERIODIC("int_0", mgavegas_state, int_0, attotime::from_hz(6000))  //6KHz from MSM5205 /VCK
+	TIMER(config, "int_0").configure_periodic(FUNC(mgavegas_state::int_0), attotime::from_hz(6000));    //6KHz from MSM5205 /VCK
 
-	MCFG_NVRAM_ADD_1FILL("nvram")
+	NVRAM(config, "nvram", nvram_device::DEFAULT_ALL_1);
 
-	MCFG_TICKET_DISPENSER_ADD("hopper",attotime::from_msec(200),TICKET_MOTOR_ACTIVE_HIGH,TICKET_STATUS_ACTIVE_LOW);
+	TICKET_DISPENSER(config, "hopper", attotime::from_msec(200), TICKET_MOTOR_ACTIVE_HIGH, TICKET_STATUS_ACTIVE_LOW);
 
 	/* sound hardware */
+	SPEAKER(config, "mono").front_center();
+	AY8910(config, m_ay, AY_CLK);
+	m_ay->add_route(ALL_OUTPUTS, "mono", 0.3);
+	m_ay->port_a_read_callback().set(FUNC(mgavegas_state::ay8910_a_r));
+	m_ay->port_b_read_callback().set(FUNC(mgavegas_state::ay8910_b_r));
 
-	MCFG_SPEAKER_STANDARD_MONO("mono")
-	MCFG_SOUND_ADD("aysnd", AY8910, AY_CLK)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.3)
-	MCFG_AY8910_PORT_A_READ_CB(READ8(mgavegas_state, ay8910_a_r))
-	MCFG_AY8910_PORT_B_READ_CB(READ8(mgavegas_state, ay8910_b_r))
+	MSM5205(config, m_msm, MSM_CLK);
+	m_msm->set_prescaler_selector(msm5205_device::S64_4B);
+	m_msm->add_route(ALL_OUTPUTS, "filter1", 2.0);
 
-	MCFG_SOUND_ADD("5205", MSM5205, MSM_CLK)
-	MCFG_MSM5205_PRESCALER_SELECTOR(MSM5205_S64_4B)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "filter1", 2.0)
-
-
-	MCFG_FILTER_RC_ADD("filter1", 0)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "filter2",2.0)
-	MCFG_FILTER_RC_ADD("filter2", 0)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 2.0)
-
+	FILTER_RC(config, "filter1").add_route(ALL_OUTPUTS, "filter2", 2.0);
+	FILTER_RC(config, "filter2").add_route(ALL_OUTPUTS, "mono", 2.0);
 
 	/* Video */
-	MCFG_DEFAULT_LAYOUT(layout_mgavegas)
-
-MACHINE_CONFIG_END
+	config.set_default_layout(layout_mgavegas);
+}
 
 
 /*************************
@@ -653,7 +648,7 @@ ROM_END
 /*************************
 *      Game Drivers      *
 *************************/
-/*    YEAR  NAME            PARENT      MACHINE   INPUT     STATE          INIT         ROT     COMPANY     FULLNAME    FLAGS*/
-GAME( 1985, mgavegas,       0,          mgavegas, mgavegas, mgavegas_state, mgavegas,   ROT0,   "MGA",    "Vegas 1 (Ver 2.3 dual coin pulse, shorter)", MACHINE_MECHANICAL )
-GAME( 1985, mgavegas21,     mgavegas,   mgavegas, mgavegas, mgavegas_state, mgavegas21, ROT0,   "MGA",    "Vegas 1 (Ver 2.1 dual coin pulse, longer)", MACHINE_MECHANICAL )
-GAME( 1985, mgavegas133,    mgavegas,   mgavegas, mgavegas, mgavegas_state, mgavegas133,ROT0,   "MGA",    "Vegas 1 (Ver 1.33 single coin pulse)", MACHINE_MECHANICAL )
+//    YEAR  NAME            PARENT      MACHINE   INPUT     STATE           INIT        ROT     COMPANY   FULLNAME                                      FLAGS
+GAME( 1985, mgavegas,       0,          mgavegas, mgavegas, mgavegas_state, init_mgavegas,   ROT0,   "MGA",    "Vegas 1 (Ver 2.3 dual coin pulse, shorter)", MACHINE_MECHANICAL )
+GAME( 1985, mgavegas21,     mgavegas,   mgavegas, mgavegas, mgavegas_state, init_mgavegas21, ROT0,   "MGA",    "Vegas 1 (Ver 2.1 dual coin pulse, longer)",  MACHINE_MECHANICAL )
+GAME( 1985, mgavegas133,    mgavegas,   mgavegas, mgavegas, mgavegas_state, init_mgavegas133,ROT0,   "MGA",    "Vegas 1 (Ver 1.33 single coin pulse)",       MACHINE_MECHANICAL )

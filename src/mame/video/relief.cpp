@@ -7,7 +7,6 @@
 ****************************************************************************/
 
 #include "emu.h"
-#include "machine/atarigen.h"
 #include "includes/relief.h"
 
 
@@ -20,21 +19,21 @@
 
 TILE_GET_INFO_MEMBER(relief_state::get_playfield_tile_info)
 {
-	UINT16 data1 = tilemap.basemem_read(tile_index);
-	UINT16 data2 = tilemap.extmem_read(tile_index) & 0xff;
+	uint16_t data1 = m_vad->playfield().basemem_read(tile_index);
+	uint16_t data2 = m_vad->playfield().extmem_read(tile_index) & 0xff;
 	int code = data1 & 0x7fff;
 	int color = 0x20 + (data2 & 0x0f);
-	SET_TILE_INFO_MEMBER(0, code, color, (data1 >> 15) & 1);
+	tileinfo.set(0, code, color, (data1 >> 15) & 1);
 }
 
 
 TILE_GET_INFO_MEMBER(relief_state::get_playfield2_tile_info)
 {
-	UINT16 data1 = tilemap.basemem_read(tile_index);
-	UINT16 data2 = tilemap.extmem_read(tile_index) >> 8;
+	uint16_t data1 = m_vad->playfield2().basemem_read(tile_index);
+	uint16_t data2 = m_vad->playfield2().extmem_read(tile_index) >> 8;
 	int code = data1 & 0x7fff;
 	int color = data2 & 0x0f;
-	SET_TILE_INFO_MEMBER(0, code, color, (data1 >> 15) & 1);
+	tileinfo.set(0, code, color, (data1 >> 15) & 1);
 }
 
 
@@ -79,7 +78,7 @@ const atari_motion_objects_config relief_state::s_mob_config =
 	0                   /* resulting value to indicate "special" */
 };
 
-VIDEO_START_MEMBER(relief_state,relief)
+void relief_state::video_start()
 {
 	/* MOs are 5bpp but with a 4-bit color granularity */
 	m_gfxdecode->gfx(1)->set_granularity(16);
@@ -93,26 +92,26 @@ VIDEO_START_MEMBER(relief_state,relief)
  *
  *************************************/
 
-UINT32 relief_state::screen_update_relief(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t relief_state::screen_update_relief(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	// start drawing
-	m_vad->mob()->draw_async(cliprect);
+	m_vad->mob().draw_async(cliprect);
 
 	/* draw the playfield */
 	bitmap_ind8 &priority_bitmap = screen.priority();
 	priority_bitmap.fill(0, cliprect);
-	m_vad->playfield()->draw(screen, bitmap, cliprect, 0, 0);
-	m_vad->playfield2()->draw(screen, bitmap, cliprect, 0, 1);
+	m_vad->playfield().draw(screen, bitmap, cliprect, 0, 0);
+	m_vad->playfield2().draw(screen, bitmap, cliprect, 0, 1);
 
 	// draw and merge the MO
-	bitmap_ind16 &mobitmap = m_vad->mob()->bitmap();
-	for (const sparse_dirty_rect *rect = m_vad->mob()->first_dirty_rect(cliprect); rect != nullptr; rect = rect->next())
-		for (int y = rect->min_y; y <= rect->max_y; y++)
+	bitmap_ind16 &mobitmap = m_vad->mob().bitmap();
+	for (const sparse_dirty_rect *rect = m_vad->mob().first_dirty_rect(cliprect); rect != nullptr; rect = rect->next())
+		for (int y = rect->top(); y <= rect->bottom(); y++)
 		{
-			UINT16 *mo = &mobitmap.pix16(y);
-			UINT16 *pf = &bitmap.pix16(y);
-			UINT8 *pri = &priority_bitmap.pix8(y);
-			for (int x = rect->min_x; x <= rect->max_x; x++)
+			uint16_t const *const mo = &mobitmap.pix(y);
+			uint16_t *const pf = &bitmap.pix(y);
+			uint8_t const *const pri = &priority_bitmap.pix(y);
+			for (int x = rect->left(); x <= rect->right(); x++)
 				if (mo[x] != 0xffff)
 				{
 					/* verified from the GALs on the real PCB; equations follow
@@ -137,13 +136,13 @@ UINT32 relief_state::screen_update_relief(screen_device &screen, bitmap_ind16 &b
 					 *
 					 *      --- CRA8-1 are the low 8 bits of the color RAM index; set as expected
 					 */
-					int cs0 = 0;
-					int cs1 = 1;
 
 					/* compute the CS0 signal */
+					int cs0 = 0;
 					cs0 = ((mo[x] & 0x0f) == 0);
 
 					/* compute the CS1 signal */
+					int cs1 = 1;
 					if ((!cs0 && (mo[x] & 0xe0) == 0xe0) ||
 						((mo[x] & 0xf0) == 0xe0) ||
 						(!pri[x] && !cs0) ||

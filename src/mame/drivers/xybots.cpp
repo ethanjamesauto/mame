@@ -20,9 +20,13 @@
 
 
 #include "emu.h"
-#include "cpu/m68000/m68000.h"
-#include "machine/atarigen.h"
 #include "includes/xybots.h"
+
+#include "cpu/m68000/m68000.h"
+#include "machine/eeprompar.h"
+#include "machine/watchdog.h"
+#include "emupal.h"
+#include "speaker.h"
 
 
 
@@ -32,16 +36,9 @@
  *
  *************************************/
 
-void xybots_state::update_interrupts()
+void xybots_state::video_int_ack_w(uint16_t data)
 {
-	m_maincpu->set_input_line(1, m_video_int_state ? ASSERT_LINE : CLEAR_LINE);
-	m_maincpu->set_input_line(2, m_sound_int_state ? ASSERT_LINE : CLEAR_LINE);
-}
-
-
-MACHINE_RESET_MEMBER(xybots_state,xybots)
-{
-	atarigen_state::machine_reset();
+	m_maincpu->set_input_line(M68K_IRQ_1, CLEAR_LINE);
 }
 
 
@@ -52,7 +49,7 @@ MACHINE_RESET_MEMBER(xybots_state,xybots)
  *
  *************************************/
 
-READ16_MEMBER(xybots_state::special_port1_r)
+uint16_t xybots_state::special_port1_r()
 {
 	int result = ioport("FFE200")->read();
 	result ^= m_h256 ^= 0x0400;
@@ -68,26 +65,27 @@ READ16_MEMBER(xybots_state::special_port1_r)
  *************************************/
 
 /* full map verified from schematics */
-static ADDRESS_MAP_START( main_map, AS_PROGRAM, 16, xybots_state )
-	ADDRESS_MAP_UNMAP_HIGH
-	AM_RANGE(0x000000, 0x007fff) AM_MIRROR(0x7c0000) AM_ROM
-	AM_RANGE(0x008000, 0x00ffff) AM_MIRROR(0x7c0000) AM_ROM /* slapstic maps here */
-	AM_RANGE(0x010000, 0x03ffff) AM_MIRROR(0x7c0000) AM_ROM
-	AM_RANGE(0xff8000, 0xff8fff) AM_MIRROR(0x7f8000) AM_RAM_DEVWRITE("alpha", tilemap_device, write) AM_SHARE("alpha")
-	AM_RANGE(0xff9000, 0xffadff) AM_MIRROR(0x7f8000) AM_RAM
-	AM_RANGE(0xffae00, 0xffafff) AM_MIRROR(0x7f8000) AM_RAM AM_SHARE("mob")
-	AM_RANGE(0xffb000, 0xffbfff) AM_MIRROR(0x7f8000) AM_RAM_DEVWRITE("playfield", tilemap_device, write) AM_SHARE("playfield")
-	AM_RANGE(0xffc000, 0xffc7ff) AM_MIRROR(0x7f8800) AM_RAM_DEVWRITE("palette", palette_device, write) AM_SHARE("palette")
-	AM_RANGE(0xffd000, 0xffdfff) AM_MIRROR(0x7f8000) AM_DEVREADWRITE8("eeprom", atari_eeprom_device, read, write, 0x00ff)
-	AM_RANGE(0xffe000, 0xffe0ff) AM_MIRROR(0x7f8000) AM_DEVREAD8("jsa", atari_jsa_i_device, main_response_r, 0x00ff)
-	AM_RANGE(0xffe100, 0xffe1ff) AM_MIRROR(0x7f8000) AM_READ_PORT("FFE100")
-	AM_RANGE(0xffe200, 0xffe2ff) AM_MIRROR(0x7f8000) AM_READ(special_port1_r)
-	AM_RANGE(0xffe800, 0xffe8ff) AM_MIRROR(0x7f8000) AM_DEVWRITE("eeprom", atari_eeprom_device, unlock_write)
-	AM_RANGE(0xffe900, 0xffe9ff) AM_MIRROR(0x7f8000) AM_DEVWRITE8("jsa", atari_jsa_i_device, main_command_w, 0x00ff)
-	AM_RANGE(0xffea00, 0xffeaff) AM_MIRROR(0x7f8000) AM_WRITE(watchdog_reset16_w)
-	AM_RANGE(0xffeb00, 0xffebff) AM_MIRROR(0x7f8000) AM_WRITE(video_int_ack_w)
-	AM_RANGE(0xffee00, 0xffeeff) AM_MIRROR(0x7f8000) AM_DEVWRITE("jsa", atari_jsa_i_device, sound_reset_w)
-ADDRESS_MAP_END
+void xybots_state::main_map(address_map &map)
+{
+	map.unmap_value_high();
+	map(0x000000, 0x007fff).mirror(0x7c0000).rom();
+	map(0x008000, 0x009fff).mirror(0x7c6000).bankr(m_slapstic_bank); /* slapstic maps here */
+	map(0x010000, 0x03ffff).mirror(0x7c0000).rom();
+	map(0x800000, 0x800fff).mirror(0x7f8000).ram().w(m_alpha_tilemap, FUNC(tilemap_device::write16)).share("alpha");
+	map(0x801000, 0x802dff).mirror(0x7f8000).ram();
+	map(0x802e00, 0x802fff).mirror(0x7f8000).ram().share("mob");
+	map(0x803000, 0x803fff).mirror(0x7f8000).ram().w(m_playfield_tilemap, FUNC(tilemap_device::write16)).share("playfield");
+	map(0x804000, 0x8047ff).mirror(0x7f8800).ram().w("palette", FUNC(palette_device::write16)).share("palette");
+	map(0x805000, 0x805fff).mirror(0x7f8000).rw("eeprom", FUNC(eeprom_parallel_28xx_device::read), FUNC(eeprom_parallel_28xx_device::write)).umask16(0x00ff);
+	map(0x806000, 0x8060ff).mirror(0x7f8000).r(m_jsa, FUNC(atari_jsa_i_device::main_response_r)).umask16(0x00ff);
+	map(0x806100, 0x8061ff).mirror(0x7f8000).portr("FFE100");
+	map(0x806200, 0x8062ff).mirror(0x7f8000).r(FUNC(xybots_state::special_port1_r));
+	map(0x806800, 0x8068ff).mirror(0x7f8000).w("eeprom", FUNC(eeprom_parallel_28xx_device::unlock_write16));
+	map(0x806900, 0x8069ff).mirror(0x7f8000).w(m_jsa, FUNC(atari_jsa_i_device::main_command_w)).umask16(0x00ff);
+	map(0x806a00, 0x806aff).mirror(0x7f8000).w("watchdog", FUNC(watchdog_timer_device::reset16_w));
+	map(0x806b00, 0x806bff).mirror(0x7f8000).w(FUNC(xybots_state::video_int_ack_w));
+	map(0x806e00, 0x806eff).mirror(0x7f8000).w(m_jsa, FUNC(atari_jsa_i_device::sound_reset_w));
+}
 
 
 
@@ -120,15 +118,9 @@ static INPUT_PORTS_START( xybots )
 	PORT_BIT( 0x00ff, IP_ACTIVE_LOW, IPT_UNUSED )
 	PORT_SERVICE( 0x0100, IP_ACTIVE_LOW )
 	PORT_BIT( 0x0200, IP_ACTIVE_LOW, IPT_CUSTOM ) PORT_ATARI_JSA_MAIN_TO_SOUND_READY("jsa") /* /AUDBUSY */
-	PORT_BIT( 0x0400, IP_ACTIVE_HIGH, IPT_SPECIAL ) /* 256H */
+	PORT_BIT( 0x0400, IP_ACTIVE_HIGH, IPT_CUSTOM ) /* 256H */
 	PORT_BIT( 0x0800, IP_ACTIVE_HIGH, IPT_CUSTOM ) PORT_VBLANK("screen") /* VBLANK */
 	PORT_BIT( 0xf000, IP_ACTIVE_LOW, IPT_UNUSED )
-
-	/* Xybots uses a swapped version */
-// todo:
-//  PORT_MODIFY("jsa:JSAI")
-//  PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_COIN2 )
-//  PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_COIN1 )
 INPUT_PORTS_END
 
 
@@ -163,7 +155,7 @@ static const gfx_layout pfmolayout =
 };
 
 
-static GFXDECODE_START( xybots )
+static GFXDECODE_START( gfx_xybots )
 	GFXDECODE_ENTRY( "gfx1", 0, pfmolayout,    512, 16 ) /* playfield */
 	GFXDECODE_ENTRY( "gfx2", 0, pfmolayout,    256, 48 ) /* sprites */
 	GFXDECODE_ENTRY( "gfx3", 0, anlayout,        0, 64 ) /* characters 8x8 */
@@ -177,50 +169,52 @@ GFXDECODE_END
  *
  *************************************/
 
-static MACHINE_CONFIG_START( xybots, xybots_state )
-
+void xybots_state::xybots(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", M68000, ATARI_CLOCK_14MHz/2)
-	MCFG_CPU_PROGRAM_MAP(main_map)
-	MCFG_DEVICE_VBLANK_INT_DRIVER("screen", atarigen_state, video_int_gen)
+	M68000(config, m_maincpu, 14.318181_MHz_XTAL/2);
+	m_maincpu->set_addrmap(AS_PROGRAM, &xybots_state::main_map);
 
-	MCFG_SLAPSTIC_ADD("slapstic")
+	SLAPSTIC(config, m_slapstic, 107);
+	m_slapstic->set_range(m_maincpu, AS_PROGRAM, 0x8000, 0xffff, 0x7c0000);
+	m_slapstic->set_bank(m_slapstic_bank);
 
-	MCFG_MACHINE_RESET_OVERRIDE(xybots_state,xybots)
+	EEPROM_2804(config, "eeprom").lock_after_write(true);
 
-	MCFG_ATARI_EEPROM_2804_ADD("eeprom")
+	WATCHDOG_TIMER(config, "watchdog");
 
 	/* video hardware */
-	MCFG_GFXDECODE_ADD("gfxdecode", "palette", xybots)
+	GFXDECODE(config, "gfxdecode", "palette", gfx_xybots);
+	PALETTE(config, "palette").set_format(palette_device::IRGB_4444, 1024);
 
-	MCFG_PALETTE_ADD("palette", 1024)
-	MCFG_PALETTE_FORMAT(IIIIRRRRGGGGBBBB)
+	TILEMAP(config, m_playfield_tilemap, "gfxdecode", 2, 8, 8, TILEMAP_SCAN_ROWS, 64, 32).set_info_callback(FUNC(xybots_state::get_playfield_tile_info));
+	TILEMAP(config, m_alpha_tilemap, "gfxdecode", 2, 8, 8, TILEMAP_SCAN_ROWS, 64, 32, 0).set_info_callback(FUNC(xybots_state::get_alpha_tile_info));
 
-	MCFG_TILEMAP_ADD_STANDARD("playfield", "gfxdecode", 2, xybots_state, get_playfield_tile_info, 8,8, SCAN_ROWS, 64,32)
-	MCFG_TILEMAP_ADD_STANDARD_TRANSPEN("alpha", "gfxdecode", 2, xybots_state, get_alpha_tile_info, 8,8, SCAN_ROWS, 64,32, 0)
-	MCFG_ATARI_MOTION_OBJECTS_ADD("mob", "screen", xybots_state::s_mob_config)
-	MCFG_ATARI_MOTION_OBJECTS_GFXDECODE("gfxdecode")
+	ATARI_MOTION_OBJECTS(config, m_mob, 0, m_screen, xybots_state::s_mob_config);
+	m_mob->set_gfxdecode(m_gfxdecode);
 
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_VIDEO_ATTRIBUTES(VIDEO_UPDATE_BEFORE_VBLANK)
+	SCREEN(config, m_screen, SCREEN_TYPE_RASTER);
+	m_screen->set_video_attributes(VIDEO_UPDATE_BEFORE_VBLANK);
 	/* note: these parameters are from published specs, not derived */
 	/* the board uses a SYNGEN chip to generate video signals */
-	MCFG_SCREEN_RAW_PARAMS(ATARI_CLOCK_14MHz/2, 456, 0, 336, 262, 0, 240)
-	MCFG_SCREEN_UPDATE_DRIVER(xybots_state, screen_update_xybots)
-	MCFG_SCREEN_PALETTE("palette")
-
-	MCFG_VIDEO_START_OVERRIDE(xybots_state,xybots)
+	m_screen->set_raw(14.318181_MHz_XTAL/2, 456, 0, 336, 262, 0, 240);
+	m_screen->set_screen_update(FUNC(xybots_state::screen_update_xybots));
+	m_screen->set_palette("palette");
+	m_screen->screen_vblank().set_inputline(m_maincpu, M68K_IRQ_1, ASSERT_LINE);
 
 	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_STEREO("lspeaker", "rspeaker")
+	SPEAKER(config, "lspeaker").front_left();
+	SPEAKER(config, "rspeaker").front_right();
 
-	MCFG_ATARI_JSA_I_ADD("jsa", WRITELINE(atarigen_state, sound_int_write_line))
-	MCFG_ATARI_JSA_TEST_PORT("FFE200", 8)
-	MCFG_SOUND_ROUTE(0, "rspeaker", 1.0)
-	MCFG_SOUND_ROUTE(1, "lspeaker", 1.0)
-	MCFG_DEVICE_REMOVE("jsa:pokey")
-	MCFG_DEVICE_REMOVE("jsa:tms")
-MACHINE_CONFIG_END
+	ATARI_JSA_I(config, m_jsa, 0);
+	m_jsa->main_int_cb().set_inputline(m_maincpu, M68K_IRQ_2);
+	m_jsa->test_read_cb().set_ioport("FFE200").bit(8);
+	m_jsa->set_inverted_coins();
+	m_jsa->add_route(0, "rspeaker", 1.0);
+	m_jsa->add_route(1, "lspeaker", 1.0);
+	config.device_remove("jsa:pokey");
+	config.device_remove("jsa:tms");
+}
 
 
 
@@ -237,9 +231,8 @@ ROM_START( xybots )
 	ROM_LOAD16_BYTE( "136054-2114.17b",  0x020000, 0x008000, CRC(d31890cb) SHA1(b58722a4dcc79e97484c2f5e35b8dbf8c3520bd9) )
 	ROM_LOAD16_BYTE( "136054-2115.19b",  0x020001, 0x008000, CRC(750ab1b0) SHA1(0638de738bd804bde4b93cd23190ee0465887cf8) )
 
-	ROM_REGION( 0x14000, "jsa:cpu", 0 ) /* 64k for 6502 code */
-	ROM_LOAD( "136054-1116.2k",  0x010000, 0x004000, CRC(3b9f155d) SHA1(7080681a7eab282023034379825ca88adc6b300f) )
-	ROM_CONTINUE(                0x004000, 0x00c000 )
+	ROM_REGION( 0x10000, "jsa:cpu", 0 ) /* 64k for 6502 code */
+	ROM_LOAD( "136054-1116.2k",  0x00000, 0x10000, CRC(3b9f155d) SHA1(7080681a7eab282023034379825ca88adc6b300f) )
 
 	ROM_REGION( 0x40000, "gfx1", 0 )
 	ROM_LOAD( "136054-2102.12l", 0x000000, 0x008000, CRC(c1309674) SHA1(5a163c894142c8d662557c8322dc04fded637227) )
@@ -268,9 +261,8 @@ ROM_START( xybotsg )
 	ROM_LOAD16_BYTE( "136054-3214.17b",  0x020000, 0x008000, CRC(4ad35093) SHA1(6d2d82fb481c68819ec6c87d483eed17d4ae5d1a) )
 	ROM_LOAD16_BYTE( "136054-3215.19b",  0x020001, 0x008000, CRC(3a2afbaf) SHA1(61b88d15d95681eb24559d0696203cd4ee63d11f) )
 
-	ROM_REGION( 0x14000, "jsa:cpu", 0 ) /* 64k for 6502 code */
-	ROM_LOAD( "136054-1116.2k",  0x010000, 0x004000, CRC(3b9f155d) SHA1(7080681a7eab282023034379825ca88adc6b300f) )
-	ROM_CONTINUE(                0x004000, 0x00c000 )
+	ROM_REGION( 0x10000, "jsa:cpu", 0 ) /* 64k for 6502 code */
+	ROM_LOAD( "136054-1116.2k",  0x00000, 0x10000, CRC(3b9f155d) SHA1(7080681a7eab282023034379825ca88adc6b300f) )
 
 	ROM_REGION( 0x40000, "gfx1", 0 )
 	ROM_LOAD( "136054-2102.12l", 0x000000, 0x008000, CRC(c1309674) SHA1(5a163c894142c8d662557c8322dc04fded637227) )
@@ -299,9 +291,8 @@ ROM_START( xybotsf )
 	ROM_LOAD16_BYTE( "136054-3614.17b",  0x020000, 0x008000, CRC(7385e0b6) SHA1(98a69901069872b14413c1bfe48783fdb43c1c37) )
 	ROM_LOAD16_BYTE( "136054-3615.19b",  0x020001, 0x008000, CRC(8e37b812) SHA1(40f973a49c4b40f3a5d982d332995e792f718dcc) )
 
-	ROM_REGION( 0x14000, "jsa:cpu", 0 ) /* 64k for 6502 code */
-	ROM_LOAD( "136054-1116.2k",  0x010000, 0x004000, CRC(3b9f155d) SHA1(7080681a7eab282023034379825ca88adc6b300f) )
-	ROM_CONTINUE(                0x004000, 0x00c000 )
+	ROM_REGION( 0x10000, "jsa:cpu", 0 ) /* 64k for 6502 code */
+	ROM_LOAD( "136054-1116.2k",  0x00000, 0x10000, CRC(3b9f155d) SHA1(7080681a7eab282023034379825ca88adc6b300f) )
 
 	ROM_REGION( 0x40000, "gfx1", 0 )
 	ROM_LOAD( "136054-2102.12l", 0x000000, 0x008000, CRC(c1309674) SHA1(5a163c894142c8d662557c8322dc04fded637227) )
@@ -330,9 +321,8 @@ ROM_START( xybots1 )
 	ROM_LOAD16_BYTE( "136054-1114.17b",  0x020000, 0x008000, CRC(7444f88f) SHA1(e2a27754a57a809398ee639fe5d0920b564d4c0b) )
 	ROM_LOAD16_BYTE( "136054-1115.19b",  0x020001, 0x008000, CRC(848d072d) SHA1(c4d1181f0227200e60d99a99c1a83897275b055f) )
 
-	ROM_REGION( 0x14000, "jsa:cpu", 0 ) /* 64k for 6502 code */
-	ROM_LOAD( "136054-1116.2k",  0x010000, 0x004000, CRC(3b9f155d) SHA1(7080681a7eab282023034379825ca88adc6b300f) )
-	ROM_CONTINUE(                0x004000, 0x00c000 )
+	ROM_REGION( 0x10000, "jsa:cpu", 0 ) /* 64k for 6502 code */
+	ROM_LOAD( "136054-1116.2k",  0x00000, 0x10000, CRC(3b9f155d) SHA1(7080681a7eab282023034379825ca88adc6b300f) )
 
 	ROM_REGION( 0x40000, "gfx1", 0 )
 	ROM_LOAD( "136054-2102.12l", 0x000000, 0x008000, CRC(c1309674) SHA1(5a163c894142c8d662557c8322dc04fded637227) )
@@ -361,9 +351,8 @@ ROM_START( xybots0 )
 	ROM_LOAD16_BYTE( "136054-0114.17b",  0x020000, 0x008000, CRC(18b875f7) SHA1(aa78553bd3556d0b209513ba80b782cfb0e3bb8b) )
 	ROM_LOAD16_BYTE( "136054-0115.19b",  0x020001, 0x008000, CRC(7f116360) SHA1(d12c339ce973bd74be4a4ac9e9d293f6a6e358d6) )
 
-	ROM_REGION( 0x14000, "jsa:cpu", 0 ) /* 64k for 6502 code */
-	ROM_LOAD( "136054-0116.2k",  0x010000, 0x004000, BAD_DUMP CRC(3b9f155d) SHA1(7080681a7eab282023034379825ca88adc6b300f) ) // not dumped from this pcb, rom taken from another set instead
-	ROM_CONTINUE(                0x004000, 0x00c000 )
+	ROM_REGION( 0x10000, "jsa:cpu", 0 ) /* 64k for 6502 code */
+	ROM_LOAD( "136054-0116.2k",  0x00000, 0x10000, BAD_DUMP CRC(3b9f155d) SHA1(7080681a7eab282023034379825ca88adc6b300f) ) // not dumped from this pcb, rom taken from another set instead
 
 	ROM_REGION( 0x40000, "gfx1", 0 )
 	ROM_LOAD( "136054-1102.12l", 0x000000, 0x008000, CRC(0d304e5b) SHA1(203c86c865667b1538f61c0950682fb17ebd9abb) )
@@ -392,10 +381,10 @@ ROM_END
  *
  *************************************/
 
-DRIVER_INIT_MEMBER(xybots_state,xybots)
+void xybots_state::machine_start()
 {
+	m_slapstic_bank->configure_entries(0, 4, memregion("maincpu")->base() + 0x8000, 0x2000);
 	m_h256 = 0x0400;
-	slapstic_configure(*m_maincpu, 0x008000, 0, 107);
 }
 
 
@@ -406,8 +395,8 @@ DRIVER_INIT_MEMBER(xybots_state,xybots)
  *
  *************************************/
 
-GAME( 1987, xybots,  0,      xybots, xybots, xybots_state, xybots, ROT0, "Atari Games", "Xybots (rev 2)", 0 )
-GAME( 1987, xybotsg, xybots, xybots, xybots, xybots_state, xybots, ROT0, "Atari Games", "Xybots (German, rev 3)", 0 )
-GAME( 1987, xybotsf, xybots, xybots, xybots, xybots_state, xybots, ROT0, "Atari Games", "Xybots (French, rev 3)", 0 )
-GAME( 1987, xybots1, xybots, xybots, xybots, xybots_state, xybots, ROT0, "Atari Games", "Xybots (rev 1)", 0 )
-GAME( 1987, xybots0, xybots, xybots, xybots, xybots_state, xybots, ROT0, "Atari Games", "Xybots (rev 0)", 0 )
+GAME( 1987, xybots,  0,      xybots, xybots, xybots_state, empty_init, ROT0, "Atari Games", "Xybots (rev 2)", 0 )
+GAME( 1987, xybotsg, xybots, xybots, xybots, xybots_state, empty_init, ROT0, "Atari Games", "Xybots (German, rev 3)", 0 )
+GAME( 1987, xybotsf, xybots, xybots, xybots, xybots_state, empty_init, ROT0, "Atari Games", "Xybots (French, rev 3)", 0 )
+GAME( 1987, xybots1, xybots, xybots, xybots, xybots_state, empty_init, ROT0, "Atari Games", "Xybots (rev 1)", 0 )
+GAME( 1987, xybots0, xybots, xybots, xybots, xybots_state, empty_init, ROT0, "Atari Games", "Xybots (rev 0)", 0 )

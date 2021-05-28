@@ -11,9 +11,10 @@
     Sectors 0-4 are 1024 bytes, sector 5 is 512 bytes
 
 *********************************************************************/
+#ifndef MAME_FORMATS_ESQ8_DSK_H
+#define MAME_FORMATS_ESQ8_DSK_H
 
-#ifndef ESQ8_DSK_H_
-#define ESQ8_DSK_H_
+#pragma once
 
 #include "flopimg.h"
 
@@ -22,9 +23,9 @@ class esq8img_format : public floppy_image_format_t
 public:
 	esq8img_format();
 
-	virtual int identify(io_generic *io, UINT32 form_factor) override;
-	virtual bool load(io_generic *io, UINT32 form_factor, floppy_image *image) override;
-	virtual bool save(io_generic *io, floppy_image *image) override;
+	virtual int identify(io_generic *io, uint32_t form_factor, const std::vector<uint32_t> &variants) override;
+	virtual bool load(io_generic *io, uint32_t form_factor, const std::vector<uint32_t> &variants, floppy_image *image) override;
+	virtual bool save(io_generic *io, const std::vector<uint32_t> &variants, floppy_image *image) override;
 
 	virtual const char *name() const override;
 	virtual const char *description() const override;
@@ -39,4 +40,4 @@ private:
 
 extern const floppy_format_type FLOPPY_ESQ8IMG_FORMAT;
 
-#endif /* ESQ8_DSK_H_ */
+#endif // MAME_FORMATS_ESQ8_DSK_H

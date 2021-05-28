@@ -14,7 +14,10 @@
 
 */
 
+#include "emu.h"
 #include "dj2db.h"
+
+#include "machine/ay31015.h"
 
 
 
@@ -32,7 +35,7 @@
 //  DEVICE DEFINITIONS
 //**************************************************************************
 
-const device_type S100_DJ2DB = &device_creator<s100_dj2db_device>;
+DEFINE_DEVICE_TYPE(S100_DJ2DB, s100_dj2db_device, "s100_sj2db", "Morrow Disk Jockey 2D/B")
 
 
 //-------------------------------------------------
@@ -53,7 +56,7 @@ ROM_END
 //  rom_region - device-specific ROM region
 //-------------------------------------------------
 
-const rom_entry *s100_dj2db_device::device_rom_region() const
+const tiny_rom_entry *s100_dj2db_device::device_rom_region() const
 {
 	return ROM_NAME( dj2db );
 }
@@ -63,14 +66,10 @@ const rom_entry *s100_dj2db_device::device_rom_region() const
 //  COM8116_INTERFACE( brg_intf )
 //-------------------------------------------------
 
-WRITE_LINE_MEMBER( s100_dj2db_device::fr_w )
+static void s100_dj2db_floppies(device_slot_interface &device)
 {
-	// S1602 RRC/TRC
+	device.option_add("8dsdd", FLOPPY_8_DSDD);
 }
-
-static SLOT_INTERFACE_START( s100_dj2db_floppies )
-	SLOT_INTERFACE( "8dsdd", FLOPPY_8_DSDD )
-SLOT_INTERFACE_END
 
 WRITE_LINE_MEMBER( s100_dj2db_device::fdc_intrq_w )
 {
@@ -97,32 +96,25 @@ WRITE_LINE_MEMBER( s100_dj2db_device::fdc_drq_w )
 
 
 //-------------------------------------------------
-//  MACHINE_CONFIG_FRAGMENT( s100_dj2db )
+//  device_add_mconfig - add device configuration
 //-------------------------------------------------
 
-static MACHINE_CONFIG_FRAGMENT( s100_dj2db )
-	MCFG_DEVICE_ADD(BR1941_TAG, COM8116, XTAL_5_0688MHz)
-	MCFG_COM8116_FR_HANDLER(WRITELINE(s100_dj2db_device, fr_w))
-
-	MCFG_MB8866_ADD(MB8866_TAG, XTAL_10MHz/5)
-	MCFG_WD_FDC_INTRQ_CALLBACK(WRITELINE(s100_dj2db_device, fdc_intrq_w))
-	MCFG_WD_FDC_DRQ_CALLBACK(WRITELINE(s100_dj2db_device, fdc_drq_w))
-
-	MCFG_FLOPPY_DRIVE_ADD(MB8866_TAG":0", s100_dj2db_floppies, "8dsdd", floppy_image_device::default_floppy_formats)
-	MCFG_FLOPPY_DRIVE_ADD(MB8866_TAG":1", s100_dj2db_floppies, nullptr,    floppy_image_device::default_floppy_formats)
-	MCFG_FLOPPY_DRIVE_ADD(MB8866_TAG":2", s100_dj2db_floppies, nullptr,    floppy_image_device::default_floppy_formats)
-	MCFG_FLOPPY_DRIVE_ADD(MB8866_TAG":3", s100_dj2db_floppies, nullptr,    floppy_image_device::default_floppy_formats)
-MACHINE_CONFIG_END
-
-
-//-------------------------------------------------
-//  machine_config_additions - device-specific
-//  machine configurations
-//-------------------------------------------------
-
-machine_config_constructor s100_dj2db_device::device_mconfig_additions() const
+void s100_dj2db_device::device_add_mconfig(machine_config &config)
 {
-	return MACHINE_CONFIG_NAME( s100_dj2db );
+	COM8116(config, m_dbrg, 5.0688_MHz_XTAL); // BR2941
+	m_dbrg->fr_handler().set(m_uart, FUNC(ay51013_device::write_tcp));
+	m_dbrg->fr_handler().append(m_uart, FUNC(ay51013_device::write_rcp));
+
+	AY51013(config, m_uart); // TR1602
+
+	MB8866(config, m_fdc, 10_MHz_XTAL / 10); // clocked by QC output of LS390
+	m_fdc->intrq_wr_callback().set(FUNC(s100_dj2db_device::fdc_intrq_w));
+	m_fdc->drq_wr_callback().set(FUNC(s100_dj2db_device::fdc_drq_w));
+
+	FLOPPY_CONNECTOR(config, m_floppy0, s100_dj2db_floppies, "8dsdd", floppy_image_device::default_mfm_floppy_formats);
+	FLOPPY_CONNECTOR(config, m_floppy1, s100_dj2db_floppies, nullptr, floppy_image_device::default_mfm_floppy_formats);
+	FLOPPY_CONNECTOR(config, m_floppy2, s100_dj2db_floppies, nullptr, floppy_image_device::default_mfm_floppy_formats);
+	FLOPPY_CONNECTOR(config, m_floppy3, s100_dj2db_floppies, nullptr, floppy_image_device::default_mfm_floppy_formats);
 }
 
 
@@ -250,18 +242,19 @@ ioport_constructor s100_dj2db_device::device_input_ports() const
 //  s100_dj2db_device - constructor
 //-------------------------------------------------
 
-s100_dj2db_device::s100_dj2db_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock) :
-	device_t(mconfig, S100_DJ2DB, "DJ2DB", tag, owner, clock, "dj2db", __FILE__),
+s100_dj2db_device::s100_dj2db_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock) :
+	device_t(mconfig, S100_DJ2DB, tag, owner, clock),
 	device_s100_card_interface(mconfig, *this),
 	m_fdc(*this, MB8866_TAG),
 	m_dbrg(*this, BR1941_TAG),
+	m_uart(*this, S1602_TAG),
 	m_floppy0(*this, MB8866_TAG":0"),
 	m_floppy1(*this, MB8866_TAG":1"),
 	m_floppy2(*this, MB8866_TAG":2"),
 	m_floppy3(*this, MB8866_TAG":3"),
 	m_floppy(nullptr),
 	m_rom(*this, "dj2db"),
-	m_ram(*this, "ram"),
+	m_ram(*this, "ram", 0x400, ENDIANNESS_LITTLE),
 	m_j1a(*this, "J1A"),
 	m_j3a(*this, "J3A"),
 	m_j4(*this, "J4"),
@@ -282,9 +275,6 @@ s100_dj2db_device::s100_dj2db_device(const machine_config &mconfig, const char *
 
 void s100_dj2db_device::device_start()
 {
-	// allocate memory
-	m_ram.allocate(0x400);
-
 	// state saving
 	save_item(NAME(m_drive));
 	save_item(NAME(m_head));
@@ -302,6 +292,8 @@ void s100_dj2db_device::device_start()
 void s100_dj2db_device::device_reset()
 {
 	m_board_enbl = m_j4->read();
+
+	m_fdc->mr_w(0);
 }
 
 
@@ -309,11 +301,11 @@ void s100_dj2db_device::device_reset()
 //  s100_smemr_r - memory read
 //-------------------------------------------------
 
-UINT8 s100_dj2db_device::s100_smemr_r(address_space &space, offs_t offset)
+uint8_t s100_dj2db_device::s100_smemr_r(offs_t offset)
 {
-	UINT8 data = 0;
+	uint8_t data = 0;
 
-//  if (!(m_board_enbl & m_phantom)) return 0;
+//  if (!(m_board_enbl & m_phantom)) return 0xff;
 
 	if ((offset >= 0xf800) && (offset < 0xfbf8))
 	{
@@ -368,7 +360,7 @@ UINT8 s100_dj2db_device::s100_smemr_r(address_space &space, offs_t offset)
 	{
 		m_bus->rdy_w(ASSERT_LINE);
 
-		data = m_fdc->gen_r(offset & 0x03);
+		data = m_fdc->read(offset & 0x03);
 	}
 	else if ((offset >= 0xfc00) && (offset < 0x10000))
 	{
@@ -376,7 +368,7 @@ UINT8 s100_dj2db_device::s100_smemr_r(address_space &space, offs_t offset)
 	}
 	else
 	{
-		return 0;
+		return 0xff;
 	}
 
 	// LS241 inverts data
@@ -388,7 +380,7 @@ UINT8 s100_dj2db_device::s100_smemr_r(address_space &space, offs_t offset)
 //  s100_mwrt_w - memory write
 //-------------------------------------------------
 
-void s100_dj2db_device::s100_mwrt_w(address_space &space, offs_t offset, UINT8 data)
+void s100_dj2db_device::s100_mwrt_w(offs_t offset, uint8_t data)
 {
 //  if (!(m_board_enbl & m_phantom)) return;
 
@@ -440,7 +432,7 @@ void s100_dj2db_device::s100_mwrt_w(address_space &space, offs_t offset, UINT8 d
 		m_access_enbl = BIT(data, 6);
 
 		// master reset
-		if (!BIT(data, 7)) m_fdc->soft_reset();
+		m_fdc->mr_w(BIT(data, 7));
 	}
 	else if (offset == 0xfbfa) // FUNCTION SEL
 	{
@@ -468,7 +460,7 @@ void s100_dj2db_device::s100_mwrt_w(address_space &space, offs_t offset, UINT8 d
 	}
 	else if ((offset >= 0xfbfc) && (offset < 0xfc00))
 	{
-		m_fdc->gen_w(offset & 0x03, data);
+		m_fdc->write(offset & 0x03, data);
 	}
 	else if ((offset >= 0xfc00) && (offset < 0x10000))
 	{
@@ -481,9 +473,9 @@ void s100_dj2db_device::s100_mwrt_w(address_space &space, offs_t offset, UINT8 d
 //  s100_sinp_r - I/O read
 //-------------------------------------------------
 
-UINT8 s100_dj2db_device::s100_sinp_r(address_space &space, offs_t offset)
+uint8_t s100_dj2db_device::s100_sinp_r(offs_t offset)
 {
-	return 0;
+	return 0xff;
 }
 
 
@@ -491,7 +483,7 @@ UINT8 s100_dj2db_device::s100_sinp_r(address_space &space, offs_t offset)
 //  s100_sout_w - I/O write
 //-------------------------------------------------
 
-void s100_dj2db_device::s100_sout_w(address_space &space, offs_t offset, UINT8 data)
+void s100_dj2db_device::s100_sout_w(offs_t offset, uint8_t data)
 {
 	if (offset == 0x41)
 	{

@@ -23,73 +23,65 @@
 
 ***************************************************************************/
 
-PALETTE_INIT_MEMBER(gberet_state,gberet)
+void gberet_state::gberet_palette(palette_device &palette) const
 {
-	const UINT8 *color_prom = memregion("proms")->base();
-	int i;
+	uint8_t const *color_prom = memregion("proms")->base();
 
-	/* create a lookup table for the palette */
-	for (i = 0; i < 0x20; i++)
+	// create a lookup table for the palette
+	for (int i = 0; i < 0x20; i++)
 	{
 		int bit0, bit1, bit2;
-		int r, g, b;
 
-		/* red component */
-		bit0 = (color_prom[i] >> 0) & 0x01;
-		bit1 = (color_prom[i] >> 1) & 0x01;
-		bit2 = (color_prom[i] >> 2) & 0x01;
-		r = 0x21 * bit0 + 0x47 * bit1 + 0x97 * bit2;
+		// red component
+		bit0 = BIT(color_prom[i], 0);
+		bit1 = BIT(color_prom[i], 1);
+		bit2 = BIT(color_prom[i], 2);
+		int const r = 0x21 * bit0 + 0x47 * bit1 + 0x97 * bit2;
 
-		/* green component */
-		bit0 = (color_prom[i] >> 3) & 0x01;
-		bit1 = (color_prom[i] >> 4) & 0x01;
-		bit2 = (color_prom[i] >> 5) & 0x01;
-		g = 0x21 * bit0 + 0x47 * bit1 + 0x97 * bit2;
+		// green component
+		bit0 = BIT(color_prom[i], 3);
+		bit1 = BIT(color_prom[i], 4);
+		bit2 = BIT(color_prom[i], 5);
+		int const g = 0x21 * bit0 + 0x47 * bit1 + 0x97 * bit2;
 
-		/* blue component */
+		// blue component
 		bit0 = 0;
-		bit1 = (color_prom[i] >> 6) & 0x01;
-		bit2 = (color_prom[i] >> 7) & 0x01;
-		b = 0x21 * bit0 + 0x47 * bit1 + 0x97 * bit2;
+		bit1 = BIT(color_prom[i], 6);
+		bit2 = BIT(color_prom[i], 7);
+		int const b = 0x21 * bit0 + 0x47 * bit1 + 0x97 * bit2;
 
 		palette.set_indirect_color(i, rgb_t(r, g, b));
 	}
 
-	/* color_prom now points to the beginning of the lookup table */
+	// color_prom now points to the beginning of the lookup table
 	color_prom += 0x20;
 
-	for (i = 0; i < 0x100; i++)
+	for (int i = 0; i < 0x100; i++)
 	{
-		UINT8 ctabentry = (color_prom[i] & 0x0f) | 0x10;
+		uint8_t const ctabentry = (color_prom[i] & 0x0f) | 0x10;
 		palette.set_pen_indirect(i, ctabentry);
 	}
 
-	for (i = 0x100; i < 0x200; i++)
+	for (int i = 0x100; i < 0x200; i++)
 	{
-		UINT8 ctabentry;
-
-		if (color_prom[i] & 0x0f)
-			ctabentry = color_prom[i] & 0x0f;
-		else
-			ctabentry = 0;
-
+		uint8_t const ctabentry = color_prom[i] & 0x0f;
 		palette.set_pen_indirect(i, ctabentry);
 	}
 }
 
-WRITE8_MEMBER(gberet_state::gberet_videoram_w)
+void gberet_state::gberet_videoram_w(offs_t offset, uint8_t data)
 {
 	m_videoram[offset] = data;
 	m_bg_tilemap->mark_tile_dirty(offset);
 }
 
-WRITE8_MEMBER(gberet_state::gberet_colorram_w)
+void gberet_state::gberet_colorram_w(offs_t offset, uint8_t data)
 {
 	m_colorram[offset] = data;
 	m_bg_tilemap->mark_tile_dirty(offset);
 }
 
-WRITE8_MEMBER(gberet_state::gberet_scroll_w)
+void gberet_state::gberet_scroll_w(offs_t offset, uint8_t data)
 {
 	int scroll;
 
@@ -99,7 +91,7 @@ WRITE8_MEMBER(gberet_state::gberet_scroll_w)
 	m_bg_tilemap->set_scrollx(offset & 0x1f, scroll);
 }
 
-WRITE8_MEMBER(gberet_state::gberet_sprite_bank_w)
+void gberet_state::gberet_sprite_bank_w(uint8_t data)
 {
 	m_spritebank = data;
 }
@@ -114,12 +106,12 @@ TILE_GET_INFO_MEMBER(gberet_state::get_bg_tile_info)
 	tileinfo.group = color;
 	tileinfo.category = (attr & 0x80) >> 7;
 
-	SET_TILE_INFO_MEMBER(0, code, color, flags);
+	tileinfo.set(0, code, color, flags);
 }
 
-VIDEO_START_MEMBER(gberet_state,gberet)
+void gberet_state::video_start()
 {
-	m_bg_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(gberet_state::get_bg_tile_info),this), TILEMAP_SCAN_ROWS, 8, 8, 64, 32);
+	m_bg_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(gberet_state::get_bg_tile_info)), TILEMAP_SCAN_ROWS, 8, 8, 64, 32);
 	m_bg_tilemap->configure_groups(*m_gfxdecode->gfx(0), 0x10);
 	m_bg_tilemap->set_scroll_rows(32);
 }
@@ -127,7 +119,7 @@ VIDEO_START_MEMBER(gberet_state,gberet)
 void gberet_state::gberet_draw_sprites( bitmap_ind16 &bitmap, const rectangle &cliprect )
 {
 	int offs;
-	UINT8 *sr;
+	uint8_t *sr;
 
 	if (m_spritebank & 0x08)
 		sr = m_spriteram2;
@@ -160,7 +152,7 @@ void gberet_state::gberet_draw_sprites( bitmap_ind16 &bitmap, const rectangle &c
 	}
 }
 
-UINT32 gberet_state::screen_update_gberet(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t gberet_state::screen_update_gberet(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	m_bg_tilemap->draw(screen, bitmap, cliprect, TILEMAP_DRAW_OPAQUE | TILEMAP_DRAW_ALL_CATEGORIES, 0);
 	gberet_draw_sprites(bitmap, cliprect);
@@ -170,7 +162,7 @@ UINT32 gberet_state::screen_update_gberet(screen_device &screen, bitmap_ind16 &b
 
 /* Green Beret (bootleg) */
 
-WRITE8_MEMBER(gberet_state::gberetb_scroll_w)
+void gberet_state::gberetb_scroll_w(offs_t offset, uint8_t data)
 {
 	int scroll = data;
 
@@ -183,7 +175,7 @@ WRITE8_MEMBER(gberet_state::gberetb_scroll_w)
 
 void gberet_state::gberetb_draw_sprites( bitmap_ind16 &bitmap, const rectangle &cliprect )
 {
-	UINT8 *spriteram = m_spriteram;
+	uint8_t *spriteram = m_spriteram;
 	int offs;
 
 	for (offs = m_spriteram.bytes() - 4; offs >= 0; offs -= 4)
@@ -212,7 +204,7 @@ void gberet_state::gberetb_draw_sprites( bitmap_ind16 &bitmap, const rectangle &
 	}
 }
 
-UINT32 gberet_state::screen_update_gberetb(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t gberet_state::screen_update_gberetb(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	m_bg_tilemap->draw(screen, bitmap, cliprect, TILEMAP_DRAW_OPAQUE | TILEMAP_DRAW_ALL_CATEGORIES, 0);
 	gberetb_draw_sprites(bitmap, cliprect);

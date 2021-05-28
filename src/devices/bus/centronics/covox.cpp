@@ -7,23 +7,15 @@
 ***************************************************************************/
 
 #include "emu.h"
-#include "sound/dac.h"
 #include "covox.h"
+#include "speaker.h"
 
 //**************************************************************************
 //  COVOX DEVICE
 //**************************************************************************
 
 // device type definition
-const device_type CENTRONICS_COVOX = &device_creator<centronics_covox_device>;
-
-static MACHINE_CONFIG_FRAGMENT( covox )
-	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_MONO("mono")
-
-	MCFG_SOUND_ADD("dac", DAC, 0)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 1.0)
-MACHINE_CONFIG_END
+DEFINE_DEVICE_TYPE(CENTRONICS_COVOX, centronics_covox_device, "covox", "Covox Speech Thing")
 
 
 /***************************************************************************
@@ -33,8 +25,8 @@ MACHINE_CONFIG_END
 //  centronics_covox_device - constructor
 //-------------------------------------------------
 
-centronics_covox_device::centronics_covox_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: device_t(mconfig, CENTRONICS_COVOX, "Covox Speech Thing", tag, owner, clock, "covox", __FILE__),
+centronics_covox_device::centronics_covox_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: device_t(mconfig, CENTRONICS_COVOX, tag, owner, clock),
 	device_centronics_peripheral_interface( mconfig, *this ),
 	m_dac(*this, "dac"),
 	m_data(0)
@@ -42,13 +34,14 @@ centronics_covox_device::centronics_covox_device(const machine_config &mconfig, 
 }
 
 //-------------------------------------------------
-//  machine_config_additions - device-specific
-//  machine configurations
+//  device_add_mconfig - add device configuration
 //-------------------------------------------------
 
-machine_config_constructor centronics_covox_device::device_mconfig_additions() const
+void centronics_covox_device::device_add_mconfig(machine_config &config)
 {
-	return MACHINE_CONFIG_NAME( covox );
+	/* sound hardware */
+	SPEAKER(config, "speaker").front_center();
+	DAC_8BIT_R2R(config, m_dac, 0).add_route(ALL_OUTPUTS, "speaker", 0.5); // unknown DAC
 }
 
 void centronics_covox_device::device_start()
@@ -59,7 +52,7 @@ void centronics_covox_device::device_start()
 void centronics_covox_device::update_dac()
 {
 	if (started())
-		m_dac->write_unsigned8(m_data);
+		m_dac->write(m_data);
 }
 
 //**************************************************************************
@@ -67,18 +60,7 @@ void centronics_covox_device::update_dac()
 //**************************************************************************
 
 // device type definition
-const device_type CENTRONICS_COVOX_STEREO = &device_creator<centronics_covox_stereo_device>;
-
-static MACHINE_CONFIG_FRAGMENT( covox_stereo )
-	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_STEREO("lspeaker", "rspeaker")
-
-	MCFG_SOUND_ADD("dac_left", DAC, 0)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "lspeaker", 1.0)
-
-	MCFG_SOUND_ADD("dac_right", DAC, 0)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "rspeaker", 1.0)
-MACHINE_CONFIG_END
+DEFINE_DEVICE_TYPE(CENTRONICS_COVOX_STEREO, centronics_covox_stereo_device, "covox_stereo", "Covox (Stereo-in-1)")
 
 
 /***************************************************************************
@@ -88,23 +70,28 @@ MACHINE_CONFIG_END
 //  centronics_covox_stereo_device - constructor
 //-------------------------------------------------
 
-centronics_covox_stereo_device::centronics_covox_stereo_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: device_t(mconfig, CENTRONICS_COVOX_STEREO, "Covox (Stereo-in-1)", tag, owner, clock, "covox_stereo", __FILE__),
+centronics_covox_stereo_device::centronics_covox_stereo_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: device_t(mconfig, CENTRONICS_COVOX_STEREO, tag, owner, clock),
 	device_centronics_peripheral_interface( mconfig, *this ),
-	m_dac_left(*this, "dac_left"),
-	m_dac_right(*this, "dac_right"), m_strobe(0),
-	m_data(0), m_autofd(0)
+	m_ldac(*this, "ldac"),
+	m_rdac(*this, "rdac"),
+	m_strobe(0),
+	m_data(0),
+	m_autofd(0)
 {
 }
 
 //-------------------------------------------------
-//  machine_config_additions - device-specific
-//  machine configurations
+//  device_add_mconfig - add device configuration
 //-------------------------------------------------
 
-machine_config_constructor centronics_covox_stereo_device::device_mconfig_additions() const
+void centronics_covox_stereo_device::device_add_mconfig(machine_config &config)
 {
-	return MACHINE_CONFIG_NAME( covox_stereo );
+	/* sound hardware */
+	SPEAKER(config, "lspeaker").front_left();
+	SPEAKER(config, "rspeaker").front_right();
+	DAC_8BIT_R2R(config, m_ldac, 0).add_route(ALL_OUTPUTS, "lspeaker", 0.5); // unknown DAC
+	DAC_8BIT_R2R(config, m_rdac, 0).add_route(ALL_OUTPUTS, "rspeaker", 0.5); // unknown DAC
 }
 
 void centronics_covox_stereo_device::device_start()
@@ -119,9 +106,9 @@ void centronics_covox_stereo_device::update_dac()
 	if (started())
 	{
 		if (m_strobe)
-			m_dac_left->write_unsigned8(m_data);
+			m_ldac->write(m_data);
 
 		if (m_autofd)
-			m_dac_right->write_unsigned8(m_data);
+			m_rdac->write(m_data);
 	}
 }

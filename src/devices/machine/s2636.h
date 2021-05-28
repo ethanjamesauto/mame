@@ -6,28 +6,14 @@
 
 **********************************************************************/
 
-#ifndef __S2636_H__
-#define __S2636_H__
+#ifndef MAME_MACHINE_S2636_H
+#define MAME_MACHINE_S2636_H
+
+#pragma once
 
 
-#define S2636_IS_PIXEL_DRAWN(p)     (((p) & 0x08) ? TRUE : FALSE)
+#define S2636_IS_PIXEL_DRAWN(p)     (((p) & 0x08) ? true : false)
 #define S2636_PIXEL_COLOR(p)        ((p) & 0x07)
-
-
-/*************************************
- *
- *  Device configuration macros
- *
- *************************************/
-
-#define MCFG_S2636_OFFSETS(_yoffs, _xoffs) \
-	s2636_device::set_offsets(*device, _yoffs, _xoffs);
-
-#define MCFG_S2636_DIVIDER(_divider) \
-	s2636_device::set_divider(*device, _divider);
-
-#define MCFG_S2623_SET_INTREQ_CALLBACK(_devcb) \
-	devcb = &s2636_device::set_intreq_cb(*device, DEVCB_##_devcb);
 
 
 /*************************************
@@ -41,27 +27,13 @@ class s2636_device : public device_t,
 				public device_sound_interface
 {
 public:
-	s2636_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
-	~s2636_device() {}
+	s2636_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
-	static void set_offsets(device_t &device, int y_offset, int x_offset)
-	{
-		s2636_device &dev = downcast<s2636_device &>(device);
-		dev.m_x_offset = x_offset;
-		dev.m_y_offset = y_offset;
-	}
+	void set_offsets(int y_offset, int x_offset) { m_x_offset = x_offset; m_y_offset = y_offset; }
 
-	static void set_divider(device_t &device, int divider)
-	{
-		s2636_device &dev = downcast<s2636_device &>(device);
-		dev.m_divider = divider;
-	}
+	void set_divider(int divider) { m_divider = divider; }
 
-	template<class _Object> static devcb_base &set_intreq_cb(device_t &device, _Object object)
-	{
-		s2636_device &dev = downcast<s2636_device &>(device);
-		return dev.m_intreq_cb.set_callback(object);
-	}
+	auto intreq_cb() { return m_intreq_cb.bind(); }
 
 	// returns a BITMAP_FORMAT_IND16 bitmap the size of the screen
 	// D0-D2 of each pixel is the pixel color
@@ -76,17 +48,17 @@ public:
 	void render_first_line();
 	void render_next_line();
 
-	DECLARE_READ8_MEMBER( read_data );
-	DECLARE_WRITE8_MEMBER( write_data );
+	uint8_t read_data(offs_t offset);
+	void write_data(offs_t offset, uint8_t data);
 
-	DECLARE_WRITE_LINE_MEMBER( write_intack );
+	void write_intack(int state);
 
 protected:
 	// device-level overrides
 	virtual void device_start() override;
 
 	// sound stream update overrides
-	virtual void sound_stream_update(sound_stream &stream, stream_sample_t **inputs, stream_sample_t **outputs, int samples) override;
+	virtual void sound_stream_update(sound_stream &stream, std::vector<read_stream_view> const &inputs, std::vector<write_stream_view> &outputs) override;
 
 private:
 	enum
@@ -130,16 +102,16 @@ private:
 
 	static int const OFFS_OBJ[OBJ_COUNT];
 
-	static UINT16 const SCORE_FONT[16][5];
+	static uint16_t const SCORE_FONT[16][5];
 
 	static int const SCORE_START_X[2][SCORE_DIGITS];
 	static int const SCORE_START_Y[2];
 
 	static void mask_offset(offs_t &offset) { offset &= ((offset & 0x0c0) == 0x0c0) ? 0x0cf : 0x0ff; }
 
-	UINT8 object_scale(int obj) const { return (m_registers[REG_OBJ_SIZE] >> (2 * obj)) & 0x03; }
-	UINT8 object_color(int obj) const { return (m_registers[REG_OBJ_CLR_1_2 + (obj >> 1)] >> ((obj & 1) ? 0 : 3)) & 0x07; }
-	UINT8 score_digit(int digit) const { return (m_registers[REG_SCORE_1_2 + (digit >> 1)] >> ((digit & 1) ? 0 : 4)) & 0x0f; }
+	uint8_t object_scale(int obj) const { return (m_registers[REG_OBJ_SIZE] >> (2 * obj)) & 0x03; }
+	uint8_t object_color(int obj) const { return (m_registers[REG_OBJ_CLR_1_2 + (obj >> 1)] >> ((obj & 1) ? 0 : 3)) & 0x07; }
+	uint8_t score_digit(int digit) const { return (m_registers[REG_SCORE_1_2 + (digit >> 1)] >> ((digit & 1) ? 0 : 4)) & 0x0f; }
 
 	void update_intreq(int value);
 
@@ -153,7 +125,7 @@ private:
 	bitmap_ind16        m_bitmap;
 
 	// 256-byte register file (not all of this really exists)
-	UINT8   m_registers[0x100];
+	uint8_t   m_registers[0x100];
 
 	// tracking where we're up to in the screen update
 	bool    m_vrst;
@@ -175,6 +147,6 @@ private:
 	bool            m_sound_lvl;
 };
 
-extern const device_type S2636;
+DECLARE_DEVICE_TYPE(S2636, s2636_device)
 
-#endif /* __S2636_H__ */
+#endif // MAME_MACHINE_S2636_H

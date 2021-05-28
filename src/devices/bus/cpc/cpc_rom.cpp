@@ -1,55 +1,50 @@
 // license:BSD-3-Clause
 // copyright-holders:Barry Rodewald
 /*
- * cpc_rom.c
+ * cpc_rom.cpp
  * Amstrad CPC mountable ROM image device
  *
  */
 
 #include "emu.h"
 #include "cpc_rom.h"
-#include "includes/amstrad.h"
 
-const device_type CPC_ROM = &device_creator<cpc_rom_device>;
+DEFINE_DEVICE_TYPE(CPC_ROM, cpc_rom_device, "cpc_rom", "CPC ROM Box")
 
+void cpc_exp_cards(device_slot_interface &device);
 
 //**************************************************************************
 //  DEVICE CONFIG INTERFACE
 //**************************************************************************
 
 // device machine config
-static MACHINE_CONFIG_FRAGMENT( cpc_rom )
-	MCFG_ROMSLOT_ADD("rom1")
-	MCFG_ROMSLOT_ADD("rom2")
-	MCFG_ROMSLOT_ADD("rom3")
-	MCFG_ROMSLOT_ADD("rom4")
-	MCFG_ROMSLOT_ADD("rom5")
-	MCFG_ROMSLOT_ADD("rom6")
-	MCFG_ROMSLOT_ADD("rom7")
-	MCFG_ROMSLOT_ADD("rom8")
+void cpc_rom_device::device_add_mconfig(machine_config &config)
+{
+	CPC_ROMSLOT(config, m_rom[0], 0);
+	CPC_ROMSLOT(config, m_rom[1], 0);
+	CPC_ROMSLOT(config, m_rom[2], 0);
+	CPC_ROMSLOT(config, m_rom[3], 0);
+	CPC_ROMSLOT(config, m_rom[4], 0);
+	CPC_ROMSLOT(config, m_rom[5], 0);
+	CPC_ROMSLOT(config, m_rom[6], 0);
+	CPC_ROMSLOT(config, m_rom[7], 0);
 
 	// pass-through
-	MCFG_DEVICE_ADD("exp", CPC_EXPANSION_SLOT, 0)
-	MCFG_DEVICE_SLOT_INTERFACE(cpc_exp_cards, nullptr, false)
-	MCFG_CPC_EXPANSION_SLOT_OUT_IRQ_CB(DEVWRITELINE("^", cpc_expansion_slot_device, irq_w))
-	MCFG_CPC_EXPANSION_SLOT_OUT_NMI_CB(DEVWRITELINE("^", cpc_expansion_slot_device, nmi_w))
-	MCFG_CPC_EXPANSION_SLOT_OUT_ROMDIS_CB(DEVWRITELINE("^", cpc_expansion_slot_device, romdis_w))  // ROMDIS
-
-MACHINE_CONFIG_END
-
-
-machine_config_constructor cpc_rom_device::device_mconfig_additions() const
-{
-	return MACHINE_CONFIG_NAME( cpc_rom );
+	cpc_expansion_slot_device &exp(CPC_EXPANSION_SLOT(config, "exp", DERIVED_CLOCK(1, 1), cpc_exp_cards, nullptr));
+	exp.irq_callback().set(DEVICE_SELF_OWNER, FUNC(cpc_expansion_slot_device::irq_w));
+	exp.nmi_callback().set(DEVICE_SELF_OWNER, FUNC(cpc_expansion_slot_device::nmi_w));
+	exp.romdis_callback().set(DEVICE_SELF_OWNER, FUNC(cpc_expansion_slot_device::romdis_w));  // ROMDIS
 }
+
 
 //**************************************************************************
 //  LIVE DEVICE
 //**************************************************************************
 
-cpc_rom_device::cpc_rom_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock) :
-	device_t(mconfig, CPC_ROM, "ROM Box", tag, owner, clock, "cpc_rom", __FILE__),
-	device_cpc_expansion_card_interface(mconfig, *this)
+cpc_rom_device::cpc_rom_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock) :
+	device_t(mconfig, CPC_ROM, tag, owner, clock),
+	device_cpc_expansion_card_interface(mconfig, *this),
+	m_rom(*this, "rom%u", 1)
 {
 }
 
@@ -73,23 +68,24 @@ void cpc_rom_device::device_reset()
 /*** ROM image device ***/
 
 // device type definition
-const device_type ROMSLOT = &device_creator<rom_image_device>;
+DEFINE_DEVICE_TYPE(CPC_ROMSLOT, cpc_rom_image_device, "cpc_rom_image", "CPC ROM image")
 
 //-------------------------------------------------
-//  rom_image_device - constructor
+//  cpc_rom_image_device - constructor
 //-------------------------------------------------
 
-rom_image_device::rom_image_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: device_t(mconfig, ROMSLOT, "ROM image", tag, owner, clock, "rom_image", __FILE__),
-		device_image_interface(mconfig, *this), m_base(nullptr)
+cpc_rom_image_device::cpc_rom_image_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: device_t(mconfig, CPC_ROMSLOT, tag, owner, clock)
+	, device_image_interface(mconfig, *this)
+	, m_base(nullptr)
 {
 }
 
 //-------------------------------------------------
-//  rom_image_device - destructor
+//  cpc_rom_image_device - destructor
 //-------------------------------------------------
 
-rom_image_device::~rom_image_device()
+cpc_rom_image_device::~cpc_rom_image_device()
 {
 }
 
@@ -97,7 +93,7 @@ rom_image_device::~rom_image_device()
 //  device_start - device-specific startup
 //-------------------------------------------------
 
-void rom_image_device::device_start()
+void cpc_rom_image_device::device_start()
 {
 	m_base = nullptr;
 }
@@ -105,30 +101,30 @@ void rom_image_device::device_start()
 /*-------------------------------------------------
     DEVICE_IMAGE_LOAD( rom )
 -------------------------------------------------*/
-bool rom_image_device::call_load()
+image_init_result cpc_rom_image_device::call_load()
 {
 	device_image_interface* image = this;
-	UINT64 size = image->length();
+	uint64_t size = image->length();
 
-	m_base = std::make_unique<UINT8[]>(16384);
+	m_base = std::make_unique<uint8_t[]>(16384);
 	if(size <= 16384)
 	{
-		image->fread(m_base.get(),size);
+		image->fread(m_base,size);
 	}
 	else
 	{
 		image->fseek(size-16384,SEEK_SET);
-		image->fread(m_base.get(),16384);
+		image->fread(m_base,16384);
 	}
 
-	return IMAGE_INIT_PASS;
+	return image_init_result::PASS;
 }
 
 
 /*-------------------------------------------------
     DEVICE_IMAGE_UNLOAD( rom )
 -------------------------------------------------*/
-void rom_image_device::call_unload()
+void cpc_rom_image_device::call_unload()
 {
 	m_base = nullptr;
 }

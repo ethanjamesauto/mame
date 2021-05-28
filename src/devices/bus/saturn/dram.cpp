@@ -15,26 +15,24 @@
 //  constructor
 //-------------------------------------------------
 
-const device_type SATURN_DRAM_8MB = &device_creator<saturn_dram8mb_device>;
-const device_type SATURN_DRAM_32MB = &device_creator<saturn_dram32mb_device>;
+DEFINE_DEVICE_TYPE(SATURN_DRAM_8MB,  saturn_dram8mb_device,  "sat_dram_8mb",  "Saturn Data RAM 8Mbit Cart")
+DEFINE_DEVICE_TYPE(SATURN_DRAM_32MB, saturn_dram32mb_device, "sat_dram_32mb", "Saturn Data RAM 32Mbit Cart")
 
 
-saturn_dram_device::saturn_dram_device(const machine_config &mconfig, device_type type, const char *name, const char *tag, device_t *owner, UINT32 clock, const char *shortname, const char *source)
-					: device_t(mconfig, type, name, tag, owner, clock, shortname, source),
-						device_sat_cart_interface( mconfig, *this )
+saturn_dram_device::saturn_dram_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock, int cart_type)
+	: device_t(mconfig, type, tag, owner, clock)
+	, device_sat_cart_interface(mconfig, *this, cart_type)
 {
 }
 
-saturn_dram8mb_device::saturn_dram8mb_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-					: saturn_dram_device(mconfig, SATURN_DRAM_8MB, "Saturn Data RAM 8Mbit Cart", tag, owner, clock, "sat_dram_8mb", __FILE__)
+saturn_dram8mb_device::saturn_dram8mb_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: saturn_dram_device(mconfig, SATURN_DRAM_8MB, tag, owner, clock, 0x5a)
 {
-	m_cart_type = 0x5a;
 }
 
-saturn_dram32mb_device::saturn_dram32mb_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-					: saturn_dram_device(mconfig, SATURN_DRAM_32MB, "Saturn Data RAM 32Mbit Cart", tag, owner, clock, "sat_dram_32mb", __FILE__)
+saturn_dram32mb_device::saturn_dram32mb_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: saturn_dram_device(mconfig, SATURN_DRAM_32MB, tag, owner, clock, 0x5c)
 {
-	m_cart_type = 0x5c;
 }
 
 
@@ -57,7 +55,7 @@ void saturn_dram_device::device_reset()
 
 // RAM: two DRAM chips are present in the cart, thus accesses only go up to m_size/2!
 
-READ32_MEMBER(saturn_dram_device::read_ext_dram0)
+uint32_t saturn_dram_device::read_ext_dram0(offs_t offset)
 {
 	if (offset < (0x400000/2)/4)
 		return m_ext_dram0[offset % m_ext_dram0.size()];
@@ -68,7 +66,7 @@ READ32_MEMBER(saturn_dram_device::read_ext_dram0)
 	}
 }
 
-READ32_MEMBER(saturn_dram_device::read_ext_dram1)
+uint32_t saturn_dram_device::read_ext_dram1(offs_t offset)
 {
 	if (offset < (0x400000/2)/4)
 		return m_ext_dram1[offset % m_ext_dram1.size()];
@@ -79,7 +77,7 @@ READ32_MEMBER(saturn_dram_device::read_ext_dram1)
 	}
 }
 
-WRITE32_MEMBER(saturn_dram_device::write_ext_dram0)
+void saturn_dram_device::write_ext_dram0(offs_t offset, uint32_t data, uint32_t mem_mask)
 {
 	if (offset < (0x400000/2)/4)
 		COMBINE_DATA(&m_ext_dram0[offset % m_ext_dram0.size()]);
@@ -87,7 +85,7 @@ WRITE32_MEMBER(saturn_dram_device::write_ext_dram0)
 		popmessage("DRAM0 write beyond its boundary! offs: %X data: %X\n", offset, data);
 }
 
-WRITE32_MEMBER(saturn_dram_device::write_ext_dram1)
+void saturn_dram_device::write_ext_dram1(offs_t offset, uint32_t data, uint32_t mem_mask)
 {
 	if (offset < (0x400000/2)/4)
 		COMBINE_DATA(&m_ext_dram1[offset % m_ext_dram1.size()]);

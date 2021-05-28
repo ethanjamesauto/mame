@@ -19,21 +19,21 @@
 
 TILE_GET_INFO_MEMBER(skullxbo_state::get_alpha_tile_info)
 {
-	UINT16 data = tilemap.basemem_read(tile_index);
+	uint16_t data = m_alpha_tilemap->basemem_read(tile_index);
 	int code = (data ^ 0x400) & 0x7ff;
 	int color = (data >> 11) & 0x0f;
 	int opaque = data & 0x8000;
-	SET_TILE_INFO_MEMBER(2, code, color, opaque ? TILE_FORCE_LAYER0 : 0);
+	tileinfo.set(2, code, color, opaque ? TILE_FORCE_LAYER0 : 0);
 }
 
 
 TILE_GET_INFO_MEMBER(skullxbo_state::get_playfield_tile_info)
 {
-	UINT16 data1 = tilemap.basemem_read(tile_index);
-	UINT16 data2 = tilemap.extmem_read(tile_index) & 0xff;
+	uint16_t data1 = m_playfield_tilemap->basemem_read(tile_index);
+	uint16_t data2 = m_playfield_tilemap->extmem_read(tile_index) & 0xff;
 	int code = data1 & 0x7fff;
 	int color = data2 & 0x0f;
-	SET_TILE_INFO_MEMBER(1, code, color, (data1 >> 15) & 1);
+	tileinfo.set(1, code, color, (data1 >> 15) & 1);
 }
 
 
@@ -78,10 +78,6 @@ const atari_motion_objects_config skullxbo_state::s_mob_config =
 	0                   /* resulting value to indicate "special" */
 };
 
-VIDEO_START_MEMBER(skullxbo_state,skullxbo)
-{
-}
-
 
 
 /*************************************
@@ -90,11 +86,11 @@ VIDEO_START_MEMBER(skullxbo_state,skullxbo)
  *
  *************************************/
 
-WRITE16_MEMBER( skullxbo_state::skullxbo_xscroll_w )
+void skullxbo_state::skullxbo_xscroll_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	/* combine data */
-	UINT16 oldscroll = *m_xscroll;
-	UINT16 newscroll = oldscroll;
+	uint16_t oldscroll = *m_xscroll;
+	uint16_t newscroll = oldscroll;
 	COMBINE_DATA(&newscroll);
 
 	/* if something changed, force an update */
@@ -110,13 +106,13 @@ WRITE16_MEMBER( skullxbo_state::skullxbo_xscroll_w )
 }
 
 
-WRITE16_MEMBER( skullxbo_state::skullxbo_yscroll_w )
+void skullxbo_state::skullxbo_yscroll_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	/* combine data */
 	int scanline = m_screen->vpos();
-	UINT16 oldscroll = *m_yscroll;
-	UINT16 newscroll = oldscroll;
-	UINT16 effscroll;
+	uint16_t oldscroll = *m_yscroll;
+	uint16_t newscroll = oldscroll;
+	uint16_t effscroll;
 	COMBINE_DATA(&newscroll);
 
 	/* if something changed, force an update */
@@ -124,7 +120,7 @@ WRITE16_MEMBER( skullxbo_state::skullxbo_yscroll_w )
 		m_screen->update_partial(scanline);
 
 	/* adjust the effective scroll for the current scanline */
-	if (scanline > m_screen->visible_area().max_y)
+	if (scanline > m_screen->visible_area().bottom())
 		scanline = 0;
 	effscroll = (newscroll >> 7) - scanline;
 
@@ -144,7 +140,7 @@ WRITE16_MEMBER( skullxbo_state::skullxbo_yscroll_w )
  *
  *************************************/
 
-WRITE16_MEMBER( skullxbo_state::skullxbo_mobmsb_w )
+void skullxbo_state::skullxbo_mobmsb_w(offs_t offset, uint16_t data)
 {
 	m_screen->update_partial(m_screen->vpos());
 	m_mob->set_bank((offset >> 9) & 1);
@@ -158,18 +154,18 @@ WRITE16_MEMBER( skullxbo_state::skullxbo_mobmsb_w )
  *
  *************************************/
 
-WRITE16_MEMBER( skullxbo_state::playfield_latch_w )
+void skullxbo_state::playfield_latch_w(uint16_t data)
 {
 	m_playfield_latch = data;
 }
 
-WRITE16_MEMBER(skullxbo_state::playfield_latched_w)
+void skullxbo_state::playfield_latched_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
-	m_playfield_tilemap->write(space, offset, data, mem_mask);
+	m_playfield_tilemap->write16(offset, data, mem_mask);
 	if (m_playfield_latch != -1)
 	{
-		UINT16 oldval = m_playfield_tilemap->extmem_read(offset);
-		UINT16 newval = (oldval & ~0x00ff) | (m_playfield_latch & 0x00ff);
+		uint16_t oldval = m_playfield_tilemap->extmem_read(offset);
+		uint16_t newval = (oldval & ~0x00ff) | (m_playfield_latch & 0x00ff);
 		m_playfield_tilemap->extmem_write(offset, newval);
 	}
 }
@@ -202,8 +198,8 @@ void skullxbo_state::skullxbo_scanline_update(int scanline)
 	/* update the current parameters */
 	for (x = 42; x < 64; x++)
 	{
-		UINT16 data = m_alpha_tilemap->basemem_read(offset++);
-		UINT16 command = data & 0x000f;
+		uint16_t data = m_alpha_tilemap->basemem_read(offset++);
+		uint16_t command = data & 0x000f;
 
 		/* only command I've ever seen */
 		if (command == 0x0d)
@@ -234,7 +230,7 @@ void skullxbo_state::skullxbo_scanline_update(int scanline)
  *
  *************************************/
 
-UINT32 skullxbo_state::screen_update_skullxbo(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t skullxbo_state::screen_update_skullxbo(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	// start drawing
 	m_mob->draw_async(cliprect);
@@ -245,11 +241,11 @@ UINT32 skullxbo_state::screen_update_skullxbo(screen_device &screen, bitmap_ind1
 	// draw and merge the MO
 	bitmap_ind16 &mobitmap = m_mob->bitmap();
 	for (const sparse_dirty_rect *rect = m_mob->first_dirty_rect(cliprect); rect != nullptr; rect = rect->next())
-		for (int y = rect->min_y; y <= rect->max_y; y++)
+		for (int y = rect->top(); y <= rect->bottom(); y++)
 		{
-			UINT16 *mo = &mobitmap.pix16(y);
-			UINT16 *pf = &bitmap.pix16(y);
-			for (int x = rect->min_x; x <= rect->max_x; x++)
+			uint16_t const *const mo = &mobitmap.pix(y);
+			uint16_t *const pf = &bitmap.pix(y);
+			for (int x = rect->left(); x <= rect->right(); x++)
 				if (mo[x] != 0xffff)
 				{
 					/* verified from the GALs on the real PCB; equations follow
@@ -279,11 +275,11 @@ UINT32 skullxbo_state::screen_update_skullxbo(screen_device &screen, bitmap_ind1
 					        +!CRAMD*LBMISC*(LBPIX!=0)
 
 					*/
-					int mopriority = mo[x] >> atari_motion_objects_device::PRIORITY_SHIFT;
-					int mopix = mo[x] & 0x1f;
-					int pfcolor = (pf[x] >> 4) & 0x0f;
-					int pfpix = pf[x] & 0x0f;
-					int o17 = ((pf[x] & 0xc8) == 0xc8);
+					int const mopriority = mo[x] >> atari_motion_objects_device::PRIORITY_SHIFT;
+					int const mopix = mo[x] & 0x1f;
+					int const pfcolor = (pf[x] >> 4) & 0x0f;
+					int const pfpix = pf[x] & 0x0f;
+					int const o17 = ((pf[x] & 0xc8) == 0xc8);
 
 					/* implement the equations */
 					if ((mopriority == 0 && !o17 && mopix >= 2) ||

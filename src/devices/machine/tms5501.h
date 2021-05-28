@@ -29,30 +29,12 @@
 
 **********************************************************************/
 
+#ifndef MAME_MACHINE_TMS5501_H
+#define MAME_MACHINE_TMS5501_H
+
 #pragma once
 
-#ifndef __TMS5501__
-#define __TMS5501__
-
-#include "emu.h"
-
-
-
-//**************************************************************************
-//  INTERFACE CONFIGURATION MACROS
-//**************************************************************************
-
-#define MCFG_TMS5501_IRQ_CALLBACK(_write) \
-	devcb = &tms5501_device::set_irq_wr_callback(*device, DEVCB_##_write);
-
-#define MCFG_TMS5501_XMT_CALLBACK(_write) \
-	devcb = &tms5501_device::set_xmt_wr_callback(*device, DEVCB_##_write);
-
-#define MCFG_TMS5501_XI_CALLBACK(_read) \
-	devcb = &tms5501_device::set_xi_rd_callback(*device, DEVCB_##_read);
-
-#define MCFG_TMS5501_XO_CALLBACK(_write) \
-	devcb = &tms5501_device::set_xo_wr_callback(*device, DEVCB_##_write);
+#include "diserial.h"
 
 
 
@@ -67,21 +49,32 @@ class tms5501_device :  public device_t,
 {
 public:
 	// construction/destruction
-	tms5501_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	tms5501_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
-	template<class _Object> static devcb_base &set_irq_wr_callback(device_t &device, _Object object) { return downcast<tms5501_device &>(device).m_write_irq.set_callback(object); }
-	template<class _Object> static devcb_base &set_xmt_wr_callback(device_t &device, _Object object) { return downcast<tms5501_device &>(device).m_write_xmt.set_callback(object); }
-	template<class _Object> static devcb_base &set_xi_rd_callback(device_t &device, _Object object) { return downcast<tms5501_device &>(device).m_read_xi.set_callback(object); }
-	template<class _Object> static devcb_base &set_xo_wr_callback(device_t &device, _Object object) { return downcast<tms5501_device &>(device).m_write_xo.set_callback(object); }
+	auto int_callback() { return m_write_int.bind(); }
+	auto xmt_callback() { return m_write_xmt.bind(); }
+	auto xi_callback() { return m_read_xi.bind(); }
+	auto xo_callback() { return m_write_xo.bind(); }
 
-	virtual DECLARE_ADDRESS_MAP(io_map, 8);
+	void rcv_w(int state);
 
-	DECLARE_WRITE_LINE_MEMBER( rcv_w );
+	void sens_w(int state);
+	void xi7_w(int state);
 
-	DECLARE_WRITE_LINE_MEMBER( sens_w );
-	DECLARE_WRITE_LINE_MEMBER( xi7_w );
+	uint8_t get_vector();
 
-	UINT8 get_vector();
+	virtual void io_map(address_map &map);
+
+	uint8_t rb_r();
+	uint8_t xi_r();
+	uint8_t rst_r();
+	uint8_t sta_r();
+	void cmd_w(uint8_t data);
+	void rr_w(uint8_t data);
+	void tb_w(uint8_t data);
+	void xo_w(uint8_t data);
+	void mr_w(uint8_t data);
+	void tmr_w(offs_t offset, uint8_t data);
 
 protected:
 	// device-level overrides
@@ -93,17 +86,6 @@ protected:
 	virtual void tra_callback() override;
 	virtual void tra_complete() override;
 	virtual void rcv_complete() override;
-
-	DECLARE_READ8_MEMBER( rb_r );
-	DECLARE_READ8_MEMBER( xi_r );
-	DECLARE_READ8_MEMBER( rst_r );
-	DECLARE_READ8_MEMBER( sta_r );
-	DECLARE_WRITE8_MEMBER( cmd_w );
-	DECLARE_WRITE8_MEMBER( rr_w );
-	DECLARE_WRITE8_MEMBER( tb_w );
-	DECLARE_WRITE8_MEMBER( xo_w );
-	DECLARE_WRITE8_MEMBER( mr_w );
-	DECLARE_WRITE8_MEMBER( tmr_w );
 
 private:
 	enum
@@ -162,23 +144,23 @@ private:
 		RR_STOP  = 0x80
 	};
 
-	static const UINT8 rst_vector[];
+	static const uint8_t rst_vector[];
 
-	void set_interrupt(UINT8 mask);
+	void set_interrupt(uint8_t mask);
 	void check_interrupt();
 
-	devcb_write_line m_write_irq;
+	devcb_write_line m_write_int;
 	devcb_write_line m_write_xmt;
 	devcb_read8 m_read_xi;
 	devcb_write8 m_write_xo;
 
-	UINT8 m_irq;
-	UINT8 m_rb;
-	UINT8 m_sta;
-	UINT8 m_cmd;
-	UINT8 m_rr;
-	UINT8 m_tb;
-	UINT8 m_mr;
+	uint8_t m_irq;
+	uint8_t m_rb;
+	uint8_t m_sta;
+	uint8_t m_cmd;
+	uint8_t m_rr;
+	uint8_t m_tb;
+	uint8_t m_mr;
 
 	int m_sens;
 	int m_xi7;
@@ -188,8 +170,6 @@ private:
 
 
 // device type definition
-extern const device_type TMS5501;
+DECLARE_DEVICE_TYPE(TMS5501, tms5501_device)
 
-
-
-#endif
+#endif // MAME_MACHINE_TMS5501_H

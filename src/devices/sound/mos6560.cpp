@@ -155,38 +155,36 @@ static const rgb_t PALETTE_MOS[] =
     IMPLEMENTATION
 *****************************************************************************/
 
-inline UINT8 mos6560_device::read_videoram(offs_t offset)
+inline uint8_t mos6560_device::read_videoram(offs_t offset)
 {
-	m_last_data = space(AS_0).read_byte(offset & 0x3fff);
+	m_last_data = space(0).read_byte(offset & 0x3fff);
 
 	return m_last_data;
 }
 
-inline UINT8 mos6560_device::read_colorram(offs_t offset)
+inline uint8_t mos6560_device::read_colorram(offs_t offset)
 {
-	return space(AS_1).read_byte(offset & 0x3ff);
+	return space(1).read_byte(offset & 0x3ff);
 }
 
 /*-------------------------------------------------
  draw_character
 -------------------------------------------------*/
 
-void mos6560_device::draw_character( int ybegin, int yend, int ch, int yoff, int xoff, UINT16 *color )
+void mos6560_device::draw_character( int ybegin, int yend, int ch, int yoff, int xoff, uint16_t *color )
 {
-	int y, code;
-
-	for (y = ybegin; y <= yend; y++)
+	for (int y = ybegin; y <= yend; y++)
 	{
-		code = read_videoram((m_chargenaddr + ch * m_charheight + y) & 0x3fff);
+		int code = read_videoram((m_chargenaddr + ch * m_charheight + y) & 0x3fff);
 
-		m_bitmap.pix32(y + yoff, xoff + 0) = PALETTE_MOS[color[code >> 7]];
-		m_bitmap.pix32(y + yoff, xoff + 1) = PALETTE_MOS[color[(code >> 6) & 1]];
-		m_bitmap.pix32(y + yoff, xoff + 2) = PALETTE_MOS[color[(code >> 5) & 1]];
-		m_bitmap.pix32(y + yoff, xoff + 3) = PALETTE_MOS[color[(code >> 4) & 1]];
-		m_bitmap.pix32(y + yoff, xoff + 4) = PALETTE_MOS[color[(code >> 3) & 1]];
-		m_bitmap.pix32(y + yoff, xoff + 5) = PALETTE_MOS[color[(code >> 2) & 1]];
-		m_bitmap.pix32(y + yoff, xoff + 6) = PALETTE_MOS[color[(code >> 1) & 1]];
-		m_bitmap.pix32(y + yoff, xoff + 7) = PALETTE_MOS[color[code & 1]];
+		m_bitmap.pix(y + yoff, xoff + 0) = PALETTE_MOS[color[BIT(code, 7)]];
+		m_bitmap.pix(y + yoff, xoff + 1) = PALETTE_MOS[color[BIT(code, 6)]];
+		m_bitmap.pix(y + yoff, xoff + 2) = PALETTE_MOS[color[BIT(code, 5)]];
+		m_bitmap.pix(y + yoff, xoff + 3) = PALETTE_MOS[color[BIT(code, 4)]];
+		m_bitmap.pix(y + yoff, xoff + 4) = PALETTE_MOS[color[BIT(code, 3)]];
+		m_bitmap.pix(y + yoff, xoff + 5) = PALETTE_MOS[color[BIT(code, 2)]];
+		m_bitmap.pix(y + yoff, xoff + 6) = PALETTE_MOS[color[BIT(code, 1)]];
+		m_bitmap.pix(y + yoff, xoff + 7) = PALETTE_MOS[color[BIT(code, 0)]];
 	}
 }
 
@@ -195,22 +193,20 @@ void mos6560_device::draw_character( int ybegin, int yend, int ch, int yoff, int
  draw_character_multi
 -------------------------------------------------*/
 
-void mos6560_device::draw_character_multi( int ybegin, int yend, int ch, int yoff, int xoff, UINT16 *color )
+void mos6560_device::draw_character_multi( int ybegin, int yend, int ch, int yoff, int xoff, uint16_t *color )
 {
-	int y, code;
-
-	for (y = ybegin; y <= yend; y++)
+	for (int y = ybegin; y <= yend; y++)
 	{
-		code = read_videoram((m_chargenaddr + ch * m_charheight + y) & 0x3fff);
+		int code = read_videoram((m_chargenaddr + ch * m_charheight + y) & 0x3fff);
 
-		m_bitmap.pix32(y + yoff, xoff + 0) =
-			m_bitmap.pix32(y + yoff, xoff + 1) = PALETTE_MOS[color[code >> 6]];
-		m_bitmap.pix32(y + yoff, xoff + 2) =
-			m_bitmap.pix32(y + yoff, xoff + 3) = PALETTE_MOS[color[(code >> 4) & 3]];
-		m_bitmap.pix32(y + yoff, xoff + 4) =
-			m_bitmap.pix32(y + yoff, xoff + 5) = PALETTE_MOS[color[(code >> 2) & 3]];
-		m_bitmap.pix32(y + yoff, xoff + 6) =
-			m_bitmap.pix32(y + yoff, xoff + 7) = PALETTE_MOS[color[code & 3]];
+		m_bitmap.pix(y + yoff, xoff + 0) = m_bitmap.pix(y + yoff, xoff + 1) =
+				PALETTE_MOS[color[code >> 6]];
+		m_bitmap.pix(y + yoff, xoff + 2) = m_bitmap.pix(y + yoff, xoff + 3) =
+				PALETTE_MOS[color[(code >> 4) & 3]];
+		m_bitmap.pix(y + yoff, xoff + 4) = m_bitmap.pix(y + yoff, xoff + 5) =
+				PALETTE_MOS[color[(code >> 2) & 3]];
+		m_bitmap.pix(y + yoff, xoff + 6) = m_bitmap.pix(y + yoff, xoff + 7) =
+				PALETTE_MOS[color[code & 3]];
 	}
 }
 
@@ -221,9 +217,7 @@ void mos6560_device::draw_character_multi( int ybegin, int yend, int ch, int yof
 
 void mos6560_device::drawlines( int first, int last )
 {
-	int line, vline;
-	int offs, yoff, xoff, ybegin, yend, i, j;
-	int attr, ch;
+	int line;
 
 	m_lastline = last;
 	if (first >= last)
@@ -231,12 +225,13 @@ void mos6560_device::drawlines( int first, int last )
 
 	for (line = first; (line < m_ypos) && (line < last); line++)
 	{
-		for (j = 0; j < m_total_xsize; j++)
-			m_bitmap.pix32(line, j) = PALETTE_MOS[m_framecolor];
+		for (int j = 0; j < m_total_xsize; j++)
+			m_bitmap.pix(line, j) = PALETTE_MOS[m_framecolor];
 	}
 
-	for (vline = line - m_ypos; (line < last) && (line < m_ypos + m_ysize);)
+	for (int vline = line - m_ypos; (line < last) && (line < m_ypos + m_ysize);)
 	{
+		int offs, yoff, xoff, ybegin, yend;
 		if (m_matrix8x16)
 		{
 			offs = (vline >> 4) * m_chars_x;
@@ -254,16 +249,16 @@ void mos6560_device::drawlines( int first, int last )
 
 		if (m_xpos > 0)
 		{
-			for (i = ybegin; i <= yend; i++)
-				for (j = 0; j < m_xpos; j++)
-					m_bitmap.pix32(yoff + i, j) = PALETTE_MOS[m_framecolor];
+			for (int i = ybegin; i <= yend; i++)
+				for (int j = 0; j < m_xpos; j++)
+					m_bitmap.pix(yoff + i, j) = PALETTE_MOS[m_framecolor];
 		}
 
 		for (xoff = m_xpos; (xoff < m_xpos + m_xsize) && (xoff < m_total_xsize); xoff += 8, offs++)
 		{
-			ch = read_videoram((m_videoaddr + offs) & 0x3fff);
+			int ch = read_videoram((m_videoaddr + offs) & 0x3fff);
 
-			attr = (read_colorram((m_videoaddr + offs) & 0x3fff)) & 0xf;
+			int attr = (read_colorram((m_videoaddr + offs) & 0x3fff)) & 0xf;
 
 			if (m_variant == TYPE_ATTACK_UFO)
 			{
@@ -301,9 +296,9 @@ void mos6560_device::drawlines( int first, int last )
 
 		if (xoff < m_total_xsize)
 		{
-			for (i = ybegin; i <= yend; i++)
-				for (j = xoff; j < m_total_xsize; j++)
-					m_bitmap.pix32(yoff + i, j) = PALETTE_MOS[m_framecolor];
+			for (int i = ybegin; i <= yend; i++)
+				for (int j = xoff; j < m_total_xsize; j++)
+					m_bitmap.pix(yoff + i, j) = PALETTE_MOS[m_framecolor];
 		}
 
 		if (m_matrix8x16)
@@ -319,8 +314,8 @@ void mos6560_device::drawlines( int first, int last )
 	}
 
 	for (; line < last; line++)
-		for (j = 0; j < m_total_xsize; j++)
-			m_bitmap.pix32(line, j) = PALETTE_MOS[m_framecolor];
+		for (int j = 0; j < m_total_xsize; j++)
+			m_bitmap.pix(line, j) = PALETTE_MOS[m_framecolor];
 }
 
 
@@ -328,7 +323,7 @@ void mos6560_device::drawlines( int first, int last )
  mos6560_port_w - write to regs
 -------------------------------------------------*/
 
-WRITE8_MEMBER( mos6560_device::write )
+void mos6560_device::write(offs_t offset, uint8_t data)
 {
 	DBG_LOG(1, "mos6560_port_w", ("%.4x:%.2x\n", offset, data));
 
@@ -406,7 +401,7 @@ WRITE8_MEMBER( mos6560_device::write )
  mos6560_port_r - read from regs
 -------------------------------------------------*/
 
-READ8_MEMBER( mos6560_device::read )
+uint8_t mos6560_device::read(offs_t offset)
 {
 	int val;
 
@@ -450,12 +445,12 @@ READ8_MEMBER( mos6560_device::read )
 	return val;
 }
 
-WRITE_LINE_MEMBER( mos6560_device::lp_w )
+void mos6560_device::lp_w(int state)
 {
 	// TODO
 }
 
-UINT8 mos6560_device::bus_r()
+uint8_t mos6560_device::bus_r()
 {
 	return m_last_data;
 }
@@ -481,7 +476,7 @@ void mos6560_device::raster_interrupt_gen()
      main screen bitmap
 -------------------------------------------------*/
 
-UINT32 mos6560_device::screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
+uint32_t mos6560_device::screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
 {
 	copybitmap(bitmap, m_bitmap, 0, 0, 0, 0, cliprect);
 
@@ -620,20 +615,17 @@ void mos6560_device::soundport_w( int offset, int data )
 
 void mos6560_device::sound_start()
 {
-	int i;
-
-	m_channel = machine().sound().stream_alloc(*this, 0, 1, machine().sample_rate());
+	m_channel = stream_alloc(0, 1, machine().sample_rate());
 
 	/* buffer for fastest played sample for 5 second so we have enough data for min 5 second */
 	m_noisesize = NOISE_FREQUENCY_MAX * NOISE_BUFFER_SIZE_SEC;
-	m_noise = std::make_unique<INT8[]>(m_noisesize);
+	m_noise = std::make_unique<int8_t []>(m_noisesize);
 	{
 		int noiseshift = 0x7ffff8;
-		char data;
 
-		for (i = 0; i < m_noisesize; i++)
+		for (int i = 0; i < m_noisesize; i++)
 		{
-			data = 0;
+			char data = 0;
 			if (noiseshift & 0x400000)
 				data |= 0x80;
 			if (noiseshift & 0x100000)
@@ -661,64 +653,60 @@ void mos6560_device::sound_start()
 
 	if (m_tonesize > 0)
 	{
-		m_tone = std::make_unique<INT16[]>(m_tonesize);
+		m_tone = std::make_unique<int16_t []>(m_tonesize);
 
-		for (i = 0; i < m_tonesize; i++)
+		for (int i = 0; i < m_tonesize; i++)
 		{
-			m_tone[i] = (INT16)(sin (2 * M_PI * i / m_tonesize) * 127 + 0.5);
+			m_tone[i] = int16_t(sin (2 * M_PI * i / m_tonesize) * 127 + 0.5);
 		}
-	}
-	else
-	{
-		m_tone = nullptr;
 	}
 }
 
 
-const device_type MOS6560 = &device_creator<mos6560_device>;
-const device_type MOS6561 = &device_creator<mos6561_device>;
-const device_type MOS656X_ATTACK_UFO = &device_creator<mos656x_attack_ufo_device>;
+DEFINE_DEVICE_TYPE(MOS6560,            mos6560_device,            "mos6560",            "MOS 6560 VIC")
+DEFINE_DEVICE_TYPE(MOS6561,            mos6561_device,            "mos6561",            "MOS 6561 VIC")
+DEFINE_DEVICE_TYPE(MOS656X_ATTACK_UFO, mos656x_attack_ufo_device, "mos656x_attack_ufo", "MOS 656X VIC (Attack UFO)")
 
 // default address maps
-static ADDRESS_MAP_START( mos6560_videoram_map, AS_0, 8, mos6560_device )
-	AM_RANGE(0x0000, 0x3fff) AM_RAM
-ADDRESS_MAP_END
+void mos6560_device::mos6560_videoram_map(address_map &map)
+{
+	if (!has_configured_map(0))
+		map(0x0000, 0x3fff).ram();
+}
 
-static ADDRESS_MAP_START( mos6560_colorram_map, AS_1, 8, mos6560_device )
-	AM_RANGE(0x000, 0x3ff) AM_RAM
-ADDRESS_MAP_END
+void mos6560_device::mos6560_colorram_map(address_map &map)
+{
+	if (!has_configured_map(1))
+		map(0x000, 0x3ff).ram();
+}
 
-mos6560_device::mos6560_device(const machine_config &mconfig, device_type type, const char *name, const char *tag, device_t *owner, UINT32 clock, UINT32 variant, const char *shortname, const char *source)
-	: device_t(mconfig, type, name, tag, owner, clock, shortname, source),
+mos6560_device::mos6560_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock, uint32_t variant)
+	: device_t(mconfig, type, tag, owner, clock),
 		device_memory_interface(mconfig, *this),
 		device_sound_interface(mconfig, *this),
 		device_video_interface(mconfig, *this),
 		m_variant(variant),
-		m_videoram_space_config("videoram", ENDIANNESS_LITTLE, 8, 14, 0, nullptr, *ADDRESS_MAP_NAME(mos6560_videoram_map)),
-		m_colorram_space_config("colorram", ENDIANNESS_LITTLE, 8, 10, 0, nullptr, *ADDRESS_MAP_NAME(mos6560_colorram_map)),
+		m_videoram_space_config("videoram", ENDIANNESS_LITTLE, 8, 14, 0, address_map_constructor(FUNC(mos6560_device::mos6560_videoram_map), this)),
+		m_colorram_space_config("colorram", ENDIANNESS_LITTLE, 8, 10, 0, address_map_constructor(FUNC(mos6560_device::mos6560_colorram_map), this)),
 		m_read_potx(*this),
 		m_read_poty(*this)
 {
 }
 
-mos6560_device::mos6560_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: device_t(mconfig, MOS6560, "MOS6560", tag, owner, clock, "mos6560", __FILE__),
-		device_memory_interface(mconfig, *this),
-		device_sound_interface(mconfig, *this),
-		device_video_interface(mconfig, *this),
-		m_variant(TYPE_6560),
-		m_videoram_space_config("videoram", ENDIANNESS_LITTLE, 8, 14, 0, nullptr, *ADDRESS_MAP_NAME(mos6560_videoram_map)),
-		m_colorram_space_config("colorram", ENDIANNESS_LITTLE, 8, 10, 0, nullptr, *ADDRESS_MAP_NAME(mos6560_colorram_map)),
-		m_read_potx(*this),
-		m_read_poty(*this)
+mos6560_device::mos6560_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: mos6560_device(mconfig, MOS6560, tag, owner, clock, TYPE_6560)
 {
 }
 
-mos6561_device::mos6561_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	:mos6560_device(mconfig, MOS6561, "MOS6561", tag, owner, clock, TYPE_6561, "mos6561", __FILE__) { }
+mos6561_device::mos6561_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: mos6560_device(mconfig, MOS6561, tag, owner, clock, TYPE_6561)
+{
+}
 
-mos656x_attack_ufo_device::mos656x_attack_ufo_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	:mos6560_device(mconfig, MOS656X_ATTACK_UFO, "MOS656X", tag, owner, clock, TYPE_ATTACK_UFO, "mos656x_attack_ufo", __FILE__) { }
+mos656x_attack_ufo_device::mos656x_attack_ufo_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: mos6560_device(mconfig, MOS656X_ATTACK_UFO, tag, owner, clock, TYPE_ATTACK_UFO)
+{
+}
 
 
 //-------------------------------------------------
@@ -726,14 +714,12 @@ mos656x_attack_ufo_device::mos656x_attack_ufo_device(const machine_config &mconf
 //  any address spaces owned by this device
 //-------------------------------------------------
 
-const address_space_config *mos6560_device::memory_space_config(address_spacenum spacenum) const
+device_memory_interface::space_config_vector mos6560_device::memory_space_config() const
 {
-	switch (spacenum)
-	{
-		case AS_0: return &m_videoram_space_config;
-		case AS_1: return &m_colorram_space_config;
-		default: return nullptr;
-	}
+	return space_config_vector {
+		std::make_pair(0, &m_videoram_space_config),
+		std::make_pair(1, &m_colorram_space_config)
+	};
 }
 
 
@@ -743,7 +729,7 @@ const address_space_config *mos6560_device::memory_space_config(address_spacenum
 
 void mos6560_device::device_start()
 {
-	m_screen->register_screen_bitmap(m_bitmap);
+	screen().register_screen_bitmap(m_bitmap);
 
 	// resolve callbacks
 	m_read_potx.resolve_safe(0xff);
@@ -775,7 +761,7 @@ void mos6560_device::device_start()
 
 	// allocate timers
 	m_line_timer = timer_alloc(TIMER_LINE);
-	m_line_timer->adjust(m_screen->scan_period(), 0, m_screen->scan_period());
+	m_line_timer->adjust(screen().scan_period(), 0, screen().scan_period());
 
 	// initialize sound
 	sound_start();
@@ -893,12 +879,12 @@ void mos6560_device::device_timer(emu_timer &timer, device_timer_id id, int para
 //  sound_stream_update - handle a stream update
 //-------------------------------------------------
 
-void mos6560_device::sound_stream_update(sound_stream &stream, stream_sample_t **inputs, stream_sample_t **outputs, int samples)
+void mos6560_device::sound_stream_update(sound_stream &stream, std::vector<read_stream_view> const &inputs, std::vector<write_stream_view> &outputs)
 {
 	int i, v;
-	stream_sample_t *buffer = outputs[0];
+	auto &buffer = outputs[0];
 
-	for (i = 0; i < samples; i++)
+	for (i = 0; i < buffer.samples(); i++)
 	{
 		v = 0;
 		if (TONE1_ON /*||(m_tone1pos != 0) */ )
@@ -911,7 +897,7 @@ void mos6560_device::sound_stream_update(sound_stream &stream, stream_sample_t *
 			if (m_tone1pos >= m_tone1samples)
 			{
 				m_tone1pos = 0;
-				m_tone1samples = machine().sample_rate() / TONE1_FREQUENCY;
+				m_tone1samples = buffer.sample_rate() / TONE1_FREQUENCY;
 				if (m_tone1samples == 0)
 					m_tone1samples = 1;
 			}
@@ -927,7 +913,7 @@ void mos6560_device::sound_stream_update(sound_stream &stream, stream_sample_t *
 			if (m_tone2pos >= m_tone2samples)
 			{
 				m_tone2pos = 0;
-				m_tone2samples = machine().sample_rate() / TONE2_FREQUENCY;
+				m_tone2samples = buffer.sample_rate() / TONE2_FREQUENCY;
 				if (m_tone2samples == 0)
 					m_tone2samples = 1;
 			}
@@ -943,7 +929,7 @@ void mos6560_device::sound_stream_update(sound_stream &stream, stream_sample_t *
 			if (m_tone3pos >= m_tone3samples)
 			{
 				m_tone3pos = 0;
-				m_tone3samples = machine().sample_rate() / TONE3_FREQUENCY;
+				m_tone3samples = buffer.sample_rate() / TONE3_FREQUENCY;
 				if (m_tone3samples == 0)
 					m_tone3samples = 1;
 			}
@@ -958,12 +944,11 @@ void mos6560_device::sound_stream_update(sound_stream &stream, stream_sample_t *
 				m_noisepos = 0;
 			}
 		}
-		v = (v * VOLUME) << 2;
-		if (v > 32767)
-			buffer[i] = 32767;
-		else if (v < -32767)
-			buffer[i] = -32767;
-		else
-			buffer[i] = v;
+		v *= VOLUME;
+		if (v > 8191)
+			v = 8191;
+		else if (v < -8191)
+			v = -8191;
+		buffer.put_int(i, v, 8192);
 	}
 }

@@ -24,21 +24,16 @@
 #include "includes/metlclsh.h"
 
 
-WRITE8_MEMBER(metlclsh_state::metlclsh_rambank_w)
+void metlclsh_state::metlclsh_rambank_w(uint8_t data)
 {
+	m_rambank->set_entry(data & 1);
 	if (data & 1)
-	{
 		m_write_mask = 0;
-		membank("bank1")->set_base(m_bgram);
-	}
 	else
-	{
 		m_write_mask = 1 << (data >> 1);
-		membank("bank1")->set_base(m_otherram.get());
-	}
 }
 
-WRITE8_MEMBER(metlclsh_state::metlclsh_gfxbank_w)
+void metlclsh_state::metlclsh_gfxbank_w(uint8_t data)
 {
 	if (!(data & 4) && (m_gfxbank != data))
 	{
@@ -71,10 +66,10 @@ TILEMAP_MAPPER_MEMBER(metlclsh_state::metlclsh_bgtilemap_scan)
 
 TILE_GET_INFO_MEMBER(metlclsh_state::get_bg_tile_info)
 {
-	SET_TILE_INFO_MEMBER(1, m_bgram[tile_index] + (m_gfxbank << 7), 0, 0);
+	tileinfo.set(1, m_bgram[tile_index] + (m_gfxbank << 7), 0, 0);
 }
 
-WRITE8_MEMBER(metlclsh_state::metlclsh_bgram_w)
+void metlclsh_state::metlclsh_bgram_w(offs_t offset, uint8_t data)
 {
 	/*  This ram is banked: it's either the tilemap (e401 = 1)
 	    or bit n of another area (e401 = n << 1)? (that I don't understand) */
@@ -112,13 +107,13 @@ WRITE8_MEMBER(metlclsh_state::metlclsh_bgram_w)
 
 TILE_GET_INFO_MEMBER(metlclsh_state::get_fg_tile_info)
 {
-	UINT8 code = m_fgram[tile_index + 0x000];
-	UINT8 attr = m_fgram[tile_index + 0x400];
-	SET_TILE_INFO_MEMBER(2, code + ((attr & 0x03) << 8), (attr >> 5) & 3, 0);
+	uint8_t code = m_fgram[tile_index + 0x000];
+	uint8_t attr = m_fgram[tile_index + 0x400];
+	tileinfo.set(2, code + ((attr & 0x03) << 8), (attr >> 5) & 3, 0);
 	tileinfo.category = ((attr & 0x80) ? 1 : 2);
 }
 
-WRITE8_MEMBER(metlclsh_state::metlclsh_fgram_w)
+void metlclsh_state::metlclsh_fgram_w(offs_t offset, uint8_t data)
 {
 	m_fgram[offset] = data;
 	m_fg_tilemap->mark_tile_dirty(offset & 0x3ff);
@@ -133,15 +128,19 @@ WRITE8_MEMBER(metlclsh_state::metlclsh_fgram_w)
 
 void metlclsh_state::video_start()
 {
-	m_otherram = std::make_unique<UINT8[]>(0x800); // banked ram
+	m_otherram = std::make_unique<uint8_t[]>(0x800); // banked ram
 
-	m_bg_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(metlclsh_state::get_bg_tile_info),this), tilemap_mapper_delegate(FUNC(metlclsh_state::metlclsh_bgtilemap_scan),this), 16, 16, 32, 16);
-	m_fg_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(metlclsh_state::get_fg_tile_info),this), TILEMAP_SCAN_ROWS, 8, 8, 32, 32);
+	m_bg_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(metlclsh_state::get_bg_tile_info)), tilemap_mapper_delegate(*this, FUNC(metlclsh_state::metlclsh_bgtilemap_scan)), 16, 16, 32, 16);
+	m_fg_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(metlclsh_state::get_fg_tile_info)), TILEMAP_SCAN_ROWS, 8, 8, 32, 32);
 
 	m_bg_tilemap->set_transparent_pen(0);
 	m_fg_tilemap->set_transparent_pen(0);
 
-	save_pointer(NAME(m_otherram.get()), 0x800);
+	m_rambank->configure_entry(0, m_otherram.get());
+	m_rambank->configure_entry(1, m_bgram.target());
+	m_rambank->set_entry(0);
+
+	save_pointer(NAME(m_otherram), 0x800);
 }
 
 
@@ -167,7 +166,7 @@ void metlclsh_state::video_start()
 
 void metlclsh_state::draw_sprites( bitmap_ind16 &bitmap, const rectangle &cliprect )
 {
-	UINT8 *spriteram = m_spriteram;
+	uint8_t *spriteram = m_spriteram;
 	gfx_element *gfx = m_gfxdecode->gfx(0);
 	int offs;
 
@@ -232,7 +231,7 @@ void metlclsh_state::draw_sprites( bitmap_ind16 &bitmap, const rectangle &clipre
 
 ***************************************************************************/
 
-UINT32 metlclsh_state::screen_update_metlclsh(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t metlclsh_state::screen_update_metlclsh(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	bitmap.fill(0x10, cliprect);
 

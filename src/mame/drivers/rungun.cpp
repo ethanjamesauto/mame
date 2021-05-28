@@ -14,43 +14,45 @@
    Status: Front tilemap should be complete, sprites are mostly correct, controls
    should be fine.
 
+   Known Issues:
+   - CRTC and video registers needs syncronization with current video draw state, it's very noticeable if for example scroll values are in very different states between screens.
+   - Current draw state could be improved optimization-wise (for example by supporting it in the core in some way).
+   - sprite palettes are not entirely right (fixed?)
+   - sound volume mixing, handtune with set_gain() with m_k054539 devices.
+     Also notice that "volume" in sound options is for k054539_1 (SFX)
 
    Change Log:
 
    (AT070703)
-   drivers\rungun.c (this file)
+   drivers\rungun.cpp (this file)
      - mem maps, device settings, component communications, I/O's, sound...etc.
 
-   video\rungun.c
+   video\rungun.cpp
      - general clean-up, clipping, alignment
 
-   video\konamiic.c
+   video\konamiic.cpp
      - missing sprites and priority
 
-   Known Issues:
-     - CRTC and video registers needs syncronization with current video draw state, it's very noticeable if for example scroll values are in very different states between screens.
-	 - Current draw state could be improved optimization-wise (for example by supporting it in the core in some way).
-	 - sprite palettes are not entirely right
-	 
-	 
+
 *************************************************************************/
 
 #include "emu.h"
-
+#include "includes/rungun.h"
+#include "includes/konamipt.h"
 
 #include "cpu/m68000/m68000.h"
 #include "cpu/z80/z80.h"
 #include "machine/eepromser.h"
 #include "sound/k054539.h"
-#include "includes/konamipt.h"
-#include "includes/rungun.h"
+#include "speaker.h"
+
 #include "rungun_dual.lh"
 
 
 
-READ16_MEMBER(rungun_state::rng_sysregs_r)
+uint16_t rungun_state::sysregs_r(offs_t offset, uint16_t mem_mask)
 {
-	UINT16 data = 0;
+	uint16_t data = 0;
 
 	switch (offset)
 	{
@@ -68,7 +70,7 @@ READ16_MEMBER(rungun_state::rng_sysregs_r)
 			    bit9 : screen output select
 			*/
 			{
-				UINT8 field_bit = machine().first_screen()->frame_number() & 1; 
+				uint8_t field_bit = m_screen->frame_number() & 1;
 				if(m_single_screen_mode == true)
 					field_bit = 1;
 				return (ioport("SYSTEM")->read() & 0xfdff) | (field_bit << 9);
@@ -84,7 +86,7 @@ READ16_MEMBER(rungun_state::rng_sysregs_r)
 	return m_sysreg[offset];
 }
 
-WRITE16_MEMBER(rungun_state::rng_sysregs_w)
+void rungun_state::sysregs_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	COMBINE_DATA(m_sysreg + offset);
 
@@ -95,18 +97,21 @@ WRITE16_MEMBER(rungun_state::rng_sysregs_w)
 			    bit0  : eeprom_di_write
 			    bit1  : eeprom_cs_write
 			    bit2  : eeprom_clk_write
-				bit3  : coin counter #1
-				bit4  : coin counter #2 (when coin slot "common" is selected)
+			    bit3  : coin counter #1
+			    bit4  : coin counter #2 (when coin slot "common" is selected)
 			    bit7  : set before massive memory writes (video chip select?)
 			    bit10 : IRQ5 ACK
-				bit12 : if set, forces screen output to 1 monitor.
-				bit14 : (0) sprite on top of PSAC2 layer (1) other way around (title screen) 
+			    bit12 : if set, forces screen output to 1 monitor.
+			    bit14 : (0) sprite on top of PSAC2 layer (1) other way around (title screen)
 			*/
 			if (ACCESSING_BITS_0_7)
 			{
 				membank("spriteram_bank")->set_entry((data & 0x80) >> 7);
 				m_video_mux_bank = ((data & 0x80) >> 7) ^ 1;
 				ioport("EEPROMOUT")->write(data, 0xff);
+
+				machine().bookkeeping().coin_counter_w(0, data & 0x08);
+				machine().bookkeeping().coin_counter_w(1, data & 0x10);
 			}
 			if (ACCESSING_BITS_8_15)
 			{
@@ -123,7 +128,7 @@ WRITE16_MEMBER(rungun_state::rng_sysregs_w)
 			    bit 1  : disable PSAC2 input?
 			    bit 2  : OBJCHA
 			    bit 3  : enable IRQ 5
-				bit 7-4: base address for 53936 ROM readback.
+			    bit 7-4: base address for 53936 ROM readback.
 			*/
 			m_k055673->k053246_set_objcha_line((data & 0x04) ? ASSERT_LINE : CLEAR_LINE);
 			m_roz_rombase = (data & 0xf0) >> 4;
@@ -131,30 +136,10 @@ WRITE16_MEMBER(rungun_state::rng_sysregs_w)
 	}
 }
 
-WRITE16_MEMBER(rungun_state::sound_cmd1_w)
-{
-	if (ACCESSING_BITS_8_15)
-		soundlatch_byte_w(space, 0, data >> 8);
-}
-
-WRITE16_MEMBER(rungun_state::sound_cmd2_w)
-{
-	if (ACCESSING_BITS_8_15)
-		soundlatch2_byte_w(space, 0, data >> 8);
-}
-
-WRITE16_MEMBER(rungun_state::sound_irq_w)
+void rungun_state::sound_irq_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	if (ACCESSING_BITS_8_15)
 		m_soundcpu->set_input_line(0, HOLD_LINE);
-}
-
-READ16_MEMBER(rungun_state::sound_status_msb_r)
-{
-	if (ACCESSING_BITS_8_15)
-		return(m_sound_status << 8);
-
-	return 0;
 }
 
 INTERRUPT_GEN_MEMBER(rungun_state::rng_interrupt)
@@ -162,73 +147,69 @@ INTERRUPT_GEN_MEMBER(rungun_state::rng_interrupt)
 	// send to sprite device current state (i.e. bread & butter sprite DMA)
 	// TODO: firing this in screen update causes sprites to desync badly ...
 	sprite_dma_trigger();
-	
+
 	if (m_sysreg[0x0c / 2] & 0x09)
 		device.execute().set_input_line(M68K_IRQ_5, ASSERT_LINE);
 }
 
-READ8_MEMBER(rungun_state::rng_53936_rom_r)
+uint8_t rungun_state::k53936_rom_r(offs_t offset)
 {
 	// TODO: odd addresses returns ...?
-	UINT32 rom_addr = offset;
+	uint32_t rom_addr = offset;
 	rom_addr+= (m_roz_rombase)*0x20000;
 	return m_roz_rom[rom_addr];
 }
 
-READ16_MEMBER(rungun_state::palette_read)
+uint16_t rungun_state::palette_read(offs_t offset)
 {
 	return m_pal_ram[offset + m_video_mux_bank*0x800/2];
 }
 
-WRITE16_MEMBER(rungun_state::palette_write)
+void rungun_state::palette_write(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
-	palette_device *cur_paldevice = m_video_mux_bank == 0 ? m_palette : static_cast<palette_device *>(m_palette2);
-	UINT32 addr = offset + m_video_mux_bank*0x800/2;
+	palette_device &cur_paldevice = m_video_mux_bank == 0 ? *m_palette : *m_palette2;
+	uint32_t addr = offset + m_video_mux_bank*0x800/2;
 	COMBINE_DATA(&m_pal_ram[addr]);
-	
-	UINT8 r,g,b;
-	
+
+	uint8_t r,g,b;
+
 	r = m_pal_ram[addr] & 0x1f;
 	g = (m_pal_ram[addr] & 0x3e0) >> 5;
 	b = (m_pal_ram[addr] & 0x7e00) >> 10;
-	
-	cur_paldevice->set_pen_color(offset,pal5bit(r),pal5bit(g),pal5bit(b));
+
+	cur_paldevice.set_pen_color(offset,pal5bit(r),pal5bit(g),pal5bit(b));
 }
 
-static ADDRESS_MAP_START( rungun_map, AS_PROGRAM, 16, rungun_state )
-	AM_RANGE(0x000000, 0x2fffff) AM_ROM                                         // main program + data
-	AM_RANGE(0x300000, 0x3007ff) AM_READWRITE(palette_read,palette_write) 
-	AM_RANGE(0x380000, 0x39ffff) AM_RAM                                         // work RAM
-	AM_RANGE(0x400000, 0x43ffff) AM_READ8(rng_53936_rom_r,0x00ff)			    // '936 ROM readback window
-	AM_RANGE(0x480000, 0x48001f) AM_READWRITE(rng_sysregs_r, rng_sysregs_w) AM_SHARE("sysreg")
-	AM_RANGE(0x4c0000, 0x4c001f) AM_DEVREADWRITE8("k053252", k053252_device, read, write, 0x00ff)                        // CCU (for scanline and vblank polling)
-	AM_RANGE(0x540000, 0x540001) AM_WRITE(sound_irq_w)
-	// 0x580006 written at POST.
-	AM_RANGE(0x58000c, 0x58000d) AM_WRITE(sound_cmd1_w)
-	AM_RANGE(0x58000e, 0x58000f) AM_WRITE(sound_cmd2_w)
-	// 0x580010 status for $580006 writes at POST
-	AM_RANGE(0x580014, 0x580015) AM_READ(sound_status_msb_r)
-	AM_RANGE(0x580000, 0x58001f) AM_RAM                                         // sound regs read/write fall-through
-	AM_RANGE(0x5c0000, 0x5c000f) AM_DEVREAD("k055673", k055673_device, k055673_rom_word_r)                       // 246A ROM readback window
-	AM_RANGE(0x5c0010, 0x5c001f) AM_DEVWRITE("k055673", k055673_device, k055673_reg_word_w)
-	AM_RANGE(0x600000, 0x601fff) AM_RAMBANK("spriteram_bank")                                        	     // OBJ RAM 
-	AM_RANGE(0x640000, 0x640007) AM_DEVWRITE("k055673", k055673_device, k053246_word_w)                      // '246A registers
-	AM_RANGE(0x680000, 0x68001f) AM_DEVWRITE("k053936", k053936_device, ctrl_w)          // '936 registers
-	AM_RANGE(0x6c0000, 0x6cffff) AM_READWRITE(rng_psac2_videoram_r,rng_psac2_videoram_w) // PSAC2 ('936) RAM (34v + 35v)
-	AM_RANGE(0x700000, 0x7007ff) AM_DEVREADWRITE("k053936", k053936_device, linectrl_r, linectrl_w)          // PSAC "Line RAM"
-	AM_RANGE(0x740000, 0x741fff) AM_READWRITE(rng_ttl_ram_r, rng_ttl_ram_w)     // text plane RAM
-	AM_RANGE(0x7c0000, 0x7c0001) AM_WRITENOP                                    // watchdog
-ADDRESS_MAP_END
+void rungun_state::rungun_map(address_map &map)
+{
+	map(0x000000, 0x2fffff).rom();                                         // main program + data
+	map(0x300000, 0x3007ff).rw(FUNC(rungun_state::palette_read), FUNC(rungun_state::palette_write));
+	map(0x380000, 0x39ffff).ram();                                         // work RAM
+	map(0x400000, 0x43ffff).r(FUNC(rungun_state::k53936_rom_r)).umask16(0x00ff);               // '936 ROM readback window
+	map(0x480000, 0x48001f).rw(FUNC(rungun_state::sysregs_r), FUNC(rungun_state::sysregs_w)).share("sysreg");
+	map(0x4c0000, 0x4c001f).rw(m_k053252, FUNC(k053252_device::read), FUNC(k053252_device::write)).umask16(0x00ff);                        // CCU (for scanline and vblank polling)
+	map(0x540000, 0x540001).w(FUNC(rungun_state::sound_irq_w));
+	map(0x580000, 0x58001f).m(m_k054321, FUNC(k054321_device::main_map)).umask16(0xff00);
+	map(0x5c0000, 0x5c000f).r(m_k055673, FUNC(k055673_device::k055673_rom_word_r));                       // 246A ROM readback window
+	map(0x5c0010, 0x5c001f).w(m_k055673, FUNC(k055673_device::k055673_reg_word_w));
+	map(0x600000, 0x601fff).bankrw("spriteram_bank");                                                // OBJ RAM
+	map(0x640000, 0x640007).w(m_k055673, FUNC(k055673_device::k053246_w));                      // '246A registers
+	map(0x680000, 0x68001f).w(m_k053936, FUNC(k053936_device::ctrl_w));          // '936 registers
+	map(0x6c0000, 0x6cffff).rw(FUNC(rungun_state::psac2_videoram_r), FUNC(rungun_state::psac2_videoram_w)); // PSAC2 ('936) RAM (34v + 35v)
+	map(0x700000, 0x7007ff).rw(m_k053936, FUNC(k053936_device::linectrl_r), FUNC(k053936_device::linectrl_w));          // PSAC "Line RAM"
+	map(0x740000, 0x741fff).rw(FUNC(rungun_state::ttl_ram_r), FUNC(rungun_state::ttl_ram_w));     // text plane RAM
+	map(0x7c0000, 0x7c0001).nopw();                                    // watchdog
+}
 
 
 /**********************************************************************************/
 
-WRITE8_MEMBER(rungun_state::sound_status_w)
+void rungun_state::sound_status_w(uint8_t data)
 {
 	m_sound_status = data;
 }
 
-WRITE8_MEMBER(rungun_state::sound_ctrl_w)
+void rungun_state::sound_ctrl_w(uint8_t data)
 {
 	/*
 	    .... xxxx - Z80 ROM bank
@@ -258,22 +239,21 @@ WRITE_LINE_MEMBER(rungun_state::k054539_nmi_gen)
 	m_sound_nmi_clk = state;
 }
 
-/* sound (this should be split into audio/xexex.c or pregx.c or so someday) */
+/* sound (this should be split into audio/xexex.cpp or pregx.cpp or so someday) */
 
-static ADDRESS_MAP_START( rungun_sound_map, AS_PROGRAM, 8, rungun_state )
-	AM_RANGE(0x0000, 0x7fff) AM_ROM
-	AM_RANGE(0x8000, 0xbfff) AM_ROMBANK("bank2")
-	AM_RANGE(0xc000, 0xdfff) AM_RAM
-	AM_RANGE(0xe000, 0xe22f) AM_DEVREADWRITE("k054539_1", k054539_device, read, write)
-	AM_RANGE(0xe230, 0xe3ff) AM_RAM
-	AM_RANGE(0xe400, 0xe62f) AM_DEVREADWRITE("k054539_2", k054539_device, read, write)
-	AM_RANGE(0xe630, 0xe7ff) AM_RAM
-	AM_RANGE(0xf000, 0xf000) AM_WRITE(sound_status_w)
-	AM_RANGE(0xf002, 0xf002) AM_READ(soundlatch_byte_r)
-	AM_RANGE(0xf003, 0xf003) AM_READ(soundlatch2_byte_r)
-	AM_RANGE(0xf800, 0xf800) AM_WRITE(sound_ctrl_w)
-	AM_RANGE(0xfff0, 0xfff3) AM_WRITENOP
-ADDRESS_MAP_END
+void rungun_state::rungun_sound_map(address_map &map)
+{
+	map(0x0000, 0x7fff).rom();
+	map(0x8000, 0xbfff).bankr("bank2");
+	map(0xc000, 0xdfff).ram();
+	map(0xe000, 0xe22f).rw(m_k054539_1, FUNC(k054539_device::read), FUNC(k054539_device::write));
+	map(0xe230, 0xe3ff).ram();
+	map(0xe400, 0xe62f).rw(m_k054539_2, FUNC(k054539_device::read), FUNC(k054539_device::write));
+	map(0xe630, 0xe7ff).ram();
+	map(0xf000, 0xf003).m(m_k054321, FUNC(k054321_device::sound_map));
+	map(0xf800, 0xf800).w(FUNC(rungun_state::sound_ctrl_w));
+	map(0xfff0, 0xfff3).nopw();
+}
 
 
 static INPUT_PORTS_START( rng )
@@ -296,8 +276,8 @@ static INPUT_PORTS_START( rng )
 	PORT_BIT( 0x0800, IP_ACTIVE_LOW, IPT_UNKNOWN )
 
 	PORT_START("DSW")
-	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_SPECIAL ) PORT_READ_LINE_DEVICE_MEMBER("eeprom", eeprom_serial_er5911_device, do_read)
-	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_SPECIAL ) PORT_READ_LINE_DEVICE_MEMBER("eeprom", eeprom_serial_er5911_device, ready_read)
+	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_CUSTOM ) PORT_READ_LINE_DEVICE_MEMBER("eeprom", eeprom_serial_er5911_device, do_read)
+	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_CUSTOM ) PORT_READ_LINE_DEVICE_MEMBER("eeprom", eeprom_serial_er5911_device, ready_read)
 	PORT_DIPNAME( 0x04, 0x04, "Bit2 (Unknown)" )
 	PORT_DIPSETTING(    0x04, DEF_STR( Off ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
@@ -376,23 +356,22 @@ static const gfx_layout bglayout =
 	128*8
 };
 
-static GFXDECODE_START( rungun )
+static GFXDECODE_START( gfx_rungun )
 	GFXDECODE_ENTRY( "gfx1", 0, bglayout, 0x0000, 64 )
 GFXDECODE_END
 
 
 void rungun_state::machine_start()
 {
-	UINT8 *ROM = memregion("soundcpu")->base();
+	uint8_t *ROM = memregion("soundcpu")->base();
 
 	m_roz_rom = memregion("gfx1")->base();
 	membank("bank2")->configure_entries(0, 8, &ROM[0x10000], 0x4000);
 
-	m_banked_ram = make_unique_clear<UINT16[]>(0x2000);
-	m_pal_ram = make_unique_clear<UINT16[]>(0x800*2);
+	m_banked_ram = make_unique_clear<uint16_t[]>(0x2000);
+	m_pal_ram = make_unique_clear<uint16_t[]>(0x800*2);
 	membank("spriteram_bank")->configure_entries(0,2,&m_banked_ram[0],0x2000);
-	
-	
+
 	save_item(NAME(m_sound_ctrl));
 	save_item(NAME(m_sound_status));
 	save_item(NAME(m_sound_nmi_clk));
@@ -401,101 +380,101 @@ void rungun_state::machine_start()
 
 void rungun_state::machine_reset()
 {
-	m_k054539_1->init_flags(k054539_device::REVERSE_STEREO);
-
 	memset(m_sysreg, 0, 0x20);
-	//memset(m_ttl_vram, 0, 0x1000 * sizeof(UINT16));
+	//memset(m_ttl_vram, 0, 0x1000 * sizeof(uint16_t));
 
 	m_sound_ctrl = 0;
 	m_sound_status = 0;
 }
 
-static MACHINE_CONFIG_START( rng, rungun_state )
-
+void rungun_state::rng(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", M68000, 16000000)
-	MCFG_CPU_PROGRAM_MAP(rungun_map)
-	MCFG_CPU_VBLANK_INT_DRIVER("screen", rungun_state, rng_interrupt)
+	M68000(config, m_maincpu, 16000000);
+	m_maincpu->set_addrmap(AS_PROGRAM, &rungun_state::rungun_map);
+	m_maincpu->set_vblank_int("screen", FUNC(rungun_state::rng_interrupt));
 
-	MCFG_CPU_ADD("soundcpu", Z80, 8000000)
-	MCFG_CPU_PROGRAM_MAP(rungun_sound_map)
+	Z80(config, m_soundcpu, 8000000);
+	m_soundcpu->set_addrmap(AS_PROGRAM, &rungun_state::rungun_sound_map);
 
-	MCFG_QUANTUM_TIME(attotime::from_hz(6000)) // higher if sound stutters
+	config.set_maximum_quantum(attotime::from_hz(6000)); // higher if sound stutters
 
-	MCFG_GFXDECODE_ADD("gfxdecode", "palette", rungun)
+	GFXDECODE(config, m_gfxdecode, m_palette, gfx_rungun);
 
-	MCFG_EEPROM_SERIAL_ER5911_8BIT_ADD("eeprom")
+	EEPROM_ER5911_8BIT(config, "eeprom");
 
 	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_VIDEO_ATTRIBUTES(VIDEO_UPDATE_BEFORE_VBLANK)
-	MCFG_SCREEN_REFRESH_RATE(59.185606)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(0))
-	MCFG_SCREEN_SIZE(64*8, 32*8)
-	MCFG_SCREEN_VISIBLE_AREA(88, 88+416-1, 24, 24+224-1)
-	MCFG_SCREEN_UPDATE_DRIVER(rungun_state, screen_update_rng)
-	MCFG_SCREEN_PALETTE("palette")
-	MCFG_SCREEN_VIDEO_ATTRIBUTES(VIDEO_ALWAYS_UPDATE)
+	SCREEN(config, m_screen, SCREEN_TYPE_RASTER);
+	m_screen->set_video_attributes(VIDEO_UPDATE_BEFORE_VBLANK);
+	m_screen->set_refresh_hz(59.185606);
+	m_screen->set_vblank_time(ATTOSECONDS_IN_USEC(0));
+	m_screen->set_size(64*8, 32*8);
+	m_screen->set_visarea(88, 88+416-1, 24, 24+224-1);
+	m_screen->set_screen_update(FUNC(rungun_state::screen_update_rng));
+	m_screen->set_palette(m_palette);
+	m_screen->set_video_attributes(VIDEO_ALWAYS_UPDATE);
 
-	MCFG_PALETTE_ADD("palette", 1024)
-	MCFG_PALETTE_FORMAT(xBBBBBGGGGGRRRRR)
-	MCFG_PALETTE_ENABLE_SHADOWS()
-	MCFG_PALETTE_ENABLE_HILIGHTS()
+	PALETTE(config, m_palette).set_format(palette_device::xBGR_555, 1024);
+	m_palette->enable_shadows();
+	m_palette->enable_hilights();
 
-	MCFG_DEVICE_ADD("k053936", K053936, 0)
-	MCFG_K053936_OFFSETS(34, 9)
+	K053936(config, m_k053936, 0);
+	m_k053936->set_offsets(34, 9);
 
-	MCFG_DEVICE_ADD("k055673", K055673, 0)
-	MCFG_K055673_CB(rungun_state, sprite_callback)
-	MCFG_K055673_CONFIG("gfx2", 1, K055673_LAYOUT_RNG, -8, 15)
-	MCFG_K055673_GFXDECODE("gfxdecode")
-	MCFG_K055673_PALETTE("palette")
-	MCFG_K055673_SET_SCREEN("screen")
+	K055673(config, m_k055673, 0);
+	m_k055673->set_sprite_callback(FUNC(rungun_state::sprite_callback));
+	m_k055673->set_config(K055673_LAYOUT_RNG, -8, 15);
+	m_k055673->set_palette(m_palette);
+	m_k055673->set_screen(m_screen);
 
-	MCFG_DEVICE_ADD("k053252", K053252, 16000000/2)
-	MCFG_K053252_OFFSETS(9*8, 24)
-	MCFG_VIDEO_SET_SCREEN("screen")
+	K053252(config, m_k053252, 16000000/2);
+	m_k053252->set_offsets(9*8, 24);
+	m_k053252->set_screen("screen");
 
-	MCFG_PALETTE_ADD("palette2", 1024)
-	MCFG_PALETTE_FORMAT(xBBBBBGGGGGRRRRR)
-	MCFG_PALETTE_ENABLE_SHADOWS()
-	MCFG_PALETTE_ENABLE_HILIGHTS()
-	
+	PALETTE(config, m_palette2).set_format(palette_device::xBGR_555, 1024);
+	m_palette->enable_shadows();
+	m_palette->enable_hilights();
+
 	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_STEREO("lspeaker", "rspeaker")
+	SPEAKER(config, "lspeaker").front_left();
+	SPEAKER(config, "rspeaker").front_right();
 
-	MCFG_DEVICE_ADD("k054539_1", K054539, XTAL_18_432MHz)
-	MCFG_K054539_REGION_OVERRRIDE("shared")
-	MCFG_K054539_TIMER_HANDLER(WRITELINE(rungun_state, k054539_nmi_gen))
-	MCFG_SOUND_ROUTE(0, "lspeaker", 1.0)
-	MCFG_SOUND_ROUTE(1, "rspeaker", 1.0)
+	K054321(config, m_k054321, "lspeaker", "rspeaker");
 
-	MCFG_DEVICE_ADD("k054539_2", K054539, XTAL_18_432MHz)
-	MCFG_K054539_REGION_OVERRRIDE("shared")
-	MCFG_SOUND_ROUTE(0, "lspeaker", 1.0)
-	MCFG_SOUND_ROUTE(1, "rspeaker", 1.0)
-MACHINE_CONFIG_END
+	// SFX
+	K054539(config, m_k054539_1, 18.432_MHz_XTAL);
+	m_k054539_1->set_device_rom_tag("k054539");
+	m_k054539_1->timer_handler().set(FUNC(rungun_state::k054539_nmi_gen));
+	m_k054539_1->add_route(0, "rspeaker", 1.0);
+	m_k054539_1->add_route(1, "lspeaker", 1.0);
+
+	// BGM, volumes handtuned to make SFXs audible (still not 100% right tho)
+	K054539(config, m_k054539_2, 18.432_MHz_XTAL);
+	m_k054539_2->set_device_rom_tag("k054539");
+	m_k054539_2->add_route(0, "rspeaker", 0.6);
+	m_k054539_2->add_route(1, "lspeaker", 0.6);
+}
 
 // for dual-screen output Run and Gun requires the video de-multiplexer board connected to the Jamma output, this gives you 2 Jamma connectors, one for each screen.
 // this means when operated as a single dedicated cabinet the game runs at 60fps, and has smoother animations than when operated as a twin setup where each
 // screen only gets an update every other frame.
-static MACHINE_CONFIG_DERIVED( rng_dual, rng )
-	MCFG_SCREEN_MODIFY("screen")
-	MCFG_SCREEN_UPDATE_DRIVER(rungun_state, screen_update_rng_dual_left)
+void rungun_state::rng_dual(machine_config &config)
+{
+	rng(config);
 
-	MCFG_SCREEN_ADD("demultiplex2", RASTER)
-	MCFG_SCREEN_VIDEO_ATTRIBUTES(VIDEO_UPDATE_BEFORE_VBLANK)
-	MCFG_SCREEN_REFRESH_RATE(59.185606)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(0))
-	MCFG_SCREEN_SIZE(64*8, 32*8)
-	MCFG_SCREEN_VISIBLE_AREA(88, 88+416-1, 24, 24+224-1)
-	MCFG_SCREEN_UPDATE_DRIVER(rungun_state, screen_update_rng_dual_right)
-	MCFG_SCREEN_PALETTE("palette2")
+	m_screen->set_screen_update(FUNC(rungun_state::screen_update_rng_dual_left));
 
+	screen_device &demultiplex2(SCREEN(config, "demultiplex2", SCREEN_TYPE_RASTER));
+	demultiplex2.set_video_attributes(VIDEO_UPDATE_BEFORE_VBLANK);
+	demultiplex2.set_refresh_hz(59.185606);
+	demultiplex2.set_vblank_time(ATTOSECONDS_IN_USEC(0));
+	demultiplex2.set_size(64*8, 32*8);
+	demultiplex2.set_visarea(88, 88+416-1, 24, 24+224-1);
+	demultiplex2.set_screen_update(FUNC(rungun_state::screen_update_rng_dual_right));
+	demultiplex2.set_palette(m_palette2);
 
-	MCFG_DEVICE_MODIFY("k053252")
-	MCFG_K053252_SET_SLAVE_SCREEN("demultiplex2")
-MACHINE_CONFIG_END
+	m_k053252->set_slave_screen("demultiplex2");
+}
 
 
 // Older non-US 53936/A13 roms were all returning bad from the mask ROM check. Using the US ROM on non-US reports good therefore I guess that data matches for that
@@ -524,7 +503,7 @@ ROM_START( rungun )
 	ROM_LOAD( "247a13", 0x000000, 0x200000, CRC(c5a8ef29) SHA1(23938b8093bc0b9eef91f6d38127ca7acbdc06a6) )
 
 	/* sprites */
-	ROM_REGION( 0x800000, "gfx2", 0)
+	ROM_REGION( 0x800000, "k055673", 0)
 	ROM_LOAD64_WORD( "247-a11", 0x000000, 0x200000, CRC(c3f60854) SHA1(cbee7178ab9e5aa6a5aeed0511e370e29001fb01) )  // 5y
 	ROM_LOAD64_WORD( "247-a08", 0x000002, 0x200000, CRC(3e315eef) SHA1(898bc4d5ad244e5f91cbc87820b5d0be99ef6662) )  // 2u
 	ROM_LOAD64_WORD( "247-a09", 0x000004, 0x200000, CRC(5ca7bc06) SHA1(83c793c68227399f93bd1ed167dc9ed2aaac4167) )  // 2y
@@ -535,7 +514,7 @@ ROM_START( rungun )
 	ROM_LOAD( "247-a12", 0x000000, 0x20000, CRC(57a8d26e) SHA1(0431d10b76d77c26a1f6f2b55d9dbcfa959e1cd0) )
 
 	/* sound data */
-	ROM_REGION( 0x400000, "shared", 0)
+	ROM_REGION( 0x400000, "k054539", 0)
 	ROM_LOAD( "247-a06", 0x000000, 0x200000, CRC(b8b2a67e) SHA1(a873d32f4b178c714743664fa53c0dca29cb3ce4) )
 	ROM_LOAD( "247-a07", 0x200000, 0x200000, CRC(0108142d) SHA1(4dc6a36d976dad9c0da5a5b1f01f2eb3b369c99d) )
 
@@ -566,7 +545,7 @@ ROM_START( rungund ) // same as above set, but with demux adapter connected
 	ROM_LOAD( "247a13", 0x000000, 0x200000, CRC(c5a8ef29) SHA1(23938b8093bc0b9eef91f6d38127ca7acbdc06a6) )
 
 	/* sprites */
-	ROM_REGION( 0x800000, "gfx2", 0)
+	ROM_REGION( 0x800000, "k055673", 0)
 	ROM_LOAD64_WORD( "247-a11", 0x000000, 0x200000, CRC(c3f60854) SHA1(cbee7178ab9e5aa6a5aeed0511e370e29001fb01) )  // 5y
 	ROM_LOAD64_WORD( "247-a08", 0x000002, 0x200000, CRC(3e315eef) SHA1(898bc4d5ad244e5f91cbc87820b5d0be99ef6662) )  // 2u
 	ROM_LOAD64_WORD( "247-a09", 0x000004, 0x200000, CRC(5ca7bc06) SHA1(83c793c68227399f93bd1ed167dc9ed2aaac4167) )  // 2y
@@ -577,7 +556,7 @@ ROM_START( rungund ) // same as above set, but with demux adapter connected
 	ROM_LOAD( "247-a12", 0x000000, 0x20000, CRC(57a8d26e) SHA1(0431d10b76d77c26a1f6f2b55d9dbcfa959e1cd0) )
 
 	/* sound data */
-	ROM_REGION( 0x400000, "shared", 0)
+	ROM_REGION( 0x400000, "k054539", 0)
 	ROM_LOAD( "247-a06", 0x000000, 0x200000, CRC(b8b2a67e) SHA1(a873d32f4b178c714743664fa53c0dca29cb3ce4) )
 	ROM_LOAD( "247-a07", 0x200000, 0x200000, CRC(0108142d) SHA1(4dc6a36d976dad9c0da5a5b1f01f2eb3b369c99d) )
 
@@ -608,7 +587,7 @@ ROM_START( runguna )
 	ROM_LOAD( "247a13", 0x000000, 0x200000, CRC(c5a8ef29) SHA1(23938b8093bc0b9eef91f6d38127ca7acbdc06a6) )
 
 	/* sprites */
-	ROM_REGION( 0x800000, "gfx2", 0)
+	ROM_REGION( 0x800000, "k055673", 0)
 	ROM_LOAD64_WORD( "247-a11", 0x000000, 0x200000, CRC(c3f60854) SHA1(cbee7178ab9e5aa6a5aeed0511e370e29001fb01) )  // 5y
 	ROM_LOAD64_WORD( "247-a08", 0x000002, 0x200000, CRC(3e315eef) SHA1(898bc4d5ad244e5f91cbc87820b5d0be99ef6662) )  // 2u
 	ROM_LOAD64_WORD( "247-a09", 0x000004, 0x200000, CRC(5ca7bc06) SHA1(83c793c68227399f93bd1ed167dc9ed2aaac4167) )  // 2y
@@ -619,7 +598,7 @@ ROM_START( runguna )
 	ROM_LOAD( "247-a12", 0x000000, 0x20000, CRC(57a8d26e) SHA1(0431d10b76d77c26a1f6f2b55d9dbcfa959e1cd0) )
 
 	/* sound data */
-	ROM_REGION( 0x400000, "shared", 0)
+	ROM_REGION( 0x400000, "k054539", 0)
 	ROM_LOAD( "247-a06", 0x000000, 0x200000, CRC(b8b2a67e) SHA1(a873d32f4b178c714743664fa53c0dca29cb3ce4) )
 	ROM_LOAD( "247-a07", 0x200000, 0x200000, CRC(0108142d) SHA1(4dc6a36d976dad9c0da5a5b1f01f2eb3b369c99d) )
 
@@ -651,7 +630,7 @@ ROM_START( rungunad ) // same as above set, but with demux adapter connected
 	ROM_LOAD( "247a13", 0x000000, 0x200000, CRC(c5a8ef29) SHA1(23938b8093bc0b9eef91f6d38127ca7acbdc06a6) )
 
 	/* sprites */
-	ROM_REGION( 0x800000, "gfx2", 0)
+	ROM_REGION( 0x800000, "k055673", 0)
 	ROM_LOAD64_WORD( "247-a11", 0x000000, 0x200000, CRC(c3f60854) SHA1(cbee7178ab9e5aa6a5aeed0511e370e29001fb01) )  // 5y
 	ROM_LOAD64_WORD( "247-a08", 0x000002, 0x200000, CRC(3e315eef) SHA1(898bc4d5ad244e5f91cbc87820b5d0be99ef6662) )  // 2u
 	ROM_LOAD64_WORD( "247-a09", 0x000004, 0x200000, CRC(5ca7bc06) SHA1(83c793c68227399f93bd1ed167dc9ed2aaac4167) )  // 2y
@@ -662,7 +641,7 @@ ROM_START( rungunad ) // same as above set, but with demux adapter connected
 	ROM_LOAD( "247-a12", 0x000000, 0x20000, CRC(57a8d26e) SHA1(0431d10b76d77c26a1f6f2b55d9dbcfa959e1cd0) )
 
 	/* sound data */
-	ROM_REGION( 0x400000, "shared", 0)
+	ROM_REGION( 0x400000, "k054539", 0)
 	ROM_LOAD( "247-a06", 0x000000, 0x200000, CRC(b8b2a67e) SHA1(a873d32f4b178c714743664fa53c0dca29cb3ce4) )
 	ROM_LOAD( "247-a07", 0x200000, 0x200000, CRC(0108142d) SHA1(4dc6a36d976dad9c0da5a5b1f01f2eb3b369c99d) )
 
@@ -698,7 +677,7 @@ ROM_START( rungunb )
 	ROM_LOAD( "247a13", 0x000000, 0x200000, CRC(c5a8ef29) SHA1(23938b8093bc0b9eef91f6d38127ca7acbdc06a6) )
 
 	/* sprites */
-	ROM_REGION( 0x800000, "gfx2", 0)
+	ROM_REGION( 0x800000, "k055673", 0)
 	ROM_LOAD64_WORD( "247-a11", 0x000000, 0x200000, CRC(c3f60854) SHA1(cbee7178ab9e5aa6a5aeed0511e370e29001fb01) )  // 5y
 	ROM_LOAD64_WORD( "247-a08", 0x000002, 0x200000, CRC(3e315eef) SHA1(898bc4d5ad244e5f91cbc87820b5d0be99ef6662) )  // 2u
 	ROM_LOAD64_WORD( "247-a09", 0x000004, 0x200000, CRC(5ca7bc06) SHA1(83c793c68227399f93bd1ed167dc9ed2aaac4167) )  // 2y
@@ -709,7 +688,7 @@ ROM_START( rungunb )
 	ROM_LOAD( "247-a12", 0x000000, 0x20000, CRC(57a8d26e) SHA1(0431d10b76d77c26a1f6f2b55d9dbcfa959e1cd0) )
 
 	/* sound data */
-	ROM_REGION( 0x400000, "shared", 0)
+	ROM_REGION( 0x400000, "k054539", 0)
 	ROM_LOAD( "247-a06", 0x000000, 0x200000, CRC(b8b2a67e) SHA1(a873d32f4b178c714743664fa53c0dca29cb3ce4) )
 	ROM_LOAD( "247-a07", 0x200000, 0x200000, CRC(0108142d) SHA1(4dc6a36d976dad9c0da5a5b1f01f2eb3b369c99d) )
 
@@ -741,7 +720,7 @@ ROM_START( rungunbd ) // same as above set, but with demux adapter connected
 	ROM_LOAD( "247a13", 0x000000, 0x200000, CRC(c5a8ef29) SHA1(23938b8093bc0b9eef91f6d38127ca7acbdc06a6) )
 
 	/* sprites */
-	ROM_REGION( 0x800000, "gfx2", 0)
+	ROM_REGION( 0x800000, "k055673", 0)
 	ROM_LOAD64_WORD( "247-a11", 0x000000, 0x200000, CRC(c3f60854) SHA1(cbee7178ab9e5aa6a5aeed0511e370e29001fb01) )  // 5y
 	ROM_LOAD64_WORD( "247-a08", 0x000002, 0x200000, CRC(3e315eef) SHA1(898bc4d5ad244e5f91cbc87820b5d0be99ef6662) )  // 2u
 	ROM_LOAD64_WORD( "247-a09", 0x000004, 0x200000, CRC(5ca7bc06) SHA1(83c793c68227399f93bd1ed167dc9ed2aaac4167) )  // 2y
@@ -752,7 +731,7 @@ ROM_START( rungunbd ) // same as above set, but with demux adapter connected
 	ROM_LOAD( "247-a12", 0x000000, 0x20000, CRC(57a8d26e) SHA1(0431d10b76d77c26a1f6f2b55d9dbcfa959e1cd0) )
 
 	/* sound data */
-	ROM_REGION( 0x400000, "shared", 0)
+	ROM_REGION( 0x400000, "k054539", 0)
 	ROM_LOAD( "247-a06", 0x000000, 0x200000, CRC(b8b2a67e) SHA1(a873d32f4b178c714743664fa53c0dca29cb3ce4) )
 	ROM_LOAD( "247-a07", 0x200000, 0x200000, CRC(0108142d) SHA1(4dc6a36d976dad9c0da5a5b1f01f2eb3b369c99d) )
 
@@ -782,7 +761,7 @@ ROM_START( rungunua )
 	ROM_LOAD( "247a13", 0x000000, 0x200000, CRC(c5a8ef29) SHA1(23938b8093bc0b9eef91f6d38127ca7acbdc06a6) )
 
 	/* sprites */
-	ROM_REGION( 0x800000, "gfx2", 0)
+	ROM_REGION( 0x800000, "k055673", 0)
 	ROM_LOAD64_WORD( "247-a11", 0x000000, 0x200000, CRC(c3f60854) SHA1(cbee7178ab9e5aa6a5aeed0511e370e29001fb01) )  // 5y
 	ROM_LOAD64_WORD( "247-a08", 0x000002, 0x200000, CRC(3e315eef) SHA1(898bc4d5ad244e5f91cbc87820b5d0be99ef6662) )  // 2u
 	ROM_LOAD64_WORD( "247-a09", 0x000004, 0x200000, CRC(5ca7bc06) SHA1(83c793c68227399f93bd1ed167dc9ed2aaac4167) )  // 2y
@@ -793,7 +772,7 @@ ROM_START( rungunua )
 	ROM_LOAD( "247-a12", 0x000000, 0x20000, CRC(57a8d26e) SHA1(0431d10b76d77c26a1f6f2b55d9dbcfa959e1cd0) )
 
 	/* sound data */
-	ROM_REGION( 0x400000, "shared", 0)
+	ROM_REGION( 0x400000, "k054539", 0)
 	ROM_LOAD( "247-a06", 0x000000, 0x200000, CRC(b8b2a67e) SHA1(a873d32f4b178c714743664fa53c0dca29cb3ce4) )
 	ROM_LOAD( "247-a07", 0x200000, 0x200000, CRC(0108142d) SHA1(4dc6a36d976dad9c0da5a5b1f01f2eb3b369c99d) )
 
@@ -824,7 +803,7 @@ ROM_START( rungunuad )  // same as above set, but with demux adapter connected
 	ROM_LOAD( "247a13", 0x000000, 0x200000, CRC(c5a8ef29) SHA1(23938b8093bc0b9eef91f6d38127ca7acbdc06a6) )
 
 	/* sprites */
-	ROM_REGION( 0x800000, "gfx2", 0)
+	ROM_REGION( 0x800000, "k055673", 0)
 	ROM_LOAD64_WORD( "247-a11", 0x000000, 0x200000, CRC(c3f60854) SHA1(cbee7178ab9e5aa6a5aeed0511e370e29001fb01) )  // 5y
 	ROM_LOAD64_WORD( "247-a08", 0x000002, 0x200000, CRC(3e315eef) SHA1(898bc4d5ad244e5f91cbc87820b5d0be99ef6662) )  // 2u
 	ROM_LOAD64_WORD( "247-a09", 0x000004, 0x200000, CRC(5ca7bc06) SHA1(83c793c68227399f93bd1ed167dc9ed2aaac4167) )  // 2y
@@ -835,7 +814,7 @@ ROM_START( rungunuad )  // same as above set, but with demux adapter connected
 	ROM_LOAD( "247-a12", 0x000000, 0x20000, CRC(57a8d26e) SHA1(0431d10b76d77c26a1f6f2b55d9dbcfa959e1cd0) )
 
 	/* sound data */
-	ROM_REGION( 0x400000, "shared", 0)
+	ROM_REGION( 0x400000, "k054539", 0)
 	ROM_LOAD( "247-a06", 0x000000, 0x200000, CRC(b8b2a67e) SHA1(a873d32f4b178c714743664fa53c0dca29cb3ce4) )
 	ROM_LOAD( "247-a07", 0x200000, 0x200000, CRC(0108142d) SHA1(4dc6a36d976dad9c0da5a5b1f01f2eb3b369c99d) )
 
@@ -866,7 +845,7 @@ ROM_START( slmdunkj )
 	ROM_LOAD( "247a13", 0x000000, 0x200000, CRC(c5a8ef29) SHA1(23938b8093bc0b9eef91f6d38127ca7acbdc06a6) )
 
 	/* sprites */
-	ROM_REGION( 0x800000, "gfx2", 0)
+	ROM_REGION( 0x800000, "k055673", 0)
 	ROM_LOAD64_WORD( "247-a11", 0x000000, 0x200000, CRC(c3f60854) SHA1(cbee7178ab9e5aa6a5aeed0511e370e29001fb01) )  // 5y
 	ROM_LOAD64_WORD( "247-a08", 0x000002, 0x200000, CRC(3e315eef) SHA1(898bc4d5ad244e5f91cbc87820b5d0be99ef6662) )  // 2u
 	ROM_LOAD64_WORD( "247-a09", 0x000004, 0x200000, CRC(5ca7bc06) SHA1(83c793c68227399f93bd1ed167dc9ed2aaac4167) )  // 2y
@@ -877,7 +856,7 @@ ROM_START( slmdunkj )
 	ROM_LOAD( "247-a12", 0x000000, 0x20000, CRC(57a8d26e) SHA1(0431d10b76d77c26a1f6f2b55d9dbcfa959e1cd0) )
 
 	/* sound data */
-	ROM_REGION( 0x400000, "shared", 0)
+	ROM_REGION( 0x400000, "k054539", 0)
 	ROM_LOAD( "247-a06", 0x000000, 0x200000, CRC(b8b2a67e) SHA1(a873d32f4b178c714743664fa53c0dca29cb3ce4) )
 	ROM_LOAD( "247-a07", 0x200000, 0x200000, CRC(0108142d) SHA1(4dc6a36d976dad9c0da5a5b1f01f2eb3b369c99d) )
 
@@ -908,7 +887,7 @@ ROM_START( slmdunkjd ) // same as above set, but with demux adapter connected
 	ROM_LOAD( "247a13", 0x000000, 0x200000, CRC(c5a8ef29) SHA1(23938b8093bc0b9eef91f6d38127ca7acbdc06a6) )
 
 	/* sprites */
-	ROM_REGION( 0x800000, "gfx2", 0)
+	ROM_REGION( 0x800000, "k055673", 0)
 	ROM_LOAD64_WORD( "247-a11", 0x000000, 0x200000, CRC(c3f60854) SHA1(cbee7178ab9e5aa6a5aeed0511e370e29001fb01) )  // 5y
 	ROM_LOAD64_WORD( "247-a08", 0x000002, 0x200000, CRC(3e315eef) SHA1(898bc4d5ad244e5f91cbc87820b5d0be99ef6662) )  // 2u
 	ROM_LOAD64_WORD( "247-a09", 0x000004, 0x200000, CRC(5ca7bc06) SHA1(83c793c68227399f93bd1ed167dc9ed2aaac4167) )  // 2y
@@ -919,7 +898,7 @@ ROM_START( slmdunkjd ) // same as above set, but with demux adapter connected
 	ROM_LOAD( "247-a12", 0x000000, 0x20000, CRC(57a8d26e) SHA1(0431d10b76d77c26a1f6f2b55d9dbcfa959e1cd0) )
 
 	/* sound data */
-	ROM_REGION( 0x400000, "shared", 0)
+	ROM_REGION( 0x400000, "k054539", 0)
 	ROM_LOAD( "247-a06", 0x000000, 0x200000, CRC(b8b2a67e) SHA1(a873d32f4b178c714743664fa53c0dca29cb3ce4) )
 	ROM_LOAD( "247-a07", 0x200000, 0x200000, CRC(0108142d) SHA1(4dc6a36d976dad9c0da5a5b1f01f2eb3b369c99d) )
 
@@ -949,7 +928,7 @@ ROM_START( rungunud ) // dual cabinet setup ONLY
 	ROM_LOAD( "247a13", 0x000000, 0x200000, CRC(c5a8ef29) SHA1(23938b8093bc0b9eef91f6d38127ca7acbdc06a6) )
 
 	/* sprites */
-	ROM_REGION( 0x800000, "gfx2", 0)
+	ROM_REGION( 0x800000, "k055673", 0)
 	ROM_LOAD64_WORD( "247-a11", 0x000000, 0x200000, CRC(c3f60854) SHA1(cbee7178ab9e5aa6a5aeed0511e370e29001fb01) )  // 5y
 	ROM_LOAD64_WORD( "247-a08", 0x000002, 0x200000, CRC(3e315eef) SHA1(898bc4d5ad244e5f91cbc87820b5d0be99ef6662) )  // 2u
 	ROM_LOAD64_WORD( "247-a09", 0x000004, 0x200000, CRC(5ca7bc06) SHA1(83c793c68227399f93bd1ed167dc9ed2aaac4167) )  // 2y
@@ -960,7 +939,7 @@ ROM_START( rungunud ) // dual cabinet setup ONLY
 	ROM_LOAD( "247-a12", 0x000000, 0x20000, CRC(57a8d26e) SHA1(0431d10b76d77c26a1f6f2b55d9dbcfa959e1cd0) )
 
 	/* sound data */
-	ROM_REGION( 0x400000, "shared", 0)
+	ROM_REGION( 0x400000, "k054539", 0)
 	ROM_LOAD( "247-a06", 0x000000, 0x200000, CRC(b8b2a67e) SHA1(a873d32f4b178c714743664fa53c0dca29cb3ce4) )
 	ROM_LOAD( "247-a07", 0x200000, 0x200000, CRC(0108142d) SHA1(4dc6a36d976dad9c0da5a5b1f01f2eb3b369c99d) )
 
@@ -975,18 +954,18 @@ ROM_END
 // it appears that all other regions were switchable from the first release, so use the 'A' code.
 
 // these are running WITHOUT the demux adapter, on a single screen
-GAME( 1993, rungun,   0,      rng, rng, driver_device, 0, ROT0, "Konami", "Run and Gun (ver EAA 1993 10.8)", MACHINE_IMPERFECT_GRAPHICS | MACHINE_IMPERFECT_COLORS | MACHINE_IMPERFECT_SOUND )
-GAME( 1993, runguna,  rungun, rng, rng, driver_device, 0, ROT0, "Konami", "Run and Gun (ver EAA 1993 10.4)", MACHINE_IMPERFECT_GRAPHICS | MACHINE_IMPERFECT_COLORS | MACHINE_IMPERFECT_SOUND )
-GAME( 1993, rungunb,  rungun, rng, rng, driver_device, 0, ROT0, "Konami", "Run and Gun (ver EAA 1993 9.10, prototype?)", MACHINE_IMPERFECT_GRAPHICS | MACHINE_IMPERFECT_COLORS | MACHINE_IMPERFECT_SOUND )
-GAME( 1993, rungunua, rungun, rng, rng, driver_device, 0, ROT0, "Konami", "Run and Gun (ver UBA 1993 10.8)", MACHINE_IMPERFECT_GRAPHICS | MACHINE_IMPERFECT_COLORS | MACHINE_IMPERFECT_SOUND )
-GAME( 1993, slmdunkj, rungun, rng, rng, driver_device, 0, ROT0, "Konami", "Slam Dunk (ver JAA 1993 10.8)", MACHINE_IMPERFECT_GRAPHICS | MACHINE_IMPERFECT_COLORS | MACHINE_IMPERFECT_SOUND )
+GAME( 1993, rungun,   0,      rng, rng, rungun_state, empty_init, ROT0, "Konami", "Run and Gun (ver EAA 1993 10.8)", MACHINE_IMPERFECT_GRAPHICS | MACHINE_IMPERFECT_COLORS | MACHINE_IMPERFECT_SOUND )
+GAME( 1993, runguna,  rungun, rng, rng, rungun_state, empty_init, ROT0, "Konami", "Run and Gun (ver EAA 1993 10.4)", MACHINE_IMPERFECT_GRAPHICS | MACHINE_IMPERFECT_COLORS | MACHINE_IMPERFECT_SOUND )
+GAME( 1993, rungunb,  rungun, rng, rng, rungun_state, empty_init, ROT0, "Konami", "Run and Gun (ver EAA 1993 9.10, prototype?)", MACHINE_IMPERFECT_GRAPHICS | MACHINE_IMPERFECT_COLORS | MACHINE_IMPERFECT_SOUND )
+GAME( 1993, rungunua, rungun, rng, rng, rungun_state, empty_init, ROT0, "Konami", "Run and Gun (ver UBA 1993 10.8)", MACHINE_IMPERFECT_GRAPHICS | MACHINE_IMPERFECT_COLORS | MACHINE_IMPERFECT_SOUND )
+GAME( 1993, slmdunkj, rungun, rng, rng, rungun_state, empty_init, ROT0, "Konami", "Slam Dunk (ver JAA 1993 10.8)", MACHINE_IMPERFECT_GRAPHICS | MACHINE_IMPERFECT_COLORS | MACHINE_IMPERFECT_SOUND )
 
 // these sets have the demux adapter connected, and output to 2 screens (as the adapter represents a physical hardware difference, albeit a minor one, use clone sets)
-GAMEL( 1993, rungund,  rungun, rng_dual, rng_dual, driver_device, 0, ROT0, "Konami", "Run and Gun (ver EAA 1993 10.8) (dual screen with demux adapter)", MACHINE_IMPERFECT_GRAPHICS | MACHINE_IMPERFECT_COLORS | MACHINE_IMPERFECT_SOUND, layout_rungun_dual )
-GAMEL( 1993, rungunad, rungun, rng_dual, rng_dual, driver_device, 0, ROT0, "Konami", "Run and Gun (ver EAA 1993 10.4) (dual screen with demux adapter)", MACHINE_IMPERFECT_GRAPHICS | MACHINE_IMPERFECT_COLORS | MACHINE_IMPERFECT_SOUND, layout_rungun_dual )
-GAMEL( 1993, rungunbd, rungun, rng_dual, rng_dual, driver_device, 0, ROT0, "Konami", "Run and Gun (ver EAA 1993 9.10, prototype?) (dual screen with demux adapter)", MACHINE_IMPERFECT_GRAPHICS | MACHINE_IMPERFECT_COLORS | MACHINE_IMPERFECT_SOUND, layout_rungun_dual )
-GAMEL( 1993, rungunuad,rungun, rng_dual, rng_dual, driver_device, 0, ROT0, "Konami", "Run and Gun (ver UBA 1993 10.8) (dual screen with demux adapter)", MACHINE_IMPERFECT_GRAPHICS | MACHINE_IMPERFECT_COLORS | MACHINE_IMPERFECT_SOUND, layout_rungun_dual )
-GAMEL( 1993, slmdunkjd,rungun, rng_dual, rng_dual, driver_device, 0, ROT0, "Konami", "Slam Dunk (ver JAA 1993 10.8) (dual screen with demux adapter)", MACHINE_IMPERFECT_GRAPHICS | MACHINE_IMPERFECT_COLORS | MACHINE_IMPERFECT_SOUND, layout_rungun_dual )
+GAMEL( 1993, rungund,  rungun, rng_dual, rng_dual, rungun_state, empty_init, ROT0, "Konami", "Run and Gun (ver EAA 1993 10.8) (dual screen with demux adapter)", MACHINE_IMPERFECT_GRAPHICS | MACHINE_IMPERFECT_COLORS | MACHINE_IMPERFECT_SOUND, layout_rungun_dual )
+GAMEL( 1993, rungunad, rungun, rng_dual, rng_dual, rungun_state, empty_init, ROT0, "Konami", "Run and Gun (ver EAA 1993 10.4) (dual screen with demux adapter)", MACHINE_IMPERFECT_GRAPHICS | MACHINE_IMPERFECT_COLORS | MACHINE_IMPERFECT_SOUND, layout_rungun_dual )
+GAMEL( 1993, rungunbd, rungun, rng_dual, rng_dual, rungun_state, empty_init, ROT0, "Konami", "Run and Gun (ver EAA 1993 9.10, prototype?) (dual screen with demux adapter)", MACHINE_IMPERFECT_GRAPHICS | MACHINE_IMPERFECT_COLORS | MACHINE_IMPERFECT_SOUND, layout_rungun_dual )
+GAMEL( 1993, rungunuad,rungun, rng_dual, rng_dual, rungun_state, empty_init, ROT0, "Konami", "Run and Gun (ver UBA 1993 10.8) (dual screen with demux adapter)", MACHINE_IMPERFECT_GRAPHICS | MACHINE_IMPERFECT_COLORS | MACHINE_IMPERFECT_SOUND, layout_rungun_dual )
+GAMEL( 1993, slmdunkjd,rungun, rng_dual, rng_dual, rungun_state, empty_init, ROT0, "Konami", "Slam Dunk (ver JAA 1993 10.8) (dual screen with demux adapter)", MACHINE_IMPERFECT_GRAPHICS | MACHINE_IMPERFECT_COLORS | MACHINE_IMPERFECT_SOUND, layout_rungun_dual )
 
 // this set has no dipswitches to select single screen mode (they're not even displayed in test menu) it's twin cabinet ONLY
-GAMEL( 1993, rungunud, rungun, rng_dual, rng_nodip, driver_device, 0, ROT0, "Konami", "Run and Gun (ver UAB 1993 10.12, dedicated twin cabinet)", MACHINE_IMPERFECT_GRAPHICS | MACHINE_IMPERFECT_COLORS | MACHINE_IMPERFECT_SOUND, layout_rungun_dual ) 
+GAMEL( 1993, rungunud, rungun, rng_dual, rng_nodip, rungun_state, empty_init, ROT0, "Konami", "Run and Gun (ver UAB 1993 10.12, dedicated twin cabinet)", MACHINE_IMPERFECT_GRAPHICS | MACHINE_IMPERFECT_COLORS | MACHINE_IMPERFECT_SOUND, layout_rungun_dual )

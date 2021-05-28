@@ -1,7 +1,8 @@
 // license:BSD-3-Clause
 // copyright-holders:Aaron Giles,Ernesto Corvi
 #include "emu.h"
-#include "sound/discrete.h"
+#include "audio/cliffhgr.h"
+
 
 #define CLIFF_ENABLE_SND_1  NODE_01
 #define CLIFF_ENABLE_SND_2  NODE_02
@@ -27,9 +28,8 @@ static const discrete_mixer_desc desc_cliffhgr_mixer =
 	8
 };
 
-DISCRETE_SOUND_EXTERN(cliffhgr);
 
-DISCRETE_SOUND_START(cliffhgr)
+DISCRETE_SOUND_START(cliffhgr_discrete)
 	DISCRETE_INPUT_LOGIC(CLIFF_ENABLE_SND_1)
 	DISCRETE_INPUT_LOGIC(CLIFF_ENABLE_SND_2)
 

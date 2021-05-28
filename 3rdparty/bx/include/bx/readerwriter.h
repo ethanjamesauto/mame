@@ -1,414 +1,224 @@
 /*
- * Copyright 2010-2015 Branimir Karadzic. All rights reserved.
- * License: http://www.opensource.org/licenses/BSD-2-Clause
+ * Copyright 2010-2019 Branimir Karadzic. All rights reserved.
+ * License: https://github.com/bkaradzic/bx#license-bsd-2-clause
  */
 
 #ifndef BX_READERWRITER_H_HEADER_GUARD
 #define BX_READERWRITER_H_HEADER_GUARD
 
-#include <stdarg.h> // va_list
-#include <stdio.h>
-#include <string.h>
-
-#include "bx.h"
 #include "allocator.h"
+#include "endian.h"
+#include "error.h"
+#include "filepath.h"
+#include "math.h"
+#include "string.h"
 #include "uint32_t.h"
 
-#if BX_COMPILER_MSVC_COMPATIBLE
-#	define fseeko64 _fseeki64
-#	define ftello64 _ftelli64
-#elif BX_PLATFORM_ANDROID || BX_PLATFORM_FREEBSD || BX_PLATFORM_IOS || BX_PLATFORM_OSX || BX_PLATFORM_QNX
-#	define fseeko64 fseeko
-#	define ftello64 ftello
-#endif // BX_
+BX_ERROR_RESULT(BX_ERROR_READERWRITER_OPEN,         BX_MAKEFOURCC('R', 'W', 0, 1) );
+BX_ERROR_RESULT(BX_ERROR_READERWRITER_READ,         BX_MAKEFOURCC('R', 'W', 0, 2) );
+BX_ERROR_RESULT(BX_ERROR_READERWRITER_WRITE,        BX_MAKEFOURCC('R', 'W', 0, 3) );
+BX_ERROR_RESULT(BX_ERROR_READERWRITER_EOF,          BX_MAKEFOURCC('R', 'W', 0, 4) );
+BX_ERROR_RESULT(BX_ERROR_READERWRITER_ALREADY_OPEN, BX_MAKEFOURCC('R', 'W', 0, 5) );
 
 namespace bx
 {
+	/// The position from where offset is added.
 	struct Whence
 	{
+		/// Whence values:
 		enum Enum
 		{
-			Begin,
-			Current,
-			End,
+			Begin,   //!< From begining of file.
+			Current, //!< From current position of file.
+			End,     //!< From end of file.
 		};
 	};
 
+	/// Reader interface.
 	struct BX_NO_VTABLE ReaderI
 	{
+		///
 		virtual ~ReaderI() = 0;
-		virtual int32_t read(void* _data, int32_t _size) = 0;
+
+		///
+		virtual int32_t read(void* _data, int32_t _size, Error* _err) = 0;
 	};
 
-	inline ReaderI::~ReaderI()
-	{
-	}
-
+	/// Writer interface.
 	struct BX_NO_VTABLE WriterI
 	{
+		///
 		virtual ~WriterI() = 0;
-		virtual int32_t write(const void* _data, int32_t _size) = 0;
+
+		///
+		virtual int32_t write(const void* _data, int32_t _size, Error* _err) = 0;
 	};
 
-	inline WriterI::~WriterI()
-	{
-	}
-
+	/// Seeker interface.
 	struct BX_NO_VTABLE SeekerI
 	{
+		///
 		virtual ~SeekerI() = 0;
+
+		///
 		virtual int64_t seek(int64_t _offset = 0, Whence::Enum _whence = Whence::Current) = 0;
 	};
 
-	inline SeekerI::~SeekerI()
-	{
-	}
-
-	/// Read data.
-	inline int32_t read(ReaderI* _reader, void* _data, int32_t _size)
-	{
-		return _reader->read(_data, _size);
-	}
-
-	/// Write value.
-	template<typename Ty>
-	inline int32_t read(ReaderI* _reader, Ty& _value)
-	{
-		BX_STATIC_ASSERT(BX_TYPE_IS_POD(Ty) );
-		return _reader->read(&_value, sizeof(Ty) );
-	}
-
-	/// Read value and converts it to host endianess. _fromLittleEndian specifies
-	/// underlying stream endianess.
-	template<typename Ty>
-	inline int32_t readHE(ReaderI* _reader, Ty& _value, bool _fromLittleEndian)
-	{
-		BX_STATIC_ASSERT(BX_TYPE_IS_POD(Ty) );
-		Ty value;
-		int32_t result = _reader->read(&value, sizeof(Ty) );
-		_value = toHostEndian(value, _fromLittleEndian);
-		return result;
-	}
-
-	/// Write data.
-	inline int32_t write(WriterI* _writer, const void* _data, int32_t _size)
-	{
-		return _writer->write(_data, _size);
-	}
-
-	/// Write repeat the same value.
-	inline int32_t writeRep(WriterI* _writer, uint8_t _byte, int32_t _size)
-	{
-		const uint32_t tmp0      = uint32_sels(64   - _size,   64, _size);
-		const uint32_t tmp1      = uint32_sels(256  - _size,  256, tmp0);
-		const uint32_t blockSize = uint32_sels(1024 - _size, 1024, tmp1);
-		uint8_t* temp = (uint8_t*)alloca(blockSize);
-		memset(temp, _byte, blockSize);
-
-		int32_t size = 0;
-		while (0 < _size)
-		{
-			int32_t bytes = write(_writer, temp, uint32_min(blockSize, _size) );
-			size  += bytes;
-			_size -= bytes;
-		}
-
-		return size;
-	}
-
-	/// Write value.
-	template<typename Ty>
-	inline int32_t write(WriterI* _writer, const Ty& _value)
-	{
-		BX_STATIC_ASSERT(BX_TYPE_IS_POD(Ty) );
-		return _writer->write(&_value, sizeof(Ty) );
-	}
-
-	/// Write value as little endian.
-	template<typename Ty>
-	inline int32_t writeLE(WriterI* _writer, const Ty& _value)
-	{
-		BX_STATIC_ASSERT(BX_TYPE_IS_POD(Ty) );
-		Ty value = toLittleEndian(_value);
-		int32_t result = _writer->write(&value, sizeof(Ty) );
-		return result;
-	}
-
-	/// Write value as big endian.
-	template<typename Ty>
-	inline int32_t writeBE(WriterI* _writer, const Ty& _value)
-	{
-		BX_STATIC_ASSERT(BX_TYPE_IS_POD(Ty) );
-		Ty value = toBigEndian(_value);
-		int32_t result = _writer->write(&value, sizeof(Ty) );
-		return result;
-	}
-
-	/// Write formated string.
-	inline int32_t writePrintf(WriterI* _writer, const char* _format, ...)
-	{
-		va_list argList;
-		va_start(argList, _format);
-
-		char temp[2048];
-		char* out = temp;
-		int32_t max = sizeof(temp);
-		int32_t len = vsnprintf(out, max, _format, argList);
-		if (len > max)
-		{
-			out = (char*)alloca(len);
-			len = vsnprintf(out, len, _format, argList);
-		}
-
-		int32_t size = write(_writer, out, len);
-
-		va_end(argList);
-
-		return size;
-	}
-
-	/// Skip _offset bytes forward.
-	inline int64_t skip(SeekerI* _seeker, int64_t _offset)
-	{
-		return _seeker->seek(_offset, Whence::Current);
-	}
-
-	/// Seek to any position in file.
-	inline int64_t seek(SeekerI* _seeker, int64_t _offset = 0, Whence::Enum _whence = Whence::Current)
-	{
-		return _seeker->seek(_offset, _whence);
-	}
-
-	/// Returns size of file.
-	inline int64_t getSize(SeekerI* _seeker)
-	{
-		int64_t offset = _seeker->seek();
-		int64_t size = _seeker->seek(0, Whence::End);
-		_seeker->seek(offset, Whence::Begin);
-		return size;
-	}
-
+	/// Reader seeker interface.
 	struct BX_NO_VTABLE ReaderSeekerI : public ReaderI, public SeekerI
 	{
 	};
 
+	/// Writer seeker interface.
 	struct BX_NO_VTABLE WriterSeekerI : public WriterI, public SeekerI
 	{
 	};
 
-	struct BX_NO_VTABLE FileReaderI : public ReaderSeekerI
+	/// Open for reading interface.
+	struct BX_NO_VTABLE ReaderOpenI
 	{
-		virtual int32_t open(const char* _filePath) = 0;
-		virtual int32_t close() = 0;
+		///
+		virtual ~ReaderOpenI() = 0;
+
+		///
+		virtual bool open(const FilePath& _filePath, Error* _err) = 0;
 	};
 
-	struct BX_NO_VTABLE FileWriterI : public WriterSeekerI
+	/// Open for writing interface.
+	struct BX_NO_VTABLE WriterOpenI
 	{
-		virtual int32_t open(const char* _filePath, bool _append = false) = 0;
-		virtual int32_t close() = 0;
+		///
+		virtual ~WriterOpenI() = 0;
+
+		///
+		virtual bool open(const FilePath& _filePath, bool _append, Error* _err) = 0;
 	};
 
-	inline int32_t open(FileReaderI* _reader, const char* _filePath)
+	/// Open process interface.
+	struct BX_NO_VTABLE ProcessOpenI
 	{
-		return _reader->open(_filePath);
-	}
+		///
+		virtual ~ProcessOpenI() = 0;
 
-	inline int32_t close(FileReaderI* _reader)
+		///
+		virtual bool open(const FilePath& _filePath, const StringView& _args, Error* _err) = 0;
+	};
+
+	/// Closer interface.
+	struct BX_NO_VTABLE CloserI
 	{
-		return _reader->close();
-	}
+		///
+		virtual ~CloserI() = 0;
 
-	inline int32_t open(FileWriterI* _writer, const char* _filePath, bool _append = false)
+		///
+		virtual void close() = 0;
+	};
+
+	/// File reader interface.
+	struct BX_NO_VTABLE FileReaderI : public ReaderOpenI, public CloserI, public ReaderSeekerI
 	{
-		return _writer->open(_filePath, _append);
-	}
+	};
 
-	inline int32_t close(FileWriterI* _writer)
+	/// File writer interface.
+	struct BX_NO_VTABLE FileWriterI : public WriterOpenI, public CloserI, public WriterSeekerI
 	{
-		return _writer->close();
-	}
+	};
 
+	/// Memory block interface.
 	struct BX_NO_VTABLE MemoryBlockI
 	{
 		virtual void* more(uint32_t _size = 0) = 0;
 		virtual uint32_t getSize() = 0;
 	};
 
+	/// Static memory block interface.
 	class StaticMemoryBlock : public MemoryBlockI
 	{
 	public:
-		StaticMemoryBlock(void* _data, uint32_t _size)
-			: m_data(_data)
-			, m_size(_size)
-		{
-		}
+		///
+		StaticMemoryBlock(void* _data, uint32_t _size);
 
-		virtual ~StaticMemoryBlock()
-		{
-		}
+		///
+		virtual ~StaticMemoryBlock();
 
-		virtual void* more(uint32_t /*_size*/ = 0) BX_OVERRIDE
-		{
-			return m_data;
-		}
+		///
+		virtual void* more(uint32_t _size = 0) override;
 
-		virtual uint32_t getSize() BX_OVERRIDE
-		{
-			return m_size;
-		}
+		///
+		virtual uint32_t getSize() override;
 
 	private:
-		void* m_data;
+		void*    m_data;
 		uint32_t m_size;
 	};
 
+	/// Memory block.
 	class MemoryBlock : public MemoryBlockI
 	{
 	public:
-		MemoryBlock(ReallocatorI* _allocator)
-			: m_allocator(_allocator)
-			, m_data(NULL)
-			, m_size(0)
-		{
-		}
+		///
+		MemoryBlock(AllocatorI* _allocator);
 
-		virtual ~MemoryBlock()
-		{
-			BX_FREE(m_allocator, m_data);
-		}
+		///
+		virtual ~MemoryBlock();
 
-		virtual void* more(uint32_t _size = 0) BX_OVERRIDE
-		{
-			if (0 < _size)
-			{
-				m_size += _size;
-				m_data = BX_REALLOC(m_allocator, m_data, m_size);
-			}
+		///
+		virtual void* more(uint32_t _size = 0) override;
 
-			return m_data;
-		}
-
-		virtual uint32_t getSize() BX_OVERRIDE
-		{
-			return m_size;
-		}
+		///
+		virtual uint32_t getSize() override;
 
 	private:
-		ReallocatorI* m_allocator;
-		void* m_data;
-		uint32_t m_size;
+		AllocatorI* m_allocator;
+		void*       m_data;
+		uint32_t    m_size;
 	};
 
+	/// Sizer writer. Dummy writter that only counts number of bytes written into it.
 	class SizerWriter : public WriterSeekerI
 	{
 	public:
-		SizerWriter()
-			: m_pos(0)
-			, m_top(0)
-		{
-		}
+		///
+		SizerWriter();
 
-		virtual ~SizerWriter()
-		{
-		}
+		///
+		virtual ~SizerWriter();
 
-		virtual int64_t seek(int64_t _offset = 0, Whence::Enum _whence = Whence::Current) BX_OVERRIDE
-		{
-			switch (_whence)
-			{
-			case Whence::Begin:
-				m_pos = _offset;
-				break;
+		///
+		virtual int64_t seek(int64_t _offset = 0, Whence::Enum _whence = Whence::Current) override;
 
-			case Whence::Current:
-				m_pos = int64_clamp(m_pos + _offset, 0, m_top);
-				break;
-
-			case Whence::End:
-				m_pos = int64_clamp(m_top - _offset, 0, m_top);
-				break;
-			}
-
-			return m_pos;
-		}
-
-		virtual int32_t write(const void* /*_data*/, int32_t _size) BX_OVERRIDE
-		{
-			int32_t morecore = int32_t(m_pos - m_top) + _size;
-
-			if (0 < morecore)
-			{
-				m_top += morecore;
-			}
-
-			int64_t reminder = m_top-m_pos;
-			int32_t size = uint32_min(_size, int32_t(reminder > INT32_MAX ? INT32_MAX : reminder) );
-			m_pos += size;
-			return size;
-		}
+		///
+		virtual int32_t write(const void* /*_data*/, int32_t _size, Error* _err) override;
 
 	private:
 		int64_t m_pos;
 		int64_t m_top;
 	};
 
+	/// Memory reader.
 	class MemoryReader : public ReaderSeekerI
 	{
 	public:
-		MemoryReader(const void* _data, uint32_t _size)
-			: m_data( (const uint8_t*)_data)
-			, m_pos(0)
-			, m_top(_size)
-		{
-		}
+		///
+		MemoryReader(const void* _data, uint32_t _size);
 
-		virtual ~MemoryReader()
-		{
-		}
+		///
+		virtual ~MemoryReader();
 
-		virtual int64_t seek(int64_t _offset, Whence::Enum _whence) BX_OVERRIDE
-		{
-			switch (_whence)
-			{
-				case Whence::Begin:
-					m_pos = _offset;
-					break;
+		///
+		virtual int64_t seek(int64_t _offset, Whence::Enum _whence) override;
 
-				case Whence::Current:
-					m_pos = int64_clamp(m_pos + _offset, 0, m_top);
-					break;
+		///
+		virtual int32_t read(void* _data, int32_t _size, Error* _err) override;
 
-				case Whence::End:
-					m_pos = int64_clamp(m_top - _offset, 0, m_top);
-					break;
-			}
+		///
+		const uint8_t* getDataPtr() const;
 
-			return m_pos;
-		}
+		///
+		int64_t getPos() const;
 
-		virtual int32_t read(void* _data, int32_t _size) BX_OVERRIDE
-		{
-			int64_t reminder = m_top-m_pos;
-			int32_t size = uint32_min(_size, int32_t(reminder > INT32_MAX ? INT32_MAX : reminder) );
-			memcpy(_data, &m_data[m_pos], size);
-			m_pos += size;
-			return size;
-		}
-
-		const uint8_t* getDataPtr() const
-		{
-			return &m_data[m_pos];
-		}
-
-		int64_t getPos() const
-		{
-			return m_pos;
-		}
-
-		int64_t remaining() const
-		{
-			return m_top-m_pos;
-		}
+		///
+		int64_t remaining() const;
 
 	private:
 		const uint8_t* m_data;
@@ -416,174 +226,128 @@ namespace bx
 		int64_t m_top;
 	};
 
+	/// Memory writer.
 	class MemoryWriter : public WriterSeekerI
 	{
 	public:
-		MemoryWriter(MemoryBlockI* _memBlock)
-			: m_memBlock(_memBlock)
-			, m_data(NULL)
-			, m_pos(0)
-			, m_top(0)
-			, m_size(0)
-		{
-		}
+		///
+		MemoryWriter(MemoryBlockI* _memBlock);
 
-		virtual ~MemoryWriter()
-		{
-		}
+		///
+		virtual ~MemoryWriter();
 
-		virtual int64_t seek(int64_t _offset = 0, Whence::Enum _whence = Whence::Current) BX_OVERRIDE
-		{
-			switch (_whence)
-			{
-				case Whence::Begin:
-					m_pos = _offset;
-					break;
+		///
+		virtual int64_t seek(int64_t _offset = 0, Whence::Enum _whence = Whence::Current) override;
 
-				case Whence::Current:
-					m_pos = int64_clamp(m_pos + _offset, 0, m_top);
-					break;
-
-				case Whence::End:
-					m_pos = int64_clamp(m_top - _offset, 0, m_top);
-					break;
-			}
-
-			return m_pos;
-		}
-
-		virtual int32_t write(const void* _data, int32_t _size) BX_OVERRIDE
-		{
-			int32_t morecore = int32_t(m_pos - m_size) + _size;
-
-			if (0 < morecore)
-			{
-				morecore = BX_ALIGN_MASK(morecore, 0xfff);
-				m_data = (uint8_t*)m_memBlock->more(morecore);
-				m_size = m_memBlock->getSize();
-			}
-
-			int64_t reminder = m_size-m_pos;
-			int32_t size = uint32_min(_size, int32_t(reminder > INT32_MAX ? INT32_MAX : reminder) );
-			memcpy(&m_data[m_pos], _data, size);
-			m_pos += size;
-			m_top = int64_max(m_top, m_pos);
-			return size;
-		}
+		///
+		virtual int32_t write(const void* _data, int32_t _size, Error* _err) override;
 
 	private:
 		MemoryBlockI* m_memBlock;
 		uint8_t* m_data;
-		int64_t m_pos;
-		int64_t m_top;
-		int64_t m_size;
+		int64_t  m_pos;
+		int64_t  m_top;
+		int64_t  m_size;
 	};
 
+	/// Static (fixed size) memory block writer.
 	class StaticMemoryBlockWriter : public MemoryWriter
 	{
 	public:
-		StaticMemoryBlockWriter(void* _data, uint32_t _size)
-			: MemoryWriter(&m_smb)
-			, m_smb(_data, _size)
-		{
-		}
+		///
+		StaticMemoryBlockWriter(void* _data, uint32_t _size);
 
-		~StaticMemoryBlockWriter()
-		{
-		}
+		///
+		virtual ~StaticMemoryBlockWriter();
 
 	private:
 		StaticMemoryBlock m_smb;
 	};
 
-#if BX_CONFIG_CRT_FILE_READER_WRITER
-	class CrtFileReader : public FileReaderI
-	{
-	public:
-		CrtFileReader()
-			: m_file(NULL)
-		{
-		}
+	/// Read data.
+	int32_t read(ReaderI* _reader, void* _data, int32_t _size, Error* _err = NULL);
 
-		virtual ~CrtFileReader()
-		{
-		}
+	/// Read value.
+	template<typename Ty>
+	int32_t read(ReaderI* _reader, Ty& _value, Error* _err = NULL);
 
-		virtual int32_t open(const char* _filePath) BX_OVERRIDE
-		{
-			m_file = fopen(_filePath, "rb");
-			return NULL == m_file;
-		}
+	/// Read value and converts it to host endianess. _fromLittleEndian specifies
+	/// underlying stream endianess.
+	template<typename Ty>
+	int32_t readHE(ReaderI* _reader, Ty& _value, bool _fromLittleEndian, Error* _err = NULL);
 
-		virtual int32_t close() BX_OVERRIDE
-		{
-			fclose(m_file);
-			return 0;
-		}
+	/// Write data.
+	int32_t write(WriterI* _writer, const void* _data, int32_t _size, Error* _err = NULL);
 
-		virtual int64_t seek(int64_t _offset = 0, Whence::Enum _whence = Whence::Current) BX_OVERRIDE
-		{
-			fseeko64(m_file, _offset, _whence);
-			return ftello64(m_file);
-		}
+	/// Write C string.
+	int32_t write(WriterI* _writer, const char* _str, Error* _err = NULL);
 
-		virtual int32_t read(void* _data, int32_t _size) BX_OVERRIDE
-		{
-			return (int32_t)fread(_data, 1, _size, m_file);
-		}
+	/// Write string view.
+	int32_t write(WriterI* _writer, const StringView& _str, Error* _err = NULL);
 
-	private:
-		FILE* m_file;
-	};
+	/// Write formated string.
+	int32_t write(WriterI* _writer, const StringView& _format, va_list _argList, Error* _err);
 
-	class CrtFileWriter : public FileWriterI
-	{
-	public:
-		CrtFileWriter()
-			: m_file(NULL)
-		{
-		}
+	/// Write formated string.
+	int32_t write(WriterI* _writer, Error* _err, const StringView* _format, ...);
 
-		virtual ~CrtFileWriter()
-		{
-		}
+	/// Write formated string.
+	int32_t write(WriterI* _writer, Error* _err, const char* _format, ...);
 
-		virtual int32_t open(const char* _filePath, bool _append = false) BX_OVERRIDE
-		{
-			if (_append)
-			{
-				m_file = fopen(_filePath, "ab");
-			}
-			else
-			{
-				m_file = fopen(_filePath, "wb");
-			}
+	/// Write repeat the same value.
+	int32_t writeRep(WriterI* _writer, uint8_t _byte, int32_t _size, Error* _err = NULL);
 
-			return NULL == m_file;
-		}
+	/// Write value.
+	template<typename Ty>
+	int32_t write(WriterI* _writer, const Ty& _value, Error* _err = NULL);
 
-		virtual int32_t close() BX_OVERRIDE
-		{
-			fclose(m_file);
-			return 0;
-		}
+	/// Write value as little endian.
+	template<typename Ty>
+	int32_t writeLE(WriterI* _writer, const Ty& _value, Error* _err = NULL);
 
-		virtual int64_t seek(int64_t _offset = 0, Whence::Enum _whence = Whence::Current) BX_OVERRIDE
-		{
-			fseeko64(m_file, _offset, _whence);
-			return ftello64(m_file);
-		}
+	/// Write value as big endian.
+	template<typename Ty>
+	int32_t writeBE(WriterI* _writer, const Ty& _value, Error* _err = NULL);
 
-		virtual int32_t write(const void* _data, int32_t _size) BX_OVERRIDE
-		{
-			return (int32_t)fwrite(_data, 1, _size, m_file);
-		}
+	/// Skip _offset bytes forward.
+	int64_t skip(SeekerI* _seeker, int64_t _offset);
 
-	private:
-		FILE* m_file;
-	};
-#endif // BX_CONFIG_CRT_FILE_READER_WRITER
+	/// Seek to any position in file.
+	int64_t seek(SeekerI* _seeker, int64_t _offset = 0, Whence::Enum _whence = Whence::Current);
+
+	/// Returns size of file.
+	int64_t getSize(SeekerI* _seeker);
+
+	/// Returns remaining size from current offset of file.
+	int64_t getRemain(SeekerI* _seeker);
+
+	/// Peek data.
+	int32_t peek(ReaderSeekerI* _reader, void* _data, int32_t _size, Error* _err = NULL);
+
+	/// Peek value.
+	template<typename Ty>
+	int32_t peek(ReaderSeekerI* _reader, Ty& _value, Error* _err = NULL);
+
+	/// Align reader stream.
+	int32_t align(ReaderSeekerI* _reader, uint32_t _alignment, Error* _err = NULL);
+
+	/// Align writer stream (pads stream with zeros).
+	int32_t align(WriterSeekerI* _writer, uint32_t _alignment, Error* _err = NULL);
+
+	/// Open for read.
+	bool open(ReaderOpenI* _reader, const FilePath& _filePath, Error* _err = NULL);
+
+	/// Open fro write.
+	bool open(WriterOpenI* _writer, const FilePath& _filePath, bool _append = false, Error* _err = NULL);
+
+	/// Open process.
+	bool open(ProcessOpenI* _process, const FilePath& _filePath, const StringView& _args, Error* _err = NULL);
+
+	/// Close.
+	void close(CloserI* _reader);
 
 } // namespace bx
+
+#include "inline/readerwriter.inl"
 
 #endif // BX_READERWRITER_H_HEADER_GUARD

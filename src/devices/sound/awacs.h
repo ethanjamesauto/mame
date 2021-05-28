@@ -8,27 +8,10 @@
 
 ***************************************************************************/
 
+#ifndef MAME_SOUND_AWACS_H
+#define MAME_SOUND_AWACS_H
+
 #pragma once
-
-#ifndef __AWACS_H__
-#define __AWACS_H__
-
-
-
-
-//**************************************************************************
-//  CONSTANTS
-//**************************************************************************
-
-//**************************************************************************
-//  INTERFACE CONFIGURATION MACROS
-//**************************************************************************
-
-#define MCFG_AWACS_ADD(_tag, _clock) \
-	MCFG_DEVICE_ADD(_tag, AWACS, _clock)
-
-#define MCFG_AWACS_REPLACE(_tag, _clock) \
-	MCFG_DEVICE_REPLACE(_tag, AWACS, _clock)
 
 //**************************************************************************
 //  TYPE DEFINITIONS
@@ -40,38 +23,52 @@ class awacs_device : public device_t, public device_sound_interface
 {
 public:
 	// construction/destruction
-	awacs_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	awacs_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
-	DECLARE_READ8_MEMBER(read);
-	DECLARE_WRITE8_MEMBER(write);
+	auto irq_out_cb() { return m_irq_out_cb.bind(); }
+	auto irq_in_cb() { return m_irq_in_cb.bind(); }
 
-	void set_dma_base(address_space &space, int offset0, int offset1);
+	auto dma_output() { return m_output_cb.bind(); }
+	auto dma_input() { return m_input_cb.bind(); }
 
-	sound_stream *m_stream;
+	auto port_input() { return m_input_port_cb.bind(); }
+	auto port_output() { return m_output_port_cb.bind(); }
+
+	uint8_t read(offs_t offset);
+	void write(offs_t offset, uint8_t data);
 
 protected:
+	enum {
+		ACTIVE_OUT = 0x01,
+		ACTIVE_IN = 0x02
+	};
+
+	static const u8 divider[4];
+
 	// device-level overrides
 	virtual void device_start() override;
 	virtual void device_reset() override;
-	virtual void device_timer(emu_timer &timer, device_timer_id id, int param, void *ptr) override;
 
-	virtual void sound_stream_update(sound_stream &stream, stream_sample_t **inputs, stream_sample_t **outputs, int samples) override;
+	virtual void sound_stream_update(sound_stream &stream, std::vector<read_stream_view> const &inputs, std::vector<write_stream_view> &outputs) override;
 
-	// inline data
-	UINT8 m_regs[0x100];
+	devcb_write_line m_irq_out_cb, m_irq_in_cb;
+	devcb_read32 m_output_cb;
+	devcb_write32 m_input_cb;
+	devcb_read8 m_input_port_cb;
+	devcb_write8 m_output_port_cb;
 
-	int m_play_ptr, m_buffer_size, m_buffer_num;
-	bool m_playback_enable;
+	sound_stream *m_stream;
 
-	address_space *m_dma_space;
-	int m_dma_offset_0, m_dma_offset_1;
+	attotime m_last_sample;
+	u8 m_ctrl0, m_ctrl1, m_codec0, m_codec1, m_codec2, m_out_irq, m_in_irq, m_active;
+	u16 m_ext_address, m_ext_data, m_buffer_size, m_phase;
+	bool m_extend, m_ext_command, m_input_buffer, m_output_buffer;
 
-	emu_timer *m_timer;
+	void update_irq();
 };
 
 
 // device type definition
-extern const device_type AWACS;
+DECLARE_DEVICE_TYPE(AWACS, awacs_device)
 
-
-#endif /* __AWACS_H__ */
+#endif // MAME_SOUND_AWACS_H

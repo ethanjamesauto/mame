@@ -66,6 +66,7 @@ shuuz       1   1   1   0   0   0   0   8   0   0   0x000   0x100   0   00ff,0,0
 
 #include "emu.h"
 #include "atarimo.h"
+#include "screen.h"
 
 
 //**************************************************************************
@@ -117,62 +118,41 @@ inline int atari_motion_objects_device::round_to_powerof2(int value)
 //**************************************************************************
 
 // device type definition
-const device_type ATARI_MOTION_OBJECTS = &device_creator<atari_motion_objects_device>;
+DEFINE_DEVICE_TYPE(ATARI_MOTION_OBJECTS, atari_motion_objects_device, "atarimo", "Atari Motion Objects")
 
 //-------------------------------------------------
 //  atari_motion_objects_device - constructor
 //-------------------------------------------------
 
-atari_motion_objects_device::atari_motion_objects_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: sprite16_device_ind16(mconfig, ATARI_MOTION_OBJECTS, "Atari Motion Objects", tag, owner, "atarimo", __FILE__),
-		device_video_interface(mconfig, *this),
-		m_tilewidth(0),
-		m_tileheight(0),
-		m_tilexshift(0),
-		m_tileyshift(0),
-		m_bitmapwidth(0),
-		m_bitmapheight(0),
-		m_bitmapxmask(0),
-		m_bitmapymask(0),
-		m_entrycount(0),
-		m_entrybits(0),
-		m_spriterammask(0),
-		m_spriteramsize(0),
-		m_slipshift(0),
-		m_sliprammask(0),
-		m_slipramsize(0),
-		m_bank(0),
-		m_xscroll(0),
-		m_yscroll(0),
-		m_slipram(*this, "slip"),
-		m_activelast(nullptr),
-		m_last_xpos(0),
-		m_next_xpos(0),
-		m_gfxdecode(*this)
+atari_motion_objects_device::atari_motion_objects_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: sprite16_device_ind16(mconfig, ATARI_MOTION_OBJECTS, tag, owner)
+	, device_video_interface(mconfig, *this)
+	, m_tilewidth(0)
+	, m_tileheight(0)
+	, m_tilexshift(0)
+	, m_tileyshift(0)
+	, m_bitmapwidth(0)
+	, m_bitmapheight(0)
+	, m_bitmapxmask(0)
+	, m_bitmapymask(0)
+	, m_entrycount(0)
+	, m_entrybits(0)
+	, m_spriterammask(0)
+	, m_spriteramsize(0)
+	, m_slipshift(0)
+	, m_sliprammask(0)
+	, m_slipramsize(0)
+	, m_bank(0)
+	, m_xscroll(0)
+	, m_yscroll(0)
+	, m_slipram(nullptr)
+	, m_slipramshare(*this, "slip")
+	, m_activelast(nullptr)
+	, m_last_xpos(0)
+	, m_next_xpos(0)
+	, m_gfxdecode(*this, finder_base::DUMMY_TAG)
 {
 }
-
-//-------------------------------------------------
-//  static_set_gfxdecode_tag: Set the tag of the
-//  gfx decoder
-//-------------------------------------------------
-
-void atari_motion_objects_device::static_set_gfxdecode_tag(device_t &device, const char *tag)
-{
-	downcast<atari_motion_objects_device &>(device).m_gfxdecode.set_tag(tag);
-}
-
-//-------------------------------------------------
-//  static_set_config: Set the tag of the
-//  sound CPU
-//-------------------------------------------------
-
-void atari_motion_objects_device::static_set_config(device_t &device, const atari_motion_objects_config &config)
-{
-	atari_motion_objects_device &target = downcast<atari_motion_objects_device &>(device);
-	static_cast<atari_motion_objects_config &>(target) = config;
-}
-
 
 //-------------------------------------------------
 //  draw: Render the motion objects to the
@@ -182,8 +162,8 @@ void atari_motion_objects_device::static_set_config(device_t &device, const atar
 void atari_motion_objects_device::draw(bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	// compute start/stop bands
-	int startband = ((cliprect.min_y + m_yscroll - m_slipoffset) & m_bitmapymask) >> m_slipshift;
-	int stopband = ((cliprect.max_y + m_yscroll - m_slipoffset) & m_bitmapymask) >> m_slipshift;
+	int startband = ((cliprect.top() + m_yscroll - m_slipoffset) & m_bitmapymask) >> m_slipshift;
+	int stopband = ((cliprect.bottom() + m_yscroll - m_slipoffset) & m_bitmapymask) >> m_slipshift;
 	if (startband > stopband)
 		startband -= m_bitmapheight >> m_slipshift;
 	if (m_slipshift == 0)
@@ -206,7 +186,7 @@ void atari_motion_objects_device::draw(bitmap_ind16 &bitmap, const rectangle &cl
 				bandclip.min_y -= m_bitmapheight;
 
 			// maximum Y is based on the minimum
-			bandclip.max_y = bandclip.min_y + (1 << m_slipshift) - 1;
+			bandclip.set_height(1 << m_slipshift);
 
 			// keep within the cliprect
 			bandclip &= cliprect;
@@ -223,7 +203,7 @@ void atari_motion_objects_device::draw(bitmap_ind16 &bitmap, const rectangle &cl
 			continue;
 
 		// set the start and end points
-		UINT16 *first, *last;
+		uint16_t *first, *last;
 		int step;
 		if (m_reverse)
 		{
@@ -239,7 +219,7 @@ void atari_motion_objects_device::draw(bitmap_ind16 &bitmap, const rectangle &cl
 		}
 
 		// render the mos
-		for (UINT16 *current = first; ; current += step)
+		for (uint16_t *current = first; ; current += step)
 		{
 			render_object(bitmap, bandclip, current);
 			if (current == last)
@@ -255,10 +235,10 @@ void atari_motion_objects_device::draw(bitmap_ind16 &bitmap, const rectangle &cl
 //  a stop or the end of line.
 //-------------------------------------------------
 
-void atari_motion_objects_device::apply_stain(bitmap_ind16 &bitmap, UINT16 *pf, UINT16 *mo, int x, int y)
+void atari_motion_objects_device::apply_stain(bitmap_ind16 &bitmap, uint16_t *pf, uint16_t const *mo, int x, int y)
 {
-	const UINT16 START_MARKER = ((4 << PRIORITY_SHIFT) | 2);
-	const UINT16 END_MARKER =   ((4 << PRIORITY_SHIFT) | 4);
+	const uint16_t START_MARKER = ((4 << PRIORITY_SHIFT) | 2);
+	const uint16_t END_MARKER =   ((4 << PRIORITY_SHIFT) | 4);
 	bool offnext = false;
 
 	for ( ; x < bitmap.width(); x++)
@@ -322,6 +302,10 @@ void atari_motion_objects_device::device_start()
 	if (m_maxperline == 0)
 		m_maxperline = MAX_PER_BANK;
 
+	// Get the slipram from the share if not already explicitly set
+	if (!m_slipram)
+		m_slipram = m_slipramshare;
+
 	// allocate and initialize the code lookup
 	int codesize = round_to_powerof2(m_codemask.mask());
 	m_codelookup.resize(codesize);
@@ -342,7 +326,7 @@ void atari_motion_objects_device::device_start()
 
 	// allocate a timer to periodically force update
 	m_force_update_timer = timer_alloc(TID_FORCE_UPDATE);
-	m_force_update_timer->adjust(m_screen->time_until_pos(0));
+	m_force_update_timer->adjust(screen().time_until_pos(0));
 
 	// register for save states
 	save_item(NAME(m_bank));
@@ -377,11 +361,11 @@ void atari_motion_objects_device::device_timer(emu_timer &timer, device_timer_id
 	{
 		case TID_FORCE_UPDATE:
 			if (param > 0)
-				m_screen->update_partial(param - 1);
+				screen().update_partial(param - 1);
 			param += 64;
-			if (param >= m_screen->visible_area().max_y)
+			if (param >= screen().visible_area().bottom())
 				param = 0;
-			timer.adjust(m_screen->time_until_pos(param), param);
+			timer.adjust(screen().time_until_pos(param), param);
 			break;
 	}
 }
@@ -394,18 +378,18 @@ void atari_motion_objects_device::device_timer(emu_timer &timer, device_timer_id
 
 void atari_motion_objects_device::build_active_list(int link)
 {
-	UINT16 *bankbase = &spriteram()[m_bank << (m_entrybits + 2)];
-	UINT16 *current = &m_activelist[0];
+	uint16_t *bankbase = &spriteram()[m_bank << (m_entrybits + 2)];
+	uint16_t *current = &m_activelist[0];
 
 	// visit all the motion objects and copy their data into the display list
-	UINT8 visited[MAX_PER_BANK] = {0};
+	uint8_t visited[MAX_PER_BANK] = {0};
 	for (int i = 0; i < m_maxperline && !visited[link]; i++)
 	{
 		// copy the current entry into the list
-		UINT16 *modata = current;
+		uint16_t *modata = current;
 		if (!m_split)
 		{
-			UINT16 *srcdata = &bankbase[link * 4];
+			uint16_t *srcdata = &bankbase[link * 4];
 			*current++ = srcdata[0];
 			*current++ = srcdata[1];
 			*current++ = srcdata[2];
@@ -413,11 +397,11 @@ void atari_motion_objects_device::build_active_list(int link)
 		}
 		else
 		{
-			UINT16 *srcdata = &bankbase[link];
-			*current++ = srcdata[UINT32(0 << m_entrybits)];
-			*current++ = srcdata[UINT32(1 << m_entrybits)];
-			*current++ = srcdata[UINT32(2 << m_entrybits)];
-			*current++ = srcdata[UINT32(3 << m_entrybits)];
+			uint16_t *srcdata = &bankbase[link];
+			*current++ = srcdata[uint32_t(0 << m_entrybits)];
+			*current++ = srcdata[uint32_t(1 << m_entrybits)];
+			*current++ = srcdata[uint32_t(2 << m_entrybits)];
+			*current++ = srcdata[uint32_t(3 << m_entrybits)];
 		}
 
 		// link to the next object
@@ -439,7 +423,7 @@ void atari_motion_objects_device::build_active_list(int link)
 //  copies the result  to the destination.
 //-------------------------------------------------
 
-void atari_motion_objects_device::render_object(bitmap_ind16 &bitmap, const rectangle &cliprect, const UINT16 *entry)
+void atari_motion_objects_device::render_object(bitmap_ind16 &bitmap, const rectangle &cliprect, const uint16_t *entry)
 {
 	// select the gfx element and save off key information
 	int rawcode = m_codemask.extract(entry);
@@ -525,19 +509,19 @@ void atari_motion_objects_device::render_object(bitmap_ind16 &bitmap, const rect
 			for (int y = 0, sy = ypos; y < height; y++, sy += yadv)
 			{
 				// clip the Y coordinate
-				if (sy <= cliprect.min_y - m_tileheight)
+				if (sy <= cliprect.top() - m_tileheight)
 				{
 					code += width;
 					continue;
 				}
-				else if (sy > cliprect.max_y)
+				else if (sy > cliprect.bottom())
 					break;
 
 				// loop over the width
 				for (int x = 0, sx = xpos; x < width; x++, sx += xadv, code++)
 				{
 					// clip the X coordinate
-					if (sx <= -cliprect.min_x - m_tilewidth || sx > cliprect.max_x)
+					if (sx <= -cliprect.left() - m_tilewidth || sx > cliprect.right())
 						continue;
 
 					// draw the sprite
@@ -554,19 +538,19 @@ void atari_motion_objects_device::render_object(bitmap_ind16 &bitmap, const rect
 			for (int x = 0, sx = xpos; x < width; x++, sx += xadv)
 			{
 				// clip the X coordinate
-				if (sx <= cliprect.min_x - m_tilewidth)
+				if (sx <= cliprect.left() - m_tilewidth)
 				{
 					code += height;
 					continue;
 				}
-				else if (sx > cliprect.max_x)
+				else if (sx > cliprect.right())
 					break;
 
 				// loop over the height
 				for (int y = 0, sy = ypos; y < height; y++, sy += yadv, code++)
 				{
 					// clip the X coordinate
-					if (sy <= -cliprect.min_y - m_tileheight || sy > cliprect.max_y)
+					if (sy <= -cliprect.top() - m_tileheight || sy > cliprect.bottom())
 						continue;
 
 					// draw the sprite
@@ -605,7 +589,7 @@ atari_motion_objects_device::sprite_parameter::sprite_parameter()
 //  set: Sets the mask via an input 4-word mask.
 //-------------------------------------------------
 
-bool atari_motion_objects_device::sprite_parameter::set(const UINT16 input[4])
+bool atari_motion_objects_device::sprite_parameter::set(const uint16_t input[4])
 {
 	// determine the word and make sure it's only 1
 	m_word = 0xffff;
@@ -627,7 +611,7 @@ bool atari_motion_objects_device::sprite_parameter::set(const UINT16 input[4])
 
 	// determine the shift and final mask
 	m_shift = 0;
-	UINT16 temp = input[m_word];
+	uint16_t temp = input[m_word];
 	while (!(temp & 1))
 	{
 		m_shift++;
@@ -661,7 +645,7 @@ bool atari_motion_objects_device::dual_sprite_parameter::set(const atari_motion_
 		return false;
 
 	// determine the upper shift amount
-	UINT16 temp = m_lower.mask();
+	uint16_t temp = m_lower.mask();
 	m_uppershift = 0;
 	while (temp != 0)
 	{

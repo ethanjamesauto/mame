@@ -1,9 +1,14 @@
 // license:BSD-3-Clause
-// copyright-holders:David Graves, R. Belmont
+// copyright-holders:David Graves, R. Belmont, David Haywood
 /***************************************************************************
 
-Grand Cross Pinball
-===================
+Excellent System's ES-9209B Hardware
+
+Games supported:
+
+   Grand Cross Pinball
+   Power Flipper Pinball Shooting
+
 
 Made from Raine source
 
@@ -18,11 +23,10 @@ TODO
 ----
 
  - Screen flipping support
- - Understand role of bit 5 of IN1
- - Hook up 93C46 EEPROM
- - Hook up ES-8712
- - Sort out the IOC commands for the M6585 & ES-8712
+ - Modernize ES-8712 and hook up to MSM6585 and HCT157
+ - Figure out which customs use D80010-D80077 and merge implementation with Aquarium
  - Is SW3 actually used?
+ - Power Flipper reference video: https://www.youtube.com/watch?v=zBGjncVsSf4 (seems to have been recorded with 'flipscreen' dipswitch on, because it causes a jumping glitch before the raster effect, same in MAME)
 
 BGMs (controlled by OKI MSM6585 sound chip)
   MSM6585: is an upgraded MSM5205 voice synth IC.
@@ -44,7 +48,7 @@ ES-9209B
 |                 6116      |       |  AS7C256  |
 |                 6116      +-------+  AS7C256  |
 |J                                     AS7C256  |
-|A                            AS7C256  AS7C256  |
+|A  MB3773                    AS7C256  AS7C256  |
 |M  TSW1*               +-------+          U13* |
 |M   PAL          32MHz |ES-9303|          U11  |
 |A   PAL     68000P-16  +-------+               |
@@ -58,7 +62,7 @@ ES-9209B
    CPU: TMP68HC000P-16
  Sound: OKI M6295
         OKI M6585
-        Ecxellent ES-8712
+        Excellent ES-8712
    OSC: 32MHz, 14.31818MHz & 1056kHz, 640kHz resonators
    RAM: Sony CXK5864BSP-10L 8K x 8bit high speed CMOS SRAM
         Alliance AS7C256-20PC 32K x 8bit CMOS SRAM
@@ -71,198 +75,102 @@ Custom: EXCELLENT SYSTEM ES-9208 347102 (QFP160)
 
 * Denotes unpopulated components
 
+NOTE: Mask ROMs from Power Flipper Pinball Shooting have not been dumped, but assumed to
+      be the same data.
+
 ***************************************************************************/
 
 #include "emu.h"
-#include "cpu/m68000/m68000.h"
-#include "sound/okim6295.h"
-#include "sound/msm5205.h"
 #include "includes/gcpinbal.h"
 
+#include "cpu/m68000/m68000.h"
+#include "screen.h"
+#include "speaker.h"
 
 
 /***********************************************************
                       INTERRUPTS
 ***********************************************************/
 
-void gcpinbal_state::device_timer(emu_timer &timer, device_timer_id id, int param, void *ptr)
+TIMER_DEVICE_CALLBACK_MEMBER(gcpinbal_state::scanline_cb)
 {
-	switch (id)
-	{
-	case TIMER_GCPINBAL_INTERRUPT1:
-		m_maincpu->set_input_line(1, HOLD_LINE);
-		break;
-	case TIMER_GCPINBAL_INTERRUPT3:
-		// IRQ3 is from the M6585
-		//if (!ADPCM_playing(0))
-		{
-			m_maincpu->set_input_line(3, HOLD_LINE);
-		}
-		break;
-	default:
-		assert_always(FALSE, "Unknown id in gcpinbal_state::device_timer");
-	}
+	if (param >= 16)
+		m_screen->update_partial(m_screen->vpos() - 1);
+
+	if (param == 240)
+		m_maincpu->set_input_line(1, HOLD_LINE); // V-blank
+	else if ((param >= 16) && (param < 240))
+		m_maincpu->set_input_line(4, HOLD_LINE); // H-blank? (or programmable, used for raster effects)
+
+	// IRQ level 3 is sound related, hooked up to MSM6585
 }
-
-INTERRUPT_GEN_MEMBER(gcpinbal_state::gcpinbal_interrupt)
-{
-	/* Unsure of actual sequence */
-
-	timer_set(downcast<cpu_device *>(&device)->cycles_to_attotime(500), TIMER_GCPINBAL_INTERRUPT1);
-//  timer_set(downcast<cpu_device *>(&device)->cycles_to_attotime(1000), TIMER_GCPINBAL_INTERRUPT3);
-	device.execute().set_input_line(4, HOLD_LINE);
-}
-
 
 /***********************************************************
                           IOC
 ***********************************************************/
 
-READ16_MEMBER(gcpinbal_state::ioc_r)
+void gcpinbal_state::d80010_w(offs_t offset, u16 data, u16 mem_mask)
 {
-	/* 20 (only once), 76, a0 are read in log */
-
-	switch (offset)
-	{
-		case 0x80/2:
-			return ioport("DSW")->read();
-
-		case 0x84/2:
-			return ioport("IN0")->read();
-
-		case 0x86/2:
-			return ioport("IN1")->read();
-
-		case 0x50:
-		case 0x51:
-			return m_oki->read(space, 0) << 8;
-
-	}
-
-//logerror("CPU #0 PC %06x: warning - read unmapped ioc offset %06x\n",space.device().safe_pc(),offset);
-
-	return m_ioc_ram[offset];
+	//logerror("CPU #0 PC %06x: warning - write ioc offset %06x with %04x\n", m_maincpu->pc(), offset, data);
+	COMBINE_DATA(&m_d80010_ram[offset]);
 }
 
-
-WRITE16_MEMBER(gcpinbal_state::ioc_w)
+void gcpinbal_state::d80040_w(offs_t offset, u8 data)
 {
-	COMBINE_DATA(&m_ioc_ram[offset]);
-
-//  switch (offset)
-//  {
-//      case 0x??:  /* */
-//          return;
-//
-//      case 0x88/2:    /* coin control (+ others) ??? */
-//          coin_lockout_w(machine(), 0, ~data & 0x01);
-//          coin_lockout_w(machine(), 1, ~data & 0x02);
-//popmessage(" address %04x value %04x", offset, data);
-//  }
-
-	switch (offset)
-	{
-		// these are all written every frame
-		case 0x3b:
-		case 0xa:
-		case 0xc:
-		case 0xb:
-		case 0xd:
-		case 0xe:
-		case 0xf:
-		case 0x10:
-		case 0x47:
-			break;
-
-		// MSM6585 bank, coin LEDs, maybe others?
-		case 0x44:
-			m_msm_bank = data & 0x1000 ? 0x100000 : 0;
-			m_oki->set_bank_base(0x40000 * ((data & 0x800 )>> 11));
-			break;
-
-		case 0x45:
-			//m_adpcm_idle = 1;
-			break;
-
-		// OKIM6295
-		case 0x50:
-		case 0x51:
-			m_oki->write(space, 0, data >> 8);
-			break;
-
-		// MSM6585 ADPCM - mini emulation
-		case 0x60:
-			m_msm_start &= 0xffff00;
-			m_msm_start |= (data >> 8);
-			break;
-		case 0x61:
-			m_msm_start &= 0xff00ff;
-			m_msm_start |= data;
-			break;
-		case 0x62:
-			m_msm_start &= 0x00ffff;
-			m_msm_start |= (data << 8);
-			break;
-		case 0x63:
-			m_msm_end &= 0xffff00;
-			m_msm_end |= (data >> 8);
-			break;
-		case 0x64:
-			m_msm_end &= 0xff00ff;
-			m_msm_end |= data;
-			break;
-		case 0x65:
-			m_msm_end &= 0x00ffff;
-			m_msm_end |= (data << 8);
-			break;
-		case 0x66:
-			if (m_msm_start < m_msm_end)
-			{
-				/* data written here is adpcm param? */
-				//popmessage("%08x %08x", m_msm_start + m_msm_bank, m_msm_end);
-				m_adpcm_idle = 0;
-				m_msm->reset_w(0);
-				m_adpcm_start = m_msm_start + m_msm_bank;
-				m_adpcm_end = m_msm_end;
-//              ADPCM_stop(0);
-//              ADPCM_play(0, start+bank, end-start);
-			}
-			break;
-
-		default:
-			logerror("CPU #0 PC %06x: warning - write ioc offset %06x with %04x\n", space.device().safe_pc(), offset, data);
-			break;
-	}
-
+	logerror("Writing byte value %02X to offset %X\n", data, offset);
 }
 
-
-/************************************************
-                      SOUND
-************************************************/
-
-
-/* Controlled through ioc? */
-WRITE_LINE_MEMBER(gcpinbal_state::gcp_adpcm_int)
+void gcpinbal_state::d80060_w(offs_t offset, u16 data, u16 mem_mask)
 {
-	if (m_adpcm_idle)
-		m_msm->reset_w(1);
-	if (m_adpcm_start >= 0x200000 || m_adpcm_start > m_adpcm_end)
-	{
-		//m_msm->reset_w(1);
-		m_adpcm_start = m_msm_start + m_msm_bank;
-		m_adpcm_trigger = 0;
-	}
-	else
-	{
-		UINT8 *ROM = memregion("msm")->base();
+	//logerror("CPU #0 PC %06x: warning - write ioc offset %06x with %04x\n", m_maincpu->pc(), offset, data);
+	COMBINE_DATA(&m_d80060_ram[offset]);
+}
 
-		m_adpcm_data = ((m_adpcm_trigger ? (ROM[m_adpcm_start] & 0x0f) : (ROM[m_adpcm_start] & 0xf0) >> 4));
-		m_msm->data_w(m_adpcm_data & 0xf);
-		m_adpcm_trigger ^= 1;
-		if (m_adpcm_trigger == 0)
-			m_adpcm_start++;
+void gcpinbal_state::bank_w(u8 data)
+{
+	// MSM6585 bank, coin LEDs, maybe others?
+	if (m_msm_bank != ((data & 0x10) >> 4))
+	{
+		m_msm_bank = ((data & 0x10) >> 4);
+		m_essnd->set_rom_bank(m_msm_bank);
+		logerror("Bankswitching ES8712 ROM %02x\n", m_msm_bank);
 	}
+	m_oki->set_rom_bank((data & 0x20) >> 5);
+
+	u32 old = m_bg0_gfxset;
+	u32 newbank = (data & 0x04) ? 0x1000 : 0;
+	if (old != newbank)
+	{
+		m_bg0_gfxset = (data & 0x04) ? 0x1000 : 0;
+		m_tilemap[0]->mark_all_dirty();
+	}
+
+	old = m_bg1_gfxset;
+	newbank = (data & 0x08) ? 0x1000 : 0;
+	if (old != newbank)
+	{
+		m_bg1_gfxset = (data & 0x04) ? 0x1000 : 0;
+		m_tilemap[1]->mark_all_dirty();
+	}
+
+	m_watchdog->write_line_ck(BIT(data, 7));
+
+//          machine().bookkeeping().coin_lockout_w(0, ~data & 0x01);
+//          machine().bookkeeping().coin_lockout_w(1, ~data & 0x02);
+}
+
+void gcpinbal_state::eeprom_w(u8 data)
+{
+	// 93C46 serial EEPROM (status read at D80087)
+	m_eeprom->di_write(BIT(data, 2));
+	m_eeprom->clk_write(BIT(data, 1));
+	m_eeprom->cs_write(BIT(data, 0));
+}
+
+void gcpinbal_state::es8712_reset_w(u8 data)
+{
+	// This probably works by resetting the ES-8712
+	m_essnd->reset();
 }
 
 
@@ -270,14 +178,25 @@ WRITE_LINE_MEMBER(gcpinbal_state::gcp_adpcm_int)
                      MEMORY STRUCTURES
 ***********************************************************/
 
-static ADDRESS_MAP_START( gcpinbal_map, AS_PROGRAM, 16, gcpinbal_state )
-	AM_RANGE(0x000000, 0x1fffff) AM_ROM
-	AM_RANGE(0xc00000, 0xc03fff) AM_READWRITE(gcpinbal_tilemaps_word_r, gcpinbal_tilemaps_word_w) AM_SHARE("tilemapram")
-	AM_RANGE(0xc80000, 0xc81fff) AM_DEVREADWRITE8("spritegen", excellent_spr_device, read, write, 0x00ff)
-	AM_RANGE(0xd00000, 0xd00fff) AM_RAM_DEVWRITE("palette", palette_device, write) AM_SHARE("palette")
-	AM_RANGE(0xd80000, 0xd800ff) AM_READWRITE(ioc_r, ioc_w) AM_SHARE("ioc_ram")
-	AM_RANGE(0xff0000, 0xffffff) AM_RAM /* RAM */
-ADDRESS_MAP_END
+void gcpinbal_state::gcpinbal_map(address_map &map)
+{
+	map(0x000000, 0x1fffff).rom();
+	map(0xc00000, 0xc03fff).ram().w(FUNC(gcpinbal_state::tilemaps_word_w)).share("tilemapram");
+	map(0xc80000, 0xc81fff).rw(m_sprgen, FUNC(excellent_spr_device::read), FUNC(excellent_spr_device::write)).umask16(0x00ff);
+	map(0xd00000, 0xd00fff).ram().w(m_palette, FUNC(palette_device::write16)).share("palette");
+	map(0xd80010, 0xd8002f).ram().w(FUNC(gcpinbal_state::d80010_w)).share("d80010");
+	map(0xd80040, 0xd8005b).w(FUNC(gcpinbal_state::d80040_w)).umask16(0x00ff);
+	map(0xd80060, 0xd80077).ram().w(FUNC(gcpinbal_state::d80060_w)).share("d80060");
+	map(0xd80080, 0xd80081).portr("DSW");
+	map(0xd80084, 0xd80085).portr("IN0");
+	map(0xd80086, 0xd80087).portr("IN1");
+	map(0xd80088, 0xd80088).w(FUNC(gcpinbal_state::bank_w));
+	map(0xd8008a, 0xd8008a).w(FUNC(gcpinbal_state::eeprom_w));
+	map(0xd8008e, 0xd8008e).w(FUNC(gcpinbal_state::es8712_reset_w));
+	map(0xd800a0, 0xd800a0).mirror(0x2).rw(m_oki, FUNC(okim6295_device::read), FUNC(okim6295_device::write));
+	map(0xd800c0, 0xd800cd).w(m_essnd, FUNC(es8712_device::write)).umask16(0xff00);
+	map(0xff0000, 0xffffff).ram(); /* RAM */
+}
 
 
 
@@ -337,18 +256,18 @@ static INPUT_PORTS_START( gcpinbal )
 	PORT_BIT( 0x0001, IP_ACTIVE_LOW, IPT_UNKNOWN )
 	PORT_BIT( 0x0002, IP_ACTIVE_LOW, IPT_UNKNOWN )
 	PORT_BIT( 0x0004, IP_ACTIVE_LOW, IPT_UNKNOWN )
-	PORT_BIT( 0x0008, IP_ACTIVE_LOW, IPT_BUTTON6 ) PORT_PLAYER(1)   // Item right
-	PORT_BIT( 0x0010, IP_ACTIVE_LOW, IPT_BUTTON2 ) PORT_PLAYER(1)   // Inner flipper right
-	PORT_BIT( 0x0020, IP_ACTIVE_LOW, IPT_BUTTON4 ) PORT_PLAYER(1)   // Outer flipper right
-	PORT_BIT( 0x0040, IP_ACTIVE_LOW, IPT_BUTTON8 ) PORT_PLAYER(1)   // Tilt right
+	PORT_BIT( 0x0008, IP_ACTIVE_LOW, IPT_BUTTON6 ) PORT_NAME("Item Right") PORT_PLAYER(1)
+	PORT_BIT( 0x0010, IP_ACTIVE_LOW, IPT_BUTTON2 ) PORT_NAME("Flipper 1 Right") PORT_PLAYER(1)   // Inner flipper right
+	PORT_BIT( 0x0020, IP_ACTIVE_LOW, IPT_BUTTON4 ) PORT_NAME("Flipper 2 Right") PORT_PLAYER(1)   // Outer flipper right
+	PORT_BIT( 0x0040, IP_ACTIVE_LOW, IPT_BUTTON8 ) PORT_NAME("Tilt Right") PORT_PLAYER(1)
 	PORT_BIT( 0x0080, IP_ACTIVE_LOW, IPT_START2 )
 	PORT_BIT( 0x0100, IP_ACTIVE_LOW, IPT_UNKNOWN )
 	PORT_BIT( 0x0200, IP_ACTIVE_LOW, IPT_UNKNOWN )
 	PORT_BIT( 0x0400, IP_ACTIVE_LOW, IPT_UNKNOWN )
-	PORT_BIT( 0x0800, IP_ACTIVE_LOW, IPT_BUTTON5 ) PORT_PLAYER(1)   // Item left
-	PORT_BIT( 0x1000, IP_ACTIVE_LOW, IPT_BUTTON1 ) PORT_PLAYER(1)   // Inner flipper left
-	PORT_BIT( 0x2000, IP_ACTIVE_LOW, IPT_BUTTON3 ) PORT_PLAYER(1)   // Outer flipper left
-	PORT_BIT( 0x4000, IP_ACTIVE_LOW, IPT_BUTTON7 ) PORT_PLAYER(1)   // Tilt left
+	PORT_BIT( 0x0800, IP_ACTIVE_LOW, IPT_BUTTON5 ) PORT_NAME("Item Left") PORT_PLAYER(1)
+	PORT_BIT( 0x1000, IP_ACTIVE_LOW, IPT_BUTTON1 ) PORT_NAME("Flipper 1 Left") PORT_PLAYER(1)   // Inner flipper left
+	PORT_BIT( 0x2000, IP_ACTIVE_LOW, IPT_BUTTON3 ) PORT_NAME("Flipper 2 Left") PORT_PLAYER(1)   // Outer flipper left
+	PORT_BIT( 0x4000, IP_ACTIVE_LOW, IPT_BUTTON7 ) PORT_NAME("Tilt Left") PORT_PLAYER(1)
 	PORT_BIT( 0x8000, IP_ACTIVE_LOW, IPT_START1 )
 
 	PORT_START("IN1")
@@ -357,7 +276,7 @@ static INPUT_PORTS_START( gcpinbal )
 	PORT_BIT( 0x0004, IP_ACTIVE_LOW, IPT_UNKNOWN )
 	PORT_BIT( 0x0008, IP_ACTIVE_LOW, IPT_UNKNOWN )
 	PORT_BIT( 0x0010, IP_ACTIVE_LOW, IPT_UNKNOWN )
-	PORT_BIT( 0x0020, IP_ACTIVE_LOW, IPT_UNKNOWN )  // This bit gets tested (search for d8 00 87)
+	PORT_BIT( 0x0020, IP_ACTIVE_HIGH, IPT_CUSTOM ) PORT_READ_LINE_DEVICE_MEMBER("eeprom", eeprom_serial_93cxx_device, do_read)
 	PORT_BIT( 0x0040, IP_ACTIVE_LOW, IPT_UNKNOWN )
 	PORT_BIT( 0x0080, IP_ACTIVE_LOW, IPT_UNKNOWN )
 	PORT_BIT( 0x0100, IP_ACTIVE_LOW, IPT_COIN1 )
@@ -381,10 +300,10 @@ static const gfx_layout charlayout =
 	16,16,  /* 16*16 characters */
 	RGN_FRAC(1,1),
 	4,  /* 4 bits per pixel */
-	{ 0, 1, 2, 3 },
-	{ 2*4, 3*4, 0*4, 1*4, 6*4, 7*4, 4*4, 5*4, 2*4+32, 3*4+32, 0*4+32, 1*4+32, 6*4+32, 7*4+32, 4*4+32, 5*4+32 },
-	{ 0*64, 1*64, 2*64, 3*64, 4*64, 5*64, 6*64, 7*64, 8*64, 9*64, 10*64, 11*64, 12*64, 13*64, 14*64, 15*64 },
-	128*8   /* every sprite takes 128 consecutive bytes */
+	{ STEP4(0,1) },
+	{ STEP16(0,4) },
+	{ STEP16(0,4*16) },
+	16*16*4   /* every sprite takes 128 consecutive bytes */
 };
 
 static const gfx_layout char_8x8_layout =
@@ -392,28 +311,15 @@ static const gfx_layout char_8x8_layout =
 	8,8,    /* 8*8 characters */
 	RGN_FRAC(1,1),
 	4,  /* 4 bits per pixel */
-	{ 0, 1, 2, 3 },
-	{ 2*4, 3*4, 0*4, 1*4, 6*4, 7*4, 4*4, 5*4 },
-	{ 0*32, 1*32, 2*32, 3*32, 4*32, 5*32, 6*32, 7*32 },
-	32*8    /* every sprite takes 32 consecutive bytes */
+	{ STEP4(0,1) },
+	{ STEP8(0,4) },
+	{ STEP8(0,4*8) },
+	8*8*4    /* every sprite takes 32 consecutive bytes */
 };
 
-static const gfx_layout tilelayout =
-{
-	16,16,  /* 16*16 sprites */
-	RGN_FRAC(1,1),
-	4,  /* 4 bits per pixel */
-//  { 16, 48, 0, 32 },
-	{ 48, 16, 32, 0 },
-	{ 8, 9, 10, 11, 12, 13, 14, 15, 0, 1, 2, 3, 4, 5, 6, 7 },
-	{ 0*64, 1*64, 2*64, 3*64, 4*64, 5*64, 6*64, 7*64, 8*64, 9*64, 10*64, 11*64, 12*64, 13*64, 14*64, 15*64 },
-	128*8   /* every sprite takes 128 consecutive bytes */
-};
-
-static GFXDECODE_START( gcpinbal )
-	GFXDECODE_ENTRY( "gfx3", 0, tilelayout,       0, 256 )  /* sprites & playfield */
-	GFXDECODE_ENTRY( "gfx1", 0, charlayout,       0, 256 )  /* sprites & playfield */
-	GFXDECODE_ENTRY( "gfx2", 0, char_8x8_layout,  0, 256 )  /* sprites & playfield */
+static GFXDECODE_START( gfx_gcpinbal )
+	GFXDECODE_ENTRY( "bg0", 0, charlayout,          0, 0x60 )  // playfield
+	GFXDECODE_ENTRY( "fg0", 0, char_8x8_layout, 0x700, 0x10 )  // playfield
 GFXDECODE_END
 
 
@@ -427,78 +333,100 @@ void gcpinbal_state::machine_start()
 	save_item(NAME(m_scrolly));
 	save_item(NAME(m_bg0_gfxset));
 	save_item(NAME(m_bg1_gfxset));
-	save_item(NAME(m_msm_start));
-	save_item(NAME(m_msm_end));
 	save_item(NAME(m_msm_bank));
-	save_item(NAME(m_adpcm_start));
-	save_item(NAME(m_adpcm_end));
-	save_item(NAME(m_adpcm_idle));
-	save_item(NAME(m_adpcm_trigger));
-	save_item(NAME(m_adpcm_data));
 }
 
 void gcpinbal_state::machine_reset()
 {
-	int i;
-
-	for (i = 0; i < 3; i++)
+	for (int i = 0; i < 3; i++)
 	{
 		m_scrollx[i] = 0;
 		m_scrolly[i] = 0;
 	}
 
-	m_adpcm_idle = 1;
-	m_adpcm_start = 0;
-	m_adpcm_end = 0;
-	m_adpcm_trigger = 0;
-	m_adpcm_data = 0;
 	m_bg0_gfxset = 0;
 	m_bg1_gfxset = 0;
-	m_msm_start = 0;
-	m_msm_end = 0;
 	m_msm_bank = 0;
 }
 
-static MACHINE_CONFIG_START( gcpinbal, gcpinbal_state )
-
+void gcpinbal_state::gcpinbal(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", M68000, XTAL_32MHz/2) /* 16 MHz */
-	MCFG_CPU_PROGRAM_MAP(gcpinbal_map)
-	MCFG_CPU_VBLANK_INT_DRIVER("screen", gcpinbal_state,  gcpinbal_interrupt)
+	M68000(config, m_maincpu, 32_MHz_XTAL/2); /* 16 MHz */
+	m_maincpu->set_addrmap(AS_PROGRAM, &gcpinbal_state::gcpinbal_map);
+
+	TIMER(config, "scantimer").configure_scanline(FUNC(gcpinbal_state::scanline_cb), "screen", 0, 1);
+
+	EEPROM_93C46_16BIT(config, "eeprom");
+
+	MB3773(config, m_watchdog, 0);
 
 	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_REFRESH_RATE(60)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(0)  /* frames per second, vblank duration */)
-	MCFG_SCREEN_SIZE(40*8, 32*8)
-	MCFG_SCREEN_VISIBLE_AREA(0*8, 40*8-1, 2*8, 30*8-1)
-	MCFG_SCREEN_UPDATE_DRIVER(gcpinbal_state, screen_update_gcpinbal)
-	MCFG_SCREEN_PALETTE("palette")
+	SCREEN(config, m_screen, SCREEN_TYPE_RASTER);
+	m_screen->set_refresh_hz(60);
+	m_screen->set_vblank_time(ATTOSECONDS_IN_USEC(0)  /* frames per second, vblank duration */);
+	m_screen->set_size(40*8, 32*8);
+	m_screen->set_visarea(0*8, 40*8-1, 2*8, 30*8-1);
+	m_screen->set_screen_update(FUNC(gcpinbal_state::screen_update));
+	m_screen->set_palette(m_palette);
 
+	GFXDECODE(config, m_gfxdecode, m_palette, gfx_gcpinbal);
+	PALETTE(config, m_palette).set_format(palette_device::RRRRGGGGBBBBRGBx, 0x1000/2);
 
-	MCFG_GFXDECODE_ADD("gfxdecode", "palette", gcpinbal)
-	MCFG_PALETTE_ADD("palette", 4096)
-	MCFG_PALETTE_FORMAT(RRRRGGGGBBBBRGBx)
-
-	MCFG_DEVICE_ADD("spritegen", EXCELLENT_SPRITE, 0)
+	EXCELLENT_SPRITE(config, m_sprgen, 0);
+	m_sprgen->set_palette(m_palette);
+	m_sprgen->set_color_base(0x600);
+	m_sprgen->set_colpri_callback(FUNC(gcpinbal_state::gcpinbal_colpri_cb));
 
 	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_MONO("mono")
+	SPEAKER(config, "mono").front_center();
 
-	MCFG_OKIM6295_ADD("oki", XTAL_1_056MHz, OKIM6295_PIN7_HIGH)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.30)
+	OKIM6295(config, m_oki, 1.056_MHz_XTAL, okim6295_device::PIN7_HIGH).add_route(ALL_OUTPUTS, "mono", 0.30);
 
-	MCFG_SOUND_ADD("msm", MSM6585, XTAL_640kHz)
-	MCFG_MSM6585_VCLK_CB(WRITELINE(gcpinbal_state, gcp_adpcm_int))      /* VCK function */
-	MCFG_MSM6585_PRESCALER_SELECTOR(MSM6585_S40)         /* 16 kHz */
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 1.0)
-MACHINE_CONFIG_END
+	ES8712(config, m_essnd, 0);
+	m_essnd->reset_handler().set_inputline("maincpu", 3);
+	m_essnd->msm_write_handler().set("msm", FUNC(msm6585_device::data_w));
+	m_essnd->set_msm_tag("msm");
+
+	msm6585_device &msm(MSM6585(config, "msm", 640_kHz_XTAL));
+	msm.vck_legacy_callback().set("essnd", FUNC(es8712_device::msm_int));
+	msm.set_prescaler_selector(msm6585_device::S40); /* 16 kHz */
+	msm.add_route(ALL_OUTPUTS, "mono", 1.0);
+}
 
 
 
 /***************************************************************************
                                   DRIVERS
 ***************************************************************************/
+
+ROM_START( pwrflip ) /* Updated version of Grand Cross Pinball or semi-sequel? */
+	ROM_REGION( 0x200000, "maincpu", 0 )  /* 512k for 68000 program */
+	ROM_LOAD16_WORD_SWAP( "p.f_1.33.u43",  0x000000, 0x80000, CRC(d760c987) SHA1(9200604377542193afc866c84733f2d3b5aa1c80) ) /* hand written labels on genuine EXCELLENT labels */
+	ROM_FILL            ( 0x80000,  0x080000, 0x00 ) /* unpopulated 27C4096 socket at U44 */
+	ROM_LOAD16_WORD_SWAP( "p.f.u45",       0x100000, 0x80000, CRC(6ad1a457) SHA1(8746c38efa05e3318e9b1a371470d149803fb6bb) )
+	ROM_LOAD16_WORD_SWAP( "p.f.u46",       0x180000, 0x80000, CRC(e0f3a1b4) SHA1(761dddf374a92c1a1e4a211ead215d5be461a082) )
+
+	ROM_REGION( 0x200000, "bg0", 0 )  /* BG0 (16 x 16) */
+	ROM_LOAD16_WORD_SWAP( "u1",      0x000000, 0x100000, CRC(afa459bb) SHA1(7a7c64bcb80d71b8cf3fdd3209ef109997b6417c) ) /* 23C8000 mask ROMs */
+	ROM_LOAD16_WORD_SWAP( "u6",      0x100000, 0x100000, CRC(c3f024e5) SHA1(d197e2b715b154fc64ff9a61f8c6df111d6fd446) )
+
+	ROM_REGION( 0x020000, "fg0", 0 )  /* FG0 (8 x 8) */
+	ROM_LOAD16_WORD_SWAP( "p.f.u10",   0x000000, 0x020000, CRC(50e34549) SHA1(ca1808513ff3feb8bcd34d9aafd7b374e4244732) )
+
+	ROM_REGION( 0x200000, "spritegen", 0 )  /* Sprites (16 x 16) */
+	ROM_LOAD16_WORD_SWAP( "u13",     0x000000, 0x200000, CRC(62f3952f) SHA1(7dc9ccb753d46b6aaa791bcbf6e18e6d872f6b79) ) /* 23C16000 mask ROM */
+
+	ROM_REGION( 0x080000, "oki", 0 )   /* M6295 acc to Raine */
+	ROM_LOAD( "u55",   0x000000, 0x080000, CRC(b3063351) SHA1(825e63e8a824d67d235178897528e5b0b41e4485) ) /* OKI M534001B mask ROM */
+
+	ROM_REGION( 0x200000, "essnd", 0 )   /* M6585 acc to Raine but should be for ES-8712??? */
+	ROM_LOAD( "u56",   0x000000, 0x200000, CRC(092b2c0f) SHA1(2ec1904e473ddddb50dbeaa0b561642064d45336) ) /* 23C16000 mask ROM */
+
+	ROM_REGION( 0x000400, "plds", 0 ) /* 2x TIBPAL16L8-15CN */
+	ROM_LOAD( "a.u72", 0x000, 0x104, NO_DUMP )
+	ROM_LOAD( "b.u73", 0x200, 0x104, NO_DUMP )
+ROM_END
 
 ROM_START( gcpinbal )
 	ROM_REGION( 0x200000, "maincpu", 0 )  /* 512k for 68000 program */
@@ -507,23 +435,27 @@ ROM_START( gcpinbal )
 	ROM_LOAD16_WORD_SWAP( "3_excellent.u45",  0x100000, 0x80000, CRC(0511ad56) SHA1(e0602ece514126ce719ebc9de6649ebe907be904) )
 	ROM_LOAD16_WORD_SWAP( "4_excellent.u46",  0x180000, 0x80000, CRC(e0f3a1b4) SHA1(761dddf374a92c1a1e4a211ead215d5be461a082) )
 
-	ROM_REGION( 0x200000, "gfx1", 0 )  /* BG0 (16 x 16) */
-	ROM_LOAD( "u1",      0x000000, 0x100000, CRC(afa459bb) SHA1(7a7c64bcb80d71b8cf3fdd3209ef109997b6417c) ) /* 23C8000 MASK ROMs */
-	ROM_LOAD( "u6",      0x100000, 0x100000, CRC(c3f024e5) SHA1(d197e2b715b154fc64ff9a61f8c6df111d6fd446) )
+	ROM_REGION( 0x200000, "bg0", 0 )  /* BG0 (16 x 16) */
+	ROM_LOAD16_WORD_SWAP( "u1",      0x000000, 0x100000, CRC(afa459bb) SHA1(7a7c64bcb80d71b8cf3fdd3209ef109997b6417c) ) /* 23C8000 mask ROMs */
+	ROM_LOAD16_WORD_SWAP( "u6",      0x100000, 0x100000, CRC(c3f024e5) SHA1(d197e2b715b154fc64ff9a61f8c6df111d6fd446) )
 
-	ROM_REGION( 0x020000, "gfx2", 0 )  /* FG0 (8 x 8) */
-	ROM_LOAD( "1_excellent.u10",   0x000000, 0x020000, CRC(79321550) SHA1(61f1b772ed8cf95bfee9df8394b0c3ff727e8702) )
+	ROM_REGION( 0x020000, "fg0", 0 )  /* FG0 (8 x 8) */
+	ROM_LOAD16_WORD_SWAP( "1_excellent.u10",   0x000000, 0x020000, CRC(79321550) SHA1(61f1b772ed8cf95bfee9df8394b0c3ff727e8702) )
 
-	ROM_REGION( 0x200000, "gfx3", 0 )  /* Sprites (16 x 16) */
-	ROM_LOAD( "u13",     0x000000, 0x200000, CRC(62f3952f) SHA1(7dc9ccb753d46b6aaa791bcbf6e18e6d872f6b79) ) /* 23C16000 MASK ROM */
+	ROM_REGION( 0x200000, "spritegen", 0 )  /* Sprites (16 x 16) */
+	ROM_LOAD16_WORD_SWAP( "u13",     0x000000, 0x200000, CRC(62f3952f) SHA1(7dc9ccb753d46b6aaa791bcbf6e18e6d872f6b79) ) /* 23C16000 mask ROM */
 
 	ROM_REGION( 0x080000, "oki", 0 )   /* M6295 acc to Raine */
-	ROM_LOAD( "u55",   0x000000, 0x080000, CRC(b3063351) SHA1(825e63e8a824d67d235178897528e5b0b41e4485) ) /* OKI M534001B MASK ROM */
+	ROM_LOAD( "u55",   0x000000, 0x080000, CRC(b3063351) SHA1(825e63e8a824d67d235178897528e5b0b41e4485) ) /* OKI M534001B mask ROM */
 
-	ROM_REGION( 0x200000, "msm", 0 )   /* M6585 acc to Raine but should be for ES-8712??? */
-	ROM_LOAD( "u56",   0x000000, 0x200000, CRC(092b2c0f) SHA1(2ec1904e473ddddb50dbeaa0b561642064d45336) ) /* 23C16000 MASK ROM */
+	ROM_REGION( 0x200000, "essnd", 0 )   /* M6585 acc to Raine but should be for ES-8712??? */
+	ROM_LOAD( "u56",   0x000000, 0x200000, CRC(092b2c0f) SHA1(2ec1904e473ddddb50dbeaa0b561642064d45336) ) /* 23C16000 mask ROM */
+
+	ROM_REGION( 0x000400, "plds", 0 ) /* 2x TIBPAL16L8-15CN */
+	ROM_LOAD( "a.u72", 0x000, 0x104, NO_DUMP )
+	ROM_LOAD( "b.u73", 0x200, 0x104, NO_DUMP )
 ROM_END
 
 
-
-GAME( 1994, gcpinbal, 0, gcpinbal, gcpinbal, driver_device, 0, ROT270, "Excellent System", "Grand Cross", MACHINE_IMPERFECT_SOUND | MACHINE_NO_COCKTAIL | MACHINE_SUPPORTS_SAVE )
+GAME( 1994, pwrflip,  0, gcpinbal, gcpinbal, gcpinbal_state, empty_init, ROT270, "Excellent System", "Power Flipper Pinball Shooting v1.33", MACHINE_IMPERFECT_GRAPHICS | MACHINE_NO_COCKTAIL | MACHINE_SUPPORTS_SAVE )
+GAME( 1994, gcpinbal, 0, gcpinbal, gcpinbal, gcpinbal_state, empty_init, ROT270, "Excellent System", "Grand Cross v1.02F",                   MACHINE_IMPERFECT_GRAPHICS | MACHINE_NO_COCKTAIL | MACHINE_SUPPORTS_SAVE )

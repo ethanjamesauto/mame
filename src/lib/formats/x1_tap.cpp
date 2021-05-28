@@ -20,19 +20,19 @@
  *   0x00: Sampling rate (4 bytes)
  *
  */
-
-#include <assert.h>
-
 #include "x1_tap.h"
+
+#include <cassert>
+
 
 #define WAVE_HIGH        0x5a9e
 #define WAVE_LOW        -0x5a9e
 
-static int cas_size;
+static int cas_size; // FIXME: global variables prevent multiple instances
 static int samplerate;
 static int new_format;
 
-static int x1_fill_wave(INT16* buffer, UINT8 data, int sample_pos)
+static int x1_fill_wave(int16_t* buffer, uint8_t data, int sample_pos)
 {
 	int x;
 	int sample_count = 0;
@@ -48,7 +48,7 @@ static int x1_fill_wave(INT16* buffer, UINT8 data, int sample_pos)
 	return sample_count;
 }
 
-static int x1_handle_tap(INT16* buffer, const UINT8* casdata)
+static int x1_handle_tap(int16_t* buffer, const uint8_t* casdata)
 {
 	int sample_count = 0;
 	int data_pos = new_format ? 0x28 : 0x04;
@@ -71,9 +71,9 @@ static int x1_handle_tap(INT16* buffer, const UINT8* casdata)
 /*******************************************************************
    Calculate the number of samples needed for this tape image
 ********************************************************************/
-static int x1_cas_to_wav_size (const UINT8 *casdata, int caslen)
+static int x1_cas_to_wav_size (const uint8_t *casdata, int caslen)
 {
-	UINT32 ret;
+	uint32_t ret;
 
 	if (!memcmp(casdata, "TAPE", 4))  // new TAP format
 	{
@@ -98,12 +98,12 @@ static int x1_cas_to_wav_size (const UINT8 *casdata, int caslen)
 /*******************************************************************
    Generate samples for the tape image
 ********************************************************************/
-static int x1_cas_fill_wave(INT16 *buffer, int sample_count, UINT8 *bytes)
+static int x1_cas_fill_wave(int16_t *buffer, int sample_count, uint8_t *bytes)
 {
 	return x1_handle_tap(buffer,bytes);
 }
 
-static const struct CassetteLegacyWaveFiller x1_legacy_fill_wave =
+static const cassette_image::LegacyWaveFiller x1_legacy_fill_wave =
 {
 	x1_cas_fill_wave,                       /* fill_wave */
 	-1,                                     /* chunk_size */
@@ -114,20 +114,20 @@ static const struct CassetteLegacyWaveFiller x1_legacy_fill_wave =
 	0                                       /* trailer_samples */
 };
 
-static casserr_t x1_cas_identify(cassette_image *cassette, struct CassetteOptions *opts)
+static cassette_image::error x1_cas_identify(cassette_image *cassette, cassette_image::Options *opts)
 {
-	return cassette_legacy_identify(cassette, opts, &x1_legacy_fill_wave);
+	return cassette->legacy_identify(opts, &x1_legacy_fill_wave);
 }
 
 
 
-static casserr_t x1_cas_load(cassette_image *cassette)
+static cassette_image::error x1_cas_load(cassette_image *cassette)
 {
-	return cassette_legacy_construct(cassette, &x1_legacy_fill_wave);
+	return cassette->legacy_construct(&x1_legacy_fill_wave);
 }
 
 
-static const struct CassetteFormat x1_cassette_format = {
+static const cassette_image::Format x1_cassette_format = {
 	"tap",
 	x1_cas_identify,
 	x1_cas_load,

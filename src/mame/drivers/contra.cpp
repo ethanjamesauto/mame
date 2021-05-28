@@ -19,90 +19,93 @@ Dip locations and factory settings verified with manual
 ***************************************************************************/
 
 #include "emu.h"
+#include "includes/contra.h"
+#include "includes/konamipt.h"
+
 #include "cpu/m6809/hd6309.h"
 #include "cpu/m6809/m6809.h"
-#include "sound/2151intf.h"
-#include "includes/konamipt.h"
-#include "includes/contra.h"
+#include "machine/gen_latch.h"
+#include "machine/k007452.h"
+#include "sound/ymopm.h"
+#include "speaker.h"
 
 
 INTERRUPT_GEN_MEMBER(contra_state::contra_interrupt)
 {
-	address_space &space = generic_space();
-	if (m_k007121_1->ctrlram_r(space, 7) & 0x02)
+	if (m_k007121_1->ctrlram_r(7) & 0x02)
 		device.execute().set_input_line(HD6309_IRQ_LINE, HOLD_LINE);
 }
 
-WRITE8_MEMBER(contra_state::contra_bankswitch_w)
+void contra_state::contra_bankswitch_w(uint8_t data)
 {
 	membank("bank1")->set_entry(data & 0x0f);
 }
 
-WRITE8_MEMBER(contra_state::contra_sh_irqtrigger_w)
+void contra_state::contra_sh_irqtrigger_w(uint8_t data)
 {
-	m_audiocpu->set_input_line(M6809_IRQ_LINE, HOLD_LINE);
+	m_audiocpu->set_input_line(M6809_IRQ_LINE, ASSERT_LINE);
 }
 
-WRITE8_MEMBER(contra_state::contra_coin_counter_w)
+void contra_state::sirq_clear_w(uint8_t data)
+{
+	m_audiocpu->set_input_line(M6809_IRQ_LINE, CLEAR_LINE);
+}
+
+void contra_state::contra_coin_counter_w(uint8_t data)
 {
 	if (data & 0x01)
-		coin_counter_w(machine(), 0, data & 0x01);
+		machine().bookkeeping().coin_counter_w(0, data & 0x01);
 
 	if (data & 0x02)
-		coin_counter_w(machine(), 1, (data & 0x02) >> 1);
+		machine().bookkeeping().coin_counter_w(1, (data & 0x02) >> 1);
 }
 
-WRITE8_MEMBER(contra_state::cpu_sound_command_w)
+void contra_state::contra_map(address_map &map)
 {
-	soundlatch_byte_w(space, offset, data);
+	map(0x0000, 0x0007).w(FUNC(contra_state::contra_K007121_ctrl_0_w));
+	map(0x0008, 0x000f).rw("k007452", FUNC(k007452_device::read), FUNC(k007452_device::write));
+	map(0x0010, 0x0010).portr("SYSTEM");
+	map(0x0011, 0x0011).portr("P1");
+	map(0x0012, 0x0012).portr("P2");
+
+	map(0x0014, 0x0014).portr("DSW1");
+	map(0x0015, 0x0015).portr("DSW2");
+	map(0x0016, 0x0016).portr("DSW3");
+
+	map(0x0018, 0x0018).w(FUNC(contra_state::contra_coin_counter_w));
+	map(0x001a, 0x001a).w(FUNC(contra_state::contra_sh_irqtrigger_w));
+	map(0x001c, 0x001c).w("soundlatch", FUNC(generic_latch_8_device::write));
+	map(0x001e, 0x001e).nopw();    /* ? */
+	map(0x0060, 0x0067).w(FUNC(contra_state::contra_K007121_ctrl_1_w));
+
+	map(0x0c00, 0x0cff).ram().w(m_palette, FUNC(palette_device::write_indirect)).share("palette");
+
+	map(0x1000, 0x1fff).ram();
+
+	map(0x2000, 0x23ff).ram().w(FUNC(contra_state::contra_fg_cram_w)).share("fg_cram");
+	map(0x2400, 0x27ff).ram().w(FUNC(contra_state::contra_fg_vram_w)).share("fg_vram");
+	map(0x2800, 0x2bff).ram().w(FUNC(contra_state::contra_text_cram_w)).share("tx_cram");
+	map(0x2c00, 0x2fff).ram().w(FUNC(contra_state::contra_text_vram_w)).share("tx_vram");
+	map(0x3000, 0x3fff).ram().share("spriteram");
+	map(0x4000, 0x43ff).ram().w(FUNC(contra_state::contra_bg_cram_w)).share("bg_cram");
+	map(0x4400, 0x47ff).ram().w(FUNC(contra_state::contra_bg_vram_w)).share("bg_vram");
+	map(0x4800, 0x4fff).ram();
+	map(0x5000, 0x5fff).ram().share("spriteram_2");
+
+	map(0x6000, 0x7fff).bankr("bank1");
+	map(0x7000, 0x7000).w(FUNC(contra_state::contra_bankswitch_w));
+
+	map(0x8000, 0xffff).rom();
 }
 
-
-
-static ADDRESS_MAP_START( contra_map, AS_PROGRAM, 8, contra_state )
-	AM_RANGE(0x0000, 0x0007) AM_WRITE(contra_K007121_ctrl_0_w)
-	AM_RANGE(0x0010, 0x0010) AM_READ_PORT("SYSTEM")
-	AM_RANGE(0x0011, 0x0011) AM_READ_PORT("P1")
-	AM_RANGE(0x0012, 0x0012) AM_READ_PORT("P2")
-
-	AM_RANGE(0x0014, 0x0014) AM_READ_PORT("DSW1")
-	AM_RANGE(0x0015, 0x0015) AM_READ_PORT("DSW2")
-	AM_RANGE(0x0016, 0x0016) AM_READ_PORT("DSW3")
-
-	AM_RANGE(0x0018, 0x0018) AM_WRITE(contra_coin_counter_w)
-	AM_RANGE(0x001a, 0x001a) AM_WRITE(contra_sh_irqtrigger_w)
-	AM_RANGE(0x001c, 0x001c) AM_WRITE(cpu_sound_command_w)
-	AM_RANGE(0x001e, 0x001e) AM_WRITENOP    /* ? */
-	AM_RANGE(0x0060, 0x0067) AM_WRITE(contra_K007121_ctrl_1_w)
-
-	AM_RANGE(0x0c00, 0x0cff) AM_RAM_DEVWRITE("palette", palette_device, write_indirect) AM_SHARE("palette")
-
-	AM_RANGE(0x1000, 0x1fff) AM_RAM
-
-	AM_RANGE(0x2000, 0x5fff) AM_READONLY
-	AM_RANGE(0x2000, 0x23ff) AM_WRITE(contra_fg_cram_w) AM_SHARE("fg_cram")
-	AM_RANGE(0x2400, 0x27ff) AM_WRITE(contra_fg_vram_w) AM_SHARE("fg_vram")
-	AM_RANGE(0x2800, 0x2bff) AM_WRITE(contra_text_cram_w) AM_SHARE("tx_cram")
-	AM_RANGE(0x2c00, 0x2fff) AM_WRITE(contra_text_vram_w) AM_SHARE("tx_vram")
-	AM_RANGE(0x3000, 0x37ff) AM_WRITEONLY AM_SHARE("spriteram")/* 2nd bank is at 0x5000 */
-	AM_RANGE(0x3800, 0x3fff) AM_WRITEONLY // second sprite buffer
-	AM_RANGE(0x4000, 0x43ff) AM_WRITE(contra_bg_cram_w) AM_SHARE("bg_cram")
-	AM_RANGE(0x4400, 0x47ff) AM_WRITE(contra_bg_vram_w) AM_SHARE("bg_vram")
-	AM_RANGE(0x4800, 0x5fff) AM_WRITEONLY
-
-	AM_RANGE(0x6000, 0x7fff) AM_ROMBANK("bank1")
-	AM_RANGE(0x7000, 0x7000) AM_WRITE(contra_bankswitch_w)
-
-	AM_RANGE(0x8000, 0xffff) AM_ROM
-ADDRESS_MAP_END
-
-static ADDRESS_MAP_START( sound_map, AS_PROGRAM, 8, contra_state )
-	AM_RANGE(0x0000, 0x0000) AM_READ(soundlatch_byte_r)
-	AM_RANGE(0x2000, 0x2001) AM_DEVREADWRITE("ymsnd", ym2151_device, read, write)
-	AM_RANGE(0x4000, 0x4000) AM_WRITENOP /* read triggers irq reset and latch read (in the hardware only). */
-	AM_RANGE(0x6000, 0x67ff) AM_RAM
-	AM_RANGE(0x8000, 0xffff) AM_ROM
-ADDRESS_MAP_END
+void contra_state::sound_map(address_map &map)
+{
+	map(0x0000, 0x0000).r("soundlatch", FUNC(generic_latch_8_device::read));
+	map(0x2000, 0x2001).rw("ymsnd", FUNC(ym2151_device::read), FUNC(ym2151_device::write));
+	map(0x4000, 0x4000).w(FUNC(contra_state::sirq_clear_w)); /* read triggers irq reset and latch read (in the hardware only). */
+	map(0x6000, 0x67ff).ram();
+	map(0x8000, 0xffff).rom();
+}
 
 
 
@@ -184,7 +187,7 @@ static const gfx_layout gfxlayout =
 	32*8
 };
 
-static GFXDECODE_START( contra )
+static GFXDECODE_START( gfx_contra )
 	GFXDECODE_ENTRY( "gfx1", 0, gfxlayout,       0, 8*16 )
 	GFXDECODE_ENTRY( "gfx2", 0, gfxlayout, 8*16*16, 8*16 )
 GFXDECODE_END
@@ -193,53 +196,59 @@ GFXDECODE_END
 
 void contra_state::machine_start()
 {
-	UINT8 *ROM = memregion("maincpu")->base();
+	uint8_t *ROM = memregion("maincpu")->base();
 
 	membank("bank1")->configure_entries(0, 16, &ROM[0x10000], 0x2000);
 }
 
-static MACHINE_CONFIG_START( contra, contra_state )
+void contra_state::machine_reset()
+{
+	m_audiocpu->set_input_line(M6809_IRQ_LINE, CLEAR_LINE);
+}
 
+void contra_state::contra(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", HD6309, XTAL_24MHz / 2 /* 3000000*4? */)
-	MCFG_CPU_PROGRAM_MAP(contra_map)
-	MCFG_CPU_VBLANK_INT_DRIVER("screen", contra_state,  contra_interrupt)
+	HD6309E(config, m_maincpu, XTAL(24'000'000) / 8); /* 3000000? (HD63C09EP) */
+	m_maincpu->set_addrmap(AS_PROGRAM, &contra_state::contra_map);
+	m_maincpu->set_vblank_int("screen", FUNC(contra_state::contra_interrupt));
 
-	MCFG_CPU_ADD("audiocpu", M6809, XTAL_24MHz/8) /* 3000000? */
-	MCFG_CPU_PROGRAM_MAP(sound_map)
+	MC6809E(config, m_audiocpu, XTAL(24'000'000)/8); /* 3000000? (HD68B09EP) */
+	m_audiocpu->set_addrmap(AS_PROGRAM, &contra_state::sound_map);
 
-	MCFG_QUANTUM_TIME(attotime::from_hz(6000))  /* enough for the sound CPU to read all commands */
+	config.set_maximum_quantum(attotime::from_hz(6000));  /* enough for the sound CPU to read all commands */
 
+	KONAMI_007452_MATH(config, "k007452");
 
 	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_REFRESH_RATE(60)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(2500) /* not accurate */)
-	MCFG_SCREEN_SIZE(37*8, 32*8)
-	MCFG_SCREEN_VISIBLE_AREA(0*8, 35*8-1, 2*8, 30*8-1)
-	MCFG_SCREEN_UPDATE_DRIVER(contra_state, screen_update_contra)
-	MCFG_SCREEN_PALETTE("palette")
+	SCREEN(config, m_screen, SCREEN_TYPE_RASTER);
+	m_screen->set_refresh_hz(60);
+	m_screen->set_vblank_time(ATTOSECONDS_IN_USEC(2500) /* not accurate */);
+	m_screen->set_size(37*8, 32*8);
+	m_screen->set_visarea(0*8, 35*8-1, 2*8, 30*8-1);
+	m_screen->set_screen_update(FUNC(contra_state::screen_update_contra));
+	m_screen->set_palette(m_palette);
 
-	MCFG_GFXDECODE_ADD("gfxdecode", "palette", contra)
+	GFXDECODE(config, m_gfxdecode, m_palette, gfx_contra);
 
-	MCFG_PALETTE_ADD("palette", 2*8*16*16)
-	MCFG_PALETTE_INDIRECT_ENTRIES(128)
-	MCFG_PALETTE_FORMAT(xBBBBBGGGGGRRRRR)
-	MCFG_PALETTE_ENDIANNESS(ENDIANNESS_LITTLE)
-	MCFG_PALETTE_INIT_OWNER(contra_state, contra)
+	PALETTE(config, m_palette, FUNC(contra_state::contra_palette));
+	m_palette->set_format(palette_device::xBGR_555, 2 * 8 * 16 * 16);
+	m_palette->set_indirect_entries(128);
+	m_palette->set_endianness(ENDIANNESS_LITTLE);
 
-	MCFG_K007121_ADD("k007121_1")
-	MCFG_K007121_PALETTE("palette")
-	MCFG_K007121_ADD("k007121_2")
-	MCFG_K007121_PALETTE("palette")
+	K007121(config, m_k007121_1, 0);
+	m_k007121_1->set_palette_tag(m_palette);
+	K007121(config, m_k007121_2, 0);
+	m_k007121_2->set_palette_tag(m_palette);
 
 	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_STEREO("lspeaker", "rspeaker")
+	SPEAKER(config, "lspeaker").front_left();
+	SPEAKER(config, "rspeaker").front_right();
 
-	MCFG_YM2151_ADD("ymsnd", XTAL_3_579545MHz)
-	MCFG_SOUND_ROUTE(0, "lspeaker", 0.60)
-	MCFG_SOUND_ROUTE(1, "rspeaker", 0.60)
-MACHINE_CONFIG_END
+	GENERIC_LATCH_8(config, "soundlatch");
+
+	YM2151(config, "ymsnd", XTAL(3'579'545)).add_route(0, "lspeaker", 0.60).add_route(1, "rspeaker", 0.60);
+}
 
 
 ROM_START( contra )
@@ -526,7 +535,7 @@ ROM_END
 
 ROM_START( contrabj1 )
 	ROM_REGION( 0x30000, "maincpu", ROMREGION_ERASEFF ) /* 64k for code + 96k for banked ROMs */
-	ROM_LOAD( "2__(contrabtj2).2k", 0x20000, 0x08000, CRC(bdb9196d) SHA1(fad170e8fda94c9c9d7b82433daa30b80af12efc) ) /* == 633k03.18a */
+	ROM_LOAD( "2__,contrabtj2.2k", 0x20000, 0x08000, CRC(bdb9196d) SHA1(fad170e8fda94c9c9d7b82433daa30b80af12efc) ) /* == 633k03.18a */
 	ROM_CONTINUE(                   0x08000, 0x08000 )
 	ROM_LOAD( "1.2h",               0x10000, 0x10000, CRC(5d5f7438) SHA1(489fe56ca57ef4f6a7792fba07a9656009f3f285) ) /* == 633k02.17a */
 
@@ -563,13 +572,13 @@ ROM_START( contrabj1 )
 	ROM_LOAD( "633f11.20g",   0x0300, 0x0100, CRC(14ca5e19) SHA1(eeee2f8b3d1e4acf47de1e74c4e507ff924591e7) )    /* 007121 #1 char lookup table */
 ROM_END
 
-GAME( 1987, contra,    0,      contra, contra,  driver_device, 0, ROT90, "Konami", "Contra (US / Asia, set 1)", MACHINE_SUPPORTS_SAVE )
-GAME( 1987, contra1,   contra, contra, contra,  driver_device, 0, ROT90, "Konami", "Contra (US / Asia, set 2)", MACHINE_SUPPORTS_SAVE )
-GAME( 1987, contrae,   contra, contra, contra,  driver_device, 0, ROT90, "Konami", "Contra (US / Asia, set 3)", MACHINE_SUPPORTS_SAVE )
-GAME( 1987, contraj,   contra, contra, contra,  driver_device, 0, ROT90, "Konami", "Contra (Japan, set 1)", MACHINE_SUPPORTS_SAVE )
-GAME( 1987, contraj1,  contra, contra, contra,  driver_device, 0, ROT90, "Konami", "Contra (Japan, set 2)", MACHINE_SUPPORTS_SAVE )
-GAME( 1987, gryzor,    contra, contra, gryzor,  driver_device, 0, ROT90, "Konami", "Gryzor (set 1)", MACHINE_SUPPORTS_SAVE )
-GAME( 1987, gryzor1,   contra, contra, gryzor,  driver_device, 0, ROT90, "Konami", "Gryzor (set 2)", MACHINE_SUPPORTS_SAVE )
-GAME( 1987, contrab,   contra, contra, contra,  driver_device, 0, ROT90, "bootleg", "Contra (bootleg)", MACHINE_SUPPORTS_SAVE )
-GAME( 1987, contrabj,  contra, contra, contra,  driver_device, 0, ROT90, "bootleg", "Contra (Japan bootleg, set 1)", MACHINE_SUPPORTS_SAVE )
-GAME( 1987, contrabj1, contra, contra, contra,  driver_device, 0, ROT90, "bootleg", "Contra (Japan bootleg, set 2)", MACHINE_SUPPORTS_SAVE )
+GAME( 1987, contra,    0,      contra, contra, contra_state, empty_init, ROT90, "Konami",  "Contra (US / Asia, set 1)",     MACHINE_SUPPORTS_SAVE )
+GAME( 1987, contra1,   contra, contra, contra, contra_state, empty_init, ROT90, "Konami",  "Contra (US / Asia, set 2)",     MACHINE_SUPPORTS_SAVE )
+GAME( 1987, contrae,   contra, contra, contra, contra_state, empty_init, ROT90, "Konami",  "Contra (US / Asia, set 3)",     MACHINE_SUPPORTS_SAVE )
+GAME( 1987, contraj,   contra, contra, contra, contra_state, empty_init, ROT90, "Konami",  "Contra (Japan, set 1)",         MACHINE_SUPPORTS_SAVE )
+GAME( 1987, contraj1,  contra, contra, contra, contra_state, empty_init, ROT90, "Konami",  "Contra (Japan, set 2)",         MACHINE_SUPPORTS_SAVE )
+GAME( 1987, gryzor,    contra, contra, gryzor, contra_state, empty_init, ROT90, "Konami",  "Gryzor (set 1)",                MACHINE_SUPPORTS_SAVE )
+GAME( 1987, gryzor1,   contra, contra, gryzor, contra_state, empty_init, ROT90, "Konami",  "Gryzor (set 2)",                MACHINE_SUPPORTS_SAVE )
+GAME( 1987, contrab,   contra, contra, contra, contra_state, empty_init, ROT90, "bootleg", "Contra (bootleg)",              MACHINE_SUPPORTS_SAVE )
+GAME( 1987, contrabj,  contra, contra, contra, contra_state, empty_init, ROT90, "bootleg", "Contra (Japan bootleg, set 1)", MACHINE_SUPPORTS_SAVE )
+GAME( 1987, contrabj1, contra, contra, contra, contra_state, empty_init, ROT90, "bootleg", "Contra (Japan bootleg, set 2)", MACHINE_SUPPORTS_SAVE )

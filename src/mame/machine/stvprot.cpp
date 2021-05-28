@@ -28,17 +28,17 @@
 *
 *************************************/
 
-READ32_MEMBER( stv_state::common_prot_r )
+uint32_t stv_state::common_prot_r(offs_t offset)
 {
-	UINT32 *ROM = (UINT32 *)space.machine().root_device().memregion("abus")->base();
+	uint32_t *ROM = (uint32_t *)machine().root_device().memregion("abus")->base();
 
 	if(m_abus_protenable & 0x00010000)//protection calculation is activated
 	{
 		if(offset == 3)
 		{
-			UINT8* base;
-			UINT16 res = m_cryptdevice->do_decrypt(base);
-			UINT16 res2 = m_cryptdevice->do_decrypt(base);
+			uint8_t* base;
+			uint16_t res = m_cryptdevice->do_decrypt(base);
+			uint16_t res2 = m_cryptdevice->do_decrypt(base);
 			res = ((res & 0xff00) >> 8) | ((res & 0x00ff) << 8);
 			res2 = ((res2 & 0xff00) >> 8) | ((res2 & 0x00ff) << 8);
 
@@ -54,13 +54,13 @@ READ32_MEMBER( stv_state::common_prot_r )
 }
 
 
-UINT16 stv_state::crypt_read_callback(UINT32 addr)
+uint16_t stv_state::crypt_read_callback(uint32_t addr)
 {
-	UINT16 dat= m_maincpu->space().read_word((0x02000000+2*addr));
+	uint16_t dat= m_maincpu->space().read_word((0x02000000+2*addr));
 	return ((dat&0xff00)>>8)|((dat&0x00ff)<<8);
 }
 
-WRITE32_MEMBER ( stv_state::common_prot_w )
+void stv_state::common_prot_w(offs_t offset, uint32_t data, uint32_t mem_mask)
 {
 	COMBINE_DATA(&m_a_bus[offset]);
 
@@ -70,8 +70,8 @@ WRITE32_MEMBER ( stv_state::common_prot_w )
 	}
 	else if(offset == 2)
 	{
-		if (mem_mask&0xffff0000) m_cryptdevice->set_addr_low(data >> 16);
-		if (mem_mask&0x0000ffff) m_cryptdevice->set_addr_high(data&0xffff);
+		if (ACCESSING_BITS_16_31) m_cryptdevice->set_addr_low(data >> 16);
+		if (ACCESSING_BITS_0_15) m_cryptdevice->set_addr_high(data&0xffff);
 
 	}
 	else if(offset == 3)
@@ -84,7 +84,8 @@ WRITE32_MEMBER ( stv_state::common_prot_w )
 
 void stv_state::install_common_protection()
 {
-	m_maincpu->space(AS_PROGRAM).install_readwrite_handler(0x4fffff0, 0x4ffffff, read32_delegate(FUNC(stv_state::common_prot_r), this), write32_delegate(FUNC(stv_state::common_prot_w), this));
+	m_maincpu->space(AS_PROGRAM).install_read_handler(0x4fffff0, 0x4ffffff, read32sm_delegate(*this, FUNC(stv_state::common_prot_r)));
+	m_maincpu->space(AS_PROGRAM).install_write_handler(0x4fffff0, 0x4ffffff, write32s_delegate(*this, FUNC(stv_state::common_prot_w)));
 }
 
 void stv_state::stv_register_protection_savestates()

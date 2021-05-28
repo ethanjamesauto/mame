@@ -17,36 +17,36 @@
 
 ***************************************************************************/
 
-PALETTE_INIT_MEMBER(baraduke_state, baraduke)
+void baraduke_state::baraduke_palette(palette_device &palette) const
 {
-	const UINT8 *color_prom = memregion("proms")->base();
-	int i;
-	int bit0,bit1,bit2,bit3,r,g,b;
+	const uint8_t *color_prom = memregion("proms")->base();
 
-	for (i = 0; i < 2048; i++)
+	for (int i = 0; i < 2048; i++)
 	{
-		/* red component */
-		bit0 = (color_prom[2048] >> 0) & 0x01;
-		bit1 = (color_prom[2048] >> 1) & 0x01;
-		bit2 = (color_prom[2048] >> 2) & 0x01;
-		bit3 = (color_prom[2048] >> 3) & 0x01;
-		r = 0x0e*bit0 + 0x1f*bit1 + 0x43*bit2 + 0x8f*bit3;
+		int bit0, bit1, bit2, bit3;
 
-		/* green component */
-		bit0 = (color_prom[0] >> 0) & 0x01;
-		bit1 = (color_prom[0] >> 1) & 0x01;
-		bit2 = (color_prom[0] >> 2) & 0x01;
-		bit3 = (color_prom[0] >> 3) & 0x01;
-		g = 0x0e*bit0 + 0x1f*bit1 + 0x43*bit2 + 0x8f*bit3;
+		// red component
+		bit0 = BIT(color_prom[2048], 0);
+		bit1 = BIT(color_prom[2048], 1);
+		bit2 = BIT(color_prom[2048], 2);
+		bit3 = BIT(color_prom[2048], 3);
+		int const r = 0x0e*bit0 + 0x1f*bit1 + 0x43*bit2 + 0x8f*bit3;
 
-		/* blue component */
-		bit0 = (color_prom[0] >> 4) & 0x01;
-		bit1 = (color_prom[0] >> 5) & 0x01;
-		bit2 = (color_prom[0] >> 6) & 0x01;
-		bit3 = (color_prom[0] >> 7) & 0x01;
-		b = 0x0e*bit0 + 0x1f*bit1 + 0x43*bit2 + 0x8f*bit3;
+		// green component
+		bit0 = BIT(color_prom[0], 0);
+		bit1 = BIT(color_prom[0], 1);
+		bit2 = BIT(color_prom[0], 2);
+		bit3 = BIT(color_prom[0], 3);
+		int const g = 0x0e*bit0 + 0x1f*bit1 + 0x43*bit2 + 0x8f*bit3;
 
-		palette.set_pen_color(i,rgb_t(r,g,b));
+		// blue component
+		bit0 = BIT(color_prom[0], 4);
+		bit1 = BIT(color_prom[0], 5);
+		bit2 = BIT(color_prom[0], 6);
+		bit3 = BIT(color_prom[0], 7);
+		int const b = 0x0e*bit0 + 0x1f*bit1 + 0x43*bit2 + 0x8f*bit3;
+
+		palette.set_pen_color(i, rgb_t(r, g, b));
 		color_prom++;
 	}
 }
@@ -76,7 +76,7 @@ TILEMAP_MAPPER_MEMBER(baraduke_state::tx_tilemap_scan)
 
 TILE_GET_INFO_MEMBER(baraduke_state::tx_get_tile_info)
 {
-	SET_TILE_INFO_MEMBER(0,
+	tileinfo.set(0,
 			m_textram[tile_index],
 			(m_textram[tile_index+0x400] << 2) & 0x1ff,
 			0);
@@ -87,7 +87,7 @@ TILE_GET_INFO_MEMBER(baraduke_state::get_tile_info0)
 	int code = m_videoram[2*tile_index];
 	int attr = m_videoram[2*tile_index + 1];
 
-	SET_TILE_INFO_MEMBER(1,
+	tileinfo.set(1,
 			code + ((attr & 0x03) << 8),
 			attr,
 			0);
@@ -98,7 +98,7 @@ TILE_GET_INFO_MEMBER(baraduke_state::get_tile_info1)
 	int code = m_videoram[0x1000 + 2*tile_index];
 	int attr = m_videoram[0x1000 + 2*tile_index + 1];
 
-	SET_TILE_INFO_MEMBER(2,
+	tileinfo.set(2,
 			code + ((attr & 0x03) << 8),
 			attr,
 			0);
@@ -114,9 +114,9 @@ TILE_GET_INFO_MEMBER(baraduke_state::get_tile_info1)
 
 void baraduke_state::video_start()
 {
-	m_tx_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(baraduke_state::tx_get_tile_info),this),tilemap_mapper_delegate(FUNC(baraduke_state::tx_tilemap_scan),this),8,8,36,28);
-	m_bg_tilemap[0] = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(baraduke_state::get_tile_info0),this),TILEMAP_SCAN_ROWS,8,8,64,32);
-	m_bg_tilemap[1] = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(baraduke_state::get_tile_info1),this),TILEMAP_SCAN_ROWS,8,8,64,32);
+	m_tx_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(baraduke_state::tx_get_tile_info)), tilemap_mapper_delegate(*this, FUNC(baraduke_state::tx_tilemap_scan)), 8,8, 36,28);
+	m_bg_tilemap[0] = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(baraduke_state::get_tile_info0)), TILEMAP_SCAN_ROWS, 8,8, 64,32);
+	m_bg_tilemap[1] = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(baraduke_state::get_tile_info1)), TILEMAP_SCAN_ROWS, 8,8, 64,32);
 
 	m_tx_tilemap->set_transparent_pen(3);
 	m_bg_tilemap[0]->set_transparent_pen(7);
@@ -137,30 +137,30 @@ void baraduke_state::video_start()
 
 ***************************************************************************/
 
-READ8_MEMBER(baraduke_state::baraduke_videoram_r)
+uint8_t baraduke_state::baraduke_videoram_r(offs_t offset)
 {
 	return m_videoram[offset];
 }
 
-WRITE8_MEMBER(baraduke_state::baraduke_videoram_w)
+void baraduke_state::baraduke_videoram_w(offs_t offset, uint8_t data)
 {
 	m_videoram[offset] = data;
 	m_bg_tilemap[offset/0x1000]->mark_tile_dirty((offset&0xfff)/2);
 }
 
-READ8_MEMBER(baraduke_state::baraduke_textram_r)
+uint8_t baraduke_state::baraduke_textram_r(offs_t offset)
 {
 	return m_textram[offset];
 }
 
-WRITE8_MEMBER(baraduke_state::baraduke_textram_w)
+void baraduke_state::baraduke_textram_w(offs_t offset, uint8_t data)
 {
 	m_textram[offset] = data;
 	m_tx_tilemap->mark_tile_dirty(offset & 0x3ff);
 }
 
 
-void baraduke_state::scroll_w(address_space &space, int layer, int offset, int data)
+void baraduke_state::scroll_w(int layer, int offset, int data)
 {
 	switch (offset)
 	{
@@ -176,23 +176,23 @@ void baraduke_state::scroll_w(address_space &space, int layer, int offset, int d
 	}
 }
 
-WRITE8_MEMBER(baraduke_state::baraduke_scroll0_w)
+void baraduke_state::baraduke_scroll0_w(offs_t offset, uint8_t data)
 {
-	scroll_w(space, 0, offset, data);
+	scroll_w(0, offset, data);
 }
-WRITE8_MEMBER(baraduke_state::baraduke_scroll1_w)
+void baraduke_state::baraduke_scroll1_w(offs_t offset, uint8_t data)
 {
-	scroll_w(space, 1, offset, data);
+	scroll_w(1, offset, data);
 }
 
 
 
-READ8_MEMBER(baraduke_state::baraduke_spriteram_r)
+uint8_t baraduke_state::baraduke_spriteram_r(offs_t offset)
 {
 	return m_spriteram[offset];
 }
 
-WRITE8_MEMBER(baraduke_state::baraduke_spriteram_w)
+void baraduke_state::baraduke_spriteram_w(offs_t offset, uint8_t data)
 {
 	m_spriteram[offset] = data;
 
@@ -211,9 +211,9 @@ WRITE8_MEMBER(baraduke_state::baraduke_spriteram_w)
 
 void baraduke_state::draw_sprites(bitmap_ind16 &bitmap, const rectangle &cliprect, int sprite_priority)
 {
-	UINT8 *spriteram = m_spriteram + 0x1800;
-	const UINT8 *source = &spriteram[0x0000];
-	const UINT8 *finish = &spriteram[0x0800-16];    /* the last is NOT a sprite */
+	uint8_t *spriteram = m_spriteram + 0x1800;
+	const uint8_t *source = &spriteram[0x0000];
+	const uint8_t *finish = &spriteram[0x0800-16];    /* the last is NOT a sprite */
 
 	int sprite_xoffs = spriteram[0x07f5] - 256 * (spriteram[0x07f4] & 1);
 	int sprite_yoffs = spriteram[0x07f7];
@@ -300,9 +300,9 @@ void baraduke_state::set_scroll(int layer)
 }
 
 
-UINT32 baraduke_state::screen_update_baraduke(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t baraduke_state::screen_update_baraduke(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
-	UINT8 *spriteram = m_spriteram + 0x1800;
+	uint8_t *spriteram = m_spriteram + 0x1800;
 	int back;
 
 	/* flip screen is embedded in the sprite control registers */
@@ -325,14 +325,14 @@ UINT32 baraduke_state::screen_update_baraduke(screen_device &screen, bitmap_ind1
 }
 
 
-void baraduke_state::screen_eof_baraduke(screen_device &screen, bool state)
+WRITE_LINE_MEMBER(baraduke_state::screen_vblank_baraduke)
 {
 	// rising edge
 	if (state)
 	{
 		if (m_copy_sprites)
 		{
-			UINT8 *spriteram = m_spriteram + 0x1800;
+			uint8_t *spriteram = m_spriteram + 0x1800;
 			int i,j;
 
 			for (i = 0;i < 0x800;i += 16)
@@ -343,5 +343,8 @@ void baraduke_state::screen_eof_baraduke(screen_device &screen, bool state)
 
 			m_copy_sprites = 0;
 		}
+
+		m_maincpu->set_input_line(0, ASSERT_LINE);
+		m_mcu->set_input_line(0, HOLD_LINE);
 	}
 }

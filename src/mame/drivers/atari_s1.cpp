@@ -43,13 +43,21 @@ ToDo:
 
 ************************************************************************************/
 
+#include "emu.h"
 #include "machine/genpin.h"
+
 #include "cpu/m6800/m6800.h"
+#include "machine/timer.h"
+#include "machine/watchdog.h"
 #include "sound/dac.h"
+#include "speaker.h"
+
 #include "atari_s1.lh"
 
 
-#define MASTER_CLK XTAL_4MHz / 4
+namespace {
+
+#define MASTER_CLK XTAL(4'000'000) / 4
 #define DMA_CLK MASTER_CLK / 2
 #define AUDIO_CLK DMA_CLK / 4
 #define DMA_INT DMA_CLK / 128
@@ -61,85 +69,102 @@ class atari_s1_state : public genpin_class
 public:
 	atari_s1_state(const machine_config &mconfig, device_type type, const char *tag)
 		: genpin_class(mconfig, type, tag)
+		, m_p_prom(*this, "proms")
 		, m_maincpu(*this, "maincpu")
 		, m_p_ram(*this, "ram")
 		, m_dac(*this, "dac")
-		, m_switch(*this, "SWITCH")
+		, m_switch(*this, "SWITCH.%u", 0)
+		, m_digits(*this, "digit%u", 0U)
 	{ }
 
-	DECLARE_READ8_MEMBER(m1080_r);
-	DECLARE_WRITE8_MEMBER(m1080_w);
-	DECLARE_READ8_MEMBER(m1084_r);
-	DECLARE_WRITE8_MEMBER(m1084_w);
-	DECLARE_READ8_MEMBER(m1088_r);
-	DECLARE_WRITE8_MEMBER(m1088_w);
-	DECLARE_READ8_MEMBER(m108c_r);
-	DECLARE_WRITE8_MEMBER(m108c_w);
-	DECLARE_READ8_MEMBER(switch_r);
-	DECLARE_WRITE8_MEMBER(meter_w);
-	DECLARE_WRITE8_MEMBER(audioen_w);
-	DECLARE_WRITE8_MEMBER(audiores_w);
-	DECLARE_WRITE8_MEMBER(midearth_w);
+	void midearth(machine_config &config);
+	void atari_s1(machine_config &config);
+	void atarians(machine_config &config);
+
+protected:
+	virtual void machine_reset() override;
+	virtual void machine_start() override { m_digits.resolve(); }
+
+private:
+	uint8_t m1080_r();
+	void m1080_w(uint8_t data);
+	uint8_t m1084_r();
+	void m1084_w(uint8_t data);
+	uint8_t m1088_r();
+	void m1088_w(uint8_t data);
+	uint8_t m108c_r();
+	void m108c_w(uint8_t data);
+	uint8_t switch_r(offs_t offset);
+	void meter_w(uint8_t data);
+	void audioen_w(uint8_t data);
+	void audiores_w(uint8_t data);
+	void midearth_w(offs_t offset, uint8_t data);
 	TIMER_DEVICE_CALLBACK_MEMBER(nmi);
 	TIMER_DEVICE_CALLBACK_MEMBER(timer_s);
-private:
+	void atari_s1_map(address_map &map);
+	void atarians_map(address_map &map);
+	void midearth_map(address_map &map);
+
 	bool m_audiores;
-	UINT8 m_timer_s[3];
-	UINT8 m_vol;
-	UINT8 m_1080;
-	UINT8 m_1084;
-	UINT8 m_1088;
-	UINT8 m_108c;
-	UINT8 m_bit6;
-	UINT8 m_out_offs;
-	UINT8 m_t_c;
-	UINT8 *m_p_prom;
-	virtual void machine_reset() override;
+	uint8_t m_timer_s[3];
+	uint8_t m_vol;
+	uint8_t m_1080;
+	uint8_t m_1084;
+	uint8_t m_1088;
+	uint8_t m_108c;
+	uint8_t m_bit6;
+	uint8_t m_out_offs;
+	uint8_t m_t_c;
+	required_region_ptr<uint8_t> m_p_prom;
 	required_device<cpu_device> m_maincpu;
-	required_shared_ptr<UINT8> m_p_ram;
-	required_device<dac_device> m_dac;
+	required_shared_ptr<uint8_t> m_p_ram;
+	required_device<dac_4bit_r2r_device> m_dac;
 	required_ioport_array<10> m_switch;
+	output_finder<78> m_digits;
 };
 
-static ADDRESS_MAP_START( atari_s1_map, AS_PROGRAM, 8, atari_s1_state )
-	ADDRESS_MAP_GLOBAL_MASK(0x7fff)
-	AM_RANGE(0x0000, 0x00ff) AM_RAM AM_SHARE("ram")
-	AM_RANGE(0x1080, 0x1083) AM_READWRITE(m1080_r,m1080_w)
-	AM_RANGE(0x1084, 0x1087) AM_READWRITE(m1084_r,m1084_w)
-	AM_RANGE(0x1088, 0x108b) AM_READWRITE(m1088_r,m1088_w)
-	AM_RANGE(0x108c, 0x108f) AM_READWRITE(m108c_r,m108c_w)
-	AM_RANGE(0x2000, 0x204f) AM_MIRROR(0x0F80) AM_READ(switch_r) AM_WRITENOP // aavenger ROL 200B causes a spurious write
-	AM_RANGE(0x3000, 0x3fff) AM_WRITE(audioen_w) // audio enable
-	AM_RANGE(0x4000, 0x4fff) AM_WRITE(watchdog_reset_w)
-	AM_RANGE(0x5080, 0x508c) AM_MIRROR(3) AM_WRITE(meter_w) // time2000 only
-	AM_RANGE(0x6000, 0x6fff) AM_WRITE(audiores_w) // audio reset
-	AM_RANGE(0x7000, 0x7fff) AM_ROM
-ADDRESS_MAP_END
+void atari_s1_state::atari_s1_map(address_map &map)
+{
+	map.global_mask(0x7fff);
+	map(0x0000, 0x00ff).ram().share("ram");
+	map(0x1080, 0x1083).rw(FUNC(atari_s1_state::m1080_r), FUNC(atari_s1_state::m1080_w));
+	map(0x1084, 0x1087).rw(FUNC(atari_s1_state::m1084_r), FUNC(atari_s1_state::m1084_w));
+	map(0x1088, 0x108b).rw(FUNC(atari_s1_state::m1088_r), FUNC(atari_s1_state::m1088_w));
+	map(0x108c, 0x108f).rw(FUNC(atari_s1_state::m108c_r), FUNC(atari_s1_state::m108c_w));
+	map(0x2000, 0x204f).mirror(0x0F80).r(FUNC(atari_s1_state::switch_r)).nopw(); // aavenger ROL 200B causes a spurious write
+	map(0x3000, 0x3fff).w(FUNC(atari_s1_state::audioen_w)); // audio enable
+	map(0x4000, 0x4fff).w("watchdog", FUNC(watchdog_timer_device::reset_w));
+	map(0x5080, 0x508f).w(FUNC(atari_s1_state::meter_w)); // time2000 only
+	map(0x6000, 0x6fff).w(FUNC(atari_s1_state::audiores_w)); // audio reset
+	map(0x7000, 0x7fff).rom();
+}
 
-static ADDRESS_MAP_START( atarians_map, AS_PROGRAM, 8, atari_s1_state ) // more ram
-	ADDRESS_MAP_GLOBAL_MASK(0x7fff)
-	AM_RANGE(0x0000, 0x01ff) AM_RAM AM_SHARE("ram")
-	AM_RANGE(0x1080, 0x1083) AM_READWRITE(m1080_r,m1080_w)
-	AM_RANGE(0x1084, 0x1087) AM_READWRITE(m1084_r,m1084_w)
-	AM_RANGE(0x1088, 0x108b) AM_READWRITE(m1088_r,m1088_w)
-	AM_RANGE(0x108c, 0x108f) AM_READWRITE(m108c_r,m108c_w)
-	AM_RANGE(0x2000, 0x204f) AM_MIRROR(0x0F80) AM_READ(switch_r)
-	AM_RANGE(0x3000, 0x3fff) AM_WRITE(audioen_w) // audio enable
-	AM_RANGE(0x4000, 0x4fff) AM_WRITE(watchdog_reset_w)
-	AM_RANGE(0x6000, 0x6fff) AM_WRITE(audiores_w) // audio reset
-	AM_RANGE(0x7000, 0x7fff) AM_ROM
-ADDRESS_MAP_END
+void atari_s1_state::atarians_map(address_map &map)
+{ // more ram
+	map.global_mask(0x7fff);
+	map(0x0000, 0x01ff).ram().share("ram");
+	map(0x1080, 0x1083).rw(FUNC(atari_s1_state::m1080_r), FUNC(atari_s1_state::m1080_w));
+	map(0x1084, 0x1087).rw(FUNC(atari_s1_state::m1084_r), FUNC(atari_s1_state::m1084_w));
+	map(0x1088, 0x108b).rw(FUNC(atari_s1_state::m1088_r), FUNC(atari_s1_state::m1088_w));
+	map(0x108c, 0x108f).rw(FUNC(atari_s1_state::m108c_r), FUNC(atari_s1_state::m108c_w));
+	map(0x2000, 0x204f).mirror(0x0F80).r(FUNC(atari_s1_state::switch_r));
+	map(0x3000, 0x3fff).w(FUNC(atari_s1_state::audioen_w)); // audio enable
+	map(0x4000, 0x4fff).w("watchdog", FUNC(watchdog_timer_device::reset_w));
+	map(0x6000, 0x6fff).w(FUNC(atari_s1_state::audiores_w)); // audio reset
+	map(0x7000, 0x7fff).rom();
+}
 
-static ADDRESS_MAP_START( midearth_map, AS_PROGRAM, 8, atari_s1_state )
-	ADDRESS_MAP_GLOBAL_MASK(0x7fff)
-	AM_RANGE(0x0000, 0x01ff) AM_RAM AM_SHARE("ram")
-	AM_RANGE(0x1000, 0x11ff) AM_WRITE(midearth_w)
-	AM_RANGE(0x2000, 0x204f) AM_MIRROR(0x0F80) AM_READ(switch_r)
-	AM_RANGE(0x3000, 0x3fff) AM_WRITE(audioen_w) // audio enable
-	AM_RANGE(0x4000, 0x4fff) AM_WRITE(watchdog_reset_w)
-	AM_RANGE(0x6000, 0x6fff) AM_WRITE(audiores_w) // audio reset
-	AM_RANGE(0x7000, 0x7fff) AM_ROM AM_WRITENOP // writes to FFFF due to poor coding at 7FF5
-ADDRESS_MAP_END
+void atari_s1_state::midearth_map(address_map &map)
+{
+	map.global_mask(0x7fff);
+	map(0x0000, 0x01ff).ram().share("ram");
+	map(0x1000, 0x11ff).w(FUNC(atari_s1_state::midearth_w));
+	map(0x2000, 0x204f).mirror(0x0F80).r(FUNC(atari_s1_state::switch_r));
+	map(0x3000, 0x3fff).w(FUNC(atari_s1_state::audioen_w)); // audio enable
+	map(0x4000, 0x4fff).w("watchdog", FUNC(watchdog_timer_device::reset_w));
+	map(0x6000, 0x6fff).w(FUNC(atari_s1_state::audiores_w)); // audio reset
+	map(0x7000, 0x7fff).rom().nopw(); // writes to FFFF due to poor coding at 7FF5
+}
 
 static INPUT_PORTS_START( atari_s1 )
 	PORT_START("SWITCH.0") // 2000-2007
@@ -275,22 +300,22 @@ static INPUT_PORTS_START( atari_s1 )
 	PORT_BIT( 0x80, IP_ACTIVE_HIGH, IPT_OTHER )
 INPUT_PORTS_END
 
-READ8_MEMBER( atari_s1_state::m1080_r )
+uint8_t atari_s1_state::m1080_r()
 {
 	return m_1080 & 0xf0;
 }
 
-WRITE8_MEMBER( atari_s1_state::m1080_w )
+void atari_s1_state::m1080_w(uint8_t data)
 {
 	m_1080 = data;
 }
 
-READ8_MEMBER( atari_s1_state::m1084_r )
+uint8_t atari_s1_state::m1084_r()
 {
 	return m_1084 & 0xf0;
 }
 
-WRITE8_MEMBER( atari_s1_state::m1084_w )
+void atari_s1_state::m1084_w(uint8_t data)
 {
 	m_1084 = data;
 
@@ -304,64 +329,64 @@ WRITE8_MEMBER( atari_s1_state::m1084_w )
 	}
 }
 
-READ8_MEMBER( atari_s1_state::m1088_r )
+uint8_t atari_s1_state::m1088_r()
 {
 	return m_1088 & 0xf0;
 }
 
-WRITE8_MEMBER( atari_s1_state::m1088_w )
+void atari_s1_state::m1088_w(uint8_t data)
 {
 	m_1088 = data;
 }
 
-READ8_MEMBER( atari_s1_state::m108c_r )
+uint8_t atari_s1_state::m108c_r()
 {
 	return m_108c;
 }
 
-WRITE8_MEMBER( atari_s1_state::m108c_w )
+void atari_s1_state::m108c_w(uint8_t data)
 {
 	m_108c = data;
 }
 
-WRITE8_MEMBER( atari_s1_state::meter_w )
+void atari_s1_state::meter_w(uint8_t data)
 {
 // time2000 has optional coin counters etc
 }
 
 // midearth has a ram mirror that goes on top of the output ports
-WRITE8_MEMBER( atari_s1_state::midearth_w )
+void atari_s1_state::midearth_w(offs_t offset, uint8_t data)
 {
 	m_p_ram[offset] = data;
 
 	switch (offset)
 	{
 		case 0x80:
-			m1080_w(space, 0, data);
+			m1080_w(data);
 			break;
 		case 0x84:
-			m1084_w(space, 0, data);
+			m1084_w(data);
 			break;
 		case 0x88:
-			m1088_w(space, 0, data);
+			m1088_w(data);
 			break;
 		case 0x8c:
-			m108c_w(space, 0, data);
+			m108c_w(data);
 			break;
 	}
 }
 
-READ8_MEMBER( atari_s1_state::switch_r )
+uint8_t atari_s1_state::switch_r(offs_t offset)
 {
 	return (BIT(m_switch[offset>>3]->read(), offset&7 ) << 7) | (BIT(m_bit6, 1) << 6); // switch bit | BIT6_CLK
 }
 
 TIMER_DEVICE_CALLBACK_MEMBER( atari_s1_state::nmi )
 {
-	static const UINT8 patterns[16] = { 0x3f, 0x06, 0x5b, 0x4f, 0x66, 0x6d, 0x7c, 0x07, 0x7f, 0x67, 0, 0, 0, 0, 0, 0 }; // 4511
+	static const uint8_t patterns[16] = { 0x3f, 0x06, 0x5b, 0x4f, 0x66, 0x6d, 0x7c, 0x07, 0x7f, 0x67, 0, 0, 0, 0, 0, 0 }; // 4511
 	m_bit6++;
 	if (m_t_c > 0x40)
-		m_maincpu->set_input_line(INPUT_LINE_NMI, PULSE_LINE);
+		m_maincpu->pulse_input_line(INPUT_LINE_NMI, attotime::zero);
 	else
 		m_t_c++;
 
@@ -372,13 +397,13 @@ TIMER_DEVICE_CALLBACK_MEMBER( atari_s1_state::nmi )
 		// Player number
 		char wordnum[8];
 		sprintf(wordnum,"text%d",m_out_offs>>2);
-		output_set_value(wordnum, !BIT(patterns[m_p_ram[m_out_offs]&15], 6)); // uses 'g' segment
+		output().set_value(wordnum, !BIT(patterns[m_p_ram[m_out_offs]&15], 6)); // uses 'g' segment
 	}
 	else
 	{
 		// Digits
-		output_set_digit_value(m_out_offs << 1, patterns[m_p_ram[m_out_offs]>>4]);
-		output_set_digit_value((m_out_offs << 1)+1, patterns[m_p_ram[m_out_offs]&15]);
+		m_digits[m_out_offs << 1] = patterns[m_p_ram[m_out_offs]>>4];
+		m_digits[(m_out_offs << 1)+1] = patterns[m_p_ram[m_out_offs]&15];
 	}
 }
 
@@ -402,18 +427,18 @@ TIMER_DEVICE_CALLBACK_MEMBER( atari_s1_state::timer_s )
 		{
 			m_timer_s[2]++;
 			offs_t offs = (m_timer_s[2] & 31) | ((m_1080 & 15) << 5);
-			m_dac->write_unsigned8(m_p_prom[offs]<< 4);
+			m_dac->write(m_p_prom[offs]);
 		}
 		else
 			m_timer_s[2] = 0;
 	}
 }
 
-WRITE8_MEMBER( atari_s1_state::audioen_w )
+void atari_s1_state::audioen_w(uint8_t data)
 {
 }
 
-WRITE8_MEMBER( atari_s1_state::audiores_w )
+void atari_s1_state::audiores_w(uint8_t data)
 {
 	if (data==0x5b) data=0; // spcrider
 	m_audiores = (data) ? 0 : 1;
@@ -422,39 +447,46 @@ WRITE8_MEMBER( atari_s1_state::audiores_w )
 
 void atari_s1_state::machine_reset()
 {
-	m_p_prom = memregion("proms")->base();
 	m_vol = 0;
+	m_dac->set_output_gain(0, 0);
 	m_t_c = 0;
 	m_audiores = 0;
+	m_bit6 = 0;
+	m_out_offs = 0;
 }
 
-static MACHINE_CONFIG_START( atari_s1, atari_s1_state )
+void atari_s1_state::atari_s1(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", M6800, MASTER_CLK)
-	MCFG_CPU_PROGRAM_MAP(atari_s1_map)
+	M6800(config, m_maincpu, MASTER_CLK);
+	m_maincpu->set_addrmap(AS_PROGRAM, &atari_s1_state::atari_s1_map);
+
+	WATCHDOG_TIMER(config, "watchdog");
 
 	/* Sound */
-	MCFG_FRAGMENT_ADD( genpin_audio )
-	MCFG_SPEAKER_STANDARD_MONO("mono")
-	MCFG_SOUND_ADD("dac", DAC, 0)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.60)
+	genpin_audio(config);
+	SPEAKER(config, "speaker").front_center();
+
+	DAC_4BIT_R2R(config, m_dac, 0).add_route(ALL_OUTPUTS, "speaker", 0.3); // unknown DAC
 
 	/* Video */
-	MCFG_DEFAULT_LAYOUT(layout_atari_s1)
+	config.set_default_layout(layout_atari_s1);
 
-	MCFG_TIMER_DRIVER_ADD_PERIODIC("nmi", atari_s1_state, nmi, attotime::from_hz(NMI_INT))
-	MCFG_TIMER_DRIVER_ADD_PERIODIC("timer_s", atari_s1_state, timer_s, attotime::from_hz(AUDIO_CLK))
-MACHINE_CONFIG_END
+	TIMER(config, "nmi").configure_periodic(FUNC(atari_s1_state::nmi), attotime::from_hz(NMI_INT));
+	TIMER(config, "timer_s").configure_periodic(FUNC(atari_s1_state::timer_s), attotime::from_hz(AUDIO_CLK));
+}
 
-static MACHINE_CONFIG_DERIVED( atarians, atari_s1 )
-	MCFG_CPU_MODIFY("maincpu")
-	MCFG_CPU_PROGRAM_MAP(atarians_map)
-MACHINE_CONFIG_END
+void atari_s1_state::atarians(machine_config &config)
+{
+	atari_s1(config);
+	m_maincpu->set_addrmap(AS_PROGRAM, &atari_s1_state::atarians_map);
+}
 
-static MACHINE_CONFIG_DERIVED( midearth, atari_s1 )
-	MCFG_CPU_MODIFY("maincpu")
-	MCFG_CPU_PROGRAM_MAP(midearth_map)
-MACHINE_CONFIG_END
+void atari_s1_state::midearth(machine_config &config)
+{
+	atari_s1(config);
+	m_maincpu->set_addrmap(AS_PROGRAM, &atari_s1_state::midearth_map);
+}
 
 /*-------------------------------------------------------------------
 / The Atarians (11/1976)
@@ -465,7 +497,7 @@ ROM_START(atarians)
 	ROM_LOAD("atarian.e0", 0x7800, 0x0800, CRC(45cb0427) SHA1(e286930ca36bdd0f79acefd142d2a5431fa8005b))
 
 	ROM_REGION(0x0200, "proms", 0)
-	ROM_LOAD("82s130.bin", 0x0000, 0x0200, CRC(da1f77b4) SHA1(b21fdc1c6f196c320ec5404013d672c35f95890b))
+	ROM_LOAD("07028-01.bin", 0x0000, 0x0200, CRC(e8034b5b) SHA1(6959912c530efcc4a0c690800867fb0d1f33627f))
 ROM_END
 
 /*-------------------------------------------------------------------
@@ -477,7 +509,7 @@ ROM_START(time2000)
 	ROM_LOAD("time.e0", 0x7800, 0x0800, CRC(1e79c133) SHA1(54ce5d59a00334fcec8b12c077d70e3629549af0))
 
 	ROM_REGION(0x0200, "proms", 0)
-	ROM_LOAD("82s130.bin", 0x0000, 0x0200, CRC(da1f77b4) SHA1(b21fdc1c6f196c320ec5404013d672c35f95890b))
+	ROM_LOAD("07028-01.bin", 0x0000, 0x0200, CRC(e8034b5b) SHA1(6959912c530efcc4a0c690800867fb0d1f33627f))
 ROM_END
 
 /*-------------------------------------------------------------------
@@ -489,7 +521,7 @@ ROM_START(aavenger)
 	ROM_LOAD("airborne.e0", 0x7800, 0x0800, CRC(44e67c54) SHA1(7f94189c12e322c41908d651cf6a3b6061426959))
 
 	ROM_REGION(0x0200, "proms", 0)
-	ROM_LOAD("82s130.bin", 0x0000, 0x0200, CRC(da1f77b4) SHA1(b21fdc1c6f196c320ec5404013d672c35f95890b))
+	ROM_LOAD("20252-01.bin", 0x0000, 0x0200, CRC(3d44551d) SHA1(926100f8169ab20230ad2168f94e6ad65fb1a7dc))
 ROM_END
 
 /*-------------------------------------------------------------------
@@ -501,7 +533,16 @@ ROM_START(midearth)
 	ROM_LOAD("608.bin", 0x7800, 0x0800, CRC(28b92faf) SHA1(8585770f4059049f1dcbc0c6ef5718b6ff1a5431))
 
 	ROM_REGION(0x0200, "proms", 0)
-	ROM_LOAD("82s130.bin", 0x0000, 0x0200, CRC(da1f77b4) SHA1(b21fdc1c6f196c320ec5404013d672c35f95890b))
+	ROM_LOAD("20252-01.bin", 0x0000, 0x0200, CRC(3d44551d) SHA1(926100f8169ab20230ad2168f94e6ad65fb1a7dc))
+ROM_END
+
+ROM_START(mideartha)
+	ROM_REGION(0x10000, "maincpu", 0)
+	ROM_LOAD("20855-01.bin", 0x7000, 0x0800, CRC(4a9d47ca) SHA1(57c4458822109c3ba2fa53ac1c1cd6e169e51b24))
+	ROM_LOAD("20856-01.bin", 0x7800, 0x0800, CRC(8f119e37) SHA1(5a4d63605865f3ceca4c09dbdcd888498c615b89))
+
+	ROM_REGION(0x0200, "proms", 0)
+	ROM_LOAD("20252-01.bin", 0x0000, 0x0200, CRC(3d44551d) SHA1(926100f8169ab20230ad2168f94e6ad65fb1a7dc))
 ROM_END
 
 /*-------------------------------------------------------------------
@@ -513,12 +554,15 @@ ROM_START(spcrider)
 	ROM_LOAD("spacel.bin", 0x7800, 0x0800, CRC(66ffb04e) SHA1(42d8b7fb7206b30478f631d0e947c0908dcf5419))
 
 	ROM_REGION(0x0200, "proms", 0)
-	ROM_LOAD("82s130.bin", 0x0000, 0x0200, CRC(da1f77b4) SHA1(b21fdc1c6f196c320ec5404013d672c35f95890b))
+	ROM_LOAD("20967-01.j3", 0x0000, 0x0200, CRC(da1f77b4) SHA1(b21fdc1c6f196c320ec5404013d672c35f95890b)) // PinMAME note: nuatari lists 20967-01 (and claims that all the SR boards (5) he has feature that one), manual schematics and parts list 20252-01 though
 ROM_END
 
+} // Anonymous namespace
 
-GAME( 1976, atarians, 0,         atarians, atari_s1, driver_device, 0, ROT0, "Atari", "The Atarians", MACHINE_MECHANICAL | MACHINE_IMPERFECT_SOUND)
-GAME( 1977, time2000, 0,         atari_s1, atari_s1, driver_device, 0, ROT0, "Atari", "Time 2000", MACHINE_MECHANICAL | MACHINE_IMPERFECT_SOUND)
-GAME( 1977, aavenger, 0,         atari_s1, atari_s1, driver_device, 0, ROT0, "Atari", "Airborne Avenger", MACHINE_MECHANICAL | MACHINE_IMPERFECT_SOUND)
-GAME( 1978, midearth, 0,         midearth, atari_s1, driver_device, 0, ROT0, "Atari", "Middle Earth", MACHINE_IS_SKELETON_MECHANICAL)
-GAME( 1978, spcrider, 0,         atari_s1, atari_s1, driver_device, 0, ROT0, "Atari", "Space Riders", MACHINE_MECHANICAL | MACHINE_IMPERFECT_SOUND)
+
+GAME( 1976, atarians,  0,        atarians, atari_s1, atari_s1_state, empty_init, ROT0, "Atari", "The Atarians",             MACHINE_MECHANICAL | MACHINE_NOT_WORKING | MACHINE_IMPERFECT_SOUND)
+GAME( 1977, time2000,  0,        atari_s1, atari_s1, atari_s1_state, empty_init, ROT0, "Atari", "Time 2000",                MACHINE_MECHANICAL | MACHINE_NOT_WORKING | MACHINE_IMPERFECT_SOUND)
+GAME( 1977, aavenger,  0,        atari_s1, atari_s1, atari_s1_state, empty_init, ROT0, "Atari", "Airborne Avenger",         MACHINE_MECHANICAL | MACHINE_NOT_WORKING | MACHINE_IMPERFECT_SOUND)
+GAME( 1978, midearth,  0,        midearth, atari_s1, atari_s1_state, empty_init, ROT0, "Atari", "Middle Earth",             MACHINE_IS_SKELETON_MECHANICAL)
+GAME( 1978, mideartha, midearth, midearth, atari_s1, atari_s1_state, empty_init, ROT0, "Atari", "Middle Earth (alternate)", MACHINE_IS_SKELETON_MECHANICAL)
+GAME( 1978, spcrider,  0,        atari_s1, atari_s1, atari_s1_state, empty_init, ROT0, "Atari", "Space Riders",             MACHINE_MECHANICAL | MACHINE_NOT_WORKING | MACHINE_IMPERFECT_SOUND)

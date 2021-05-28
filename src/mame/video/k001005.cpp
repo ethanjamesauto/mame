@@ -3,7 +3,6 @@
 #include "emu.h"
 #include "k001005.h"
 
-
 /*****************************************************************************/
 /* Konami K001005 Polygon Renderer (KS10071) */
 
@@ -37,7 +36,7 @@ k001005_renderer::k001005_renderer(device_t &parent, screen_device &screen, devi
 
 	m_zb = std::make_unique<bitmap_ind32>(width, height);
 
-	m_3dfifo = std::make_unique<UINT32[]>(0x10000);
+	m_3dfifo = std::make_unique<uint32_t[]>(0x10000);
 	m_3dfifo_ptr = 0;
 	m_fb_page = 0;
 
@@ -58,7 +57,7 @@ k001005_renderer::k001005_renderer(device_t &parent, screen_device &screen, devi
 	}
 
 	// save state
-	parent.save_pointer(NAME(m_3dfifo.get()), 0x10000);
+	parent.save_pointer(NAME(m_3dfifo), 0x10000);
 	parent.save_item(NAME(m_3dfifo_ptr));
 	parent.save_item(NAME(*m_fb[0]));
 	parent.save_item(NAME(*m_fb[1]));
@@ -82,7 +81,7 @@ void k001005_renderer::reset()
 	m_3dfifo_ptr = 0;
 }
 
-void k001005_renderer::push_data(UINT32 data)
+void k001005_renderer::push_data(uint32_t data)
 {
 	// process the current vertex data if a sync command is being sent (usually means the global registers are being changed)
 	if (data == 0x80000000)
@@ -108,7 +107,7 @@ bool k001005_renderer::fifo_filled()
 	return m_3dfifo_ptr > 0;
 }
 
-void k001005_renderer::set_param(k001005_param param, UINT32 value)
+void k001005_renderer::set_param(k001005_param param, uint32_t value)
 {
 	switch (param)
 	{
@@ -123,7 +122,7 @@ void k001005_renderer::set_param(k001005_param param, UINT32 value)
 		case K001005_FOG_B:         m_fog_b = value; break;
 		case K001005_FAR_Z:
 		{
-			UINT32 fz = value << 11;
+			uint32_t fz = value << 11;
 			m_far_z = *(float*)&fz;
 			if (m_far_z == 0.0f)      // just in case...
 				m_far_z = 1.0f;
@@ -143,7 +142,7 @@ void k001005_renderer::render_polygons()
 	vertex_t *vertex3;
 	vertex_t *vertex4;
 
-	UINT32 *fifo = m_3dfifo.get();
+	uint32_t *fifo = m_3dfifo.get();
 
 	const rectangle& visarea = screen().visible_area();
 
@@ -151,15 +150,15 @@ void k001005_renderer::render_polygons()
 
 	float fog_density = 1.5f;
 
-	render_delegate rd_scan_2d = render_delegate(FUNC(k001005_renderer::draw_scanline_2d), this);
-	render_delegate rd_scan_tex2d = render_delegate(FUNC(k001005_renderer::draw_scanline_2d_tex), this);
-	render_delegate rd_scan = render_delegate(FUNC(k001005_renderer::draw_scanline), this);
-	render_delegate rd_scan_tex = render_delegate(FUNC(k001005_renderer::draw_scanline_tex), this);
-	render_delegate rd_scan_gour_blend = render_delegate(FUNC(k001005_renderer::draw_scanline_gouraud_blend), this);
+	render_delegate rd_scan_2d = render_delegate(&k001005_renderer::draw_scanline_2d, this);
+	render_delegate rd_scan_tex2d = render_delegate(&k001005_renderer::draw_scanline_2d_tex, this);
+	render_delegate rd_scan = render_delegate(&k001005_renderer::draw_scanline, this);
+	render_delegate rd_scan_tex = render_delegate(&k001005_renderer::draw_scanline_tex, this);
+	render_delegate rd_scan_gour_blend = render_delegate(&k001005_renderer::draw_scanline_gouraud_blend, this);
 
 	do
 	{
-		UINT32 cmd = fifo[index++];
+		uint32_t cmd = fifo[index++];
 
 		// Current guesswork on the command word bits:
 		// 0x01: Z-buffer disable?
@@ -191,17 +190,17 @@ void k001005_renderer::render_polygons()
 			// texture, Z
 
 			int tex_x, tex_y;
-			UINT32 color = 0;
+			uint32_t color = 0;
 			k001005_polydata &extra = object_data_alloc();
 
-			UINT32 header = fifo[index++];
+			uint32_t header = fifo[index++];
 
 			int last_vertex = 0;
 			int vert_num = 0;
 			do
 			{
 				int x, y, z;
-				INT16 tu, tv;
+				int16_t tu, tv;
 
 				x = (fifo[index] >> 0) & 0x3fff;
 				y = (fifo[index] >> 16) & 0x1fff;
@@ -238,7 +237,7 @@ void k001005_renderer::render_polygons()
 				if (v[vert_num].p[POLY_FOG] > 65536.0f) v[vert_num].p[POLY_FOG] = 65536.0f;
 				vert_num++;
 			}
-			while (!last_vertex);
+			while (!last_vertex && vert_num < 4);
 
 			tex_y = ((header & 0x400) >> 5) |
 					((header & 0x100) >> 4) |
@@ -354,7 +353,7 @@ void k001005_renderer::render_polygons()
 				do
 				{
 					int x, y, z;
-					INT16 tu, tv;
+					int16_t tu, tv;
 
 					x = ((fifo[index] >>  0) & 0x3fff);
 					y = ((fifo[index] >> 16) & 0x1fff);
@@ -393,7 +392,7 @@ void k001005_renderer::render_polygons()
 					vert_num++;
 					new_verts++;
 				}
-				while (!last_vertex);
+				while (!last_vertex && vert_num < 4);
 
 				extra.texture_x = tex_x * 8;
 				extra.texture_y = tex_y * 8;
@@ -443,7 +442,7 @@ void k001005_renderer::render_polygons()
 			// no texture, Z
 
 			k001005_polydata &extra = object_data_alloc();
-			UINT32 color;
+			uint32_t color;
 			int r, g, b, a;
 
 			int last_vertex = 0;
@@ -475,7 +474,7 @@ void k001005_renderer::render_polygons()
 				if (v[vert_num].p[POLY_FOG] > 65536.0f) v[vert_num].p[POLY_FOG] = 65536.0f;
 				vert_num++;
 			}
-			while (!last_vertex);
+			while (!last_vertex && vert_num < 4);
 
 			r = (fifo[index] >>  0) & 0xff;
 			g = (fifo[index] >>  8) & 0xff;
@@ -601,7 +600,7 @@ void k001005_renderer::render_polygons()
 					vert_num++;
 					new_verts++;
 				}
-				while (!last_vertex);
+				while (!last_vertex && vert_num < 4);
 
 				r = (fifo[index] >>  0) & 0xff;
 				g = (fifo[index] >>  8) & 0xff;
@@ -648,7 +647,7 @@ void k001005_renderer::render_polygons()
 
 			k001005_polydata &extra = object_data_alloc();
 			int r, g, b, a;
-			UINT32 color;
+			uint32_t color;
 
 			int last_vertex = 0;
 			int vert_num = 0;
@@ -669,7 +668,7 @@ void k001005_renderer::render_polygons()
 				v[vert_num].y = ((float)(-y) / 16.0f) + 192.0f + 8;
 				vert_num++;
 			}
-			while (!last_vertex);
+			while (!last_vertex && vert_num < 4);
 
 			// unknown word
 			index++;
@@ -701,16 +700,16 @@ void k001005_renderer::render_polygons()
 			int tex_x, tex_y;
 			k001005_polydata &extra = object_data_alloc();
 			int r, g, b, a;
-			UINT32 color = 0;
+			uint32_t color = 0;
 
-			UINT32 header = fifo[index++];
+			uint32_t header = fifo[index++];
 
 			int last_vertex = 0;
 			int vert_num = 0;
 			do
 			{
 				int x, y;
-				INT16 tu, tv;
+				int16_t tu, tv;
 
 				x = ((fifo[index] >>  0) & 0x3fff);
 				y = ((fifo[index] >> 16) & 0x1fff);
@@ -739,7 +738,7 @@ void k001005_renderer::render_polygons()
 				v[vert_num].p[POLY_V] = tv;
 				vert_num++;
 			}
-			while (!last_vertex);
+			while (!last_vertex && vert_num < 4);
 
 			r = (color >>  0) & 0xff;
 			g = (color >>  8) & 0xff;
@@ -783,12 +782,12 @@ void k001005_renderer::render_polygons()
 				render_triangle(visarea, rd_scan_tex2d, 5, v[2], v[3], v[0]);
 			}
 		}
-		else if (cmd == 0x80000121 || cmd == 0x80000126)
+		else if (cmd == 0x80000106 || cmd == 0x80000121 || cmd == 0x80000126)
 		{
 			// no texture, color gouraud, Z
 
 			k001005_polydata &extra = object_data_alloc();
-			UINT32 color;
+			uint32_t color;
 
 			int last_vertex = 0;
 			int vert_num = 0;
@@ -821,7 +820,7 @@ void k001005_renderer::render_polygons()
 				v[vert_num].p[POLY_A] = (color >> 24) & 0xff;
 				vert_num++;
 			}
-			while (!last_vertex);
+			while (!last_vertex && vert_num < 4);
 
 			extra.color = color;
 			extra.flags = cmd;
@@ -879,14 +878,13 @@ void k001005_renderer::render_polygons()
 }
 
 
-void k001005_renderer::draw_scanline_2d(INT32 scanline, const extent_t &extent, const k001005_polydata &extradata, int threadid)
+void k001005_renderer::draw_scanline_2d(int32_t scanline, const extent_t &extent, const k001005_polydata &extradata, int threadid)
 {
-	UINT32 *fb = &m_fb[m_fb_page]->pix32(scanline);
-	float *zb = (float*)&m_zb->pix32(scanline);
-	UINT32 color = extradata.color;
-	int x;
+	uint32_t *const fb = &m_fb[m_fb_page]->pix(scanline);
+	float *const zb = (float*)&m_zb->pix(scanline);
+	uint32_t color = extradata.color;
 
-	for (x = extent.startx; x < extent.stopx; x++)
+	for (int x = extent.startx; x < extent.stopx; x++)
 	{
 		if (color & 0xff000000)
 		{
@@ -896,7 +894,7 @@ void k001005_renderer::draw_scanline_2d(INT32 scanline, const extent_t &extent, 
 	}
 }
 
-void k001005_renderer::draw_scanline_2d_tex(INT32 scanline, const extent_t &extent, const k001005_polydata &extradata, int threadid)
+void k001005_renderer::draw_scanline_2d_tex(int32_t scanline, const extent_t &extent, const k001005_polydata &extradata, int threadid)
 {
 	//  int pal_chip = (extradata.texture_palette & 0x8) ? 1 : 0;
 	k001006_device *k001006 = downcast<k001006_device*>(m_k001006);
@@ -907,9 +905,9 @@ void k001005_renderer::draw_scanline_2d_tex(INT32 scanline, const extent_t &exte
 	float v = extent.param[POLY_V].start;
 	float du = extent.param[POLY_U].dpdx;
 	float dv = extent.param[POLY_V].dpdx;
-	UINT32 *fb = &m_fb[m_fb_page]->pix32(scanline);
-	float *zb = (float*)&m_zb->pix32(scanline);
-	UINT32 color = extradata.color;
+	uint32_t *const fb = &m_fb[m_fb_page]->pix(scanline);
+	float *const zb = (float*)&m_zb->pix(scanline);
+	uint32_t color = extradata.color;
 	int texture_mirror_x = extradata.texture_mirror_x;
 	int texture_mirror_y = extradata.texture_mirror_y;
 	int texture_x = extradata.texture_x;
@@ -942,7 +940,7 @@ void k001005_renderer::draw_scanline_2d_tex(INT32 scanline, const extent_t &exte
 	}
 }
 
-void k001005_renderer::draw_scanline(INT32 scanline, const extent_t &extent, const k001005_polydata &extradata, int threadid)
+void k001005_renderer::draw_scanline(int32_t scanline, const extent_t &extent, const k001005_polydata &extradata, int threadid)
 {
 	float z = extent.param[POLY_Z].start;
 	float dz = extent.param[POLY_Z].dpdx;
@@ -950,9 +948,9 @@ void k001005_renderer::draw_scanline(INT32 scanline, const extent_t &extent, con
 	float dbri = extent.param[POLY_BRI].dpdx;
 	float fog = extent.param[POLY_FOG].start;
 	float dfog = extent.param[POLY_FOG].dpdx;
-	UINT32 *fb = &m_fb[m_fb_page]->pix32(scanline);
-	float *zb = (float*)&m_zb->pix32(scanline);
-	UINT32 color = extradata.color;
+	uint32_t *const fb = &m_fb[m_fb_page]->pix(scanline);
+	float *const zb = (float*)&m_zb->pix(scanline);
+	uint32_t color = extradata.color;
 
 	int poly_light_r = extradata.light_r + extradata.ambient_r;
 	int poly_light_g = extradata.light_g + extradata.ambient_g;
@@ -969,8 +967,10 @@ void k001005_renderer::draw_scanline(INT32 scanline, const extent_t &extent, con
 		int ibri = (int)(bri);
 		int ifog = (int)(fog);
 
-		if (ibri < 0) ibri = 0; if (ibri > 255) ibri = 255;
-		if (ifog < 0) ifog = 0; if (ifog > 65536) ifog = 65536;
+		if (ibri < 0) ibri = 0;
+		if (ibri > 255) ibri = 255;
+		if (ifog < 0) ifog = 0;
+		if (ifog > 65536) ifog = 65536;
 
 		if (z <= zb[x])
 		{
@@ -984,9 +984,12 @@ void k001005_renderer::draw_scanline(INT32 scanline, const extent_t &extent, con
 				g = ((((g * poly_light_g * ibri) >> 16) * ifog) + (poly_fog_g * (65536 - ifog))) >> 16;
 				b = ((((b * poly_light_b * ibri) >> 16) * ifog) + (poly_fog_b * (65536 - ifog))) >> 16;
 
-				if (r < 0) r = 0; if (r > 255) r = 255;
-				if (g < 0) g = 0; if (g > 255) g = 255;
-				if (b < 0) b = 0; if (b > 255) b = 255;
+				if (r < 0) r = 0;
+				if (r > 255) r = 255;
+				if (g < 0) g = 0;
+				if (g > 255) g = 255;
+				if (b < 0) b = 0;
+				if (b > 255) b = 255;
 
 				fb[x] = (color & 0xff000000) | (r << 16) | (g << 8) | b;
 				zb[x] = z;
@@ -999,7 +1002,7 @@ void k001005_renderer::draw_scanline(INT32 scanline, const extent_t &extent, con
 	}
 }
 
-void k001005_renderer::draw_scanline_tex(INT32 scanline, const extent_t &extent, const k001005_polydata &extradata, int threadid)
+void k001005_renderer::draw_scanline_tex(int32_t scanline, const extent_t &extent, const k001005_polydata &extradata, int threadid)
 {
 //  int pal_chip = (extradata.texture_palette & 0x8) ? 1 : 0;
 	k001006_device *k001006 = downcast<k001006_device*>(m_k001006);
@@ -1035,8 +1038,8 @@ void k001005_renderer::draw_scanline_tex(INT32 scanline, const extent_t &extent,
 	int poly_fog_g = extradata.fog_g;
 	int poly_fog_b = extradata.fog_b;
 
-	UINT32 *fb = &m_fb[m_fb_page]->pix32(scanline);
-	float *zb = (float*)&m_zb->pix32(scanline);
+	uint32_t *const fb = &m_fb[m_fb_page]->pix(scanline);
+	float *const zb = (float*)&m_zb->pix(scanline);
 
 	int *x_mirror_table = m_tex_mirror_table[texture_mirror_x][texture_width].get();
 	int *y_mirror_table = m_tex_mirror_table[texture_mirror_y][texture_height].get();
@@ -1046,13 +1049,15 @@ void k001005_renderer::draw_scanline_tex(INT32 scanline, const extent_t &extent,
 		int ibri = (int)(bri);
 		int ifog = (int)(fog);
 
-		if (ibri < 0) ibri = 0; if (ibri > 255) ibri = 255;
-		if (ifog < 0) ifog = 0; if (ifog > 65536) ifog = 65536;
+		if (ibri < 0) ibri = 0;
+		if (ibri > 255) ibri = 255;
+		if (ifog < 0) ifog = 0;
+		if (ifog > 65536) ifog = 65536;
 
 		if (z <= zb[x])
 		{
 			float oow = 1.0f / w;
-			UINT32 color;
+			uint32_t color;
 			int iu, iv;
 			int iiv, iiu;
 
@@ -1074,9 +1079,12 @@ void k001005_renderer::draw_scanline_tex(INT32 scanline, const extent_t &extent,
 				g = ((((g * poly_light_g * ibri) >> 16) * ifog) + (poly_fog_g * (65536 - ifog))) >> 16;
 				b = ((((b * poly_light_b * ibri) >> 16) * ifog) + (poly_fog_b * (65536 - ifog))) >> 16;
 
-				if (r < 0) r = 0; if (r > 255) r = 255;
-				if (g < 0) g = 0; if (g > 255) g = 255;
-				if (b < 0) b = 0; if (b > 255) b = 255;
+				if (r < 0) r = 0;
+				if (r > 255) r = 255;
+				if (g < 0) g = 0;
+				if (g > 255) g = 255;
+				if (b < 0) b = 0;
+				if (b > 255) b = 255;
 
 				fb[x] = 0xff000000 | (r << 16) | (g << 8) | b;
 				zb[x] = z;
@@ -1092,7 +1100,7 @@ void k001005_renderer::draw_scanline_tex(INT32 scanline, const extent_t &extent,
 	}
 }
 
-void k001005_renderer::draw_scanline_gouraud_blend(INT32 scanline, const extent_t &extent, const k001005_polydata &extradata, int threadid)
+void k001005_renderer::draw_scanline_gouraud_blend(int32_t scanline, const extent_t &extent, const k001005_polydata &extradata, int threadid)
 {
 	float z = extent.param[POLY_Z].start;
 	float dz = extent.param[POLY_Z].dpdx;
@@ -1104,8 +1112,8 @@ void k001005_renderer::draw_scanline_gouraud_blend(INT32 scanline, const extent_
 	float db = extent.param[POLY_B].dpdx;
 	float a = extent.param[POLY_A].start;
 	float da = extent.param[POLY_A].dpdx;
-	UINT32 *fb = &m_fb[m_fb_page]->pix32(scanline);
-	float *zb = (float*)&m_zb->pix32(scanline);
+	uint32_t *const fb = &m_fb[m_fb_page]->pix(scanline);
+	float *const zb = (float*)&m_zb->pix(scanline);
 
 	for (int x = extent.startx; x < extent.stopx; x++)
 	{
@@ -1129,9 +1137,12 @@ void k001005_renderer::draw_scanline_gouraud_blend(INT32 scanline, const extent_
 					ib = ((ib * ia) >> 8) + ((sb * (0xff-ia)) >> 8);
 				}
 
-				if (ir < 0) ir = 0; if (ir > 255) ir = 255;
-				if (ig < 0) ig = 0; if (ig > 255) ig = 255;
-				if (ib < 0) ib = 0; if (ib > 255) ib = 255;
+				if (ir < 0) ir = 0;
+				if (ir > 255) ir = 255;
+				if (ig < 0) ig = 0;
+				if (ig > 255) ig = 255;
+				if (ib < 0) ib = 0;
+				if (ib > 255) ib = 255;
 
 				fb[x] = 0xff000000 | (ir << 16) | (ig << 8) | ib;
 				zb[x] = z;
@@ -1149,14 +1160,12 @@ void k001005_renderer::draw_scanline_gouraud_blend(INT32 scanline, const extent_
 
 void k001005_renderer::draw(bitmap_rgb32 &bitmap, const rectangle &cliprect)
 {
-	int i, j;
-
-	for (j = cliprect.min_y; j <= cliprect.max_y; j++)
+	for (int j = cliprect.min_y; j <= cliprect.max_y; j++)
 	{
-		UINT32 *bmp = &bitmap.pix32(j);
-		UINT32 *src = &m_fb[m_fb_page^1]->pix32(j);
+		uint32_t *const bmp = &bitmap.pix(j);
+		uint32_t const *const src = &m_fb[m_fb_page^1]->pix(j);
 
-		for (i = cliprect.min_x; i <= cliprect.max_x; i++)
+		for (int i = cliprect.min_x; i <= cliprect.max_x; i++)
 		{
 			if (src[i] & 0xff000000)
 			{
@@ -1168,31 +1177,21 @@ void k001005_renderer::draw(bitmap_rgb32 &bitmap, const rectangle &cliprect)
 
 
 
-const device_type K001005 = &device_creator<k001005_device>;
+DEFINE_DEVICE_TYPE(K001005, k001005_device, "k001005", "K001005 Polygon Renderer")
 
-k001005_device::k001005_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: device_t(mconfig, K001005, "K001005 Polygon Renderer", tag, owner, clock, "k001005", __FILE__),
-		device_video_interface(mconfig, *this),
-		m_k001006(nullptr),
-		m_fifo(nullptr),
-		m_status(0),
-		m_ram_ptr(0),
-		m_fifo_read_ptr(0),
-		m_fifo_write_ptr(0),
-		m_reg_far_z(0)
+k001005_device::k001005_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: device_t(mconfig, K001005, tag, owner, clock)
+	, device_video_interface(mconfig, *this)
+	, m_k001006(*this, finder_base::DUMMY_TAG)
+	, m_fifo(nullptr)
+	, m_status(0)
+	, m_ram_ptr(0)
+	, m_fifo_read_ptr(0)
+	, m_fifo_write_ptr(0)
+	, m_reg_far_z(0)
 {
-		m_ram[0] = nullptr;
-		m_ram[1] = nullptr;
-}
-
-//-------------------------------------------------
-//  device_config_complete - perform any
-//  operations now that the configuration is
-//  complete
-//-------------------------------------------------
-
-void k001005_device::device_config_complete()
-{
+	m_ram[0] = nullptr;
+	m_ram[1] = nullptr;
 }
 
 //-------------------------------------------------
@@ -1201,18 +1200,16 @@ void k001005_device::device_config_complete()
 
 void k001005_device::device_start()
 {
-	m_k001006 = machine().device(m_k001006_tag);
+	m_ram[0] = std::make_unique<uint16_t[]>(0x140000);
+	m_ram[1] = std::make_unique<uint16_t[]>(0x140000);
 
-	m_ram[0] = std::make_unique<UINT16[]>(0x140000);
-	m_ram[1] = std::make_unique<UINT16[]>(0x140000);
+	m_fifo = std::make_unique<uint32_t[]>(0x800);
 
-	m_fifo = std::make_unique<UINT32[]>(0x800);
+	m_renderer = auto_alloc(machine(), k001005_renderer(*this, screen(), m_k001006));
 
-	m_renderer = auto_alloc(machine(), k001005_renderer(*this, *m_screen, m_k001006));
-
-	save_pointer(NAME(m_ram[0].get()), 0x140000);
-	save_pointer(NAME(m_ram[1].get()), 0x140000);
-	save_pointer(NAME(m_fifo.get()), 0x800);
+	save_pointer(NAME(m_ram[0]), 0x140000);
+	save_pointer(NAME(m_ram[1]), 0x140000);
+	save_pointer(NAME(m_fifo), 0x800);
 	save_item(NAME(m_status));
 	save_item(NAME(m_ram_ptr));
 	save_item(NAME(m_fifo_read_ptr));
@@ -1252,7 +1249,7 @@ void k001005_device::swap_buffers( )
 	m_renderer->swap_buffers();
 }
 
-READ32_MEMBER( k001005_device::read )
+uint32_t k001005_device::read(address_space &space, offs_t offset, uint32_t mem_mask)
 {
 	adsp21062_device *dsp = downcast<adsp21062_device*>(&space.device());
 
@@ -1261,14 +1258,14 @@ READ32_MEMBER( k001005_device::read )
 		case 0x000:         // FIFO read, high 16 bits
 		{
 			//osd_printf_debug("FIFO_r0: %08X\n", m_fifo_read_ptr);
-			UINT16 value = m_fifo[m_fifo_read_ptr] >> 16;
+			uint16_t value = m_fifo[m_fifo_read_ptr] >> 16;
 			return value;
 		}
 
 		case 0x001:         // FIFO read, low 16 bits
 		{
 			//osd_printf_debug("FIFO_r1: %08X\n", m_fifo_read_ptr);
-			UINT16 value = m_fifo[m_fifo_read_ptr] & 0xffff;
+			uint16_t value = m_fifo[m_fifo_read_ptr] & 0xffff;
 
 			if (m_status != 1 && m_status != 2)
 			{
@@ -1308,13 +1305,13 @@ READ32_MEMBER( k001005_device::read )
 			}
 
 		default:
-			//osd_printf_debug("m_r: %08X, %08X at %08X\n", offset, mem_mask, space.device().safe_pc());
+			//osd_printf_debug("%s m_r: %08X, %08X\n", machine().describe_context(), offset, mem_mask);
 			break;
 	}
 	return 0;
 }
 
-WRITE32_MEMBER( k001005_device::write )
+void k001005_device::write(address_space &space, offs_t offset, uint32_t data, uint32_t mem_mask)
 {
 	adsp21062_device *dsp = downcast<adsp21062_device*>(&space.device());
 
@@ -1322,7 +1319,7 @@ WRITE32_MEMBER( k001005_device::write )
 	{
 		case 0x000:         // FIFO write
 		{
-			//osd_printf_debug("K001005 FIFO write: %08X at %08X\n", data, space.device().safe_pc());
+			//osd_printf_debug("%s K001005 FIFO write: %08X\n", machine().describe_context(), data);
 			if (m_status != 1 && m_status != 2)
 			{
 				if (m_fifo_write_ptr < 0x400)
@@ -1339,7 +1336,7 @@ WRITE32_MEMBER( k001005_device::write )
 				dsp->set_flag_input(1, ASSERT_LINE);
 			}
 
-		//  osd_printf_debug("K001005 FIFO write: %08X at %08X\n", data, space.device().safe_pc());
+		//  osd_printf_debug("%s K001005 FIFO write: %08X\n", machine().describe_context(), data);
 			m_fifo[m_fifo_write_ptr] = data;
 			m_fifo_write_ptr++;
 			m_fifo_write_ptr &= 0x7ff;
@@ -1357,16 +1354,16 @@ WRITE32_MEMBER( k001005_device::write )
 #endif
 
 			// !!! HACK to get past the FIFO B test (GTI Club & Thunder Hurricane) !!!
-			if (space.device().safe_pc() == 0x201ee)
+			if (dsp->pc() == 0x201ee)
 			{
 				// This is used to make the SHARC timeout
-				space.device().execute().spin_until_trigger(10000);
+				dsp->spin_until_trigger(10000);
 			}
 			// !!! HACK to get past the FIFO B test (Winding Heat & Midnight Run) !!!
-			if (space.device().safe_pc() == 0x201e6)
+			if (dsp->pc() == 0x201e6)
 			{
 				// This is used to make the SHARC timeout
-				space.device().execute().spin_until_trigger(10000);
+				dsp->spin_until_trigger(10000);
 			}
 
 			break;
@@ -1446,7 +1443,7 @@ WRITE32_MEMBER( k001005_device::write )
 			break;
 
 		default:
-			//osd_printf_debug("m_w: %08X, %08X, %08X at %08X\n", data, offset, mem_mask, space.device().safe_pc());
+			//osd_printf_debug("%s m_w: %08X, %08X, %08X\n", machine().describe_context(), data, offset, mem_mask);
 			break;
 	}
 
@@ -1455,9 +1452,4 @@ WRITE32_MEMBER( k001005_device::write )
 void k001005_device::draw( bitmap_rgb32 &bitmap, const rectangle &cliprect )
 {
 	m_renderer->draw(bitmap, cliprect);
-}
-
-void k001005_device::set_texel_chip(device_t &device, const char *tag)
-{
-	downcast<k001005_device &>(device).m_k001006_tag = tag;
 }

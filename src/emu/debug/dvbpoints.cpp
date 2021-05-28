@@ -2,86 +2,79 @@
 // copyright-holders:Aaron Giles
 /*********************************************************************
 
-    dvbpoints.c
+    dvbpoints.cpp
 
     Breakpoint debugger view.
 
 ***************************************************************************/
 
 #include "emu.h"
+#include "debugger.h"
 #include "dvbpoints.h"
+#include "points.h"
+
+#include <algorithm>
+#include <iomanip>
 
 
 
 // Sorting functors for the qsort function
-static int cIndexAscending(const void* a, const void* b)
+static bool cIndexAscending(const debug_breakpoint *a, const debug_breakpoint *b)
 {
-	const device_debug::breakpoint* left = *(device_debug::breakpoint**)a;
-	const device_debug::breakpoint* right = *(device_debug::breakpoint**)b;
-	return left->index() - right->index();
+	return a->index() < b->index();
 }
 
-static int cIndexDescending(const void* a, const void* b)
+static bool cIndexDescending(const debug_breakpoint *a, const debug_breakpoint *b)
 {
 	return cIndexAscending(b, a);
 }
 
-static int cEnabledAscending(const void* a, const void* b)
+static bool cEnabledAscending(const debug_breakpoint *a, const debug_breakpoint *b)
 {
-	const device_debug::breakpoint* left = *(device_debug::breakpoint**)a;
-	const device_debug::breakpoint* right = *(device_debug::breakpoint**)b;
-	return (left->enabled() ? 1 : 0) - (right->enabled() ? 1 : 0);
+	return !a->enabled() && b->enabled();
 }
 
-static int cEnabledDescending(const void* a, const void* b)
+static bool cEnabledDescending(const debug_breakpoint *a, const debug_breakpoint *b)
 {
 	return cEnabledAscending(b, a);
 }
 
-static int cCpuAscending(const void* a, const void* b)
+static bool cCpuAscending(const debug_breakpoint *a, const debug_breakpoint *b)
 {
-	const device_debug::breakpoint* left = *(device_debug::breakpoint**)a;
-	const device_debug::breakpoint* right = *(device_debug::breakpoint**)b;
-	return strcmp(left->debugInterface()->device().tag(), right->debugInterface()->device().tag());
+	return strcmp(a->debugInterface()->device().tag(), b->debugInterface()->device().tag()) < 0;
 }
 
-static int cCpuDescending(const void* a, const void* b)
+static bool cCpuDescending(const debug_breakpoint *a, const debug_breakpoint *b)
 {
 	return cCpuAscending(b, a);
 }
 
-static int cAddressAscending(const void* a, const void* b)
+static bool cAddressAscending(const debug_breakpoint *a, const debug_breakpoint *b)
 {
-	const device_debug::breakpoint* left = *(device_debug::breakpoint**)a;
-	const device_debug::breakpoint* right = *(device_debug::breakpoint**)b;
-	return (left->address() > right->address()) ? 1 : (left->address() < right->address()) ? -1 : 0;
+	return a->address() < b->address();
 }
 
-static int cAddressDescending(const void* a, const void* b)
+static bool cAddressDescending(const debug_breakpoint *a, const debug_breakpoint *b)
 {
 	return cAddressAscending(b, a);
 }
 
-static int cConditionAscending(const void* a, const void* b)
+static bool cConditionAscending(const debug_breakpoint *a, const debug_breakpoint *b)
 {
-	const device_debug::breakpoint* left = *(device_debug::breakpoint**)a;
-	const device_debug::breakpoint* right = *(device_debug::breakpoint**)b;
-	return strcmp(left->condition(), right->condition());
+	return strcmp(a->condition(), b->condition()) < 0;
 }
 
-static int cConditionDescending(const void* a, const void* b)
+static bool cConditionDescending(const debug_breakpoint *a, const debug_breakpoint *b)
 {
 	return cConditionAscending(b, a);
 }
 
-static int cActionAscending(const void* a, const void* b)
+static bool cActionAscending(const debug_breakpoint *a, const debug_breakpoint *b)
 {
-	const device_debug::breakpoint* left = *(device_debug::breakpoint**)a;
-	const device_debug::breakpoint* right = *(device_debug::breakpoint**)b;
-	return strcmp(left->action(), right->action());
+	return strcmp(a->action(), b->action()) < 0;
 }
 
-static int cActionDescending(const void* a, const void* b)
+static bool cActionDescending(const debug_breakpoint *a, const debug_breakpoint *b)
 {
 	return cActionAscending(b, a);
 }
@@ -99,12 +92,12 @@ static const int tableBreaks[] = { 5, 9, 31, 45, 63, 80 };
 //-------------------------------------------------
 
 debug_view_breakpoints::debug_view_breakpoints(running_machine &machine, debug_view_osd_update_func osdupdate, void *osdprivate)
-	: debug_view(machine, DVT_BREAK_POINTS, osdupdate, osdprivate),
-		m_sortType(cIndexAscending)
+	: debug_view(machine, DVT_BREAK_POINTS, osdupdate, osdprivate)
+	, m_sortType(cIndexAscending)
 {
 	// fail if no available sources
 	enumerate_sources();
-	if (m_source_list.count() == 0)
+	if (m_source_list.empty())
 		throw std::bad_alloc();
 }
 
@@ -126,19 +119,20 @@ debug_view_breakpoints::~debug_view_breakpoints()
 void debug_view_breakpoints::enumerate_sources()
 {
 	// start with an empty list
-	m_source_list.reset();
+	m_source_list.clear();
 
 	// iterate over devices with disassembly interfaces
-	disasm_interface_iterator iter(machine().root_device());
-	for (device_disasm_interface *dasm = iter.first(); dasm != nullptr; dasm = iter.next())
+	for (device_disasm_interface &dasm : disasm_interface_enumerator(machine().root_device()))
 	{
-		std::string name;
-		strprintf(name, "%s '%s'", dasm->device().name(), dasm->device().tag());
-		m_source_list.append(*global_alloc(debug_view_source(name.c_str(), &dasm->device())));
+		m_source_list.emplace_back(
+				std::make_unique<debug_view_source>(
+					util::string_format("%s '%s'", dasm.device().name(), dasm.device().tag()),
+					&dasm.device()));
 	}
 
 	// reset the source to a known good entry
-	set_source(*m_source_list.first());
+	if (!m_source_list.empty())
+		set_source(*m_source_list[0]);
 }
 
 
@@ -176,7 +170,7 @@ void debug_view_breakpoints::view_click(const int button, const debug_view_xy& p
 			return;
 
 		// Enable / disable
-		m_buffer[bpIndex]->setEnabled(!m_buffer[bpIndex]->enabled());
+		const_cast<debug_breakpoint &>(*m_buffer[bpIndex]).setEnabled(!m_buffer[bpIndex]->enabled());
 
 		machine().debug_view().update_all(DVT_DISASSEMBLY);
 	}
@@ -187,33 +181,28 @@ void debug_view_breakpoints::view_click(const int button, const debug_view_xy& p
 }
 
 
-void debug_view_breakpoints::pad_astring_to_length(std::string& str, int len)
+void debug_view_breakpoints::pad_ostream_to_length(std::ostream& str, int len)
 {
-	int diff = len - str.length();
-	if (diff > 0)
-	{
-		std::string buffer;
-		for (int i = 0; i < diff; i++)
-			strcatprintf(buffer, " ");
-		strcatprintf(str, "%s", buffer.c_str());
-	}
+	auto const current = str.tellp();
+	if (current < decltype(current)(len))
+		str << std::setw(decltype(current)(len) - current) << "";
 }
 
 
 void debug_view_breakpoints::gather_breakpoints()
 {
 	m_buffer.resize(0);
-	for (const debug_view_source *source = m_source_list.first(); source != nullptr; source = source->next())
+	for (auto &source : m_source_list)
 	{
 		// Collect
 		device_debug &debugInterface = *source->device()->debug();
-		for (device_debug::breakpoint *bp = debugInterface.breakpoint_first(); bp != nullptr; bp = bp->next())
-			m_buffer.push_back(bp);
+		for (const auto &bpp : debugInterface.breakpoint_list())
+			m_buffer.push_back(bpp.second.get());
 	}
 
 	// And now for the sort
 	if (!m_buffer.empty())
-		qsort(&m_buffer[0], m_buffer.size(), sizeof(device_debug::breakpoint *), m_sortType);
+		std::stable_sort(m_buffer.begin(), m_buffer.end(), m_sortType);
 }
 
 
@@ -228,47 +217,50 @@ void debug_view_breakpoints::view_update()
 	gather_breakpoints();
 
 	// Set the view region so the scroll bars update
-	m_total.x = tableBreaks[ARRAY_LENGTH(tableBreaks) - 1];
+	m_total.x = tableBreaks[std::size(tableBreaks) - 1];
 	m_total.y = m_buffer.size() + 1;
 	if (m_total.y < 10)
 		m_total.y = 10;
 
 	// Draw
-	debug_view_char *dest = &m_viewdata[0];
-	std::string         linebuf;
+	debug_view_char     *dest = &m_viewdata[0];
+	util::ovectorstream linebuf;
+	linebuf.reserve(std::size(tableBreaks) - 1);
 
 	// Header
 	if (m_visible.y > 0)
 	{
 		linebuf.clear();
-		linebuf.append("ID");
-		if (m_sortType == &cIndexAscending) linebuf.push_back('\\');
-		else if (m_sortType == &cIndexDescending) linebuf.push_back('/');
-		pad_astring_to_length(linebuf, tableBreaks[0]);
-		linebuf.append("En");
-		if (m_sortType == &cEnabledAscending) linebuf.push_back('\\');
-		else if (m_sortType == &cEnabledDescending) linebuf.push_back('/');
-		pad_astring_to_length(linebuf, tableBreaks[1]);
-		linebuf.append("CPU");
-		if (m_sortType == &cCpuAscending) linebuf.push_back('\\');
-		else if (m_sortType == &cCpuDescending) linebuf.push_back('/');
-		pad_astring_to_length(linebuf, tableBreaks[2]);
-		linebuf.append("Address");
-		if (m_sortType == &cAddressAscending) linebuf.push_back('\\');
-		else if (m_sortType == &cAddressDescending) linebuf.push_back('/');
-		pad_astring_to_length(linebuf, tableBreaks[3]);
-		linebuf.append("Condition");
-		if (m_sortType == &cConditionAscending) linebuf.push_back('\\');
-		else if (m_sortType == &cConditionDescending) linebuf.push_back('/');
-		pad_astring_to_length(linebuf, tableBreaks[4]);
-		linebuf.append("Action");
-		if (m_sortType == &cActionAscending) linebuf.push_back('\\');
-		else if (m_sortType == &cActionDescending) linebuf.push_back('/');
-		pad_astring_to_length(linebuf, tableBreaks[5]);
+		linebuf.rdbuf()->clear();
+		linebuf << "ID";
+		if (m_sortType == &cIndexAscending) linebuf.put('\\');
+		else if (m_sortType == &cIndexDescending) linebuf.put('/');
+		pad_ostream_to_length(linebuf, tableBreaks[0]);
+		linebuf << "En";
+		if (m_sortType == &cEnabledAscending) linebuf.put('\\');
+		else if (m_sortType == &cEnabledDescending) linebuf.put('/');
+		pad_ostream_to_length(linebuf, tableBreaks[1]);
+		linebuf << "CPU";
+		if (m_sortType == &cCpuAscending) linebuf.put('\\');
+		else if (m_sortType == &cCpuDescending) linebuf.put('/');
+		pad_ostream_to_length(linebuf, tableBreaks[2]);
+		linebuf << "Address";
+		if (m_sortType == &cAddressAscending) linebuf.put('\\');
+		else if (m_sortType == &cAddressDescending) linebuf.put('/');
+		pad_ostream_to_length(linebuf, tableBreaks[3]);
+		linebuf << "Condition";
+		if (m_sortType == &cConditionAscending) linebuf.put('\\');
+		else if (m_sortType == &cConditionDescending) linebuf.put('/');
+		pad_ostream_to_length(linebuf, tableBreaks[4]);
+		linebuf << "Action";
+		if (m_sortType == &cActionAscending) linebuf.put('\\');
+		else if (m_sortType == &cActionDescending) linebuf.put('/');
+		pad_ostream_to_length(linebuf, tableBreaks[5]);
 
-		for (UINT32 i = m_topleft.x; i < (m_topleft.x + m_visible.x); i++, dest++)
+		auto const &text(linebuf.vec());
+		for (u32 i = m_topleft.x; i < (m_topleft.x + m_visible.x); i++, dest++)
 		{
-			dest->byte = (i < linebuf.length()) ? linebuf[i] : ' ';
+			dest->byte = (i < text.size()) ? text[i] : ' ';
 			dest->attrib = DCA_ANCILLARY;
 		}
 	}
@@ -279,26 +271,28 @@ void debug_view_breakpoints::view_update()
 		int bpi = row + m_topleft.y - 1;
 		if ((bpi < m_buffer.size()) && (bpi >= 0))
 		{
-			device_debug::breakpoint *const bp = m_buffer[bpi];
+			const debug_breakpoint *const bp = m_buffer[bpi];
 
 			linebuf.clear();
-			strcatprintf(linebuf, "%2X", bp->index());
-			pad_astring_to_length(linebuf, tableBreaks[0]);
-			linebuf.push_back(bp->enabled() ? 'X' : 'O');
-			pad_astring_to_length(linebuf, tableBreaks[1]);
-			linebuf.append(bp->debugInterface()->device().tag());
-			pad_astring_to_length(linebuf, tableBreaks[2]);
-			linebuf.append(core_i64_hex_format(bp->address(), bp->debugInterface()->logaddrchars()));
-			pad_astring_to_length(linebuf, tableBreaks[3]);
+			linebuf.rdbuf()->clear();
+			util::stream_format(linebuf, "%2X", bp->index());
+			pad_ostream_to_length(linebuf, tableBreaks[0]);
+			linebuf.put(bp->enabled() ? 'X' : 'O');
+			pad_ostream_to_length(linebuf, tableBreaks[1]);
+			linebuf << bp->debugInterface()->device().tag();
+			pad_ostream_to_length(linebuf, tableBreaks[2]);
+			util::stream_format(linebuf, "%0*X", bp->debugInterface()->logaddrchars(), bp->address());
+			pad_ostream_to_length(linebuf, tableBreaks[3]);
 			if (strcmp(bp->condition(), "1"))
-				linebuf.append(bp->condition());
-			pad_astring_to_length(linebuf, tableBreaks[4]);
-			linebuf.append(bp->action());
-			pad_astring_to_length(linebuf, tableBreaks[5]);
+				linebuf << bp->condition();
+			pad_ostream_to_length(linebuf, tableBreaks[4]);
+			linebuf << bp->action();
+			pad_ostream_to_length(linebuf, tableBreaks[5]);
 
-			for (UINT32 i = m_topleft.x; i < (m_topleft.x + m_visible.x); i++, dest++)
+			auto const &text(linebuf.vec());
+			for (u32 i = m_topleft.x; i < (m_topleft.x + m_visible.x); i++, dest++)
 			{
-				dest->byte = (i < linebuf.length()) ? linebuf[i] : ' ';
+				dest->byte = (i < text.size()) ? text[i] : ' ';
 				dest->attrib = DCA_NORMAL;
 
 				// Color disabled breakpoints red
@@ -309,7 +303,7 @@ void debug_view_breakpoints::view_update()
 		else
 		{
 			// Fill the remaining vertical space
-			for (UINT32 i = m_topleft.x; i < (m_topleft.x + m_visible.x); i++, dest++)
+			for (u32 i = m_topleft.x; i < (m_topleft.x + m_visible.x); i++, dest++)
 			{
 				dest->byte = ' ';
 				dest->attrib = DCA_NORMAL;

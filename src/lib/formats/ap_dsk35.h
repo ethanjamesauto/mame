@@ -7,14 +7,15 @@
     Apple 3.5" disk images
 
 *********************************************************************/
+#ifndef MAME_FORMATS_AP_DSK35_H
+#define MAME_FORMATS_AP_DSK35_H
 
-#ifndef AP_DSK35_H
-#define AP_DSK35_H
+#pragma once
 
 #include "flopimg.h"
 
-void sony_filltrack(UINT8 *buffer, size_t buffer_len, size_t *pos, UINT8 data);
-UINT8 sony_fetchtrack(const UINT8 *buffer, size_t buffer_len, size_t *pos);
+void sony_filltrack(uint8_t *buffer, size_t buffer_len, size_t *pos, uint8_t data);
+uint8_t sony_fetchtrack(const uint8_t *buffer, size_t buffer_len, size_t *pos);
 
 int apple35_sectors_per_track(floppy_image_legacy *image, int track);
 
@@ -28,9 +29,9 @@ class dc42_format : public floppy_image_format_t
 public:
 	dc42_format();
 
-	virtual int identify(io_generic *io, UINT32 form_factor) override;
-	virtual bool load(io_generic *io, UINT32 form_factor, floppy_image *image) override;
-	virtual bool save(io_generic *io, floppy_image *image) override;
+	virtual int identify(io_generic *io, uint32_t form_factor, const std::vector<uint32_t> &variants) override;
+	virtual bool load(io_generic *io, uint32_t form_factor, const std::vector<uint32_t> &variants, floppy_image *image) override;
+	virtual bool save(io_generic *io, const std::vector<uint32_t> &variants, floppy_image *image) override;
 
 	virtual const char *name() const override;
 	virtual const char *description() const override;
@@ -38,12 +39,43 @@ public:
 	virtual bool supports_save() const override;
 
 private:
-	static const desc_e mac_gcr[];
-
-	UINT8 gb(const UINT8 *buf, int ts, int &pos, int &wrap);
-	void update_chk(const UINT8 *data, int size, UINT32 &chk);
+	void update_chk(const uint8_t *data, int size, uint32_t &chk);
 };
 
 extern const floppy_format_type FLOPPY_DC42_FORMAT;
 
-#endif /* AP_DSK35_H */
+class apple_gcr_format : public floppy_image_format_t
+{
+public:
+	apple_gcr_format();
+
+	virtual int identify(io_generic *io, uint32_t form_factor, const std::vector<uint32_t> &variants) override;
+	virtual bool load(io_generic *io, uint32_t form_factor, const std::vector<uint32_t> &variants, floppy_image *image) override;
+	virtual bool save(io_generic *io, const std::vector<uint32_t> &variants, floppy_image *image) override;
+
+	virtual const char *name() const override;
+	virtual const char *description() const override;
+	virtual const char *extensions() const override;
+	virtual bool supports_save() const override;
+};
+
+extern const floppy_format_type FLOPPY_APPLE_GCR_FORMAT;
+
+class apple_2mg_format : public floppy_image_format_t
+{
+public:
+	apple_2mg_format();
+
+	virtual int identify(io_generic *io, uint32_t form_factor, const std::vector<uint32_t> &variants) override;
+	virtual bool load(io_generic *io, uint32_t form_factor, const std::vector<uint32_t> &variants, floppy_image *image) override;
+	virtual bool save(io_generic *io, const std::vector<uint32_t> &variants, floppy_image *image) override;
+
+	virtual const char *name() const override;
+	virtual const char *description() const override;
+	virtual const char *extensions() const override;
+	virtual bool supports_save() const override;
+};
+
+extern const floppy_format_type FLOPPY_APPLE_2MG_FORMAT;
+
+#endif // MAME_FORMATS_AP_DSK35_H

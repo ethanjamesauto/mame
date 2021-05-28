@@ -6,6 +6,7 @@
 
 *********************************************************************/
 
+#include "emu.h"
 #include "dmv_keyb.h"
 
 
@@ -13,7 +14,7 @@
 //  DEVICE DEFINITIONS
 //**************************************************************************
 
-const device_type DMV_KEYBOARD = &device_creator<dmv_keyboard_device>;
+DEFINE_DEVICE_TYPE(DMV_KEYBOARD, dmv_keyboard_device, "dmv_keyboard", "Decision Mate V Keyboard")
 
 
 //***************************************************************************
@@ -26,18 +27,6 @@ ROM_START( dmv_keyboard )
 ROM_END
 
 
-static ADDRESS_MAP_START( dmv_keyboard_io, AS_IO, 8, dmv_keyboard_device )
-	AM_RANGE(MCS48_PORT_P1, MCS48_PORT_P1) AM_READ(port1_r)
-	AM_RANGE(MCS48_PORT_P2, MCS48_PORT_P2) AM_READWRITE(port2_r, port2_w)
-ADDRESS_MAP_END
-
-
-static MACHINE_CONFIG_FRAGMENT( dmv_keyboard )
-	MCFG_CPU_ADD("mcu", I8741, XTAL_6MHz)
-	MCFG_CPU_IO_MAP(dmv_keyboard_io)
-MACHINE_CONFIG_END
-
-
 INPUT_PORTS_START( dmv_keyboard )
 	PORT_START("COL.0")
 	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_CODE(KEYCODE_RCONTROL)  PORT_CHAR(UCHAR_MAMEKEY(RCONTROL))
@@ -45,7 +34,7 @@ INPUT_PORTS_START( dmv_keyboard )
 	PORT_BIT( 0x04, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_CODE(KEYCODE_V)         PORT_CHAR('v') PORT_CHAR('V')
 	PORT_BIT( 0x08, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_CODE(KEYCODE_7_PAD)     PORT_CHAR(UCHAR_MAMEKEY(7_PAD))
 	PORT_BIT( 0x10, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_CODE(KEYCODE_9_PAD)     PORT_CHAR(UCHAR_MAMEKEY(9_PAD))
-	PORT_BIT( 0x20, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_CODE(KEYCODE_R)         PORT_CHAR('R') PORT_CHAR('r')
+	PORT_BIT( 0x20, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_CODE(KEYCODE_R)         PORT_CHAR('r') PORT_CHAR('R')
 	PORT_BIT( 0x40, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_CODE(KEYCODE_4)         PORT_CHAR('4') PORT_CHAR('$')
 	PORT_BIT( 0x80, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_CODE(KEYCODE_F5)        PORT_CHAR(UCHAR_MAMEKEY(F5))
 
@@ -100,12 +89,12 @@ INPUT_PORTS_START( dmv_keyboard )
 	PORT_BIT( 0x80, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_CODE(KEYCODE_F2)    PORT_CHAR(UCHAR_MAMEKEY(F2))
 
 	PORT_START("COL.6")
-	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_CODE(KEYCODE_BACKSPACE) PORT_CHAR(UCHAR_MAMEKEY(BACKSPACE)) PORT_NAME("Backspace")
+	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_CODE(KEYCODE_BACKSPACE) PORT_CHAR(UCHAR_MAMEKEY(BACKSPACE),8) PORT_NAME("Backspace")
 	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_CODE(KEYCODE_L)     PORT_CHAR('l') PORT_CHAR('L')
 	PORT_BIT( 0x04, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_CODE(KEYCODE_STOP)  PORT_CHAR('.') PORT_CHAR('>')
 	PORT_BIT( 0x08, IP_ACTIVE_HIGH, IPT_UNUSED )
 	PORT_BIT( 0x10, IP_ACTIVE_HIGH, IPT_UNUSED )
-	PORT_BIT( 0x20, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_CODE(KEYCODE_O)     PORT_CHAR('0') PORT_CHAR(')')
+	PORT_BIT( 0x20, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_CODE(KEYCODE_O)     PORT_CHAR('o') PORT_CHAR('O')
 	PORT_BIT( 0x40, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_CODE(KEYCODE_9)     PORT_CHAR('9') PORT_CHAR('(')
 	PORT_BIT( 0x80, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_CODE(KEYCODE_F10)   PORT_CHAR(UCHAR_MAMEKEY(F10))
 
@@ -161,7 +150,7 @@ INPUT_PORTS_START( dmv_keyboard )
 
 	PORT_START("COL.12")
 	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_CODE(KEYCODE_HOME)  PORT_CHAR(UCHAR_MAMEKEY(HOME))
-	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_CODE(KEYCODE_K)     PORT_CHAR('e') PORT_CHAR('E')
+	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_CODE(KEYCODE_K)     PORT_CHAR('k') PORT_CHAR('K')
 	PORT_BIT( 0x04, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_CODE(KEYCODE_COMMA) PORT_CHAR(',') PORT_CHAR('<')
 	PORT_BIT( 0x08, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_NAME("F20")
 	PORT_BIT( 0x10, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_CODE(KEYCODE_RIGHT) PORT_CHAR(UCHAR_MAMEKEY(RIGHT))
@@ -207,10 +196,10 @@ ioport_constructor dmv_keyboard_device::device_input_ports() const
 //  dmv_keyboard_device - constructor
 //-------------------------------------------------
 
-dmv_keyboard_device::dmv_keyboard_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: device_t(mconfig, DMV_KEYBOARD, "Decision Mate V Keyboard", tag, owner, clock, "dmv_keyboard", __FILE__),
-		m_maincpu(*this, "mcu"),
-		m_keyboard(*this, "COL")
+dmv_keyboard_device::dmv_keyboard_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: device_t(mconfig, DMV_KEYBOARD, tag, owner, clock)
+	, m_maincpu(*this, "mcu")
+	, m_keyboard(*this, "COL.%u", 0)
 {
 }
 
@@ -220,6 +209,10 @@ dmv_keyboard_device::dmv_keyboard_device(const machine_config &mconfig, const ch
 
 void dmv_keyboard_device::device_start()
 {
+	// register for state saving
+	save_item(NAME(m_col));
+	save_item(NAME(m_sd_data_state));
+	save_item(NAME(m_sd_poll_state));
 }
 
 
@@ -235,13 +228,15 @@ void dmv_keyboard_device::device_reset()
 }
 
 //-------------------------------------------------
-//  machine_config_additions - device-specific
-//  machine configurations
+//  device_add_mconfig - add device configuration
 //-------------------------------------------------
 
-machine_config_constructor dmv_keyboard_device::device_mconfig_additions() const
+void dmv_keyboard_device::device_add_mconfig(machine_config &config)
 {
-	return MACHINE_CONFIG_NAME( dmv_keyboard );
+	I8741A(config, m_maincpu, XTAL(6'000'000));
+	m_maincpu->p1_in_cb().set(FUNC(dmv_keyboard_device::port1_r));
+	m_maincpu->p2_in_cb().set(FUNC(dmv_keyboard_device::port2_r));
+	m_maincpu->p2_out_cb().set(FUNC(dmv_keyboard_device::port2_w));
 }
 
 
@@ -249,7 +244,7 @@ machine_config_constructor dmv_keyboard_device::device_mconfig_additions() const
 //  rom_region - device-specific ROM region
 //-------------------------------------------------
 
-const rom_entry *dmv_keyboard_device::device_rom_region() const
+const tiny_rom_entry *dmv_keyboard_device::device_rom_region() const
 {
 	return ROM_NAME( dmv_keyboard );
 }
@@ -259,7 +254,7 @@ const rom_entry *dmv_keyboard_device::device_rom_region() const
 //  port1_r -
 //-------------------------------------------------
 
-READ8_MEMBER( dmv_keyboard_device::port1_r )
+uint8_t dmv_keyboard_device::port1_r()
 {
 	return m_keyboard[m_col]->read();
 }
@@ -268,7 +263,7 @@ READ8_MEMBER( dmv_keyboard_device::port1_r )
 //  port2_r
 //-------------------------------------------------
 
-READ8_MEMBER( dmv_keyboard_device::port2_r )
+uint8_t dmv_keyboard_device::port2_r()
 {
 	return ((m_sd_data_state | m_sd_poll_state) << 7) | m_col;
 }
@@ -277,7 +272,7 @@ READ8_MEMBER( dmv_keyboard_device::port2_r )
 //  port2_w
 //-------------------------------------------------
 
-WRITE8_MEMBER( dmv_keyboard_device::port2_w )
+void dmv_keyboard_device::port2_w(uint8_t data)
 {
 	/*
 	   P2.0    col 0
@@ -298,7 +293,7 @@ WRITE8_MEMBER( dmv_keyboard_device::port2_w )
 DECLARE_WRITE_LINE_MEMBER(dmv_keyboard_device::sd_poll_w)
 {
 	if (m_sd_poll_state && !state)
-		m_maincpu->upi41_master_w(m_maincpu->space(), 0, 0);
+		m_maincpu->upi41_master_w(0, 0);
 
 	m_sd_poll_state = state;
 }

@@ -10,16 +10,139 @@
 #include "emu.h"
 #include "machine/megacdcd.h"
 
-const device_type LC89510_TEMP = &device_creator<lc89510_temp_device>;
+#define READ_MAIN (0x0200)
+#define READ_SUB  (0x0300)
 
-lc89510_temp_device::lc89510_temp_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: device_t(mconfig, LC89510_TEMP, "lc89510_temp_device", tag, owner, clock, "lc89510_temp", __FILE__)
+#define REG_W_SBOUT  (0x0)
+#define REG_W_IFCTRL (0x1)
+#define REG_W_DBCL   (0x2)
+#define REG_W_DBCH   (0x3)
+#define REG_W_DACL   (0x4)
+#define REG_W_DACH   (0x5)
+#define REG_W_DTTRG  (0x6)
+#define REG_W_DTACK  (0x7)
+#define REG_W_WAL    (0x8)
+#define REG_W_WAH    (0x9)
+#define REG_W_CTRL0  (0xA)
+#define REG_W_CTRL1  (0xB)
+#define REG_W_PTL    (0xC)
+#define REG_W_PTH    (0xD)
+#define REG_W_CTRL2  (0xE)
+#define REG_W_RESET  (0xF)
+
+#define REG_R_COMIN  (0x0)
+#define REG_R_IFSTAT (0x1)
+#define REG_R_DBCL   (0x2)
+#define REG_R_DBCH   (0x3)
+#define REG_R_HEAD0  (0x4)
+#define REG_R_HEAD1  (0x5)
+#define REG_R_HEAD2  (0x6)
+#define REG_R_HEAD3  (0x7)
+#define REG_R_PTL    (0x8)
+#define REG_R_PTH    (0x9)
+#define REG_R_WAL    (0xa)
+#define REG_R_WAH    (0xb)
+#define REG_R_STAT0  (0xc)
+#define REG_R_STAT1  (0xd)
+#define REG_R_STAT2  (0xe)
+#define REG_R_STAT3  (0xf)
+
+#define CMD_STATUS   (0x0)
+#define CMD_STOPALL  (0x1)
+#define CMD_GETTOC   (0x2)
+#define CMD_READ     (0x3)
+#define CMD_SEEK     (0x4)
+//                   (0x5)
+#define CMD_STOP     (0x6)
+#define CMD_RESUME   (0x7)
+#define CMD_FF       (0x8)
+#define CMD_RW       (0x9)
+#define CMD_INIT     (0xa)
+//                   (0xb)
+#define CMD_CLOSE    (0xc)
+#define CMD_OPEN     (0xd)
+//                   (0xe)
+//                   (0xf)
+
+
+#define TOCCMD_CURPOS    (0x0)
+#define TOCCMD_TRKPOS    (0x1)
+#define TOCCMD_CURTRK    (0x2)
+#define TOCCMD_LENGTH    (0x3)
+#define TOCCMD_FIRSTLAST (0x4)
+#define TOCCMD_TRACKADDR (0x5)
+
+
+
+
+#define SET_CDD_DATA_MODE \
+	CDD_CONTROL |= 0x0100;
+#define SET_CDD_AUDIO_MODE \
+	CDD_CONTROL &= ~0x0100;
+#define STOP_CDC_READ \
+	SCD_STATUS_CDC &= ~0x01;
+#define SET_CDC_READ \
+	SCD_STATUS_CDC |= 0x01;
+#define SET_CDC_DMA \
+	SCD_STATUS_CDC |= 0x08;
+#define STOP_CDC_DMA \
+	SCD_STATUS_CDC &= ~0x08;
+#define SCD_READ_ENABLED \
+	(SCD_STATUS_CDC & 1)
+
+#define SCD_DMA_ENABLED \
+	(SCD_STATUS_CDC & 0x08)
+
+#define CLEAR_CDD_RESULT \
+	CDD_MIN = CDD_SEC = CDD_FRAME = CDD_EXT = 0;
+#define CHECK_SCD_LV5_INTERRUPT \
+	if (segacd_irq_mask & 0x20) \
+	{ \
+		m_68k->set_input_line(5, HOLD_LINE); \
+	}
+#define CHECK_SCD_LV4_INTERRUPT \
+	if (segacd_irq_mask & 0x10) \
+	{ \
+		m_68k->set_input_line(4, HOLD_LINE); \
+	}
+#define CHECK_SCD_LV4_INTERRUPT_A \
+	if (segacd_irq_mask & 0x10) \
+	{ \
+		m_68k->set_input_line(4, HOLD_LINE); \
+	}
+
+
+#define CURRENT_TRACK_IS_DATA \
+	(segacd.toc->tracks[SCD_CURTRK - 1].trktype != CD_TRACK_AUDIO)
+
+#define CDD_PLAYINGCDDA 0x0100
+#define CDD_READY       0x0400
+#define CDD_STOPPED     0x0900
+
+
+/* neocd */
+
+#define CD_FRAMES_MINUTE (60 * 75)
+#define CD_FRAMES_SECOND (     75)
+#define CD_FRAMES_PREGAP ( 2 * 75)
+
+#define SEK_IRQSTATUS_NONE (0x0000)
+#define SEK_IRQSTATUS_AUTO (0x2000)
+#define SEK_IRQSTATUS_ACK  (0x1000)
+
+
+DEFINE_DEVICE_TYPE(LC89510_TEMP, lc89510_temp_device, "lc89510_temp", "lc89510_temp_device")
+
+lc89510_temp_device::lc89510_temp_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: device_t(mconfig, LC89510_TEMP, tag, owner, clock)
+	, m_segacd_dma_callback(*this, FUNC(lc89510_temp_device::Fake_CDC_Do_DMA))
+	, m_type1_interrupt_callback(*this, FUNC(lc89510_temp_device::dummy_interrupt_callback))
+	, m_type2_interrupt_callback(*this, FUNC(lc89510_temp_device::dummy_interrupt_callback))
+	, m_type3_interrupt_callback(*this, FUNC(lc89510_temp_device::dummy_interrupt_callback))
+	, m_cdrom(*this, finder_base::DUMMY_TAG)
+	, m_cdda(*this, "cdda")
+	, m_68k(*this, finder_base::DUMMY_TAG)
 {
-	segacd_dma_callback =  segacd_dma_delegate(FUNC(lc89510_temp_device::Fake_CDC_Do_DMA), this);
-	type1_interrupt_callback =  interrupt_delegate(FUNC(lc89510_temp_device::dummy_interrupt_callback), this);
-	type2_interrupt_callback =  interrupt_delegate(FUNC(lc89510_temp_device::dummy_interrupt_callback), this);
-	type3_interrupt_callback =  interrupt_delegate(FUNC(lc89510_temp_device::dummy_interrupt_callback), this);
-
 	is_neoCD = false;
 
 	nff0002 = 0;
@@ -36,58 +159,27 @@ lc89510_temp_device::lc89510_temp_device(const machine_config &mconfig, const ch
 	segacd_irq_mask = 0;
 }
 
-void lc89510_temp_device::dummy_interrupt_callback(void)
+void lc89510_temp_device::dummy_interrupt_callback()
 {
-}
-
-void lc89510_temp_device::set_CDC_Do_DMA(device_t &device,segacd_dma_delegate new_segacd_dma_callback)
-{
-	lc89510_temp_device &dev = downcast<lc89510_temp_device &>(device);
-	dev.segacd_dma_callback = new_segacd_dma_callback;
-}
-
-void lc89510_temp_device::set_type1_interrupt_callback(device_t &device,interrupt_delegate interrupt_callback)
-{
-	lc89510_temp_device &dev = downcast<lc89510_temp_device &>(device);
-	dev.type1_interrupt_callback = interrupt_callback;
-}
-
-void lc89510_temp_device::set_type2_interrupt_callback(device_t &device,interrupt_delegate interrupt_callback)
-{
-	lc89510_temp_device &dev = downcast<lc89510_temp_device &>(device);
-	dev.type2_interrupt_callback = interrupt_callback;
-}
-
-void lc89510_temp_device::set_type3_interrupt_callback(device_t &device,interrupt_delegate interrupt_callback)
-{
-	lc89510_temp_device &dev = downcast<lc89510_temp_device &>(device);
-	dev.type3_interrupt_callback = interrupt_callback;
-}
-
-void lc89510_temp_device::set_is_neoCD(device_t &device, bool is_neoCD)
-{
-	lc89510_temp_device &dev = downcast<lc89510_temp_device &>(device);
-	dev.is_neoCD = is_neoCD;
 }
 
 // HACK for DMA handling, this gets replaced
-void lc89510_temp_device::Fake_CDC_Do_DMA(int &dmacount, UINT8 *CDC_BUFFER, UINT16 &dma_addrc, UINT16 &destination )
+void lc89510_temp_device::Fake_CDC_Do_DMA(int &dmacount, uint8_t *CDC_BUFFER, uint16_t &dma_addrc, uint16_t &destination )
 {
 	fatalerror("Fake_CDC_Do_DMA\n");
 }
 
 void lc89510_temp_device::device_start()
 {
-	segacd_dma_callback.bind_relative_to(*owner());
-	type1_interrupt_callback.bind_relative_to(*owner());
-	type2_interrupt_callback.bind_relative_to(*owner());
-	type3_interrupt_callback.bind_relative_to(*owner());
-
-	m_cdda = (cdda_device*)subdevice("cdda");
+	m_segacd_dma_callback.resolve();
+	m_type1_interrupt_callback.resolve();
+	m_type2_interrupt_callback.resolve();
+	m_type3_interrupt_callback.resolve();
 }
 
 void lc89510_temp_device::device_reset()
 {
+	m_cdda->stop_audio();
 }
 
 
@@ -191,14 +283,14 @@ void lc89510_temp_device::CDD_Export(bool neocd_hack)
 
 void lc89510_temp_device::CDD_GetStatus(void)
 {
-	UINT16 s = (CDD_STATUS & 0x0f00);
+	uint16_t s = (CDD_STATUS & 0x0f00);
 
 	if ((s == 0x0200) || (s == 0x0700) || (s == 0x0e00))
 		CDD_STATUS = (SCD_STATUS & 0xff00) | (CDD_STATUS & 0x00ff);
 }
 
 
-void lc89510_temp_device::CDD_Stop(running_machine &machine)
+void lc89510_temp_device::CDD_Stop()
 {
 	CLEAR_CDD_RESULT
 	STOP_CDC_READ
@@ -217,7 +309,7 @@ void lc89510_temp_device::CDD_Stop(running_machine &machine)
 void lc89510_temp_device::CDD_GetPos(void)
 {
 	CLEAR_CDD_RESULT
-	UINT32 msf;
+	uint32_t msf;
 	CDD_STATUS &= 0xFF;
 	if(segacd.cd == nullptr) // no CD is there, bail out
 		return;
@@ -232,9 +324,9 @@ void lc89510_temp_device::CDD_GetTrackPos(void)
 {
 	CLEAR_CDD_RESULT
 	int elapsedlba;
-	UINT32 msf;
+	uint32_t msf;
 	CDD_STATUS &= 0xFF;
-	//  UINT32 end_msf = ;
+	//  uint32_t end_msf = ;
 	if(segacd.cd == nullptr) // no CD is there, bail out
 		return;
 	CDD_STATUS |= SCD_STATUS;
@@ -265,8 +357,8 @@ void lc89510_temp_device::CDD_Length(void)
 		return;
 	CDD_STATUS |= SCD_STATUS;
 
-	UINT32 startlba = (segacd.toc->tracks[cdrom_get_last_track(segacd.cd)].logframeofs);
-	UINT32 startmsf = lba_to_msf_alt( startlba );
+	uint32_t startlba = (segacd.toc->tracks[cdrom_get_last_track(segacd.cd)].logframeofs);
+	uint32_t startmsf = lba_to_msf_alt( startlba );
 
 	CDD_MIN = to_bcd((startmsf&0x00ff0000)>>16,false);
 	CDD_SEC = to_bcd((startmsf&0x0000ff00)>>8,false);
@@ -303,8 +395,8 @@ void lc89510_temp_device::CDD_GetTrackAdr(void)
 	if (track < 1)
 		track = 1;
 
-	UINT32 startlba = (segacd.toc->tracks[track-1].logframeofs);
-	UINT32 startmsf = lba_to_msf_alt( startlba+150 );
+	uint32_t startlba = (segacd.toc->tracks[track-1].logframeofs);
+	uint32_t startmsf = lba_to_msf_alt( startlba+150 );
 
 	CDD_MIN = to_bcd((startmsf&0x00ff0000)>>16,false);
 	CDD_SEC = to_bcd((startmsf&0x0000ff00)>>8,false);
@@ -345,9 +437,9 @@ void lc89510_temp_device::CDD_GetTrackType(void)
 
 }
 
-UINT32 lc89510_temp_device::getmsf_from_regs(void)
+uint32_t lc89510_temp_device::getmsf_from_regs(void)
 {
-	UINT32 msf = 0;
+	uint32_t msf = 0;
 
 	msf  = ((CDD_TX[3] & 0xF) + (CDD_TX[2] & 0xF) * 10) << 16;
 	msf |= ((CDD_TX[5] & 0xF) + (CDD_TX[4] & 0xF) * 10) << 8;
@@ -356,14 +448,14 @@ UINT32 lc89510_temp_device::getmsf_from_regs(void)
 	return msf;
 }
 
-void lc89510_temp_device::CDD_Play(running_machine &machine)
+void lc89510_temp_device::CDD_Play()
 {
 	CLEAR_CDD_RESULT
-	UINT32 msf = getmsf_from_regs();
+	uint32_t msf = getmsf_from_regs();
 	SCD_CURLBA = msf_to_lba(msf)-150;
 	if(segacd.cd == nullptr) // no CD is there, bail out
 		return;
-	UINT32 end_msf = segacd.toc->tracks[ cdrom_get_track(segacd.cd, SCD_CURLBA) + 1 ].logframeofs;
+	uint32_t track_length = segacd.toc->tracks[ cdrom_get_track(segacd.cd, SCD_CURLBA) ].logframes;
 	SCD_CURTRK = cdrom_get_track(segacd.cd, SCD_CURLBA)+1;
 	LC8951UpdateHeader();
 	SCD_STATUS = CDD_PLAYINGCDDA;
@@ -372,7 +464,7 @@ void lc89510_temp_device::CDD_Play(running_machine &machine)
 	printf("%d Track played\n",SCD_CURTRK);
 	CDD_MIN = to_bcd(SCD_CURTRK, false);
 	if(!(CURRENT_TRACK_IS_DATA))
-		m_cdda->start_audio(SCD_CURLBA, end_msf - SCD_CURLBA);
+		m_cdda->start_audio(SCD_CURLBA, SCD_CURLBA + track_length);
 	SET_CDC_READ
 
 
@@ -384,7 +476,7 @@ void lc89510_temp_device::CDD_Play(running_machine &machine)
 void lc89510_temp_device::CDD_Seek(void)
 {
 	CLEAR_CDD_RESULT
-	UINT32 msf = getmsf_from_regs();
+	uint32_t msf = getmsf_from_regs();
 	SCD_CURLBA = msf_to_lba(msf)-150;
 	if(segacd.cd == nullptr) // no CD is there, bail out
 		return;
@@ -397,7 +489,7 @@ void lc89510_temp_device::CDD_Seek(void)
 }
 
 
-void lc89510_temp_device::CDD_Pause(running_machine &machine)
+void lc89510_temp_device::CDD_Pause()
 {
 	CLEAR_CDD_RESULT
 	STOP_CDC_READ
@@ -415,7 +507,7 @@ void lc89510_temp_device::CDD_Pause(running_machine &machine)
 
 }
 
-void lc89510_temp_device::CDD_Resume(running_machine &machine)
+void lc89510_temp_device::CDD_Resume()
 {
 	CLEAR_CDD_RESULT
 	STOP_CDC_READ
@@ -434,13 +526,13 @@ void lc89510_temp_device::CDD_Resume(running_machine &machine)
 }
 
 
-void lc89510_temp_device::CDD_FF(running_machine &machine)
+void lc89510_temp_device::CDD_FF()
 {
 	fatalerror("Fast Forward unsupported\n");
 }
 
 
-void lc89510_temp_device::CDD_RW(running_machine &machine)
+void lc89510_temp_device::CDD_RW()
 {
 	fatalerror("Fast Rewind unsupported\n");
 }
@@ -521,11 +613,11 @@ void lc89510_temp_device::lc89510_Reset(void)
 }
 
 
-void lc89510_temp_device::CDC_Do_DMA(running_machine& machine, int rate)
+void lc89510_temp_device::CDC_Do_DMA(int rate)
 {
-	UINT32 length;
+	uint32_t length;
 
-	UINT16 destination = CDC_REG0 & 0x0700;
+	uint16_t destination = CDC_REG0 & 0x0700;
 
 	if (!(SCD_DMA_ENABLED))
 		return;
@@ -541,7 +633,7 @@ void lc89510_temp_device::CDC_Do_DMA(running_machine& machine, int rate)
 	if (dma_count_register <= (rate * 2))
 	{
 		length = (dma_count_register + 1) >> 1;
-		CDC_End_Transfer(machine);
+		CDC_End_Transfer();
 	}
 	else
 		length = rate;
@@ -549,10 +641,10 @@ void lc89510_temp_device::CDC_Do_DMA(running_machine& machine, int rate)
 
 	int dmacount = length;
 
-	UINT16 dma_addrc = LC8951RegistersW[REG_W_DACL] | (LC8951RegistersW[REG_W_DACH]<<8);
+	uint16_t dma_addrc = LC8951RegistersW[REG_W_DACL] | (LC8951RegistersW[REG_W_DACH]<<8);
 
 	// HACK
-	segacd_dma_callback(dmacount, CDC_BUFFER, dma_addrc, destination );
+	m_segacd_dma_callback(dmacount, CDC_BUFFER, dma_addrc, destination );
 
 
 	dma_addrc += length*2;
@@ -570,9 +662,9 @@ void lc89510_temp_device::CDC_Do_DMA(running_machine& machine, int rate)
 
 
 
-UINT16 lc89510_temp_device::CDC_Host_r(running_machine& machine, UINT16 type)
+uint16_t lc89510_temp_device::CDC_Host_r(uint16_t type)
 {
-	UINT16 destination = CDC_REG0 & 0x0700;
+	uint16_t destination = CDC_REG0 & 0x0700;
 
 	if (SCD_DMA_ENABLED)
 	{
@@ -586,14 +678,14 @@ UINT16 lc89510_temp_device::CDC_Host_r(running_machine& machine, UINT16 type)
 			{
 				if (type==READ_SUB) dma_count_register = 0;
 
-				CDC_End_Transfer(machine);
+				CDC_End_Transfer();
 			}
 
 			LC8951RegistersW[REG_W_DBCL] = dma_count_register & 0xff; LC8951RegistersW[REG_W_DBCH] = (dma_count_register>>8) & 0xff;
 
-			UINT16 dma_addrc = LC8951RegistersW[REG_W_DACL] | (LC8951RegistersW[REG_W_DACH]<<8);
+			uint16_t dma_addrc = LC8951RegistersW[REG_W_DACL] | (LC8951RegistersW[REG_W_DACH]<<8);
 
-			UINT16 data = (CDC_BUFFER[dma_addrc]<<8) | CDC_BUFFER[dma_addrc+1];
+			uint16_t data = (CDC_BUFFER[dma_addrc]<<8) | CDC_BUFFER[dma_addrc+1];
 			dma_addrc += 2;
 
 			LC8951RegistersW[REG_W_DACL] = dma_addrc & 0xff; LC8951RegistersW[REG_W_DACH] = (dma_addrc >> 8) & 0xff;
@@ -609,13 +701,13 @@ UINT16 lc89510_temp_device::CDC_Host_r(running_machine& machine, UINT16 type)
 
 
 
-UINT8 lc89510_temp_device::CDC_Reg_r(void)
+uint8_t lc89510_temp_device::CDC_Reg_r(void)
 {
 	int reg = CDC_REG0 & 0xF;
-	UINT8 ret = 0;
+	uint8_t ret = 0;
 
 
-	UINT16 decoderegs = 0x73F2;
+	uint16_t decoderegs = 0x73F2;
 
 	if ((decoderegs>>reg)&1)
 		CDC_DECODE |= (1 << reg);
@@ -664,7 +756,7 @@ UINT8 lc89510_temp_device::CDC_Reg_r(void)
 	return ret;
 }
 
-void lc89510_temp_device::CDC_Reg_w(UINT8 data)
+void lc89510_temp_device::CDC_Reg_w(uint8_t data)
 {
 	int reg = CDC_REG0 & 0xF;
 
@@ -738,7 +830,7 @@ void lc89510_temp_device::CDC_Reg_w(UINT8 data)
 
 
 
-void lc89510_temp_device::CDD_Process(running_machine& machine, int reason)
+void lc89510_temp_device::CDD_Process(int reason)
 {
 	CDD_Export();
 	CHECK_SCD_LV4_INTERRUPT
@@ -782,7 +874,7 @@ static const char *const CDD_import_cmdnames[] =
 	"<undefined> (f)"           // F
 };
 
-bool lc89510_temp_device::CDD_Import(running_machine& machine)
+bool lc89510_temp_device::CDD_Import()
 {
 	// don't execute the command if the checksum isn't valid
 	if (!CDD_Check_TX_Checksum())
@@ -797,14 +889,14 @@ bool lc89510_temp_device::CDD_Import(running_machine& machine)
 	switch (CDD_TX[0])
 	{
 		case CMD_STATUS:    CDD_GetStatus();           break;
-		case CMD_STOPALL:   CDD_Stop(machine);         break;
+		case CMD_STOPALL:   CDD_Stop();                break;
 		case CMD_GETTOC:    CDD_Handle_TOC_Commands(); break;
-		case CMD_READ:      CDD_Play(machine);         break;
+		case CMD_READ:      CDD_Play();                break;
 		case CMD_SEEK:      CDD_Seek();                break;
-		case CMD_STOP:      CDD_Pause(machine);        break;
-		case CMD_RESUME:    CDD_Resume(machine);       break;
-		case CMD_FF:        CDD_FF(machine);           break;
-		case CMD_RW:        CDD_RW(machine);           break;
+		case CMD_STOP:      CDD_Pause();               break;
+		case CMD_RESUME:    CDD_Resume();              break;
+		case CMD_FF:        CDD_FF();                  break;
+		case CMD_RW:        CDD_RW();                  break;
 		case CMD_INIT:      CDD_Init();                break;
 		case CMD_CLOSE:     CDD_Open();                break;
 		case CMD_OPEN:      CDD_Close();               break;
@@ -822,17 +914,17 @@ bool lc89510_temp_device::CDD_Import(running_machine& machine)
 
 
 
-WRITE16_MEMBER( lc89510_temp_device::segacd_cdc_mode_address_w )
+void lc89510_temp_device::segacd_cdc_mode_address_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	COMBINE_DATA(&CDC_REG0);
 }
 
-READ16_MEMBER( lc89510_temp_device::segacd_cdc_mode_address_r )
+uint16_t lc89510_temp_device::segacd_cdc_mode_address_r()
 {
 	return CDC_REG0;
 }
 
-WRITE16_MEMBER( lc89510_temp_device::segacd_cdc_data_w )
+void lc89510_temp_device::segacd_cdc_data_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	COMBINE_DATA(&CDC_REG1);
 
@@ -840,9 +932,9 @@ WRITE16_MEMBER( lc89510_temp_device::segacd_cdc_data_w )
 		CDC_Reg_w(data);
 }
 
-READ16_MEMBER( lc89510_temp_device::segacd_cdc_data_r )
+uint16_t lc89510_temp_device::segacd_cdc_data_r(offs_t offset, uint16_t mem_mask)
 {
-	UINT16 retdat = 0x0000;
+	uint16_t retdat = 0x0000;
 
 	if (ACCESSING_BITS_0_7)
 		retdat |= CDC_Reg_r();
@@ -851,29 +943,29 @@ READ16_MEMBER( lc89510_temp_device::segacd_cdc_data_r )
 }
 
 
-READ16_MEMBER( lc89510_temp_device::cdc_data_sub_r )
+uint16_t lc89510_temp_device::cdc_data_sub_r()
 {
-	return CDC_Host_r(space.machine(), READ_SUB);
+	return CDC_Host_r(READ_SUB);
 }
 
-READ16_MEMBER( lc89510_temp_device::cdc_data_main_r )
+uint16_t lc89510_temp_device::cdc_data_main_r()
 {
-	return CDC_Host_r(space.machine(), READ_MAIN);
+	return CDC_Host_r(READ_MAIN);
 }
 
 
 
 
-READ16_MEMBER( lc89510_temp_device::segacd_irq_mask_r )
+uint16_t lc89510_temp_device::segacd_irq_mask_r()
 {
 	return segacd_irq_mask;
 }
 
-WRITE16_MEMBER( lc89510_temp_device::segacd_irq_mask_w )
+void lc89510_temp_device::segacd_irq_mask_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	if (ACCESSING_BITS_0_7)
 	{
-		UINT16 control = CDD_CONTROL;
+		uint16_t control = CDD_CONTROL;
 
 	//  printf("segacd_irq_mask_w %04x %04x (CDD control is %04x)\n",data, mem_mask, control);
 
@@ -884,7 +976,7 @@ WRITE16_MEMBER( lc89510_temp_device::segacd_irq_mask_w )
 				if (!(segacd_irq_mask & 0x10))
 				{
 					segacd_irq_mask = data & 0x7e;
-					CDD_Process(space.machine(), 0);
+					CDD_Process(0);
 					return;
 				}
 			}
@@ -899,17 +991,17 @@ WRITE16_MEMBER( lc89510_temp_device::segacd_irq_mask_w )
 	}
 }
 
-READ16_MEMBER( lc89510_temp_device::segacd_cdd_ctrl_r )
+uint16_t lc89510_temp_device::segacd_cdd_ctrl_r()
 {
 	return CDD_CONTROL;
 }
 
 
-WRITE16_MEMBER( lc89510_temp_device::segacd_cdd_ctrl_w )
+void lc89510_temp_device::segacd_cdd_ctrl_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	if (ACCESSING_BITS_0_7)
 	{
-		UINT16 control = CDD_CONTROL;
+		uint16_t control = CDD_CONTROL;
 
 
 		//printf("segacd_cdd_ctrl_w %04x %04x (control %04x irq %04x\n", data, mem_mask, control, segacd_irq_mask);
@@ -922,7 +1014,7 @@ WRITE16_MEMBER( lc89510_temp_device::segacd_cdd_ctrl_w )
 			{
 				if (segacd_irq_mask&0x10)
 				{
-					CDD_Process(space.machine(), 1);
+					CDD_Process(1);
 				}
 			}
 		}
@@ -937,9 +1029,9 @@ WRITE16_MEMBER( lc89510_temp_device::segacd_cdd_ctrl_w )
 
 
 // mapped as serial
-UINT8 lc89510_temp_device::neocd_cdd_rx_r()
+uint8_t lc89510_temp_device::neocd_cdd_rx_r()
 {
-	UINT8 ret = 0;
+	uint8_t ret = 0;
 
 	if (NeoCDCommsWordCount >= 0 && NeoCDCommsWordCount < 10) {
 		ret = CDD_RX[NeoCDCommsWordCount] & 0x0F;
@@ -953,13 +1045,13 @@ UINT8 lc89510_temp_device::neocd_cdd_rx_r()
 }
 
 // mapped like 'ram'
-READ8_MEMBER( lc89510_temp_device::segacd_cdd_rx_r )
+uint8_t lc89510_temp_device::segacd_cdd_rx_r(offs_t offset)
 {
 	return CDD_RX[offset];
 }
 
 // mapped as serial
-void lc89510_temp_device::neocd_cdd_tx_w(UINT8 data)
+void lc89510_temp_device::neocd_cdd_tx_w(uint8_t data)
 {
 	//printf("neocd_cdd_tx_w %d, %02x\n", NeoCDCommsWordCount, data);
 
@@ -968,13 +1060,13 @@ void lc89510_temp_device::neocd_cdd_tx_w(UINT8 data)
 	}
 }
 
-WRITE8_MEMBER( lc89510_temp_device::segacd_cdd_tx_w )
+void lc89510_temp_device::segacd_cdd_tx_w(offs_t offset, uint8_t data)
 {
 	CDD_TX[offset] = data;
 
 	if(offset == 9)
 	{
-		CDD_Import(space.machine());
+		CDD_Import();
 	}
 }
 
@@ -983,12 +1075,12 @@ WRITE8_MEMBER( lc89510_temp_device::segacd_cdd_tx_w )
 
 
 
-READ16_MEMBER( lc89510_temp_device::segacd_cdfader_r )
+uint16_t lc89510_temp_device::segacd_cdfader_r()
 {
 	return 0;
 }
 
-WRITE16_MEMBER( lc89510_temp_device::segacd_cdfader_w )
+void  lc89510_temp_device::segacd_cdfader_w(uint16_t data)
 {
 	static double cdfader_vol;
 	if(data & 0x800f)
@@ -997,13 +1089,13 @@ WRITE16_MEMBER( lc89510_temp_device::segacd_cdfader_w )
 	cdfader_vol = (double)((data & 0x3ff0) >> 4);
 
 	if(data & 0x4000)
-		cdfader_vol = 100.0;
+		cdfader_vol = 1.0;
 	else
-		cdfader_vol = (cdfader_vol / 1024.0) * 100.0;
+		cdfader_vol = cdfader_vol / 1024.0;
 
 	//printf("%f\n",cdfader_vol);
 
-	m_cdda->set_volume(cdfader_vol);
+	m_cdda->set_output_gain(ALL_OUTPUTS, cdfader_vol);
 }
 
 void lc89510_temp_device::reset_cd(void)
@@ -1013,16 +1105,12 @@ void lc89510_temp_device::reset_cd(void)
 	lc89510_Reset();
 
 	{
-		cdrom_image_device *cddevice = machine().device<cdrom_image_device>("cdrom");
-		if ( cddevice )
+		segacd.cd = m_cdrom->get_cdrom_file();
+		if ( segacd.cd )
 		{
-			segacd.cd = cddevice->get_cdrom_file();
-			if ( segacd.cd )
-			{
-				segacd.toc = cdrom_get_toc( segacd.cd );
-				m_cdda->set_cdrom(segacd.cd);
-				m_cdda->stop_audio(); //stop any pending CD-DA
-			}
+			segacd.toc = cdrom_get_toc( segacd.cd );
+			m_cdda->set_cdrom(segacd.cd);
+			m_cdda->stop_audio(); //stop any pending CD-DA
 		}
 	}
 
@@ -1049,43 +1137,31 @@ TIMER_DEVICE_CALLBACK_MEMBER( lc89510_temp_device::segacd_access_timer_callback 
 	{
 		if (nff0002 & 0x0050)
 		{
-			type2_interrupt_callback();
+			m_type2_interrupt_callback();
 		}
 	}
 
 	if (SCD_READ_ENABLED) // if (nff0002 & 0x0050) if (nff0002 & 0x0500);
 	{
 		set_data_audio_mode();
-		Read_LBA_To_Buffer(machine());
+		Read_LBA_To_Buffer();
 	}
 
 }
 
 
-
-
-static MACHINE_CONFIG_FRAGMENT( lc89510_temp_fragment )
-	MCFG_TIMER_DRIVER_ADD_PERIODIC("hock_timer", lc89510_temp_device, segacd_access_timer_callback, attotime::from_hz(75))
-
-	MCFG_SOUND_ADD( "cdda", CDDA, 0 )
-	MCFG_SOUND_ROUTE( 0, ":lspeaker", 0.50 ) // TODO: accurate volume balance
-	MCFG_SOUND_ROUTE( 1, ":rspeaker", 0.50 )
-MACHINE_CONFIG_END
-
-machine_config_constructor lc89510_temp_device::device_mconfig_additions() const
+void lc89510_temp_device::device_add_mconfig(machine_config &config)
 {
-	return MACHINE_CONFIG_NAME( lc89510_temp_fragment );
+	TIMER(config, "hock_timer").configure_periodic(FUNC(lc89510_temp_device::segacd_access_timer_callback), attotime::from_hz(75));
+
+	cdda_device &cdda(CDDA(config, "cdda"));
+	cdda.add_route(0, ":lspeaker", 0.50); // TODO: accurate volume balance
+	cdda.add_route(1, ":rspeaker", 0.50);
 }
 
+
+
 /* Neo CD */
-
-
-
-
-
-
-
-
 
 
 void lc89510_temp_device::NeoCDCommsReset()
@@ -1106,7 +1182,7 @@ void lc89510_temp_device::NeoCDCommsReset()
 
 
 
-void lc89510_temp_device::NeoCDCommsControl(UINT8 clock, UINT8 send)
+void lc89510_temp_device::NeoCDCommsControl(uint8_t clock, uint8_t send)
 {
 	if (clock && !bNeoCDCommsClock) {
 		NeoCDCommsWordCount++;
@@ -1117,7 +1193,7 @@ void lc89510_temp_device::NeoCDCommsControl(UINT8 clock, UINT8 send)
 			{
 				if (CDD_TX[0])
 				{
-					if (!CDD_Import(machine()))
+					if (!CDD_Import())
 						return;
 
 					CDD_Export(true); // true == neocd hack,
@@ -1143,7 +1219,7 @@ void lc89510_temp_device::LC8951UpdateHeader() // neocd
 
 	} else {
 		// HEAD registers have header
-		UINT32 msf = lba_to_msf_alt(SCD_CURLBA+150);
+		uint32_t msf = lba_to_msf_alt(SCD_CURLBA+150);
 
 		LC8951RegistersR[REG_R_HEAD0] = to_bcd (((msf & 0x00ff0000)>>16), true);    // HEAD0
 		LC8951RegistersR[REG_R_HEAD1] = to_bcd (((msf & 0x0000ff00)>>8), true);     // HEAD1
@@ -1162,7 +1238,7 @@ char* lc89510_temp_device::LC8915InitTransfer(int NeoCDDMACount)
 		//bprintf(PRINT_ERROR, _T("    LC8951 DOUTEN status invalid\n"));
 		return nullptr;
 	}
-	if (((LC8951RegistersW[REG_W_DACH] << 8) | LC8951RegistersW[REG_W_DACL]) + (NeoCDDMACount << 1) > LC89510_EXTERNAL_BUFFER_SIZE) {
+	if (((LC8951RegistersW[REG_W_DACH] << 8) | LC8951RegistersW[REG_W_DACL]) + (NeoCDDMACount << 1) > EXTERNAL_BUFFER_SIZE) {
 		//bprintf(PRINT_ERROR, _T("    DMA transfer exceeds current sector in LC8951 external buffer\n"));
 
 		return nullptr;
@@ -1188,7 +1264,7 @@ void lc89510_temp_device::LC8915EndTransfer()
 }
 
 
-void lc89510_temp_device::CDC_End_Transfer(running_machine& machine)
+void lc89510_temp_device::CDC_End_Transfer()
 {
 	STOP_CDC_DMA
 	CDC_REG0 |= 0x8000;
@@ -1207,7 +1283,7 @@ void lc89510_temp_device::CDC_End_Transfer(running_machine& machine)
 
 
 
-void lc89510_temp_device::scd_ctrl_checks(running_machine& machine)
+void lc89510_temp_device::scd_ctrl_checks()
 {
 	LC8951RegistersR[REG_R_STAT0] = 0x80;
 
@@ -1218,7 +1294,7 @@ void lc89510_temp_device::scd_ctrl_checks(running_machine& machine)
 	{
 		if (is_neoCD)
 		{
-			type1_interrupt_callback();
+			m_type1_interrupt_callback();
 		}
 		else
 		{
@@ -1251,7 +1327,7 @@ void lc89510_temp_device::scd_advance_current_readpos(void)
 
 }
 
-int lc89510_temp_device::Read_LBA_To_Buffer(running_machine& machine)
+int lc89510_temp_device::Read_LBA_To_Buffer()
 {
 	bool data_track = false;
 	if (CDD_CONTROL & 0x0100) data_track = true;
@@ -1304,7 +1380,7 @@ int lc89510_temp_device::Read_LBA_To_Buffer(running_machine& machine)
 			}
 		}
 
-		scd_ctrl_checks(machine);
+		scd_ctrl_checks();
 
 
 	}
@@ -1318,14 +1394,14 @@ int lc89510_temp_device::Read_LBA_To_Buffer(running_machine& machine)
 
 
 
-void lc89510_temp_device::nff0002_set(UINT16 wordValue)
+void lc89510_temp_device::nff0002_set(uint16_t wordValue)
 {
 	nff0002 = wordValue;
 }
 
-void lc89510_temp_device::nff0016_set(UINT16 wordValue)
+void lc89510_temp_device::nff0016_set(uint16_t wordValue)
 {
 	nff0016 = wordValue;
 }
 
-UINT16 lc89510_temp_device::nff0016_r(void) { return nff0016; }
+uint16_t lc89510_temp_device::nff0016_r(void) { return nff0016; }

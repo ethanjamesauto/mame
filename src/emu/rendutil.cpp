@@ -2,16 +2,118 @@
 // copyright-holders:Aaron Giles
 /***************************************************************************
 
-    rendutil.c
+    rendutil.cpp
 
     Core rendering utilities.
+
 ***************************************************************************/
 
 #include "emu.h"
-#include "render.h"
 #include "rendutil.h"
+
+#include "msdib.h"
 #include "png.h"
 
+#include "jpeglib.h"
+#include "jerror.h"
+
+
+namespace {
+
+struct jpeg_corefile_source : public jpeg_source_mgr
+{
+	static void source(j_decompress_ptr cinfo, util::core_file &file);
+
+private:
+	static constexpr unsigned INPUT_BUF_SIZE = 4096;
+
+	static void do_init(j_decompress_ptr cinfo)
+	{
+		jpeg_corefile_source &src = *static_cast<jpeg_corefile_source *>(cinfo->src);
+		src.start_of_file = true;
+	}
+
+	static boolean do_fill(j_decompress_ptr cinfo)
+	{
+		jpeg_corefile_source &src = *static_cast<jpeg_corefile_source *>(cinfo->src);
+
+		size_t nbytes = src.infile->read(src.buffer, INPUT_BUF_SIZE);
+
+		if (0 >= nbytes)
+		{
+			if (src.start_of_file)
+				ERREXIT(cinfo, JERR_INPUT_EMPTY);
+			WARNMS(cinfo, JWRN_JPEG_EOF);
+			src.buffer[0] = JOCTET(0xff);
+			src.buffer[1] = JOCTET(JPEG_EOI);
+			nbytes = 2;
+		}
+
+		src.next_input_byte = src.buffer;
+		src.bytes_in_buffer = nbytes;
+		src.start_of_file = false;
+
+		return TRUE;
+	}
+
+	static void do_skip(j_decompress_ptr cinfo, long num_bytes)
+	{
+		jpeg_corefile_source &src = *static_cast<jpeg_corefile_source *>(cinfo->src);
+
+		if (0 < num_bytes)
+		{
+			while (long(src.bytes_in_buffer) < num_bytes)
+			{
+				num_bytes -= long(src.bytes_in_buffer);
+				(void)(*src.fill_input_buffer)(cinfo);
+			}
+			src.next_input_byte += size_t(num_bytes);
+			src.bytes_in_buffer -= size_t(num_bytes);
+		}
+	}
+
+	static void do_term(j_decompress_ptr cinfo)
+	{
+	}
+
+	util::core_file *infile;
+	JOCTET *buffer;
+	bool start_of_file;
+};
+
+void jpeg_corefile_source::source(j_decompress_ptr cinfo, util::core_file &file)
+{
+	jpeg_corefile_source *src;
+	if (!cinfo->src)
+	{
+		src = reinterpret_cast<jpeg_corefile_source *>(
+				(*cinfo->mem->alloc_small)(
+					reinterpret_cast<j_common_ptr>(cinfo),
+					JPOOL_PERMANENT,
+					sizeof(jpeg_corefile_source)));
+		cinfo->src = src;
+		src->buffer = reinterpret_cast<JOCTET *>(
+				(*cinfo->mem->alloc_small)(
+					reinterpret_cast<j_common_ptr>(cinfo),
+					JPOOL_PERMANENT,
+					INPUT_BUF_SIZE * sizeof(JOCTET)));
+	}
+	else
+	{
+		src = static_cast<jpeg_corefile_source *>(cinfo->src);
+	}
+
+	src->init_source = &jpeg_corefile_source::do_init;
+	src->fill_input_buffer = &jpeg_corefile_source::do_fill;
+	src->skip_input_data = &jpeg_corefile_source::do_skip;
+	src->resync_to_restart = jpeg_resync_to_restart;
+	src->term_source = &jpeg_corefile_source::do_term;
+	src->infile = &file;
+	src->bytes_in_buffer = 0;
+	src->next_input_byte = nullptr;
+}
+
+} // anonymous namespace
 
 
 /***************************************************************************
@@ -19,10 +121,9 @@
 ***************************************************************************/
 
 /* utilities */
-static void resample_argb_bitmap_average(UINT32 *dest, UINT32 drowpixels, UINT32 dwidth, UINT32 dheight, const UINT32 *source, UINT32 srowpixels, UINT32 swidth, UINT32 sheight, const render_color &color, UINT32 dx, UINT32 dy);
-static void resample_argb_bitmap_bilinear(UINT32 *dest, UINT32 drowpixels, UINT32 dwidth, UINT32 dheight, const UINT32 *source, UINT32 srowpixels, UINT32 swidth, UINT32 sheight, const render_color &color, UINT32 dx, UINT32 dy);
-static bool copy_png_to_bitmap(bitmap_argb32 &bitmap, const png_info *png);
-static bool copy_png_alpha_to_bitmap(bitmap_argb32 &bitmap, const png_info *png);
+static void resample_argb_bitmap_average(u32 *dest, u32 drowpixels, u32 dwidth, u32 dheight, const u32 *source, u32 srowpixels, u32 swidth, u32 sheight, const render_color &color, u32 dx, u32 dy);
+static void resample_argb_bitmap_bilinear(u32 *dest, u32 drowpixels, u32 dwidth, u32 dheight, const u32 *source, u32 srowpixels, u32 swidth, u32 sheight, const render_color &color, u32 dx, u32 dy);
+static bool copy_png_alpha_to_bitmap(bitmap_argb32 &bitmap, const util::png_info &png);
 
 
 
@@ -35,24 +136,24 @@ static bool copy_png_alpha_to_bitmap(bitmap_argb32 &bitmap, const png_info *png)
     quality resampling of a texture
 -------------------------------------------------*/
 
-void render_resample_argb_bitmap_hq(bitmap_argb32 &dest, bitmap_argb32 &source, const render_color &color)
+void render_resample_argb_bitmap_hq(bitmap_argb32 &dest, bitmap_argb32 &source, const render_color &color, bool force)
 {
 	if (dest.width() == 0 || dest.height() == 0)
 		return;
 
 	/* adjust the source base */
-	const UINT32 *sbase = &source.pix32(0);
+	const u32 *sbase = &source.pix(0);
 
 	/* determine the steppings */
-	UINT32 swidth = source.width();
-	UINT32 sheight = source.height();
-	UINT32 dwidth = dest.width();
-	UINT32 dheight = dest.height();
-	UINT32 dx = (swidth << 12) / dwidth;
-	UINT32 dy = (sheight << 12) / dheight;
+	u32 swidth = source.width();
+	u32 sheight = source.height();
+	u32 dwidth = dest.width();
+	u32 dheight = dest.height();
+	u32 dx = (swidth << 12) / dwidth;
+	u32 dy = (sheight << 12) / dheight;
 
 	/* if the source is higher res than the target, use full averaging */
-	if (dx > 0x1000 || dy > 0x1000)
+	if (dx > 0x1000 || dy > 0x1000 || force)
 		resample_argb_bitmap_average(&dest.pix(0), dest.rowpixels(), dwidth, dheight, sbase, source.rowpixels(), swidth, sheight, color, dx, dy);
 	else
 		resample_argb_bitmap_bilinear(&dest.pix(0), dest.rowpixels(), dwidth, dheight, sbase, source.rowpixels(), swidth, sheight, color, dx, dy);
@@ -65,11 +166,11 @@ void render_resample_argb_bitmap_hq(bitmap_argb32 &dest, bitmap_argb32 &source, 
     all contributing pixels
 -------------------------------------------------*/
 
-static void resample_argb_bitmap_average(UINT32 *dest, UINT32 drowpixels, UINT32 dwidth, UINT32 dheight, const UINT32 *source, UINT32 srowpixels, UINT32 swidth, UINT32 sheight, const render_color &color, UINT32 dx, UINT32 dy)
+static void resample_argb_bitmap_average(u32 *dest, u32 drowpixels, u32 dwidth, u32 dheight, const u32 *source, u32 srowpixels, u32 swidth, u32 sheight, const render_color &color, u32 dx, u32 dy)
 {
-	UINT64 sumscale = (UINT64)dx * (UINT64)dy;
-	UINT32 r, g, b, a;
-	UINT32 x, y;
+	u64 sumscale = u64(dx) * u64(dy);
+	u32 r, g, b, a;
+	u32 x, y;
 
 	/* precompute premultiplied R/G/B/A factors */
 	r = color.r * color.a * 256.0f;
@@ -80,22 +181,22 @@ static void resample_argb_bitmap_average(UINT32 *dest, UINT32 drowpixels, UINT32
 	/* loop over the target vertically */
 	for (y = 0; y < dheight; y++)
 	{
-		UINT32 starty = y * dy;
+		u32 starty = y * dy;
 
 		/* loop over the target horizontally */
 		for (x = 0; x < dwidth; x++)
 		{
-			UINT64 sumr = 0, sumg = 0, sumb = 0, suma = 0;
-			UINT32 startx = x * dx;
-			UINT32 xchunk, ychunk;
-			UINT32 curx, cury;
+			u64 sumr = 0, sumg = 0, sumb = 0, suma = 0;
+			u32 startx = x * dx;
+			u32 xchunk, ychunk;
+			u32 curx, cury;
 
-			UINT32 yremaining = dy;
+			u32 yremaining = dy;
 
 			/* accumulate all source pixels that contribute to this pixel */
 			for (cury = starty; yremaining; cury += ychunk)
 			{
-				UINT32 xremaining = dx;
+				u32 xremaining = dx;
 
 				/* determine the Y contribution, clamping to the amount remaining */
 				ychunk = 0x1000 - (cury & 0xfff);
@@ -106,7 +207,7 @@ static void resample_argb_bitmap_average(UINT32 *dest, UINT32 drowpixels, UINT32
 				/* loop over all source pixels in the X direction */
 				for (curx = startx; xremaining; curx += xchunk)
 				{
-					UINT32 factor;
+					u32 factor;
 
 					/* determine the X contribution, clamping to the amount remaining */
 					xchunk = 0x1000 - (curx & 0xfff);
@@ -156,11 +257,11 @@ static void resample_argb_bitmap_average(UINT32 *dest, UINT32 drowpixels, UINT32
     sampling via a bilinear filter
 -------------------------------------------------*/
 
-static void resample_argb_bitmap_bilinear(UINT32 *dest, UINT32 drowpixels, UINT32 dwidth, UINT32 dheight, const UINT32 *source, UINT32 srowpixels, UINT32 swidth, UINT32 sheight, const render_color &color, UINT32 dx, UINT32 dy)
+static void resample_argb_bitmap_bilinear(u32 *dest, u32 drowpixels, u32 dwidth, u32 dheight, const u32 *source, u32 srowpixels, u32 swidth, u32 sheight, const render_color &color, u32 dx, u32 dy)
 {
-	UINT32 maxx = swidth << 12, maxy = sheight << 12;
-	UINT32 r, g, b, a;
-	UINT32 x, y;
+	u32 maxx = swidth << 12, maxy = sheight << 12;
+	u32 r, g, b, a;
+	u32 x, y;
 
 	/* precompute premultiplied R/G/B/A factors */
 	r = color.r * color.a * 256.0f;
@@ -171,17 +272,17 @@ static void resample_argb_bitmap_bilinear(UINT32 *dest, UINT32 drowpixels, UINT3
 	/* loop over the target vertically */
 	for (y = 0; y < dheight; y++)
 	{
-		UINT32 starty = y * dy;
+		u32 starty = y * dy;
 
 		/* loop over the target horizontally */
 		for (x = 0; x < dwidth; x++)
 		{
-			UINT32 startx = x * dx;
+			u32 startx = x * dx;
 			rgb_t pix0, pix1, pix2, pix3;
-			UINT32 sumr, sumg, sumb, suma;
-			UINT32 nextx, nexty;
-			UINT32 curx, cury;
-			UINT32 factor;
+			u32 sumr, sumg, sumb, suma;
+			u32 nextx, nexty;
+			u32 curx, cury;
+			u32 factor;
 
 			/* adjust start to the center; note that this math will tend to produce */
 			/* negative results on the first pixel, which is why we clamp below */
@@ -194,13 +295,13 @@ static void resample_argb_bitmap_bilinear(UINT32 *dest, UINT32 drowpixels, UINT3
 
 			/* fetch the four relevant pixels */
 			pix0 = pix1 = pix2 = pix3 = 0;
-			if ((INT32)cury >= 0 && cury < maxy && (INT32)curx >= 0 && curx < maxx)
+			if (s32(cury) >= 0 && cury < maxy && s32(curx) >= 0 && curx < maxx)
 				pix0 = source[(cury >> 12) * srowpixels + (curx >> 12)];
-			if ((INT32)cury >= 0 && cury < maxy && (INT32)nextx >= 0 && nextx < maxx)
+			if (s32(cury) >= 0 && cury < maxy && s32(nextx) >= 0 && nextx < maxx)
 				pix1 = source[(cury >> 12) * srowpixels + (nextx >> 12)];
-			if ((INT32)nexty >= 0 && nexty < maxy && (INT32)curx >= 0 && curx < maxx)
+			if (s32(nexty) >= 0 && nexty < maxy && s32(curx) >= 0 && curx < maxx)
 				pix2 = source[(nexty >> 12) * srowpixels + (curx >> 12)];
-			if ((INT32)nexty >= 0 && nexty < maxy && (INT32)nextx >= 0 && nextx < maxx)
+			if (s32(nexty) >= 0 && nexty < maxy && s32(nextx) >= 0 && nextx < maxx)
 				pix3 = source[(nexty >> 12) * srowpixels + (nextx >> 12)];
 
 			/* compute the x/y scaling factors */
@@ -262,13 +363,13 @@ static void resample_argb_bitmap_bilinear(UINT32 *dest, UINT32 drowpixels, UINT3
     render_clip_line - clip a line to a rectangle
 -------------------------------------------------*/
 
-int render_clip_line(render_bounds *bounds, const render_bounds *clip)
+bool render_clip_line(render_bounds *bounds, const render_bounds *clip)
 {
 	/* loop until we get a final result */
 	while (1)
 	{
-		UINT8 code0 = 0, code1 = 0;
-		UINT8 thiscode;
+		u8 code0 = 0, code1 = 0;
+		u8 thiscode;
 		float x, y;
 
 		/* compute Cohen Sutherland bits for first coordinate */
@@ -291,13 +392,13 @@ int render_clip_line(render_bounds *bounds, const render_bounds *clip)
 		if (bounds->x1 < clip->x0)
 			code1 |= 8;
 
-		/* trivial accept: just return FALSE */
+		/* trivial accept: just return false */
 		if ((code0 | code1) == 0)
-			return FALSE;
+			return false;
 
-		/* trivial reject: just return TRUE */
+		/* trivial reject: just return true */
 		if ((code0 & code1) != 0)
-			return TRUE;
+			return true;
 
 		/* fix one of the OOB cases */
 		thiscode = code0 ? code0 : code1;
@@ -349,7 +450,7 @@ int render_clip_line(render_bounds *bounds, const render_bounds *clip)
     render_clip_quad - clip a quad to a rectangle
 -------------------------------------------------*/
 
-int render_clip_quad(render_bounds *bounds, const render_bounds *clip, render_quad_texuv *texcoords)
+bool render_clip_quad(render_bounds *bounds, const render_bounds *clip, render_quad_texuv *texcoords)
 {
 	/* ensure our assumptions about the bounds are correct */
 	assert(bounds->x0 <= bounds->x1);
@@ -357,13 +458,13 @@ int render_clip_quad(render_bounds *bounds, const render_bounds *clip, render_qu
 
 	/* trivial reject */
 	if (bounds->y1 < clip->y0)
-		return TRUE;
+		return true;
 	if (bounds->y0 > clip->y1)
-		return TRUE;
+		return true;
 	if (bounds->x1 < clip->x0)
-		return TRUE;
+		return true;
 	if (bounds->x0 > clip->x1)
-		return TRUE;
+		return true;
 
 	/* clip top (x0,y0)-(x1,y1) */
 	if (bounds->y0 < clip->y0)
@@ -420,7 +521,7 @@ int render_clip_quad(render_bounds *bounds, const render_bounds *clip, render_qu
 			texcoords->br.v -= (texcoords->br.v - texcoords->bl.v) * frac;
 		}
 	}
-	return FALSE;
+	return false;
 }
 
 
@@ -429,10 +530,9 @@ int render_clip_quad(render_bounds *bounds, const render_bounds *clip, render_qu
     width to four points
 -------------------------------------------------*/
 
-void render_line_to_quad(const render_bounds *bounds, float width, render_bounds *bounds0, render_bounds *bounds1)
+void render_line_to_quad(const render_bounds *bounds, float width, float length_extension, render_bounds *bounds0, render_bounds *bounds1)
 {
 	render_bounds modbounds = *bounds;
-	float unitx, unity;
 
 	/*
 	    High-level logic -- due to math optimizations, this info is lost below.
@@ -480,27 +580,46 @@ void render_line_to_quad(const render_bounds *bounds, float width, render_bounds
 	*/
 
 	/* we only care about the half-width */
-	width *= 0.5f;
+	float half_width = width * 0.5f;
 
 	/* compute a vector from point 0 to point 1 */
-	unitx = modbounds.x1 - modbounds.x0;
-	unity = modbounds.y1 - modbounds.y0;
+	float unitx = modbounds.x1 - modbounds.x0;
+	float unity = modbounds.y1 - modbounds.y0;
 
 	/* points just use a +1/+1 unit vector; this gives a nice diamond pattern */
 	if (unitx == 0 && unity == 0)
 	{
-		unitx = unity = 0.70710678f * width;
-		modbounds.x0 -= 0.5f * unitx;
-		modbounds.y0 -= 0.5f * unity;
-		modbounds.x1 += 0.5f * unitx;
-		modbounds.y1 += 0.5f * unity;
+		/* length of a unit vector (1,1) */
+		float unit_length = 0.70710678f;
+
+		unitx = unity = unit_length * half_width;
+		modbounds.x0 -= unitx;
+		modbounds.y0 -= unity;
+		modbounds.x1 += unitx;
+		modbounds.y1 += unity;
 	}
 
 	/* lines need to be divided by their length */
 	else
 	{
+		float length = sqrtf(unitx * unitx + unity * unity);
+
+		/* extend line length */
+		if (length_extension > 0.0f)
+		{
+			float half_length_extension = length_extension *0.5f;
+
+			float directionx = unitx / length;
+			float directiony = unity / length;
+
+			modbounds.x0 -= directionx * half_length_extension;
+			modbounds.y0 -= directiony * half_length_extension;
+			modbounds.x1 += directionx * half_length_extension;
+			modbounds.y1 += directiony * half_length_extension;
+		}
+
 		/* prescale unitx and unity by the half-width */
-		float invlength = width / sqrtf(unitx * unitx + unity * unity);
+		float invlength = half_width / length;
 		unitx *= invlength;
 		unity *= invlength;
 	}
@@ -517,9 +636,110 @@ void render_line_to_quad(const render_bounds *bounds, float width, render_bounds
 	bounds1->x0 = modbounds.x1 - unity;
 	bounds1->y0 = modbounds.y1 + unitx;
 
-	/* rotate the unit vector by -09 degrees and add to point 1 */
+	/* rotate the unit vector by -90 degrees and add to point 1 */
 	bounds1->x1 = modbounds.x1 + unity;
 	bounds1->y1 = modbounds.y1 - unitx;
+}
+
+
+/*-------------------------------------------------
+    render_load_msdib - load a Microsoft DIB file
+    into a bitmap
+-------------------------------------------------*/
+
+void render_load_msdib(bitmap_argb32 &bitmap, util::core_file &file)
+{
+	// deallocate previous bitmap
+	bitmap.reset();
+
+	// read the DIB data
+	util::msdib_error const result = util::msdib_read_bitmap(file, bitmap);
+	if (result != util::msdib_error::NONE)
+	{
+		osd_printf_error("Error reading Microsoft DIB file\n");
+		bitmap.reset();
+	}
+}
+
+
+/*-------------------------------------------------
+    render_load_jpeg - load a JPEG file into a
+    bitmap
+-------------------------------------------------*/
+
+void render_load_jpeg(bitmap_argb32 &bitmap, util::core_file &file)
+{
+	// deallocate previous bitmap
+	bitmap.reset();
+
+	// create a JPEG source for the file
+	jpeg_decompress_struct cinfo;
+	jpeg_error_mgr jerr;
+	cinfo.err = jpeg_std_error(&jerr);
+	jerr.error_exit = [] (j_common_ptr cinfo) { throw cinfo->err; };
+	JSAMPARRAY buffer = nullptr;
+	try
+	{
+		jpeg_create_decompress(&cinfo);
+		cinfo.mem->max_memory_to_use = 128 * 1024 * 1024;
+		jpeg_corefile_source::source(&cinfo, file);
+
+		// read JPEG header and start decompression
+		jpeg_read_header(&cinfo, TRUE);
+		jpeg_start_decompress(&cinfo);
+
+		// allocates the destination bitmap
+		int w = cinfo.output_width;
+		int h = cinfo.output_height;
+		int s = cinfo.output_components;
+		bitmap.allocate(w, h);
+
+		// allocates a buffer to receive the information and copy them into the bitmap
+		int row_stride = cinfo.output_width * cinfo.output_components;
+		JSAMPARRAY buffer = reinterpret_cast<JSAMPARRAY>(malloc(sizeof(JSAMPROW)));
+		buffer[0] = reinterpret_cast<JSAMPROW>(malloc(sizeof(JSAMPLE) * row_stride));
+
+		while (cinfo.output_scanline < cinfo.output_height)
+		{
+			int j = cinfo.output_scanline;
+			jpeg_read_scanlines(&cinfo, buffer, 1);
+
+			if (s == 1)
+			{
+				for (int i = 0; i < w; ++i)
+					bitmap.pix(j, i) = rgb_t(0xFF, buffer[0][i], buffer[0][i], buffer[0][i]);
+
+			}
+			else if (s == 3)
+			{
+				for (int i = 0; i < w; ++i)
+					bitmap.pix(j, i) = rgb_t(0xFF, buffer[0][i * s], buffer[0][i * s + 1], buffer[0][i * s + 2]);
+			}
+			else
+			{
+				osd_printf_error("Cannot read JPEG data from file.\n");
+				bitmap.reset();
+				break;
+			}
+		}
+
+		// finish decompression and frees the memory
+		jpeg_finish_decompress(&cinfo);
+	}
+	catch (jpeg_error_mgr *)
+	{
+		char msg[1024];
+		(cinfo.err->format_message)(reinterpret_cast<j_common_ptr>(&cinfo), msg);
+		osd_printf_error("JPEG error reading data from file: %s\n", msg);
+		bitmap.reset();
+	}
+	jpeg_destroy_decompress(&cinfo);
+	if (buffer)
+	{
+		if (buffer[0])
+			free(buffer[0]);
+		free(buffer);
+	}
 }
 
 
@@ -528,131 +748,53 @@ void render_line_to_quad(const render_bounds *bounds, float width, render_bounds
     bitmap
 -------------------------------------------------*/
 
-bool render_load_png(bitmap_argb32 &bitmap, emu_file &file, const char *dirname, const char *filename, bool load_as_alpha_to_existing)
+bool render_load_png(bitmap_argb32 &bitmap, util::core_file &file, bool load_as_alpha_to_existing)
 {
 	// deallocate if we're not overlaying alpha
 	if (!load_as_alpha_to_existing)
 		bitmap.reset();
 
-	// open the file
-	std::string fname;
-	if (dirname == nullptr)
-		fname.assign(filename);
-	else
-		fname.assign(dirname).append(PATH_SEPARATOR).append(filename);
-	file_error filerr = file.open(fname.c_str());
-	if (filerr != FILERR_NONE)
-		return false;
-
 	// read the PNG data
-	png_info png;
-	png_error result = png_read_file(file, &png);
-	file.close();
-	if (result != PNGERR_NONE)
-		return false;
-
-	// verify we can handle this PNG
-	if (png.bit_depth > 8)
+	util::png_info png;
+	util::png_error const result = png.read_file(file);
+	if (result != util::png_error::NONE)
 	{
-		osd_printf_error("%s: Unsupported bit depth %d (8 bit max)\n", filename, png.bit_depth);
-		png_free(&png);
-		return false;
-	}
-	if (png.interlace_method != 0)
-	{
-		osd_printf_error("%s: Interlace unsupported\n", filename);
-		png_free(&png);
-		return false;
-	}
-	if (png.color_type != 0 && png.color_type != 3 && png.color_type != 2 && png.color_type != 6)
-	{
-		osd_printf_error("%s: Unsupported color type %d\n", filename, png.color_type);
-		png_free(&png);
+		osd_printf_error("Error reading PNG file\n");
 		return false;
 	}
 
 	// if less than 8 bits, upsample
-	png_expand_buffer_8bit(&png);
+	if (util::png_error::NONE != png.expand_buffer_8bit())
+	{
+		osd_printf_error("Error upsampling PNG bitmap\n");
+		return false;
+	}
 
-	// non-alpha case
 	bool hasalpha = false;
 	if (!load_as_alpha_to_existing)
 	{
-		bitmap.allocate(png.width, png.height);
-		hasalpha = copy_png_to_bitmap(bitmap, &png);
+		// non-alpha case
+		if (util::png_error::NONE != png.copy_to_bitmap(bitmap, hasalpha))
+		{
+			osd_printf_error("Error copying PNG bitmap to MAME bitmap\n");
+			return false;
+		}
 	}
-
-	// alpha case
 	else if (png.width == bitmap.width() && png.height == bitmap.height())
-		hasalpha = copy_png_alpha_to_bitmap(bitmap, &png);
+	{
+		// verify we can handle this PNG
+		if (png.bit_depth > 8)
+		{
+			osd_printf_error("Unsupported bit depth %d (8 bit max)\n", png.bit_depth);
+			return false;
+		}
+
+		// alpha case
+		hasalpha = copy_png_alpha_to_bitmap(bitmap, png);
+	}
 
 	// free PNG data
-	png_free(&png);
 	return hasalpha;
-}
-
-
-/*-------------------------------------------------
-    copy_png_to_bitmap - copy the PNG data to a
-    bitmap
--------------------------------------------------*/
-
-static bool copy_png_to_bitmap(bitmap_argb32 &bitmap, const png_info *png)
-{
-	UINT8 accumalpha = 0xff;
-	UINT8 *src;
-	int x, y;
-
-	/* handle 8bpp palettized case */
-	if (png->color_type == 3)
-	{
-		/* loop over width/height */
-		src = png->image;
-		for (y = 0; y < png->height; y++)
-			for (x = 0; x < png->width; x++, src++)
-			{
-				/* determine alpha and expand to 32bpp */
-				UINT8 alpha = (*src < png->num_trans) ? png->trans[*src] : 0xff;
-				accumalpha &= alpha;
-				bitmap.pix32(y, x) = rgb_t(alpha, png->palette[*src * 3], png->palette[*src * 3 + 1], png->palette[*src * 3 + 2]);
-			}
-	}
-
-	/* handle 8bpp grayscale case */
-	else if (png->color_type == 0)
-	{
-		/* loop over width/height */
-		src = png->image;
-		for (y = 0; y < png->height; y++)
-			for (x = 0; x < png->width; x++, src++)
-				bitmap.pix32(y, x) = rgb_t(0xff, *src, *src, *src);
-	}
-
-	/* handle 32bpp non-alpha case */
-	else if (png->color_type == 2)
-	{
-		/* loop over width/height */
-		src = png->image;
-		for (y = 0; y < png->height; y++)
-			for (x = 0; x < png->width; x++, src += 3)
-				bitmap.pix32(y, x) = rgb_t(0xff, src[0], src[1], src[2]);
-	}
-
-	/* handle 32bpp alpha case */
-	else
-	{
-		/* loop over width/height */
-		src = png->image;
-		for (y = 0; y < png->height; y++)
-			for (x = 0; x < png->width; x++, src += 4)
-			{
-				accumalpha &= src[3];
-				bitmap.pix32(y, x) = rgb_t(src[3], src[0], src[1], src[2]);
-			}
-	}
-
-	/* set the hasalpha flag */
-	return (accumalpha != 0xff);
 }
 
 
@@ -661,71 +803,152 @@ static bool copy_png_to_bitmap(bitmap_argb32 &bitmap, const png_info *png)
     to the alpha channel of a bitmap
 -------------------------------------------------*/
 
-static bool copy_png_alpha_to_bitmap(bitmap_argb32 &bitmap, const png_info *png)
+static bool copy_png_alpha_to_bitmap(bitmap_argb32 &bitmap, const util::png_info &png)
 {
-	UINT8 accumalpha = 0xff;
-	UINT8 *src;
-	int x, y;
+	// FIXME: this function is basically copy/pasted from the PNG code in util, and should be unified with it
+	u8 accumalpha = 0xff;
 
-	/* handle 8bpp palettized case */
-	if (png->color_type == 3)
+	// colour format table
+	static constexpr unsigned samples[] = { 1, 0, 3, 1, 2, 0, 4 };
+
+	// adam7 interlace tables
+	static constexpr unsigned x_bias[7] = { 7, 3, 3, 1, 1, 0, 0 };
+	static constexpr unsigned y_bias[7] = { 7, 7, 3, 3, 1, 1, 0 };
+	static constexpr unsigned x_shift[7] = { 3, 3, 2, 2, 1, 1, 0 };
+	static constexpr unsigned y_shift[7] = { 3, 3, 3, 2, 2, 1, 1 };
+
+	unsigned const pass_count(png.interlace_method ? 7 : 1);
+	u32 pass_offset[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+	for (unsigned pass = 0; pass_count > pass; ++pass)
 	{
-		/* loop over width/height */
-		src = png->image;
-		for (y = 0; y < png->height; y++)
-			for (x = 0; x < png->width; x++, src++)
+		// calculate offset for next interlace pass
+		u32 const width(png.interlace_method ? ((png.width + x_bias[pass]) >> x_shift[pass]) : png.width);
+		u32 const height(png.interlace_method ? ((png.height + y_bias[pass]) >> y_shift[pass]) : png.height);
+		u32 const rowbytes(((width * samples[png.color_type] * png.bit_depth) + 7) >> 3);
+		pass_offset[pass + 1] = pass_offset[pass] + (height * (rowbytes + 1));
+		u8 const *src(&png.image[pass_offset[pass]]);
+		auto const x_trans = [offs = (1 << x_shift[pass]) - x_bias[pass] - 1, shift = x_shift[pass]] (u32 x) { return (x << shift) + offs; };
+		auto const y_trans = [offs = (1 << y_shift[pass]) - y_bias[pass] - 1, shift = y_shift[pass]] (u32 y) { return (y << shift) + offs; };
+
+		if (png.color_type == 3)
+		{
+			// handle 8bpp palettized case
+			for (u32 y = 0; height > y; ++y)
 			{
-				rgb_t pixel = bitmap.pix32(y, x);
-				UINT8 alpha = rgb_t(png->palette[*src * 3], png->palette[*src * 3 + 1], png->palette[*src * 3 + 2]).brightness();
-				accumalpha &= alpha;
-				bitmap.pix32(y, x) = rgb_t(alpha, pixel.r(), pixel.g(), pixel.b());
+				for (u32 x = 0; width > x; ++x, ++src)
+				{
+					bitmap_argb32::pixel_t &dest(png.interlace_method ? bitmap.pix(y_trans(y), x_trans(x)) : bitmap.pix(y, x));
+					rgb_t const pixel(dest);
+					u8 const alpha(rgb_t(png.palette[*src * 3], png.palette[*src * 3 + 1], png.palette[*src * 3 + 2]).brightness());
+					accumalpha &= alpha;
+					dest = rgb_t(alpha, pixel.r(), pixel.g(), pixel.b());
+				}
 			}
+		}
+		else if (png.color_type == 0)
+		{
+			// handle 8bpp grayscale non-alpha case
+			for (u32 y = 0; height > y; ++y)
+			{
+				for (u32 x = 0; width > x; ++x, ++src)
+				{
+					bitmap_argb32::pixel_t &dest(png.interlace_method ? bitmap.pix(y_trans(y), x_trans(x)) : bitmap.pix(y, x));
+					rgb_t const pixel(dest);
+					accumalpha &= *src;
+					dest = rgb_t(*src, pixel.r(), pixel.g(), pixel.b());
+				}
+			}
+		}
+		else if (png.color_type == 4)
+		{
+			// handle 8bpp grayscale alpha case
+			for (u32 y = 0; height > y; ++y)
+			{
+				for (u32 x = 0; width > x; ++x, src += 2)
+				{
+					bitmap_argb32::pixel_t &dest(png.interlace_method ? bitmap.pix(y_trans(y), x_trans(x)) : bitmap.pix(y, x));
+					rgb_t const pixel(dest);
+					accumalpha &= *src;
+					dest = rgb_t(*src, pixel.r(), pixel.g(), pixel.b());
+				}
+			}
+		}
+		else if (png.color_type == 2)
+		{
+			// handle 32bpp non-alpha case
+			for (u32 y = 0; height > y; ++y)
+			{
+				for (u32 x = 0; width > x; ++x, src += 3)
+				{
+					bitmap_argb32::pixel_t &dest(png.interlace_method ? bitmap.pix(y_trans(y), x_trans(x)) : bitmap.pix(y, x));
+					rgb_t const pixel(dest);
+					u8 const alpha(rgb_t(src[0], src[1], src[2]).brightness());
+					accumalpha &= alpha;
+					dest = rgb_t(alpha, pixel.r(), pixel.g(), pixel.b());
+				}
+			}
+		}
+		else
+		{
+			// handle 32bpp alpha case
+			for (u32 y = 0; height > y; ++y)
+			{
+				for (u32 x = 0; width > x; ++x, src += 4)
+				{
+					bitmap_argb32::pixel_t &dest(png.interlace_method ? bitmap.pix(y_trans(y), x_trans(x)) : bitmap.pix(y, x));
+					rgb_t const pixel(dest);
+					u8 const alpha(rgb_t(src[0], src[1], src[2]).brightness());
+					accumalpha &= alpha;
+					dest = rgb_t(alpha, pixel.r(), pixel.g(), pixel.b());
+				}
+			}
+		}
 	}
 
-	/* handle 8bpp grayscale case */
-	else if (png->color_type == 0)
-	{
-		/* loop over width/height */
-		src = png->image;
-		for (y = 0; y < png->height; y++)
-			for (x = 0; x < png->width; x++, src++)
-			{
-				rgb_t pixel = bitmap.pix32(y, x);
-				accumalpha &= *src;
-				bitmap.pix32(y, x) = rgb_t(*src, pixel.r(), pixel.g(), pixel.b());
-			}
-	}
-
-	/* handle 32bpp non-alpha case */
-	else if (png->color_type == 2)
-	{
-		/* loop over width/height */
-		src = png->image;
-		for (y = 0; y < png->height; y++)
-			for (x = 0; x < png->width; x++, src += 3)
-			{
-				rgb_t pixel = bitmap.pix32(y, x);
-				UINT8 alpha = rgb_t(src[0], src[1], src[2]).brightness();
-				accumalpha &= alpha;
-				bitmap.pix32(y, x) = rgb_t(alpha, pixel.r(), pixel.g(), pixel.b());
-			}
-	}
-
-	/* handle 32bpp alpha case */
-	else
-	{
-		/* loop over width/height */
-		src = png->image;
-		for (y = 0; y < png->height; y++)
-			for (x = 0; x < png->width; x++, src += 4)
-			{
-				rgb_t pixel = bitmap.pix32(y, x);
-				UINT8 alpha = rgb_t(src[0], src[1], src[2]).brightness();
-				accumalpha &= alpha;
-				bitmap.pix32(y, x) = rgb_t(alpha, pixel.r(), pixel.g(), pixel.b());
-			}
-	}
-
-	/* set the hasalpha flag */
+	// set the hasalpha flag
 	return (accumalpha != 0xff);
+}
+
+
+/*-------------------------------------------------
+    render_detect_image - detect image format
+-------------------------------------------------*/
+
+ru_imgformat render_detect_image(util::core_file &file)
+{
+	// PNG: check for valid header
+	util::png_error const png = util::png_info::verify_header(file);
+	file.seek(0, SEEK_SET);
+	if (util::png_error::NONE == png)
+		return RENDUTIL_IMGFORMAT_PNG;
+
+	// JPEG: attempt to read header with libjpeg
+	jpeg_decompress_struct cinfo;
+	jpeg_error_mgr jerr;
+	cinfo.err = jpeg_std_error(&jerr);
+	jerr.error_exit = [] (j_common_ptr cinfo) { throw cinfo->err; };
+	try
+	{
+		jpeg_create_decompress(&cinfo);
+		cinfo.mem->max_memory_to_use = 128 * 1024 * 1024;
+		jpeg_corefile_source::source(&cinfo, file);
+		jpeg_read_header(&cinfo, TRUE);
+		jpeg_destroy_decompress(&cinfo);
+		file.seek(0, SEEK_SET);
+		return RENDUTIL_IMGFORMAT_JPEG;
+	}
+	catch (jpeg_error_mgr *)
+	{
+		jpeg_destroy_decompress(&cinfo);
+		file.seek(0, SEEK_SET);
+	}
+
+	// Microsoft DIB: check for valid header
+	util::msdib_error const msdib = util::msdib_verify_header(file);
+	file.seek(0, SEEK_SET);
+	if (util::msdib_error::NONE == msdib)
+		return RENDUTIL_IMGFORMAT_MSDIB;
+
+	// TODO: add more as necessary
+	return RENDUTIL_IMGFORMAT_UNKNOWN;
 }

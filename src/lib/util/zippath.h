@@ -8,21 +8,41 @@
 
 ***************************************************************************/
 
+#ifndef MAME_LIB_UTIL_ZIPPATH_H
+#define MAME_LIB_UTIL_ZIPPATH_H
+
 #pragma once
 
-#ifndef __ZIPPATH_H__
-#define __ZIPPATH_H__
-
 #include "corefile.h"
-#include <string>
 #include "unzip.h"
 
+#include <string>
+#include <string_view>
+
+
+namespace util {
 
 /***************************************************************************
     TYPE DEFINITIONS
 ***************************************************************************/
 
-class zippath_directory;
+class zippath_directory
+{
+public:
+	typedef std::unique_ptr<zippath_directory> ptr;
+
+	// opens a directory
+	static osd_file::error open(std::string_view path, ptr &directory);
+
+	// closes a directory
+	virtual ~zippath_directory();
+
+	// reads a directory entry
+	virtual osd::directory::entry const *readdir() = 0;
+
+	// returns true if this directory is an archive or false if it is a filesystem directory
+	virtual bool is_archive() const = 0;
+};
 
 
 
@@ -30,38 +50,21 @@ class zippath_directory;
     FUNCTION PROTOTYPES
 ***************************************************************************/
 
-/* ----- path operations ----- */
+// ----- path operations -----
 
-/* retrieves the parent directory */
-std::string &zippath_parent(std::string &dst, const char *path);
+// retrieves the parent directory
+std::string zippath_parent(std::string_view path);
 
-/* retrieves the parent directory basename */
-std::string &zippath_parent_basename(std::string &dst, const char *path);
-
-/* combines two paths */
-std::string &zippath_combine(std::string &dst, const char *path1, const char *path2);
+// combines two paths
+std::string &zippath_combine(std::string &dst, const std::string &path1, const std::string &path2);
+std::string zippath_combine(const std::string &path1, const std::string &path2);
 
 
-/* ----- file operations ----- */
+// ----- file operations -----
 
-/* opens a zip path file */
-file_error zippath_fopen(const char *filename, UINT32 openflags, core_file *&file, std::string &revised_path);
+// opens a zip path file
+osd_file::error zippath_fopen(std::string_view filename, uint32_t openflags, util::core_file::ptr &file, std::string &revised_path);
 
+} // namespace util
 
-/* ----- directory operations ----- */
-
-/* opens a directory */
-file_error zippath_opendir(const char *path, zippath_directory **directory);
-
-/* closes a directory */
-void zippath_closedir(zippath_directory *directory);
-
-/* reads a directory entry */
-const osd_directory_entry *zippath_readdir(zippath_directory *directory);
-
-/* returns TRUE if this path is a ZIP path or FALSE if not */
-int zippath_is_zip(zippath_directory *directory);
-
-
-
-#endif /* __ZIPPATH_H__ */
+#endif // MAME_LIB_UTIL_ZIPPATH_H

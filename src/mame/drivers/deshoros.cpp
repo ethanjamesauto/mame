@@ -12,7 +12,7 @@ It is not Y2K compliant.
 
 Rough cpanel sketch:
 
-    [LED-array dispay]          1  2  3  M
+    [LED-array display]         1  2  3  M
                                 4  5  6  F
                                 7  8  9  0
                                 CLEAR ENTER
@@ -32,39 +32,46 @@ TODO:
 #include "emu.h"
 #include "cpu/m6809/m6809.h"
 #include "sound/beep.h"
+#include "emupal.h"
+#include "screen.h"
+#include "speaker.h"
 
 class destiny_state : public driver_device
 {
 public:
-	destiny_state(const machine_config &mconfig, device_type type, const char *tag)
-		: driver_device(mconfig, type, tag),
+	destiny_state(const machine_config &mconfig, device_type type, const char *tag) :
+		driver_device(mconfig, type, tag),
 		m_maincpu(*this, "maincpu"),
 		m_beeper(*this, "beeper")
 	{ }
 
+	void destiny(machine_config &config);
+
+	DECLARE_INPUT_CHANGED_MEMBER(coin_inserted);
+
+private:
 	required_device<cpu_device> m_maincpu;
 	required_device<beep_device> m_beeper;
 
 	char m_led_array[21];
 
-	DECLARE_WRITE8_MEMBER(firq_ack_w);
-	DECLARE_WRITE8_MEMBER(nmi_ack_w);
-	DECLARE_READ8_MEMBER(printer_status_r);
-	DECLARE_READ8_MEMBER(display_ready_r);
-	DECLARE_WRITE8_MEMBER(display_w);
-	DECLARE_WRITE8_MEMBER(out_w);
-	DECLARE_WRITE8_MEMBER(bank_select_w);
-	DECLARE_WRITE8_MEMBER(sound_w);
+	void firq_ack_w(uint8_t data);
+	void nmi_ack_w(uint8_t data);
+	uint8_t printer_status_r();
+	uint8_t display_ready_r();
+	void display_w(uint8_t data);
+	void out_w(uint8_t data);
+	void bank_select_w(uint8_t data);
+	void sound_w(offs_t offset, uint8_t data);
 
-	DECLARE_INPUT_CHANGED_MEMBER(coin_inserted);
-
+	void main_map(address_map &map);
 protected:
 	// driver_device overrides
 	virtual void machine_start() override;
 	virtual void machine_reset() override;
 	virtual void video_start() override;
 public:
-	UINT32 screen_update_destiny(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
+	uint32_t screen_update_destiny(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
 };
 
 
@@ -72,13 +79,13 @@ public:
 
 void destiny_state::video_start()
 {
-	UINT8 i;
+	uint8_t i;
 	for(i=0;i<20;i++)
 		m_led_array[i] = 0x20;
 	m_led_array[20] = 0;
 }
 
-UINT32 destiny_state::screen_update_destiny(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t destiny_state::screen_update_destiny(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	popmessage("%s",m_led_array);
 	return 0;
@@ -92,17 +99,17 @@ UINT32 destiny_state::screen_update_destiny(screen_device &screen, bitmap_ind16 
 
 ***************************************************************************/
 
-WRITE8_MEMBER(destiny_state::firq_ack_w)
+void destiny_state::firq_ack_w(uint8_t data)
 {
 	m_maincpu->set_input_line(M6809_FIRQ_LINE, CLEAR_LINE);
 }
 
-WRITE8_MEMBER(destiny_state::nmi_ack_w)
+void destiny_state::nmi_ack_w(uint8_t data)
 {
 	m_maincpu->set_input_line(INPUT_LINE_NMI, CLEAR_LINE);
 }
 
-READ8_MEMBER(destiny_state::printer_status_r)
+uint8_t destiny_state::printer_status_r()
 {
 	// d2: mark sensor
 	// d3: motor stop
@@ -113,14 +120,14 @@ READ8_MEMBER(destiny_state::printer_status_r)
 	return 0xff;
 }
 
-READ8_MEMBER(destiny_state::display_ready_r)
+uint8_t destiny_state::display_ready_r()
 {
 	// d7: /display ready
 	// other bits: N/C
 	return 0;
 }
 
-WRITE8_MEMBER(destiny_state::display_w)
+void destiny_state::display_w(uint8_t data)
 {
 	/* this is preliminary, just fills a string and doesn't support control codes etc. */
 
@@ -132,17 +139,17 @@ WRITE8_MEMBER(destiny_state::display_w)
 	m_led_array[19] = data;
 }
 
-WRITE8_MEMBER(destiny_state::out_w)
+void destiny_state::out_w(uint8_t data)
 {
 	// d0: coin blocker
-	coin_lockout_w(machine(), 0, ~data & 1);
+	machine().bookkeeping().coin_lockout_w(0, ~data & 1);
 
 	// d1: paper cutter 1
 	// d2: paper cutter 2
 	// other bits: N/C?
 }
 
-WRITE8_MEMBER(destiny_state::bank_select_w)
+void destiny_state::bank_select_w(uint8_t data)
 {
 	// d0-d2 and d4: bank (but only up to 4 banks supported)
 	membank("bank1")->set_base(memregion("answers")->base() + 0x6000 * (data & 3));
@@ -155,33 +162,34 @@ INPUT_CHANGED_MEMBER(destiny_state::coin_inserted)
 		m_maincpu->set_input_line(INPUT_LINE_NMI, ASSERT_LINE);
 
 	// coincounter on coin insert
-	if (((int)(FPTR)param) == 0)
-		coin_counter_w(machine(), 0, newval);
+	if (param == 0)
+		machine().bookkeeping().coin_counter_w(0, newval);
 }
 
-WRITE8_MEMBER(destiny_state::sound_w)
+void destiny_state::sound_w(offs_t offset, uint8_t data)
 {
 	// a0: sound on/off
 	m_beeper->set_state(~offset & 1);
 }
 
-static ADDRESS_MAP_START( main_map, AS_PROGRAM, 8, destiny_state )
-	AM_RANGE(0x0000, 0x5fff) AM_ROMBANK("bank1")
-	AM_RANGE(0x8000, 0x87ff) AM_RAM
-	AM_RANGE(0x9000, 0x9000) AM_READWRITE(printer_status_r, firq_ack_w)
-	AM_RANGE(0x9001, 0x9001) AM_READ_PORT("SYSTEM") AM_WRITE(nmi_ack_w)
-	AM_RANGE(0x9002, 0x9002) AM_READWRITE(display_ready_r, display_w)
-	AM_RANGE(0x9003, 0x9003) AM_READ_PORT("KEY1")
-	AM_RANGE(0x9004, 0x9004) AM_READ_PORT("KEY2")
-	AM_RANGE(0x9005, 0x9005) AM_READ_PORT("DIPSW") AM_WRITE(out_w)
-//  AM_RANGE(0x9006, 0x9006) AM_NOP // printer motor on
-//  AM_RANGE(0x9007, 0x9007) AM_NOP // printer data
-	AM_RANGE(0x900a, 0x900b) AM_WRITE(sound_w)
-	AM_RANGE(0x900c, 0x900c) AM_WRITE(bank_select_w)
-//  AM_RANGE(0x900d, 0x900d) AM_NOP // printer motor off
-//  AM_RANGE(0x900e, 0x900e) AM_NOP // printer motor jam reset
-	AM_RANGE(0xc000, 0xffff) AM_ROM
-ADDRESS_MAP_END
+void destiny_state::main_map(address_map &map)
+{
+	map(0x0000, 0x5fff).bankr("bank1");
+	map(0x8000, 0x87ff).ram();
+	map(0x9000, 0x9000).rw(FUNC(destiny_state::printer_status_r), FUNC(destiny_state::firq_ack_w));
+	map(0x9001, 0x9001).portr("SYSTEM").w(FUNC(destiny_state::nmi_ack_w));
+	map(0x9002, 0x9002).rw(FUNC(destiny_state::display_ready_r), FUNC(destiny_state::display_w));
+	map(0x9003, 0x9003).portr("KEY1");
+	map(0x9004, 0x9004).portr("KEY2");
+	map(0x9005, 0x9005).portr("DIPSW").w(FUNC(destiny_state::out_w));
+//  map(0x9006, 0x9006).noprw(); // printer motor on
+//  map(0x9007, 0x9007).noprw(); // printer data
+	map(0x900a, 0x900b).w(FUNC(destiny_state::sound_w));
+	map(0x900c, 0x900c).w(FUNC(destiny_state::bank_select_w));
+//  map(0x900d, 0x900d).noprw(); // printer motor off
+//  map(0x900e, 0x900e).noprw(); // printer motor jam reset
+	map(0xc000, 0xffff).rom();
+}
 
 
 
@@ -235,10 +243,10 @@ static INPUT_PORTS_START( destiny )
 	PORT_BIT( 0x10, IP_ACTIVE_HIGH, IPT_UNUSED )
 	PORT_BIT( 0x20, IP_ACTIVE_HIGH, IPT_UNUSED )
 	PORT_BIT( 0x40, IP_ACTIVE_HIGH, IPT_UNUSED )
-	PORT_BIT( 0x80, IP_ACTIVE_LOW, IPT_COIN1 ) PORT_CHANGED_MEMBER(DEVICE_SELF, destiny_state, coin_inserted, (void *)nullptr)
+	PORT_BIT( 0x80, IP_ACTIVE_LOW, IPT_COIN1 ) PORT_CHANGED_MEMBER(DEVICE_SELF, destiny_state, coin_inserted, 0)
 
 	PORT_START("SERVICE")
-	PORT_BIT( 0x01, IP_ACTIVE_LOW, IPT_SERVICE ) PORT_CHANGED_MEMBER(DEVICE_SELF, destiny_state, coin_inserted, (void *)1)
+	PORT_BIT( 0x01, IP_ACTIVE_LOW, IPT_SERVICE ) PORT_CHANGED_MEMBER(DEVICE_SELF, destiny_state, coin_inserted, 1)
 INPUT_PORTS_END
 
 
@@ -251,39 +259,36 @@ INPUT_PORTS_END
 
 void destiny_state::machine_start()
 {
-	m_beeper->set_frequency(800); // TODO: determine exact frequency thru schematics
-	m_beeper->set_state(0);
 }
 
 void destiny_state::machine_reset()
 {
-	bank_select_w(m_maincpu->space(AS_PROGRAM), 0, 0);
+	bank_select_w(0);
 }
 
-static MACHINE_CONFIG_START( destiny, destiny_state )
-
+void destiny_state::destiny(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", M6809, XTAL_4MHz/2)
-	MCFG_CPU_PROGRAM_MAP(main_map)
-	MCFG_CPU_PERIODIC_INT_DRIVER(destiny_state, irq0_line_hold,  60) // timer irq controls update speed, frequency needs to be determined yet (2MHz through three 74LS390)
+	M6809(config, m_maincpu, XTAL(4'000'000)/2);
+	m_maincpu->set_addrmap(AS_PROGRAM, &destiny_state::main_map);
+	m_maincpu->set_periodic_int(FUNC(destiny_state::irq0_line_hold), attotime::from_hz(50)); // timer irq controls update speed, frequency needs to be determined yet (2MHz through three 74LS390)
 
 	/* video hardware (dummy) */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_REFRESH_RATE(60)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(0))
-	MCFG_SCREEN_SIZE(48*8, 16*8)
-	MCFG_SCREEN_VISIBLE_AREA(0*8, 48*8-1, 0*8, 16*8-1)
-	MCFG_SCREEN_UPDATE_DRIVER(destiny_state, screen_update_destiny)
-	MCFG_SCREEN_PALETTE("palette")
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_LCD));
+	screen.set_refresh_hz(50);
+	screen.set_vblank_time(ATTOSECONDS_IN_USEC(2500)); /* not accurate */
+	screen.set_size(6*16, 9*2);
+	screen.set_visarea_full();
+	screen.set_screen_update(FUNC(destiny_state::screen_update_destiny));
+	screen.set_palette("palette");
 
-	MCFG_PALETTE_ADD("palette", 16)
-
+	PALETTE(config, "palette", palette_device::MONOCHROME);
 
 	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_MONO("mono")
-	MCFG_SOUND_ADD("beeper", BEEP, 0)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS,"mono",0.50)
-MACHINE_CONFIG_END
+	SPEAKER(config, "mono").front_center();
+	BEEP(config, m_beeper, 800); // TODO: determine exact frequency thru schematics
+	m_beeper->add_route(ALL_OUTPUTS, "mono", 0.50);
+}
 
 
 
@@ -313,4 +318,4 @@ ROM_START( destiny )
 	ROM_LOAD( "ag11.18a",  0x16000, 0x2000, CRC(5f7bf9f9) SHA1(281f89c0bccfcc2bdc1d4d0a5b9cc9a8ab2e7869) )
 ROM_END
 
-GAME( 1983, destiny,  0,       destiny,  destiny, driver_device,  0, ROT0, "Data East Corporation", "Destiny - The Fortuneteller (USA)", MACHINE_IMPERFECT_SOUND | MACHINE_NOT_WORKING )
+GAME( 1983, destiny, 0, destiny,  destiny, destiny_state, empty_init, ROT0, "Data East Corporation", "Destiny - The Fortuneteller (USA)", MACHINE_IMPERFECT_SOUND | MACHINE_NOT_WORKING|MACHINE_IMPERFECT_GRAPHICS|MACHINE_NODEVICE_PRINTER )

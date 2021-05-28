@@ -1,237 +1,274 @@
-// license:GPL-2.0+
+// license:BSD-3-Clause
 // copyright-holders:Couriersud
-/*
- * poptions.h
- *
- */
-
-#pragma once
 
 #ifndef POPTIONS_H_
 #define POPTIONS_H_
 
-#include <cstddef>
+///
+/// \file poptions.h
+///
 
+#include "pfmtlog.h"
+#include "pstonum.h"
 #include "pstring.h"
-#include "plists.h"
+#include "putil.h"
 
-/***************************************************************************
-    Options
-***************************************************************************/
+namespace plib {
 
-class poptions;
+	/// \brief options base class
+	///
+	class options;
 
-class poption
-{
-public:
-	poption()
-	: m_short(""), m_long(""), m_help(""), m_has_argument(false)
-	{}
-
-	poption(pstring ashort, pstring along, pstring help, bool has_argument, poptions *parent = NULL);
-
-	virtual ~poption()
+	class option_base
 	{
-	}
+	public:
+		option_base(options &parent, const pstring &help);
+		virtual ~option_base() = default;
 
-	/* no_argument options will be called with "" argument */
+		PCOPYASSIGNMOVE(option_base, delete)
 
-	virtual int parse(ATTR_UNUSED pstring argument) { return 0; }
+		virtual pstring help() const { return m_help; }
+	private:
+		pstring m_help;
+	};
 
-	pstring m_short;
-	pstring m_long;
-	pstring m_help;
-	bool m_has_argument;
-private:
-};
-
-class poption_str : public poption
-{
-public:
-	poption_str(pstring ashort, pstring along, pstring defval, pstring help, poptions *parent = NULL)
-	: poption(ashort, along, help, true, parent), m_val(defval)
-	{}
-
-	virtual int parse(pstring argument) override { m_val = argument; return 0; }
-
-	pstring operator ()() { return m_val; }
-private:
-	pstring m_val;
-};
-
-class poption_str_limit : public poption
-{
-public:
-	poption_str_limit(pstring ashort, pstring along, pstring defval, pstring limit, pstring help, poptions *parent = NULL)
-	: poption(ashort, along, help, true, parent), m_val(defval), m_limit(limit, ":")
-	{}
-
-	virtual int parse(pstring argument) override
+	class option_group : public option_base
 	{
-		if (m_limit.contains(argument))
+	public:
+		option_group(options &parent, const pstring &group, const pstring &help)
+		: option_base(parent, help), m_group(group) { }
+
+		pstring group() const { return m_group; }
+	private:
+		pstring m_group;
+	};
+
+	class option_example : public option_base
+	{
+	public:
+		option_example(options &parent, const pstring &group, const pstring &help)
+		: option_base(parent, help), m_example(group) { }
+
+		pstring example() const { return m_example; }
+	private:
+		pstring m_example;
+	};
+
+
+	class option : public option_base
+	{
+	public:
+		option(options &parent, const pstring &ashort, const pstring &along, const pstring &help, bool has_argument);
+
+		// no_argument options will be called with "" argument
+
+		pstring short_opt() const { return m_short; }
+		pstring long_opt() const { return m_long; }
+		bool has_argument() const { return m_has_argument ; }
+		bool was_specified() const { return m_specified; }
+
+		int do_parse(const pstring &argument)
 		{
-			m_val = argument;
-			return 0;
+			m_specified = true;
+			return parse(argument);
 		}
-		else
+
+	protected:
+		virtual int parse(const pstring &argument) = 0;
+
+	private:
+		pstring m_short;
+		pstring m_long;
+		bool m_has_argument;
+		bool m_specified;
+	};
+
+	class option_str : public option
+	{
+	public:
+		option_str(options &parent, const pstring &ashort, const pstring &along, const pstring &defval, const pstring &help)
+		: option(parent, ashort, along, help, true), m_val(defval)
+		{}
+
+		pstring operator ()() const { return m_val; }
+
+	protected:
+		int parse(const pstring &argument) override;
+
+	private:
+		pstring m_val;
+	};
+
+	class option_str_limit_base : public option
+	{
+	public:
+		option_str_limit_base(options &parent, const pstring &ashort, const pstring &along, std::vector<pstring> &&limit, const pstring &help)
+		: option(parent, ashort, along, help, true)
+		, m_limit(limit)
+		{
+		}
+		const std::vector<pstring> &limit() const { return m_limit; }
+
+	protected:
+
+	private:
+		std::vector<pstring> m_limit;
+	};
+
+
+	template <typename T>
+	class option_str_limit : public option_str_limit_base
+	{
+	public:
+		option_str_limit(options &parent, const pstring &ashort, const pstring &along, const T &defval, std::vector<pstring> &&limit, const pstring &help)
+		: option_str_limit_base(parent, ashort, along, std::move(limit), help), m_val(defval)
+		{
+		}
+
+		T operator ()() const { return m_val; }
+
+		pstring as_string() const { return limit()[m_val]; }
+
+	protected:
+		int parse(const pstring &argument) override
+		{
+			auto raw = plib::container::indexof(limit(), argument);
+
+			if (raw != plib::container::npos)
+			{
+				m_val = narrow_cast<T>(raw);
+				return 0;
+			}
+
 			return 1;
+		}
+
+	private:
+		T m_val;
+	};
+
+	class option_bool : public option
+	{
+	public:
+		option_bool(options &parent, const pstring &ashort, const pstring &along, const pstring &help)
+		: option(parent, ashort, along, help, false), m_val(false)
+		{}
+
+		bool operator ()() const { return m_val; }
+
+	protected:
+		int parse(const pstring &argument) override;
+
+	private:
+		bool m_val;
+	};
+
+	template <typename T>
+	class option_num : public option
+	{
+	public:
+		option_num(options &parent, const pstring &ashort, const pstring &along, T defval,
+				const pstring &help,
+				T minval = std::numeric_limits<T>::lowest(),
+				T maxval = std::numeric_limits<T>::max() )
+		: option(parent, ashort, along, help, true)
+		, m_val(defval)
+		, m_min(minval)
+		, m_max(maxval)
+		, m_def(defval)
+		{}
+
+		T operator ()() const { return m_val; }
+
+		pstring help() const override
+		{
+			auto hs(option::help());
+			return plib::pfmt(hs)(m_def, m_min, m_max);
+		}
+
+	protected:
+		int parse(const pstring &argument) override
+		{
+			bool err(false);
+			m_val = pstonum_ne<T>(argument, err);
+			return (err ? 1 : (m_val < m_min || m_val > m_max));
+		}
+
+	private:
+		T m_val;
+		T m_min;
+		T m_max;
+		T m_def;
+	};
+
+	class option_vec : public option
+	{
+	public:
+		option_vec(options &parent, const pstring &ashort, const pstring &along, const pstring &help)
+		: option(parent, ashort, along, help, true)
+		{}
+
+		const std::vector<pstring> &operator ()() const { return m_val; }
+
+	protected:
+		int parse(const pstring &argument) override;
+
+	private:
+		std::vector<pstring> m_val;
+	};
+
+	class option_args : public option_vec
+	{
+	public:
+		option_args(options &parent, const pstring &help)
+		: option_vec(parent, "", "", help)
+		{}
+	};
+
+	class options
+	{
+	public:
+
+		options();
+		explicit options(option **o);
+
+		~options() = default;
+
+		PCOPYASSIGNMOVE(options, delete)
+
+		void register_option(option_base *opt);
+		std::size_t parse(const std::vector<putf8string> &argv);
+
+		pstring help(const pstring &description, const pstring &usage,
+				unsigned width = 72, unsigned indent = 20) const;
+
+		pstring app() const { return m_app; }
+
+	private:
+		static pstring split_paragraphs(const pstring &text, unsigned width, unsigned indent,
+				unsigned firstline_indent, const pstring &line_end = "\n");
+
+		void check_consistency() noexcept(false);
+
+		template <typename T>
+		T *getopt_type() const
+		{
+			for (const auto & optbase : m_opts )
+			{
+				if (auto opt = dynamic_cast<T *>(optbase))
+					return opt;
+			}
+		return nullptr;
 	}
 
-	pstring operator ()() { return m_val; }
-private:
-	pstring m_val;
-	pstring_list_t m_limit;
+		option *getopt_short(const pstring &arg) const;
+		option *getopt_long(const pstring &arg) const;
+
+		std::vector<option_base *> m_opts;
+		pstring m_app;
+		option_args * m_other_args;
 };
 
-class poption_bool : public poption
-{
-public:
-	poption_bool(pstring ashort, pstring along, pstring help, poptions *parent = NULL)
-	: poption(ashort, along, help, false, parent), m_val(false)
-	{}
+} // namespace plib
 
-	virtual int parse(ATTR_UNUSED pstring argument) override { m_val = true; return 0; }
-
-	bool operator ()() { return m_val; }
-private:
-	bool m_val;
-};
-
-class poption_double : public poption
-{
-public:
-	poption_double(pstring ashort, pstring along, double defval, pstring help, poptions *parent = NULL)
-	: poption(ashort, along, help, true, parent), m_val(defval)
-	{}
-
-	virtual int parse(pstring argument) override
-	{
-		bool err = false;
-		m_val = argument.as_double(&err);
-		return (err ? 1 : 0);
-	}
-
-	double operator ()() { return m_val; }
-private:
-	double m_val;
-};
-
-class poptions
-{
-public:
-
-	poptions() {}
-
-	poptions(poption *o[])
-	{
-		int i=0;
-		while (o[i] != NULL)
-		{
-			m_opts.add(o[i]);
-			i++;
-		}
-	}
-
-	~poptions()
-	{
-		m_opts.clear();
-	}
-
-	void register_option(poption *opt)
-	{
-		m_opts.add(opt);
-	}
-
-	int parse(int argc, char *argv[])
-	{
-		m_app = argv[0];
-
-		for (int i=1; i<argc; )
-		{
-			pstring arg(argv[i]);
-			poption *opt = NULL;
-
-			if (arg.startsWith("--"))
-			{
-				opt = getopt_long(arg.substr(2));
-			}
-			else if (arg.startsWith("-"))
-			{
-				opt = getopt_short(arg.substr(1));
-			}
-			else
-				return i;
-			if (opt == NULL)
-				return i;
-			if (opt->m_has_argument)
-			{
-				i++; // FIXME: are there more arguments?
-				if (opt->parse(argv[i]) != 0)
-					return i - 1;
-			}
-			else
-				opt->parse("");
-			i++;
-		}
-		return argc;
-	}
-
-	pstring help()
-	{
-		pstring ret;
-
-		for (std::size_t i=0; i<m_opts.size(); i++ )
-		{
-			poption *opt = m_opts[i];
-			pstring line = "";
-			if (opt->m_short != "")
-				line += "  -" + opt->m_short;
-			if (opt->m_long != "")
-			{
-				if (line != "")
-					line += ", ";
-				else
-					line = "     ";
-				line += "--" + opt->m_long;
-			}
-			line = line.rpad(" ", 20).cat(opt->m_help);
-			ret = ret + line + "\n";
-		}
-		return ret;
-	}
-	pstring app() { return m_app; }
-
-private:
-
-	poption *getopt_short(pstring arg)
-	{
-		for (std::size_t i=0; i < m_opts.size(); i++)
-		{
-			if (m_opts[i]->m_short == arg)
-				return m_opts[i];
-		}
-		return NULL;
-	}
-	poption *getopt_long(pstring arg)
-	{
-		for (std::size_t i=0; i < m_opts.size(); i++)
-		{
-			if (m_opts[i]->m_long == arg)
-				return m_opts[i];
-		}
-		return NULL;
-	}
-
-	plist_t<poption *> m_opts;
-	pstring m_app;
-};
-
-poption::poption(pstring ashort, pstring along, pstring help, bool has_argument, poptions *parent)
-: m_short(ashort), m_long(along), m_help(help), m_has_argument(has_argument)
-{
-	if (parent != NULL)
-		parent->register_option(this);
-}
-
-
-#endif /* POPTIONS_H_ */
+#endif // POPTIONS_H_

@@ -1,6 +1,20 @@
-// license:???
-// copyright-holders:insideoutboy
-/*
+// license:BSD-3-Clause
+// copyright-holders:Angelo Salese
+/***************************************************************************
+
+    Super Cross II (c) 1987 GM Shoji
+
+    driver by Angelo Salese, based off "wiped off due of not anymore licenseable" driver by insideoutboy.
+
+    TODO:
+    - scanline renderer;
+    - understand irq 0 source;
+    - output bit 0 might be watchdog armed bit/sprite start DMA instead of irq enable;
+    - weird visible area resolution, 224 or 240 x 224? Maybe it's really just 256 x 224 and then it's supposed
+      to show garbage/nothing on the edges?
+
+===================================
+
 Super Cross II (JPN Ver.)
 (c)1986 GM Shoji
 
@@ -36,103 +50,241 @@ SCM-23.5B
 SC-60.4K
 SC-61.5A
 
-Notes:
-
-- sprites pop in at the wrong place sometimes before entering the screen
-
-- correct drawing/animation of bg is very sensitive to cpu speed/interrupts/
-  interleave, current settings aren't correct but don't think there's any
-  visible problems
-
-- engine rev sound may not be completely correct
-
-- bg not using second half of prom, of interest is this half is identical to
-  the second half of a bankp/appoooh prom, hardware is similar to bankp/appoooh
-  in a few ways, there's also an unused SEGA logo in the bg graphics
-
-- fg not using odd colours, shouldn't matter as the colours are duplicated
-
-- sprite priorities are wrong when bikes are jumping as they are ordered on
-  vertical position only, assume this is original behaviour
-*/
+***************************************************************************/
 
 #include "emu.h"
 #include "cpu/z80/z80.h"
+#include "machine/timer.h"
 #include "sound/sn76496.h"
-#include "includes/sprcros2.h"
+#include "emupal.h"
+#include "screen.h"
+#include "speaker.h"
 
+#define MAIN_CLOCK XTAL(10'000'000)
 
-
-
-WRITE8_MEMBER(sprcros2_state::m_port7_w)
+class sprcros2_state : public driver_device
 {
-	//76543210
-	//x------- unused
-	//-x------ bankswitch halves of scm-01.10k into c000-dfff
-	//--xx---- unused
-	//----x--- irq enable
-	//-----x-- ?? off with title flash and screen clears, possibly layer/sprite enable
-	//------x- flip screen
-	//-------x nmi enable
+public:
+	sprcros2_state(const machine_config &mconfig, device_type type, const char *tag)
+		: driver_device(mconfig, type, tag)
+		, m_master_cpu(*this, "master_cpu")
+		, m_slave_cpu(*this, "slave_cpu")
+		, m_gfxdecode(*this, "gfxdecode")
+		, m_fgvram(*this, "fgvram")
+		, m_fgattr(*this, "fgattr")
+		, m_bgvram(*this, "bgvram")
+		, m_bgattr(*this, "bgattr")
+		, m_sprram(*this, "sprram")
+	{ }
 
-	if((m_port7^data)&0x40)
-		membank("masterbank")->set_entry((data&0x40)>>6);
+	void sprcros2(machine_config &config);
 
-	machine().tilemap().set_flip_all(data&0x02?(TILEMAP_FLIPX|TILEMAP_FLIPY):0 );
+protected:
+	// driver_device overrides
+	virtual void machine_start() override;
+	virtual void machine_reset() override;
 
-	m_port7 = data;
+	virtual void video_start() override;
+
+private:
+	// devices
+	required_device<cpu_device> m_master_cpu;
+	required_device<cpu_device> m_slave_cpu;
+	required_device<gfxdecode_device> m_gfxdecode;
+
+	required_shared_ptr<uint8_t> m_fgvram;
+	required_shared_ptr<uint8_t> m_fgattr;
+	required_shared_ptr<uint8_t> m_bgvram;
+	required_shared_ptr<uint8_t> m_bgattr;
+	required_shared_ptr<uint8_t> m_sprram;
+
+	bool m_master_nmi_enable;
+	bool m_master_irq_enable;
+	bool m_slave_nmi_enable;
+	bool m_screen_enable;
+	uint8_t m_bg_scrollx, m_bg_scrolly;
+
+	// screen updates
+	uint32_t screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
+	void sprcros2_palette(palette_device &palette) const;
+	void master_output_w(uint8_t data);
+	void slave_output_w(uint8_t data);
+	void bg_scrollx_w(uint8_t data);
+	void bg_scrolly_w(uint8_t data);
+	INTERRUPT_GEN_MEMBER(master_vblank_irq);
+	INTERRUPT_GEN_MEMBER(slave_vblank_irq);
+	TIMER_DEVICE_CALLBACK_MEMBER(master_scanline);
+
+	void master_io(address_map &map);
+	void master_map(address_map &map);
+	void slave_io(address_map &map);
+	void slave_map(address_map &map);
+
+	void legacy_bg_draw(bitmap_ind16 &bitmap,const rectangle &cliprect);
+	void legacy_fg_draw(bitmap_ind16 &bitmap,const rectangle &cliprect);
+	void legacy_obj_draw(bitmap_ind16 &bitmap,const rectangle &cliprect);
+};
+
+void sprcros2_state::video_start()
+{
 }
 
-WRITE8_MEMBER(sprcros2_state::s_port3_w)
+void sprcros2_state::legacy_bg_draw(bitmap_ind16 &bitmap,const rectangle &cliprect)
 {
-	//76543210
-	//xxxx---- unused
-	//----x--- bankswitch halves of scs-27.5k into c000-dfff
-	//-----xx- unused
-	//-------x nmi enable
+	gfx_element *gfx_0 = m_gfxdecode->gfx(0);
+	int count = 0;
 
-	if((m_s_port3^data)&0x08)
-		membank("slavebank")->set_entry((data&0x08)>>3);
+	for (int y=0;y<32;y++)
+	{
+		for (int x=0;x<32;x++)
+		{
+			uint16_t tile = m_bgvram[count];
+			tile |= (m_bgattr[count] & 7) << 8;
+			bool flipx = bool(m_bgattr[count] & 0x08);
+			uint8_t color = (m_bgattr[count] & 0xf0) >> 4;
 
-	m_s_port3 = data;
+			gfx_0->opaque(bitmap,cliprect,tile,color,flipx,0,x*8-m_bg_scrollx,y*8-m_bg_scrolly);
+			gfx_0->opaque(bitmap,cliprect,tile,color,flipx,0,x*8+256-m_bg_scrollx,y*8-m_bg_scrolly);
+			gfx_0->opaque(bitmap,cliprect,tile,color,flipx,0,x*8-m_bg_scrollx,y*8+256-m_bg_scrolly);
+			gfx_0->opaque(bitmap,cliprect,tile,color,flipx,0,x*8+256-m_bg_scrollx,y*8+256-m_bg_scrolly);
+
+			count++;
+		}
+	}
+
 }
 
-static ADDRESS_MAP_START( sprcros2_master_map, AS_PROGRAM, 8, sprcros2_state )
-	AM_RANGE(0x0000, 0xbfff) AM_ROM
-	AM_RANGE(0xc000, 0xdfff) AM_ROMBANK("masterbank")
-	AM_RANGE(0xe000, 0xe7ff) AM_RAM_WRITE(fgvideoram_w) AM_SHARE("fgvideoram")
-	AM_RANGE(0xe800, 0xe817) AM_RAM                     //always zero
-	AM_RANGE(0xe818, 0xe83f) AM_RAM AM_SHARE("spriteram")
-	AM_RANGE(0xe840, 0xefff) AM_RAM                     //always zero
-	AM_RANGE(0xf000, 0xf7ff) AM_RAM
-	AM_RANGE(0xf800, 0xffff) AM_RAM AM_SHARE("share1")          //shared with slave cpu
-ADDRESS_MAP_END
+void sprcros2_state::legacy_obj_draw(bitmap_ind16 &bitmap,const rectangle &cliprect)
+{
+	gfx_element *gfx_1 = m_gfxdecode->gfx(1);
 
-static ADDRESS_MAP_START( sprcros2_master_io_map, AS_IO, 8, sprcros2_state )
-	ADDRESS_MAP_GLOBAL_MASK(0xff)
-	AM_RANGE(0x00, 0x00) AM_READ_PORT("P1") AM_DEVWRITE("sn1", sn76489_device, write)
-	AM_RANGE(0x01, 0x01) AM_READ_PORT("P2") AM_DEVWRITE("sn2", sn76489_device, write)
-	AM_RANGE(0x02, 0x02) AM_READ_PORT("EXTRA") AM_DEVWRITE("sn3", sn76489_device, write)
-	AM_RANGE(0x04, 0x04) AM_READ_PORT("DSW1")
-	AM_RANGE(0x05, 0x05) AM_READ_PORT("DSW2")
-	AM_RANGE(0x07, 0x07) AM_WRITE(m_port7_w)
-ADDRESS_MAP_END
+	for(int count=0x40-4;count>-1;count-=4)
+	{
+		uint8_t x,y,tile,color;
+		bool flipx;
 
-static ADDRESS_MAP_START( sprcros2_slave_map, AS_PROGRAM, 8, sprcros2_state )
-	AM_RANGE(0x0000, 0xbfff) AM_ROM
-	AM_RANGE(0xc000, 0xdfff) AM_ROMBANK("slavebank")
-	AM_RANGE(0xe000, 0xe7ff) AM_RAM_WRITE(bgvideoram_w) AM_SHARE("bgvideoram")
-	AM_RANGE(0xe800, 0xefff) AM_RAM                     //always zero
-	AM_RANGE(0xf000, 0xf7ff) AM_RAM
-	AM_RANGE(0xf800, 0xffff) AM_RAM AM_SHARE("share1")
-ADDRESS_MAP_END
+		y = 224-m_sprram[count+2];
+		x = m_sprram[count+3];
+		tile = m_sprram[count+0];
+		flipx = bool(m_sprram[count+1] & 2);
+		color = (m_sprram[count+1] & 0x38) >> 3;
+		gfx_1->transpen(bitmap,cliprect,tile,color,flipx,0,x,y & 0xff,0);
+	}
+}
 
-static ADDRESS_MAP_START( sprcros2_slave_io_map, AS_IO, 8, sprcros2_state )
-	ADDRESS_MAP_GLOBAL_MASK(0xff)
-	AM_RANGE(0x00, 0x00) AM_WRITE(bgscrollx_w)
-	AM_RANGE(0x01, 0x01) AM_WRITE(bgscrolly_w)
-	AM_RANGE(0x03, 0x03) AM_WRITE(s_port3_w)
-ADDRESS_MAP_END
+void sprcros2_state::legacy_fg_draw(bitmap_ind16 &bitmap,const rectangle &cliprect)
+{
+	gfx_element *gfx_2 = m_gfxdecode->gfx(2);
+	int count = 0;
+
+	for (int y=0;y<32;y++)
+	{
+		for (int x=0;x<32;x++)
+		{
+			uint16_t tile = m_fgvram[count];
+			tile |= (m_fgattr[count] & 3) << 8;
+			uint8_t color = (m_fgattr[count] & 0xfc) >> 2;
+
+			// TODO: was using tileinfo.group, which I don't know what's for at all.
+			//       This guess seems as good as the original one for all I know.
+			if((color & 0x30) != 0x30)
+				gfx_2->opaque(bitmap,cliprect,tile,color,0,0,x*8,y*8);
+			else
+				gfx_2->transpen(bitmap,cliprect,tile,color,0,0,x*8,y*8,0);
+
+			count++;
+		}
+	}
+}
+
+
+
+
+uint32_t sprcros2_state::screen_update( screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect )
+{
+	if(m_screen_enable == false)
+	{
+		bitmap.fill(0,cliprect);
+		return 0;
+	}
+	legacy_bg_draw(bitmap,cliprect);
+	legacy_obj_draw(bitmap,cliprect);
+	legacy_fg_draw(bitmap,cliprect);
+	return 0;
+}
+
+void sprcros2_state::master_output_w(uint8_t data)
+{
+	//popmessage("%02x",data);
+	//if(data & 0xbe)
+	//  printf("master 07 -> %02x\n",data);
+
+	membank("master_rombank")->set_entry((data&0x40)>>6);
+	m_master_nmi_enable = bool(data & 1);
+	m_screen_enable = bool(data & 4);
+	m_master_irq_enable = bool(data & 8);
+//  if(data & 0x80)
+//      m_master_cpu->set_input_line(0,HOLD_LINE);
+}
+
+void sprcros2_state::slave_output_w(uint8_t data)
+{
+	//if(data & 0xf6)
+	//  printf("slave 03 -> %02x\n",data);
+
+	m_slave_nmi_enable = bool(data & 1);
+	membank("slave_rombank")->set_entry((data&8)>>3);
+}
+
+void sprcros2_state::bg_scrollx_w(uint8_t data)
+{
+	m_bg_scrollx = data;
+}
+
+void sprcros2_state::bg_scrolly_w(uint8_t data)
+{
+	m_bg_scrolly = data;
+}
+
+void sprcros2_state::master_map(address_map &map)
+{
+	map(0x0000, 0xbfff).rom().region("master", 0);
+	map(0xc000, 0xdfff).bankr("master_rombank");
+	map(0xe000, 0xe3ff).ram().share("fgvram");
+	map(0xe400, 0xe7ff).ram().share("fgattr");
+	map(0xe800, 0xe83f).ram().share("sprram");
+	map(0xe840, 0xf7ff).ram();
+	map(0xf800, 0xffff).ram().share("shared_ram");
+}
+
+void sprcros2_state::master_io(address_map &map)
+{
+	map.global_mask(0xff);
+	map(0x00, 0x00).portr("P1").w("sn1", FUNC(sn76489_device::write));
+	map(0x01, 0x01).portr("P2").w("sn2", FUNC(sn76489_device::write));
+	map(0x02, 0x02).portr("EXTRA").w("sn3", FUNC(sn76489_device::write));
+	map(0x04, 0x04).portr("DSW1");
+	map(0x05, 0x05).portr("DSW2");
+	map(0x07, 0x07).w(FUNC(sprcros2_state::master_output_w));
+}
+
+void sprcros2_state::slave_map(address_map &map)
+{
+	map(0x0000, 0xbfff).rom().region("slave", 0);
+	map(0xc000, 0xdfff).bankr("slave_rombank");
+	map(0xe000, 0xe3ff).ram().share("bgvram");
+	map(0xe400, 0xe7ff).ram().share("bgattr");
+	map(0xe800, 0xf7ff).ram();
+	map(0xf800, 0xffff).ram().share("shared_ram");
+}
+
+void sprcros2_state::slave_io(address_map &map)
+{
+	map.global_mask(0xff);
+	map(0x00, 0x00).w(FUNC(sprcros2_state::bg_scrollx_w));
+	map(0x01, 0x01).w(FUNC(sprcros2_state::bg_scrolly_w));
+	map(0x03, 0x03).w(FUNC(sprcros2_state::slave_output_w));
+}
 
 static INPUT_PORTS_START( sprcros2 )
 	PORT_START("P1")
@@ -187,18 +339,7 @@ static INPUT_PORTS_START( sprcros2 )
 	PORT_DIPSETTING(    0x80, DEF_STR( On ) )
 INPUT_PORTS_END
 
-static const gfx_layout sprcros2_bglayout =
-{
-	8,8,
-	RGN_FRAC(1,3),
-	3,
-	{ RGN_FRAC(0,3), RGN_FRAC(1,3), RGN_FRAC(2,3) },
-	{ STEP8(0,1) },
-	{ STEP8(0,8) },
-	8*8
-};
-
-static const gfx_layout sprcros2_spritelayout =
+static const gfx_layout sprite_layout =
 {
 	32,32,
 	RGN_FRAC(1,3),
@@ -209,7 +350,7 @@ static const gfx_layout sprcros2_spritelayout =
 	32*32
 };
 
-static const gfx_layout sprcros2_fglayout =
+static const gfx_layout fg_layout =
 {
 	8,8,
 	RGN_FRAC(1,1),
@@ -220,106 +361,164 @@ static const gfx_layout sprcros2_fglayout =
 	8*8*2
 };
 
-static GFXDECODE_START( sprcros2 )
-	GFXDECODE_ENTRY( "gfx1", 0, sprcros2_bglayout,     0,   16 )
-	GFXDECODE_ENTRY( "gfx2", 0, sprcros2_spritelayout, 256, 6  )
-	GFXDECODE_ENTRY( "gfx3", 0, sprcros2_fglayout,     512, 64 )
+static GFXDECODE_START( gfx_sprcros2 )
+	GFXDECODE_ENTRY( "gfx1", 0, gfx_8x8x3_planar, 0,   16 )
+	GFXDECODE_ENTRY( "gfx2", 0, sprite_layout, 256, 32 )
+	GFXDECODE_ENTRY( "gfx3", 0, fg_layout,     512, 64 )
 GFXDECODE_END
 
-TIMER_DEVICE_CALLBACK_MEMBER(sprcros2_state::m_interrupt)
-{
-	int scanline = param;
 
-	if (scanline == 240)
-	{
-		if(m_port7&0x01)
-			m_master->set_input_line(INPUT_LINE_NMI, PULSE_LINE);
-	}
-	else if(scanline == 0)
-	{
-		if(m_port7&0x08)
-			m_master->set_input_line(0, HOLD_LINE);
-	}
-}
-
-INTERRUPT_GEN_MEMBER(sprcros2_state::s_interrupt)
-{
-	if(m_s_port3&0x01)
-		device.execute().set_input_line(INPUT_LINE_NMI, PULSE_LINE);
-}
 
 void sprcros2_state::machine_start()
 {
-	membank("masterbank")->configure_entries(0, 2, memregion("master")->base() + 0x10000, 0x2000);
-	membank("slavebank")->configure_entries(0, 2, memregion("slave")->base() + 0x10000, 0x2000);
+	membank("master_rombank")->configure_entries(0, 2, memregion("master_bank")->base(), 0x2000);
+	membank("slave_rombank")->configure_entries(0, 2, memregion("slave_bank")->base(), 0x2000);
 
-	save_item(NAME(m_port7));
-	save_item(NAME(m_s_port3));
 }
 
-static MACHINE_CONFIG_START( sprcros2, sprcros2_state )
+void sprcros2_state::machine_reset()
+{
+	m_master_nmi_enable = false;
+	m_slave_nmi_enable = false;
+}
 
+
+void sprcros2_state::sprcros2_palette(palette_device &palette) const
+{
+	const uint8_t *color_prom = memregion("proms")->base();
+
+	// create a lookup table for the palette
+	for (int i = 0; i < 0x20; i++)
+	{
+		int bit0, bit1, bit2;
+
+		// red component
+		bit0 = BIT(color_prom[i], 0);
+		bit1 = BIT(color_prom[i], 1);
+		bit2 = BIT(color_prom[i], 2);
+		int const r = 0x21 * bit0 + 0x47 * bit1 + 0x97 * bit2;
+
+		// green component
+		bit0 = BIT(color_prom[i], 3);
+		bit1 = BIT(color_prom[i], 4);
+		bit2 = BIT(color_prom[i], 5);
+		int const g = 0x21 * bit0 + 0x47 * bit1 + 0x97 * bit2;
+
+		// blue component
+		bit0 = BIT(color_prom[i], 6);
+		bit1 = BIT(color_prom[i], 7);
+		int const b = 0x47 * bit0 + 0xb8 * bit1;
+
+		palette.set_pen_color(i, rgb_t(r, g, b));
+		palette.set_indirect_color(i, rgb_t(r, g, b));
+	}
+
+	// color_prom now points to the beginning of the lookup table
+	color_prom += 0x20;
+
+	// bg
+	for (int i = 0; i < 0x100; i++)
+	{
+		uint8_t const ctabentry = (color_prom[i] & 0x0f) | ((color_prom[i + 0x100] & 0x0f) << 4);
+		palette.set_pen_indirect(i, ctabentry);
+	}
+
+	// sprites & fg
+	for (int i = 0x100; i < 0x300; i++)
+	{
+		uint8_t ctabentry = color_prom[i + 0x100];
+		palette.set_pen_indirect(i, ctabentry);
+	}
+}
+
+INTERRUPT_GEN_MEMBER(sprcros2_state::master_vblank_irq)
+{
+	if(m_master_nmi_enable == true)
+		device.execute().pulse_input_line(INPUT_LINE_NMI, attotime::zero);
+}
+
+INTERRUPT_GEN_MEMBER(sprcros2_state::slave_vblank_irq)
+{
+	if(m_slave_nmi_enable == true)
+		device.execute().pulse_input_line(INPUT_LINE_NMI, attotime::zero);
+}
+
+TIMER_DEVICE_CALLBACK_MEMBER(sprcros2_state::master_scanline)
+{
+	int scanline = param;
+
+
+	if(scanline == 0 && m_master_irq_enable == true)
+		m_master_cpu->set_input_line(0, HOLD_LINE);
+}
+
+void sprcros2_state::sprcros2(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("master", Z80,10000000/2)
-	MCFG_CPU_PROGRAM_MAP(sprcros2_master_map)
-	MCFG_CPU_IO_MAP(sprcros2_master_io_map)
-	MCFG_TIMER_DRIVER_ADD_SCANLINE("scantimer", sprcros2_state, m_interrupt, "screen", 0, 1)
+	Z80(config, m_master_cpu, MAIN_CLOCK/4);
+	m_master_cpu->set_addrmap(AS_PROGRAM, &sprcros2_state::master_map);
+	m_master_cpu->set_addrmap(AS_IO, &sprcros2_state::master_io);
+	m_master_cpu->set_vblank_int("screen", FUNC(sprcros2_state::master_vblank_irq));
 
-	MCFG_CPU_ADD("slave", Z80,10000000/2)
-	MCFG_CPU_PROGRAM_MAP(sprcros2_slave_map)
-	MCFG_CPU_IO_MAP(sprcros2_slave_io_map)
-	MCFG_CPU_PERIODIC_INT_DRIVER(sprcros2_state, s_interrupt, 2*60)    //2 nmis
+	TIMER(config, "scantimer").configure_scanline(FUNC(sprcros2_state::master_scanline), "screen", 0, 1);
 
+	Z80(config, m_slave_cpu, MAIN_CLOCK/4);
+	m_slave_cpu->set_addrmap(AS_PROGRAM, &sprcros2_state::slave_map);
+	m_slave_cpu->set_addrmap(AS_IO, &sprcros2_state::slave_io);
+	m_slave_cpu->set_vblank_int("screen", FUNC(sprcros2_state::slave_vblank_irq));
+
+	config.set_perfect_quantum(m_master_cpu);
 
 	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_REFRESH_RATE(60)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(0))
-	MCFG_SCREEN_SIZE(32*8, 32*8)
-	MCFG_SCREEN_VISIBLE_AREA(1*8, 31*8-1, 2*8, 30*8-1)
-	MCFG_SCREEN_UPDATE_DRIVER(sprcros2_state, screen_update)
-	MCFG_SCREEN_PALETTE("palette")
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_RASTER));
+	screen.set_screen_update(FUNC(sprcros2_state::screen_update));
+	screen.set_raw(MAIN_CLOCK/2, 343, 8, 256-8, 262, 16, 240); // TODO: Wrong screen parameters
+	screen.set_palette("palette");
 
-	MCFG_GFXDECODE_ADD("gfxdecode", "palette", sprcros2)
-	MCFG_PALETTE_ADD("palette", 768)
-	MCFG_PALETTE_INDIRECT_ENTRIES(32)
-	MCFG_PALETTE_INIT_OWNER(sprcros2_state, sprcros2)
+	GFXDECODE(config, m_gfxdecode, "palette", gfx_sprcros2);
+
+	PALETTE(config, "palette", FUNC(sprcros2_state::sprcros2_palette), 768, 32);
 
 	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_MONO("mono")
+	SPEAKER(config, "mono").front_center();
+	SN76489(config, "sn1", 10000000/4).add_route(ALL_OUTPUTS, "mono", 0.50);
+	SN76489(config, "sn2", 10000000/4).add_route(ALL_OUTPUTS, "mono", 0.50);
+	SN76489(config, "sn3", 10000000/4).add_route(ALL_OUTPUTS, "mono", 0.50);
+}
 
-	MCFG_SOUND_ADD("sn1", SN76489, 10000000/4)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.50)
 
-	MCFG_SOUND_ADD("sn2", SN76489, 10000000/4)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.50)
+/***************************************************************************
 
-	MCFG_SOUND_ADD("sn3", SN76489, 10000000/4)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.50)
-MACHINE_CONFIG_END
+  Machine driver(s)
+
+***************************************************************************/
+
+
 
 ROM_START( sprcros2 )
-	ROM_REGION( 0x14000, "master", 0 )
+	ROM_REGION( 0x0c000, "master", 0 )
 	ROM_LOAD( "scm-03.10g", 0x00000, 0x4000, CRC(b9757908) SHA1(d59cb2aac1b6268fc766306850f5711d4a12d897) )
 	ROM_LOAD( "scm-02.10j", 0x04000, 0x4000, CRC(849c5c87) SHA1(0e02c4990e371d6a290efa53301818e769648945) )
 	ROM_LOAD( "scm-01.10k", 0x08000, 0x4000, CRC(385a62de) SHA1(847bf9d97ab3fa8949d9198e4e509948a940d6aa) )
 
-	ROM_LOAD( "scm-00.10l", 0x10000, 0x4000, CRC(13fa3684) SHA1(611b7a237e394f285dcc5beb027dacdbdd58a7a0) ) //banked into c000-dfff
+	ROM_REGION( 0x4000, "master_bank", 0)
+	ROM_LOAD( "scm-00.10l", 0x00000, 0x4000, CRC(13fa3684) SHA1(611b7a237e394f285dcc5beb027dacdbdd58a7a0) )
 
-	ROM_REGION( 0x14000, "slave", 0 )
+	ROM_REGION( 0xc000, "slave", 0 )
 	ROM_LOAD( "scs-30.5f",  0x00000, 0x4000, CRC(c0a40e41) SHA1(e74131b353855749258dffa45091c825ccdbf05a) )
 	ROM_LOAD( "scs-29.5h",  0x04000, 0x4000, CRC(83d49fa5) SHA1(7112110df2f382bbc0e651adcec975054a485b9b) )
 	ROM_LOAD( "scs-28.5j",  0x08000, 0x4000, CRC(480d351f) SHA1(d1b86f441ae0e58b30e0f089ab25de219d5f30e3) )
 
-	ROM_LOAD( "scs-27.5k",  0x10000, 0x4000, CRC(2cf720cb) SHA1(a95c5b8c88371cf597bb7d80afeca6a48c7b74e6) ) //banked into c000-dfff
+	ROM_REGION( 0x4000, "slave_bank", 0)
+	ROM_LOAD( "scs-27.5k",  0x00000, 0x4000, CRC(2cf720cb) SHA1(a95c5b8c88371cf597bb7d80afeca6a48c7b74e6) )
 
 	ROM_REGION( 0xc000, "gfx1", 0 ) //bg
-	ROM_LOAD( "scs-26.4b",   0x0000, 0x4000, CRC(f958b56d) SHA1(a1973179d336d2ba57294155550515f2b8a33a09) )
+	ROM_LOAD( "scs-26.4b",   0x8000, 0x4000, CRC(f958b56d) SHA1(a1973179d336d2ba57294155550515f2b8a33a09) )
 	ROM_LOAD( "scs-25.4c",   0x4000, 0x4000, CRC(d6fd7ba5) SHA1(1c26c4c1655b2be9cb6103e75386cc2f0cf27fc5) )
-	ROM_LOAD( "scs-24.4e",   0x8000, 0x4000, CRC(87783c36) SHA1(7102be795afcddd76b4d41823e95c65fe1ffbca0) )
+	ROM_LOAD( "scs-24.4e",   0x0000, 0x4000, CRC(87783c36) SHA1(7102be795afcddd76b4d41823e95c65fe1ffbca0) )
 
 	ROM_REGION( 0xc000, "gfx2", 0 )
-	ROM_LOAD( "scm-23.5b",   0x0000, 0x4000, CRC(ab42f8e3) SHA1(8c2213b7c47a48e223fc3f7d323d16c0e4cd0457) ) //sprites
+	ROM_LOAD( "scm-23.5b",   0x0000, 0x4000, CRC(ab42f8e3) SHA1(8c2213b7c47a48e223fc3f7d323d16c0e4cd0457) )
 	ROM_LOAD( "scm-22.5e",   0x4000, 0x4000, CRC(0cad254c) SHA1(36e30e30b652b3a388a3c4a82251196f79368f59) )
 	ROM_LOAD( "scm-21.5g",   0x8000, 0x4000, CRC(b6b68998) SHA1(cc3c6d996beeedcc7e5199f10d65c5b1d3c6e666) )
 
@@ -334,29 +533,30 @@ ROM_START( sprcros2 )
 	ROM_LOAD( "sc-60.4k",    0x0320, 0x0100, CRC(d7a4e57d) SHA1(6db02ec6aa55b05422cb505e63c71e36b4b11b4a) ) //fg clut
 ROM_END
 
-/* this is probably an old revision */
 ROM_START( sprcros2a )
-	ROM_REGION( 0x14000, "master", 0 )
+	ROM_REGION( 0xc000, "master", 0 )
 	ROM_LOAD( "15.bin",     0x00000, 0x4000, CRC(b9d02558) SHA1(775404c6c7648d9dab02b496541739ea700cd481) )
 	ROM_LOAD( "scm-02.10j", 0x04000, 0x4000, CRC(849c5c87) SHA1(0e02c4990e371d6a290efa53301818e769648945) )
 	ROM_LOAD( "scm-01.10k", 0x08000, 0x4000, CRC(385a62de) SHA1(847bf9d97ab3fa8949d9198e4e509948a940d6aa) )
 
-	ROM_LOAD( "scm-00.10l", 0x10000, 0x4000, CRC(13fa3684) SHA1(611b7a237e394f285dcc5beb027dacdbdd58a7a0) ) //banked into c000-dfff
+	ROM_REGION( 0x4000, "master_bank", 0)
+	ROM_LOAD( "scm-00.10l", 0x00000, 0x4000, CRC(13fa3684) SHA1(611b7a237e394f285dcc5beb027dacdbdd58a7a0) )
 
-	ROM_REGION( 0x14000, "slave", 0 )
+	ROM_REGION( 0xc000, "slave", 0 )
 	ROM_LOAD( "scs-30.5f",  0x00000, 0x4000, CRC(c0a40e41) SHA1(e74131b353855749258dffa45091c825ccdbf05a) )
 	ROM_LOAD( "scs-29.5h",  0x04000, 0x4000, CRC(83d49fa5) SHA1(7112110df2f382bbc0e651adcec975054a485b9b) )
 	ROM_LOAD( "scs-28.5j",  0x08000, 0x4000, CRC(480d351f) SHA1(d1b86f441ae0e58b30e0f089ab25de219d5f30e3) )
 
-	ROM_LOAD( "scs-27.5k",  0x10000, 0x4000, CRC(2cf720cb) SHA1(a95c5b8c88371cf597bb7d80afeca6a48c7b74e6) ) //banked into c000-dfff
+	ROM_REGION( 0x4000, "slave_bank", 0)
+	ROM_LOAD( "scs-27.5k",  0x00000, 0x4000, CRC(2cf720cb) SHA1(a95c5b8c88371cf597bb7d80afeca6a48c7b74e6) )
 
 	ROM_REGION( 0xc000, "gfx1", 0 ) //bg
-	ROM_LOAD( "scs-26.4b",   0x0000, 0x4000, CRC(f958b56d) SHA1(a1973179d336d2ba57294155550515f2b8a33a09) )
+	ROM_LOAD( "scs-26.4b",   0x8000, 0x4000, CRC(f958b56d) SHA1(a1973179d336d2ba57294155550515f2b8a33a09) )
 	ROM_LOAD( "scs-25.4c",   0x4000, 0x4000, CRC(d6fd7ba5) SHA1(1c26c4c1655b2be9cb6103e75386cc2f0cf27fc5) )
-	ROM_LOAD( "scs-24.4e",   0x8000, 0x4000, CRC(87783c36) SHA1(7102be795afcddd76b4d41823e95c65fe1ffbca0) )
+	ROM_LOAD( "scs-24.4e",   0x0000, 0x4000, CRC(87783c36) SHA1(7102be795afcddd76b4d41823e95c65fe1ffbca0) )
 
 	ROM_REGION( 0xc000, "gfx2", 0 )
-	ROM_LOAD( "scm-23.5b",   0x0000, 0x4000, CRC(ab42f8e3) SHA1(8c2213b7c47a48e223fc3f7d323d16c0e4cd0457) ) //sprites
+	ROM_LOAD( "scm-23.5b",   0x0000, 0x4000, CRC(ab42f8e3) SHA1(8c2213b7c47a48e223fc3f7d323d16c0e4cd0457) )
 	ROM_LOAD( "scm-22.5e",   0x4000, 0x4000, CRC(0cad254c) SHA1(36e30e30b652b3a388a3c4a82251196f79368f59) )
 	ROM_LOAD( "scm-21.5g",   0x8000, 0x4000, CRC(b6b68998) SHA1(cc3c6d996beeedcc7e5199f10d65c5b1d3c6e666) )
 
@@ -371,5 +571,5 @@ ROM_START( sprcros2a )
 	ROM_LOAD( "sc-60.4k",    0x0320, 0x0100, CRC(d7a4e57d) SHA1(6db02ec6aa55b05422cb505e63c71e36b4b11b4a) ) //fg clut
 ROM_END
 
-GAME( 1986, sprcros2, 0,        sprcros2, sprcros2, driver_device, 0, ROT0, "GM Shoji", "Super Cross II (Japan, set 1)", MACHINE_SUPPORTS_SAVE )
-GAME( 1986, sprcros2a,sprcros2, sprcros2, sprcros2, driver_device, 0, ROT0, "GM Shoji", "Super Cross II (Japan, set 2)", MACHINE_SUPPORTS_SAVE )
+GAME( 1986, sprcros2,  0,        sprcros2, sprcros2, sprcros2_state, empty_init, ROT0, "GM Shoji", "Super Cross II (Japan, set 1)", MACHINE_SUPPORTS_SAVE )
+GAME( 1986, sprcros2a, sprcros2, sprcros2, sprcros2, sprcros2_state, empty_init, ROT0, "GM Shoji", "Super Cross II (Japan, set 2)", MACHINE_SUPPORTS_SAVE )

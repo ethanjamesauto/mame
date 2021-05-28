@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2015 Branimir Karadzic. All rights reserved.
- * License: http://www.opensource.org/licenses/BSD-2-Clause
+ * Copyright 2010-2019 Branimir Karadzic. All rights reserved.
+ * License: https://github.com/bkaradzic/bgfx#license-bsd-2-clause
  */
 
 #ifndef CMD_H_HEADER_GUARD
@@ -19,6 +19,6 @@ void cmdShutdown();
 void cmdAdd(const char* _name, ConsoleFn _fn, void* _userData = NULL);
 
 ///
-void cmdExec(const char* _cmd);
+void cmdExec(const char* _format, ...);
 
 #endif // CMD_H_HEADER_GUARD

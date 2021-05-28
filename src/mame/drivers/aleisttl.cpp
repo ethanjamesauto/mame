@@ -7,7 +7,7 @@
  Chase (aka Chase1) (1976)
  Deluxe Soccer (1973)
  Fire Power (1975)                EG-1020-2
- F??tsball (1975)
+ Fötsball (1975)
  Galaxy Raider (1974)
  Hesitation (1974)                AL-6500?
  Hockey, Soccer, Tennis (1974)
@@ -30,6 +30,7 @@
 #include "machine/netlist.h"
 #include "netlist/devices/net_lib.h"
 #include "video/fixfreq.h"
+#include "screen.h"
 
 // copied by Pong, not accurate for this driver!
 // start
@@ -49,19 +50,16 @@
 class sburners_state : public driver_device
 {
 public:
-	sburners_state(const machine_config &mconfig, device_type type, const char *tag)
-	: driver_device(mconfig, type, tag),
+	sburners_state(const machine_config &mconfig, device_type type, const char *tag) :
+		driver_device(mconfig, type, tag),
 		m_maincpu(*this, "maincpu"),
 		m_video(*this, "fixfreq")
 	{
 	}
 
-	// devices
-	required_device<netlist_mame_device_t> m_maincpu;
-	required_device<fixedfreq_device> m_video;
+	void sburners(machine_config &config);
 
 protected:
-
 	// driver_device overrides
 	virtual void machine_start() override;
 	virtual void machine_reset() override;
@@ -69,7 +67,9 @@ protected:
 	virtual void video_start() override;
 
 private:
-
+	// devices
+	required_device<netlist_mame_device> m_maincpu;
+	required_device<fixedfreq_device> m_video;
 };
 
 
@@ -100,20 +100,20 @@ void sburners_state::video_start()
 {
 }
 
-static MACHINE_CONFIG_START( sburners, sburners_state )
-
+void sburners_state::sburners(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_DEVICE_ADD("maincpu", NETLIST_CPU, NETLIST_CLOCK)
-	MCFG_NETLIST_SETUP(sburners)
+	NETLIST_CPU(config, m_maincpu, netlist::config::DEFAULT_CLOCK()).set_source(netlist_sburners);
 
 	/* video hardware */
-	MCFG_FIXFREQ_ADD("fixfreq", "screen")
-	MCFG_FIXFREQ_MONITOR_CLOCK(MASTER_CLOCK)
-	MCFG_FIXFREQ_HORZ_PARAMS(H_TOTAL-67,H_TOTAL-40,H_TOTAL-8,H_TOTAL)
-	MCFG_FIXFREQ_VERT_PARAMS(V_TOTAL-22,V_TOTAL-19,V_TOTAL-12,V_TOTAL)
-	MCFG_FIXFREQ_FIELDCOUNT(1)
-	MCFG_FIXFREQ_SYNC_THRESHOLD(0.30)
-MACHINE_CONFIG_END
+	SCREEN(config, "screen", SCREEN_TYPE_RASTER);
+	FIXFREQ(config, m_video).set_screen("screen");
+	m_video->set_monitor_clock(MASTER_CLOCK);
+	m_video->set_horz_params(H_TOTAL-67,H_TOTAL-40,H_TOTAL-8,H_TOTAL);
+	m_video->set_vert_params(V_TOTAL-22,V_TOTAL-19,V_TOTAL-12,V_TOTAL);
+	m_video->set_fieldcount(1);
+	m_video->set_threshold(0.30);
+}
 
 
 /***************************************************************************
@@ -131,4 +131,4 @@ ROM_START( sburners )
 ROM_END
 
 
-GAME( 1975, sburners,  0, sburners, 0, driver_device,  0, ROT0, "Allied Leisure", "Street Burners [TTL]", MACHINE_IS_SKELETON )
+GAME( 1975, sburners, 0, sburners, 0, sburners_state, empty_init, ROT0, "Allied Leisure", "Street Burners [TTL]", MACHINE_IS_SKELETON )

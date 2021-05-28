@@ -13,41 +13,40 @@
 
 #include "emu.h"
 #include "includes/alesis.h"
+#include "speaker.h"
 
 #define LOG 1
 
 // device type definition
-const device_type ALESIS_DM3AG = &device_creator<alesis_dm3ag_device>;
+DEFINE_DEVICE_TYPE(ALESIS_DM3AG, alesis_dm3ag_device, "alesis_dm3ag", "Alesis DM3AG")
 
 /***************************************************************************
     IMPLEMENTATION
 ***************************************************************************/
 
-static MACHINE_CONFIG_FRAGMENT( alesis_dm3ag )
-	MCFG_SPEAKER_STANDARD_STEREO("out1_left", "out1_right")
-	MCFG_SOUND_ADD("dac", DAC, 0)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "out1_left",  1.0)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "out1_right", 1.0)
-MACHINE_CONFIG_END
 
 //-------------------------------------------------
 //  alesis_dm3ag_device - constructor
 //-------------------------------------------------
 
-alesis_dm3ag_device::alesis_dm3ag_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: device_t(mconfig, ALESIS_DM3AG, "Alesis DM3AG", tag, owner, clock, "alesis_dm3ag", __FILE__),
-		m_dac(*this, "dac"),
-		m_samples(*this, DEVICE_SELF)
+alesis_dm3ag_device::alesis_dm3ag_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: device_t(mconfig, ALESIS_DM3AG, tag, owner, clock)
+	, m_dac(*this, "dac")
+	, m_samples(*this, DEVICE_SELF)
 {
 }
 
 //-------------------------------------------------
-//  device_mconfig_additions
+//  device_add_mconfig
 //-------------------------------------------------
 
-machine_config_constructor alesis_dm3ag_device::device_mconfig_additions() const
+void alesis_dm3ag_device::device_add_mconfig(machine_config &config)
 {
-	return MACHINE_CONFIG_NAME( alesis_dm3ag );
+	SPEAKER(config, "lspeaker1").front_left();
+	SPEAKER(config, "rspeaker1").front_right();
+	SPEAKER(config, "lspeaker2").front_left();
+	SPEAKER(config, "rspeaker2").front_right();
+	PCM54HP(config, m_dac, 0).add_route(ALL_OUTPUTS, "lspeaker1", 1.0).add_route(ALL_OUTPUTS, "rspeaker1", 1.0); // PCM54HP DAC + R63/R73-75 + Sample and hold
 }
 
 //-------------------------------------------------
@@ -72,6 +71,7 @@ void alesis_dm3ag_device::device_reset()
 	m_cur_sample = 0;
 	m_shift = 0;
 	memset(m_cmd, 0, sizeof(m_cmd));
+	m_dac->write(0x8000);
 }
 
 //-------------------------------------------------
@@ -81,7 +81,7 @@ void alesis_dm3ag_device::device_timer(emu_timer &timer, device_timer_id id, int
 {
 	if (m_output_active)
 	{
-		INT16 sample = m_samples[m_cur_sample++];
+		int16_t sample = m_samples[m_cur_sample++];
 		int count = 0;
 
 		while (sample == -128)
@@ -114,11 +114,11 @@ void alesis_dm3ag_device::device_timer(emu_timer &timer, device_timer_id id, int
 			sample = m_samples[m_cur_sample++];
 		}
 
-		m_dac->write_signed16((sample << m_shift) + 0x8000);
+		m_dac->write(0x8000 - (sample << m_shift));
 	}
 }
 
-WRITE8_MEMBER(alesis_dm3ag_device::write)
+void alesis_dm3ag_device::write(uint8_t data)
 {
 	if (LOG)    logerror("DM3AG '%s' write: %02x\n", tag(), data);
 

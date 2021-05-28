@@ -1,5 +1,5 @@
 // license:BSD-3-Clause
-// copyright-holders:Darren Olafson, Quench
+// copyright-holders:Darren Olafson, Quench,Stephane Humbert
 /***************************************************************************
                 ToaPlan game hardware from 1988-1991
                 ------------------------------------
@@ -8,52 +8,23 @@
 #include "emu.h"
 #include "cpu/z80/z80.h"
 #include "cpu/tms32010/tms32010.h"
-#include "sound/3812intf.h"
+#include "sound/ymopl.h"
 #include "includes/toaplan1.h"
 
 
-
-/* List of possible regions for coinage (for games with unemulated sound CPU) */
-enum {
-	TOAPLAN1_REGION_JAPAN=0,
-	TOAPLAN1_REGION_US,
-	TOAPLAN1_REGION_WORLD,
-	TOAPLAN1_REGION_OTHER
-};
-
-static const UINT8 toaplan1_coins_for_credit[TOAPLAN1_REGION_OTHER+1][2][4] =
-{
-	{ { 1, 1, 2, 2 }, { 1, 1, 2, 2 } }, /* TOAPLAN1_REGION_JAPAN */
-	{ { 1, 1, 2, 2 }, { 1, 1, 2, 2 } }, /* TOAPLAN1_REGION_US */
-	{ { 1, 2, 3, 4 }, { 1, 1, 1, 1 } }, /* TOAPLAN1_REGION_WORLD */
-	{ { 1, 1, 1, 1 }, { 1, 1, 1, 1 } }  /* TOAPLAN1_REGION_OTHER */
-};
-
-static const UINT8 toaplan1_credits_for_coin[TOAPLAN1_REGION_OTHER+1][2][4] =
-{
-	{ { 1, 2, 1, 3 }, { 1, 2, 1, 3 } }, /* TOAPLAN1_REGION_JAPAN */
-	{ { 1, 2, 1, 3 }, { 1, 2, 1, 3 } }, /* TOAPLAN1_REGION_US */
-	{ { 1, 1, 1, 1 }, { 2, 3, 4, 6 } }, /* TOAPLAN1_REGION_WORLD */
-	{ { 1, 1, 1, 1 }, { 1, 1, 1, 1 } }, /* TOAPLAN1_REGION_OTHER */
-};
-
-
-INTERRUPT_GEN_MEMBER(toaplan1_state::toaplan1_interrupt)
+void toaplan1_state::interrupt()
 {
 	if (m_intenable)
-		device.execute().set_input_line(4, HOLD_LINE);
+		m_maincpu->set_input_line(4, HOLD_LINE);
 }
 
-WRITE16_MEMBER(toaplan1_state::toaplan1_intenable_w)
+void toaplan1_state::intenable_w(u8 data)
 {
-	if (ACCESSING_BITS_0_7)
-	{
-		m_intenable = data & 0xff;
-	}
+	m_intenable = data;
 }
 
 
-WRITE16_MEMBER(toaplan1_state::demonwld_dsp_addrsel_w)
+void toaplan1_demonwld_state::dsp_addrsel_w(u16 data)
 {
 	/* This sets the main CPU RAM address the DSP should */
 	/*  read/write, via the DSP IO port 0 */
@@ -65,40 +36,42 @@ WRITE16_MEMBER(toaplan1_state::demonwld_dsp_addrsel_w)
 
 	m_main_ram_seg = ((data & 0xe000) << 9);
 	m_dsp_addr_w   = ((data & 0x1fff) << 1);
-	logerror("DSP PC:%04x IO write %04x (%08x) at port 0\n", space.device().safe_pcbase(), data, m_main_ram_seg + m_dsp_addr_w);
+	logerror("DSP PC:%04x IO write %04x (%08x) at port 0\n", m_dsp->pcbase(), data, m_main_ram_seg + m_dsp_addr_w);
 }
 
-READ16_MEMBER(toaplan1_state::demonwld_dsp_r)
+u16 toaplan1_demonwld_state::dsp_r()
 {
 	/* DSP can read data from main CPU RAM via DSP IO port 1 */
 
-	UINT16 input_data = 0;
+	u16 input_data = 0;
 
-	switch (m_main_ram_seg) {
+	switch (m_main_ram_seg)
+	{
 		case 0xc00000: {address_space &mainspace = m_maincpu->space(AS_PROGRAM);
 						input_data = mainspace.read_word(m_main_ram_seg + m_dsp_addr_w);
 						break;}
-		default:        logerror("DSP PC:%04x Warning !!! IO reading from %08x (port 1)\n", space.device().safe_pcbase(), m_main_ram_seg + m_dsp_addr_w);
+		default:        logerror("DSP PC:%04x Warning !!! IO reading from %08x (port 1)\n", m_dsp->pcbase(), m_main_ram_seg + m_dsp_addr_w);
 	}
-	logerror("DSP PC:%04x IO read %04x at %08x (port 1)\n", space.device().safe_pcbase(), input_data, m_main_ram_seg + m_dsp_addr_w);
+	logerror("DSP PC:%04x IO read %04x at %08x (port 1)\n", m_dsp->pcbase(), input_data, m_main_ram_seg + m_dsp_addr_w);
 	return input_data;
 }
 
-WRITE16_MEMBER(toaplan1_state::demonwld_dsp_w)
+void toaplan1_demonwld_state::dsp_w(u16 data)
 {
 	/* Data written to main CPU RAM via DSP IO port 1 */
 	m_dsp_execute = 0;
-	switch (m_main_ram_seg) {
+	switch (m_main_ram_seg)
+	{
 		case 0xc00000: {if ((m_dsp_addr_w < 3) && (data == 0)) m_dsp_execute = 1;
 						address_space &mainspace = m_maincpu->space(AS_PROGRAM);
 						mainspace.write_word(m_main_ram_seg + m_dsp_addr_w, data);
 						break;}
-		default:        logerror("DSP PC:%04x Warning !!! IO writing to %08x (port 1)\n", space.device().safe_pcbase(), m_main_ram_seg + m_dsp_addr_w);
+		default:        logerror("DSP PC:%04x Warning !!! IO writing to %08x (port 1)\n", m_dsp->pcbase(), m_main_ram_seg + m_dsp_addr_w);
 	}
-	logerror("DSP PC:%04x IO write %04x at %08x (port 1)\n", space.device().safe_pcbase(), data, m_main_ram_seg + m_dsp_addr_w);
+	logerror("DSP PC:%04x IO write %04x at %08x (port 1)\n", m_dsp->pcbase(), data, m_main_ram_seg + m_dsp_addr_w);
 }
 
-WRITE16_MEMBER(toaplan1_state::demonwld_dsp_bio_w)
+void toaplan1_demonwld_state::dsp_bio_w(u16 data)
 {
 	/* data 0xffff  means inhibit BIO line to DSP and enable */
 	/*              communication to main processor */
@@ -107,27 +80,29 @@ WRITE16_MEMBER(toaplan1_state::demonwld_dsp_bio_w)
 	/*              communication to main processor*/
 
 
-	logerror("DSP PC:%04x IO write %04x at port 3\n", space.device().safe_pcbase(), data);
-	if (data & 0x8000) {
-		m_dsp_BIO = CLEAR_LINE;
-	}
-	if (data == 0) {
-		if (m_dsp_execute) {
+	logerror("DSP PC:%04x IO write %04x at port 3\n", m_dsp->pcbase(), data);
+	if (data & 0x8000)
+		m_dsp_bio = CLEAR_LINE;
+
+	if (data == 0)
+	{
+		if (m_dsp_execute)
+		{
 			logerror("Turning 68000 on\n");
 			m_maincpu->set_input_line(INPUT_LINE_HALT, CLEAR_LINE);
 			m_dsp_execute = 0;
 		}
-		m_dsp_BIO = ASSERT_LINE;
+		m_dsp_bio = ASSERT_LINE;
 	}
 }
 
-READ16_MEMBER(toaplan1_state::demonwld_BIO_r)
+READ_LINE_MEMBER(toaplan1_demonwld_state::bio_r)
 {
-	return m_dsp_BIO;
+	return m_dsp_bio;
 }
 
 
-void toaplan1_state::demonwld_dsp(int enable)
+void toaplan1_demonwld_state::dsp_int_w(int enable)
 {
 	m_dsp_on = enable;
 	if (enable)
@@ -145,286 +120,156 @@ void toaplan1_state::demonwld_dsp(int enable)
 	}
 }
 
-void toaplan1_state::demonwld_restore_dsp()
+void toaplan1_demonwld_state::device_post_load()
 {
-	demonwld_dsp(m_dsp_on);
+	dsp_int_w(m_dsp_on);
 }
 
-WRITE16_MEMBER(toaplan1_state::demonwld_dsp_ctrl_w)
+void toaplan1_demonwld_state::dsp_ctrl_w(u8 data)
 {
 #if 0
-	logerror("68000:%08x  Writing %08x to %08x.\n",space.device().safe_pc() ,data ,0xe0000a + offset);
+	logerror("68000:%08x  Writing %02x to $e0000b.\n",m_maincpu->pc() ,data);
 #endif
 
-	if (ACCESSING_BITS_0_7)
+	switch (data)
 	{
-		switch (data)
-		{
-			case 0x00:  demonwld_dsp(1); break;  /* Enable the INT line to the DSP */
-			case 0x01:  demonwld_dsp(0); break;  /* Inhibit the INT line to the DSP */
-			default:    logerror("68000:%04x  Writing unknown command %08x to %08x\n",space.device().safe_pcbase() ,data ,0xe0000a + offset); break;
-		}
-	}
-	else
-	{
-		logerror("68000:%04x  Writing unknown command %08x to %08x\n",space.device().safe_pcbase() ,data ,0xe0000a + offset);
+		case 0x00:  dsp_int_w(1); break;  /* Enable the INT line to the DSP */
+		case 0x01:  dsp_int_w(0); break;  /* Inhibit the INT line to the DSP */
+		default:    logerror("68000:%08x  Writing unknown command %02x to $e0000b\n",m_maincpu->pcbase() ,data); break;
 	}
 }
 
 
-READ16_MEMBER(toaplan1_state::samesame_port_6_word_r)
+u8 toaplan1_samesame_state::port_6_word_r()
 {
 	/* Bit 0x80 is secondary CPU (HD647180) ready signal */
-	logerror("PC:%04x Warning !!! IO reading from $14000a\n",space.device().safe_pcbase());
-	return (0x80 | ioport("TJUMP")->read()) & 0xff;
+	logerror("PC:%08x Warning !!! IO reading from $14000b\n",m_maincpu->pcbase());
+	return (0x80 | m_tjump_io->read()) & 0xff;
 }
 
-READ16_MEMBER(toaplan1_state::vimana_system_port_r)
+u8 toaplan1_state::shared_r(offs_t offset)
 {
-	static const UINT8 vimana_region[16] =
-	{
-		TOAPLAN1_REGION_JAPAN, TOAPLAN1_REGION_US   , TOAPLAN1_REGION_WORLD, TOAPLAN1_REGION_JAPAN,
-		TOAPLAN1_REGION_JAPAN, TOAPLAN1_REGION_JAPAN, TOAPLAN1_REGION_JAPAN, TOAPLAN1_REGION_US   ,
-		TOAPLAN1_REGION_JAPAN, TOAPLAN1_REGION_OTHER, TOAPLAN1_REGION_OTHER, TOAPLAN1_REGION_OTHER,
-		TOAPLAN1_REGION_OTHER, TOAPLAN1_REGION_OTHER, TOAPLAN1_REGION_OTHER, TOAPLAN1_REGION_JAPAN
-	};
-
-	int data, p, r, d, slot, reg, dsw;
-
-	slot = -1;
-	d = ioport("DSWA")->read();
-	r = ioport("TJUMP")->read();
-	p = ioport("SYSTEM")->read();
-	m_vimana_latch ^= p;
-	data = (m_vimana_latch & p);
-
-	/* simulate the mcu keeping track of credits based on region and coinage settings */
-	/* latch so it doesn't add more than one coin per keypress */
-	if (d & 0x04)   /* "test mode" ON */
-	{
-		m_vimana_coins[0] = m_vimana_coins[1] = 0;
-		m_vimana_credits = 0;
-	}
-	else            /* "test mode" OFF */
-	{
-		if (data & 0x02)      /* TILT */
-		{
-			m_vimana_coins[0] = m_vimana_coins[1] = 0;
-			m_vimana_credits = 0;
-		}
-		if (data & 0x01)      /* SERVICE1 */
-		{
-			m_vimana_credits++ ;
-		}
-		if (data & 0x08)      /* COIN1 */
-		{
-			slot = 0;
-		}
-		if (data & 0x10)      /* COIN2 */
-		{
-			slot = 1 ;
-		}
-
-		if (slot != -1)
-		{
-			reg = vimana_region[r];
-			dsw = (d & 0xf0) >> (4 + 2 * slot);
-			m_vimana_coins[slot]++;
-			if (m_vimana_coins[slot] >= toaplan1_coins_for_credit[reg][slot][dsw])
-			{
-				m_vimana_credits += toaplan1_credits_for_coin[reg][slot][dsw];
-				m_vimana_coins[slot] -= toaplan1_coins_for_credit[reg][slot][dsw];
-			}
-			coin_counter_w(machine(), slot, 1);
-			coin_counter_w(machine(), slot, 0);
-		}
-
-		if (m_vimana_credits >= 9)
-			m_vimana_credits = 9;
-	}
-
-	coin_lockout_global_w(machine(), (m_vimana_credits >= 9));
-
-	m_vimana_latch = p;
-
-	return p & 0xffff;
+	return m_sharedram[offset];
 }
 
-READ16_MEMBER(toaplan1_state::vimana_mcu_r)
+void toaplan1_state::shared_w(offs_t offset, u8 data)
 {
-	int data = 0 ;
-	switch (offset)
-	{
-		case 0:  data = 0xff; break;
-		case 1:  data = 0x00; break;
-		case 2:
-		{
-			data = m_vimana_credits;
-			break;
-		}
-	}
-	return data & 0xff;
-}
-
-WRITE16_MEMBER(toaplan1_state::vimana_mcu_w)
-{
-	switch (offset)
-	{
-		case 0: break;
-		case 1: break;
-		case 2:
-			if (ACCESSING_BITS_0_7)
-			{
-				m_vimana_credits = data & 0xff;
-				coin_lockout_global_w(machine(), (m_vimana_credits >= 9));
-			}
-			break;
-	}
-}
-
-READ16_MEMBER(toaplan1_state::toaplan1_shared_r)
-{
-	return m_sharedram[offset] & 0xff;
-}
-
-WRITE16_MEMBER(toaplan1_state::toaplan1_shared_w)
-{
-	if (ACCESSING_BITS_0_7)
-	{
-		m_sharedram[offset] = data & 0xff;
-	}
+	m_sharedram[offset] = data;
 }
 
 
-void toaplan1_state::toaplan1_reset_sound()
+void toaplan1_state::reset_sound()
 {
 	/* Reset the secondary CPU and sound chip */
 	/* rallybik, truxton, hellfire, demonwld write to a port to cause a reset */
 	/* zerowing, fireshrk, outzone, vimana use a RESET instruction instead */
-	machine().device("ymsnd")->reset();
-	m_audiocpu->set_input_line(INPUT_LINE_RESET, PULSE_LINE);
+	m_ymsnd->reset();
+	m_audiocpu->pulse_input_line(INPUT_LINE_RESET, attotime::zero);
 }
 
-WRITE16_MEMBER(toaplan1_state::toaplan1_reset_sound_w)
+void toaplan1_state::reset_sound_w(u8 data)
 {
-	if (ACCESSING_BITS_0_7 && (data == 0)) toaplan1_reset_sound();
+	if (data == 0) reset_sound();
 }
 
 
-WRITE8_MEMBER(toaplan1_rallybik_state::rallybik_coin_w)
+WRITE_LINE_MEMBER(toaplan1_rallybik_state::coin_counter_1_w)
 {
-	switch (data) {
-		case 0x08: if (m_coin_count) { coin_counter_w(machine(), 0, 1); coin_counter_w(machine(), 0, 0); } break;
-		case 0x09: if (m_coin_count) { coin_counter_w(machine(), 2, 1); coin_counter_w(machine(), 2, 0); } break;
-		case 0x0a: if (m_coin_count) { coin_counter_w(machine(), 1, 1); coin_counter_w(machine(), 1, 0); } break;
-		case 0x0b: if (m_coin_count) { coin_counter_w(machine(), 3, 1); coin_counter_w(machine(), 3, 0); } break;
-		case 0x0c: coin_lockout_w(machine(), 0, 1); coin_lockout_w(machine(), 2, 1); break;
-		case 0x0d: coin_lockout_w(machine(), 0, 0); coin_lockout_w(machine(), 2, 0); break;
-		case 0x0e: coin_lockout_w(machine(), 1, 1); coin_lockout_w(machine(), 3, 1); break;
-		case 0x0f: coin_lockout_w(machine(), 1, 0); coin_lockout_w(machine(), 3, 0); m_coin_count=1; break;
-		default:   logerror("PC:%04x  Writing unknown data (%04x) to coin count/lockout port\n",space.device().safe_pcbase(),data); break;
-	}
+	machine().bookkeeping().coin_counter_w(0, state);
 }
 
-WRITE8_MEMBER(toaplan1_state::toaplan1_coin_w)
+WRITE_LINE_MEMBER(toaplan1_rallybik_state::coin_counter_2_w)
+{
+	machine().bookkeeping().coin_counter_w(1, state);
+}
+
+WRITE_LINE_MEMBER(toaplan1_rallybik_state::coin_lockout_1_w)
+{
+	machine().bookkeeping().coin_lockout_w(0, !state);
+}
+
+WRITE_LINE_MEMBER(toaplan1_rallybik_state::coin_lockout_2_w)
+{
+	machine().bookkeeping().coin_lockout_w(1, !state);
+}
+
+
+void toaplan1_state::coin_w(u8 data)
 {
 	logerror("Z80 writing %02x to coin control\n",data);
 	/* This still isnt too clear yet. */
 	/* Coin C has no coin lock ? */
 	/* Are some outputs for lights ? (no space on JAMMA for it though) */
 
-	switch (data) {
-		case 0xee: coin_counter_w(machine(), 1,1); coin_counter_w(machine(), 1,0); break; /* Count slot B */
-		case 0xed: coin_counter_w(machine(), 0,1); coin_counter_w(machine(), 0,0); break; /* Count slot A */
+	switch (data)
+	{
+		case 0xee: machine().bookkeeping().coin_counter_w(1,1); machine().bookkeeping().coin_counter_w(1,0); break; /* Count slot B */
+		case 0xed: machine().bookkeeping().coin_counter_w(0,1); machine().bookkeeping().coin_counter_w(0,0); break; /* Count slot A */
 	/* The following are coin counts after coin-lock active (faulty coin-lock ?) */
-		case 0xe2: coin_counter_w(machine(), 1,1); coin_counter_w(machine(), 1,0); coin_lockout_w(machine(), 1,1); break;
-		case 0xe1: coin_counter_w(machine(), 0,1); coin_counter_w(machine(), 0,0); coin_lockout_w(machine(), 0,1); break;
+		case 0xe2: machine().bookkeeping().coin_counter_w(1,1); machine().bookkeeping().coin_counter_w(1,0); machine().bookkeeping().coin_lockout_w(1,1); break;
+		case 0xe1: machine().bookkeeping().coin_counter_w(0,1); machine().bookkeeping().coin_counter_w(0,0); machine().bookkeeping().coin_lockout_w(0,1); break;
 
-		case 0xec: coin_lockout_global_w(machine(), 0); break;  /* ??? count games played */
+		case 0xec: machine().bookkeeping().coin_lockout_global_w(0); break;  /* ??? count games played */
 		case 0xe8: break;   /* ??? Maximum credits reached with coin/credit ratio */
 		case 0xe4: break;   /* ??? Reset coin system */
 
-		case 0x0c: coin_lockout_global_w(machine(), 0); break;  /* Unlock all coin slots */
-		case 0x08: coin_lockout_w(machine(), 2,0); break;   /* Unlock coin slot C */
-		case 0x09: coin_lockout_w(machine(), 0,0); break;   /* Unlock coin slot A */
-		case 0x0a: coin_lockout_w(machine(), 1,0); break;   /* Unlock coin slot B */
+		case 0x0c: machine().bookkeeping().coin_lockout_global_w(0); break;  /* Unlock all coin slots */
+		case 0x08: machine().bookkeeping().coin_lockout_w(2,0); break;   /* Unlock coin slot C */
+		case 0x09: machine().bookkeeping().coin_lockout_w(0,0); break;   /* Unlock coin slot A */
+		case 0x0a: machine().bookkeeping().coin_lockout_w(1,0); break;   /* Unlock coin slot B */
 
-		case 0x02: coin_lockout_w(machine(), 1,1); break;   /* Lock coin slot B */
-		case 0x01: coin_lockout_w(machine(), 0,1); break;   /* Lock coin slot A */
-		case 0x00: coin_lockout_global_w(machine(), 1); break;  /* Lock all coin slots */
-		default:   logerror("PC:%04x  Writing unknown data (%04x) to coin count/lockout port\n",space.device().safe_pcbase(),data); break;
+		case 0x02: machine().bookkeeping().coin_lockout_w(1,1); break;   /* Lock coin slot B */
+		case 0x01: machine().bookkeeping().coin_lockout_w(0,1); break;   /* Lock coin slot A */
+		case 0x00: machine().bookkeeping().coin_lockout_global_w(1); break;  /* Lock all coin slots */
+		default:   logerror("PC:%04x  Writing unknown data (%04x) to coin count/lockout port\n",m_audiocpu->pcbase(),data); break;
 	}
 }
 
-WRITE16_MEMBER(toaplan1_state::samesame_coin_w)
+WRITE_LINE_MEMBER(toaplan1_state::reset_callback)
 {
-	if (ACCESSING_BITS_0_7)
-	{
-		toaplan1_coin_w(space, offset, data & 0xff);
-	}
-	if (ACCESSING_BITS_8_15 && (data&0xff00))
-	{
-		logerror("PC:%04x  Writing unknown MSB data (%04x) to coin count/lockout port\n",space.device().safe_pcbase(),data);
-	}
+	reset_sound();
 }
 
-WRITE_LINE_MEMBER(toaplan1_state::toaplan1_reset_callback)
-{
-	toaplan1_reset_sound();
-}
-
-MACHINE_RESET_MEMBER(toaplan1_state,toaplan1)
+void toaplan1_state::machine_reset()
 {
 	m_intenable = 0;
-	m_coin_count = 0;
-	coin_lockout_global_w(machine(), 0);
+	machine().bookkeeping().coin_lockout_global_w(0);
 }
 
 /* zerowing, fireshrk, outzone */
 MACHINE_RESET_MEMBER(toaplan1_state,zerowing)
 {
-	MACHINE_RESET_CALL_MEMBER(toaplan1);
-	m_maincpu->set_reset_callback(write_line_delegate(FUNC(toaplan1_state::toaplan1_reset_callback),this));
+	machine_reset();
+	m_maincpu->set_reset_callback(*this, FUNC(toaplan1_state::reset_callback));
 }
 
-MACHINE_RESET_MEMBER(toaplan1_state,demonwld)
+void toaplan1_demonwld_state::machine_reset()
 {
-	MACHINE_RESET_CALL_MEMBER(toaplan1);
+	toaplan1_state::machine_reset();
 	m_dsp_addr_w = 0;
 	m_main_ram_seg = 0;
 	m_dsp_execute = 0;
 }
 
-MACHINE_RESET_MEMBER(toaplan1_state,vimana)
-{
-	MACHINE_RESET_CALL_MEMBER(toaplan1);
-	m_vimana_coins[0] = m_vimana_coins[1] = 0;
-	m_vimana_credits = 0;
-	m_vimana_latch = 0;
-	m_maincpu->set_reset_callback(write_line_delegate(FUNC(toaplan1_state::toaplan1_reset_callback),this));
-}
 
-
-void toaplan1_state::toaplan1_driver_savestate()
+void toaplan1_state::machine_start()
 {
 	save_item(NAME(m_intenable));
-	save_item(NAME(m_coin_count));
 }
 
-void toaplan1_state::demonwld_driver_savestate()
+void toaplan1_demonwld_state::machine_start()
 {
+	toaplan1_state::machine_start();
 	save_item(NAME(m_dsp_on));
 	save_item(NAME(m_dsp_addr_w));
 	save_item(NAME(m_main_ram_seg));
-	save_item(NAME(m_dsp_BIO));
+	save_item(NAME(m_dsp_bio));
 	save_item(NAME(m_dsp_execute));
-	machine().save().register_postload(save_prepost_delegate(FUNC(toaplan1_state::demonwld_restore_dsp), this));
 }
 
-void toaplan1_state::vimana_driver_savestate()
+void toaplan1_samesame_state::machine_start()
 {
-	save_item(NAME(m_vimana_coins[0]));
-	save_item(NAME(m_vimana_coins[1]));
-	save_item(NAME(m_vimana_credits));
-	save_item(NAME(m_vimana_latch));
+	toaplan1_state::machine_start();
+	save_item(NAME(m_to_mcu));
+	save_item(NAME(m_cmdavailable));
 }

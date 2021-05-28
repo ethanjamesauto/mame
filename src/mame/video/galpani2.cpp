@@ -11,6 +11,7 @@
 
 #include "emu.h"
 #include "includes/galpani2.h"
+#include "screen.h"
 
 /*
 304000:0040 0000 0100 0000-0000 0000 0000 0000      (Sprites regs)
@@ -27,13 +28,13 @@
 
 
 #ifdef UNUSED_DEFINITION
-inline UINT16 galpani2_state::galpani2_bg8_regs_r(address_space &space, offs_t offset, int n)
+inline uint16_t galpani2_state::galpani2_bg8_regs_r(offs_t offset, int n)
 {
 	switch (offset * 2)
 	{
 		case 0x16:  return machine().rand() & 1;
 		default:
-			logerror("CPU #0 PC %06X : Warning, bg8 #%d screen reg %04X read\n",space.cpu->safe_pc(),_n_,offset*2);
+			logerror("%s: Warning, bg8 #%d screen reg %04X read\n",machine().describe_context(),_n_,offset*2);
 	}
 	return m_bg8_regs[_n_][offset];
 }
@@ -45,41 +46,18 @@ inline UINT16 galpani2_state::galpani2_bg8_regs_r(address_space &space, offs_t o
     c04         0003 flip, 0300 flip?
     c1c/e       01ff scroll, 3000 ?
 */
-inline void galpani2_state::galpani2_bg8_regs_w(address_space &space, offs_t offset, UINT16 data, UINT16 mem_mask, int _n_)
+inline void galpani2_state::galpani2_bg8_regs_w(offs_t offset, uint16_t data, uint16_t mem_mask, int _n_)
 {
 	COMBINE_DATA(&m_bg8_regs[_n_][offset]);
 }
 
-READ16_MEMBER( galpani2_bg8_regs_0_r ) { return galpani2_bg8_regs_r(space, offset, 0); }
-READ16_MEMBER( galpani2_bg8_regs_1_r ) { return galpani2_bg8_regs_r(space, offset, 1); }
+uint16_t galpani2_state::galpani2_bg8_regs_0_r(offs_t offset) { return galpani2_bg8_regs_r(offset, 0); }
+uint16_t galpani2_state::galpani2_bg8_regs_1_r(offs_t offset) { return galpani2_bg8_regs_r(offset, 1); }
 
-WRITE16_MEMBER( galpani2_bg8_regs_0_w ) { galpani2_bg8_regs_w(space, offset, data, mem_mask, 0); }
-WRITE16_MEMBER( galpani2_bg8_regs_1_w ) { galpani2_bg8_regs_w(space, offset, data, mem_mask, 1); }
+void galpani2_state::galpani2_bg8_regs_0_w(offs_t offset, uint16_t data, uint16_t mem_mask) { galpani2_bg8_regs_w(offset, data, mem_mask, 0); }
+void galpani2_state::galpani2_bg8_regs_1_w(offs_t offset, uint16_t data, uint16_t mem_mask) { galpani2_bg8_regs_w(offset, data, mem_mask, 1); }
 #endif
 
-
-
-/***************************************************************************
-
-
-                            Video Init Functions
-
-
-***************************************************************************/
-
-PALETTE_INIT_MEMBER(galpani2_state, galpani2)
-{
-	int i;
-	/* first $4200 colors are dynamic */
-
-	/* initialize 555 RGB lookup */
-	for (i = 0; i < 0x8000; i++)
-		palette.set_pen_color(i,pal5bit(i >> 5),pal5bit(i >> 10),pal5bit(i >> 0));
-}
-
-void galpani2_state::video_start()
-{
-}
 
 
 /***************************************************************************
@@ -98,15 +76,15 @@ void galpani2_state::copybg8(screen_device &screen, bitmap_rgb32 &bitmap, const 
 {
 	int x = + ( *m_bg8_scrollx[layer] + 0x200 - 0x1be );
 	int y = + ( *m_bg8_scrolly[layer] + 0x200 - 0x0f5 );
-	UINT16* ram = m_bg8[layer];
+	uint16_t* ram = m_bg8[layer];
 
-	const pen_t *clut = &m_bg8palette->pen(0);
+	pen_t const *const clut = &m_bg8palette->pen(0);
 	for (int xx = 0; xx < 320; xx++)
 	{
 		for (int yy = 0; yy < 240; yy++)
 		{
-			UINT16 pen = ram[(((y + yy) & 0xff) * 512) + ((x + xx) & 0x1ff)];
-			if (pen) bitmap.pix32(yy, xx) = clut[pen & 0xff];
+			uint16_t pen = ram[(((y + yy) & 0xff) * 512) + ((x + xx) & 0x1ff)];
+			if (pen) bitmap.pix(yy, xx) = clut[pen & 0xff];
 		}
 	}
 }
@@ -118,23 +96,23 @@ void galpani2_state::copybg8(screen_device &screen, bitmap_rgb32 &bitmap, const 
 // (or is this just wrong format / layout due to protection?)
 void galpani2_state::copybg15(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
 {
-	UINT16* ram = m_bg15 + 0x40000/2;
+	uint16_t* ram = m_bg15 + 0x40000/2;
 
 	//int x = 0;
 	//int y = 0;
 
-	const pen_t *clut = &m_bg15palette->pen(0);
+	pen_t const *const clut = &m_bg15palette->pen(0);
 	for (int xx = 0; xx < 320; xx++)
 	{
 		for (int yy = 0; yy < 240; yy++)
 		{
-			UINT16 pen = ram[(xx * 0x800) + yy];
-			bitmap.pix32(yy, xx) = clut[pen & 0x7fff];
+			uint16_t pen = ram[(xx * 0x800) + yy];
+			bitmap.pix(yy, xx) = clut[pen & 0x7fff];
 		}
 	}
 }
 
-UINT32 galpani2_state::screen_update_galpani2(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
+uint32_t galpani2_state::screen_update_galpani2(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
 {
 	int layers_ctrl = -1;
 
@@ -162,6 +140,10 @@ if (machine().input().code_pressed(KEYCODE_Z))
 	if (layers_ctrl & 0x1) copybg15(screen, bitmap, cliprect);
 	if (layers_ctrl & 0x2) copybg8(screen, bitmap, cliprect, 0);
 	if (layers_ctrl & 0x4) copybg8(screen, bitmap, cliprect, 1);
-	if (layers_ctrl & 0x8) m_kaneko_spr->kaneko16_render_sprites(bitmap, cliprect, screen.priority(), m_spriteram, m_spriteram.bytes());
+	if (layers_ctrl & 0x8)
+	{
+		m_kaneko_spr->render_sprites(cliprect, m_spriteram, m_spriteram.bytes());
+		m_kaneko_spr->copybitmap(bitmap, cliprect, screen.priority());
+	}
 	return 0;
 }

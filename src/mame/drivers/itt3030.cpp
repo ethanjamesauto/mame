@@ -8,7 +8,6 @@
     ToDo:
     - Check Beeper
     - finish hooking up keyboard
-    - According to the manual, the keyboard is based on a 8278 ... it's nowhere to be found. The keyboard / video card has a 8741 instead of which a ROM dump exists
     - serial port
     - daisy chain
     - ...
@@ -191,16 +190,25 @@ Beeper Circuit, all ICs shown:
 
 
 #include "emu.h"
+#include "cpu/mcs48/mcs48.h"        //Keyboard MCU ... talks to the 8278 on the keyboard circuit
 #include "cpu/z80/z80.h"
-#include "machine/wd_fdc.h"
+#include "imagedev/floppy.h"
 #include "machine/bankdev.h"
 #include "machine/ram.h"
-#include "formats/itt3030_dsk.h"
-#include "video/tms9927.h"          //Display hardware
+#include "machine/wd_fdc.h"
 #include "sound/beep.h"
-#include "cpu/mcs48/mcs48.h"        //Keyboard MCU ... talks to the 8278 on the keyboard circuit
+#include "video/tms9927.h"          //Display hardware
+#include "emupal.h"
+#include "screen.h"
+#include "speaker.h"
+#include "formats/itt3030_dsk.h"
+#include "debugger.h"
 
 #define MAIN_CLOCK XTAL_4.194MHz
+
+//**************************************************************************
+//  TYPE DEFINITIONS
+//**************************************************************************
 
 class itt3030_state : public driver_device
 {
@@ -208,112 +216,266 @@ public:
 	itt3030_state(const machine_config &mconfig, device_type type, const char *tag)
 		: driver_device(mconfig, type, tag)
 		, m_maincpu(*this, "maincpu")
+		, m_screen(*this, "screen")
 		, m_kbdmcu(*this, "kbdmcu")
 		, m_ram(*this, "mainram")
 		, m_crtc(*this, "crt5027")
 		, m_48kbank(*this, "lowerbank")
 		, m_fdc (*this, "fdc")
-		, m_floppy0(*this, "fdc:0")
-		, m_floppy1(*this, "fdc:1")
+		, m_floppy(*this, "fdc:%u", 0)
 		, m_beep(*this, "beeper")
-		, m_keyrow1(*this, "ROW1")
-		, m_keyrow2(*this, "ROW2")
-		, m_keyrow3(*this, "ROW3")
-		, m_keyrow4(*this, "ROW4")
-		, m_keyrow5(*this, "ROW5")
-		, m_keyrow6(*this, "ROW6")
-		, m_keyrow7(*this, "ROW7")
-		, m_keyrow8(*this, "ROW8")
-		, m_keyrow9(*this, "ROW9")
-		, m_keyrow10(*this, "ROW10")
-		, m_keyrow11(*this, "ROW11")
-		, m_keyrow12(*this, "ROW12")
-		, m_keyrow13(*this, "ROW13")
-		, m_keyrow14(*this, "ROW14")
-		, m_keyrow15(*this, "ROW15")
-		, m_keyrow16(*this, "ROW16")
-		, m_vram(*this, "vram"),
-		m_gfxdecode(*this, "gfxdecode"),
-		m_palette(*this, "palette")
+		, m_keyrows(*this, "ROW.%u", 0)
+		, m_vram(*this, "vram")
+		, m_gfxdecode(*this, "gfxdecode")
+		, m_palette(*this, "palette")
 	{ }
 
-	// devices
-	required_device<cpu_device> m_maincpu;
-	required_device<i8041_device> m_kbdmcu;
-	required_device<ram_device> m_ram;
-	required_device<crt5027_device> m_crtc;
-	required_device<address_map_bank_device> m_48kbank;
-	required_device<fd1791_t> m_fdc;
-	required_device<floppy_connector> m_floppy0;
-	required_device<floppy_connector> m_floppy1;
-	required_device<beep_device> m_beep;
-
-	required_ioport m_keyrow1, m_keyrow2, m_keyrow3, m_keyrow4, m_keyrow5, m_keyrow6, m_keyrow7, m_keyrow8, m_keyrow9;
-	required_ioport m_keyrow10, m_keyrow11, m_keyrow12, m_keyrow13, m_keyrow14, m_keyrow15, m_keyrow16;
-
-	// shared pointers
-	required_shared_ptr<UINT8> m_vram;
-
-	// screen updates
-	UINT32 screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
+	void itt3030(machine_config &config);
 
 protected:
 	// driver_device overrides
 	virtual void machine_start() override;
 	virtual void machine_reset() override;
 
-	virtual void video_start() override;
-public:
+private:
+	// screen updates
+	uint32_t screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
 
-	DECLARE_READ8_MEMBER(vsync_r);
-	DECLARE_READ8_MEMBER(i8078_r);
-	DECLARE_WRITE8_MEMBER(i8078_w);
-	DECLARE_WRITE8_MEMBER( beep_w );
-	DECLARE_WRITE8_MEMBER(bank_w);
-	DECLARE_READ8_MEMBER(bankl_r);
-	DECLARE_WRITE8_MEMBER(bankl_w);
-	DECLARE_READ8_MEMBER(bankh_r);
-	DECLARE_WRITE8_MEMBER(bankh_w);
-	DECLARE_READ8_MEMBER(kbd_fifo_r);
-	DECLARE_READ8_MEMBER(kbd_matrix_r);
-	DECLARE_WRITE8_MEMBER(kbd_matrix_w);
-	DECLARE_READ8_MEMBER(fdc_r);
-	DECLARE_WRITE8_MEMBER(fdc_w);
-	DECLARE_READ8_MEMBER(fdc_stat_r);
-	DECLARE_WRITE8_MEMBER(fdc_cmd_w);
-	DECLARE_FLOPPY_FORMATS(itt3030_floppy_formats);
+	uint8_t vsync_r();
+	void beep_w(uint8_t data);
+	void bank_w(uint8_t data);
+	DECLARE_READ_LINE_MEMBER(kbd_matrix_r);
+	void kbd_matrix_w(uint8_t data);
+	uint8_t kbd_port2_r();
+	void kbd_port2_w(uint8_t data);
+	uint8_t fdc_r(offs_t offset);
+	void fdc_w(offs_t offset, uint8_t data);
+	uint8_t fdc_stat_r();
+	void fdc_cmd_w(uint8_t data);
+	static void itt3030_floppy_formats(format_registration &fr);
 
 	DECLARE_WRITE_LINE_MEMBER(fdcirq_w);
 	DECLARE_WRITE_LINE_MEMBER(fdcdrq_w);
 	DECLARE_WRITE_LINE_MEMBER(fdchld_w);
+	void itt3030_palette(palette_device &palette) const;
 
-private:
-	UINT8 m_unk;
-	UINT8 m_bank;
-	UINT8 m_kbdrow, m_kbdcol, m_kbdclk, m_kbdread;
+	void itt3030_io(address_map &map);
+	void itt3030_map(address_map &map);
+	void lower48_map(address_map &map);
+
+	// devices
+	required_device<cpu_device> m_maincpu;
+	required_device<screen_device> m_screen;
+	required_device<i8741a_device> m_kbdmcu;
+	required_device<ram_device> m_ram;
+	required_device<crt5027_device> m_crtc;
+	required_device<address_map_bank_device> m_48kbank;
+	required_device<fd1791_device> m_fdc;
+	required_device_array<floppy_connector, 3> m_floppy;
+	required_device<beep_device> m_beep;
+
+	required_ioport_array<16> m_keyrows;
+
+	// shared pointers
+	required_shared_ptr<uint8_t> m_vram;
+
+	uint8_t m_kbdclk, m_kbdread, m_kbdport2;
 	required_device<gfxdecode_device> m_gfxdecode;
 	required_device<palette_device> m_palette;
 	floppy_image_device *m_curfloppy;
 	bool m_fdc_irq, m_fdc_drq, m_fdc_hld;
-	floppy_connector *m_con1, *m_con2, *m_con3;
-	bool m_keyskip;
 };
 
-void itt3030_state::video_start()
+//**************************************************************************
+//  ADDRESS MAPS
+//**************************************************************************
+
+// The lower 48K is switchable among the first 48K of each of 8 48K banks numbered 0-7 or "bank 8" which is the internal ROM and VRAM
+// The upper 16K is always the top 16K of the first bank, F5 can set this to 32K
+// Port F6 bits 7-5 select banks 0-7, bit 4 enables bank 8
+
+void itt3030_state::itt3030_map(address_map &map)
 {
-	m_unk = 0x80;
+	map(0x0000, 0xbfff).m(m_48kbank, FUNC(address_map_bank_device::amap8));
 }
 
-READ8_MEMBER(itt3030_state::vsync_r)
+void itt3030_state::lower48_map(address_map &map)
 {
-	UINT8 ret = 0;
+	map(0x60000, 0x607ff).rom().region("maincpu", 0);   // begin "page 8"
+	map(0x60800, 0x60fff).rom().region("maincpu", 0);
+	map(0x61000, 0x610ff).ram().mirror(0x100);  // only 256 bytes, but ROM also clears 11xx?
+	map(0x63000, 0x63fff).ram().share("vram");
+}
 
-	if (machine().first_screen()->vblank())
+void itt3030_state::itt3030_io(address_map &map)
+{
+	map.global_mask(0xff);
+	map(0x20, 0x2f).rw(m_crtc, FUNC(crt5027_device::read), FUNC(crt5027_device::write));
+	map(0x30, 0x31).rw(m_kbdmcu, FUNC(i8741a_device::upi41_master_r), FUNC(i8741a_device::upi41_master_w));
+	map(0x32, 0x32).w(FUNC(itt3030_state::beep_w));
+	map(0x35, 0x35).r(FUNC(itt3030_state::vsync_r));
+	map(0x50, 0x53).rw(FUNC(itt3030_state::fdc_r), FUNC(itt3030_state::fdc_w));
+	map(0x54, 0x54).rw(FUNC(itt3030_state::fdc_stat_r), FUNC(itt3030_state::fdc_cmd_w));
+	map(0xf6, 0xf6).w(FUNC(itt3030_state::bank_w));
+}
+
+
+//**************************************************************************
+//  INPUTS
+//**************************************************************************
+
+READ_LINE_MEMBER(itt3030_state::kbd_matrix_r)
+{
+	return m_kbdread;
+}
+
+void itt3030_state::kbd_matrix_w(uint8_t data)
+{
+//  printf("matrix_w: %02x (col %d row %d clk %d)\n", data, m_kbdcol, m_kbdrow, (data & 0x80) ? 1 : 0);
+
+	if ((data & 0x80) && (!m_kbdclk))
+	{
+		const ioport_value tmp_read = m_keyrows[(data >> 3) & 0xf]->read() & (1 << (data & 0x7));
+		m_kbdread = (tmp_read != 0) ? 1 : 0;
+	}
+
+	m_kbdclk = (data & 0x80) ? 1 : 0;
+}
+
+// bit 2 is UPI-41 host IRQ to Z80
+void itt3030_state::kbd_port2_w(uint8_t data)
+{
+	m_kbdport2 = data;
+}
+
+uint8_t itt3030_state::kbd_port2_r()
+{
+	return m_kbdport2;
+}
+
+
+//**************************************************************************
+//  KEYBOARD
+//**************************************************************************
+
+static INPUT_PORTS_START( itt3030 )
+	PORT_START("ROW.0")
+	PORT_BIT(0x0001, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("F4") PORT_CODE(KEYCODE_F4) PORT_CHAR(UCHAR_MAMEKEY(F4))
+	PORT_BIT(0x0002, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_5) PORT_CHAR('5') PORT_CHAR('%')
+	PORT_BIT(0x0004, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_T) PORT_CHAR('t') PORT_CHAR('T')
+	PORT_BIT(0x0008, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_F) PORT_CHAR('f') PORT_CHAR('F')
+	PORT_BIT(0x0010, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_V) PORT_CHAR('v') PORT_CHAR('V')
+
+	PORT_START("ROW.1")
+	PORT_BIT(0x0001, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("F5") PORT_CODE(KEYCODE_F5) PORT_CHAR(UCHAR_MAMEKEY(F5))
+	PORT_BIT(0x0002, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_6) PORT_CHAR('6') PORT_CHAR('&')
+	PORT_BIT(0x0004, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_Z) PORT_CHAR('z') PORT_CHAR('Z')
+	PORT_BIT(0x0008, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_G) PORT_CHAR('g') PORT_CHAR('G')
+	PORT_BIT(0x0010, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_B) PORT_CHAR('b') PORT_CHAR('B')
+
+	PORT_START("ROW.2")
+	PORT_BIT(0x0001, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("F6") PORT_CODE(KEYCODE_F6) PORT_CHAR(UCHAR_MAMEKEY(F6))
+	PORT_BIT(0x0002, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_7) PORT_CHAR('7') PORT_CHAR('/')
+	PORT_BIT(0x0004, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_U) PORT_CHAR('u') PORT_CHAR('U')
+	PORT_BIT(0x0008, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_H) PORT_CHAR('h') PORT_CHAR('H')
+	PORT_BIT(0x0010, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_N) PORT_CHAR('n') PORT_CHAR('N')
+
+	PORT_START("ROW.3")
+	PORT_BIT(0x0001, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("F7") PORT_CODE(KEYCODE_F7) PORT_CHAR(UCHAR_MAMEKEY(F7))
+	PORT_BIT(0x0002, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_8) PORT_CHAR('8') PORT_CHAR('(')
+	PORT_BIT(0x0004, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_I) PORT_CHAR('i') PORT_CHAR('I')
+	PORT_BIT(0x0008, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_J) PORT_CHAR('j') PORT_CHAR('J')
+	PORT_BIT(0x0010, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_M) PORT_CHAR('m') PORT_CHAR('M')
+
+	PORT_START("ROW.4")
+	PORT_BIT(0x0001, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_LCONTROL) PORT_CODE(KEYCODE_RCONTROL)
+	PORT_BIT(0x0002, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_1) PORT_CHAR('1') PORT_CHAR('!')
+	PORT_BIT(0x0004, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_Q) PORT_CHAR('q') PORT_CHAR('Q')
+	PORT_BIT(0x0008, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("Shift Lock") PORT_CODE(KEYCODE_CAPSLOCK)
+	PORT_BIT(0x0010, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("Shift") PORT_CODE(KEYCODE_LSHIFT) PORT_CODE(KEYCODE_RSHIFT) PORT_CHAR(UCHAR_SHIFT_1)
+
+	PORT_START("ROW.5")
+	PORT_BIT(0x0001, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("F1") PORT_CODE(KEYCODE_F1) PORT_CHAR(UCHAR_MAMEKEY(F1))
+	PORT_BIT(0x0002, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_2) PORT_CHAR('2') PORT_CHAR('"')
+	PORT_BIT(0x0004, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_W) PORT_CHAR('w') PORT_CHAR('W')
+	PORT_BIT(0x0008, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_A) PORT_CHAR('a') PORT_CHAR('A')
+	PORT_BIT(0x0010, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_Y) PORT_CHAR('y') PORT_CHAR('Y')
+
+	PORT_START("ROW.6")
+	PORT_BIT(0x0001, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("F2") PORT_CODE(KEYCODE_F2) PORT_CHAR(UCHAR_MAMEKEY(F2))
+	PORT_BIT(0x0002, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_3) PORT_CHAR('3') PORT_CHAR('#')   // actually UK pound symbol
+	PORT_BIT(0x0004, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_E) PORT_CHAR('e') PORT_CHAR('E')
+	PORT_BIT(0x0008, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_S) PORT_CHAR('s') PORT_CHAR('S')
+	PORT_BIT(0x0010, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_X) PORT_CHAR('x') PORT_CHAR('X')
+
+	PORT_START("ROW.7")
+	PORT_BIT(0x0001, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("F3") PORT_CODE(KEYCODE_F3) PORT_CHAR(UCHAR_MAMEKEY(F3))
+	PORT_BIT(0x0002, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_4) PORT_CHAR('4') PORT_CHAR('$')
+	PORT_BIT(0x0004, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_R) PORT_CHAR('r') PORT_CHAR('R')
+	PORT_BIT(0x0008, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_D) PORT_CHAR('d') PORT_CHAR('D')
+	PORT_BIT(0x0010, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_C) PORT_CHAR('c') PORT_CHAR('C')
+
+	PORT_START("ROW.8")
+	PORT_BIT(0x0001, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("(R)") PORT_CODE(KEYCODE_F12) PORT_CHAR('=')
+	PORT_BIT(0x0002, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_BACKSLASH) PORT_CHAR('~')
+	PORT_BIT(0x0004, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_ENTER) PORT_CHAR(13)
+	PORT_BIT(0x0008, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_DEL) PORT_CHAR('^')    // PC doesn't have 3 keys to the right of L, so we sub DEL for the 3rd one
+	PORT_BIT(0x0010, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_SPACE) PORT_CHAR(' ')
+
+	PORT_START("ROW.9")
+	PORT_BIT(0x0001, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("(CL)") PORT_CODE(KEYCODE_F13) PORT_CHAR(4)    // produces control-D always
+	PORT_BIT(0x001e, IP_ACTIVE_HIGH, IPT_UNUSED)
+
+	PORT_START("ROW.10")
+	PORT_BIT(0x001f, IP_ACTIVE_HIGH, IPT_UNUSED)
+
+	PORT_START("ROW.11")
+	PORT_BIT(0x001f, IP_ACTIVE_HIGH, IPT_UNUSED)
+
+	PORT_START("ROW.12")
+	PORT_BIT(0x0001, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("F8") PORT_CODE(KEYCODE_F8) PORT_CHAR(UCHAR_MAMEKEY(F8))
+	PORT_BIT(0x0002, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_9) PORT_CHAR('9') PORT_CHAR(')')
+	PORT_BIT(0x0004, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_O) PORT_CHAR('o') PORT_CHAR('O')
+	PORT_BIT(0x0008, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_K) PORT_CHAR('k') PORT_CHAR('K')
+	PORT_BIT(0x0010, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_COMMA) PORT_CHAR(',') PORT_CHAR(';')
+
+	PORT_START("ROW.13")
+	PORT_BIT(0x0001, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME(UTF8_LEFT) PORT_CODE(KEYCODE_F9)
+	PORT_BIT(0x0002, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_0) PORT_CHAR('0') PORT_CHAR('=')
+	PORT_BIT(0x0004, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_P) PORT_CHAR('p') PORT_CHAR('P')
+	PORT_BIT(0x0008, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_L) PORT_CHAR('l') PORT_CHAR('L')
+	PORT_BIT(0x0010, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_STOP) PORT_CHAR('.') PORT_CHAR(':')
+
+	PORT_START("ROW.14")
+	PORT_BIT(0x0001, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME(UTF8_RIGHT) PORT_CODE(KEYCODE_F10)
+	PORT_BIT(0x0002, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_MINUS) PORT_CHAR('@') PORT_CHAR('?')
+	PORT_BIT(0x0004, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_OPENBRACE) PORT_CHAR('<') PORT_CHAR('>')
+	PORT_BIT(0x0008, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_COLON) PORT_CHAR('[') PORT_CHAR('{')
+	PORT_BIT(0x0010, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_SLASH) PORT_CHAR('-') PORT_CHAR('`')
+
+	PORT_START("ROW.15")
+	PORT_BIT(0x0001, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("Esc") PORT_CODE(KEYCODE_F11) PORT_CHAR(27)
+	PORT_BIT(0x0002, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_EQUALS) PORT_CHAR('/') PORT_CHAR('\\')
+	PORT_BIT(0x0004, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_CLOSEBRACE) PORT_CHAR('+') PORT_CHAR('*')
+	PORT_BIT(0x0008, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_QUOTE) PORT_CHAR(']') PORT_CHAR('}')
+	PORT_BIT(0x0010, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_RSHIFT) PORT_CHAR(UCHAR_MAMEKEY(RSHIFT))
+INPUT_PORTS_END
+
+
+//**************************************************************************
+//  VIDEO
+//**************************************************************************
+
+uint8_t itt3030_state::vsync_r()
+{
+	uint8_t ret = 0;
+
+	if (m_screen->vblank())
 	{
 		ret |= 0xc0;    // set both bits 6 and 7 if vblank
 	}
 
-	if (machine().first_screen()->hblank())
+	if (m_screen->hblank())
 	{
 		ret |= 0x80;    // set only bit 7 if hblank
 	}
@@ -321,108 +483,80 @@ READ8_MEMBER(itt3030_state::vsync_r)
 	return ret;
 }
 
-// TODO: make this a correct device once we figure out how everything goes together in this system
-READ8_MEMBER(itt3030_state::i8078_r)
+void itt3030_state::bank_w(uint8_t data)
 {
-	if (offset)
+	int bank = 8;
+
+	if (BIT(data, 4))
 	{
-//      printf("Read 8078 status\n");
-		if (!m_keyskip)
-		{
-			return 0x10;
-		}
-	}
-	else
-	{
-//      printf("Read 8078 data\n");
-		if (!m_keyskip)
-		{
-			m_keyskip = true;   // don't keep reporting the 'b' key, just the once to trick the boot ROM
-			return 0x0c;
-		}
+		bank = (BIT(data, 5) << 2) | (BIT(data, 6) << 1) | BIT(data, 7);
 	}
 
-	return 0;
-}
-
-WRITE8_MEMBER(itt3030_state::i8078_w)
-{
-	#if 0
-	if (offset)
-	{
-		printf("%02x to 8078 command\n", data);
-	}
-	else
-	{
-		printf("%02x to 8078 data\n", data);
-	}
-	#endif
-}
-
-WRITE8_MEMBER( itt3030_state::beep_w )
-{
-	m_beep->set_state(data&0x32);
-}
-
-WRITE8_MEMBER(itt3030_state::bank_w)
-{
-	int bank = 0;
-	m_bank = data>>4;
-
-	if (!(m_bank & 1)) // bank 8
-	{
-		bank = 8;
-	}
-	else
-	{
-		bank = m_bank >> 1;
-	}
-
-//  printf("bank_w: new value %02x, m_bank %x, bank %x\n", data, m_bank, bank);
+	//  printf("bank_w: new value %02x, m_bank %x, bank %x\n", data, m_bank, bank);
 
 	m_48kbank->set_bank(bank);
 }
 
-READ8_MEMBER(itt3030_state::bankl_r)
+uint32_t itt3030_state::screen_update( screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
-	return m_ram->read(offset);
-}
-
-WRITE8_MEMBER(itt3030_state::bankl_w)
-{
-	m_ram->write(offset, data);
-}
-
-READ8_MEMBER(itt3030_state::bankh_r)
-{
-	return m_ram->read(((m_bank>>1)*0x10000) + offset + 0xc000);
-}
-
-WRITE8_MEMBER(itt3030_state::bankh_w)
-{
-	m_ram->write(((m_bank>>1)*0x10000) + offset + 0xc000, data);
-}
-
-UINT32 itt3030_state::screen_update( screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
-{
+	int start = m_crtc->upscroll_offset();
 	for(int y = 0; y < 24; y++ )
 	{
+		int vramy = (start + y) % 24;
 		for(int x = 0; x < 80; x++ )
 		{
-			UINT8 code = m_vram[x + y*128];
-			m_gfxdecode->gfx(0)->opaque(bitmap,cliprect,  code , 0, 0,0, x*8,y*16);
+			uint8_t code = m_vram[x + vramy*128];
+			int invert = code & 0x80 ? 1 : 0;
+			code &= 0x7f;
+			m_gfxdecode->gfx(invert)->opaque(bitmap,cliprect,  code , 0, 0,0, x*8,y*12);
 		}
 	}
 
 	return 0;
 }
+
+static const gfx_layout charlayout =
+{
+	8, 16,              /* 8x16 characters */
+	128,                /* 128 characters */
+	1,                /* 1 bits per pixel */
+	{0},                /* no bitplanes; 1 bit per pixel */
+	{7, 6, 5, 4, 3, 2, 1, 0},
+	{ 0*8,  1*8,  2*8,  3*8,  4*8,  5*8,  6*8,  7*8,
+		8*8,  9*8, 10*8, 11*8, 12*8, 13*8, 14*8, 15*8 },
+	8*16                    /* size of one char */
+};
+
+static GFXDECODE_START( gfx_itt3030 )
+	GFXDECODE_ENTRY( "gfx1", 0, charlayout,     0, 1 )
+	GFXDECODE_ENTRY( "gfx1", 0, charlayout,     0, 1 )
+GFXDECODE_END
+
+void itt3030_state::itt3030_palette(palette_device &palette) const
+{
+	palette.set_pen_color(0, rgb_t::black());
+	palette.set_pen_color(1, rgb_t(215, 229, 82));
+	palette.set_pen_color(2, rgb_t::black());
+}
+
+//**************************************************************************
+//  SOUND
+//**************************************************************************
+
+void itt3030_state::beep_w(uint8_t data)
+{
+	m_beep->set_state(data&1);
+}
+
+//**************************************************************************
+//  FLOPPY
+//**************************************************************************
 
 WRITE_LINE_MEMBER(itt3030_state::fdcirq_w)
 {
 	m_fdc_irq = state;
 }
 
-#include "debugger.h"
 
 WRITE_LINE_MEMBER(itt3030_state::fdcdrq_w)
 {
@@ -444,33 +578,33 @@ WRITE_LINE_MEMBER(itt3030_state::fdchld_w)
     1 Write protect (the disk in the selected drive is write protected)
     0 HLT (Halt signal during head load and track change)
 */
-READ8_MEMBER(itt3030_state::fdc_stat_r)
+uint8_t itt3030_state::fdc_stat_r()
 {
-	UINT8 res = 0;
-	floppy_image_device *floppy1 = m_con1 ? m_con1->get_device() : nullptr;
-	floppy_image_device *floppy2 = m_con2 ? m_con2->get_device() : nullptr;
-	floppy_image_device *floppy3 = m_con3 ? m_con3->get_device() : nullptr;
+	uint8_t res = 0;
+	floppy_image_device *floppy1 = m_floppy[0] ? m_floppy[0]->get_device() : nullptr;
+	floppy_image_device *floppy2 = m_floppy[1] ? m_floppy[1]->get_device() : nullptr;
+	floppy_image_device *floppy3 = m_floppy[2] ? m_floppy[2]->get_device() : nullptr;
 
 	res = m_fdc_drq ? 0x80 : 0x00;
 	res |= m_fdc_irq ? 0x40 : 0x00;
 	res |= m_fdc_hld ? 0x00 : 0x20;
-	if (floppy3) res |= floppy3->ready_r() ? 0x10 : 0;
-	if (floppy2) res |= floppy2->ready_r() ? 0x08 : 0;
-	if (floppy1) res |= floppy1->ready_r() ? 0x04 : 0;
+	if (floppy3) res |= !floppy3->ready_r() ? 0x10 : 0;
+	if (floppy2) res |= !floppy2->ready_r() ? 0x08 : 0;
+	if (floppy1) res |= !floppy1->ready_r() ? 0x04 : 0;
 	if (m_curfloppy) res |= m_curfloppy->wpt_r() ? 0x02 : 0;
 
 	return res;
 }
 
 /* As far as we can tell, the mess of ttl de-inverts the bus */
-READ8_MEMBER(itt3030_state::fdc_r)
+uint8_t itt3030_state::fdc_r(offs_t offset)
 {
-	return m_fdc->gen_r(offset) ^ 0xff;
+	return m_fdc->read(offset) ^ 0xff;
 }
 
-WRITE8_MEMBER(itt3030_state::fdc_w)
+void itt3030_state::fdc_w(offs_t offset, uint8_t data)
 {
-	m_fdc->gen_w(offset, data ^ 0xff);
+	m_fdc->write(offset, data ^ 0xff);
 }
 
 /*
@@ -483,7 +617,7 @@ WRITE8_MEMBER(itt3030_state::fdc_w)
     1 KOMP - write comp on/off
     0 RG J - Change separator stage to read
 */
-WRITE8_MEMBER(itt3030_state::fdc_cmd_w)
+void itt3030_state::fdc_cmd_w(uint8_t data)
 {
 	floppy_image_device *floppy = nullptr;
 
@@ -492,15 +626,15 @@ WRITE8_MEMBER(itt3030_state::fdc_cmd_w)
 	// select drive
 	if (data & 0x80)
 	{
-		floppy = m_con1 ? m_con1->get_device() : nullptr;
+		floppy = m_floppy[0] ? m_floppy[0]->get_device() : nullptr;
 	}
 	else if (data & 0x40)
 	{
-		floppy = m_con2 ? m_con2->get_device() : nullptr;
+		floppy = m_floppy[1] ? m_floppy[1]->get_device() : nullptr;
 	}
 	else if (data & 0x20)
 	{
-		floppy = m_con3 ? m_con3->get_device() : nullptr;
+		floppy = m_floppy[2] ? m_floppy[2]->get_device() : nullptr;
 	}
 
 	// selecting a new drive?
@@ -520,292 +654,107 @@ WRITE8_MEMBER(itt3030_state::fdc_cmd_w)
 	}
 }
 
-// The lower 48K is switchable among the first 48K of each of 8 64K banks numbered 0-7 or "bank 8" which is the internal ROM and VRAM
-// The upper 16K is always the top 16K of the selected bank 0-7, which allows bank/bank copies and such
-// Port F6 bits 7-5 select banks 0-7, bit 4 enables bank 8
+//**************************************************************************
+//  FLOPPY - Drive definitions
+//**************************************************************************
 
-static ADDRESS_MAP_START( itt3030_map, AS_PROGRAM, 8, itt3030_state )
-	AM_RANGE(0x0000, 0xbfff) AM_DEVICE("lowerbank", address_map_bank_device, amap8)
-	AM_RANGE(0xc000, 0xffff) AM_READWRITE(bankh_r, bankh_w)
-ADDRESS_MAP_END
-
-static ADDRESS_MAP_START( lower48_map, AS_PROGRAM, 8, itt3030_state )
-	AM_RANGE(0x00000, 0x7ffff) AM_READWRITE(bankl_r, bankl_w)   // pages 0-7
-	AM_RANGE(0x80000, 0x807ff) AM_ROM AM_REGION("maincpu", 0)   // begin "page 8"
-	AM_RANGE(0x80800, 0x80fff) AM_ROM AM_REGION("maincpu", 0)
-	AM_RANGE(0x81000, 0x810ff) AM_RAM AM_MIRROR(0x100)  // only 256 bytes, but ROM also clears 11xx?
-	AM_RANGE(0x83000, 0x83fff) AM_RAM AM_SHARE("vram")
-ADDRESS_MAP_END
-
-static ADDRESS_MAP_START( itt3030_io, AS_IO, 8, itt3030_state )
-	ADDRESS_MAP_GLOBAL_MASK(0xff)
-	AM_RANGE(0x20, 0x26) AM_DEVREADWRITE("crt5027", crt5027_device, read, write)
-	AM_RANGE(0x30, 0x31) AM_READWRITE(i8078_r, i8078_w)
-	AM_RANGE(0x32, 0x32) AM_WRITE(beep_w)
-	AM_RANGE(0x35, 0x35) AM_READ(vsync_r)
-	AM_RANGE(0x40, 0x40) AM_READ(kbd_fifo_r)
-	AM_RANGE(0x50, 0x53) AM_READWRITE(fdc_r, fdc_w)
-	AM_RANGE(0x54, 0x54) AM_READWRITE(fdc_stat_r, fdc_cmd_w)
-	AM_RANGE(0xf6, 0xf6) AM_WRITE(bank_w)
-ADDRESS_MAP_END
-
-READ8_MEMBER(itt3030_state::kbd_fifo_r)
+void itt3030_state::itt3030_floppy_formats(format_registration &fr)
 {
-	return m_kbdmcu->upi41_master_r(space, 0);  // offset 0 is data, 1 is status
+	fr.add_mfm_containers();
+	fr.add(FLOPPY_ITT3030_FORMAT);
 }
 
-READ8_MEMBER(itt3030_state::kbd_matrix_r)
+
+static void itt3030_floppies(device_slot_interface &device)
 {
-	return m_kbdread;
+	device.option_add("525dd", FLOPPY_525_DD);
+	device.option_add("525qd", FLOPPY_525_QD);
 }
 
-WRITE8_MEMBER(itt3030_state::kbd_matrix_w)
-{
-	ioport_port *ports[16] = { m_keyrow1, m_keyrow2, m_keyrow3, m_keyrow4, m_keyrow5, m_keyrow6, m_keyrow7, m_keyrow8, m_keyrow9,
-								m_keyrow10, m_keyrow11, m_keyrow12, m_keyrow13, m_keyrow14, m_keyrow15, m_keyrow16 };
-	int col_masks[8] = { 1, 2, 4, 8, 0x10, 0x20, 0x40, 0x80 };
-	int tmp_read;
 
-	m_kbdrow = data & 0xf;
-	m_kbdcol = (data >> 4) & 0x7;
 
-	if ((data & 0x80) && (!m_kbdclk))
-	{
-		tmp_read = ports[m_kbdrow]->read() & col_masks[m_kbdcol];
-		m_kbdread = (tmp_read != 0) ? 1 : 0;
-	}
 
-	m_kbdclk = (data & 0x80) ? 1 : 0;
-}
-
-// Schematics say:
-// Port 1 goes to the keyboard matrix.
-// bits 0-3 select matrix rows, bits 4-6 choose column to read, bit 7 clocks the process (rising edge strobes the row, falling edge reads the data)
-// T0 is the key matrix return
-// Port 2 bit 2 is shown as "IRQ" on the schematics, and the code does a lot with it as well (debug?)
-static ADDRESS_MAP_START( kbdmcu_io, AS_IO, 8, itt3030_state )
-	AM_RANGE(MCS48_PORT_T0, MCS48_PORT_T0) AM_READ(kbd_matrix_r)
-	AM_RANGE(MCS48_PORT_P1, MCS48_PORT_P1) AM_WRITE(kbd_matrix_w)
-	AM_RANGE(MCS48_PORT_P2, MCS48_PORT_P2) AM_NOP AM_WRITENOP
-ADDRESS_MAP_END
-
-static INPUT_PORTS_START( itt3030 )
-	PORT_START("ROW1")
-	PORT_BIT(0x0001, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_LCONTROL) PORT_CODE(KEYCODE_RCONTROL)
-	PORT_BIT(0x0002, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_1) PORT_CHAR('1') PORT_CHAR('!')
-	PORT_BIT(0x0004, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_Q) PORT_CHAR('q') PORT_CHAR('Q')
-	PORT_BIT(0x0008, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("Shift Lock") PORT_CODE(KEYCODE_CAPSLOCK) PORT_TOGGLE
-	PORT_BIT(0x0010, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("Shift") PORT_CODE(KEYCODE_LSHIFT) PORT_CODE(KEYCODE_RSHIFT) PORT_CHAR(UCHAR_SHIFT_1)
-
-	PORT_START("ROW2")
-	PORT_BIT(0x0001, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("F1") PORT_CODE(KEYCODE_F1) PORT_CHAR(UCHAR_MAMEKEY(F1))
-	PORT_BIT(0x0002, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_2) PORT_CHAR('2') PORT_CHAR('"')
-	PORT_BIT(0x0004, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_W) PORT_CHAR('w') PORT_CHAR('W')
-	PORT_BIT(0x0008, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_A) PORT_CHAR('a') PORT_CHAR('A')
-	PORT_BIT(0x0010, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_Z) PORT_CHAR('z') PORT_CHAR('Z')
-
-	PORT_START("ROW3")
-	PORT_BIT(0x0001, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("F2") PORT_CODE(KEYCODE_F2) PORT_CHAR(UCHAR_MAMEKEY(F2))
-	PORT_BIT(0x0002, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_3) PORT_CHAR('3') PORT_CHAR('#')   // actually UK pound symbol
-	PORT_BIT(0x0004, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_E) PORT_CHAR('e') PORT_CHAR('E')
-	PORT_BIT(0x0008, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_S) PORT_CHAR('s') PORT_CHAR('S')
-	PORT_BIT(0x0010, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_X) PORT_CHAR('x') PORT_CHAR('X')
-
-	PORT_START("ROW4")
-	PORT_BIT(0x0001, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("F3") PORT_CODE(KEYCODE_F3) PORT_CHAR(UCHAR_MAMEKEY(F3))
-	PORT_BIT(0x0002, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_4) PORT_CHAR('4') PORT_CHAR('$')
-	PORT_BIT(0x0004, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_R) PORT_CHAR('r') PORT_CHAR('R')
-	PORT_BIT(0x0008, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_D) PORT_CHAR('d') PORT_CHAR('D')
-	PORT_BIT(0x0010, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_C) PORT_CHAR('c') PORT_CHAR('C')
-
-	PORT_START("ROW5")
-	PORT_BIT(0x0001, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("F4") PORT_CODE(KEYCODE_F4) PORT_CHAR(UCHAR_MAMEKEY(F4))
-	PORT_BIT(0x0002, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_5) PORT_CHAR('5') PORT_CHAR('%')
-	PORT_BIT(0x0004, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_T) PORT_CHAR('t') PORT_CHAR('T')
-	PORT_BIT(0x0008, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_F) PORT_CHAR('f') PORT_CHAR('F')
-	PORT_BIT(0x0010, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_V) PORT_CHAR('v') PORT_CHAR('V')
-
-	PORT_START("ROW6")
-	PORT_BIT(0x0001, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("F5") PORT_CODE(KEYCODE_F5) PORT_CHAR(UCHAR_MAMEKEY(F5))
-	PORT_BIT(0x0002, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_6) PORT_CHAR('6') PORT_CHAR('&')
-	PORT_BIT(0x0004, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_Y) PORT_CHAR('y') PORT_CHAR('Y')
-	PORT_BIT(0x0008, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_G) PORT_CHAR('g') PORT_CHAR('G')
-	PORT_BIT(0x0010, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_B) PORT_CHAR('b') PORT_CHAR('B')
-
-	PORT_START("ROW7")
-	PORT_BIT(0x0001, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("F6") PORT_CODE(KEYCODE_F6) PORT_CHAR(UCHAR_MAMEKEY(F6))
-	PORT_BIT(0x0002, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_7) PORT_CHAR('7') PORT_CHAR('/')
-	PORT_BIT(0x0004, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_U) PORT_CHAR('u') PORT_CHAR('U')
-	PORT_BIT(0x0008, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_H) PORT_CHAR('h') PORT_CHAR('H')
-	PORT_BIT(0x0010, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_N) PORT_CHAR('n') PORT_CHAR('N')
-
-	PORT_START("ROW8")
-	PORT_BIT(0x0001, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("F7") PORT_CODE(KEYCODE_F7) PORT_CHAR(UCHAR_MAMEKEY(F7))
-	PORT_BIT(0x0002, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_8) PORT_CHAR('8') PORT_CHAR('(')
-	PORT_BIT(0x0004, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_I) PORT_CHAR('i') PORT_CHAR('I')
-	PORT_BIT(0x0008, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_J) PORT_CHAR('j') PORT_CHAR('J')
-	PORT_BIT(0x0010, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_M) PORT_CHAR('m') PORT_CHAR('M')
-
-	PORT_START("ROW9")
-	PORT_BIT(0x0001, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("F8") PORT_CODE(KEYCODE_F8) PORT_CHAR(UCHAR_MAMEKEY(F8))
-	PORT_BIT(0x0002, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_9) PORT_CHAR('9') PORT_CHAR(')')
-	PORT_BIT(0x0004, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_O) PORT_CHAR('o') PORT_CHAR('O')
-	PORT_BIT(0x0008, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_K) PORT_CHAR('k') PORT_CHAR('K')
-	PORT_BIT(0x0010, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_COMMA) PORT_CHAR(',') PORT_CHAR(';')
-
-	PORT_START("ROW10")
-	PORT_BIT(0x0001, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME(UTF8_LEFT) PORT_CODE(KEYCODE_F9)
-	PORT_BIT(0x0002, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_0) PORT_CHAR('0') PORT_CHAR('=')
-	PORT_BIT(0x0004, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_P) PORT_CHAR('p') PORT_CHAR('P')
-	PORT_BIT(0x0008, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_L) PORT_CHAR('l') PORT_CHAR('L')
-	PORT_BIT(0x0010, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_STOP) PORT_CHAR('.') PORT_CHAR(':')
-
-	PORT_START("ROW11")
-	PORT_BIT(0x0001, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME(UTF8_RIGHT) PORT_CODE(KEYCODE_F10)
-	PORT_BIT(0x0002, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_MINUS) PORT_CHAR('@') PORT_CHAR('?')
-	PORT_BIT(0x0004, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_OPENBRACE) PORT_CHAR('<') PORT_CHAR('>')
-	PORT_BIT(0x0008, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_COLON) PORT_CHAR('[') PORT_CHAR('{')
-	PORT_BIT(0x0010, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_SLASH) PORT_CHAR('-') PORT_CHAR('`')
-
-	PORT_START("ROW12")
-	PORT_BIT(0x0001, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("Esc") PORT_CODE(KEYCODE_F11) PORT_CHAR(27)
-	PORT_BIT(0x0002, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_EQUALS) PORT_CHAR('/') PORT_CHAR('\\')
-	PORT_BIT(0x0004, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_CLOSEBRACE) PORT_CHAR('+') PORT_CHAR('*')
-	PORT_BIT(0x0008, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_QUOTE) PORT_CHAR(']') PORT_CHAR('}')
-	PORT_BIT(0x0010, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_RSHIFT) PORT_CHAR(UCHAR_MAMEKEY(RSHIFT))
-
-	PORT_START("ROW13")
-	PORT_BIT(0x0001, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("(R)") PORT_CODE(KEYCODE_F12) PORT_CHAR('=')
-	PORT_BIT(0x0002, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_BACKSLASH) PORT_CHAR('~')
-	PORT_BIT(0x0004, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_ENTER) PORT_CHAR(13)
-	PORT_BIT(0x0008, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_DEL) PORT_CHAR('^')    // PC doesn't have 3 keys to the right of L, so we sub DEL for the 3rd one
-	PORT_BIT(0x0010, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_SPACE) PORT_CHAR(' ')
-
-	PORT_START("ROW14")
-	PORT_BIT(0x0001, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("(CL)") PORT_CODE(KEYCODE_F13) PORT_CHAR(4)    // produces control-D always
-	PORT_BIT(0x001e, IP_ACTIVE_HIGH, IPT_UNUSED)
-
-	PORT_START("ROW15")
-	PORT_BIT(0x001f, IP_ACTIVE_HIGH, IPT_UNUSED)
-
-	PORT_START("ROW16")
-	PORT_BIT(0x001f, IP_ACTIVE_HIGH, IPT_UNUSED)
-INPUT_PORTS_END
-
-static const gfx_layout charlayout =
-{
-	8, 16,              /* 8x16 characters */
-	128,                /* 128 characters */
-	1,                /* 1 bits per pixel */
-	{0},                /* no bitplanes; 1 bit per pixel */
-	{7, 6, 5, 4, 3, 2, 1, 0},
-	{ 0*8,  1*8,  2*8,  3*8,  4*8,  5*8,  6*8,  7*8,
-		8*8,  9*8, 10*8, 11*8, 12*8, 13*8, 14*8, 15*8 },
-	8*16                    /* size of one char */
-};
-
-static GFXDECODE_START( itt3030 )
-	GFXDECODE_ENTRY( "gfx1", 0, charlayout,     0, 1 )
-GFXDECODE_END
-
+//**************************************************************************
+//  MACHINE
+//**************************************************************************
 
 void itt3030_state::machine_start()
 {
-	save_item(NAME(m_unk));
-	save_item(NAME(m_bank));
-	save_item(NAME(m_kbdrow));
-	save_item(NAME(m_kbdcol));
-	save_item(NAME(m_kbdclk));
 	save_item(NAME(m_kbdread));
+	m_48kbank->space(AS_PROGRAM).install_ram(0, m_ram->size() - 16384, m_ram->pointer());
+	m_maincpu->space(AS_PROGRAM).install_ram(0xc000, 0xffff, m_ram->pointer() + m_ram->size() - 16384);
+	m_gfxdecode->gfx(1)->set_colorbase(1);
 
 	m_kbdclk = 0;   // must be initialized here b/c mcs48_reset() causes write of 0xff to all ports
 }
 
 void itt3030_state::machine_reset()
 {
-	m_bank = 9;
 	m_48kbank->set_bank(8);
 	m_kbdread = 1;
-	m_kbdrow = m_kbdcol = 0;
 	m_kbdclk = 1;
 	m_fdc_irq = m_fdc_drq = m_fdc_hld = 0;
 	m_curfloppy = nullptr;
-	m_keyskip = false;
-
-	// look up floppies in advance
-	m_con1 = machine().device<floppy_connector>("fdc:0");
-	m_con2 = machine().device<floppy_connector>("fdc:1");
-	m_con3 = machine().device<floppy_connector>("fdc:2");
 }
 
-FLOPPY_FORMATS_MEMBER( itt3030_state::itt3030_floppy_formats )
-	FLOPPY_ITT3030_FORMAT
-FLOPPY_FORMATS_END
-
-
-static SLOT_INTERFACE_START( itt3030_floppies )
-	SLOT_INTERFACE( "525dd", FLOPPY_525_QD )
-SLOT_INTERFACE_END
-
-
-static MACHINE_CONFIG_START( itt3030, itt3030_state )
-
+void itt3030_state::itt3030(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu",Z80,XTAL_4MHz)
-	MCFG_CPU_PROGRAM_MAP(itt3030_map)
-	MCFG_CPU_IO_MAP(itt3030_io)
+	Z80(config, m_maincpu, 4_MHz_XTAL);
+	m_maincpu->set_addrmap(AS_PROGRAM, &itt3030_state::itt3030_map);
+	m_maincpu->set_addrmap(AS_IO, &itt3030_state::itt3030_io);
 
-	MCFG_CPU_ADD("kbdmcu", I8041, XTAL_6MHz)
-	MCFG_CPU_IO_MAP(kbdmcu_io)
+	// Schematics + i8278 datasheet says:
+	// Port 1 goes to the keyboard matrix.
+	// bits 0-2 select bit to read back, bits 3-6 choose column to read from, bit 7 clocks the process (rising edge strobes the row, falling edge reads the data)
+	// T0 is the key matrix return
+	// pin 23 is the UPI-41 host IRQ line, it's unknown how it's connected to the Z80
+	I8741A(config, m_kbdmcu, 6_MHz_XTAL);
+	m_kbdmcu->t0_in_cb().set(FUNC(itt3030_state::kbd_matrix_r));
+	m_kbdmcu->p1_out_cb().set(FUNC(itt3030_state::kbd_matrix_w));
+	m_kbdmcu->p2_in_cb().set(FUNC(itt3030_state::kbd_port2_r));
+	m_kbdmcu->p2_out_cb().set(FUNC(itt3030_state::kbd_port2_w));
 
 	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_REFRESH_RATE(60)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(250))
-	MCFG_SCREEN_UPDATE_DRIVER(itt3030_state, screen_update)
-	MCFG_SCREEN_SIZE(80*8, 24*16)
-	MCFG_SCREEN_VISIBLE_AREA(0, 80*8-1, 0, 24*16-1)
-	MCFG_SCREEN_PALETTE("palette")
+	SCREEN(config, m_screen, SCREEN_TYPE_RASTER);
+	m_screen->set_refresh_hz(60);
+	m_screen->set_vblank_time(ATTOSECONDS_IN_USEC(250));
+	m_screen->set_screen_update(FUNC(itt3030_state::screen_update));
+	m_screen->set_size(80*8, 24*12);
+	m_screen->set_visarea(0, 80*8-1, 0, 24*12-1);
+	m_screen->set_palette(m_palette);
 
 	/* devices */
-	MCFG_DEVICE_ADD("lowerbank", ADDRESS_MAP_BANK, 0)
-	MCFG_DEVICE_PROGRAM_MAP(lower48_map)
-	MCFG_ADDRESS_MAP_BANK_ENDIANNESS(ENDIANNESS_LITTLE)
-	MCFG_ADDRESS_MAP_BANK_DATABUS_WIDTH(8)
-	MCFG_ADDRESS_MAP_BANK_STRIDE(0x10000)
+	ADDRESS_MAP_BANK(config, "lowerbank").set_map(&itt3030_state::lower48_map).set_options(ENDIANNESS_LITTLE, 8, 20, 0xc000);
 
-	MCFG_DEVICE_ADD("crt5027", CRT5027, XTAL_6MHz)
-	MCFG_TMS9927_CHAR_WIDTH(16)
+	CRT5027(config, m_crtc, 6_MHz_XTAL / 8).set_char_width(8);
 
-	MCFG_FD1791_ADD("fdc", XTAL_20MHz / 20)
-	MCFG_WD_FDC_INTRQ_CALLBACK(WRITELINE(itt3030_state, fdcirq_w))
-	MCFG_WD_FDC_DRQ_CALLBACK(WRITELINE(itt3030_state, fdcdrq_w))
-	MCFG_WD_FDC_HLD_CALLBACK(WRITELINE(itt3030_state, fdchld_w))
-	MCFG_FLOPPY_DRIVE_ADD("fdc:0", itt3030_floppies, "525dd", itt3030_state::itt3030_floppy_formats)
-	MCFG_FLOPPY_DRIVE_ADD("fdc:1", itt3030_floppies, "525dd", itt3030_state::itt3030_floppy_formats)
-	MCFG_FLOPPY_DRIVE_ADD("fdc:2", itt3030_floppies, "525dd", itt3030_state::itt3030_floppy_formats)
+	FD1791(config, m_fdc, 20_MHz_XTAL / 20);
+	m_fdc->intrq_wr_callback().set(FUNC(itt3030_state::fdcirq_w));
+	m_fdc->drq_wr_callback().set(FUNC(itt3030_state::fdcdrq_w));
+	m_fdc->hld_wr_callback().set(FUNC(itt3030_state::fdchld_w));
+	FLOPPY_CONNECTOR(config, "fdc:0", itt3030_floppies, "525qd", itt3030_state::itt3030_floppy_formats);
+	FLOPPY_CONNECTOR(config, "fdc:1", itt3030_floppies, "525qd", itt3030_state::itt3030_floppy_formats);
+	FLOPPY_CONNECTOR(config, "fdc:2", itt3030_floppies, "525qd", itt3030_state::itt3030_floppy_formats);
 
-	MCFG_GFXDECODE_ADD("gfxdecode", "palette", itt3030)
+	GFXDECODE(config, m_gfxdecode, m_palette, gfx_itt3030);
 
-	MCFG_PALETTE_ADD_BLACK_AND_WHITE("palette")
+	PALETTE(config, m_palette, FUNC(itt3030_state::itt3030_palette), 3);
 
 	/* internal ram */
-	MCFG_RAM_ADD("mainram")
-	MCFG_RAM_DEFAULT_SIZE("512K")
+	RAM(config, "mainram").set_default_size("256K");
 
 	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_MONO( "mono" )
-	MCFG_SOUND_ADD( "beeper", BEEP, 0 )
-	MCFG_SOUND_ROUTE( ALL_OUTPUTS, "mono", 1.00 )
+	SPEAKER(config, "mono").front_center();
+	BEEP(config, m_beep, 3250).add_route(ALL_OUTPUTS, "mono", 1.00);
 
-MACHINE_CONFIG_END
+	SOFTWARE_LIST(config, "flop_list").set_original("itt3030");
+}
 
 
-/***************************************************************************
-
-  Game driver(s)
-
-***************************************************************************/
+//**************************************************************************
+//  ROM DEFINITIONS
+//**************************************************************************
 
 ROM_START( itt3030 )
 	ROM_REGION( 0x0800, "maincpu", ROMREGION_ERASE00 )
@@ -816,4 +765,8 @@ ROM_START( itt3030 )
 	ROM_LOAD( "8741ad.bin", 0x0000, 0x0400, CRC(cabf4394) SHA1(e5d1416b568efa32b578ca295a29b7b5d20c0def))
 ROM_END
 
-COMP( 1982, itt3030,  0,   0,  itt3030,  itt3030,  driver_device, 0,  "ITT RFA",      "ITT3030", MACHINE_NOT_WORKING | MACHINE_NO_SOUND )
+//**************************************************************************
+//  SYSTEM DRIVERS
+//**************************************************************************
+
+COMP( 1982, itt3030, 0, 0, itt3030, itt3030, itt3030_state, empty_init, "ITT RFA", "ITT3030", MACHINE_NOT_WORKING | MACHINE_NO_SOUND )

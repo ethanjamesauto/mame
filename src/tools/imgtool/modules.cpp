@@ -15,53 +15,42 @@
 #define MODULES_RECURSIVE
 
 /* step 1: declare all external references */
-#define MODULE(name)    extern void name##_get_info(const imgtool_class *imgclass, UINT32 state, union imgtoolinfo *info);
+#define MODULE(name)    extern void name##_get_info(const imgtool_class *imgclass, uint32_t state, union imgtoolinfo *info);
 #include "modules.cpp"
 #undef MODULE
 
 /* step 2: define the modules[] array */
 #define MODULE(name)    name##_get_info,
-static void (*const modules[])(const imgtool_class *imgclass, UINT32 state, union imgtoolinfo *info) =
+static void (*const modules[])(const imgtool_class *imgclass, uint32_t state, union imgtoolinfo *info) =
 {
 #include "modules.cpp"
 };
 
-/* step 3: declare imgtool_create_cannonical_library() */
-imgtoolerr_t imgtool_create_cannonical_library(int omit_untested, imgtool_library **library)
+/* step 3: declare imgtool_create_canonical_library() */
+imgtoolerr_t imgtool_create_canonical_library(bool omit_untested, std::unique_ptr<imgtool::library> &library)
 {
-	imgtoolerr_t err;
-	size_t i;
-	imgtool_library *lib;
-	imgtool_module *module;
-
 	/* list of modules that we drop */
 	static const char *const irrelevant_modules[] =
 	{
 		"coco_os9_rsdos"
 	};
 
-	lib = imgtool_library_create();
-	if (!lib)
-	{
-		err = IMGTOOLERR_OUTOFMEMORY;
-		goto error;
-	}
+	library.reset(new imgtool::library());
+	if (!library)
+		return IMGTOOLERR_OUTOFMEMORY;
 
-	/* create all modules */
-	for (i = 0; i < ARRAY_LENGTH(modules); i++)
-		imgtool_library_add(lib, modules[i]);
+	// create all modules
+	for (auto &module : modules)
+		library->add(module);
 
-	/* remove irrelevant modules */
-	for (i = 0; i < ARRAY_LENGTH(irrelevant_modules); i++)
-	{
-		imgtool_library_unlink(lib, irrelevant_modules[i]);
-	}
+	// remove irrelevant modules
+	for (auto &module : irrelevant_modules)
+		library->unlink(module);
 
-	/* if we are omitting untested, go through and block out the functionality in question */
+	// if we are omitting untested, go through and block out the functionality in question
 	if (omit_untested)
 	{
-		module = nullptr;
-		while((module = imgtool_library_iterate(lib, module)) != nullptr)
+		for (auto &module : library->modules())
 		{
 			if (module->writing_untested)
 			{
@@ -76,14 +65,7 @@ imgtoolerr_t imgtool_create_cannonical_library(int omit_untested, imgtool_librar
 		}
 	}
 
-	*library = lib;
 	return IMGTOOLERR_SUCCESS;
-
-error:
-	if (lib)
-		imgtool_library_close(lib);
-	return err;
-
 }
 
 
@@ -95,6 +77,7 @@ MODULE(mac_mfs)
 MODULE(mac_hfs)
 MODULE(hd)
 MODULE(rsdos)
+MODULE(dgndos)
 MODULE(vzdos)
 MODULE(os9)
 MODULE(ti99_old)
@@ -115,5 +98,8 @@ MODULE(cybikoxt)
 MODULE(psion)
 MODULE(bml3)
 MODULE(hp48)
+MODULE(hp9845_tape)
+MODULE(hp85_tape)
+MODULE(rt11)
 
 #endif /* MODULES_RECURSIVE */

@@ -1,62 +1,76 @@
 // license:BSD-3-Clause
 // copyright-holders:Luca Elia,David Haywood
+#ifndef MAME_VIDEO_ST0020_H
+#define MAME_VIDEO_ST0020_H
+
+#pragma once
+
+#include "tilemap.h"
 
 
-
-class st0020_device : public device_t
+class st0020_device : public device_t, public device_gfx_interface
 {
 public:
-	st0020_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	st0020_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
-	// static configuration
-	static void static_set_gfxdecode_tag(device_t &device, const char *tag);
-	static void static_set_palette_tag(device_t &device, const char *tag);
-	static void set_is_st0032(device_t &device, int is_st0032);
-	static void set_is_jclub2o(device_t &device, int is_jclub2o);
+	// configuration
+	void set_is_st0032(int is_st0032) { m_is_st0032 = is_st0032; }
+	void set_is_jclub2(int is_jclub2) { m_is_jclub2 = is_jclub2; }
 
-	int m_gfx_index;
+	void update_screen(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect, bool update_visible_area);
 
-	// see if we can handle the difference between this and the st0032 in here, or if we need another
-	// device
-	int m_is_st0032;
+	uint16_t gfxram_r(offs_t offset, uint16_t mem_mask = ~0);
+	void gfxram_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
 
-	// per-game hack
-	int m_is_jclub2;
+	uint16_t regs_r(offs_t offset);
+	void regs_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
 
-	void st0020_draw_all(bitmap_ind16 &bitmap, const rectangle &cliprect);
-
-	DECLARE_READ16_MEMBER(st0020_gfxram_r);
-	DECLARE_WRITE16_MEMBER(st0020_gfxram_w);
-	DECLARE_READ16_MEMBER(st0020_blitram_r);
-	DECLARE_WRITE16_MEMBER(st0020_blitram_w);
-	DECLARE_READ16_MEMBER(st0020_sprram_r);
-	DECLARE_WRITE16_MEMBER(st0020_sprram_w);
+	uint16_t sprram_r(offs_t offset);
+	void sprram_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
 
 protected:
 	virtual void device_start() override;
 	virtual void device_reset() override;
 
 private:
+	// see if we can handle the difference between this and the st0032 in here, or if we need another device
+	int m_is_st0032;
 
-	int m_st0020_gfxram_bank;
-	std::unique_ptr<UINT16[]> m_st0020_gfxram;
-	std::unique_ptr<UINT16[]> m_st0020_spriteram;
-	std::unique_ptr<UINT16[]> m_st0020_blitram;
-	void st0020_draw_zooming_sprites(bitmap_ind16 &bitmap, const rectangle &cliprect, int priority);
-	DECLARE_READ16_MEMBER(st0020_blit_r);
-	DECLARE_WRITE16_MEMBER(st0020_blit_w);
-	required_device<gfxdecode_device> m_gfxdecode;
-	required_device<palette_device> m_palette;
+	// per-game hack
+	int m_is_jclub2;
+
+	// RAM
+	std::unique_ptr<uint16_t[]> m_gfxram;
+	std::unique_ptr<uint16_t[]> m_spriteram;
+	std::unique_ptr<uint16_t[]> m_regs;
+
+	void regs_st0020_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	void regs_st0032_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+
+	int m_gfxram_bank;
+	void gfxram_bank_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+
+	// blitter
+	optional_region_ptr<uint8_t> m_rom_ptr;
+	void do_blit_w(uint16_t data);
+
+	// tilemaps
+	tilemap_t *m_tmap[4];
+
+	template<int Layer> TILE_GET_INFO_MEMBER(get_tile_info);
+	TILEMAP_MAPPER_MEMBER(scan_16x16);
+
+	int tmap_offset(int i);
+	int tmap_priority(int i);
+	int tmap_is_enabled(int i);
+	void tmap_st0020_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	void tmap_st0032_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+
+	// sprites
+	void draw_zooming_sprites(bitmap_ind16 &bitmap, const rectangle &cliprect, int priority);
 };
 
-#define ST0020_ST0032_BYTESWAP_DATA \
-	if (m_is_st0032) data = ((data & 0x00ff)<<8) | ((data & 0xff00)>>8);
-#define ST0020_ST0032_BYTESWAP_MEM_MASK \
-	if (m_is_st0032) mem_mask = ((mem_mask & 0x00ff)<<8) | ((mem_mask & 0xff00)>>8);
-extern const device_type ST0020_SPRITES;
+DECLARE_DEVICE_TYPE(ST0020_SPRITES, st0020_device)
 
-#define MCFG_ST0020_SPRITES_GFXDECODE(_gfxtag) \
-	st0020_device::static_set_gfxdecode_tag(*device, "^" _gfxtag);
 
-#define MCFG_ST0020_SPRITES_PALETTE(_palette_tag) \
-	st0020_device::static_set_palette_tag(*device, "^" _palette_tag);
+#endif // MAME_VIDEO_ST0020_H

@@ -4,11 +4,11 @@
 #include "emu.h"
 #include "wpc_pic.h"
 
-const device_type WPC_PIC = &device_creator<wpc_pic_device>;
+DEFINE_DEVICE_TYPE(WPC_PIC, wpc_pic_device, "wpc_pic", "Williams Pinball Controller PIC Security")
 
-wpc_pic_device::wpc_pic_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock) :
-	device_t(mconfig, WPC_PIC, "Williams Pinball Controller PIC Security", tag, owner, clock, "wpc_pic", __FILE__),
-	swarray(*this, ":SW")
+wpc_pic_device::wpc_pic_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock) :
+	device_t(mconfig, WPC_PIC, tag, owner, clock),
+	swarray(*this, ":SW.%u", 0)
 {
 	serial = "000 000000 00000 000";
 }
@@ -22,9 +22,9 @@ void wpc_pic_device::set_serial(const char *_serial)
 	serial = _serial;
 }
 
-READ8_MEMBER(wpc_pic_device::read)
+uint8_t wpc_pic_device::read()
 {
-	UINT8 data = 0x00;
+	uint8_t data = 0x00;
 	if(curcmd == 0x0d)
 		data = count;
 
@@ -38,29 +38,29 @@ READ8_MEMBER(wpc_pic_device::read)
 		data = swarray[curcmd - 0x16]->read();
 
 	else
-		logerror("%s: cmd=%02x (%04x)\n", tag(), curcmd, space.device().safe_pc());
+		logerror("cmd=%02x %s\n", tag(), curcmd, machine().describe_context());
 
 	return data;
 }
 
 void wpc_pic_device::check_game_id()
 {
-	UINT32 cmp = (cmpchk[0] << 16) | (cmpchk[1] << 8) | cmpchk[2];
+	uint32_t cmp = (cmpchk[0] << 16) | (cmpchk[1] << 8) | cmpchk[2];
 	for(int i=0; i<1000; i++) {
-		UINT32 v = (i >> 8) * 0x3133 + (i & 0xff) * 0x3231;
+		uint32_t v = (i >> 8) * 0x3133 + (i & 0xff) * 0x3231;
 		v = v & 0xffffff;
 		if(v == cmp)
-			logerror("%s: Detected game id %03d\n", tag(), i);
+			logerror("Detected game id %03d\n", i);
 	}
 }
 
-WRITE8_MEMBER(wpc_pic_device::write)
+void wpc_pic_device::write(uint8_t data)
 {
 	if(chk_count) {
 		cmpchk[3-chk_count] = data;
 
 		if(data != cmpchk[3-chk_count]) {
-			logerror("%s: WARNING: validation error, checksum[%d] got %02x, expected %02x\n", tag(), 3-chk_count, data, chk[3-chk_count]);
+			logerror("WARNING: validation error, checksum[%d] got %02x, expected %02x\n", 3-chk_count, data, chk[3-chk_count]);
 			if(chk_count == 1)
 				check_game_id();
 		}
@@ -79,17 +79,17 @@ WRITE8_MEMBER(wpc_pic_device::write)
 	else if(data == 0x20)
 		chk_count = 3;
 	else if((data < 0x16 || data >= 0x1e) && ((data & 0xf0) != 0x70))
-		logerror("%s: write %02x (%04x)\n", tag(), data, space.device().safe_pc());
+		logerror("write %02x (%04x)\n", data, machine().describe_context());
 
 	curcmd = data;
 }
 
 void wpc_pic_device::serial_to_pic()
 {
-	UINT32 no[20];
+	uint32_t no[20];
 	for(int i=0; i<20; i++)
 		no[i] = serial[i] - '0';
-	UINT32 v;
+	uint32_t v;
 
 	mem[10] = 0x12; // Random?
 	mem[ 2] = 0x34; // Random?

@@ -1,18 +1,16 @@
 <?xml version="1.0"?>
 <!DOCTYPE softwarelist SYSTEM "softwarelist.dtd">
-
 <!--
+license:CC0
+
   Undumped games
 
-  - Game de check! Koutsuu Anzen
   - Great Ice Hockey Jpn ? (Only 1000 copies were distributed through a
   BEEP! magazine contest in 1987, to celebrate the release of Phantasy Star)
   - Tec Toy SMS 3 with built-in games (74 game, 112 games, 120 games or
   131 games)
   - a few other pirate multigame carts (two versions of 4 in 1 carts)
 
--->
-<!--
   Taiwanese releases for the Aaronix Mark III
   - White Gold Cartridges
   GB1301 - Fantasy Zone / Kuàilè xiǎo fēidié (快樂小飛碟)  [dumped]
@@ -54,6 +52,18 @@
 		</part>
 	</software>
 
+	<software name="3dgunner">
+		<description>3D Gunner (prototype)</description>
+		<year>198?</year>
+		<publisher>&lt;unknown&gt;</publisher>
+		<sharedfeat name="ctrl1_default" value="lphaser" />
+		<part name="cart" interface="sms_cart">
+			<dataarea name="rom" size="32768">
+				<rom name="3d gunner (prototype).bin" size="32768" crc="56dcb2d4" sha1="2f66b626416902a4b0a81c682c9c40579f32e7be" offset="000000" />
+			</dataarea>
+		</part>
+	</software>
+
 	<software name="3dragon">
 		<description>The Three Dragon Story (Kor)</description>
 		<year>19??</year>
@@ -91,6 +101,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="actionfg">
 		<description>Action Fighter (Euro, USA, Bra, v2)</description>
 		<year>1986</year>
@@ -106,6 +117,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="actionfg1" cloneof="actionfg">
 		<description>Action Fighter (Euro, Jpn, v1)</description>
 		<year>1986</year>
@@ -120,6 +132,20 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
+	<software name="actionfg0" cloneof="actionfg">
+		<description>Action Fighter (v0, prototype)</description>
+		<year>1986</year>
+		<publisher>Sega</publisher>
+		<info name="alt_title" value="アクションファイター" />
+		<part name="cart" interface="sms_cart">
+			<dataarea name="rom" size="131072">
+				<rom name="action fighter [v0] [proto].bin" size="131072" crc="e2d765ad" sha1="88fe2ee194981c82b5db2a9166dd97a8edb6d852" offset="000000" />
+			</dataarea>
+		</part>
+	</software>
+
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="actionfgtw" cloneof="actionfg">
 		<description>Action Fighter / Mo zhan che (Taiwan)</description>
 		<year>1986</year>
@@ -127,6 +153,19 @@
 		<part name="cart" interface="sms_cart">
 			<dataarea name="rom" size="131072">
 				<rom name="Action Fighter (TW).sms" size="131072" crc="8418f438" sha1="4f514dc568466f6b0424086edeb3fa0014f9c887" offset="000000" />
+			</dataarea>
+		</part>
+	</software>
+
+	<!-- Note from the dumper: The dump could seem bad because CRC in the header is wrong, it's normal because the ROM must be seen as two
+	     banks of 16KB (selected with A14, controlled by the PAL in the Action Replay -->
+	<software name="ar" supported="no">
+		<description>Action Replay (v. 1.02)</description>
+		<year>1993</year>
+		<publisher>Datel Electronics</publisher>
+		<part name="cart" interface="sms_cart">
+			<dataarea name="rom" size="32768">
+				<rom name="ms_ar_rom.bin" size="32768" crc="7d731851" sha1="d222c556b8a993879de222d095e08c2376f0b7cc" offset="000000" />
 			</dataarea>
 		</part>
 	</software>
@@ -252,6 +291,7 @@
 		<info name="serial" value="G-1330"/>
 		<info name="release" value="19871115"/>
 		<info name="alt_title" value="アレックスキッド BMXトライアル" />
+		<sharedfeat name="ctrl1_default" value="paddle" />
 		<part name="cart" interface="sms_cart">
 			<dataarea name="rom" size="131072">
 				<rom name="alex kidd bmx trial (japan).bin" size="131072" crc="f9dbb533" sha1="77cc767bfae01e9cc81612c780c939ed954a6312" offset="000000" />
@@ -274,7 +314,19 @@
 		</part>
 	</software>
 
-<!-- MPR-11047 according to SMS Power, but not clear which version these correspond to -->
+	<software name="alexhitwp" cloneof="alexhitw">
+		<description>Alex Kidd - High-Tech World (prototype)</description>
+		<year>1989</year>
+		<publisher>Sega</publisher>
+		<part name="cart" interface="sms_cart">
+			<dataarea name="rom" size="131072">
+				<rom name="alex kidd high tech world (prototype).bin" size="131072" crc="2d7fabb2" sha1="98a0d2aa3221dde30e0883760e4b6a62f2271bc5" offset="000000" />
+			</dataarea>
+		</part>
+	</software>
+
+	<!-- Notes: optional SK-1100 keyboard support -->
+	<!-- MPR-11047 according to SMS Power, but not clear which version these correspond to -->
 	<software name="alexkidd">
 		<description>Alex Kidd in Miracle World (Euro, USA, v1)</description>
 		<year>1986</year>
@@ -287,6 +339,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="alexkidd1" cloneof="alexkidd">
 		<description>Alex Kidd in Miracle World (Euro, USA, v0)</description>
 		<year>1986</year>
@@ -298,6 +351,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="alexkiddb" cloneof="alexkidd">
 		<description>Alex Kidd in Miracle World (Bra, v1, Pirate)</description>
 		<year>1986</year>
@@ -309,6 +363,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="alexkiddj" cloneof="alexkidd">
 		<description>Alex Kidd no Miracle World (Jpn)</description>
 		<year>1986</year>
@@ -322,6 +377,18 @@
 			<feature name="ic1" value="MPR-10379" />
 			<dataarea name="rom" size="131072">
 				<rom name="mpr-10379.ic1" size="131072" crc="08c9ec91" sha1="62fdc25501e17b87c355378562c3b1966e5f9008" offset="000000" />
+			</dataarea>
+		</part>
+	</software>
+
+	<!-- Notes: fan made release, which runs in original system and was also released and distributed as physical copy. More info: https://youtu.be/6ntwR94J6iM https://goo.gl/9efrGv -->
+	<software name="alexkidd2">
+		<description>Alex Kidd in Miracle World 2 (World, hack)</description>
+		<year>2017</year>
+		<publisher>Ian Wall</publisher>
+		<part name="cart" interface="sms_cart">
+			<dataarea name="rom" size="524288">
+				<rom name="alex kidd in miracle world 2.sms" size="524288" crc="7de172ff" sha1="d85aba7a276d751302f6a076ab2beb32cd654497" offset="000000"/>
 			</dataarea>
 		</part>
 	</software>
@@ -392,6 +459,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
 	<software name="altbeast">
 		<description>Altered Beast (Euro, USA, Bra)</description>
 		<year>1989</year>
@@ -534,6 +602,7 @@
 		<year>1990</year>
 		<publisher>Sega</publisher>
 		<info name="serial" value="7040"/>
+		<sharedfeat name="ctrl1_default" value="lphaser" />
 		<part name="cart" interface="sms_cart">
 			<dataarea name="rom" size="262144">
 				<rom name="assault city (europe) (light phaser).bin" size="262144" crc="861b6e79" sha1="835217550ecb92422d887a3353ff43890c71566b" offset="000000" />
@@ -620,6 +689,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<!-- This has been found in unlicensed GG compilation too (or has it been ripped from such a compilation only?) -->
 	<software name="astrofl1" cloneof="transbot">
 		<description>Astro Flash (Jpn, Pirate)</description>
@@ -632,6 +702,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="astropit">
 		<description>Astro Warrior &amp; Pit Pot (Euro)</description>
 		<year>1987</year>
@@ -647,6 +718,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="astrow">
 		<description>Astro Warrior (Jpn, USA, Bra)</description>
 		<year>1986</year>
@@ -665,6 +737,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
 	<software name="aliensyn">
 		<description>Alien Syndrome (Euro, USA, Bra)</description>
 		<year>1987</year>
@@ -695,8 +768,9 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
 	<software name="aliensynp" cloneof="aliensyn">
-		<description>Alien Syndrome (Prototype)</description>
+		<description>Alien Syndrome (prototype)</description>
 		<year>1987</year>
 		<publisher>Sega</publisher>
 		<part name="cart" interface="sms_cart">
@@ -752,6 +826,7 @@
 		<description>Back to the Future Part III (Euro)</description>
 		<year>1992</year>
 		<publisher>Image Works</publisher>
+		<info name="usage" value="Only runs with PAL/50Hz drivers, e.g. smspal" />
 		<info name="serial" value="MK-27020-50"/>
 		<part name="cart" interface="sms_cart">
 			<dataarea name="rom" size="262144">
@@ -784,6 +859,19 @@
 			<feature name="ic1" value="MPR-12554" />
 			<dataarea name="rom" size="32768">
 				<rom name="mpr-12554.ic1" size="32768" crc="655fb1f4" sha1="661bbe20f01b7afb242936d409fdd30420c6de5f" offset="000000" />
+			</dataarea>
+		</part>
+	</software>
+
+	<!-- Notes: rom freely available at https://www.smspower.org and physical cartridges sold at https://www.2minds.fr -->
+	<software name="baraburu">
+		<description>Bara Buru</description>
+		<year>2016</year> <!-- 2Minds cart published 2020 -->
+		<publisher>2Minds</publisher>
+		<info name="alt_title" value="バラブルー" />
+		<part name="cart" interface="sms_cart">
+			<dataarea name="rom" size="131072">
+				<rom name="baraburuu-sms-1.00.bin" size="131072" crc="43e39aa4" sha1="5a56ce4ae9ec21b158f5c6bfead15a9f0057e2cd" offset="000000" /> <!-- this digital release not verified against physical cart -->
 			</dataarea>
 		</part>
 	</software>
@@ -827,6 +915,17 @@
 			<feature name="ic1" value="MPR-12728" />
 			<dataarea name="rom" size="262144">
 				<rom name="mpr-12728.ic1" size="262144" crc="0df8597f" sha1="0fa1156931c83763bc6906efce75045327cdd7aa" offset="000000" />
+			</dataarea>
+		</part>
+	</software>
+
+	<software name="basketnp" cloneof="basketn">
+		<description>Basket Ball Nightmare (prototype)</description>
+		<year>1989</year>
+		<publisher>Sega</publisher>
+		<part name="cart" interface="sms_cart">
+			<dataarea name="rom" size="262144">
+				<rom name="basketball nightmare [proto].bin" size="262144" crc="e5b3573e" sha1="d5c5c8f902659e0b1aeb72c45b649f0b3934750e" offset="000000" />
 			</dataarea>
 		</part>
 	</software>
@@ -884,6 +983,7 @@
     but boxes are typically mixed up and patched with stickers added to change game titles (on both boxes and cartridges)
     making the product number rather unreliable AND realistically we may never find out the correct numbers.
 -->
+	<!-- Notes: optional SK-1100 keyboard support (except for game selection, Hang-On) -->
 	<software name="hicom3a">
 		<description>The Best Game Collection - Hang On + Pit Pot + Spy vs Spy (Kor)</description>
 		<year>1990</year>
@@ -896,6 +996,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support (except for game selection) -->
 	<software name="hicom3b">
 		<description>The Best Game Collection - Great Baseball + Great Soccer + Super Tennis (Kor)</description>
 		<year>1990</year>
@@ -908,6 +1009,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support (except for game selection) -->
 	<software name="hicom3c">
 		<description>The Best Game Collection - Teddy Boy Blues + Pit-Pot + Astro Flash (Kor)</description>
 		<year>1990</year>
@@ -920,6 +1022,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support (except for game selection) -->
 	<software name="hicom3d">
 		<description>The Best Game Collection - Teddy Boy Blues + Great Soccer + Comical Machine Gun Joe (Kor)</description>
 		<year>1990</year>
@@ -932,6 +1035,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support (except for game selection) -->
 	<software name="hicom3e">
 		<description>The Best Game Collection - Ghost House + Teddy Boy Blues + Seishun Scandal (Kor)</description>
 		<year>1990</year>
@@ -944,6 +1048,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support (except for game selection) -->
 	<software name="hicom3f">
 		<description>The Best Game Collection - Satellite-7 + Great Baseball + Seishun Scandal (Kor)</description>
 		<year>1990</year>
@@ -956,6 +1061,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support (except for game selection, Hyper Sports 2, Monkey Academy) -->
 	<software name="hicom8a">
 		<description>The Best Game Collection (Kor, 8 in 1 Ver. A)</description>
 		<year>1990</year>
@@ -968,6 +1074,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support (except for game selection, King's Valley, Magical Tree, Hang-On) -->
 	<software name="hicom8b">
 		<description>The Best Game Collection (Kor, 8 in 1 Ver. B)</description>
 		<year>1990</year>
@@ -980,6 +1087,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support (except for game selection, Athletic Land, Bomb Jack, Circus Charlie, Yie Ar Kung-Fu) -->
 	<software name="hicom8c">
 		<description>The Best Game Collection (Kor, 8 in 1 Ver. C)</description>
 		<year>1990</year>
@@ -992,6 +1100,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="blackblt">
 		<description>Black Belt (Euro, USA)</description>
 		<year>1986</year>
@@ -1022,8 +1131,9 @@
 		</part>
 	</software>
 
+	<!-- Notes: 3D glasses support -->
 	<software name="bladeag1" cloneof="bladeag">
-		<description>Blade Eagle (USA, Prototype)</description>
+		<description>Blade Eagle (USA, prototype)</description>
 		<year>1988</year>
 		<publisher>Sega</publisher>
 		<part name="cart" interface="sms_cart">
@@ -1063,6 +1173,18 @@
 		</part>
 	</software>
 
+	<software name="bombraidp" cloneof="bombraid">
+		<description>Battle Wings (Bomber Raid, prototype)</description>
+		<year>1989</year>
+		<publisher>Sega</publisher>
+		<info name="alt_title" value="ボンバーレイド" />
+		<part name="cart" interface="sms_cart">
+			<dataarea name="rom" size="262144">
+				<rom name="battle wings (prototye).bin" size="262144" crc="fae0ade7" sha1="99fef1cca416df8586d3aaf76d147e86e69dbdad" offset="000000" />
+			</dataarea>
+		</part>
+	</software>
+
 	<software name="bnzabros">
 		<description>Bonanza Bros. (Euro, Bra)</description>
 		<year>1991</year>
@@ -1082,7 +1204,7 @@
 		<info name="serial" value="028.600"/>
 		<part name="cart" interface="sms_cart">
 			<dataarea name="rom" size="524288">
-				<rom name="bonkers wax up! (brazil).bin" size="524288" crc="b3768a7a" sha1="e1f8da3897f0756c8764ece6605f940ce79e81ca" offset="000000" />
+				<rom name="bonkers wax up (brazil).bin" size="524288" crc="b3768a7a" sha1="e1f8da3897f0756c8764ece6605f940ce79e81ca" offset="000000" />
 			</dataarea>
 		</part>
 	</software>
@@ -1102,8 +1224,9 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
 	<software name="borgmanp" cloneof="cyborgh">
-		<description>Chouon Senshi Borgman (Jpn, Prototype)</description>
+		<description>Chouon Senshi Borgman (Jpn, prototype)</description>
 		<year>1988</year>
 		<publisher>Sega</publisher>
 		<part name="cart" interface="sms_cart">
@@ -1121,6 +1244,18 @@
 		<part name="cart" interface="sms_cart">
 			<dataarea name="rom" size="262144">
 				<rom name="bram stoker's dracula (europe).bin" size="262144" crc="1b10a951" sha1="6c9f52cdae96541020eaaa543ca6f729763f3ada" offset="000000" />
+			</dataarea>
+		</part>
+	</software>
+
+	<!-- Notes: rom freely available at https://www.smspower.org, physical cartridge produced by Ichigo of 2Minds but not available commercially -->
+	<software name="brucelee">
+		<description>Bruce Lee</description>
+		<year>2015</year>
+		<publisher>&lt;homebrew&gt;</publisher>
+		<part name="cart" interface="sms_cart">
+			<dataarea name="rom" size="131072">
+				<rom name="brucelee-sms-1.00.bin" size="131072" crc="37e27a38" sha1="48c41270493302d51da773ba938ffae5264ceb28" offset="000000" />
 			</dataarea>
 		</part>
 	</software>
@@ -1213,7 +1348,7 @@
 		<part name="cart" interface="sms_cart">
 			<feature name="slot" value="korean_nb" />
 			<dataarea name="rom" size="32768">
-				<rom name="c_so! [msx] (kr).bin" size="32768" crc="0918fba0" sha1="e7fefabd7a920fd71e87509d065080855b5b233c" offset="000000" />
+				<rom name="c_so [msx] (kr).bin" size="32768" crc="0918fba0" sha1="e7fefabd7a920fd71e87509d065080855b5b233c" offset="000000" />
 			</dataarea>
 		</part>
 	</software>
@@ -1245,6 +1380,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
 	<software name="calgames">
 		<description>California Games (Euro, USA, Bra)</description>
 		<year>1989</year>
@@ -1278,6 +1414,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
 	<software name="captsilvu" cloneof="captsilv">
 		<description>Captain Silver (USA)</description>
 		<year>1988</year>
@@ -1290,6 +1427,19 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
+	<software name="captsilvp" cloneof="captsilv">
+		<description>Captain Silver (prototype)</description>
+		<year>1988</year>
+		<publisher>Sega</publisher>
+		<part name="cart" interface="sms_cart">
+			<dataarea name="rom" size="131072">
+				<rom name="captain silver [proto].bin" size="131072" crc="2532a7cd" sha1="e128c74fd5f0f1ad2f34d408feedff2bfe1adc71" offset="000000" />
+			</dataarea>
+		</part>
+	</software>
+
+	<!-- Notes: FM support -->
 	<software name="casino">
 		<description>Casino Games (Euro, USA)</description>
 		<year>1989</year>
@@ -1370,6 +1520,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="chapolim" cloneof="ghosth">
 		<description>Chapolim x Dracula - Um Duelo Assustador (Bra)</description>
 		<year>1990</year>
@@ -1390,6 +1541,17 @@
 		<part name="cart" interface="sms_cart">
 			<dataarea name="rom" size="262144">
 				<rom name="taito chase h.q. (europe).bin" size="262144" crc="85cfc9c9" sha1="495e3ced83ccd938b549bc76905097dba0aaf32b" offset="000000" />
+			</dataarea>
+		</part>
+	</software>
+
+	<software name="chasehqp" cloneof="chasehq">
+		<description>Taito Chase H.Q. (prototype)</description>
+		<year>1990</year>
+		<publisher>Sega</publisher>
+		<part name="cart" interface="sms_cart">
+			<dataarea name="rom" size="262144">
+				<rom name="taito chase h.q. [proto].bin" size="262144" crc="1cdcf415" sha1="a9efe283d2a3025864cd9e86aed4ebae7bc7e4b1" offset="000000" />
 			</dataarea>
 		</part>
 	</software>
@@ -1418,6 +1580,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="choplift">
 		<description>Choplifter (Euro, USA, Bra)</description>
 		<year>1986</year>
@@ -1433,8 +1596,9 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="chopliftj" cloneof="choplift">
-		<description>Choplifter (Jpn, Prototype)</description>
+		<description>Choplifter (Jpn, prototype)</description>
 		<year>1986</year>
 		<publisher>Sega</publisher>
 		<part name="cart" interface="sms_cart">
@@ -1444,8 +1608,9 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="chopliftp" cloneof="choplift">
-		<description>Choplifter (USA, Prototype)</description>
+		<description>Choplifter (USA, prototype)</description>
 		<year>1986</year>
 		<publisher>Sega</publisher>
 		<part name="cart" interface="sms_cart">
@@ -1491,6 +1656,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="circuit" cloneof="worldgp">
 		<description>The Circuit (Jpn)</description>
 		<year>1986</year>
@@ -1505,6 +1671,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
 	<software name="cloudmst">
 		<description>Cloud Master (Euro, USA)</description>
 		<year>1989</year>
@@ -1545,7 +1712,7 @@
 	</software>
 
 	<software name="columnsp" cloneof="columns">
-		<description>Columns (Prototype)</description>
+		<description>Columns (prototype)</description>
 		<year>1990</year>
 		<publisher>Sega</publisher>
 		<part name="cart" interface="sms_cart">
@@ -1566,6 +1733,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="comicaltw" cloneof="comical">
 		<description>Comical Machine Gun Joe (Tw)</description>
 		<year>1986?</year>
@@ -1579,6 +1747,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="comicalk" cloneof="comical">
 		<description>Comical Machine Gun Joe (Kor)</description>
 		<year>198?</year>
@@ -1603,10 +1772,12 @@
 		</part>
 	</software>
 
+	<!-- Notes: Requires an extra-height video mode absent on the 315-5124 VDP -->
 	<software name="cosmic">
 		<description>Cosmic Spacehead (Euro)</description>
 		<year>1993</year>
 		<publisher>Codemasters</publisher>
+		<info name="usage" value="Video mode is correct only on SMS 2 drivers, e.g. smspal" />
 		<info name="serial" value="MK-27074-50"/>
 		<part name="cart" interface="sms_cart">
 			<feature name="slot" value="codemasters" />
@@ -1629,7 +1800,7 @@
 	</software>
 
 	<software name="cybersp" cloneof="cybers">
-		<description>The Cyber Shinobi (Prototype)</description>
+		<description>The Cyber Shinobi (prototype)</description>
 		<year>1990</year>
 		<publisher>Sega</publisher>
 		<part name="cart" interface="sms_cart">
@@ -1639,6 +1810,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
 	<software name="cyborgh">
 		<description>Cyborg Hunter (Euro, USA, Bra)</description>
 		<year>1988</year>
@@ -1647,6 +1819,17 @@
 		<part name="cart" interface="sms_cart">
 			<dataarea name="rom" size="131072">
 				<rom name="cyborg hunter (usa, europe).bin" size="131072" crc="908e7524" sha1="b6131585cb944d7fae69ad609802a1b5d51b442f" offset="000000" />
+			</dataarea>
+		</part>
+	</software>
+
+	<software name="cyborghp" cloneof="cyborgh">
+		<description>Cyborg Hunter (prototype)</description>
+		<year>1988</year>
+		<publisher>Sega</publisher>
+		<part name="cart" interface="sms_cart">
+			<dataarea name="rom" size="131072">
+				<rom name="cyborg hunter (prototype).bin" size="131072" crc="691211a1" sha1="6e1259bf0d8888d63d5033a0fafd53592b5697e2" offset="000000" />
 			</dataarea>
 		</part>
 	</software>
@@ -1719,6 +1902,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
 	<software name="ddragonk" cloneof="ddragon">
 		<description>Double Dragon (Kor)</description>
 		<year>198?</year>
@@ -1788,7 +1972,7 @@
 	</software>
 
 	<software name="dinobash">
-		<description>Dinobasher Starring Bignose the Caveman (Euro, Prototype)</description>
+		<description>Dinobasher Starring Bignose the Caveman (Euro, prototype)</description>
 		<year>19??</year>
 		<publisher>Codemasters</publisher>
 		<part name="cart" interface="sms_cart">
@@ -1828,8 +2012,9 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
 	<software name="dokidokip" cloneof="pengland">
-		<description>Doki Doki Penguin Land - Uchuu Daibouken (Jpn, Prototype)</description>
+		<description>Doki Doki Penguin Land - Uchuu Daibouken (Jpn, prototype)</description>
 		<year>1987</year>
 		<publisher>Sega</publisher>
 		<part name="cart" interface="sms_cart">
@@ -1855,7 +2040,7 @@
 	</software>
 
 	<software name="doublhwkp" cloneof="doublhwk">
-		<description>Double Hawk (Euro, Prototype)</description>
+		<description>Double Hawk (Euro, prototype)</description>
 		<year>1990</year>
 		<publisher>Sega</publisher>
 		<part name="cart" interface="sms_cart">
@@ -1938,6 +2123,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="dumpmats" cloneof="prowres">
 		<description>Gokuaku Doumei Dump Matsumoto (Jpn)</description>
 		<year>1986</year>
@@ -2104,7 +2290,7 @@
 	</software>
 
 	<software name="eswatp0" cloneof="eswatc"> <!-- early build, alt subtitle -->
-		<description>E-SWAT - The Ultimate Battle In The Factor Against Crime (prototype 0)</description>
+		<description>E-SWAT - The Ultimate Factor in the Battle Against Crime (prototype 0)</description>
 		<year>1990</year>
 		<publisher>Sega</publisher>
 		<info name="serial" value="7042"/>
@@ -2139,10 +2325,12 @@
 		</part>
 	</software>
 
+	<!-- Notes: Requires an extra-height video mode absent on the 315-5124 VDP -->
 	<software name="excdizzy" supported="no">
-		<description>The Excellent Dizzy Collection (Euro, USA, Prototype)</description>
+		<description>The Excellent Dizzy Collection (Euro, USA, prototype)</description>
 		<year>19??</year>
 		<publisher>Codemasters</publisher>
+		<info name="usage" value="Video mode is correct only on SMS 2 drivers, e.g. smspal" />
 		<part name="cart" interface="sms_cart">
 			<feature name="slot" value="codemasters" />
 			<dataarea name="rom" size="262144">
@@ -2178,6 +2366,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="f16falc" cloneof="f16fight">
 		<description>F-16 Fighting Falcon (USA)</description>
 		<year>1985</year>
@@ -2190,6 +2379,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<!-- Alt. Title: F-16 -->
 	<software name="f16falctw" cloneof="f16fight">
 		<description>F-16 Fighting Falcon (Tw)</description>
@@ -2203,6 +2393,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="f16fight">
 		<description>F-16 Fighter (Euro, USA)</description>
 		<year>1986</year>
@@ -2249,10 +2440,12 @@
 		</part>
 	</software>
 
+	<!-- Notes: Requires an extra-height video mode absent on the 315-5124 VDP -->
 	<software name="fantdizz">
 		<description>Fantastic Dizzy (Euro)</description>
 		<year>1993</year>
 		<publisher>Codemasters</publisher>
+		<info name="usage" value="Video mode is correct only on SMS 2 drivers, e.g. smspal" />
 		<info name="serial" value="MK-27074-50"/>
 		<part name="cart" interface="sms_cart">
 			<feature name="slot" value="codemasters" />
@@ -2262,6 +2455,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
 	<software name="fantzon2">
 		<description>Fantasy Zone II - The Tears of Opa-Opa (Euro, USA, Bra)</description>
 		<year>1987</year>
@@ -2295,6 +2489,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="fantzone">
 		<description>Fantasy Zone (World, v2)</description>
 		<year>1986</year>
@@ -2312,8 +2507,9 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="fantzone1" cloneof="fantzone">
-		<description>Fantasy Zone (World, v1, Prototype)</description>
+		<description>Fantasy Zone (World, v1, prototype)</description>
 		<year>1986</year>
 		<publisher>Sega</publisher>
 		<part name="cart" interface="sms_cart">
@@ -2323,6 +2519,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="fantzonej" cloneof="fantzone">
 		<description>Fantasy Zone (Jpn, v0)</description>
 		<year>1986</year>
@@ -2338,6 +2535,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="fantzonetw" cloneof="fantzone">
 		<description>Fantasy Zone (Tw)</description>
 		<year>1986?</year>
@@ -2350,6 +2548,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
 	<software name="fantzonm">
 		<description>Fantasy Zone - The Maze (Euro, USA)</description>
 		<year>1987</year>
@@ -2372,17 +2571,6 @@
 		<part name="cart" interface="sms_cart">
 			<dataarea name="rom" size="262144">
 				<rom name="final bubble bobble (japan).bin" size="262144" crc="3ebb7457" sha1="ab585612fddb90b5285e2804f63fd7fb7ba02900" offset="000000" />
-			</dataarea>
-		</part>
-	</software>
-
-	<software name="felipe" cloneof="teddyboy">
-		<description>Felipe em Acao (Bra)</description>
-		<year>19??</year>
-		<publisher>Tec Toy</publisher>
-		<part name="cart" interface="sms_cart">
-			<dataarea name="rom" size="32768">
-				<rom name="felipe em acao (b).bin" size="32768" crc="ccb2cab4" sha1="b7601ff0116490b85c9bd50109db175ce2dd9104" offset="000000" />
 			</dataarea>
 		</part>
 	</software>
@@ -2425,7 +2613,7 @@
 
 	<software name="fireice">
 		<description>Fire &amp; Ice (Bra)</description>
-		<year>1993</year>
+		<year>1995</year>
 		<publisher>Tec Toy</publisher>
 		<info name="serial" value="027.360"/>
 		<part name="cart" interface="sms_cart">
@@ -2457,6 +2645,56 @@
 			<feature name="slot" value="korean_nb" />
 			<dataarea name="rom" size="32768">
 				<rom name="flashpoint (kr).bin" size="32768" crc="61e8806f" sha1="bfa43eaa99c470eaa542ba37033651c2759b9874" offset="000000" />
+			</dataarea>
+		</part>
+	</software>
+
+	<!-- Notes: rom freely available at https://www.smspower.org and physical cartridges sold at https://www.2minds.fr -->
+	<software name="pigarus">
+		<description>Flight of Pigarus (v1.11)</description>
+		<year>2018</year> <!-- 2Minds cart published 2020 -->
+		<publisher>2Minds</publisher>
+		<info name="usage" value="Replay mode fully supported only on PAL/50Hz drivers, e.g. smspal" />
+		<info name="alt_title" value="ピガロスの飛行" />
+		<part name="cart" interface="sms_cart">
+			<feature name="battery" value="yes" />
+			<dataarea name="rom" size="262144">
+				<rom name="flightofpigarus-sms-1.11.bin" size="262144" crc="60b86f18" sha1="46941b6ca4c38b07fa55987d3f30c249d5674e2a" offset="000000" /> <!-- this digital release not verified against physical cart -->
+			</dataarea>
+			<!-- 32K is what game can actually use? According to maker the pcb part is a 256K Lapis MR48V256 -->
+			<dataarea name="ram" size="32768">
+			</dataarea>
+		</part>
+	</software>
+
+	<software name="pigarus110" cloneof="pigarus">
+		<description>Flight of Pigarus (v1.10)</description>
+		<year>2018</year>
+		<publisher>&lt;homebrew&gt;</publisher>
+		<info name="usage" value="Replay mode fully supported only on PAL/50Hz drivers, e.g. smspal" />
+		<info name="alt_title" value="ピガロスの飛行" />
+		<part name="cart" interface="sms_cart">
+			<feature name="battery" value="yes" />
+			<dataarea name="rom" size="262144">
+				<rom name="flightofpigarus-sms-1.10.bin" size="262144" crc="1950005d" sha1="3bd03c3be402b90e61e6be5b67216c0c6d8056e6" offset="000000" />
+			</dataarea>
+			<dataarea name="ram" size="32768">
+			</dataarea>
+		</part>
+	</software>
+
+	<software name="pigarus100" cloneof="pigarus">
+		<description>Flight of Pigarus (v1.00)</description>
+		<year>2018</year>
+		<publisher>&lt;homebrew&gt;</publisher>
+		<info name="usage" value="Replay mode fully supported only on PAL/50Hz drivers, e.g. smspal" />
+		<info name="alt_title" value="ピガロスの飛行" />
+		<part name="cart" interface="sms_cart">
+			<feature name="battery" value="yes" />
+			<dataarea name="rom" size="262144">
+				<rom name="flightofpigarus-sms-1.00.bin" size="262144" crc="838574d1" sha1="e53a16f5bf4a2d804b26c359cf3a727c06379e6d" offset="000000" />
+			</dataarea>
+			<dataarea name="ram" size="32768">
 			</dataarea>
 		</part>
 	</software>
@@ -2503,6 +2741,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="pitpot1" cloneof="pitpot">
 		<description>Fushigi no Oshiro Pit Pot (Jpn, Pirate?)</description>
 		<year>1985</year>
@@ -2539,7 +2778,7 @@
 	</software>
 
 	<software name="ggroundp" cloneof="gground">
-		<description>Gain Ground (Euro, Prototype)</description>
+		<description>Gain Ground (Euro, prototype)</description>
 		<year>1990</year>
 		<publisher>Sega</publisher>
 		<info name="serial" value="7045"/>
@@ -2558,6 +2797,8 @@
 		<info name="serial" value="G-1348"/>
 		<info name="release" value="19880221"/>
 		<info name="alt_title" value="ギャラクティック プロテクター" />
+		<sharedfeat name="ctrl1_default" value="paddle" />
+		<sharedfeat name="ctrl2_default" value="paddle" />
 		<part name="cart" interface="sms_cart">
 			<!-- PCB info based on SMS Power -->
 			<feature name="pcb" value="171-5552" />
@@ -2580,6 +2821,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
 	<software name="gforce">
 		<description>Galaxy Force (Euro, Bra)</description>
 		<year>1989</year>
@@ -2596,6 +2838,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
 	<software name="gforceu" cloneof="gforce">
 		<description>Galaxy Force (USA)</description>
 		<year>1989</year>
@@ -2608,6 +2851,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
 	<software name="gamebox">
 		<description>Game Box Série Esportes Radicais (Bra)</description>
 		<year>19??</year>
@@ -2624,6 +2868,17 @@
 			<feature name="u6" value="74HC32" />
 			<dataarea name="rom" size="262144">
 				<rom name="mpr-18796.ic1" size="262144" crc="1890f407" sha1="c0ee197e93c9ec81f5b788e8d6b20b3ab57d2259" offset="000000" />
+			</dataarea>
+		</part>
+	</software>
+
+	<software name="gamcheck">
+		<description>Game de Check! Koutsuu Anzen (Jpn, prototype)</description>
+		<year>1987</year>
+		<publisher>Tokio Marine</publisher>
+		<part name="cart" interface="sms_cart">
+			<dataarea name="rom" size="262144">
+				<rom name="game de check koutsuu anzen (jpn, prototype).bin" size="262144" crc="9afab511" sha1="72353c77efa078e88483858201f5bdf832f5c01c" offset="000000" />
 			</dataarea>
 		</part>
 	</software>
@@ -2645,6 +2900,8 @@
 		<year>1987</year>
 		<publisher>Sega</publisher>
 		<info name="serial" value="5074, 023.120"/>
+		<sharedfeat name="ctrl1_default" value="lphaser" />
+		<sharedfeat name="ctrl2_default" value="lphaser" />
 		<part name="cart" interface="sms_cart">
 			<!-- PCB info based on US cart (nepereny's), to check the cart with MPR-10577 -->
 			<feature name="pcb" value="171-5519" />
@@ -2701,6 +2958,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="gerald" cloneof="teddyboy">
 		<description>Geraldinho (Bra)</description>
 		<year>19??</year>
@@ -2713,6 +2971,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="ghostbst">
 		<description>Ghostbusters (Euro, USA, Kor)</description>
 		<year>1989</year>
@@ -2728,6 +2987,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="ghosth">
 		<description>Ghost House (Euro, USA, Bra)</description>
 		<year>1986</year>
@@ -2743,6 +3003,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="ghosthj1" cloneof="ghosth">
 		<description>Ghost House (Jpn, Pirate?)</description>
 		<year>1986</year>
@@ -2754,6 +3015,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="ghosthk" cloneof="ghosth">
 		<description>Ghost House (Kor)</description>
 		<year>198?</year>
@@ -2789,6 +3051,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
 	<software name="globald">
 		<description>Global Defense (Euro, USA)</description>
 		<year>1987</year>
@@ -2804,8 +3067,9 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
 	<software name="globaldp" cloneof="globald">
-		<description>Global Defense (Euro, USA, Prototype)</description>
+		<description>Global Defense (Euro, USA, prototype)</description>
 		<year>1987</year>
 		<publisher>Sega</publisher>
 		<part name="cart" interface="sms_cart">
@@ -2827,6 +3091,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
 	<software name="golfaman">
 		<description>Golfamania (Euro, Bra)</description>
 		<year>1990</year>
@@ -2847,8 +3112,9 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
 	<software name="golfamanp" cloneof="golfaman">
-		<description>Golfamania (Prototype)</description>
+		<description>Golfamania (prototype)</description>
 		<year>1990</year>
 		<publisher>Sega</publisher>
 		<part name="cart" interface="sms_cart">
@@ -2861,6 +3127,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
 	<software name="golvell">
 		<description>Golvellius (Euro, USA)</description>
 		<year>1988</year>
@@ -2890,7 +3157,7 @@
 
 	<software name="greatbas">
 		<description>Great Baseball (Euro, USA, Bra)</description>
-		<year>1985</year>
+		<year>1987</year>
 		<publisher>Sega</publisher>
 		<info name="serial" value="5061"/>
 		<part name="cart" interface="sms_cart">
@@ -2903,6 +3170,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="greatbasj1" cloneof="greatbas">
 		<description>Great Baseball (Jpn, Pirate?)</description>
 		<year>1985</year>
@@ -2966,19 +3234,21 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
 	<software name="greatglf1" cloneof="greatglf">
 		<description>Great Golf (Euro, USA, v1.0)</description>
 		<year>1987</year>
 		<publisher>Sega</publisher>
 		<part name="cart" interface="sms_cart">
 			<dataarea name="rom" size="131072">
-				<rom name="great golf (ue) (v1.0) [!].bin" size="131072" crc="c6611c84" sha1="eab0eed872dd26b13bcf0b2dd74fcbbc078812c9" offset="000000" />
+				<rom name="great golf (ue) (v1.0).bin" size="131072" crc="c6611c84" sha1="eab0eed872dd26b13bcf0b2dd74fcbbc078812c9" offset="000000" />
 			</dataarea>
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
 	<software name="greatglfp" cloneof="greatglf">
-		<description>Great Golf (Prototype)</description>
+		<description>Great Golf (prototype)</description>
 		<year>1987</year>
 		<publisher>Sega</publisher>
 		<part name="cart" interface="sms_cart">
@@ -3013,12 +3283,14 @@
 		</part>
 	</software>
 
-	<!-- Notes: FM support, in Japan only 1000 copies were manufactured as a prize for a contest-->
+	<!-- Notes: FM support, in Japan only 1000 copies were manufactured as a prize for a contest -->
 	<software name="greatice">
 		<description>Great Ice Hockey (Jpn, USA)</description>
 		<year>1987</year>
 		<publisher>Sega</publisher>
 		<info name="serial" value="5062 (USA)"/>
+		<sharedfeat name="ctrl1_default" value="sportspad" />
+		<sharedfeat name="ctrl2_default" value="sportspad" />
 		<part name="cart" interface="sms_cart">
 			<!-- PCB info based on SMS Power (Jpn cart) -->
 			<feature name="pcb" value="171-5552" />
@@ -3029,6 +3301,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="greatscr">
 		<description>Great Soccer (Euro)</description>
 		<year>1985</year>
@@ -3041,6 +3314,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="greatscrtw" cloneof="greatscr">
 		<description>Great Soccer (Tw)</description>
 		<year>1985?</year>
@@ -3122,6 +3396,18 @@
 		</part>
 	</software>
 
+	<software name="hangonp" cloneof="hangon">
+		<description>Hang-On (prototype)</description>
+		<year>1985</year>
+		<publisher>Sega</publisher>
+		<part name="cart" interface="sms_cart">
+			<dataarea name="rom" size="32768">
+				<rom name="hang-on (prototype).bin" size="32768" crc="649f29e8" sha1="817d7bba41f0619342127d562f848045b9ddd7ea" offset="000000" />
+			</dataarea>
+		</part>
+	</software>
+
+	<!-- Notes: optional SK-1100 keyboard support (except for Hang-On) -->
 	<software name="hangonaw">
 		<description>Hang-On &amp; Astro Warrior (USA)</description>
 		<year>1986</year>
@@ -3153,7 +3439,7 @@
 	</software>
 
 	<software name="hangonshp" cloneof="hangonsh">
-		<description>Hang-On &amp; Safari Hunt (USA, Prototype)</description>
+		<description>Hang-On &amp; Safari Hunt (USA, prototype)</description>
 		<year>1986</year>
 		<publisher>Sega</publisher>
 		<part name="cart" interface="sms_cart">
@@ -3171,6 +3457,19 @@
 		<part name="cart" interface="sms_cart">
 			<dataarea name="rom" size="262144">
 				<rom name="heavyweight champ (europe).bin" size="262144" crc="fdab876a" sha1="7e2523061df0c08b7df7b446b5504c4eb0fea163" offset="000000" />
+			</dataarea>
+		</part>
+	</software>
+
+	<!-- Notes: rom freely available at https://www.smspower.org and physical cartridges sold at https://www.2minds.fr -->
+	<software name="heroesad">
+		<description>Heroes Against Demons</description>
+		<year>2020</year>
+		<publisher>2Minds</publisher>
+		<info name="usage" value="Only runs with certain drivers, e.g. smsj - others show SOFTWARE ERROR" />
+		<part name="cart" interface="sms_cart">
+			<dataarea name="rom" size="262144">
+				<rom name="heroesagainstdemons_v1.04b [retail rom].bin" size="262144" crc="8c77f8bf" sha1="95bec2ea672024162653fa8657e6f3344b7260cc" offset="000000" /> <!-- this digital release not verified against physical cart -->
 			</dataarea>
 		</part>
 	</software>
@@ -3196,12 +3495,13 @@
 		<info name="alt_title" value="ハイスクール!奇面組" />
 		<part name="cart" interface="sms_cart">
 			<dataarea name="rom" size="131072">
-				<rom name="high school! kimengumi (japan).bin" size="131072" crc="9eb1aa4f" sha1="d3c0aeeacccef77c45ab4219c7d6d8ed04d467cb" offset="000000" />
+				<rom name="high school kimengumi (japan).bin" size="131072" crc="9eb1aa4f" sha1="d3c0aeeacccef77c45ab4219c7d6d8ed04d467cb" offset="000000" />
 			</dataarea>
 		</part>
 	</software>
 
-	<!-- Notes: The Western version "Black Belt" is quite different -->
+	<!-- Notes: optional SK-1100 keyboard support -->
+	<!-- The Western version "Black Belt" is quite different -->
 	<software name="hokuto" cloneof="blackblt">
 		<description>Hokuto no Ken (Jpn)</description>
 		<year>1986</year>
@@ -3216,6 +3516,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="hokutotw" cloneof="blackblt">
 		<description>Hokuto no Ken (Tw)</description>
 		<year>1986?</year>
@@ -3253,7 +3554,7 @@
 	</software>
 
 	<software name="hook">
-		<description>Hook (Euro, Prototype)</description>
+		<description>Hook (Euro, prototype)</description>
 		<year>19??</year>
 		<publisher>Sega</publisher>
 		<part name="cart" interface="sms_cart">
@@ -3281,6 +3582,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
 	<software name="hwaran" cloneof="kenseid">
 		<description>Hwarang Ui Geom (Kor)</description>
 		<year>1988</year>
@@ -3306,7 +3608,7 @@
 	</software>
 
 	<software name="impmissp" cloneof="impmiss">
-		<description>Impossible Mission (Euro, Prototype)</description>
+		<description>Impossible Mission (Euro, prototype)</description>
 		<year>1990</year>
 		<publisher>U.S. Gold</publisher>
 		<part name="cart" interface="sms_cart">
@@ -3356,7 +3658,7 @@
 	</software>
 
 	<software name="indycrusp" cloneof="indycrus">
-		<description>Indiana Jones and the Last Crusade (Euro, Prototype)</description>
+		<description>Indiana Jones and the Last Crusade (Euro, prototype)</description>
 		<year>1990</year>
 		<publisher>U.S. Gold</publisher>
 		<part name="cart" interface="sms_cart">
@@ -3379,7 +3681,7 @@
 	</software>
 
 	<software name="jbdougkop" cloneof="heavyw">
-		<description>James 'Buster' Douglas Knockout Boxing (USA, Prototype)</description>
+		<description>James 'Buster' Douglas Knockout Boxing (USA, prototype)</description>
 		<year>1990</year>
 		<publisher>Sega</publisher>
 		<part name="cart" interface="sms_cart">
@@ -3434,6 +3736,7 @@
 		<year>1993</year>
 		<publisher>Sieco</publisher>
 		<part name="cart" interface="sms_cart">
+			<feature name="slot" value="korean" />
 			<dataarea name="rom" size="524288">
 				<rom name="jang pung ii (kr).bin" size="524288" crc="929222c4" sha1="10a5095513efebae3d045b217caa7a520e66f26f" offset="000000" />
 			</dataarea>
@@ -3495,6 +3798,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
 	<software name="kenseid">
 		<description>Kenseiden (Euro, USA, Bra)</description>
 		<year>1988</year>
@@ -3538,7 +3842,7 @@
 	</software>
 
 	<software name="kingqstp" cloneof="kingqst">
-		<description>King's Quest - Quest for the Crown (USA, Prototype)</description>
+		<description>King's Quest - Quest for the Crown (USA, prototype)</description>
 		<year>1989</year>
 		<publisher>Parker Brothers</publisher>
 		<part name="cart" interface="sms_cart">
@@ -3642,6 +3946,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional Light Phaser support -->
 	<software name="lghost">
 		<description>Laser Ghost (Euro)</description>
 		<year>1991</year>
@@ -3685,7 +3990,7 @@
 	</software>
 
 	<software name="lemmingsp" cloneof="lemmings">
-		<description>Lemmings (Euro, Prototype)</description>
+		<description>Lemmings (Euro, prototype)</description>
 		<year>1991</year>
 		<publisher>Sega</publisher>
 		<part name="cart" interface="sms_cart">
@@ -3696,7 +4001,7 @@
 	</software>
 
 	<software name="lemming2">
-		<description>Lemmings 2 - The Tribes (Euro, Prototype)</description>
+		<description>Lemmings 2 - The Tribes (Euro, prototype)</description>
 		<year>1994</year>
 		<publisher>Psygnosis</publisher>
 		<part name="cart" interface="sms_cart">
@@ -3706,10 +4011,12 @@
 		</part>
 	</software>
 
+	<!-- Notes: 3D glasses support -->
 	<software name="loffire">
 		<description>Line of Fire (Euro, Bra, Kor)</description>
 		<year>1991</year>
 		<publisher>Sega</publisher>
+		<info name="usage" value="To play in 3-D on SMS1, hold buttons 1 and 2 while powering up the system." />
 		<info name="serial" value="9006, GB-4011JG"/>
 		<part name="cart" interface="sms_cart">
 			<dataarea name="rom" size="524288">
@@ -3731,6 +4038,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
 	<software name="lordswrd">
 		<description>Lord of the Sword (Euro, USA, Bra)</description>
 		<year>1988</year>
@@ -3758,7 +4066,8 @@
 		</part>
 	</software>
 
-	<!-- Notes: This is actually compatible with SG-1000 and SG-1000 Mark II (and SC-3000) -->
+	<!-- Notes: optional SK-1100 keyboard support -->
+	<!-- This is actually compatible with SG-1000 and SG-1000 Mark II (and SC-3000) -->
 	<software name="loretta">
 		<description>Loretta no Shouzou (Jpn)</description>
 		<year>1987</year>
@@ -3793,7 +4102,7 @@
 	</software>
 
 	<software name="luckydimp" cloneof="luckydim">
-		<description>The Lucky Dime Caper Starring Donald Duck (Euro, Prototype)</description>
+		<description>The Lucky Dime Caper Starring Donald Duck (Euro, prototype)</description>
 		<year>1991</year>
 		<publisher>Sega</publisher>
 		<part name="cart" interface="sms_cart">
@@ -3821,7 +4130,7 @@
 	</software>
 
 	<software name="mjsengokp" cloneof="mjsengok">
-		<description>Mahjong Sengoku Jidai (Jpn, Prototype)</description>
+		<description>Mahjong Sengoku Jidai (Jpn, prototype)</description>
 		<year>1987</year>
 		<publisher>Sega</publisher>
 		<part name="cart" interface="sms_cart">
@@ -3864,8 +4173,9 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
 	<software name="maougolvp" cloneof="golvell">
-		<description>Maou Golvellius (Jpn, Prototype)</description>
+		<description>Maou Golvellius (Jpn, prototype)</description>
 		<year>1988</year>
 		<publisher>Sega</publisher>
 		<part name="cart" interface="sms_cart">
@@ -3892,6 +4202,7 @@
 		<year>1986</year>
 		<publisher>Sega</publisher>
 		<info name="serial" value="6080"/>
+		<sharedfeat name="ctrl1_default" value="lphaser" />
 		<part name="cart" interface="sms_cart">
 			<!-- PCB info based on SMS Power -->
 			<feature name="pcb" value="??" />
@@ -3908,6 +4219,7 @@
 		<year>1986</year>
 		<publisher>Sega</publisher>
 		<info name="serial" value="6003"/>
+		<sharedfeat name="ctrl1_default" value="lphaser" />
 		<part name="cart" interface="sms_cart">
 			<dataarea name="rom" size="131072">
 				<rom name="marksman shooting &amp; trap shooting (usa).bin" size="131072" crc="e8ea842c" sha1="5491cce7b9c19cb49060da94ab8f9c4331e77cb3" offset="000000" />
@@ -3942,6 +4254,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support, 3D glasses support -->
 	<software name="mazehunt">
 		<description>Maze Hunter 3-D (Euro, USA, Bra)</description>
 		<year>1988</year>
@@ -3983,6 +4296,7 @@
 		<info name="serial" value="G-1359"/>
 		<info name="release" value="19880730"/>
 		<info name="alt_title" value="(め)組レスキュー" />
+		<sharedfeat name="ctrl1_default" value="paddle" />
 		<part name="cart" interface="sms_cart">
 			<dataarea name="rom" size="131072">
 				<rom name="megumi rescue (japan).bin" size="131072" crc="29bc7fad" sha1="7bd156cf8dc2ad07c666ac58ccb3c0ff6671b93f" offset="000000" />
@@ -4033,10 +4347,12 @@
 		</part>
 	</software>
 
+	<!-- Notes: Requires an extra-height video mode absent on the 315-5124 VDP -->
 	<software name="micromac">
 		<description>Micro Machines (Euro)</description>
 		<year>1994</year>
 		<publisher>Codemasters</publisher>
+		<info name="usage" value="Video mode is correct only on SMS 2 drivers, e.g. smspal" />
 		<info name="serial" value="19001"/>
 		<part name="cart" interface="sms_cart">
 			<feature name="slot" value="codemasters" />
@@ -4047,7 +4363,7 @@
 	</software>
 
 	<software name="sdmilhao">
-		<description>Show do Milhão (Bra, Prototype)</description>
+		<description>Show do Milhão (Bra, prototype)</description>
 		<year>2003</year>
 		<publisher>Tec Toy</publisher>
 		<part name="cart" interface="sms_cart">
@@ -4057,6 +4373,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
 	<software name="miracle">
 		<description>Miracle Warriors - Seal of the Dark Lord (Euro, USA, Bra)</description>
 		<year>1987</year>
@@ -4072,8 +4389,9 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
 	<software name="miraclep" cloneof="miracle">
-		<description>Miracle Warriors - Seal of the Dark Lord (Prototype)</description>
+		<description>Miracle Warriors - Seal of the Dark Lord (prototype)</description>
 		<year>1987</year>
 		<publisher>Sega</publisher>
 		<part name="cart" interface="sms_cart">
@@ -4086,17 +4404,33 @@
 		</part>
 	</software>
 
+	<!-- Notes: 3D glasses support -->
 	<software name="missil3d">
 		<description>Missile Defense 3-D (Euro, USA, Bra)</description>
-		<year>19??</year>
+		<year>1987</year>
 		<publisher>Sega</publisher>
 		<info name="serial" value="8001, 023.230"/>
+		<sharedfeat name="ctrl1_default" value="lphaser" />
 		<part name="cart" interface="sms_cart">
 			<!-- PCB info based on US cart (nepereny's) -->
 			<feature name="pcb" value="171-5519" />
 			<feature name="ic1" value="MPR-10844 W29" />
 			<dataarea name="rom" size="131072">
 				<rom name="mpr-10844 w29.ic1" size="131072" crc="fbe5cfbb" sha1="86242fcc8b9f93cdad2241f40c3eebbf4c9ff213" offset="000000" />
+			</dataarea>
+		</part>
+	</software>
+
+	<!-- Notes: 3D glasses support -->
+	<software name="missil3dp" cloneof="missil3d">
+		<description>Missile Defense 3-D (prototype)</description>
+		<year>1987</year>
+		<publisher>Sega</publisher>
+		<sharedfeat name="ctrl1_default" value="lphaser" />
+		<part name="cart" interface="sms_cart">
+			<dataarea name="rom" size="131072">
+				<!-- 2 (eep)rom chips on pcb -->
+				<rom name="missile-3d (prototype).bin" size="131072" crc="43def05d" sha1="0275f34127af816779a332becd692b8a6dbeefb7" offset="000000" />
 			</dataarea>
 		</part>
 	</software>
@@ -4140,6 +4474,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
 	<software name="monica" cloneof="wboymlnd">
 		<description>Mônica no Castelo do Dragao (Bra)</description>
 		<year>1991</year>
@@ -4181,7 +4516,7 @@
 	</software>
 
 	<software name="monopolyp" cloneof="monopoly">
-		<description>Monopoly (USA, Prototype)</description>
+		<description>Monopoly (USA, prototype)</description>
 		<year>1988</year>
 		<publisher>Sega</publisher>
 		<part name="cart" interface="sms_cart">
@@ -4210,7 +4545,7 @@
 	</software>
 
 	<software name="montezump" cloneof="montezum">
-		<description>Montezuma's Revenge Featuring Panama Joe (USA, Prototype)</description>
+		<description>Montezuma's Revenge Featuring Panama Joe (USA, prototype)</description>
 		<year>1989</year>
 		<publisher>Parker Brothers</publisher>
 		<part name="cart" interface="sms_cart">
@@ -4257,7 +4592,7 @@
 	</software>
 
 	<software name="mwalkp" cloneof="mwalk">
-		<description>Michael Jackson's Moonwalker (USA, Prototype)</description>
+		<description>Michael Jackson's Moonwalker (USA, prototype)</description>
 		<year>1990</year>
 		<publisher>Sega</publisher>
 		<part name="cart" interface="sms_cart">
@@ -4279,6 +4614,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="myhero">
 		<description>My Hero (Euro, USA, Bra)</description>
 		<year>1986</year>
@@ -4292,7 +4628,7 @@
 	</software>
 
 	<software name="nbajam">
-		<description>NBA Jam (Euro, Prototype)</description>
+		<description>NBA Jam (Euro, prototype)</description>
 		<year>1994</year>
 		<publisher>Acclaim</publisher>
 		<info name="usage" value="Only runs with certain drivers, e.g. smsj - others show SOFTWARE ERROR" />
@@ -4303,8 +4639,9 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
 	<software name="supgolf" cloneof="golfaman">
-		<description>Super Golf (Prototype)</description>
+		<description>Super Golf (prototype)</description>
 		<year>1989</year>
 		<publisher>Sega</publisher>
 		<part name="cart" interface="sms_cart">
@@ -4411,7 +4748,7 @@
 	</software>
 
 	<software name="ngaidenp" cloneof="ngaiden">
-		<description>Ninja Gaiden (Euro, Prototype)</description>
+		<description>Ninja Gaiden (Euro, prototype)</description>
 		<year>1992</year>
 		<publisher>Sega</publisher>
 		<part name="cart" interface="sms_cart">
@@ -4468,6 +4805,7 @@
 		<year>1990</year>
 		<publisher>Sega</publisher>
 		<info name="serial" value="7039"/>
+		<sharedfeat name="ctrl1_default" value="lphaser" />
 		<part name="cart" interface="sms_cart">
 			<dataarea name="rom" size="262144">
 				<rom name="operation wolf (europe).bin" size="262144" crc="205caae8" sha1="064040452b6bacc75443dae7916a0fd573f1600d" offset="000000" />
@@ -4487,7 +4825,7 @@
 		</part>
 	</software>
 
-	<!-- Notes: FM support -->
+	<!-- Notes: FM support, optional Paddle Control support -->
 	<software name="outrun">
 		<description>Out Run (World)</description>
 		<year>1987</year>
@@ -4505,6 +4843,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support, 3D glasses support, optional Paddle Control support -->
 	<software name="outrun3d">
 		<description>Out Run 3-D (Euro, Bra)</description>
 		<year>1991</year>
@@ -4516,6 +4855,17 @@
 			<feature name="ic1" value="MPR-12130" />
 			<dataarea name="rom" size="262144">
 				<rom name="mpr-12130.ic1" size="262144" crc="d6f43dda" sha1="93c3fbe23848556fc6a737db1b5182537db5961d" offset="000000" />
+			</dataarea>
+		</part>
+	</software>
+
+	<software name="outrun3dp" cloneof="outrun3d">
+		<description>Out Run 3-D (prototype)</description>
+		<year>1988</year>
+		<publisher>Sega</publisher>
+		<part name="cart" interface="sms_cart">
+			<dataarea name="rom" size="262144">
+				<rom name="out run 3d (prototype).bin" size="262144" crc="4e684ec0" sha1="9b52818e8c1bd31cfbe1d7107d572049207a705f" offset="000000" />
 			</dataarea>
 		</part>
 	</software>
@@ -4571,6 +4921,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
 	<software name="parlour">
 		<description>Parlour Games (Euro, USA)</description>
 		<year>1987</year>
@@ -4588,7 +4939,7 @@
 	</software>
 
 	<software name="patriley">
-		<description>Pat Riley Basketball (USA, Prototype)</description>
+		<description>Pat Riley Basketball (USA, prototype)</description>
 		<year>19??</year>
 		<publisher>Sega</publisher>
 		<part name="cart" interface="sms_cart">
@@ -4611,6 +4962,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
 	<software name="pengland">
 		<description>Penguin Land (Euro, USA)</description>
 		<year>1987</year>
@@ -4691,6 +5043,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support, 3D glasses support -->
 	<software name="poseidon">
 		<description>Poseidon Wars 3-D (Euro, USA, Bra)</description>
 		<year>1988</year>
@@ -4706,6 +5059,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support, optional SK-1100 keyboard support -->
 	<software name="pstrike">
 		<description>Power Strike (Euro, Bra, Kor)</description>
 		<year>1988</year>
@@ -4771,6 +5125,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="prowres">
 		<description>Pro Wrestling (Euro, USA, Bra)</description>
 		<year>1986</year>
@@ -4877,6 +5232,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
 	<!-- This is the MegaDrive version (released in 1994), also included in "Phantasy Star Collection" for the Sega Saturn -->
 	<!-- It currently does not work in the megadrij driver -->
 	<software name="pstarjmd" cloneof="pstar">
@@ -4886,7 +5242,7 @@
 		<part name="cart" interface="sms_cart">
 			<feature name="battery" value="yes" />
 			<dataarea name="rom" size="524288">
-				<rom name="phantasy star (j) (from saturn collection cd) [!].bin" size="524288" crc="07301f83" sha1="b3ae447dc739256616b44cbd77cb903c9f19e980" offset="000000" />
+				<rom name="phantasy star (j) (from saturn collection cd).bin" size="524288" crc="07301f83" sha1="b3ae447dc739256616b44cbd77cb903c9f19e980" offset="000000" />
 			</dataarea>
 			<dataarea name="ram" size="8192">
 			</dataarea>
@@ -4945,7 +5301,7 @@
 	</software>
 
 	<software name="puttputtp" cloneof="puttputt">
-		<description>Putt &amp; Putter (Euro, Prototype)</description>
+		<description>Putt &amp; Putter (Euro, prototype)</description>
 		<year>1992</year>
 		<publisher>Sega</publisher>
 		<part name="cart" interface="sms_cart">
@@ -5037,6 +5393,7 @@
 		<year>1988</year>
 		<publisher>Sega</publisher>
 		<info name="serial" value="7015"/>
+		<sharedfeat name="ctrl1_default" value="lphaser" />
 		<part name="cart" interface="sms_cart">
 			<!-- PCB info based on US cart (nepereny's) -->
 			<feature name="pcb" value="171-5507" />
@@ -5047,6 +5404,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
 	<software name="rampage">
 		<description>Rampage (Euro, USA, Bra)</description>
 		<year>1988</year>
@@ -5074,6 +5432,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
 	<software name="rastan">
 		<description>Rastan (Euro, USA, Bra)</description>
 		<year>1988</year>
@@ -5082,6 +5441,18 @@
 		<part name="cart" interface="sms_cart">
 			<dataarea name="rom" size="262144">
 				<rom name="rastan (usa, europe).bin" size="262144" crc="c547eb1b" sha1="90f9ccf516db2a1cf20e199cfd5d31d4cfce0f1f" offset="000000" />
+			</dataarea>
+		</part>
+	</software>
+
+	<!-- Notes: FM support -->
+	<software name="rastanp" cloneof="rastan">
+		<description>Rastan (prototype)</description>
+		<year>1988</year>
+		<publisher>Sega</publisher>
+		<part name="cart" interface="sms_cart">
+			<dataarea name="rom" size="262144">
+				<rom name="rastan [proto].bin" size="262144" crc="f063bfc8" sha1="1988ef92f982d19755754ea499aaaf3f45d7641e" offset="000000" />
 			</dataarea>
 		</part>
 	</software>
@@ -5102,7 +5473,7 @@
 	</software>
 
 	<software name="rcgpp" cloneof="rcgp">
-		<description>R.C. Grand Prix (Prototype)</description>
+		<description>R.C. Grand Prix (prototype)</description>
 		<year>1989</year>
 		<publisher>Sega</publisher>
 		<part name="cart" interface="sms_cart">
@@ -5136,11 +5507,13 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
 	<software name="rescuems">
 		<description>Rescue Mission (Euro, USA, Bra)</description>
 		<year>1988</year>
 		<publisher>Sega</publisher>
 		<info name="serial" value="5106"/>
+		<sharedfeat name="ctrl1_default" value="lphaser" />
 		<part name="cart" interface="sms_cart">
 			<!-- PCB info based on US cart (nepereny's) -->
 			<feature name="pcb" value="171-5519" />
@@ -5247,8 +5620,9 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
 	<software name="rtypep" cloneof="rtype">
-		<description>R-Type (Prototype)</description>
+		<description>R-Type (prototype)</description>
 		<year>1988</year>
 		<publisher>Sega</publisher>
 		<part name="cart" interface="sms_cart">
@@ -5309,6 +5683,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="saposos" cloneof="astrow">
 		<description>S.O.S Lagoa Poluida (Bra)</description>
 		<year>1995</year>
@@ -5334,6 +5709,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="satell7a" cloneof="satell7">
 		<description>Satellite 7 (Jpn, Pirate?)</description>
 		<year>1985</year>
@@ -5359,7 +5735,7 @@
 	</software>
 
 	<software name="smurfs2p" cloneof="smurfs2">
-		<description>The Smurfs 2 (Euro, Prototype)</description>
+		<description>The Smurfs 2 (Euro, prototype)</description>
 		<year>1996</year>
 		<publisher>Infogrames</publisher>
 		<part name="cart" interface="sms_cart">
@@ -5382,7 +5758,7 @@
 	</software>
 
 	<software name="scip" cloneof="sci">
-		<description>Special Criminal Investigation (Euro, Prototype)</description>
+		<description>Special Criminal Investigation (Euro, prototype)</description>
 		<year>1992</year>
 		<publisher>Sega</publisher>
 		<part name="cart" interface="sms_cart">
@@ -5392,6 +5768,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
 	<software name="sspirits">
 		<description>Scramble Spirits (Euro, Bra)</description>
 		<year>1989</year>
@@ -5446,9 +5823,10 @@
 	</software>
 
 	<software name="segagfx">
-		<description>Sega Graphic Board (Jpn, Prototype v2.0)</description>
+		<description>Sega Graphic Board (Jpn, prototype v2.0)</description>
 		<year>1987</year>
 		<publisher>Sega</publisher>
+		<sharedfeat name="ctrl1_default" value="graphic" />
 		<part name="cart" interface="sms_cart">
 			<dataarea name="rom" size="32768">
 				<rom name="graphic board v2.0.bin" size="32768" crc="276aa542" sha1="d04ea11e1f6743ab4e73eadd95fa9f9fb2eb01fe" offset="000000" />
@@ -5468,6 +5846,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="seishun1" cloneof="myhero">
 		<description>Seishun Scandal (Jpn, Pirate?)</description>
 		<year>1986</year>
@@ -5487,6 +5866,19 @@
 		<part name="cart" interface="sms_cart">
 			<dataarea name="rom" size="131072">
 				<rom name="sensible soccer (europe).bin" size="131072" crc="f8176918" sha1="08b4f5b8096bc811bc9a7750deb21def67711a9f" offset="000000" />
+			</dataarea>
+		</part>
+	</software>
+
+	<!-- port of an MSX title -->
+	<software name="skyfight">
+		<description>Sky Fighter (Kor)</description>
+		<year>1990</year>
+		<publisher>Clover Soft</publisher>
+		<info name="alt_title" value="보라매 전사"/>
+		<part name="cart" interface="sms_cart">
+			<dataarea name="rom" size="32768">
+				<rom name="sky fighter (kr).bin" size="32768" crc="77ba2667" sha1="afdd09097dce40c0af5ec01de0dfdc08482e9e0e" offset="000000" />
 			</dataarea>
 		</part>
 	</software>
@@ -5539,6 +5931,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
 	<software name="shanghai">
 		<description>Shanghai (Euro, USA)</description>
 		<year>1988</year>
@@ -5551,8 +5944,9 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
 	<software name="shanghaip" cloneof="shanghai">
-		<description>Shanghai (Prototype)</description>
+		<description>Shanghai (prototype)</description>
 		<year>1988</year>
 		<publisher>Sega</publisher>
 		<part name="cart" interface="sms_cart">
@@ -5562,6 +5956,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="sharrier">
 		<description>Space Harrier (Euro)</description>
 		<year>1986</year>
@@ -5577,6 +5972,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support, 3D glasses support -->
 	<software name="sharr3d">
 		<description>Space Harrier 3-D (Euro, USA, Bra)</description>
 		<year>1988</year>
@@ -5607,6 +6003,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="sharrierju" cloneof="sharrier">
 		<description>Space Harrier (Jpn, USA)</description>
 		<year>1986</year>
@@ -5627,6 +6024,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
 	<software name="shinobi">
 		<description>Shinobi (Euro, USA, Bra, v1)</description>
 		<year>1988</year>
@@ -5659,6 +6057,7 @@
 		<year>1987</year>
 		<publisher>Sega</publisher>
 		<info name="serial" value="5072"/>
+		<sharedfeat name="ctrl1_default" value="lphaser" />
 		<part name="cart" interface="sms_cart">
 			<!-- PCB info based on SMS Power -->
 			<feature name="pcb" value="??" />
@@ -5719,7 +6118,7 @@
 	</software>
 
 	<software name="slapshotp" cloneof="slapshot">
-		<description>Slap Shoot (Prototype)</description>
+		<description>Slap Shoot (prototype)</description>
 		<year>1990</year>
 		<publisher>Sega</publisher>
 		<part name="cart" interface="sms_cart">
@@ -5770,7 +6169,7 @@
 	</software>
 
 	<software name="smgpp1" cloneof="smgp">
-		<description>Super Monaco GP (Euro, Prototype)</description>
+		<description>Super Monaco GP (Euro, prototype)</description>
 		<year>1990</year>
 		<publisher>Sega</publisher>
 		<part name="cart" interface="sms_cart">
@@ -5781,7 +6180,7 @@
 	</software>
 
 	<software name="smgpp2" cloneof="smgp">
-		<description>Super Monaco GP (Euro, Older Prototype)</description>
+		<description>Super Monaco GP (Euro, older prototype)</description>
 		<year>1990</year>
 		<publisher>Sega</publisher>
 		<part name="cart" interface="sms_cart">
@@ -5826,6 +6225,19 @@
 		<part name="cart" interface="sms_cart">
 			<dataarea name="rom" size="131072">
 				<rom name="solomon no kagi - oujo rihita no namida (japan).bin" size="131072" crc="11645549" sha1="875f35d0775609776ec75ea2a8fa2297643e906c" offset="000000" />
+			</dataarea>
+		</part>
+	</software>
+
+	<software name="solomonp" cloneof="solomon">
+		<description>Solomon no Kagi - Oujo Rihita no Namida (prototype)</description>
+		<year>1988</year>
+		<publisher>Salio</publisher>
+		<info name="alt_title" value="ソロモンの鍵 -王女リヒタの涙-" />
+		<part name="cart" interface="sms_cart">
+			<dataarea name="rom" size="131072">
+				<!-- cartridge contains 2 eproms, labels on the chips: 6301 CHR and 6302 P -->
+				<rom name="solomon no kagi - oujo rihita no namida (prototype).bin" size="131072" crc="92dc4cd6" sha1="4587743e156bddf59e268f89bc08a9450eabe5ea" offset="000000" />
 			</dataarea>
 		</part>
 	</software>
@@ -5903,8 +6315,38 @@
 		</part>
 	</software>
 
+	<!-- Notes: Sega of Japan labels, unfortunately crashes after title screen -->
+	<software name="sonicc630" cloneof="sonicc" supported="no">
+		<description>Sonic the Hedgehog Chaos (Euro, "Ver 0.20", prototype 19930630)</description>
+		<year>1993</year>
+		<publisher>Sega</publisher>
+		<part name="cart" interface="sms_cart">
+			<dataarea name="rom" size="524288">
+				<rom name="ms sonic 3 0.bin" size="131072" crc="538ef990" sha1="0eee07db9d64813ab343c7d2ebd70bb2a1c6b589" offset="0x00000" />
+				<rom name="ms sonic 3 1.bin" size="131072" crc="4cec61fe" sha1="c6ff6f80e9f71965fca1927fe9c49c355d633f64" offset="0x20000" />
+				<rom name="ms sonic 3 2.bin" size="131072" crc="95f3c5b5" sha1="08a918b028a2e646b280637dd81217feae5d435c" offset="0x40000" />
+				<rom name="ms sonic 3 3.bin" size="131072" crc="803893e6" sha1="138c4fb7c0e80d1d06b1ebc949a139594d876693" offset="0x60000" />
+			</dataarea>
+		</part>
+	</software>
+
+	<!-- Notes: Sega UK labels, mistakenly marked GG; internal version has not changed since sonicc630 and therefore is not ideal for reference -->
+	<software name="sonicc713" cloneof="sonicc">
+		<description>Sonic the Hedgehog Chaos (Euro, prototype 19930713)</description>
+		<year>1993</year>
+		<publisher>Sega</publisher>
+		<part name="cart" interface="sms_cart">
+			<dataarea name="rom" size="524288">
+				<rom name="sonic chaos 0 gg 13-7 1m.bin" size="131072" crc="d8fae464" sha1="1873efcc4937c7e7c4b3c622f855615193229846" offset="0x00000" />
+				<rom name="sonic chaos 1 gg 13-7 1m.bin" size="131072" crc="b13ab99a" sha1="9e9575e50dba386917862c45f7af3acdf0e54e8e" offset="0x20000" />
+				<rom name="sonic chaos 2 gg 13-7 1m.bin" size="131072" crc="62625015" sha1="4cba6035f0b8e4ee2da372d9cdd0126af3807ddb" offset="0x40000" />
+				<rom name="sonic chaos 3 gg 13-7 1m.bin" size="131072" crc="fbd1c349" sha1="43c301b1439a83e57c6ab900a2838ea27fac7d25" offset="0x60000" />
+			</dataarea>
+		</part>
+	</software>
+
 	<software name="sonicedu">
-		<description>Sonic's Edusoft (Prototype)</description>
+		<description>Sonic's Edusoft (prototype)</description>
 		<year>19??</year>
 		<publisher>Sega</publisher>
 		<part name="cart" interface="sms_cart">
@@ -5955,6 +6397,7 @@
 		<year>1992</year>
 		<publisher>Sega</publisher>
 		<info name="serial" value="9010"/>
+		<sharedfeat name="ctrl1_default" value="lphaser" />
 		<part name="cart" interface="sms_cart">
 			<!-- PCB info based on SMS Power (Euro cart?) -->
 			<feature name="pcb" value="171-5559-01D" />
@@ -6002,6 +6445,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
 	<software name="spellcst">
 		<description>SpellCaster (Euro, USA, Bra)</description>
 		<year>1988</year>
@@ -6050,6 +6494,8 @@
 		<year>1987</year>
 		<publisher>Sega</publisher>
 		<info name="serial" value="5060"/>
+		<sharedfeat name="ctrl1_default" value="sportspad" />
+		<sharedfeat name="ctrl2_default" value="sportspad" />
 		<part name="cart" interface="sms_cart">
 			<dataarea name="rom" size="131072">
 				<rom name="sports pad football (usa).bin" size="131072" crc="e42e4998" sha1="556d9ab4ba3c3a34440b36c6fc8e972f70f16d72" offset="000000" />
@@ -6057,7 +6503,18 @@
 		</part>
 	</software>
 
-	<!-- Notes: Sports Pad support -->
+	<!-- Notes: -->
+	<!-- This Japanese version of Sports Pad Soccer has code to operate the
+	Sports Pad controller in two different modes. When it detects a Japanese SMS,
+	the operation is the same used by US Sports Pad games. Otherwise, it uses
+	a mode compatible with the Sega Mark III, that lacks the TH line used by
+	the US Sports Pad mode. This Mark III mode is also used on other non-SMSJ
+	consoles, like the Korean SMS2 version. The two controller modes are
+	significantly different from each other and no information was found about
+	support for both modes on the Japanese Sports Pad model, so that model is
+	currently emulated as a different device: sportspadjp. -->
+	<!-- This ROM has a player 2 input bug when operates in Mark III compatible
+	mode: it reads part of player 1 data instead (see sportsjp.cpp). -->
 	<software name="sportssc" cloneof="worldsoc">
 		<description>Sports Pad Soccer (Jpn)</description>
 		<year>1988</year>
@@ -6065,6 +6522,8 @@
 		<info name="serial" value="G-1365"/>
 		<info name="release" value="19881029"/>
 		<info name="alt_title" value="スポーツパッドサッカー" />
+		<sharedfeat name="ctrl1_default" value="sportspad" />
+		<sharedfeat name="ctrl2_default" value="sportspad" />
 		<part name="cart" interface="sms_cart">
 			<dataarea name="rom" size="131072">
 				<rom name="sports pad soccer (japan).bin" size="131072" crc="41c948bf" sha1="7634ce39e87049dad1ee4f32a80d728e4bd1f81f" offset="000000" />
@@ -6072,6 +6531,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="spyvsspy">
 		<description>Spy vs. Spy (Euro, USA, Bra)</description>
 		<year>1986</year>
@@ -6084,7 +6544,8 @@
 		</part>
 	</software>
 
-<!-- same dump was released as a MyCard in Japan -->
+	<!-- Notes: optional SK-1100 keyboard support -->
+	<!-- same dump was released as a MyCard in Japan -->
 	<software name="spyvsspyk" cloneof="spyvsspy">
 		<description>Spy vs Spy (Kor)</description>
 		<year>1986</year>
@@ -6097,6 +6558,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="spyvsspyj1" cloneof="spyvsspy">
 		<description>Spy vs. Spy (Jpn, Pirate?)</description>
 		<year>1986</year>
@@ -6108,6 +6570,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="spyvsspytw" cloneof="spyvsspy">
 		<description>Spy vs Spy (Tw)</description>
 		<year>1986?</year>
@@ -6121,13 +6584,14 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="spyvsspys" cloneof="spyvsspy">
 		<description>Spy vs. Spy (USA, Display Unit Sample)</description>
 		<year>1986</year>
 		<publisher>Sega</publisher>
 		<part name="cart" interface="sms_cart">
 			<dataarea name="rom" size="262144">
-				<rom name="spy vs. spy (u) (display-unit cart) [!].bin" size="262144" crc="b87e1b2b" sha1="03eec0d33d7c3b376fe08ffec79f84091f58366b" offset="000000" />
+				<rom name="spy vs. spy (u) (display-unit cart).bin" size="262144" crc="b87e1b2b" sha1="03eec0d33d7c3b376fe08ffec79f84091f58366b" offset="000000" />
 			</dataarea>
 		</part>
 	</software>
@@ -6269,8 +6733,9 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
 	<software name="sumgamesp" cloneof="sumgames">
-		<description>Summer Games (Euro, Prototype)</description>
+		<description>Summer Games (Euro, prototype)</description>
 		<year>1991</year>
 		<publisher>Sega</publisher>
 		<part name="cart" interface="sms_cart">
@@ -6295,10 +6760,13 @@
 		</part>
 	</software>
 
+	<!-- Notes: This clone replaced the original paddle code with code for the regular controller, but like the former it is used only when
+	the system region is detected as Japanese, what happens with Korean Mark-III/SMS1 versions, but not with Korean SMS2 versions. -->
 	<software name="superark" cloneof="woodypop">
 		<description>Super Arkanoid (Kor)</description>
 		<year>1989</year>
 		<publisher>HiCom</publisher>
+		<info name="usage" value="Input works only with drivers of Japanese region, e.g. sms1kr,smsj" />
 		<info name="serial" value="G-2101"/>
 		<info name="alt_title" value="슈퍼알카노이드" />
 		<part name="cart" interface="sms_cart">
@@ -6407,7 +6875,18 @@
 		</part>
 	</software>
 
-	<!-- Notes: FM support -->
+	<software name="superoffp" cloneof="superoff">
+		<description>Super Off Road (prototype)</description>
+		<year>1992</year>
+		<publisher>Virgin Interactive</publisher>
+		<part name="cart" interface="sms_cart">
+			<dataarea name="rom" size="131072">
+				<rom name="super off road (prototype).bin" size="131072" crc="ce8d6846" sha1="f8267cc15123bc5cfec53298e403232da373822b" offset="000000" />
+			</dataarea>
+		</part>
+	</software>
+
+	<!-- Notes: FM support, optional Paddle Control support -->
 	<software name="superrac">
 		<description>Super Racing (Jpn)</description>
 		<year>1988</year>
@@ -6422,6 +6901,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="stennis">
 		<description>Super Tennis (Euro, USA)</description>
 		<year>1985</year>
@@ -6468,7 +6948,7 @@
 	</software>
 
 	<software name="tazmaniap" cloneof="tazmania">
-		<description>Taz-Mania (Euro, Prototype)</description>
+		<description>Taz-Mania (Euro, prototype)</description>
 		<year>1992</year>
 		<publisher>Sega</publisher>
 		<part name="cart" interface="sms_cart">
@@ -6491,7 +6971,7 @@
 	</software>
 
 	<software name="tecmow92">
-		<description>Tecmo World Cup '92 (Euro, Prototype)</description>
+		<description>Tecmo World Cup '92 (Euro, prototype)</description>
 		<year>19??</year>
 		<publisher>Sega</publisher>
 		<part name="cart" interface="sms_cart">
@@ -6513,6 +6993,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="teddyboy">
 		<description>Teddy Boy (Euro, USA, Bra)</description>
 		<year>1985</year>
@@ -6528,6 +7009,24 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
+	<!-- This is a prototype cartridge in Japanese form to be supposedly used
+	in a machine of the cancelled EP-MyCard service, where users could bring
+	a rewritable card version and get new games written on for a certain fee.
+	The cartridge contains three 16kB EPROM chips, the last chip seems to have
+	only 48 bytes of metadata used by the machine and the rest is all $ff. -->
+	<software name="teddyboyjp" cloneof="teddyboy">
+		<description>Teddy Boy Blues (Jpn, Ep-MyCard, prototype)</description>
+		<year>1985</year>
+		<publisher>Sega</publisher>
+		<part name="cart" interface="sms_cart">
+			<dataarea name="rom" size="49152">
+				<rom name="teddy boy blues (japan) (proto) (ep-mycard).bin" size="49152" crc="d7508041" sha1="51014d89cd8770df8a3d837a0208cb69d5bf7903" offset="000000" />
+			</dataarea>
+		</part>
+	</software>
+
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="teddyboyj1" cloneof="teddyboy">
 		<description>Teddy Boy Blues (Jpn, Pirate?)</description>
 		<year>1985</year>
@@ -6539,6 +7038,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
 	<software name="tennis">
 		<description>Tennis Ace (Euro, Bra)</description>
 		<year>1989</year>
@@ -6584,8 +7084,16 @@
 		<publisher>Virgin Interactive</publisher>
 		<info name="serial" value="MK-27025-50"/>
 		<part name="cart" interface="sms_cart">
+			<!-- PCB info based on elotrolado.net forum:
+			https://www.elotrolado.net/hilo_hilo-oficial-dossier-completo-de-sega-master-system_2197710_s60
+			-->
+			<feature name="pcb" value="171-6339A" />
+			<feature name="ic1" value="MPR-14831-F" />
+			<feature name="ic2" value="KM62256BLP-10L" /> <!-- 32768 * 8 bit CMOS Static RAM -->
 			<dataarea name="rom" size="262144">
 				<rom name="terminator, the (europe).bin" size="262144" crc="edc5c012" sha1="eaf733d385e61526b90c1b194bf605078d43e2d3" offset="000000" />
+			</dataarea>
+			<dataarea name="ram" size="32768">
 			</dataarea>
 		</part>
 	</software>
@@ -6599,9 +7107,12 @@
 			<dataarea name="rom" size="262144">
 				<rom name="terminator, the (brazil).bin" size="262144" crc="e3d5ce9a" sha1="bea0a1d0271faa2273e4cf1e968241d018c81da1" offset="000000" />
 			</dataarea>
+			<dataarea name="ram" size="32768">
+			</dataarea>
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
 	<software name="tblade">
 		<description>Thunder Blade (Euro, USA, Bra)</description>
 		<year>1988</year>
@@ -6632,6 +7143,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
 	<software name="timesold">
 		<description>Time Soldiers (Euro, USA, Bra)</description>
 		<year>1989</year>
@@ -6672,7 +7184,7 @@
 	</software>
 
 	<software name="tomjerry" cloneof="tomjermv">
-		<description>Tom &amp; Jerry (Prototype)</description>
+		<description>Tom &amp; Jerry (prototype)</description>
 		<year>1992</year>
 		<publisher>Sega</publisher>
 		<part name="cart" interface="sms_cart">
@@ -6694,6 +7206,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="transbot">
 		<description>TransBot (Euro, USA, Bra)</description>
 		<year>1985</year>
@@ -6709,24 +7222,14 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="transbotp" cloneof="transbot">
-		<description>TransBot (USA, Prototype)</description>
+		<description>TransBot (USA, prototype)</description>
 		<year>1985</year>
 		<publisher>Sega</publisher>
 		<part name="cart" interface="sms_cart">
 			<dataarea name="rom" size="32768">
 				<rom name="transbot [proto].bin" size="32768" crc="58b99750" sha1="4cd1d5e94b31bb3c3e449bc995890c0a4707bc5f" offset="000000" />
-			</dataarea>
-		</part>
-	</software>
-
-	<software name="treinam">
-		<description>Treinamento Do Mymo (Bra)</description>
-		<year>19??</year>
-		<publisher>Tec Toy</publisher>
-		<part name="cart" interface="sms_cart">
-			<dataarea name="rom" size="262144">
-				<rom name="treinamento do mymo (b).bin" size="262144" crc="e94784f2" sha1="327c3518363ee060b681ff34c0b2eea3ffea27e4" offset="000000" />
 			</dataarea>
 		</part>
 	</software>
@@ -6744,6 +7247,7 @@
 	</software>
 
 	<!-- G-37 -->
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="ttoriui" cloneof="myhero">
 		<description>Ttoriui Moheom (Kor)</description>
 		<year>19??</year>
@@ -6755,6 +7259,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
 	<software name="turmamon" cloneof="wboy3">
 		<description>Turma da Mônica em O Resgate (Bra)</description>
 		<year>1993</year>
@@ -6782,6 +7287,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
 	<software name="ultima4">
 		<description>Ultima IV - Quest of the Avatar (Euro, Bra)</description>
 		<year>1990</year>
@@ -6802,8 +7308,9 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
 	<software name="ultima4p" cloneof="ultima4">
-		<description>Ultima IV - Quest of the Avatar (Euro, Prototype)</description>
+		<description>Ultima IV - Quest of the Avatar (Euro, prototype)</description>
 		<year>1990</year>
 		<publisher>Sega</publisher>
 		<part name="cart" interface="sms_cart">
@@ -6829,7 +7336,7 @@
 	</software>
 
 	<software name="vampire" cloneof="mastdark">
-		<description>Vampire (Euro, Prototype)</description>
+		<description>Vampire (Euro, prototype)</description>
 		<year>19??</year>
 		<publisher>&lt;unknown&gt;</publisher>
 		<part name="cart" interface="sms_cart">
@@ -6851,6 +7358,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
 	<software name="vigilant">
 		<description>Vigilante (Euro, USA, Bra)</description>
 		<year>1989</year>
@@ -6862,6 +7370,19 @@
 			<feature name="ic1" value="MPR-12138F" />
 			<dataarea name="rom" size="262144">
 				<rom name="mpr-12138f.ic1" size="262144" crc="dfb0b161" sha1="0dc37f1104508c2c0e2593b10dffc3f268ae8ff9" offset="000000" />
+			</dataarea>
+		</part>
+	</software>
+
+	<!-- Notes: Hack of alexkidd v1.1. IPS patch freely available at https://www.smspower.org and physical cartridges sold at https://www.2minds.fr -->
+	<software name="voyagesv">
+		<description>Voyage - A Sorceress' Vacation</description>
+		<year>2020</year> <!-- 2Minds cart published 2021 -->
+		<publisher>2Minds</publisher>
+		<info name="usage" value="Only runs with certain drivers, e.g. smsj - others show SOFTWARE ERROR" />
+		<part name="cart" interface="sms_cart">
+			<dataarea name="rom" size="524288">
+				<rom name="voyage - a sorceress vacation v1.04 (build 704).bin" size="524288" crc="f56940f8" sha1="e7f3477aec7292d10d5956b14c2881ac5bf7e87b" offset="000000" /> <!-- this digital release not verified against physical cart -->
 			</dataarea>
 		</part>
 	</software>
@@ -6883,6 +7404,7 @@
 		<year>1989</year>
 		<publisher>Sega</publisher>
 		<info name="serial" value="5118"/>
+		<sharedfeat name="ctrl1_default" value="lphaser" />
 		<part name="cart" interface="sms_cart">
 			<!-- PCB info based on SMS Power (Euro cart?) -->
 			<feature name="pcb" value="??" />
@@ -6893,7 +7415,7 @@
 		</part>
 	</software>
 
-<!-- MPR-10744F on 171-5519 according to SMS Power, but not clear which version these correspond to -->
+	<!-- MPR-10744F on 171-5519 according to SMS Power, but not clear which version these correspond to -->
 	<software name="wboy">
 		<description>Wonder Boy (Euro, USA, Bra, v1)</description>
 		<year>1987</year>
@@ -6920,6 +7442,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
 	<software name="wboy3">
 		<description>Wonder Boy III - The Dragon's Trap (Euro, USA, Kor)</description>
 		<year>1989</year>
@@ -6935,6 +7458,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
 	<software name="wboymlnd">
 		<description>Wonder Boy in Monster Land (Euro, USA)</description>
 		<year>1988</year>
@@ -6950,8 +7474,9 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
 	<software name="wboymlndp" cloneof="wboymlnd">
-		<description>Wonder Boy in Monster Land (Prototype)</description>
+		<description>Wonder Boy in Monster Land (prototype)</description>
 		<year>1988</year>
 		<publisher>Sega</publisher>
 		<part name="cart" interface="sms_cart">
@@ -6976,6 +7501,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
 	<!-- From Bock: "This hack does two things: force the game to run in Japanese mode (with an harder difficulty level), and allows to
 	Pause the game by pressing LEFT+RIGHT+Button 2 on joypad 1 (a combination that cannot be done on a normal SMS joypad). -->
 	<software name="wboymlnda" cloneof="wboymlnd">
@@ -7005,7 +7531,7 @@
 	</software>
 
 	<software name="wboymwldp" cloneof="wboymwld">
-		<description>Wonder Boy in Monster World (Euro, Prototype)</description>
+		<description>Wonder Boy in Monster World (Euro, prototype)</description>
 		<year>1993</year>
 		<publisher>Sega</publisher>
 		<part name="cart" interface="sms_cart">
@@ -7157,7 +7683,7 @@
 	</software>
 
 	<software name="wldgamesp" cloneof="wldgames">
-		<description>World Games (Euro, Prototype)</description>
+		<description>World Games (Euro, prototype)</description>
 		<year>1989</year>
 		<publisher>Sega</publisher>
 		<part name="cart" interface="sms_cart">
@@ -7167,28 +7693,29 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="worldgp">
 		<description>World Grand Prix (Euro)</description>
 		<year>1986</year>
 		<publisher>Sega</publisher>
 		<info name="serial" value="5080"/>
 		<part name="cart" interface="sms_cart">
-			<!-- PCB info based on SMS Power -->
-			<feature name="pcb" value="??" />
-			<feature name="ic1" value="MPR-10156" />
+			<feature name="pcb" value="171-5519" />
+			<feature name="ic1" value="MPR-11074" />
 			<dataarea name="rom" size="131072">
-				<rom name="mpr-10156.ic1" size="131072" crc="4aaad0d6" sha1="650f15ebbd149f5c357f089d7bd305fcb20b068f" offset="000000" />
+				<rom name="mpr-11074.ic1" size="131072" crc="4aaad0d6" sha1="650f15ebbd149f5c357f089d7bd305fcb20b068f" offset="000000" />
 			</dataarea>
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="worldgpu" cloneof="worldgp">
 		<description>World Grand Prix (USA, Bra, Kor)</description>
 		<year>1986</year>
 		<publisher>Sega</publisher>
 		<info name="serial" value="5080, GB-1304"/>
 		<part name="cart" interface="sms_cart">
-			<!-- PCB info based on US cart (nepereny's), to check the cart with MPR-11074 reported at SMS Power -->
+			<!-- PCB info based on US cart (nepereny's), to check the cart with MPR-10156 listed at SMS Power -->
 			<feature name="pcb" value="171-5365-01" />
 			<feature name="ic1" value="315-5208" /> <!-- Sega Memory Controller -->
 			<feature name="ic2" value="MPR-10151" />
@@ -7198,8 +7725,9 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="worldgpp" cloneof="worldgp">
-		<description>World Grand Prix (USA, Prototype)</description>
+		<description>World Grand Prix (USA, prototype)</description>
 		<year>1986</year>
 		<publisher>Sega</publisher>
 		<part name="cart" interface="sms_cart">
@@ -7209,6 +7737,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional Sports Pad (US model) support -->
 	<software name="worldsoc">
 		<description>World Soccer (Euro, Jpn, Kor) ~ Great Soccer (USA)</description>
 		<year>1987</year>
@@ -7310,11 +7839,12 @@
 		</part>
 	</software>
 
-	<!-- Notes: FM support -->
+	<!-- Notes: FM support, video code relies on the tilemap mirroring bug of the 315-5124 VDP -->
 	<software name="ysj" cloneof="ys">
 		<description>Ys (Jpn)</description>
 		<year>1988</year>
 		<publisher>Sega</publisher>
+		<info name="usage" value="Video only works correctly on drivers with SMS1 VDP, e.g. smsj" />
 		<info name="serial" value="G-1370"/>
 		<info name="release" value="19881015"/>
 		<info name="alt_title" value="イース" />
@@ -7347,10 +7877,12 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support, video code relies on the tilemap mirroring bug of the 315-5124 VDP -->
 	<software name="ysd" cloneof="ys">
 		<description>Ys (USA, Demo)</description>
 		<year>1988</year>
 		<publisher>Sega</publisher>
+		<info name="usage" value="Video only works correctly on drivers with SMS1 VDP, e.g. smsj" />
 		<part name="cart" interface="sms_cart">
 			<dataarea name="rom" size="262144">
 				<rom name="ys - the vanished omens [demo].bin" size="262144" crc="e8b82066" sha1="b70757876e4ff592692eb0ee1c51c571b31541a9" offset="000000" />
@@ -7376,8 +7908,9 @@
 		</part>
 	</software>
 
+	<!-- Notes: 3D glasses support -->
 	<software name="zaxxon3dp" cloneof="zaxxon3d">
-		<description>Zaxxon 3-D (World, Prototype)</description>
+		<description>Zaxxon 3-D (World, prototype)</description>
 		<year>1987</year>
 		<publisher>Sega</publisher>
 		<part name="cart" interface="sms_cart">
@@ -7387,7 +7920,7 @@
 		</part>
 	</software>
 
-<!-- MPR-11068 according to SMS Power, but not clear which version these correspond to -->
+	<!-- MPR-11068 according to SMS Power, but not clear which version these correspond to -->
 	<software name="zillion">
 		<description>Zillion (Euro, v2)</description>
 		<year>1987</year>
@@ -7441,6 +7974,18 @@
 		</part>
 	</software>
 
+	<!-- Notes: FM support -->
+	<software name="zillion2p" cloneof="zillion2">
+		<description>Zillion II - The Tri Formation (prototype)</description>
+		<year>1987</year>
+		<publisher>Sega</publisher>
+		<part name="cart" interface="sms_cart">
+			<dataarea name="rom" size="131072">
+				<rom name="zillion ii - the tri formation [proto].bin" size="131072" crc="5b1cf392" sha1="fdc156deffd5ff4f57b88dfe18dbd45560cb433f" offset="000000" />
+			</dataarea>
+		</part>
+	</software>
+
 	<software name="zool">
 		<description>Zool - Ninja of the 'Nth' Dimension (Euro)</description>
 		<year>1993</year>
@@ -7456,6 +8001,23 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support (except for game selection, Super Wonderboy, Super Tetris, Super Boy I, Goonies, Road Fighter) -->
+	<!-- This MASK rom was actually found on a larger arcade multi-game but appears to have been taken directly from a home cartridge.
+	   The menu contained within it, and bank switching system used is ignored by the arcade board which just makes use of the game
+	   data from it -->
+	<software name="smssgame">
+		<description>Super Game 11-in-1 (Kor)</description>
+		<year>1990</year>
+		<publisher>Seo Jin</publisher>
+		<part name="cart" interface="sms_cart">
+			<feature name="slot" value="seojin" />
+			<dataarea name="rom" size="0x080000">
+				<rom name="SG11004A 79ST0086END 9045" size="0x080000" crc="cdbfe86e" sha1="83d6f261471dca20f8d2e33b9807d670e9b4eb9c" offset="000000" />
+			</dataarea>
+			<dataarea name="ram" size="16384">
+			</dataarea>
+		</part>
+	</software>
 
 <!-- The next items have been compiled from original source code written by Jeroen Tel.
   It is unsure if Probe has ever written any game code for these licensed titles -->
@@ -7483,8 +8045,9 @@
 	</software>
 
 
-<!-- Sega Cards & MyCard dumps -->
+<!-- Sega Card & MyCard dumps -->
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="astrofl" cloneof="transbot">
 		<description>Astro Flash (Jpn, MyCard)</description>
 		<year>1985</year>
@@ -7510,6 +8073,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="comical">
 		<description>Comical Machine Gun Joe (Jpn, MyCard)</description>
 		<year>1986</year>
@@ -7523,6 +8087,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="f16fightc" cloneof="f16fight">
 		<description>F-16 Fighter (Euro, USA, Sega Card)</description>
 		<year>1986</year>
@@ -7535,6 +8100,28 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
+	<!--
+	         The mode for 2 players requires 2 Mark III consoles, both with
+	         the SK-1100 keyboard, plus a cable to link the keyboards through
+	         their printer port. To emulate this setup, it is necessary to run
+	         two instances of MAME and make a point-to-point connection between
+	         them using the bitbanger (bitb) stream that is provided by the
+	         kblink device, that simulates the function of the cable link.
+	         Example for a localhost (127.0.0.1) connection:
+
+	         mame -window sg1000m3 -card f16falcjc -sgexp sk1100 -sgexp:sk1100:printer kblink -bitb socket.127.0.0.1:2345
+	         mame -window sg1000m3 -card f16falcjc -sgexp sk1100 -sgexp:sk1100:printer kblink -bitb socket.127.0.0.1:2345
+
+	         After run both instances, press the CR key on the keyboard when
+	         the title screen is displayed. Next, when asked which player
+	         (1 or 2), the user needs to press 1 on the keyboard of one
+	         instance, switch to the other instance and press 2 on the keyboard
+	         (due to key 1 is mapped by default to the PAUSE function of the
+	         console, it is recommended first remap PAUSE to avoid conflict).
+	         Next, when LEVEL 1 appears on the screen, press the SPACE key on
+	         each instance to start playing the game.
+	-->
 	<software name="f16falcjc" cloneof="f16fight">
 		<description>F-16 Fighting Falcon (Jpn, MyCard)</description>
 		<year>1985</year>
@@ -7548,6 +8135,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="f16falcc" cloneof="f16fight">
 		<description>F-16 Fighting Falcon (USA, Sega Card for Display Unit)</description>
 		<year>1985</year>
@@ -7560,6 +8148,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="pitpot">
 		<description>Fushigi no Oshiro Pit Pot (Jpn, MyCard)</description>
 		<year>1985</year>
@@ -7573,6 +8162,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="ghosthc" cloneof="ghosth">
 		<description>Ghost House (Euro, USA, Bra, Sega Card)</description>
 		<year>1986</year>
@@ -7585,17 +8175,19 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="ghosthcp" cloneof="ghosth">
-		<description>Ghost House (Sega Card, Prototype)</description>
+		<description>Ghost House (Sega Card, prototype)</description>
 		<year>1986</year>
 		<publisher>Sega</publisher>
-		<part name="cart" interface="sms_cart">
+		<part name="cart" interface="sms_card">
 			<dataarea name="rom" size="32768">
 				<rom name="ghost house (usa, europe) (beta).bin" size="32768" crc="c3e7c1ed" sha1="f341e68bad5029bf475922c2c1b79eb109f467a1" offset="000000" />
 			</dataarea>
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="ghosthj" cloneof="ghosth">
 		<description>Ghost House (Jpn, MyCard)</description>
 		<year>1986</year>
@@ -7609,6 +8201,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="greatbasj" cloneof="greatbas">
 		<description>Great Baseball (Jpn, MyCard)</description>
 		<year>1985</year>
@@ -7622,6 +8215,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="greatscrc" cloneof="greatscr">
 		<description>Great Soccer (Euro, Sega Card)</description>
 		<year>1985</year>
@@ -7634,6 +8228,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="greatscrj" cloneof="greatscr">
 		<description>Great Soccer (Jpn, MyCard)</description>
 		<year>1985</year>
@@ -7647,6 +8242,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="greattns" cloneof="stennis">
 		<description>Great Tennis (Jpn, MyCard)</description>
 		<year>1985</year>
@@ -7672,6 +8268,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="hangonj" cloneof="hangon">
 		<description>Hang-On (Jpn, MyCard)</description>
 		<year>1985</year>
@@ -7685,6 +8282,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="myheroc" cloneof="myhero">
 		<description>My Hero (Euro, USA, Bra, Sega Card)</description>
 		<year>1986</year>
@@ -7697,6 +8295,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="satell7">
 		<description>Satellite 7 (Jpn, MyCard)</description>
 		<year>1985</year>
@@ -7710,6 +8309,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="seishun" cloneof="myhero">
 		<description>Seishun Scandal (Jpn, MyCard)</description>
 		<year>1986</year>
@@ -7723,6 +8323,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="spyvsspyc" cloneof="spyvsspy">
 		<description>Spy vs. Spy (Euro, USA, Bra, Sega Card)</description>
 		<year>1986</year>
@@ -7735,6 +8336,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="spyvsspyj" cloneof="spyvsspy">
 		<description>Spy vs Spy (Jpn, MyCard)</description>
 		<year>1986</year>
@@ -7748,6 +8350,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="stennisc" cloneof="stennis">
 		<description>Super Tennis (Euro, USA, Sega Card)</description>
 		<year>1985</year>
@@ -7760,6 +8363,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="teddyboyc" cloneof="teddyboy">
 		<description>Teddy Boy (Euro, USA, Bra, Sega Card)</description>
 		<year>1985</year>
@@ -7772,17 +8376,7 @@
 		</part>
 	</software>
 
-	<software name="teddyboyjp" cloneof="teddyboy">
-		<description>Teddy Boy Blues (Jpn, Ep-MyCard, Prototype)</description>
-		<year>1985</year>
-		<publisher>Sega</publisher>
-		<part name="cart" interface="sms_card">
-			<dataarea name="rom" size="49152">
-				<rom name="teddy boy blues (japan) (proto) (ep-mycard).bin" size="49152" crc="d7508041" sha1="51014d89cd8770df8a3d837a0208cb69d5bf7903" offset="000000" />
-			</dataarea>
-		</part>
-	</software>
-
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="teddyboyj" cloneof="teddyboy">
 		<description>Teddy Boy Blues (Jpn, MyCard)</description>
 		<year>1985</year>
@@ -7796,6 +8390,7 @@
 		</part>
 	</software>
 
+	<!-- Notes: optional SK-1100 keyboard support -->
 	<software name="transbotc" cloneof="transbot">
 		<description>TransBot (Euro, USA, Bra, Sega Card)</description>
 		<year>1985</year>
@@ -7814,6 +8409,7 @@
 		<publisher>Sega</publisher>
 		<info name="serial" value="C-519"/>
 		<info name="release" value="19870315"/>
+		<sharedfeat name="ctrl1_default" value="paddle" />
 		<part name="cart" interface="sms_card">
 			<dataarea name="rom" size="32768">
 				<rom name="woody pop - shinjinrui no block kuzushi (japan).bin" size="32768" crc="315917d4" sha1="b74078c4a3e6d20d21ca81e88c0cb3381b0c84a4" offset="000000" />

@@ -2,7 +2,7 @@
 // copyright-holders:Nathan Woods
 /***************************************************************************
 
-    coco.c
+    coco.cpp
 
     TRS-80 Radio Shack Color Computer Family
 
@@ -51,15 +51,13 @@
     research that for you if you want an exact number for scanlines before the
     screen starts and the scanline that the v-interrupt triggers..etc.
 
-Added bi-directional bitbanger support. Also fixed reading PIA 1, port A. The
-DAC and bitbanger values written should be reflected in the read.
-    tim lindner, October 2010
-
 ***************************************************************************/
 
+#include "emu.h"
 #include "includes/coco.h"
+
 #include "cpu/m6809/m6809.h"
-#include "debug/debugcpu.h"
+#include "screen.h"
 
 
 
@@ -84,16 +82,24 @@ coco_state::coco_state(const machine_config &mconfig, device_type type, const ch
 	m_maincpu(*this, MAINCPU_TAG),
 	m_pia_0(*this, PIA0_TAG),
 	m_pia_1(*this, PIA1_TAG),
-	m_dac(*this, DAC_TAG),
-	m_wave(*this, WAVE_TAG),
+	m_dac(*this, "dac"),
+	m_sbs(*this, "sbs"),
+	m_screen(*this, SCREEN_TAG),
 	m_cococart(*this, CARTRIDGE_TAG),
 	m_ram(*this, RAM_TAG),
 	m_cassette(*this, "cassette"),
+	m_floating(*this, FLOATING_TAG),
 	m_rs232(*this, RS232_TAG),
 	m_vhd_0(*this, VHD0_TAG),
 	m_vhd_1(*this, VHD1_TAG),
 	m_beckerport(*this, DWSOCK_TAG),
-	m_beckerportconfig(*this, BECKERPORT_TAG)
+	m_beckerportconfig(*this, BECKERPORT_TAG),
+	m_irqs(*this, "irqs"),
+	m_firqs(*this, "firqs"),
+	m_keyboard(*this, "row%u", 0),
+	m_joystick_type_control(*this, CTRL_SEL_TAG),
+	m_joystick_hires_control(*this, HIRES_INTF_TAG),
+	m_in_floating_bus_read(false)
 {
 }
 
@@ -119,18 +125,10 @@ void coco_state::analog_port_start(analog_input_t *analog, const char *rx_tag, c
 
 void coco_state::device_start()
 {
-	/* call base device_start */
+	// call base device_start
 	driver_device::device_start();
 
-	/* look up keyboard ports */
-	for (int i = 0; i < ARRAY_LENGTH(m_keyboard); i++)
-	{
-		char name[32];
-		snprintf(name, ARRAY_LENGTH(name), "row%d", i);
-		m_keyboard[i] =  ioport(name);
-	}
-
-	/* look up analog ports */
+	// look up analog ports
 	analog_port_start(&m_joystick, JOYSTICK_RX_TAG, JOYSTICK_RY_TAG,
 		JOYSTICK_LX_TAG, JOYSTICK_LY_TAG, JOYSTICK_BUTTONS_TAG);
 	analog_port_start(&m_rat_mouse, RAT_MOUSE_RX_TAG, RAT_MOUSE_RY_TAG,
@@ -138,19 +136,17 @@ void coco_state::device_start()
 	analog_port_start(&m_diecom_lightgun, DIECOM_LIGHTGUN_RX_TAG, DIECOM_LIGHTGUN_RY_TAG,
 		DIECOM_LIGHTGUN_LX_TAG, DIECOM_LIGHTGUN_LY_TAG, DIECOM_LIGHTGUN_BUTTONS_TAG);
 
-	/* look up miscellaneous controls */
-	m_joystick_type_control =  ioport(CTRL_SEL_TAG);
-	m_joystick_hires_control =  ioport(HIRES_INTF_TAG);
-
-	/* timers */
+	// timers
 	m_hiresjoy_transition_timer[0] = timer_alloc(TIMER_HIRES_JOYSTICK_X);
 	m_hiresjoy_transition_timer[1] = timer_alloc(TIMER_HIRES_JOYSTICK_Y);
 	m_diecom_lightgun_timer = timer_alloc(TIMER_DIECOM_LIGHTGUN);
 
-	/* cart base update */
-	m_cococart->set_cart_base_update(cococart_base_update_delegate(FUNC(coco_state::update_cart_base), this));
+	// cart slot
+	m_cococart->set_cart_base_update(cococart_base_update_delegate(&coco_state::update_cart_base, this));
+	m_cococart->set_line_delay(cococart_slot_device::line::NMI, 12);    // 12 allowed one more instruction to finished after the line is pulled
+	m_cococart->set_line_delay(cococart_slot_device::line::HALT, 6);    // 6 allowed one more instruction to finished after the line is pulled
 
-	/* save state support */
+	// save state support
 	save_item(NAME(m_dac_output));
 	save_item(NAME(m_hiresjoy_ca));
 	save_item(NAME(m_dclg_previous_bit));
@@ -159,12 +155,6 @@ void coco_state::device_start()
 	save_item(NAME(m_dclg_state));
 	save_item(NAME(m_dclg_timer));
 	save_item(NAME(m_vhd_select));
-
-	/* set up disassembly override */
-	if (m_maincpu->debug())
-	{
-		m_maincpu->debug()->set_dasm_override(dasm_override);
-	}
 
 	// miscellaneous
 	m_in_floating_bus_read = false;
@@ -203,9 +193,11 @@ void coco_state::device_timer(emu_timer &timer, device_timer_id id, int param, v
 {
 	switch(id)
 	{
+		case TIMER_DIECOM_LIGHTGUN:
+			m_dclg_output_h |= 0x02;
+			[[fallthrough]];
 		case TIMER_HIRES_JOYSTICK_X:
 		case TIMER_HIRES_JOYSTICK_Y:
-		case TIMER_DIECOM_LIGHTGUN:
 			poll_keyboard();
 			break;
 	}
@@ -259,9 +251,9 @@ void coco_state::device_timer(emu_timer &timer, device_timer_id id, int param, v
 // CoCo 1/2 you should get $F627 instead.
 //-------------------------------------------------
 
-UINT8 coco_state::floating_bus_read(void)
+uint8_t coco_state::floating_bus_read()
 {
-	UINT8 result;
+	uint8_t result;
 
 	// this method calls program.read_byte() - therefore we run the risk of a stack overflow if we don't check for
 	// a reentrant invocation
@@ -276,25 +268,22 @@ UINT8 coco_state::floating_bus_read(void)
 		// prevent stack overflows
 		m_in_floating_bus_read = true;
 
-		// set up the ability to read address spaces
-		address_space &program = m_maincpu->space(AS_PROGRAM);
-
 		// get the previous and current PC
-		UINT16 prev_pc = m_maincpu->pcbase();
-		UINT16 pc = m_maincpu->pc();
+		uint16_t prev_pc = m_maincpu->pcbase();
+		uint16_t pc = m_maincpu->pc();
 
 		// get the byte; and skip over header bytes
-		UINT8 byte = program.read_byte(prev_pc);
+		uint8_t byte = m_maincpu->space().read_byte(prev_pc);
 		if ((byte == 0x10) || (byte == 0x11))
-			byte = program.read_byte(++prev_pc);
+			byte = m_maincpu->space().read_byte(++prev_pc);
 
 		// check to see if the opcode specifies the indexed addressing mode, and the secondary byte
 		// specifies no-offset
 		bool is_nooffset_indexed = (((byte & 0xF0) == 0x60) || ((byte & 0xF0) == 0xA0) || ((byte & 0xF0) == 0xE0))
-			&& ((program.read_byte(prev_pc + 1) & 0xBF) == 0x84);
+			&& ((m_maincpu->space().read_byte(prev_pc + 1) & 0xBF) == 0x84);
 
 		// finally read the byte
-		result = program.read_byte(is_nooffset_indexed ? pc : 0xFFFF);
+		result = m_maincpu->space().read_byte(is_nooffset_indexed ? pc : 0xFFFF);
 
 		// we're done reading
 		m_in_floating_bus_read = false;
@@ -302,6 +291,31 @@ UINT8 coco_state::floating_bus_read(void)
 	return result;
 }
 
+
+//-------------------------------------------------
+//  floating_space_read
+//-------------------------------------------------
+
+uint8_t coco_state::floating_space_read(offs_t offset)
+{
+	// The "floating space" is intended to be a catch all for address space
+	// not handled by the normal CoCo infrastructure, but may be read directly
+	// by cartridge hardware and other miscellany
+	//
+	// Most of the time, the read below will result in floating_bus_read() being
+	// invoked
+	return m_floating->read8(offset);
+}
+
+
+//-------------------------------------------------
+//  floating_space_write
+//-------------------------------------------------
+
+void coco_state::floating_space_write(offs_t offset, uint8_t data)
+{
+	m_floating->write8(offset, data);
+}
 
 
 /***************************************************************************
@@ -316,32 +330,10 @@ UINT8 coco_state::floating_bus_read(void)
 ***************************************************************************/
 
 //-------------------------------------------------
-//  ff00_write
-//-------------------------------------------------
-
-READ8_MEMBER( coco_state::ff00_read )
-{
-	return m_pia_0->read(space, offset, mem_mask);
-}
-
-
-
-//-------------------------------------------------
-//  ff00_write
-//-------------------------------------------------
-
-WRITE8_MEMBER( coco_state::ff00_write )
-{
-	m_pia_0->write(space, offset, data, mem_mask);
-}
-
-
-
-//-------------------------------------------------
 //  pia0_pa_w
 //-------------------------------------------------
 
-WRITE8_MEMBER( coco_state::pia0_pa_w )
+void coco_state::pia0_pa_w(uint8_t data)
 {
 	poll_keyboard();
 }
@@ -352,7 +344,7 @@ WRITE8_MEMBER( coco_state::pia0_pa_w )
 //  pia0_pb_w
 //-------------------------------------------------
 
-WRITE8_MEMBER( coco_state::pia0_pb_w )
+void coco_state::pia0_pb_w(uint8_t data)
 {
 	poll_keyboard();
 }
@@ -382,29 +374,6 @@ WRITE_LINE_MEMBER( coco_state::pia0_cb2_w )
 }
 
 
-
-//-------------------------------------------------
-//  pia0_irq_a
-//-------------------------------------------------
-
-WRITE_LINE_MEMBER( coco_state::pia0_irq_a )
-{
-	recalculate_irq();
-}
-
-
-
-//-------------------------------------------------
-//  pia0_irq_b
-//-------------------------------------------------
-
-WRITE_LINE_MEMBER( coco_state::pia0_irq_b )
-{
-	recalculate_irq();
-}
-
-
-
 /***************************************************************************
   PIA1 ($FF20-$FF3F) (Chip U4)
 
@@ -426,24 +395,13 @@ WRITE_LINE_MEMBER( coco_state::pia0_irq_b )
 ***************************************************************************/
 
 //-------------------------------------------------
-//  ff20_read
-//-------------------------------------------------
-
-READ8_MEMBER( coco_state::ff20_read )
-{
-	return m_pia_1->read(space, offset, mem_mask);
-}
-
-
-
-//-------------------------------------------------
 //  ff20_write
 //-------------------------------------------------
 
-WRITE8_MEMBER( coco_state::ff20_write )
+void coco_state::ff20_write(offs_t offset, uint8_t data)
 {
 	/* write to the PIA */
-	m_pia_1->write(space, offset, data, mem_mask);
+	pia_1().write(offset, data);
 
 	/* we have to do this to do something that approximates the cartridge Q line behavior */
 	m_cococart->twiddle_q_lines();
@@ -455,7 +413,7 @@ WRITE8_MEMBER( coco_state::ff20_write )
 //  pia1_pa_r
 //-------------------------------------------------
 
-READ8_MEMBER( coco_state::pia1_pa_r )
+uint8_t coco_state::pia1_pa_r()
 {
 	// Port A: we need to specify the values of all the lines, regardless of whether
 	// they are in input or output mode in the DDR
@@ -471,11 +429,11 @@ READ8_MEMBER( coco_state::pia1_pa_r )
 //  serial-in (PB0)
 //-------------------------------------------------
 
-READ8_MEMBER( coco_state::pia1_pb_r )
+uint8_t coco_state::pia1_pb_r()
 {
 	// Port B: lines in output mode are handled automatically by the PIA object.
 	// We only need to specify the input lines here
-	UINT32 ram_size = m_ram->size();
+	uint32_t ram_size = m_ram->size();
 
 	//  For the CoCo 1, the logic has been changed to only select 64K rams
 	//  if there is more than 16K of memory, as the Color Basic 1.0 rom
@@ -484,7 +442,7 @@ READ8_MEMBER( coco_state::pia1_pb_r )
 	//  to access 32K of ram, and also allows the cocoe driver to access
 	//  the full 64K, as this uses Color Basic 1.2, which can configure 64K rams
 	bool memory_sense = (ram_size >= 0x4000 && ram_size <= 0x7FFF)
-		|| (ram_size >= 0x8000 && (m_pia_0->b_output() & 0x40));
+		|| (ram_size >= 0x8000 && (pia_0().b_output() & 0x40));
 
 	// serial in (PB0)
 	bool serial_in = (m_rs232 != nullptr) && (m_rs232->rxd_r() ? true : false);
@@ -500,7 +458,7 @@ READ8_MEMBER( coco_state::pia1_pb_r )
 //  pia1_pa_w
 //-------------------------------------------------
 
-WRITE8_MEMBER( coco_state::pia1_pa_w )
+void coco_state::pia1_pa_w(uint8_t data)
 {
 	pia1_pa_changed(data);
 }
@@ -511,7 +469,7 @@ WRITE8_MEMBER( coco_state::pia1_pa_w )
 //  pia1_pb_w
 //-------------------------------------------------
 
-WRITE8_MEMBER( coco_state::pia1_pb_w )
+void coco_state::pia1_pb_w(uint8_t data)
 {
 	pia1_pb_changed(data);
 }
@@ -541,29 +499,6 @@ WRITE_LINE_MEMBER( coco_state::pia1_cb2_w )
 }
 
 
-
-//-------------------------------------------------
-//  pia1_firq_a
-//-------------------------------------------------
-
-WRITE_LINE_MEMBER( coco_state::pia1_firq_a )
-{
-	recalculate_firq();
-}
-
-
-
-//-------------------------------------------------
-//  pia1_firq_b
-//-------------------------------------------------
-
-WRITE_LINE_MEMBER( coco_state::pia1_firq_b )
-{
-	recalculate_firq();
-}
-
-
-
 /***************************************************************************
   CPU INTERRUPTS
 
@@ -583,56 +518,6 @@ WRITE_LINE_MEMBER( coco_state::pia1_firq_b )
   -----
 
 ***************************************************************************/
-
-//-------------------------------------------------
-//  irq_get_line - gets the value of the FIRQ line
-//  passed into the CPU
-//-------------------------------------------------
-
-bool coco_state::irq_get_line(void)
-{
-	return m_pia_0->irq_a_state() || m_pia_0->irq_b_state();
-}
-
-
-
-//-------------------------------------------------
-//  recalculate_irq
-//-------------------------------------------------
-
-void coco_state::recalculate_irq(void)
-{
-	bool line = irq_get_line();
-	if (LOG_INTERRUPTS)
-		logerror("recalculate_irq():  line=%d\n", line ? 1 : 0);
-	m_maincpu->set_input_line(M6809_IRQ_LINE, line ? ASSERT_LINE : CLEAR_LINE);
-}
-
-
-
-//-------------------------------------------------
-//  firq_get_line - gets the value of the FIRQ line
-//  passed into the CPU
-//-------------------------------------------------
-
-bool coco_state::firq_get_line(void)
-{
-	return m_pia_1->irq_a_state() || m_pia_1->irq_b_state();
-}
-
-
-
-//-------------------------------------------------
-//  recalculate_firq
-//-------------------------------------------------
-
-void coco_state::recalculate_firq(void)
-{
-	bool line = firq_get_line();
-	if (LOG_INTERRUPTS)
-		logerror("recalculate_firq():  line=%d\n", line ? 1 : 0);
-	m_maincpu->set_input_line(M6809_FIRQ_LINE, line ? ASSERT_LINE : CLEAR_LINE);
-}
 
 
 
@@ -673,28 +558,20 @@ coco_state::soundmux_status_t coco_state::soundmux_status(void)
 
 void coco_state::update_sound(void)
 {
-	/* PB1 will drive the sound output.  This is a rarely
-	 * used single bit sound mode. It is always connected thus
-	 * cannot be disabled.
-	 *
-	 * Source:  Page 31 of the Tandy Color Computer Serice Manual
-	 */
-	UINT8 single_bit_sound = (m_pia_1->b_output() & 0x02) ? 0x80 : 0x00;
-
 	/* determine the sound mux status */
 	soundmux_status_t status = soundmux_status();
 
 	/* the SC77526 DAC chip internally biases the AC-coupled sound inputs for Cassette and Cartridge at the midpoint of the 3.9v output range */
 	bool bCassSoundEnable = (status == (SOUNDMUX_ENABLE | SOUNDMUX_SEL1));
 	bool bCartSoundEnable = (status == (SOUNDMUX_ENABLE | SOUNDMUX_SEL2));
-	UINT8 cassette_sound = (bCassSoundEnable ? 0x40 : 0);
-	UINT8 cart_sound = (bCartSoundEnable ? 0x40 : 0);
+	uint8_t cassette_sound = (bCassSoundEnable ? 0x20 : 0);
+	uint8_t cart_sound = (bCartSoundEnable ? 0x20 : 0);
 
 	/* determine the value to send to the DAC (this is used by the Joystick read as well as audio out) */
-	m_dac_output = (m_pia_1->a_output() & 0xFC) >> 2;
-	UINT8 dac_sound =  (status == SOUNDMUX_ENABLE ? m_dac_output << 1 : 0);
+	m_dac_output = (pia_1().a_output() & 0xFC) >> 2;
+	uint8_t dac_sound =  (status == SOUNDMUX_ENABLE ? m_dac_output : 0);
 
-	/* The CoCo uses a single DAC for both audio output and joystick axis position measurement.
+	/* The CoCo uses the main 6-bit DAC for both audio output and joystick axis position measurement.
 	 * To avoid introducing artifacts while reading the axis positions, some software will disable
 	 * the audio output while using the DAC to read the joystick.  On a real CoCo, there is a low-pass
 	 * filter (C57 on the CoCo 3) which will hold the audio level for very short periods of time,
@@ -708,14 +585,16 @@ void coco_state::update_sound(void)
 		m_analog_audio_level = dac_sound + cassette_sound + cart_sound;
 	}
 
-	m_dac->write_unsigned8(single_bit_sound + m_analog_audio_level);
+	m_dac->write(m_analog_audio_level);
 
 	/* determine the cassette sound status */
 	cassette_state cas_sound = bCassSoundEnable ? CASSETTE_SPEAKER_ENABLED : CASSETTE_SPEAKER_MUTED;
 	m_cassette->change_state(cas_sound, CASSETTE_MASK_SPEAKER);
 
 	/* determine the cartridge sound status */
-	m_cococart->cart_set_line(COCOCART_LINE_SOUND_ENABLE, bCartSoundEnable ? COCOCART_LINE_VALUE_ASSERT : COCOCART_LINE_VALUE_CLEAR);
+	m_cococart->set_line_value(
+		cococart_slot_device::line::SOUND_ENABLE,
+		bCartSoundEnable ? cococart_slot_device::line_value::ASSERT : cococart_slot_device::line_value::CLEAR);
 }
 
 
@@ -728,7 +607,7 @@ void coco_state::update_sound(void)
 coco_state::joystick_type_t coco_state::joystick_type(int index)
 {
 	assert((index == 0) || (index == 1));
-	return (m_joystick_type_control != nullptr)
+	return m_joystick_type_control
 		? (joystick_type_t) ((m_joystick_type_control->read() >> (index * 4)) & 0x0F)
 		: JOYSTICK_NONE;
 }
@@ -741,7 +620,7 @@ coco_state::joystick_type_t coco_state::joystick_type(int index)
 
 coco_state::hires_type_t coco_state::hires_interface_type(void)
 {
-	return (m_joystick_hires_control != nullptr)
+	return m_joystick_hires_control
 		? (hires_type_t) m_joystick_hires_control->read()
 		: HIRES_NONE;
 }
@@ -782,7 +661,7 @@ bool coco_state::is_joystick_hires(int joystick_index)
 //  poll_joystick
 //-------------------------------------------------
 
-void coco_state::poll_joystick(bool *joyin, UINT8 *buttons)
+bool coco_state::poll_joystick(void)
 {
 	static const analog_input_t s_empty = {};
 	static const int joy_rat_table[] = {15, 24, 42, 33 };
@@ -795,8 +674,7 @@ void coco_state::poll_joystick(bool *joyin, UINT8 *buttons)
 	/* determine the JOYIN value */
 	const analog_input_t *analog;
 	bool joyin_value;
-	UINT8 joyval;
-	int dclg_vpos;
+	uint32_t joyval;
 	switch(joystick_type(joystick))
 	{
 		case JOYSTICK_NORMAL:
@@ -813,7 +691,7 @@ void coco_state::poll_joystick(bool *joyin, UINT8 *buttons)
 			{
 				/* conventional joystick */
 				joyval = analog->input(joystick, joystick_axis);
-				joyin_value = (dac_output() <= (joyval >> 2));
+				joyin_value = (dac_output() <= (joyval / 10));
 			}
 			break;
 
@@ -825,25 +703,7 @@ void coco_state::poll_joystick(bool *joyin, UINT8 *buttons)
 
 		case JOYSTICK_DIECOM_LIGHT_GUN:
 			analog = &m_diecom_lightgun;
-
-			/* get the vertical position of the lightgun */
-			dclg_vpos = analog->input(joystick, 1);
-
-			if (machine().first_screen()->vpos() == dclg_vpos)
-			{
-				/* if gun is pointing at the current scan line, set hit bit and cache horizontal timer value */
-				m_dclg_output_h |= 0x02;
-				m_dclg_timer = analog->input(joystick, 0) << 1;
-			}
-
 			joyin_value = (dac_output() <= dclg_table[(joystick_axis ? m_dclg_output_h : m_dclg_output_v) & 0x03]);
-
-			if (m_dclg_state == 7)
-			{
-				/* while in state 7, prepare to check next video frame for a hit */
-				attotime dclg_time = machine().first_screen()->time_until_pos(dclg_vpos, 0);
-				m_diecom_lightgun_timer->adjust(dclg_time);
-			}
 			break;
 
 		default: /* None */
@@ -852,10 +712,64 @@ void coco_state::poll_joystick(bool *joyin, UINT8 *buttons)
 			break;
 	}
 
-	*joyin = joyin_value;
-	*buttons = analog->buttons();
+	return joyin_value;
 }
 
+
+//-------------------------------------------------
+//  poll_joystick_buttons
+//-------------------------------------------------
+
+uint8_t coco_state::poll_joystick_buttons(void)
+{
+	static const analog_input_t s_empty = {};
+	const analog_input_t *analog;
+	uint8_t joy0, joy1;
+
+	switch(joystick_type(0))
+	{
+		case JOYSTICK_NORMAL:
+			analog = &m_joystick;
+			break;
+
+		case JOYSTICK_RAT_MOUSE:
+			analog = &m_rat_mouse;
+			break;
+
+		case JOYSTICK_DIECOM_LIGHT_GUN:
+			analog = &m_diecom_lightgun;
+			break;
+
+		default: /* None */
+			analog = &s_empty;
+			break;
+	}
+
+	joy0 = analog->buttons();
+
+	switch(joystick_type(1))
+	{
+		case JOYSTICK_NORMAL:
+			analog = &m_joystick;
+			break;
+
+		case JOYSTICK_RAT_MOUSE:
+			analog = &m_rat_mouse;
+			break;
+
+		case JOYSTICK_DIECOM_LIGHT_GUN:
+			analog = &m_diecom_lightgun;
+			break;
+
+		default: /* None */
+			analog = &s_empty;
+			break;
+	}
+
+	joy1 = analog->buttons();
+
+	return joy0 | joy1;
+}
 
 
 //-------------------------------------------------
@@ -864,23 +778,17 @@ void coco_state::poll_joystick(bool *joyin, UINT8 *buttons)
 
 void coco_state::poll_keyboard(void)
 {
-	UINT8 pia0_pb = m_pia_0->b_output();
-	UINT8 pia0_pb_z = m_pia_0->port_b_z_mask();
+	uint8_t pia0_pb = pia_0().b_output();
 
-	UINT8 pia0_pa = 0x7F;
-	UINT8 pia0_pa_z = 0x7F;
+	uint8_t pia0_pa = 0x7F;
 
 	/* poll the keyboard, and update PA6-PA0 accordingly*/
-	for (int i = 0; i < ARRAY_LENGTH(m_keyboard); i++)
+	for (unsigned i = 0; i < m_keyboard.size(); i++)
 	{
 		int value = m_keyboard[i]->read();
 		if ((value | pia0_pb) != 0xFF)
 		{
 			pia0_pa &= ~(0x01 << i);
-		}
-		if ((value | pia0_pb_z) != 0xFF)
-		{
-			pia0_pa_z &= ~(0x01 << i);
 		}
 	}
 
@@ -889,18 +797,18 @@ void coco_state::poll_keyboard(void)
 
 	/* poll the joystick (*/
 	bool joyin;
-	UINT8 buttons;
-	poll_joystick(&joyin, &buttons);
+	joyin = poll_joystick();
 
 	/* PA7 comes from JOYIN */
 	pia0_pa |= joyin ? 0x80 : 0x00;
 
 	/* mask out the buttons */
+	uint8_t buttons;
+	buttons = poll_joystick_buttons();
 	pia0_pa &= ~buttons;
-	pia0_pa_z &= ~buttons;
 
 	/* and write the result to PIA0 */
-	update_keyboard_input(pia0_pa, pia0_pa_z);
+	update_keyboard_input(pia0_pa);
 }
 
 
@@ -910,9 +818,9 @@ void coco_state::poll_keyboard(void)
 //  on the CoCo 3 controls a GIME input
 //-------------------------------------------------
 
-void coco_state::update_keyboard_input(UINT8 value, UINT8 z)
+void coco_state::update_keyboard_input(uint8_t value)
 {
-	m_pia_0->set_a_input(value, z);
+	pia_0().set_a_input(value);
 }
 
 
@@ -929,41 +837,54 @@ void coco_state::update_cassout(int cassout)
 
 
 //-------------------------------------------------
-//  diecom_lightgun_clock - called the diecom
-//  lightgun undergoes a high to low transition
+//  diecom_lightgun_clock - called when the diecom
+//  lightgun undergoes a clock transition
 //-------------------------------------------------
 
 void coco_state::diecom_lightgun_clock(void)
 {
-	/* clock Diecom Light gun interface on a high to low transistion */
 	m_dclg_state++;
-	m_dclg_state &= 0x0f;
+	m_dclg_state &= 0x1f;
+	int half_state = m_dclg_state >> 1;
 
 	/* clear hit bit for every transistion */
 	m_dclg_output_h &= ~0x02;
+	m_dclg_output_v = 0;
 
-	if (m_dclg_state > 7)
+	if (half_state > 7)
 	{
-		/* Bit shift timer data on state 8 thru 15 */
-		if (((m_dclg_timer >> (m_dclg_state - 8 + 1)) & 0x01) == 1)
+		/* bit shift timer data on half states 8 thru 15 */
+		if (m_dclg_timer & (1 << (half_state - 7)))
+		{
 			m_dclg_output_v |= 0x01;
-		else
-			m_dclg_output_v &= ~0x01;
+		}
 
-		/* Bit 9 of timer is only avaiable if state == 8*/
-		if (m_dclg_state == 8 && (((m_dclg_timer >> 9) & 0x01) == 1))
+		/* bit 9 of timer is only available if half state == 8 */
+		if (half_state == 8 && (m_dclg_timer & (1 << 8)))
 			m_dclg_output_v |= 0x02;
-		else
-			m_dclg_output_v &= ~0x02;
 	}
 
-	/* During state 15, this bit is high. */
-	if (m_dclg_state == 15)
+	/* during half state 15, this bit is high. */
+	/* it is used to sync the state of the converter box with the computer */
+	if (half_state == 15)
 		m_dclg_output_h |= 0x01;
 	else
 		m_dclg_output_h &= ~0x01;
-}
 
+	/* while in full state 15, prepare to check next video frame for a hit */
+	if (m_dclg_state == 15)
+	{
+		int dclg_vpos = m_diecom_lightgun.input(sel2() ? 1 : 0, 1) - 12;
+		m_dclg_timer = m_diecom_lightgun.input(sel2() ? 1 : 0, 0);
+		int horizontal_pixel = ((m_dclg_timer - 105.) / (420. - 110.0)) * (639.0 - 0.0) + 0.0;
+		attotime dclg_time = m_screen->time_until_pos(dclg_vpos, horizontal_pixel);
+		m_diecom_lightgun_timer->adjust(dclg_time);
+	}
+	else
+	{
+		m_diecom_lightgun_timer->adjust(attotime::never);
+	}
+}
 
 
 //-------------------------------------------------
@@ -975,10 +896,11 @@ void coco_state::update_prinout(bool prinout)
 	if ((joystick_type(0) == JOYSTICK_DIECOM_LIGHT_GUN) || (joystick_type(1) == JOYSTICK_DIECOM_LIGHT_GUN))
 	{
 		/* printer port is connected to diecom light gun */
-		if (m_dclg_previous_bit && !prinout)
+		if (m_dclg_previous_bit != prinout)
 		{
 			diecom_lightgun_clock();
 		}
+
 		m_dclg_previous_bit = prinout;
 	}
 	else
@@ -997,7 +919,7 @@ void coco_state::update_prinout(bool prinout)
 //  pia1_pa_changed - called when PIA1 PA changes
 //-------------------------------------------------
 
-void coco_state::pia1_pa_changed(UINT8 data)
+void coco_state::pia1_pa_changed(uint8_t data)
 {
 	update_sound();     // DAC is connected to PIA1 PA2-PA7
 	poll_keyboard();
@@ -1011,9 +933,15 @@ void coco_state::pia1_pa_changed(UINT8 data)
 //  pia1_pb_changed - called when PIA1 PB changes
 //-------------------------------------------------
 
-void coco_state::pia1_pb_changed(UINT8 data)
+void coco_state::pia1_pb_changed(uint8_t data)
 {
-	update_sound();     // singe_bit_sound is connected to PIA1 PB1
+	/* PB1 will drive the sound output.  This is a rarely
+	 * used single bit sound mode. It is always connected thus
+	 * cannot be disabled.
+	 *
+	 * Source:  Page 31 of the Tandy Color Computer Serice Manual
+	 */
+	m_sbs->write(BIT(data, 1));
 }
 
 
@@ -1058,7 +986,7 @@ void coco_state::poll_hires_joystick(void)
 			break;
 
 		case HIRES_RIGHT_COCOMAX3:
-			newvalue = (m_pia_0->a_output() & 0x04);
+			newvalue = (pia_0().a_output() & 0x04);
 			joystick_index = 0;
 			is_cocomax3 = true;
 			break;
@@ -1070,7 +998,7 @@ void coco_state::poll_hires_joystick(void)
 			break;
 
 		case HIRES_LEFT_COCOMAX3:
-			newvalue = (m_pia_0->a_output() & 0x08);
+			newvalue = (pia_0().a_output() & 0x08);
 			joystick_index = 1;
 			is_cocomax3 = true;
 			break;
@@ -1091,10 +1019,10 @@ void coco_state::poll_hires_joystick(void)
 		if (m_hiresjoy_ca && !newvalue)
 		{
 			/* hi to lo */
-			double value = m_joystick.input(joystick_index, axis) / 255.0;
-			value *= is_cocomax3 ? 2500.0 : 4160.0;
+			double value = m_joystick.input(joystick_index, axis) / 640.0;
+			value *= is_cocomax3 ? 2500.0 : 4250.0;
 			value += is_cocomax3 ? 400.0 : 592.0;
-			attotime duration = m_maincpu->clocks_to_attotime((UINT64) value) * 8;
+			attotime duration = m_maincpu->clocks_to_attotime((uint64_t) value) * 2;
 			m_hiresjoy_transition_timer[axis]->adjust(duration);
 		}
 		else if (!m_hiresjoy_ca && newvalue)
@@ -1116,7 +1044,7 @@ void coco_state::poll_hires_joystick(void)
 //  current_vhd
 //-------------------------------------------------
 
-coco_vhd_image_device *coco_state::current_vhd(void)
+coco_vhd_image_device *coco_state::current_vhd()
 {
 	switch(m_vhd_select)
 	{
@@ -1132,9 +1060,9 @@ coco_vhd_image_device *coco_state::current_vhd(void)
 //  ff60_read
 //-------------------------------------------------
 
-READ8_MEMBER( coco_state::ff60_read )
+uint8_t coco_state::ff60_read(offs_t offset)
 {
-	UINT8 result;
+	uint8_t result;
 
 	if ((current_vhd() != nullptr) && (offset >= 32) && (offset <= 37))
 	{
@@ -1142,7 +1070,7 @@ READ8_MEMBER( coco_state::ff60_read )
 	}
 	else
 	{
-		result = floating_bus_read();
+		result = floating_space_read(0xFF60 + offset);
 	}
 
 	return result;
@@ -1154,7 +1082,7 @@ READ8_MEMBER( coco_state::ff60_read )
 //  ff60_write
 //-------------------------------------------------
 
-WRITE8_MEMBER( coco_state::ff60_write )
+void coco_state::ff60_write(offs_t offset, uint8_t data)
 {
 	if ((current_vhd() != nullptr) && (offset >= 32) && (offset <= 37))
 	{
@@ -1164,6 +1092,10 @@ WRITE8_MEMBER( coco_state::ff60_write )
 	{
 		/* writes to $FF86 will switch the VHD */
 		m_vhd_select = data;
+	}
+	else
+	{
+		floating_space_write(0xFF60 + offset, data);
 	}
 }
 
@@ -1177,32 +1109,30 @@ WRITE8_MEMBER( coco_state::ff60_write )
 //  ff40_read
 //-------------------------------------------------
 
-READ8_MEMBER( coco_state::ff40_read )
+uint8_t coco_state::ff40_read(offs_t offset)
 {
-	if (offset >= 1 && offset <= 2 && m_beckerportconfig && m_beckerportconfig->read() == 1)
+	if (offset >= 1 && offset <= 2 && m_beckerportconfig.read_safe(0) == 1)
 	{
-		return m_beckerport->read(space, offset-1, mem_mask);
+		return m_beckerport->read(offset-1);
 	}
 
-	return m_cococart->read(space, offset, mem_mask);
+	return m_cococart->scs_read(offset);
 }
-
 
 
 //-------------------------------------------------
 //  ff40_write
 //-------------------------------------------------
 
-WRITE8_MEMBER( coco_state::ff40_write )
+void coco_state::ff40_write(offs_t offset, uint8_t data)
 {
-	if (offset >= 1 && offset <= 2 && m_beckerportconfig && m_beckerportconfig->read() == 1)
+	if (offset >= 1 && offset <= 2 && m_beckerportconfig.read_safe(0) == 1)
 	{
-		return m_beckerport->write(space, offset-1, data, mem_mask);
+		return m_beckerport->write(offset-1, data);
 	}
 
-	m_cococart->write(space, offset, data, mem_mask);
+	m_cococart->scs_write(offset, data);
 }
-
 
 
 //-------------------------------------------------
@@ -1211,8 +1141,19 @@ WRITE8_MEMBER( coco_state::ff40_write )
 
 void coco_state::cart_w(bool state)
 {
-	m_pia_1->cb1_w(state);
+	pia_1().cb1_w(state);
 }
+
+
+//-------------------------------------------------
+//  cartridge_space
+//-------------------------------------------------
+
+address_space &coco_state::cartridge_space()
+{
+	return m_floating->space(0);
+}
+
 
 /***************************************************************************
   DISASSEMBLY OVERRIDE (OS9 syscalls)
@@ -1220,93 +1161,90 @@ void coco_state::cart_w(bool state)
 
 static const char *const os9syscalls[] =
 {
-	"F$Link",          /* Link to Module */
-	"F$Load",          /* Load Module from File */
-	"F$UnLink",        /* Unlink Module */
-	"F$Fork",          /* Start New Process */
-	"F$Wait",          /* Wait for Child Process to Die */
-	"F$Chain",         /* Chain Process to New Module */
-	"F$Exit",          /* Terminate Process */
-	"F$Mem",           /* Set Memory Size */
-	"F$Send",          /* Send Signal to Process */
-	"F$Icpt",          /* Set Signal Intercept */
-	"F$Sleep",         /* Suspend Process */
-	"F$SSpd",          /* Suspend Process */
-	"F$ID",            /* Return Process ID */
-	"F$SPrior",        /* Set Process Priority */
-	"F$SSWI",          /* Set Software Interrupt */
-	"F$PErr",          /* Print Error */
-	"F$PrsNam",        /* Parse Pathlist Name */
-	"F$CmpNam",        /* Compare Two Names */
-	"F$SchBit",        /* Search Bit Map */
-	"F$AllBit",        /* Allocate in Bit Map */
-	"F$DelBit",        /* Deallocate in Bit Map */
-	"F$Time",          /* Get Current Time */
-	"F$STime",         /* Set Current Time */
-	"F$CRC",           /* Generate CRC */
-	"F$GPrDsc",        /* get Process Descriptor copy */
-	"F$GBlkMp",        /* get System Block Map copy */
-	"F$GModDr",        /* get Module Directory copy */
-	"F$CpyMem",        /* Copy External Memory */
-	"F$SUser",         /* Set User ID number */
-	"F$UnLoad",        /* Unlink Module by name */
-	"F$Alarm",         /* Color Computer Alarm Call (system wide) */
+	"F$Link",          // Link to Module
+	"F$Load",          // Load Module from File
+	"F$UnLink",        // Unlink Module
+	"F$Fork",          // Start New Process
+	"F$Wait",          // Wait for Child Process to Die
+	"F$Chain",         // Chain Process to New Module
+	"F$Exit",          // Terminate Process
+	"F$Mem",           // Set Memory Size
+	"F$Send",          // Send Signal to Process
+	"F$Icpt",          // Set Signal Intercept
+	"F$Sleep",         // Suspend Process
+	"F$SSpd",          // Suspend Process
+	"F$ID",            // Return Process ID
+	"F$SPrior",        // Set Process Priority
+	"F$SSWI",          // Set Software Interrupt
+	"F$PErr",          // Print Error
+	"F$PrsNam",        // Parse Pathlist Name
+	"F$CmpNam",        // Compare Two Names
+	"F$SchBit",        // Search Bit Map
+	"F$AllBit",        // Allocate in Bit Map
+	"F$DelBit",        // Deallocate in Bit Map
+	"F$Time",          // Get Current Time
+	"F$STime",         // Set Current Time
+	"F$CRC",           // Generate CRC
+	"F$GPrDsc",        // get Process Descriptor copy
+	"F$GBlkMp",        // get System Block Map copy
+	"F$GModDr",        // get Module Directory copy
+	"F$CpyMem",        // Copy External Memory
+	"F$SUser",         // Set User ID number
+	"F$UnLoad",        // Unlink Module by name
+	"F$Alarm",         // Color Computer Alarm Call (system wide)
 	nullptr,
 	nullptr,
-	"F$NMLink",        /* Color Computer NonMapping Link */
-	"F$NMLoad",        /* Color Computer NonMapping Load */
+	"F$NMLink",        // Color Computer NonMapping Link
+	"F$NMLoad",        // Color Computer NonMapping Load
 	nullptr,
 	nullptr,
-	"F$TPS",           /* Return System's Ticks Per Second */
-	"F$TimAlm",        /* COCO individual process alarm call */
-	"F$VIRQ",          /* Install/Delete Virtual IRQ */
-	"F$SRqMem",        /* System Memory Request */
-	"F$SRtMem",        /* System Memory Return */
-	"F$IRQ",           /* Enter IRQ Polling Table */
-	"F$IOQu",          /* Enter I/O Queue */
-	"F$AProc",         /* Enter Active Process Queue */
-	"F$NProc",         /* Start Next Process */
-	"F$VModul",        /* Validate Module */
-	"F$Find64",        /* Find Process/Path Descriptor */
-	"F$All64",         /* Allocate Process/Path Descriptor */
-	"F$Ret64",         /* Return Process/Path Descriptor */
-	"F$SSvc",          /* Service Request Table Initialization */
-	"F$IODel",         /* Delete I/O Module */
-	"F$SLink",         /* System Link */
-	"F$Boot",          /* Bootstrap System */
-	"F$BtMem",         /* Bootstrap Memory Request */
-	"F$GProcP",        /* Get Process ptr */
-	"F$Move",          /* Move Data (low bound first) */
-	"F$AllRAM",        /* Allocate RAM blocks */
-	"F$AllImg",        /* Allocate Image RAM blocks */
-	"F$DelImg",        /* Deallocate Image RAM blocks */
-	"F$SetImg",        /* Set Process DAT Image */
-	"F$FreeLB",        /* Get Free Low Block */
-	"F$FreeHB",        /* Get Free High Block */
-	"F$AllTsk",        /* Allocate Process Task number */
-	"F$DelTsk",        /* Deallocate Process Task number */
-	"F$SetTsk",        /* Set Process Task DAT registers */
-	"F$ResTsk",        /* Reserve Task number */
-	"F$RelTsk",        /* Release Task number */
-	"F$DATLog",        /* Convert DAT Block/Offset to Logical */
-	"F$DATTmp",        /* Make temporary DAT image (Obsolete) */
-	"F$LDAXY",         /* Load A [X,[Y]] */
-	"F$LDAXYP",        /* Load A [X+,[Y]] */
-	"F$LDDDXY",        /* Load D [D+X,[Y]] */
-	"F$LDABX",         /* Load A from 0,X in task B */
-	"F$STABX",         /* Store A at 0,X in task B */
-	"F$AllPrc",        /* Allocate Process Descriptor */
-	"F$DelPrc",        /* Deallocate Process Descriptor */
-	"F$ELink",         /* Link using Module Directory Entry */
-	"F$FModul",        /* Find Module Directory Entry */
-	"F$MapBlk",        /* Map Specific Block */
-	"F$ClrBlk",        /* Clear Specific Block */
-	"F$DelRAM",        /* Deallocate RAM blocks */
-	"F$GCMDir",        /* Pack module directory */
-	"F$AlHRam",        /* Allocate HIGH RAM Blocks */
-	nullptr,
-	nullptr,
-	nullptr,
+	"F$TPS",           // Return System's Ticks Per Second
+	"F$TimAlm",        // COCO individual process alarm call
+	"F$VIRQ",          // Install/Delete Virtual IRQ
+	"F$SRqMem",        // System Memory Request
+	"F$SRtMem",        // System Memory Return
+	"F$IRQ",           // Enter IRQ Polling Table
+	"F$IOQu",          // Enter I/O Queue
+	"F$AProc",         // Enter Active Process Queue
+	"F$NProc",         // Start Next Process
+	"F$VModul",        // Validate Module
+	"F$Find64",        // Find Process/Path Descriptor
+	"F$All64",         // Allocate Process/Path Descriptor
+	"F$Ret64",         // Return Process/Path Descriptor
+	"F$SSvc",          // Service Request Table Initialization
+	"F$IODel",         // Delete I/O Module
+	"F$SLink",         // System Link
+	"F$Boot",          // Bootstrap System
+	"F$BtMem",         // Bootstrap Memory Request
+	"F$GProcP",        // Get Process ptr
+	"F$Move",          // Move Data (low bound first)
+	"F$AllRAM",        // Allocate RAM blocks
+	"F$AllImg",        // Allocate Image RAM blocks
+	"F$DelImg",        // Deallocate Image RAM blocks
+	"F$SetImg",        // Set Process DAT Image
+	"F$FreeLB",        // Get Free Low Block
+	"F$FreeHB",        // Get Free High Block
+	"F$AllTsk",        // Allocate Process Task number
+	"F$DelTsk",        // Deallocate Process Task number
+	"F$SetTsk",        // Set Process Task DAT registers
+	"F$ResTsk",        // Reserve Task number
+	"F$RelTsk",        // Release Task number
+	"F$DATLog",        // Convert DAT Block/Offset to Logical
+	"F$DATTmp",        // Make temporary DAT image (Obsolete)
+	"F$LDAXY",         // Load A [X,[Y]]
+	"F$LDAXYP",        // Load A [X+,[Y]]
+	"F$LDDDXY",        // Load D [D+X,[Y]]
+	"F$LDABX",         // Load A from 0,X in task B
+	"F$STABX",         // Store A at 0,X in task B
+	"F$AllPrc",        // Allocate Process Descriptor
+	"F$DelPrc",        // Deallocate Process Descriptor
+	"F$ELink",         // Link using Module Directory Entry
+	"F$FModul",        // Find Module Directory Entry
+	"F$MapBlk",        // Map Specific Block
+	"F$ClrBlk",        // Clear Specific Block
+	"F$DelRAM",        // Deallocate RAM blocks
+	"F$GCMDir",        // Pack module directory
+	"F$AlHRam",        // Allocate HIGH RAM Blocks
 	nullptr,
 	nullptr,
 	nullptr,
@@ -1332,8 +1270,11 @@ static const char *const os9syscalls[] =
 	nullptr,
 	nullptr,
 	nullptr,
-	"F$RegDmp",        /* Ron Lammardo's debugging register dump call */
-	"F$NVRAM",         /* Non Volatile RAM (RTC battery backed static) read/write */
+	nullptr,
+	nullptr,
+	nullptr,
+	"F$RegDmp",        // Ron Lammardo's debugging register dump call
+	"F$NVRAM",         // Non Volatile RAM (RTC battery backed static) read/write
 	nullptr,
 	nullptr,
 	nullptr,
@@ -1348,40 +1289,51 @@ static const char *const os9syscalls[] =
 	nullptr,
 	nullptr,
 	nullptr,
-	"I$Attach",        /* Attach I/O Device */
-	"I$Detach",        /* Detach I/O Device */
-	"I$Dup",           /* Duplicate Path */
-	"I$Create",        /* Create New File */
-	"I$Open",          /* Open Existing File */
-	"I$MakDir",        /* Make Directory File */
-	"I$ChgDir",        /* Change Default Directory */
-	"I$Delete",        /* Delete File */
-	"I$Seek",          /* Change Current Position */
-	"I$Read",          /* Read Data */
-	"I$Write",         /* Write Data */
-	"I$ReadLn",        /* Read Line of ASCII Data */
-	"I$WritLn",        /* Write Line of ASCII Data */
-	"I$GetStt",        /* Get Path Status */
-	"I$SetStt",        /* Set Path Status */
-	"I$Close",         /* Close Path */
-	"I$DeletX"         /* Delete from current exec dir */
+	"I$Attach",        // Attach I/O Device
+	"I$Detach",        // Detach I/O Device
+	"I$Dup",           // Duplicate Path
+	"I$Create",        // Create New File
+	"I$Open",          // Open Existing File
+	"I$MakDir",        // Make Directory File
+	"I$ChgDir",        // Change Default Directory
+	"I$Delete",        // Delete File
+	"I$Seek",          // Change Current Position
+	"I$Read",          // Read Data
+	"I$Write",         // Write Data
+	"I$ReadLn",        // Read Line of ASCII Data
+	"I$WritLn",        // Write Line of ASCII Data
+	"I$GetStt",        // Get Path Status
+	"I$SetStt",        // Set Path Status
+	"I$Close",         // Close Path
+	"I$DeletX"         // Delete from current exec dir
 };
 
 
-offs_t coco_state::dasm_override(device_t &device, char *buffer, offs_t pc, const UINT8 *oprom, const UINT8 *opram, int options)
+//-------------------------------------------------
+//  os9_dasm_override
+//-------------------------------------------------
+
+offs_t coco_state::os9_dasm_override(std::ostream &stream, offs_t pc, const util::disasm_interface::data_buffer &opcodes, const util::disasm_interface::data_buffer &params)
 {
 	unsigned call;
-	unsigned result = 0;
+	offs_t result = 0;
 
-	/* check for SWI2 instruction */
-	if ((oprom[0] == 0x10) && (oprom[1] == 0x3F))
+	// Microware OS-9 (on the CoCo) and a number of other 6x09 based systems used the SWI2
+	// instruction for syscalls.  This checks for a SWI2 and looks up the syscall as appropriate
+	if ((opcodes.r8(pc) == 0x10) && (opcodes.r8(pc+1) == 0x3F))
 	{
-		call = oprom[2];
-		if ((call < ARRAY_LENGTH(os9syscalls)) && os9syscalls[call])
+		call = opcodes.r8(pc+2);
+		if ((call < std::size(os9syscalls)) && (os9syscalls[call] != nullptr))
 		{
-			sprintf(buffer, "OS9   %s", os9syscalls[call]);
+			util::stream_format(stream, "OS9   %s", os9syscalls[call]);
 			result = 3;
 		}
 	}
 	return result;
+}
+
+
+offs_t coco_state::dasm_override(std::ostream &stream, offs_t pc, const util::disasm_interface::data_buffer &opcodes, const util::disasm_interface::data_buffer &params)
+{
+	return os9_dasm_override(stream, pc, opcodes, params);
 }

@@ -16,10 +16,10 @@
  *
  *************************************/
 
-UINT8 mw8080bw_state::vpos_to_vysnc_chain_counter( int vpos )
+uint8_t mw8080bw_state::vpos_to_vysnc_chain_counter( int vpos )
 {
 	/* convert from a vertical position to the actual values on the vertical sync counters */
-	UINT8 counter;
+	uint8_t counter;
 	int vblank = (vpos >= MW8080BW_VBSTART);
 
 	if (vblank)
@@ -31,7 +31,7 @@ UINT8 mw8080bw_state::vpos_to_vysnc_chain_counter( int vpos )
 }
 
 
-int mw8080bw_state::vysnc_chain_counter_to_vpos( UINT8 counter, int vblank )
+int mw8080bw_state::vysnc_chain_counter_to_vpos( uint8_t counter, int vblank )
 {
 	/* convert from the vertical sync counters to an actual vertical position */
 	int vpos;
@@ -45,19 +45,18 @@ int mw8080bw_state::vysnc_chain_counter_to_vpos( UINT8 counter, int vblank )
 }
 
 
-TIMER_CALLBACK_MEMBER(mw8080bw_state::mw8080bw_interrupt_callback)
+TIMER_CALLBACK_MEMBER(mw8080bw_state::interrupt_trigger)
 {
-	UINT8 next_counter;
-	int next_vpos;
-	int next_vblank;
-
-	/* compute vector and set the interrupt line */
 	int vpos = m_screen->vpos();
-	UINT8 counter = vpos_to_vysnc_chain_counter(vpos);
-	UINT8 vector = 0xc7 | ((counter & 0x40) >> 2) | ((~counter & 0x40) >> 3);
-	m_maincpu->set_input_line_and_vector(0, HOLD_LINE, vector);
+	uint8_t counter = vpos_to_vysnc_chain_counter(vpos);
+
+	m_maincpu->set_input_line(0, ASSERT_LINE);
+
+	m_interrupt_time = machine().time();
 
 	/* set up for next interrupt */
+	uint8_t next_counter;
+	int next_vblank;
 	if (counter == MW8080BW_INT_TRIGGER_COUNT_1)
 	{
 		next_counter = MW8080BW_INT_TRIGGER_COUNT_2;
@@ -69,14 +68,28 @@ TIMER_CALLBACK_MEMBER(mw8080bw_state::mw8080bw_interrupt_callback)
 		next_vblank = MW8080BW_INT_TRIGGER_VBLANK_1;
 	}
 
-	next_vpos = vysnc_chain_counter_to_vpos(next_counter, next_vblank);
+	int next_vpos = vysnc_chain_counter_to_vpos(next_counter, next_vblank);
 	m_interrupt_timer->adjust(m_screen->time_until_pos(next_vpos));
+}
+
+
+IRQ_CALLBACK_MEMBER(mw8080bw_state::interrupt_vector)
+{
+	int vpos = m_screen->vpos();
+	// MAME scheduling quirks cause this to happen more often than you might think, in fact far too often
+	if (machine().time() < m_interrupt_time)
+		vpos++;
+	uint8_t counter = vpos_to_vysnc_chain_counter(vpos);
+	uint8_t vector = 0xc7 | ((counter & 0x40) >> 2) | ((~counter & 0x40) >> 3);
+
+	m_maincpu->set_input_line(0, CLEAR_LINE);
+	return vector;
 }
 
 
 void mw8080bw_state::mw8080bw_create_interrupt_timer(  )
 {
-	m_interrupt_timer = machine().scheduler().timer_alloc(timer_expired_delegate(FUNC(mw8080bw_state::mw8080bw_interrupt_callback),this));
+	m_interrupt_timer = machine().scheduler().timer_alloc(timer_expired_delegate(FUNC(mw8080bw_state::interrupt_trigger),this));
 }
 
 
@@ -84,6 +97,8 @@ void mw8080bw_state::mw8080bw_start_interrupt_timer(  )
 {
 	int vpos = vysnc_chain_counter_to_vpos(MW8080BW_INT_TRIGGER_COUNT_1, MW8080BW_INT_TRIGGER_VBLANK_1);
 	m_interrupt_timer->adjust(m_screen->time_until_pos(vpos));
+
+	m_interrupt_time = attotime::zero;
 }
 
 
@@ -94,7 +109,7 @@ void mw8080bw_state::mw8080bw_start_interrupt_timer(  )
  *
  *************************************/
 
-MACHINE_START_MEMBER(mw8080bw_state,mw8080bw)
+void mw8080bw_state::machine_start()
 {
 	mw8080bw_create_interrupt_timer();
 }

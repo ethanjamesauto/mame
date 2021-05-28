@@ -2,7 +2,7 @@
 // copyright-holders:Nicola Salmoria
 /***************************************************************************
 
-    namcops2.c
+    namcops2.cpp
 
     Namco System 246 / System 256 games (Sony PS2 based)
 
@@ -51,6 +51,7 @@ Mobile Suit Gundam SEED O.M.N.I. vs Z.A.F.T..... 123456X  SED1 DVD0            D
 M.S. Gundam SEED Destiny O.M.N.I. vs Z.A.F.T. II 123456X  GSD1 DVD0            DVD          NM00034   GSD1 Ver.A             Banpresto 2006                % #
 Mobile Suit Z Gundam A.E.U.G. vs Titans......... 123456X  ZGA1 DVD0            DVD          NM00013   ZGA1 Ver.A             Capcom/Banpresto 2003         %
 Mobile Suit Z Gundam DX A.E.U.G. vs Titans...... 12X456X  ZDX1 DVD0            DVD          NM00017   ZDX1 Ver.A             Capcom/Banpresto 2003         %
+Moto GP......................................... XXXX56X  MGP1004-NA-HDD0-A    HDD (80GB)   NM00039   MGP1004-NA-B           Namco 2007                    HDD: Western Digital WD800BB (note only about 2.5GB is used and the remainder of the drive is 00-filled)
 Netchuu Pro Yakyuu 2002......................... X23XXXX  NPY1 CD0B            CD           NM00009   NPY Ver.B              Namco 2002
 Pride GP 2003................................... 123456X  PR21 DVD0            DVD          NM00011   PR21 Ver.A             Capcom 2003                   %
 Quiz Mobile Suit Gundam Tou Senshi.............. 123456X  QG1                  DVD          NM00030   QG1 Ver.A              Banpresto 2006                %
@@ -66,17 +67,17 @@ Soul Calibur II................................. 123456X  SC21 DVD0            D
 Soul Calibur III Arcade Edition................. 123456X  SC31001-NA-DVD0-A    DVD          NM00031   SC31001-NA-A           Namco 2005                    \
    "                           ................. 123456X  SC31001-NA-DVD0-B    DVD          NM00031   SC31001-NA-A           Namco 2005                    / # % @
 Sukusuku Inufuku 2 / The Dog Luck 2............. 123456X  HM-IN2               CD           NM00037   IN2 Ver.A              Hampster/Video System 2007
-Super Dragonball Z / Chou Dragonball Z.......... XXXX56X  DB1                  DVD          NM00027   DB1 Ver.B              Banpresto 2005
+Super Dragon Ball Z / Chou Dragon Ball Z........ XXXX56X  DB1                  DVD          NM00027   DB1 Ver.B              Banpresto 2005
 Taiko no Tatsujin 7............................. ------X  TK71 DVD0            DVD          NM00023   TK71 Ver.A             Namco 2005
 Taiko no Tatsujin 8............................. ------X  TK8100-1-NA-DVD0-A   DVD          NM00033   TK81001-NA-A           Namco 2006
-Taiko No Tatsujin 9............................. XXXX56X  TK9100-1-NA-DVD0-A   DVD          NM00038   TK91001-NA-A           Namco 2006
-Taiko No Tatsujin 10............................ XXXX56X  TK10100-1-NA-DVD0-A  DVD          NM00041   TK101001-NA-A          Namco 2007
-Taiko No Tatsujin 11............................ ------X *TK11100-1-NA-DVD0-A *DVD         *NM00044  *TK111001-NA-A          Namco 2008
-Taiko No Tatsujin 12............................ ------X *TK12-HA             *HDD         *NM00051  *TK121001-NA-A          Namco 2008
-Taiko No Tatsujin 12 More....................... ------X *TK12200-1-NA-HDD-A  *HDD         *NM00051  *TK121001-NA-A          Namco 2008
-Taiko No Tatsujin 13............................ ------X *TK1301-NA-HDD0-A1   *HDD         *NM00056  *TK1301-NA-A            Namco 2009
-Taiko No Tatsujin 14............................ ------X *T141001-NA-HDD0-A   *HDD         *NM00057  *TK141001-NA-A          Namco 2010
-Taiko No Tatsujin 14 More....................... ------X *T141002-NA-HDD0-A   *HDD         *NM00057  *TK141002-NA-A          Namco 2010
+Taiko no Tatsujin 9............................. XXXX56X  TK9100-1-NA-DVD0-A   DVD          NM00038   TK91001-NA-A           Namco 2006
+Taiko no Tatsujin 10............................ XXXX56X  TK10100-1-NA-DVD0-A  DVD          NM00041   TK101001-NA-A          Namco 2007
+Taiko no Tatsujin 11............................ ------X *TK11100-1-NA-DVD0-A *DVD         *NM00044  *TK111001-NA-A          Namco 2008
+Taiko no Tatsujin 12............................ ------X *TK12-HA             *HDD         *NM00051  *TK121001-NA-A          Namco 2008
+Taiko no Tatsujin 12 More....................... ------X *TK12200-1-NA-HDD-A  *HDD         *NM00051  *TK121001-NA-A          Namco 2008
+Taiko no Tatsujin 13............................ ------X *TK1301-NA-HDD0-A1   *HDD         *NM00056  *TK1301-NA-A            Namco 2009
+Taiko no Tatsujin 14............................ ------X *T141001-NA-HDD0-A   *HDD         *NM00057  *TK141001-NA-A          Namco 2010
+Taiko no Tatsujin 14 More....................... ------X *T141002-NA-HDD0-A   *HDD         *NM00057  *TK141002-NA-A          Namco 2010
 Technic Beat.................................... ------X *TNB1 DVD0           *DVD         *NM000??  *TNB1 Ver.A             Arika 2002
 Tekken 4........................................ 1234XXX  TEF1 DVD0            DVD          NM00004   TEF1 Ver.A             Namco 2001                    \
    "    ........................................ 1234XXX  TEF1 DVD0            DVD          NM00004   TEF1 Ver.C             Namco 2001                    |
@@ -110,13 +111,11 @@ Zoids Infinity Ex Plus.......................... ------X  M9006907A Ver.2.10J  H
 ? - unknown info
 
 Unused NM000xx numbers:
-NM00039 ?
 NM00045 ?
 NM00046 ?
 NM00047 ?
 NM00049 ?
 NM00050 ?
-NM00052 ?
 NM00053 ?
 NM00054 ?
 NM00055 ?
@@ -872,7 +871,9 @@ Notes:
 
 #include "emu.h"
 #include "cpu/mips/mips3.h"
-#include "cpu/mips/r3000.h"
+#include "cpu/mips/mips1.h"
+#include "emupal.h"
+#include "screen.h"
 
 
 class namcops2_state : public driver_device
@@ -883,12 +884,16 @@ public:
 			m_maincpu(*this, "maincpu")
 	{ }
 
-	UINT32 screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect);
+	void system246(machine_config &config);
+	void system256(machine_config &config);
 
-protected:
+private:
+	uint32_t screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect);
+
+	void ps2_map(address_map &map);
 
 	// devices
-	required_device<cpu_device> m_maincpu;
+	required_device<mips3_device> m_maincpu;
 
 	// driver_device overrides
 	virtual void video_start() override;
@@ -899,37 +904,41 @@ void namcops2_state::video_start()
 {
 }
 
-UINT32 namcops2_state::screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
+uint32_t namcops2_state::screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
 {
 	return 0;
 }
 
-static ADDRESS_MAP_START(ps2_map, AS_PROGRAM, 32, namcops2_state)
-	AM_RANGE(0x00000000, 0x01ffffff) AM_RAM // 32 MB RAM in consumer PS2s, do these have more?
-	AM_RANGE(0x1fc00000, 0x1fdfffff) AM_ROM AM_REGION("bios", 0)
-ADDRESS_MAP_END
+void namcops2_state::ps2_map(address_map &map)
+{
+	map(0x00000000, 0x01ffffff).ram(); // 32 MB RAM in consumer PS2s, do these have more?
+	map(0x1fc00000, 0x1fdfffff).rom().region("bios", 0);
+}
 
 static INPUT_PORTS_START( system246 )
 INPUT_PORTS_END
 
-static MACHINE_CONFIG_START( system246, namcops2_state )
-	MCFG_CPU_ADD("maincpu", R5000LE, 294000000) // actually R5900 @ 294 MHz
-	MCFG_MIPS3_ICACHE_SIZE(16384)
-	MCFG_MIPS3_DCACHE_SIZE(16384)
-	MCFG_CPU_PROGRAM_MAP(ps2_map)
+void namcops2_state::system246(machine_config &config)
+{
+	R5000LE(config, m_maincpu, 294000000); // actually R5900 @ 294 MHz
+	m_maincpu->set_icache_size(16384);
+	m_maincpu->set_dcache_size(16384);
+	m_maincpu->set_addrmap(AS_PROGRAM, &namcops2_state::ps2_map);
 
 	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_REFRESH_RATE(60)
-	MCFG_SCREEN_UPDATE_DRIVER(namcops2_state, screen_update)
-	MCFG_SCREEN_SIZE(640, 480)
-	MCFG_SCREEN_VISIBLE_AREA(0, 639, 0, 479)
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_RASTER));
+	screen.set_refresh_hz(60);
+	screen.set_screen_update(FUNC(namcops2_state::screen_update));
+	screen.set_size(640, 480);
+	screen.set_visarea(0, 639, 0, 479);
 
-	MCFG_PALETTE_ADD("palette", 65536)
-MACHINE_CONFIG_END
+	PALETTE(config, "palette").set_entries(65536);
+}
 
-static MACHINE_CONFIG_DERIVED( system256, system246 )
-MACHINE_CONFIG_END
+void namcops2_state::system256(machine_config &config)
+{
+	system246(config);
+}
 
 #define SYSTEM246_BIOS  \
 	ROM_LOAD( "r27v1602f.7d", 0x000000, 0x200000, CRC(2b2e41a2) SHA1(f0a74bbcaf801f3fd0b7002ebd0118564aae3528) )
@@ -938,7 +947,7 @@ MACHINE_CONFIG_END
 	ROM_LOAD( "r27v1602f.8g", 0x000000, 0x200000, CRC(b2a8eeb6) SHA1(bc4fb4e1e53adbd92385f1726bd69663ff870f1e) )
 
 ROM_START( sys246 )
-	ROM_REGION(0x200000, "bios", 0)
+	ROM_REGION32_LE(0x200000, "bios", 0)
 	SYSTEM246_BIOS
 
 	ROM_REGION(0x840000, "key", ROMREGION_ERASE00)
@@ -946,7 +955,7 @@ ROM_START( sys246 )
 ROM_END
 
 ROM_START( sys256 )
-	ROM_REGION(0x200000, "bios", 0)
+	ROM_REGION32_LE(0x200000, "bios", 0)
 	SYSTEM256_BIOS
 
 	ROM_REGION(0x840000, "key", ROMREGION_ERASE00)
@@ -954,7 +963,7 @@ ROM_START( sys256 )
 ROM_END
 
 ROM_START( dragchrn )
-	ROM_REGION(0x200000, "bios", 0)
+	ROM_REGION32_LE(0x200000, "bios", 0)
 	SYSTEM246_BIOS
 
 	ROM_REGION(0x840000, "key", ROMREGION_ERASE00)
@@ -965,7 +974,7 @@ ROM_START( dragchrn )
 ROM_END
 
 ROM_START( fghtjam )
-	ROM_REGION(0x200000, "bios", 0)
+	ROM_REGION32_LE(0x200000, "bios", 0)
 	SYSTEM246_BIOS
 
 	ROM_REGION(0x840000, "key", ROMREGION_ERASE00)
@@ -977,7 +986,7 @@ ROM_START( fghtjam )
 ROM_END
 
 ROM_START( kinniku )
-	ROM_REGION(0x200000, "bios", 0)
+	ROM_REGION32_LE(0x200000, "bios", 0)
 	SYSTEM256_BIOS
 
 	ROM_REGION(0x840000, "key", ROMREGION_ERASE00)
@@ -989,7 +998,7 @@ ROM_START( kinniku )
 ROM_END
 
 ROM_START( kinniku2 )
-	ROM_REGION(0x200000, "bios", 0)
+	ROM_REGION32_LE(0x200000, "bios", 0)
 	SYSTEM256_BIOS
 
 	ROM_REGION(0x840000, "key", ROMREGION_ERASE00)
@@ -1001,7 +1010,7 @@ ROM_START( kinniku2 )
 ROM_END
 
 ROM_START( netchu02 )
-	ROM_REGION(0x200000, "bios", 0)
+	ROM_REGION32_LE(0x200000, "bios", 0)
 	SYSTEM246_BIOS
 
 	ROM_REGION(0x840000, "key", ROMREGION_ERASE00)
@@ -1013,7 +1022,7 @@ ROM_START( netchu02 )
 ROM_END
 
 ROM_START( soulclb2 )
-	ROM_REGION(0x200000, "bios", 0)
+	ROM_REGION32_LE(0x200000, "bios", 0)
 	SYSTEM246_BIOS
 
 	ROM_REGION(0x840000, "key", ROMREGION_ERASE00)
@@ -1025,7 +1034,7 @@ ROM_START( soulclb2 )
 ROM_END
 
 ROM_START( soulcl2a )
-	ROM_REGION(0x200000, "bios", 0)
+	ROM_REGION32_LE(0x200000, "bios", 0)
 	SYSTEM246_BIOS
 
 	ROM_REGION(0x840000, "key", ROMREGION_ERASE00)
@@ -1037,7 +1046,7 @@ ROM_START( soulcl2a )
 ROM_END
 
 ROM_START( soulcl2b )
-	ROM_REGION(0x200000, "bios", 0)
+	ROM_REGION32_LE(0x200000, "bios", 0)
 	SYSTEM246_BIOS
 
 	ROM_REGION(0x840000, "key", ROMREGION_ERASE00)
@@ -1049,7 +1058,7 @@ ROM_START( soulcl2b )
 ROM_END
 
 ROM_START( soulcl2w )
-	ROM_REGION(0x200000, "bios", 0)
+	ROM_REGION32_LE(0x200000, "bios", 0)
 	SYSTEM246_BIOS
 
 	// Guru says this disc works with any SC2x key
@@ -1062,7 +1071,7 @@ ROM_START( soulcl2w )
 ROM_END
 
 ROM_START( soulclb3 )
-	ROM_REGION(0x200000, "bios", 0)
+	ROM_REGION32_LE(0x200000, "bios", 0)
 	SYSTEM246_BIOS
 
 	ROM_REGION(0x840000, "key", ROMREGION_ERASE00)
@@ -1074,7 +1083,7 @@ ROM_START( soulclb3 )
 ROM_END
 
 ROM_START( soulclb3a )
-	ROM_REGION(0x200000, "bios", 0)
+	ROM_REGION32_LE(0x200000, "bios", 0)
 	SYSTEM246_BIOS
 
 	ROM_REGION(0x840000, "key", ROMREGION_ERASE00)
@@ -1085,7 +1094,7 @@ ROM_START( soulclb3a )
 ROM_END
 
 ROM_START( soulclb3b )
-	ROM_REGION(0x200000, "bios", 0)
+	ROM_REGION32_LE(0x200000, "bios", 0)
 	SYSTEM246_BIOS
 
 	ROM_REGION(0x840000, "key", ROMREGION_ERASE00)
@@ -1097,7 +1106,7 @@ ROM_START( soulclb3b )
 ROM_END
 
 ROM_START( sukuinuf )
-	ROM_REGION(0x200000, "bios", 0)
+	ROM_REGION32_LE(0x200000, "bios", 0)
 	SYSTEM246_BIOS
 
 	ROM_REGION(0x840000, "key", ROMREGION_ERASE00)
@@ -1109,7 +1118,7 @@ ROM_START( sukuinuf )
 ROM_END
 
 ROM_START( taiko7 )
-	ROM_REGION(0x200000, "bios", 0)
+	ROM_REGION32_LE(0x200000, "bios", 0)
 	SYSTEM246_BIOS
 
 	ROM_REGION(0x840000, "key", ROMREGION_ERASE00)
@@ -1121,7 +1130,7 @@ ROM_START( taiko7 )
 ROM_END
 
 ROM_START( taiko8 )
-	ROM_REGION(0x200000, "bios", 0)
+	ROM_REGION32_LE(0x200000, "bios", 0)
 	SYSTEM246_BIOS
 
 	ROM_REGION(0x840000, "key", ROMREGION_ERASE00)
@@ -1133,7 +1142,7 @@ ROM_START( taiko8 )
 ROM_END
 
 ROM_START( zoidsinf )
-	ROM_REGION(0x200000, "bios", 0)
+	ROM_REGION32_LE(0x200000, "bios", 0)
 	SYSTEM246_BIOS
 
 	ROM_REGION(0x840000, "key", ROMREGION_ERASE00)
@@ -1145,7 +1154,7 @@ ROM_START( zoidsinf )
 ROM_END
 
 ROM_START( zoidiexp )
-	ROM_REGION(0x200000, "bios", 0)
+	ROM_REGION32_LE(0x200000, "bios", 0)
 	SYSTEM246_BIOS
 
 	ROM_REGION(0x840000, "key", ROMREGION_ERASE00)
@@ -1157,7 +1166,7 @@ ROM_START( zoidiexp )
 ROM_END
 
 ROM_START( taiko9 )
-	ROM_REGION(0x200000, "bios", 0)
+	ROM_REGION32_LE(0x200000, "bios", 0)
 	SYSTEM256_BIOS
 
 	ROM_REGION(0x840000, "key", ROMREGION_ERASE00)
@@ -1170,7 +1179,7 @@ ROM_END
 
 // only known System Super 256 game; if more surface the BIOS should be moved out like 246/256
 ROM_START( timecrs4 )
-	ROM_REGION(0x200000, "bios", 0)
+	ROM_REGION32_LE(0x200000, "bios", 0)
 	ROM_LOAD( "r27v1602f.8g", 0x000000, 0x200000, CRC(b2a8eeb6) SHA1(bc4fb4e1e53adbd92385f1726bd69663ff870f1e) )
 
 	ROM_REGION(0x840000, "key", ROMREGION_ERASE00)
@@ -1181,8 +1190,19 @@ ROM_START( timecrs4 )
 	DISK_IMAGE_READONLY( "tsf1-ha", 0, SHA1(8ba7eec0d1add2192a115b295a32265c8d084aea) )
 ROM_END
 
+ROM_START( timecrs4j )
+	ROM_REGION32_LE(0x200000, "bios", 0)
+	ROM_LOAD( "r27v1602f.8g", 0x000000, 0x200000, CRC(b2a8eeb6) SHA1(bc4fb4e1e53adbd92385f1726bd69663ff870f1e) )
+
+	ROM_REGION(0x840000, "key", ROMREGION_ERASE00)
+	ROM_LOAD( "tsf1001-na-a.ic002", 0x000000, 0x840000, CRC(e115a2ae) SHA1(73cbb166d105809e9454e77e386c5c9b4010719c) )
+
+	DISK_REGION("dvd")  // HDD for this game
+	DISK_IMAGE_READONLY( "tsf1-ha", 0, SHA1(8ba7eec0d1add2192a115b295a32265c8d084aea) )
+ROM_END
+
 ROM_START( taiko10 )
-	ROM_REGION(0x200000, "bios", 0)
+	ROM_REGION32_LE(0x200000, "bios", 0)
 	SYSTEM256_BIOS
 
 	ROM_REGION(0x840000, "key", ROMREGION_ERASE00)
@@ -1194,7 +1214,7 @@ ROM_START( taiko10 )
 ROM_END
 
 ROM_START( tekken4 )
-	ROM_REGION(0x200000, "bios", 0)
+	ROM_REGION32_LE(0x200000, "bios", 0)
 	SYSTEM246_BIOS
 
 	ROM_REGION(0x840000, "key", ROMREGION_ERASE00)
@@ -1206,7 +1226,7 @@ ROM_START( tekken4 )
 ROM_END
 
 ROM_START( tekken4a )
-	ROM_REGION(0x200000, "bios", 0)
+	ROM_REGION32_LE(0x200000, "bios", 0)
 	SYSTEM246_BIOS
 
 	ROM_REGION(0x840000, "key", ROMREGION_ERASE00)
@@ -1218,7 +1238,7 @@ ROM_START( tekken4a )
 ROM_END
 
 ROM_START( tekken4b )
-	ROM_REGION(0x200000, "bios", 0)
+	ROM_REGION32_LE(0x200000, "bios", 0)
 	SYSTEM246_BIOS
 
 	ROM_REGION(0x840000, "key", ROMREGION_ERASE00)
@@ -1230,7 +1250,7 @@ ROM_START( tekken4b )
 ROM_END
 
 ROM_START( tekken4c )
-	ROM_REGION(0x200000, "bios", 0)
+	ROM_REGION32_LE(0x200000, "bios", 0)
 	SYSTEM246_BIOS
 
 	ROM_REGION(0x840000, "key", ROMREGION_ERASE00)
@@ -1241,7 +1261,7 @@ ROM_START( tekken4c )
 ROM_END
 
 ROM_START( tekken51 )
-	ROM_REGION(0x200000, "bios", 0)
+	ROM_REGION32_LE(0x200000, "bios", 0)
 	SYSTEM256_BIOS
 
 	ROM_REGION(0x840000, "key", ROMREGION_ERASE00)
@@ -1253,7 +1273,7 @@ ROM_START( tekken51 )
 ROM_END
 
 ROM_START( tekken51b )
-	ROM_REGION(0x200000, "bios", 0)
+	ROM_REGION32_LE(0x200000, "bios", 0)
 	SYSTEM256_BIOS
 
 	// this key should work with Tekken 5 or 5.1 discs, according to Guru
@@ -1266,7 +1286,7 @@ ROM_START( tekken51b )
 ROM_END
 
 ROM_START( tekken5d )
-	ROM_REGION(0x200000, "bios", 0)
+	ROM_REGION32_LE(0x200000, "bios", 0)
 	SYSTEM256_BIOS
 
 	ROM_REGION(0x840000, "key", ROMREGION_ERASE00)
@@ -1278,7 +1298,7 @@ ROM_START( tekken5d )
 ROM_END
 
 ROM_START( zgundm )
-	ROM_REGION(0x200000, "bios", 0)
+	ROM_REGION32_LE(0x200000, "bios", 0)
 	SYSTEM246_BIOS
 
 	ROM_REGION(0x840000, "key", ROMREGION_ERASE00)
@@ -1290,7 +1310,7 @@ ROM_START( zgundm )
 ROM_END
 
 ROM_START( prdgp03 )
-	ROM_REGION(0x200000, "bios", 0)
+	ROM_REGION32_LE(0x200000, "bios", 0)
 	SYSTEM246_BIOS
 
 	ROM_REGION(0x840000, "key", ROMREGION_ERASE00)
@@ -1302,7 +1322,7 @@ ROM_START( prdgp03 )
 ROM_END
 
 ROM_START( timecrs3 )
-	ROM_REGION(0x200000, "bios", 0)
+	ROM_REGION32_LE(0x200000, "bios", 0)
 	SYSTEM246_BIOS
 
 	ROM_REGION(0x840000, "key", ROMREGION_ERASE00)
@@ -1311,10 +1331,13 @@ ROM_START( timecrs3 )
 
 	DISK_REGION("dvd")
 	DISK_IMAGE_READONLY( "tst1dvd0", 0, SHA1(f8a447d9a4224282516bea590f5217c751bdc4ae) )
+
+	ROM_REGION(0x40000, "iocpu", 0)   // NAMCO V291 I/O PCB, HD643334 H8/3334 MCU code
+	ROM_LOAD("tss-iopc.ic3", 0x000000, 0x040000, CRC(bb112fe0) SHA1(6fa5dc81d258137c1b1ad427d49d136d0bbf53fa) )
 ROM_END
 
 ROM_START( timecrs3e )
-	ROM_REGION(0x200000, "bios", 0)
+	ROM_REGION32_LE(0x200000, "bios", 0)
 	SYSTEM246_BIOS
 
 	ROM_REGION(0x840000, "key", ROMREGION_ERASE00)
@@ -1323,10 +1346,13 @@ ROM_START( timecrs3e )
 
 	DISK_REGION("dvd")
 	DISK_IMAGE_READONLY( "tst1dvd0", 0, SHA1(f8a447d9a4224282516bea590f5217c751bdc4ae) )
+
+	ROM_REGION(0x40000, "iocpu", 0)   // NAMCO V291 I/O PCB, HD643334 H8/3334 MCU code
+	ROM_LOAD("tss-iopc.ic3", 0x000000, 0x040000, CRC(bb112fe0) SHA1(6fa5dc81d258137c1b1ad427d49d136d0bbf53fa) )
 ROM_END
 
 ROM_START( zgundmdx )
-	ROM_REGION(0x200000, "bios", 0)
+	ROM_REGION32_LE(0x200000, "bios", 0)
 	SYSTEM246_BIOS
 
 	ROM_REGION(0x840000, "key", ROMREGION_ERASE00)
@@ -1338,19 +1364,19 @@ ROM_START( zgundmdx )
 ROM_END
 
 ROM_START( gundzaft )
-	ROM_REGION(0x200000, "bios", 0)
+	ROM_REGION32_LE(0x200000, "bios", 0)
 	SYSTEM246_BIOS
 
 	ROM_REGION(0x840000, "key", ROMREGION_ERASE00)
 	ROM_LOAD( "sed1vera.ic002", 0x000000, 0x800000, CRC(db52309d) SHA1(3e325dfa68dadcc2f9abd9d338e47ffa511e73f8) )
 	ROM_LOAD( "sed1vera_spr.ic002", 0x800000, 0x040000, CRC(12641e0e) SHA1(64b7655f95a2e5e41b5a89998f2b858dab05ae75) )
 
-	DISK_REGION("dvd")
+	DISK_REGION("dvd") // V-050853
 	DISK_IMAGE_READONLY( "sed1dvd0", 0, SHA1(0e6db61d94f66a4ddd7d4a3013983a838d256c5d) )
 ROM_END
 
 ROM_START( cobrata )
-	ROM_REGION(0x200000, "bios", 0)
+	ROM_REGION32_LE(0x200000, "bios", 0)
 	SYSTEM246_BIOS
 
 	ROM_REGION(0x840000, "key", ROMREGION_ERASE00)
@@ -1362,20 +1388,20 @@ ROM_START( cobrata )
 ROM_END
 
 ROM_START( rrvac )
-	ROM_REGION(0x200000, "bios", 0)
+	ROM_REGION32_LE(0x200000, "bios", 0)
 	SYSTEM246_BIOS
 
 	ROM_REGION(0x840000, "key", ROMREGION_ERASE00)
 	ROM_LOAD( "rrv3vera.ic002", 0x000000, 0x800000, CRC(dd20c4a2) SHA1(07bddaac958ac62d9fc29671fc83bd1e3b27f4b8) )
 	ROM_LOAD( "rrv3vera_spr.ic002", 0x800000, 0x040000, CRC(712e0e9a) SHA1(d396aaf918036ff7f909a84daefe8f651fdf9b05) )
 
-	ROM_REGION(0xc000, "jvsio", 0)  // Namco "FCA" JVS I/O board PIC16F84 code (see namcos23.c for FCA details)
+	ROM_REGION(0xc000, "jvsio", 0)  // Namco "FCA" JVS I/O board PIC16F84 code (see namcos23.cpp for FCA details)
 	ROM_LOAD( "fcap11.ic2",   0x000000, 0x004010, CRC(1b2592ce) SHA1(a1a487361053af564f6ec67e545413e370a3b38c) )
 	// Fujitsu MB90F574 code, partial dumps, only last 48KB of 256KB flash was extracted
-	ROM_LOAD( "fcaf11.ic4",     0x000000, 0x00c000, BAD_DUMP CRC(9794f16b) SHA1(94e1c036a6d23d39b2ad69dd1ad2cfa6163287e0) )	// almost good dump, all JVS related code and data is in place
+	ROM_LOAD( "fcaf11.ic4",     0x000000, 0x00c000, BAD_DUMP CRC(9794f16b) SHA1(94e1c036a6d23d39b2ad69dd1ad2cfa6163287e0) ) // almost good dump, all JVS related code and data is in place
 	ROM_LOAD( "fcb1_io-0b.ic4", 0x000000, 0x00c000, BAD_DUMP CRC(5e25b73f) SHA1(fa805a422ff8793989b0ce901cc868ec1a87c7ac) ) // most JVS handling code is in undumped area
 
-	ROM_REGION(0x80000, "steering", 0)  // Steering I/O board MB90242A code (see namcos23.c for steering board details)
+	ROM_REGION(0x80000, "steering", 0)  // Steering I/O board MB90242A code (see namcos23.cpp for steering board details)
 	ROM_LOAD( "rrv3_str-0a.ic16", 0x000000, 0x080000, CRC(df8b6cac) SHA1(d45e150678218084925673e1d77edefc04135035) )
 
 	DISK_REGION("dvd")
@@ -1383,20 +1409,20 @@ ROM_START( rrvac )
 ROM_END
 
 ROM_START( rrvac2 )
-	ROM_REGION(0x200000, "bios", 0)
+	ROM_REGION32_LE(0x200000, "bios", 0)
 	SYSTEM246_BIOS
 
 	ROM_REGION(0x840000, "key", ROMREGION_ERASE00)
 	ROM_LOAD( "rrv2vera.ic002", 0x000000, 0x800000, CRC(4666f6b5) SHA1(974ed4f6c5869ecf879c0d3540db6ea576225c04) )
 	ROM_LOAD( "rrv2vera_spr.ic002", 0x800000, 0x040000, CRC(8d98ef04) SHA1(3f33046a8283b918226301fcf5538729be84bfbe) )
 
-	ROM_REGION(0xc000, "jvsio", 0)  // Namco "FCA" JVS I/O board PIC16F84 code (see namcos23.c for FCA details)
+	ROM_REGION(0xc000, "jvsio", 0)  // Namco "FCA" JVS I/O board PIC16F84 code (see namcos23.cpp for FCA details)
 	ROM_LOAD( "fcap11.ic2",   0x000000, 0x004010, CRC(1b2592ce) SHA1(a1a487361053af564f6ec67e545413e370a3b38c) )
 	// Fujitsu MB90F574 code, partial dumps, only last 48KB of 256KB flash was extracted
-	ROM_LOAD( "fcaf11.ic4",     0x000000, 0x00c000, BAD_DUMP CRC(9794f16b) SHA1(94e1c036a6d23d39b2ad69dd1ad2cfa6163287e0) )	// almost good dump, all JVS related code and data is in place
+	ROM_LOAD( "fcaf11.ic4",     0x000000, 0x00c000, BAD_DUMP CRC(9794f16b) SHA1(94e1c036a6d23d39b2ad69dd1ad2cfa6163287e0) ) // almost good dump, all JVS related code and data is in place
 	ROM_LOAD( "fcb1_io-0b.ic4", 0x000000, 0x00c000, BAD_DUMP CRC(5e25b73f) SHA1(fa805a422ff8793989b0ce901cc868ec1a87c7ac) ) // most JVS handling code is in undumped area
 
-	ROM_REGION(0x80000, "steering", 0)  // Steering I/O board MB90242A code (see namcos23.c for steering board details)
+	ROM_REGION(0x80000, "steering", 0)  // Steering I/O board MB90242A code (see namcos23.cpp for steering board details)
 	ROM_LOAD( "rrv3_str-0a.ic16", 0x000000, 0x080000, CRC(df8b6cac) SHA1(d45e150678218084925673e1d77edefc04135035) )
 
 	// is this the same disc as rrvac?
@@ -1405,20 +1431,20 @@ ROM_START( rrvac2 )
 ROM_END
 
 ROM_START( rrvac1 )
-	ROM_REGION(0x200000, "bios", 0)
+	ROM_REGION32_LE(0x200000, "bios", 0)
 	SYSTEM246_BIOS
 
 	ROM_REGION(0x840000, "key", ROMREGION_ERASE00)
 	ROM_LOAD( "rrv1vera.ic002", 0x000000, 0x800000, CRC(e28bb0be) SHA1(9683ddc228e9aedd338cf2eb4d4373faeaea5b75) )
 	ROM_LOAD( "rrv1vera_spr.ic002", 0x800000, 0x040000, CRC(81c370b7) SHA1(7693c03b544c79fa3b6e536abb32ad34cf14dfbf) )
 
-	ROM_REGION(0xc000, "jvsio", 0)  // Namco "FCA" JVS I/O board PIC16F84 code (see namcos23.c for FCA details)
+	ROM_REGION(0xc000, "jvsio", 0)  // Namco "FCA" JVS I/O board PIC16F84 code (see namcos23.cpp for FCA details)
 	ROM_LOAD( "fcap11.ic2",   0x000000, 0x004010, CRC(1b2592ce) SHA1(a1a487361053af564f6ec67e545413e370a3b38c) )
 	// Fujitsu MB90F574 code, partial dumps, only last 48KB of 256KB flash was extracted
-	ROM_LOAD( "fcaf11.ic4",     0x000000, 0x00c000, BAD_DUMP CRC(9794f16b) SHA1(94e1c036a6d23d39b2ad69dd1ad2cfa6163287e0) )	// almost good dump, all JVS related code and data is in place
+	ROM_LOAD( "fcaf11.ic4",     0x000000, 0x00c000, BAD_DUMP CRC(9794f16b) SHA1(94e1c036a6d23d39b2ad69dd1ad2cfa6163287e0) ) // almost good dump, all JVS related code and data is in place
 	ROM_LOAD( "fcb1_io-0b.ic4", 0x000000, 0x00c000, BAD_DUMP CRC(5e25b73f) SHA1(fa805a422ff8793989b0ce901cc868ec1a87c7ac) ) // most JVS handling code is in undumped area
 
-	ROM_REGION(0x80000, "steering", 0)  // Steering I/O board MB90242A code (see namcos23.c for steering board details)
+	ROM_REGION(0x80000, "steering", 0)  // Steering I/O board MB90242A code (see namcos23.cpp for steering board details)
 	ROM_LOAD( "rrv3_str-0a.ic16", 0x000000, 0x080000, CRC(df8b6cac) SHA1(d45e150678218084925673e1d77edefc04135035) )
 
 	DISK_REGION("dvd")
@@ -1426,7 +1452,7 @@ ROM_START( rrvac1 )
 ROM_END
 
 ROM_START( scptour )
-	ROM_REGION(0x200000, "bios", 0)
+	ROM_REGION32_LE(0x200000, "bios", 0)
 	SYSTEM246_BIOS
 
 	ROM_REGION(0x840000, "key", ROMREGION_ERASE00)
@@ -1438,19 +1464,19 @@ ROM_START( scptour )
 ROM_END
 
 ROM_START( superdbz )
-	ROM_REGION(0x200000, "bios", 0)
+	ROM_REGION32_LE(0x200000, "bios", 0)
 	SYSTEM256_BIOS
 
 	ROM_REGION(0x840000, "key", ROMREGION_ERASE00)
 	ROM_LOAD( "db1verb.ic002", 0x000000, 0x800000, CRC(ae9aa06d) SHA1(dabb6d797f706bb3523ce4ca77e9ffb1652e845a) )
 	ROM_LOAD( "db1verb_spr.ic002", 0x800000, 0x040000, CRC(baae64a1) SHA1(f82c5b1e98255976518f7b78f764e7a7bb3c9017) )
 
-	DISK_REGION("dvd")
-	DISK_IMAGE_READONLY( "db1", 0, SHA1(5f4031e2beda9c1cd4a5a9a07740fa50946b73f2) )
+	DISK_REGION("dvd") // V-055127
+	DISK_IMAGE_READONLY( "db1", 0, SHA1(e126319da6a222e81ca3db22439d06e175f2ec88) )
 ROM_END
 
 ROM_START( wanganmd )
-	ROM_REGION(0x200000, "bios", 0)
+	ROM_REGION32_LE(0x200000, "bios", 0)
 	SYSTEM246_BIOS
 
 	ROM_REGION(0x840000, "key", ROMREGION_ERASE00)
@@ -1461,8 +1487,20 @@ ROM_START( wanganmd )
 	DISK_IMAGE_READONLY( "wmn1-a", 0, SHA1(4254e987e71d0d4038a87f11dc1a304396b3dffc) )
 ROM_END
 
+ROM_START( wanganmr )
+	ROM_REGION32_LE(0x200000, "bios", 0)
+	SYSTEM246_BIOS
+
+	ROM_REGION(0x840000, "key", ROMREGION_ERASE00)
+	ROM_LOAD( "wmr1vera.ic002", 0x000000, 0x800000, CRC(b431936b) SHA1(e2c543936cb5689a432662a69d0042c6179a3728) )
+	ROM_LOAD( "wmr1vera_spr.ic002", 0x800000, 0x040000, CRC(b8b7539c) SHA1(f415bdc8e3ebf3b0c3d0d7607b894440e89b0fe7) )
+
+	DISK_REGION("dvd")  // actually single-track CD-ROM
+	DISK_IMAGE_READONLY( "wmr1-a", 0, SHA1(02feab4380dcc2dd95c85b209192f858bafc721e) )
+ROM_END
+
 ROM_START( vnight )
-	ROM_REGION(0x200000, "bios", 0)
+	ROM_REGION32_LE(0x200000, "bios", 0)
 	SYSTEM246_BIOS
 
 	ROM_REGION(0x840000, "key", ROMREGION_ERASE00)
@@ -1474,7 +1512,7 @@ ROM_START( vnight )
 ROM_END
 
 ROM_START( bldyr3b )
-	ROM_REGION(0x200000, "bios", 0)
+	ROM_REGION32_LE(0x200000, "bios", 0)
 	SYSTEM246_BIOS
 
 	ROM_REGION(0x840000, "key", ROMREGION_ERASE00)
@@ -1485,7 +1523,7 @@ ROM_START( bldyr3b )
 ROM_END
 
 ROM_START( qgundam )
-	ROM_REGION(0x200000, "bios", 0)
+	ROM_REGION32_LE(0x200000, "bios", 0)
 	SYSTEM246_BIOS
 
 	ROM_REGION(0x840000, "key", ROMREGION_ERASE00)
@@ -1497,7 +1535,7 @@ ROM_START( qgundam )
 ROM_END
 
 ROM_START( fateulc )
-	ROM_REGION(0x200000, "bios", 0)
+	ROM_REGION32_LE(0x200000, "bios", 0)
 	SYSTEM246_BIOS
 
 	ROM_REGION(0x840000, "key", ROMREGION_ERASE00)
@@ -1509,7 +1547,7 @@ ROM_START( fateulc )
 ROM_END
 
 ROM_START( fateulcb )
-	ROM_REGION(0x200000, "bios", 0)
+	ROM_REGION32_LE(0x200000, "bios", 0)
 	SYSTEM246_BIOS
 
 	ROM_REGION(0x840000, "key", ROMREGION_ERASE00)
@@ -1520,7 +1558,7 @@ ROM_START( fateulcb )
 ROM_END
 
 ROM_START( gdvsgd )
-	ROM_REGION(0x200000, "bios", 0)
+	ROM_REGION32_LE(0x200000, "bios", 0)
 	SYSTEM256_BIOS
 
 	ROM_REGION(0x840000, "key", ROMREGION_ERASE00)
@@ -1532,7 +1570,7 @@ ROM_START( gdvsgd )
 ROM_END
 
 ROM_START( gdvsgdnx )
-	ROM_REGION(0x200000, "bios", 0)
+	ROM_REGION32_LE(0x200000, "bios", 0)
 	SYSTEM256_BIOS
 
 	ROM_REGION(0x840000, "key", ROMREGION_ERASE00)
@@ -1544,7 +1582,7 @@ ROM_START( gdvsgdnx )
 ROM_END
 
 ROM_START( yuyuhaku )
-	ROM_REGION(0x200000, "bios", 0)
+	ROM_REGION32_LE(0x200000, "bios", 0)
 	SYSTEM256_BIOS
 
 	ROM_REGION(0x840000, "key", ROMREGION_ERASE00)
@@ -1555,7 +1593,7 @@ ROM_START( yuyuhaku )
 ROM_END
 
 ROM_START( sbxc )
-	ROM_REGION(0x200000, "bios", 0)
+	ROM_REGION32_LE(0x200000, "bios", 0)
 	SYSTEM246_BIOS
 
 	ROM_REGION(0x840000, "key", ROMREGION_ERASE00)
@@ -1566,59 +1604,73 @@ ROM_START( sbxc )
 	DISK_IMAGE_READONLY( "bax1_dvd0", 0, SHA1(56d58e66eeaa57ff07668000491360853b064936) )
 ROM_END
 
+ROM_START( motogp )
+	ROM_REGION32_LE(0x200000, "bios", 0)
+	SYSTEM256_BIOS
+
+	ROM_REGION(0x840000, "key", ROMREGION_ERASE00)
+	ROM_LOAD( "mgp1004-na-b.ic002", 0x000000, 0x840000, CRC(31cc0cc7) SHA1(269ddaa55f230c697da132b565bbca9338cf6820) )
+
+	DISK_REGION("dvd")  // actually HDD for this game
+	DISK_IMAGE_READONLY( "mgp1004-na-hdd0-a", 0, SHA1(599940b9fe7fc8e46fd80a32c7e795ae143ee645) )
+ROM_END
+
 // System 246
-GAME(2001, sys246,          0, system246, system246, driver_device, 0, ROT0, "Namco", "System 246 BIOS", MACHINE_IS_SKELETON|MACHINE_IS_BIOS_ROOT)
-GAME(2001, vnight,     sys246, system246, system246, driver_device, 0, ROT0, "Sega / Namco", "Vampire Night (VPN3 Ver. B)", MACHINE_IS_SKELETON)
-GAME(2001, bldyr3b,    sys246, system246, system246, driver_device, 0, ROT0, "bootleg", "Bloody Roar 3 (bootleg)", MACHINE_IS_SKELETON)
-GAME(2001, rrvac,      sys246, system246, system246, driver_device, 0, ROT0, "Namco", "Ridge Racer V Arcade Battle (RRV3 Ver. A)", MACHINE_IS_SKELETON)
-GAME(2001, rrvac2,      rrvac, system246, system246, driver_device, 0, ROT0, "Namco", "Ridge Racer V Arcade Battle (RRV2 Ver. A)", MACHINE_IS_SKELETON)
-GAME(2001, rrvac1,      rrvac, system246, system246, driver_device, 0, ROT0, "Namco", "Ridge Racer V Arcade Battle (RRV1 Ver. A)", MACHINE_IS_SKELETON)
-GAME(2001, wanganmd,   sys246, system246, system246, driver_device, 0, ROT0, "Namco", "Wangan Midnight (WMN1 Ver. A)", MACHINE_IS_SKELETON)
-GAME(2002, dragchrn,   sys246, system246, system246, driver_device, 0, ROT0, "Namco", "Dragon Chronicles (DC001 Ver. A)", MACHINE_IS_SKELETON)
-GAME(2002, netchu02,   sys246, system246, system246, driver_device, 0, ROT0, "Namco", "Netchuu Pro Yakyuu 2002 (NPY1 Ver. A)", MACHINE_IS_SKELETON)
-GAME(2002, scptour,    sys246, system246, system246, driver_device, 0, ROT0, "Namco", "Smash Court Pro Tournament (SCP1)", MACHINE_IS_SKELETON)
-GAME(2002, soulclb2,   sys246, system246, system246, driver_device, 0, ROT0, "Namco", "Soul Calibur II (SC23 Ver. A)", MACHINE_IS_SKELETON)
-GAME(2002, soulcl2a, soulclb2, system246, system246, driver_device, 0, ROT0, "Namco", "Soul Calibur II (SC22 Ver. A)", MACHINE_IS_SKELETON)
-GAME(2002, soulcl2b, soulclb2, system246, system246, driver_device, 0, ROT0, "Namco", "Soul Calibur II (SC21 Ver. A)", MACHINE_IS_SKELETON)
-GAME(2002, soulcl2w, soulclb2, system246, system246, driver_device, 0, ROT0, "Namco", "Soul Calibur II (SC23 world version)", MACHINE_IS_SKELETON)
-GAME(2002, tekken4,    sys246, system246, system246, driver_device, 0, ROT0, "Namco", "Tekken 4 (TEF3 Ver. C)", MACHINE_IS_SKELETON)
-GAME(2002, tekken4a,  tekken4, system246, system246, driver_device, 0, ROT0, "Namco", "Tekken 4 (TEF2 Ver. A)", MACHINE_IS_SKELETON)
-GAME(2002, tekken4b,  tekken4, system246, system246, driver_device, 0, ROT0, "Namco", "Tekken 4 (TEF1 Ver. A)", MACHINE_IS_SKELETON)
-GAME(2002, tekken4c,  tekken4, system246, system246, driver_device, 0, ROT0, "Namco", "Tekken 4 (TEF1 Ver. C)", MACHINE_IS_SKELETON)
-GAME(2003, prdgp03,    sys246, system246, system246, driver_device, 0, ROT0, "Namco", "Pride GP 2003 (PR21 Ver. A)", MACHINE_IS_SKELETON)
-GAME(2003, timecrs3,   sys246, system246, system246, driver_device, 0, ROT0, "Namco", "Time Crisis 3 (TST1)", MACHINE_IS_SKELETON)
-GAME(2003, timecrs3e,timecrs3, system246, system246, driver_device, 0, ROT0, "Namco", "Time Crisis 3 (TST2 Ver. A)", MACHINE_IS_SKELETON)
-GAME(2003, zgundm,     sys246, system246, system246, driver_device, 0, ROT0, "Capcom / Banpresto", "Mobile Suit Z-Gundam: A.E.U.G. vs Titans (ZGA1 Ver. A)", MACHINE_IS_SKELETON)
-GAME(2004, fghtjam,    sys246, system246, system246, driver_device, 0, ROT0, "Capcom / Namco", "Capcom Fighting Jam (JAM1 Ver. A)", MACHINE_IS_SKELETON)
-GAME(2004, sukuinuf,   sys246, system246, system246, driver_device, 0, ROT0, "Namco", "Quiz and Variety Suku Suku Inufuku 2 (IN2 Ver. A)", MACHINE_IS_SKELETON)
-GAME(2004, zgundmdx,   sys246, system246, system246, driver_device, 0, ROT0, "Capcom / Banpresto", "Mobile Suit Z-Gundam: A.E.U.G. vs Titans DX (ZDX1 Ver. A)", MACHINE_IS_SKELETON)
-GAME(2004, zoidsinf,   sys246, system246, system246, driver_device, 0, ROT0, "Tomy / Taito", "Zoids Infinity", MACHINE_IS_SKELETON)
-GAME(2005, cobrata,    sys246, system246, system246, driver_device, 0, ROT0, "Namco", "Cobra: The Arcade (CBR1 Ver. B)", MACHINE_IS_SKELETON)
-GAME(2005, gundzaft,   sys246, system246, system246, driver_device, 0, ROT0, "Capcom / Banpresto", "Gundam Seed: Federation vs. Z.A.F.T. (SED1 Ver. A)", MACHINE_IS_SKELETON)
-GAME(2005, soulclb3,   sys246, system246, system246, driver_device, 0, ROT0, "Namco", "Soul Calibur III (SC31001-NA-A key, NA-B disc)", MACHINE_IS_SKELETON)
-GAME(2005, soulclb3a,soulclb3, system246, system246, driver_device, 0, ROT0, "Namco", "Soul Calibur III (SC31002-NA-A key, NA-B disc)", MACHINE_IS_SKELETON)
-GAME(2005, soulclb3b,soulclb3, system246, system246, driver_device, 0, ROT0, "Namco", "Soul Calibur III (SC31002-NA-A key, NA-A disc)", MACHINE_IS_SKELETON)
-GAME(2005, taiko7,     sys246, system246, system246, driver_device, 0, ROT0, "Namco", "Taiko No Tatsujin 7 (TK71-NA-A)", MACHINE_IS_SKELETON)
-GAME(2006, taiko8,     sys246, system246, system246, driver_device, 0, ROT0, "Namco", "Taiko No Tatsujin 8 (TK8100-1-NA-A)", MACHINE_IS_SKELETON)
-GAME(2006, qgundam,    sys246, system246, system246, driver_device, 0, ROT0, "Namco", "Quiz Mobile Suit Gundam: Monsenshi (QG1 Ver. A)", MACHINE_IS_SKELETON)
-GAME(2008, fateulc,    sys246, system246, system246, driver_device, 0, ROT0, "Capcom / Namco", "Fate: Unlimited Codes (FUD1 ver. A)", MACHINE_IS_SKELETON)
-GAME(2008, fateulcb,  fateulc, system246, system246, driver_device, 0, ROT0, "bootleg", "Fate: Unlimited Codes (bootleg)", MACHINE_IS_SKELETON)
-GAME(2008, sbxc,       sys246, system246, system246, driver_device, 0, ROT0, "Capcom / Arc System Works", "Sengoku Basara X Cross", MACHINE_IS_SKELETON)
+GAME(2001, sys246,          0, system246, system246, namcops2_state, empty_init, ROT0, "Namco", "System 246 BIOS", MACHINE_IS_SKELETON|MACHINE_IS_BIOS_ROOT)
+GAME(2001, vnight,     sys246, system246, system246, namcops2_state, empty_init, ROT0, "Sega / Namco", "Vampire Night (VPN3 Ver. B)", MACHINE_IS_SKELETON)
+GAME(2001, bldyr3b,    sys246, system246, system246, namcops2_state, empty_init, ROT0, "bootleg", "Bloody Roar 3 (bootleg)", MACHINE_IS_SKELETON)
+GAME(2001, rrvac,      sys246, system246, system246, namcops2_state, empty_init, ROT0, "Namco", "Ridge Racer V Arcade Battle (RRV3 Ver. A)", MACHINE_IS_SKELETON)
+GAME(2001, rrvac2,      rrvac, system246, system246, namcops2_state, empty_init, ROT0, "Namco", "Ridge Racer V Arcade Battle (RRV2 Ver. A)", MACHINE_IS_SKELETON)
+GAME(2001, rrvac1,      rrvac, system246, system246, namcops2_state, empty_init, ROT0, "Namco", "Ridge Racer V Arcade Battle (RRV1 Ver. A)", MACHINE_IS_SKELETON)
+GAME(2001, tekken4,    sys246, system246, system246, namcops2_state, empty_init, ROT0, "Namco", "Tekken 4 (TEF3 Ver. C)", MACHINE_IS_SKELETON)
+GAME(2001, tekken4a,  tekken4, system246, system246, namcops2_state, empty_init, ROT0, "Namco", "Tekken 4 (TEF2 Ver. A)", MACHINE_IS_SKELETON)
+GAME(2001, tekken4b,  tekken4, system246, system246, namcops2_state, empty_init, ROT0, "Namco", "Tekken 4 (TEF1 Ver. A)", MACHINE_IS_SKELETON)
+GAME(2001, tekken4c,  tekken4, system246, system246, namcops2_state, empty_init, ROT0, "Namco", "Tekken 4 (TEF1 Ver. C)", MACHINE_IS_SKELETON)
+GAME(2001, wanganmd,   sys246, system246, system246, namcops2_state, empty_init, ROT0, "Namco", "Wangan Midnight (WMN1 Ver. A)", MACHINE_IS_SKELETON)
+GAME(2002, dragchrn,   sys246, system246, system246, namcops2_state, empty_init, ROT0, "Namco", "Dragon Chronicles (DC001 Ver. A)", MACHINE_IS_SKELETON)
+GAME(2002, netchu02,   sys246, system246, system246, namcops2_state, empty_init, ROT0, "Namco", "Netchuu Pro Yakyuu 2002 (NPY1 Ver. A)", MACHINE_IS_SKELETON)
+GAME(2002, scptour,    sys246, system246, system246, namcops2_state, empty_init, ROT0, "Namco", "Smash Court Pro Tournament (SCP1)", MACHINE_IS_SKELETON)
+GAME(2002, soulclb2,   sys246, system246, system246, namcops2_state, empty_init, ROT0, "Namco", "Soul Calibur II (SC23 Ver. A)", MACHINE_IS_SKELETON)
+GAME(2002, soulcl2a, soulclb2, system246, system246, namcops2_state, empty_init, ROT0, "Namco", "Soul Calibur II (SC22 Ver. A)", MACHINE_IS_SKELETON)
+GAME(2002, soulcl2b, soulclb2, system246, system246, namcops2_state, empty_init, ROT0, "Namco", "Soul Calibur II (SC21 Ver. A)", MACHINE_IS_SKELETON)
+GAME(2002, soulcl2w, soulclb2, system246, system246, namcops2_state, empty_init, ROT0, "Namco", "Soul Calibur II (SC23 world version)", MACHINE_IS_SKELETON)
+GAME(2002, wanganmr,   sys246, system246, system246, namcops2_state, empty_init, ROT0, "Namco", "Wangan Midnight R (WMR1 Ver. A)", MACHINE_IS_SKELETON)
+GAME(2003, prdgp03,    sys246, system246, system246, namcops2_state, empty_init, ROT0, "Namco", "Pride GP 2003 (PR21 Ver. A)", MACHINE_IS_SKELETON)
+GAME(2003, timecrs3,   sys246, system246, system246, namcops2_state, empty_init, ROT0, "Namco", "Time Crisis 3 (TST1)", MACHINE_IS_SKELETON)
+GAME(2003, timecrs3e,timecrs3, system246, system246, namcops2_state, empty_init, ROT0, "Namco", "Time Crisis 3 (TST2 Ver. A)", MACHINE_IS_SKELETON)
+GAME(2003, zgundm,     sys246, system246, system246, namcops2_state, empty_init, ROT0, "Capcom / Banpresto", "Mobile Suit Z-Gundam: A.E.U.G. vs Titans (ZGA1 Ver. A)", MACHINE_IS_SKELETON)
+GAME(2004, fghtjam,    sys246, system246, system246, namcops2_state, empty_init, ROT0, "Capcom / Namco", "Capcom Fighting Jam (JAM1 Ver. A)", MACHINE_IS_SKELETON)
+GAME(2004, sukuinuf,   sys246, system246, system246, namcops2_state, empty_init, ROT0, "Namco", "Quiz and Variety Suku Suku Inufuku 2 (IN2 Ver. A)", MACHINE_IS_SKELETON)
+GAME(2004, zgundmdx,   sys246, system246, system246, namcops2_state, empty_init, ROT0, "Capcom / Banpresto", "Mobile Suit Z-Gundam: A.E.U.G. vs Titans DX (ZDX1 Ver. A)", MACHINE_IS_SKELETON)
+GAME(2004, zoidsinf,   sys246, system246, system246, namcops2_state, empty_init, ROT0, "Tomy / Taito", "Zoids Infinity", MACHINE_IS_SKELETON)
+GAME(2005, cobrata,    sys246, system246, system246, namcops2_state, empty_init, ROT0, "Namco", "Cobra: The Arcade (CBR1 Ver. B)", MACHINE_IS_SKELETON)
+GAME(2005, gundzaft,   sys246, system246, system246, namcops2_state, empty_init, ROT0, "Capcom / Banpresto", "Gundam Seed: Federation vs. Z.A.F.T. (SED1 Ver. A)", MACHINE_IS_SKELETON)
+GAME(2005, soulclb3,   sys246, system246, system246, namcops2_state, empty_init, ROT0, "Namco", "Soul Calibur III (SC31001-NA-A key, NA-B disc)", MACHINE_IS_SKELETON)
+GAME(2005, soulclb3a,soulclb3, system246, system246, namcops2_state, empty_init, ROT0, "Namco", "Soul Calibur III (SC31002-NA-A key, NA-B disc)", MACHINE_IS_SKELETON)
+GAME(2005, soulclb3b,soulclb3, system246, system246, namcops2_state, empty_init, ROT0, "Namco", "Soul Calibur III (SC31002-NA-A key, NA-A disc)", MACHINE_IS_SKELETON)
+GAME(2005, taiko7,     sys246, system246, system246, namcops2_state, empty_init, ROT0, "Namco", "Taiko no Tatsujin 7 (TK71-NA-A)", MACHINE_IS_SKELETON)
+GAME(2006, taiko8,     sys246, system246, system246, namcops2_state, empty_init, ROT0, "Namco", "Taiko no Tatsujin 8 (TK8100-1-NA-A)", MACHINE_IS_SKELETON)
+GAME(2006, qgundam,    sys246, system246, system246, namcops2_state, empty_init, ROT0, "Namco", "Quiz Mobile Suit Gundam: Monsenshi (QG1 Ver. A)", MACHINE_IS_SKELETON)
+GAME(2008, fateulc,    sys246, system246, system246, namcops2_state, empty_init, ROT0, "Capcom / Namco", "Fate: Unlimited Codes (FUD1 ver. A)", MACHINE_IS_SKELETON)
+GAME(2008, fateulcb,  fateulc, system246, system246, namcops2_state, empty_init, ROT0, "bootleg", "Fate: Unlimited Codes (bootleg)", MACHINE_IS_SKELETON)
+GAME(2008, sbxc,       sys246, system246, system246, namcops2_state, empty_init, ROT0, "Capcom / Arc System Works", "Sengoku Basara X Cross", MACHINE_IS_SKELETON)
 
 // System 256
-GAME(2004, sys256,          0, system256, system246, driver_device, 0, ROT0, "Namco", "System 256 BIOS", MACHINE_IS_SKELETON|MACHINE_IS_BIOS_ROOT)
-GAME(2005, tekken51,   sys256, system256, system246, driver_device, 0, ROT0, "Namco", "Tekken 5.1 (TE51 Ver. B)", MACHINE_IS_SKELETON)
-GAME(2005, tekken51b,tekken51, system256, system246, driver_device, 0, ROT0, "Namco", "Tekken 5.1 (TE53 Ver. B)", MACHINE_IS_SKELETON)
-GAME(2005, tekken5d,   sys256, system256, system246, driver_device, 0, ROT0, "Namco", "Tekken 5 Dark Resurrection (TED1 Ver. A)", MACHINE_IS_SKELETON)
-GAME(2005, superdbz,   sys256, system256, system246, driver_device, 0, ROT0, "Banpresto / Spike", "Super Dragon Ball Z (DB1 Ver. B)", MACHINE_IS_SKELETON)
-GAME(2006, kinniku,    sys256, system256, system246, driver_device, 0, ROT0, "Namco", "Kinnikuman Muscle Grand Prix (KN1 Ver. A)", MACHINE_IS_SKELETON)
-GAME(2006, taiko9,     sys256, system256, system246, driver_device, 0, ROT0, "Namco", "Taiko No Tatsujin 9 (TK91001-NA-A)", MACHINE_IS_SKELETON)
-GAME(2006, yuyuhaku,   sys256, system256, system246, driver_device, 0, ROT0, "Banpresto", "The Battle of Yu Yu Hakusho: Shitou! Ankoku Bujutsukai!", MACHINE_IS_SKELETON)
-GAME(2006, zoidiexp,   sys246, system246, system246, driver_device, 0, ROT0, "Tomy / Taito", "Zoids Infinity EX Plus (ver. 2.10)", MACHINE_IS_SKELETON)
-GAME(2007, kinniku2,   sys256, system256, system246, driver_device, 0, ROT0, "Namco", "Kinnikuman Muscle Grand Prix 2 (KN2 Ver. A)", MACHINE_IS_SKELETON)
-GAME(2007, taiko10,    sys256, system256, system246, driver_device, 0, ROT0, "Namco", "Taiko No Tatsujin 10 (T101001-NA-A)", MACHINE_IS_SKELETON)
-GAME(2008, gdvsgd,     sys256, system256, system246, driver_device, 0, ROT0, "Capcom / Bandai", "Gundam vs. Gundam (GVS1 Ver. A)", MACHINE_IS_SKELETON)
-GAME(2009, gdvsgdnx,   sys256, system256, system246, driver_device, 0, ROT0, "Capcom / Bandai", "Gundam vs. Gundam Next", MACHINE_IS_SKELETON)
+GAME(2004, sys256,          0, system256, system246, namcops2_state, empty_init, ROT0, "Namco", "System 256 BIOS", MACHINE_IS_SKELETON|MACHINE_IS_BIOS_ROOT)
+GAME(2005, tekken51,   sys256, system256, system246, namcops2_state, empty_init, ROT0, "Namco", "Tekken 5.1 (TE51 Ver. B)", MACHINE_IS_SKELETON)
+GAME(2005, tekken51b,tekken51, system256, system246, namcops2_state, empty_init, ROT0, "Namco", "Tekken 5.1 (TE53 Ver. B)", MACHINE_IS_SKELETON)
+GAME(2005, tekken5d,   sys256, system256, system246, namcops2_state, empty_init, ROT0, "Namco", "Tekken 5 Dark Resurrection (TED1 Ver. A)", MACHINE_IS_SKELETON)
+GAME(2005, superdbz,   sys256, system256, system246, namcops2_state, empty_init, ROT0, "Banpresto / Spike", "Super Dragon Ball Z (DB1 Ver. B)", MACHINE_IS_SKELETON)
+GAME(2006, kinniku,    sys256, system256, system246, namcops2_state, empty_init, ROT0, "Namco", "Kinnikuman Muscle Grand Prix (KN1 Ver. A)", MACHINE_IS_SKELETON)
+GAME(2006, taiko9,     sys256, system256, system246, namcops2_state, empty_init, ROT0, "Namco", "Taiko no Tatsujin 9 (TK91001-NA-A)", MACHINE_IS_SKELETON)
+GAME(2006, yuyuhaku,   sys256, system256, system246, namcops2_state, empty_init, ROT0, "Banpresto", "The Battle of Yu Yu Hakusho: Shitou! Ankoku Bujutsukai!", MACHINE_IS_SKELETON)
+GAME(2006, zoidiexp,   sys246, system246, system246, namcops2_state, empty_init, ROT0, "Tomy / Taito", "Zoids Infinity EX Plus (ver. 2.10)", MACHINE_IS_SKELETON)
+GAME(2007, kinniku2,   sys256, system256, system246, namcops2_state, empty_init, ROT0, "Namco", "Kinnikuman Muscle Grand Prix 2 (KN2 Ver. A)", MACHINE_IS_SKELETON)
+GAME(2007, motogp,     sys256, system256, system246, namcops2_state, empty_init, ROT0, "Namco", "Moto GP (MGP1004-NA-B)", MACHINE_IS_SKELETON)
+GAME(2007, taiko10,    sys256, system256, system246, namcops2_state, empty_init, ROT0, "Namco", "Taiko no Tatsujin 10 (T101001-NA-A)", MACHINE_IS_SKELETON)
+GAME(2008, gdvsgd,     sys256, system256, system246, namcops2_state, empty_init, ROT0, "Capcom / Bandai", "Gundam vs. Gundam (GVS1 Ver. A)", MACHINE_IS_SKELETON)
+GAME(2009, gdvsgdnx,   sys256, system256, system246, namcops2_state, empty_init, ROT0, "Capcom / Bandai", "Gundam vs. Gundam Next", MACHINE_IS_SKELETON)
 
 // System Super 256
-GAME(2006, timecrs4,   sys256, system256, system246, driver_device, 0, ROT0, "Namco", "Time Crisis 4", MACHINE_IS_SKELETON)
+GAME(2006, timecrs4,   sys256, system256, system246, namcops2_state, empty_init, ROT0, "Namco", "Time Crisis 4 (World, TSF1002-NA-A)", MACHINE_IS_SKELETON)
+GAME(2006, timecrs4j,timecrs4, system256, system246, namcops2_state, empty_init, ROT0, "Namco", "Time Crisis 4 (Japan, TSF1001-NA-A)", MACHINE_IS_SKELETON)

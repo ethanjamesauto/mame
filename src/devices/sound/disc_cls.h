@@ -1,9 +1,11 @@
 // license:BSD-3-Clause
 // copyright-holders:K.Wilkins,Couriersud,Derrick Renaud,Frank Palazzolo
+#ifndef MAME_SOUND_DISC_CLS_H
+#define MAME_SOUND_DISC_CLS_H
+
 #pragma once
 
-#ifndef __DISC_CLS_H__
-#define __DISC_CLS_H__
+#include "wavwrite.h"
 
 /***********************************************************************
  *
@@ -118,23 +120,24 @@ public:
 		/* Add gain to the output and put into the buffers */
 		/* Clipping will be handled by the main sound system */
 		double val = DISCRETE_INPUT(0) * DISCRETE_INPUT(1);
-		*m_ptr++ = val;
+		m_outview->put(m_outview_sample++, val * (1.0 / 32768.0));
 	}
 	virtual int max_output(void) override { return 0; }
-	virtual void set_output_ptr(stream_sample_t *ptr) override { m_ptr = ptr; }
+	virtual void set_output_ptr(write_stream_view &view) override { m_outview = &view; m_outview_sample = 0; }
 private:
-	stream_sample_t     *m_ptr;
+	write_stream_view     *m_outview;
+	u32                    m_outview_sample;
 };
 
 DISCRETE_CLASS(dso_csvlog, 0,
 	FILE *m_csv_file;
-	INT64 m_sample_num;
-	char  m_name[32];
+	int64_t m_sample_num;
+	char m_name[32];
 );
 
 DISCRETE_CLASS(dso_wavlog, 0,
-	wav_file *m_wavfile;
-	char      m_name[32];
+	util::wav_file_ptr m_wavfile;
+	char m_name[32];
 );
 
 /*************************************
@@ -152,8 +155,8 @@ public:
 	virtual void reset(void) override;
 private:
 	ioport_port *m_port;
-	INT32                   m_lastpval;
-	INT32                   m_pmin;
+	int32_t                   m_lastpval;
+	int32_t                   m_pmin;
 	double                  m_pscale;
 	double                  m_min;
 	double                  m_scale;
@@ -167,11 +170,11 @@ class DISCRETE_CLASS_NAME(dss_input_data): public discrete_base_node, public dis
 	DISCRETE_CLASS_CONSTRUCTOR(dss_input_data, base)
 public:
 	virtual void reset(void) override;
-	virtual void input_write(int sub_node, UINT8 data ) override;
+	virtual void input_write(int sub_node, uint8_t data ) override;
 private:
 	double      m_gain;             /* node gain */
 	double      m_offset;           /* node offset */
-	UINT8       m_data;             /* data written */
+	uint8_t       m_data;             /* data written */
 };
 
 class DISCRETE_CLASS_NAME(dss_input_logic): public discrete_base_node, public discrete_input_interface
@@ -180,11 +183,11 @@ class DISCRETE_CLASS_NAME(dss_input_logic): public discrete_base_node, public di
 	DISCRETE_CLASS_DESTRUCTOR(dss_input_logic)
 public:
 	virtual void reset(void) override;
-	virtual void input_write(int sub_node, UINT8 data ) override;
+	virtual void input_write(int sub_node, uint8_t data ) override;
 private:
 	double      m_gain;             /* node gain */
 	double      m_offset;           /* node offset */
-	UINT8       m_data;             /* data written */
+	uint8_t       m_data;             /* data written */
 };
 
 class DISCRETE_CLASS_NAME(dss_input_not): public discrete_base_node, public discrete_input_interface
@@ -193,11 +196,11 @@ class DISCRETE_CLASS_NAME(dss_input_not): public discrete_base_node, public disc
 	DISCRETE_CLASS_DESTRUCTOR(dss_input_not)
 public:
 	virtual void reset(void) override;
-	virtual void input_write(int sub_node, UINT8 data ) override;
+	virtual void input_write(int sub_node, uint8_t data ) override;
 private:
 	double      m_gain;             /* node gain */
 	double      m_offset;           /* node offset */
-	UINT8       m_data;             /* data written */
+	uint8_t       m_data;             /* data written */
 };
 
 class DISCRETE_CLASS_NAME(dss_input_pulse): public discrete_base_node, public discrete_input_interface, public discrete_step_interface
@@ -207,11 +210,11 @@ class DISCRETE_CLASS_NAME(dss_input_pulse): public discrete_base_node, public di
 public:
 	virtual void step(void) override;
 	virtual void reset(void) override;
-	virtual void input_write(int sub_node, UINT8 data ) override;
+	virtual void input_write(int sub_node, uint8_t data ) override;
 private:
 	//double      m_gain;             /* node gain */
 	//double      m_offset;           /* node offset */
-	UINT8       m_data;             /* data written */
+	uint8_t       m_data;             /* data written */
 };
 
 class DISCRETE_CLASS_NAME(dss_input_stream): public discrete_base_node, public discrete_input_interface, public discrete_step_interface
@@ -222,22 +225,23 @@ public:
 	virtual void step(void) override;
 	virtual void reset(void) override;
 	virtual void start(void) override;
-	virtual void input_write(int sub_node, UINT8 data ) override;
+	virtual void input_write(int sub_node, uint8_t data ) override;
 	virtual bool is_buffered(void) { return false; }
 
 	/* This is called by discrete_sound_device */
 	void stream_start(void);
 
 //protected:
-	UINT32              m_stream_in_number;
-	stream_sample_t     *m_ptr;         /* current in ptr for stream */
+	uint32_t              m_stream_in_number;
+	read_stream_view const *m_inview;         /* current in ptr for stream */
+	uint32_t              m_inview_sample;
 private:
-	void stream_generate(sound_stream &stream, stream_sample_t **inputs, stream_sample_t **outputs, int samples);
+	void stream_generate(sound_stream &stream, std::vector<read_stream_view> const &inputs, std::vector<write_stream_view> &outputs);
 
 	double      m_gain;             /* node gain */
 	double      m_offset;           /* node offset */
-	UINT8       m_data;             /* data written */
-	UINT8               m_is_buffered;
+	uint8_t       m_data;             /* data written */
+	uint8_t               m_is_buffered;
 	/* the buffer stream */
 	sound_stream        *m_buffer_stream;
 };
@@ -255,4 +259,4 @@ public:
 #include "disc_flt.h"
 #include "disc_dev.h"
 
-#endif /* __DISCRETE_H__ */
+#endif // MAME_SOUND_DISC_CLS_H

@@ -5,58 +5,44 @@
     M72 audio interface
 
 ****************************************************************************/
+#ifndef MAME_AUDIO_M72_H
+#define MAME_AUDIO_M72_H
 
-#include "emu.h"
+#pragma once
+
+#include "dirom.h"
 #include "sound/dac.h"
 
-class m72_audio_device : public device_t,
-									public device_sound_interface
+class m72_audio_device : public device_t, public device_rom_interface<32> // unknown address bits
 {
 public:
-	m72_audio_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	m72_audio_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock = 0);
 	~m72_audio_device() {}
 
-	enum
-	{
-		YM2151_ASSERT,
-		YM2151_CLEAR,
-		Z80_ASSERT,
-		Z80_CLEAR
-	};
-
-	WRITE_LINE_MEMBER( ym2151_irq_handler );
-	DECLARE_WRITE8_MEMBER( sound_command_byte_w );
-	DECLARE_WRITE16_MEMBER( sound_command_w );
-	DECLARE_WRITE8_MEMBER(sound_irq_ack_w );
-	DECLARE_READ8_MEMBER( sample_r );
-	DECLARE_WRITE8_MEMBER( sample_w );
+	template <typename T> void set_dac_tag(T &&tag) { m_dac.set_tag(std::forward<T>(tag)); }
+	u8 sample_r();
+	void sample_w(u8 data);
 
 	/* the port goes to different address bits depending on the game */
-	void set_sample_start( int start );
-	DECLARE_WRITE8_MEMBER( vigilant_sample_addr_w );
-	DECLARE_WRITE8_MEMBER( shisen_sample_addr_w );
-	DECLARE_WRITE8_MEMBER( rtype2_sample_addr_w );
-	DECLARE_WRITE8_MEMBER( poundfor_sample_addr_w );
+	void set_sample_start(int start);
+	void vigilant_sample_addr_w(offs_t offset, u8 data);
+	void shisen_sample_addr_w(offs_t offset, u8 data);
+	void rtype2_sample_addr_w(offs_t offset, u8 data);
+	void poundfor_sample_addr_w(offs_t offset, u8 data);
 
 protected:
 	// device-level overrides
-	virtual void device_config_complete() override;
 	virtual void device_start() override;
-	virtual void device_reset() override;
 
-	// sound stream update overrides
-	virtual void sound_stream_update(sound_stream &stream, stream_sample_t **inputs, stream_sample_t **outputs, int samples) override;
+	// device_rom_interface overrides
+	virtual void rom_bank_updated() override;
 
 private:
 	// internal state
-	UINT8 m_irqvector;
-	UINT32 m_sample_addr;
-	UINT8 *m_samples;
-	UINT32 m_samples_size;
-	address_space *m_space;
-	dac_device *m_dac;
-
-	TIMER_CALLBACK_MEMBER( setvector_callback );
+	uint32_t m_sample_addr;
+	optional_device<dac_byte_interface> m_dac;
 };
 
-extern const device_type M72;
+DECLARE_DEVICE_TYPE(IREM_M72_AUDIO, m72_audio_device)
+
+#endif // MAME_AUDIO_M72_H

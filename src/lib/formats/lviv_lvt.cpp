@@ -1,9 +1,9 @@
 // license:BSD-3-Clause
 // copyright-holders:Krzysztof Strzecha
 /* .LVT tape images */
-#include <assert.h>
-
 #include "lviv_lvt.h"
+
+#include <cassert>
 
 #define WAVEENTRY_LOW  -32768
 #define WAVEENTRY_HIGH  32767
@@ -17,18 +17,16 @@
 #define LVIV_LVT_HEADER_PILOT_LENGTH        5190
 #define LVIV_LVT_BLOCK_PILOT_LENGTH         1298
 
-static INT16 *lviv_emit_level(INT16 *p, int count, int level)
+static int16_t *lviv_emit_level(int16_t *p, int count, int level)
 {
-	int i;
-
-	for (i=0; i<count; i++)
+	for (int i=0; i<count; i++)
 	{
 		*(p++) = level;
 	}
 	return p;
 }
 
-static INT16* lviv_output_bit(INT16 *p, UINT8 b)
+static int16_t* lviv_output_bit(int16_t *p, uint8_t b)
 {
 	if (b)
 	{
@@ -45,13 +43,11 @@ static INT16* lviv_output_bit(INT16 *p, UINT8 b)
 		return p;
 }
 
-static INT16* lviv_output_byte(INT16 *p, UINT8 byte)
+static int16_t* lviv_output_byte(int16_t *p, uint8_t byte)
 {
-	int i;
-
 	p = lviv_output_bit (p, 0);
 
-	for (i=0; i<8; i++)
+	for (int i=0; i<8; i++)
 		p = lviv_output_bit(p,(byte>>i) & 0x01);
 
 	p = lviv_output_bit (p, 1);
@@ -61,7 +57,7 @@ static INT16* lviv_output_byte(INT16 *p, UINT8 byte)
 
 /*************************************************************************************/
 
-static int lviv_cassette_calculate_size_in_samples(const UINT8 *bytes, int length)
+static int lviv_cassette_calculate_size_in_samples(const uint8_t *bytes, int length)
 {
 	int size;
 
@@ -76,25 +72,24 @@ static int lviv_cassette_calculate_size_in_samples(const UINT8 *bytes, int lengt
 
 /*************************************************************************************/
 
-static int lviv_cassette_fill_wave(INT16 *buffer, int length, UINT8 *bytes)
+static int lviv_cassette_fill_wave(int16_t *buffer, int length, uint8_t *bytes)
 {
-	int i;
-	INT16 * p = buffer;
+	int16_t * p = buffer;
 
 	int data_size;
 
-	for (i=0; i<LVIV_LVT_HEADER_PILOT_LENGTH; i++)
+	for (int i=0; i<LVIV_LVT_HEADER_PILOT_LENGTH; i++)
 		p = lviv_output_bit (p, 1);
 
-	for (i=0; i<10; i++)
+	for (int i=0; i<10; i++)
 		p = lviv_output_byte (p, bytes[0x09]);
 
-	for (i=0; i<6; i++)
+	for (int i=0; i<6; i++)
 		p = lviv_output_byte (p, bytes[0x0a+i]);
 
 	p = lviv_emit_level (p, LVIV_LVT_PAUSE_SAMPLES, WAVEENTRY_HIGH);
 
-	for (i=0; i<LVIV_LVT_BLOCK_PILOT_LENGTH; i++)
+	for (int i=0; i<LVIV_LVT_BLOCK_PILOT_LENGTH; i++)
 		p = lviv_output_bit (p, 1);
 
 	data_size = length - ( LVIV_LVT_HEADER_PILOT_SAMPLES +
@@ -103,7 +98,7 @@ static int lviv_cassette_fill_wave(INT16 *buffer, int length, UINT8 *bytes)
 					LVIV_LVT_BLOCK_PILOT_SAMPLES );
 	data_size/=660;
 
-	for (i=0; i<data_size; i++)
+	for (int i=0; i<data_size; i++)
 		p = lviv_output_byte (p, bytes[0x10+i]);
 
 	return p - buffer;
@@ -111,7 +106,7 @@ static int lviv_cassette_fill_wave(INT16 *buffer, int length, UINT8 *bytes)
 
 
 
-static const struct CassetteLegacyWaveFiller lviv_legacy_fill_wave =
+static const cassette_image::LegacyWaveFiller lviv_legacy_fill_wave =
 {
 	lviv_cassette_fill_wave,                    /* fill_wave */
 	-1,                                         /* chunk_size */
@@ -124,21 +119,21 @@ static const struct CassetteLegacyWaveFiller lviv_legacy_fill_wave =
 
 
 
-static casserr_t lviv_lvt_identify(cassette_image *cassette, struct CassetteOptions *opts)
+static cassette_image::error lviv_lvt_identify(cassette_image *cassette, cassette_image::Options *opts)
 {
-	return cassette_legacy_identify(cassette, opts, &lviv_legacy_fill_wave);
+	return cassette->legacy_identify(opts, &lviv_legacy_fill_wave);
 }
 
 
 
-static casserr_t lviv_lvt_load(cassette_image *cassette)
+static cassette_image::error lviv_lvt_load(cassette_image *cassette)
 {
-	return cassette_legacy_construct(cassette, &lviv_legacy_fill_wave);
+	return cassette->legacy_construct(&lviv_legacy_fill_wave);
 }
 
 
 
-static const struct CassetteFormat lviv_lvt_image_format =
+static const cassette_image::Format lviv_lvt_image_format =
 {
 	"lvt,lvr,lv0,lv1,lv2,lv3",
 	lviv_lvt_identify,

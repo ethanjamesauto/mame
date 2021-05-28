@@ -1,7 +1,11 @@
 // license:BSD-3-Clause
 // copyright-holders:Ryan Holtz
 //-----------------------------------------------------------------------------
-// Effect File Variables
+// Phosphor Effect
+//-----------------------------------------------------------------------------
+
+//-----------------------------------------------------------------------------
+// Sampler Definitions
 //-----------------------------------------------------------------------------
 
 texture Diffuse;
@@ -57,7 +61,7 @@ struct PS_INPUT
 };
 
 //-----------------------------------------------------------------------------
-// Simple Vertex Shader
+// Phosphor Vertex Shader
 //-----------------------------------------------------------------------------
 
 uniform float2 ScreenDims;
@@ -67,16 +71,16 @@ uniform bool Passthrough;
 
 VS_OUTPUT vs_main(VS_INPUT Input)
 {
-	VS_OUTPUT Output = (VS_OUTPUT)0;
+	VS_OUTPUT Output = (VS_OUTPUT)0.0;
 
-	Output.Position = float4(Input.Position.xyz, 1.0f);
+	Output.Position = float4(Input.Position.xyz, 1.0);
 	Output.Position.xy /= ScreenDims;
-	Output.Position.y = 1.0f - Output.Position.y; // flip y
-	Output.Position.xy -= 0.5f; // center
-	Output.Position.xy *= 2.0f; // zoom
+	Output.Position.y = 1.0 - Output.Position.y; // flip y
+	Output.Position.xy -= 0.5; // center
+	Output.Position.xy *= 2.0; // zoom
 
 	Output.TexCoord = Input.TexCoord;
-	Output.TexCoord += 0.5f / TargetDims; // half texel offset correction (DX9)
+	Output.TexCoord += 0.5 / TargetDims; // half texel offset correction (DX9)
 
 	Output.PrevCoord = Output.TexCoord;
 
@@ -86,37 +90,37 @@ VS_OUTPUT vs_main(VS_INPUT Input)
 }
 
 //-----------------------------------------------------------------------------
-// Simple Pixel Shader
+// Phosphor Pixel Shader
 //-----------------------------------------------------------------------------
 
-uniform float3 Phosphor = float3(0.0f, 0.0f, 0.0f);
+uniform float DeltaTime = 0.0;
+uniform float3 Phosphor = float3(0.0, 0.0, 0.0);
+
+static const float F = 30.0;
 
 float4 ps_main(PS_INPUT Input) : COLOR
 {
-	float4 CurrPix = tex2D(DiffuseSampler, Input.TexCoord);
-	float3 PrevPix = tex2D(PreviousSampler, Input.PrevCoord).rgb * float3(Phosphor.r, Phosphor.g, Phosphor.b);
+	float4 CurrY = tex2D(DiffuseSampler, Input.TexCoord);
+	float3 PrevY = tex2D(PreviousSampler, Input.PrevCoord).rgb;
 
-	float RedMax = max(CurrPix.r, PrevPix.r);
-	float GreenMax = max(CurrPix.g, PrevPix.g);
-	float BlueMax = max(CurrPix.b, PrevPix.b);
-
-	return Passthrough
-		? CurrPix
-		: float4(RedMax, GreenMax, BlueMax, CurrPix.a);
+	PrevY[0] *= Phosphor[0] == 0.0 ? 0.0 : pow(Phosphor[0], F * DeltaTime);
+	PrevY[1] *= Phosphor[1] == 0.0 ? 0.0 : pow(Phosphor[1], F * DeltaTime);
+	PrevY[2] *= Phosphor[2] == 0.0 ? 0.0 : pow(Phosphor[2], F * DeltaTime);
+	float a = max(PrevY[0], CurrY[0]);
+	float b = max(PrevY[1], CurrY[1]);
+	float c = max(PrevY[2], CurrY[2]);
+	return Passthrough ? CurrY : float4(a, b, c, CurrY.a);
 }
 
 //-----------------------------------------------------------------------------
-// Simple Effect
+// Phosphor Technique
 //-----------------------------------------------------------------------------
 
-technique TestTechnique
+technique DefaultTechnique
 {
 	pass Pass0
 	{
 		Lighting = FALSE;
-
-		Sampler[0] = <DiffuseSampler>;
-		Sampler[1] = <PreviousSampler>;
 
 		VertexShader = compile vs_2_0 vs_main();
 		PixelShader  = compile ps_2_0 ps_main();

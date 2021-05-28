@@ -39,6 +39,18 @@
     Register 7:
         D7..D0: Noise volume
 
+************************************************************
+
+    The device has active high(!) SO strobes triggered by
+    read accesses, which transfer data from the 8 SI lines
+    to the bus. Logically SO0-7 and SI0-7 ought to be hooked
+    up to the same input matrix, but this only appears to be
+    the case with the Astrocade home systems.  The arcade
+    games instead channel the SI inputs through a quartet of
+    MC14539B (pin-compatible with 74153) CMOS multiplexers
+    and connect the SO strobes to unrelated outputs which
+    generally use the upper 8 address bits as data.
+
 ***********************************************************/
 
 #include "emu.h"
@@ -46,7 +58,7 @@
 
 
 // device type definition
-const device_type ASTROCADE = &device_creator<astrocade_device>;
+DEFINE_DEVICE_TYPE(ASTROCADE_IO, astrocade_io_device, "astrocade_io", "Astrocade Custom I/O")
 
 
 //**************************************************************************
@@ -54,26 +66,43 @@ const device_type ASTROCADE = &device_creator<astrocade_device>;
 //**************************************************************************
 
 //-------------------------------------------------
-//  astrocade_device - constructor
+//  astrocade_io_device - constructor
 //-------------------------------------------------
 
-astrocade_device::astrocade_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: device_t(mconfig, ASTROCADE, "Astrocade", tag, owner, clock, "astrocade", __FILE__),
-		device_sound_interface(mconfig, *this),
-		m_stream(nullptr),
-		m_master_count(0),
-		m_vibrato_clock(0),
-		m_noise_clock(0),
-		m_noise_state(0),
-		m_a_count(0),
-		m_a_state(0),
-		m_b_count(0),
-		m_b_state(0),
-		m_c_count(0),
-		m_c_state(0)
+astrocade_io_device::astrocade_io_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: device_t(mconfig, ASTROCADE_IO, tag, owner, clock)
+	, device_sound_interface(mconfig, *this)
+	, m_stream(nullptr)
+	, m_master_count(0)
+	, m_vibrato_clock(0)
+	, m_noise_clock(0)
+	, m_noise_state(0)
+	, m_a_count(0)
+	, m_a_state(0)
+	, m_b_count(0)
+	, m_b_state(0)
+	, m_c_count(0)
+	, m_c_state(0)
+	, m_si_callback(*this)
+	, m_so_callback(*this)
+	, m_pots(*this)
 {
-	memset(m_reg, 0, sizeof(UINT8)*8);
-	memset(m_bitswap, 0, sizeof(UINT8)*256);
+	memset(m_reg, 0, sizeof(uint8_t)*8);
+	memset(m_bitswap, 0, sizeof(uint8_t)*256);
+}
+
+
+//-------------------------------------------------
+//  device_resolve_objects - resolve objects that
+//  may be needed for other devices to set
+//  initial conditions at start time
+//-------------------------------------------------
+
+void astrocade_io_device::device_resolve_objects()
+{
+	m_si_callback.resolve_safe(0);
+	m_so_callback.resolve_all_safe();
+	m_pots.resolve_all_safe(0);
 }
 
 
@@ -81,13 +110,11 @@ astrocade_device::astrocade_device(const machine_config &mconfig, const char *ta
 //  device_start - device-specific startup
 //-------------------------------------------------
 
-void astrocade_device::device_start()
+void astrocade_io_device::device_start()
 {
-	int i;
-
 	/* generate a bitswap table for the noise */
-	for (i = 0; i < 256; i++)
-		m_bitswap[i] = BITSWAP8(i, 0,1,2,3,4,5,6,7);
+	for (int i = 0; i < 256; i++)
+		m_bitswap[i] = bitswap<8>(i, 0,1,2,3,4,5,6,7);
 
 	/* allocate a stream for output */
 	m_stream = stream_alloc(0, 1, clock());
@@ -102,12 +129,12 @@ void astrocade_device::device_start()
 //  sound_stream_update - handle a stream update
 //-------------------------------------------------
 
-void astrocade_device::sound_stream_update(sound_stream &stream, stream_sample_t **inputs, stream_sample_t **outputs, int samples)
+void astrocade_io_device::sound_stream_update(sound_stream &stream, std::vector<read_stream_view> const &inputs, std::vector<write_stream_view> &outputs)
 {
-	stream_sample_t *dest = outputs[0];
-	UINT16 noise_state;
-	UINT8 master_count;
-	UINT8 noise_clock;
+	auto &dest = outputs[0];
+	uint16_t noise_state;
+	uint8_t master_count;
+	uint8_t noise_clock;
 
 	/* load some locals */
 	master_count = m_master_count;
@@ -115,17 +142,16 @@ void astrocade_device::sound_stream_update(sound_stream &stream, stream_sample_t
 	noise_state = m_noise_state;
 
 	/* loop over samples */
-	while (samples > 0)
+	int samples_this_time;
+	constexpr stream_buffer::sample_t sample_scale = 1.0f / 60.0f;
+	for (int sampindex = 0; sampindex < dest.samples(); sampindex += samples_this_time)
 	{
-		stream_sample_t cursample = 0;
-		int samples_this_time;
-		int samp;
+		s32 cursample = 0;
 
 		/* compute the number of cycles until the next master oscillator reset */
 		/* or until the next noise boundary */
-		samples_this_time = MIN(samples, 256 - master_count);
-		samples_this_time = MIN(samples_this_time, 64 - noise_clock);
-		samples -= samples_this_time;
+		samples_this_time = std::min<int>(dest.samples() - sampindex, 256 - master_count);
+		samples_this_time = std::min(samples_this_time, 64 - noise_clock);
 
 		/* sum the output of the tone generators */
 		if (m_a_state)
@@ -140,9 +166,7 @@ void astrocade_device::sound_stream_update(sound_stream &stream, stream_sample_t
 			cursample += m_reg[7] >> 4;
 
 		/* scale to max and output */
-		cursample = cursample * 32767 / 60;
-		for (samp = 0; samp < samples_this_time; samp++)
-			*dest++ = cursample;
+		dest.fill(stream_buffer::sample_t(cursample) * sample_scale, sampindex, samples_this_time);
 
 		/* clock the noise; a 2-bit counter clocks a 4-bit counter which clocks the LFSR */
 		noise_clock += samples_this_time;
@@ -218,7 +242,7 @@ void astrocade_device::sound_stream_update(sound_stream &stream, stream_sample_t
 //  device_reset - device-specific reset
 //-------------------------------------------------
 
-void astrocade_device::device_reset()
+void astrocade_io_device::device_reset()
 {
 	memset(m_reg, 0, sizeof(m_reg));
 
@@ -243,7 +267,7 @@ void astrocade_device::device_reset()
 //  Save state registration
 //-------------------------------------------------
 
-void astrocade_device::state_save_register()
+void astrocade_io_device::state_save_register()
 {
 	save_item(NAME(m_reg));
 
@@ -270,7 +294,7 @@ void astrocade_device::state_save_register()
  *
  *************************************/
 
-WRITE8_MEMBER( astrocade_device::astrocade_sound_w )
+void astrocade_io_device::write(offs_t offset, uint8_t data)
 {
 	if ((offset & 8) != 0)
 		offset = (offset >> 8) & 7;
@@ -282,4 +306,20 @@ WRITE8_MEMBER( astrocade_device::astrocade_sound_w )
 
 	/* stash the new register value */
 	m_reg[offset & 7] = data;
+}
+
+
+uint8_t astrocade_io_device::read(offs_t offset)
+{
+	if ((offset & 0x0f) < 0x08)
+	{
+		if (!machine().side_effects_disabled())
+			m_so_callback[offset & 7](0, offset >> 8);
+
+		return m_si_callback(offset & 7);
+	}
+	else if ((offset & 0x0f) >= 0x0c)
+		return m_pots[offset & 3]();
+	else
+		return 0xff;
 }

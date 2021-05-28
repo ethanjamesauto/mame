@@ -38,6 +38,7 @@ memory map:
 001     W  Devastators sets bit 1, function unknown.
            Ultraman sets the register to 0x0f.
            None of the other games I tested seem to set this register to other than 0.
+           Update: Chequered Flag sets bit 0 when background should be dimmed (palette control?)
 002-003 W  selects the portion of the gfx ROMs to be read.
 004     W  Aliens uses this to select the ROM bank to be read, but Punk Shot
            and TMNT don't, they use another bit of the registers above. Many
@@ -60,10 +61,13 @@ memory map:
 #include "emu.h"
 #include "k051960.h"
 
-#define VERBOSE 0
-#define LOG(x) do { if (VERBOSE) logerror x; } while (0)
+#include "screen.h"
 
-const device_type K051960 = &device_creator<k051960_device>;
+#define VERBOSE 0
+#include "logmacro.h"
+
+
+DEFINE_DEVICE_TYPE(K051960, k051960_device, "k051960", "K051960 Sprite Generator")
 
 const gfx_layout k051960_device::spritelayout =
 {
@@ -125,41 +129,39 @@ GFXDECODE_MEMBER( k051960_device::gfxinfo_gradius3 )
 GFXDECODE_END
 
 
-k051960_device::k051960_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: device_t(mconfig, K051960, "K051960 Sprite Generator", tag, owner, clock, "k051960", __FILE__),
-	device_gfx_interface(mconfig, *this, gfxinfo),
-	m_ram(nullptr),
-	m_sprite_rom(nullptr),
-	m_sprite_size(0),
-	m_screen_tag(nullptr),
-	m_screen(nullptr),
-	m_scanline_timer(nullptr),
-	m_irq_handler(*this),
-	m_firq_handler(*this),
-	m_nmi_handler(*this),
-	m_romoffset(0),
-	m_spriteflip(0),
-	m_readroms(0),
-	m_nmi_enabled(0)
+k051960_device::k051960_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: device_t(mconfig, K051960, tag, owner, clock)
+	, device_gfx_interface(mconfig, *this, gfxinfo)
+	, device_video_interface(mconfig, *this)
+	, m_ram(nullptr)
+	, m_sprite_rom(*this, DEVICE_SELF)
+	, m_scanline_timer(nullptr)
+	, m_k051960_cb(*this)
+	, m_irq_handler(*this)
+	, m_firq_handler(*this)
+	, m_nmi_handler(*this)
+	, m_vreg_contrast_handler(*this)
+	, m_romoffset(0)
+	, m_spriteflip(0)
+	, m_readroms(0)
+	, m_nmi_enabled(0)
 {
 }
 
-void k051960_device::set_plane_order(device_t &device, int order)
+void k051960_device::set_plane_order(int order)
 {
-	k051960_device &dev = downcast<k051960_device &>(device);
-
 	switch (order)
 	{
 		case K051960_PLANEORDER_BASE:
-			device_gfx_interface::static_set_info(dev, gfxinfo);
+			set_info(gfxinfo);
 			break;
 
 		case K051960_PLANEORDER_MIA:
-			device_gfx_interface::static_set_info(dev, gfxinfo_reverse);
+			set_info(gfxinfo_reverse);
 			break;
 
 		case K051960_PLANEORDER_GRADIUS3:
-			device_gfx_interface::static_set_info(dev, gfxinfo_gradius3);
+			set_info(gfxinfo_gradius3);
 			break;
 
 		default:
@@ -168,48 +170,40 @@ void k051960_device::set_plane_order(device_t &device, int order)
 }
 
 //-------------------------------------------------
-//  set_screen_tag - set screen we are attached to
-//-------------------------------------------------
-
-void k051960_device::set_screen_tag(device_t &device, device_t *owner, const char *tag)
-{
-	k051960_device &dev = dynamic_cast<k051960_device &>(device);
-	dev.m_screen_tag = tag;
-}
-
-//-------------------------------------------------
 //  device_start - device-specific startup
 //-------------------------------------------------
 
 void k051960_device::device_start()
 {
+	// assumes it can make an address mask with m_sprite_rom.length() - 1
+	assert(!(m_sprite_rom.length() & (m_sprite_rom.length() - 1)));
+
 	// make sure our screen is started
-	m_screen = m_owner->subdevice<screen_device>(m_screen_tag);
-	if (!m_screen->started())
+	if (!screen().started())
 		throw device_missing_dependencies();
+	if (!palette().device().started())
+		throw device_missing_dependencies();
+
+	// bind callbacks
+	m_k051960_cb.resolve();
 
 	// allocate scanline timer and start at first scanline
 	m_scanline_timer = machine().scheduler().timer_alloc(timer_expired_delegate(FUNC(k051960_device::scanline_callback), this));
-	m_scanline_timer->adjust(m_screen->time_until_pos(0));
-
-	m_sprite_rom = region()->base();
-	m_sprite_size = region()->bytes();
+	m_scanline_timer->adjust(screen().time_until_pos(0));
 
 	decode_gfx();
-	m_gfx[0]->set_colors(m_palette->entries() / m_gfx[0]->depth());
+	gfx(0)->set_colors(palette().entries() / gfx(0)->depth());
 
-	if (VERBOSE && !(m_palette->shadows_enabled()))
+	if (VERBOSE && !(palette().shadows_enabled()))
 		popmessage("driver should use VIDEO_HAS_SHADOWS");
 
-	m_ram = make_unique_clear<UINT8[]>(0x400);
-
-	// bind callbacks
-	m_k051960_cb.bind_relative_to(*owner());
+	m_ram = make_unique_clear<uint8_t[]>(0x400);
 
 	// resolve callbacks
 	m_irq_handler.resolve_safe();
 	m_firq_handler.resolve_safe();
 	m_nmi_handler.resolve_safe();
+	m_vreg_contrast_handler.resolve_safe();
 
 	// register for save states
 	save_item(NAME(m_romoffset));
@@ -217,7 +211,7 @@ void k051960_device::device_start()
 	save_item(NAME(m_readroms));
 	save_item(NAME(m_nmi_enabled));
 	save_item(NAME(m_spriterombank));
-	save_pointer(NAME(m_ram.get()), 0x400);
+	save_pointer(NAME(m_ram), 0x400);
 }
 
 //-------------------------------------------------
@@ -244,7 +238,7 @@ void k051960_device::device_reset()
 TIMER_CALLBACK_MEMBER( k051960_device::scanline_callback )
 {
 	// range 0..255
-	UINT8 y = m_screen->vpos();
+	uint8_t y = screen().vpos();
 
 	// 32v
 	if ((y % 32 == 0) && m_nmi_enabled)
@@ -255,7 +249,7 @@ TIMER_CALLBACK_MEMBER( k051960_device::scanline_callback )
 		m_irq_handler(ASSERT_LINE);
 
 	// wait for next line
-	m_scanline_timer->adjust(m_screen->time_until_pos(y + 1));
+	m_scanline_timer->adjust(screen().time_until_pos(y + 1));
 }
 
 int k051960_device::k051960_fetchromdata( int byte )
@@ -271,14 +265,14 @@ int k051960_device::k051960_fetchromdata( int byte )
 	m_k051960_cb(&code, &color, &pri, &shadow);
 
 	addr = (code << 7) | (off1 << 2) | byte;
-	addr &= m_sprite_size - 1;
+	addr &= m_sprite_rom.length() - 1;
 
 //  popmessage("%s: addr %06x", machine().describe_context(), addr);
 
 	return m_sprite_rom[addr];
 }
 
-READ8_MEMBER( k051960_device::k051960_r )
+u8 k051960_device::k051960_r(offs_t offset)
 {
 	if (m_readroms)
 	{
@@ -290,25 +284,25 @@ READ8_MEMBER( k051960_device::k051960_r )
 		return m_ram[offset];
 }
 
-WRITE8_MEMBER( k051960_device::k051960_w )
+void k051960_device::k051960_w(offs_t offset, u8 data)
 {
 	m_ram[offset] = data;
 }
 
 
 /* should this be split by k051960? */
-READ8_MEMBER( k051960_device::k051937_r )
+u8 k051960_device::k051937_r(offs_t offset)
 {
 	if (m_readroms && offset >= 4 && offset < 8)
 		return k051960_fetchromdata(offset & 3);
 	else if (offset == 0)
-		return m_screen->vblank() ? 1 : 0; // vblank?
+		return screen().vblank() ? 1 : 0; // vblank?
 
-	//logerror("%04x: read unknown 051937 address %x\n", space.device().safe_pc(), offset);
+	//logerror("%s: read unknown 051937 address %x\n", m_maincpu->pc(), offset);
 	return 0;
 }
 
-WRITE8_MEMBER( k051960_device::k051937_w )
+void k051960_device::k051937_w(offs_t offset, u8 data)
 {
 	if (offset == 0)
 	{
@@ -329,10 +323,14 @@ WRITE8_MEMBER( k051960_device::k051937_w )
 
 		/* bit 5 = enable gfx ROM reading */
 		m_readroms = data & 0x20;
-		//logerror("%04x: write %02x to 051937 address %x\n", space.device().safe_pc(), data, offset);
+		//logerror("%s: write %02x to 051937 address %x\n", m_maincpu->pc(), data, offset);
 	}
 	else if (offset == 1)
 	{
+		//popmessage("%04x: write %02x to 051937 address %x", m_maincpu->pc(), data, offset);
+		// Chequered Flag uses this bit to enable background palette dimming
+		// TODO: use a callback here for now, pending further investigation over this bit
+		m_vreg_contrast_handler(BIT(data,0));
 		// unknown, Devastators writes 02 here in game
 		if (0)
 			logerror("%s: %02x to 051937 address %x\n", machine().describe_context(), data, offset);
@@ -343,8 +341,7 @@ WRITE8_MEMBER( k051960_device::k051937_w )
 	}
 	else
 	{
-	//  popmessage("%04x: write %02x to 051937 address %x", space.device().safe_pc(), data, offset);
-	//logerror("%04x: write %02x to unknown 051937 address %x\n", space.device().safe_pc(), data, offset);
+	//logerror("%s: write %02x to unknown 051937 address %x\n", m_maincpu->pc(), data, offset);
 	}
 }
 
@@ -386,7 +383,7 @@ void k051960_device::k051960_sprites_draw( bitmap_ind16 &bitmap, const rectangle
 #define NUM_SPRITES 128
 	int offs, pri_code;
 	int sortedlist[NUM_SPRITES];
-	UINT8 drawmode_table[256];
+	uint8_t drawmode_table[256];
 
 	memset(drawmode_table, DRAWMODE_SOURCE, sizeof(drawmode_table));
 	drawmode_table[0] = DRAWMODE_NONE;
@@ -466,7 +463,7 @@ void k051960_device::k051960_sprites_draw( bitmap_ind16 &bitmap, const rectangle
 			flipy = !flipy;
 		}
 
-		drawmode_table[m_gfx[0]->granularity() - 1] = shadow ? DRAWMODE_SHADOW : DRAWMODE_SOURCE;
+		drawmode_table[gfx(0)->granularity() - 1] = shadow ? DRAWMODE_SHADOW : DRAWMODE_SOURCE;
 
 		if (zoomx == 0x10000 && zoomy == 0x10000)
 		{
@@ -492,14 +489,14 @@ void k051960_device::k051960_sprites_draw( bitmap_ind16 &bitmap, const rectangle
 						c += yoffset[y];
 
 					if (max_priority == -1)
-						m_gfx[0]->prio_transtable(bitmap,cliprect,
+						gfx(0)->prio_transtable(bitmap,cliprect,
 								c,color,
 								flipx,flipy,
 								sx & 0x1ff,sy,
 								priority_bitmap,pri,
 								drawmode_table);
 					else
-						m_gfx[0]->transtable(bitmap,cliprect,
+						gfx(0)->transtable(bitmap,cliprect,
 								c,color,
 								flipx,flipy,
 								sx & 0x1ff,sy,
@@ -533,7 +530,7 @@ void k051960_device::k051960_sprites_draw( bitmap_ind16 &bitmap, const rectangle
 						c += yoffset[y];
 
 					if (max_priority == -1)
-						m_gfx[0]->prio_zoom_transtable(bitmap,cliprect,
+						gfx(0)->prio_zoom_transtable(bitmap,cliprect,
 								c,color,
 								flipx,flipy,
 								sx & 0x1ff,sy,
@@ -541,7 +538,7 @@ void k051960_device::k051960_sprites_draw( bitmap_ind16 &bitmap, const rectangle
 								priority_bitmap,pri,
 								drawmode_table);
 					else
-						m_gfx[0]->zoom_transtable(bitmap,cliprect,
+						gfx(0)->zoom_transtable(bitmap,cliprect,
 								c,color,
 								flipx,flipy,
 								sx & 0x1ff,sy,

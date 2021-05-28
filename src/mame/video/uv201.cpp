@@ -6,6 +6,7 @@
 
 **********************************************************************/
 
+#include "emu.h"
 #include "uv201.h"
 
 
@@ -80,7 +81,7 @@
 	((_y >= cliprect.min_y) && (_y <= cliprect.max_y))
 
 #define DRAW_PIXEL(_scanline, _dot) \
-	if (IS_VISIBLE(_scanline)) bitmap.pix32((_scanline), HSYNC_WIDTH + HFP_WIDTH + _dot) = m_palette_val[pixel];
+	if (IS_VISIBLE(_scanline)) bitmap.pix((_scanline), HSYNC_WIDTH + HFP_WIDTH + _dot) = m_palette_val[pixel];
 
 
 
@@ -89,15 +90,15 @@
 //**************************************************************************
 
 // device type definition
-const device_type UV201 = &device_creator<uv201_device>;
+DEFINE_DEVICE_TYPE(UV201, uv201_device, "uv201", "UV201")
 
 
 //-------------------------------------------------
 //  uv201_device - constructor
 //-------------------------------------------------
 
-uv201_device::uv201_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock) :
-	device_t(mconfig, UV201, "UV201", tag, owner, clock, "uv201", __FILE__),
+uv201_device::uv201_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock) :
+	device_t(mconfig, UV201, tag, owner, clock),
 	device_video_interface(mconfig, *this),
 	m_write_ext_int(*this),
 	m_write_hblank(*this),
@@ -165,7 +166,7 @@ void uv201_device::device_reset()
 
 void uv201_device::device_timer(emu_timer &timer, device_timer_id id, int param, void *ptr)
 {
-	int scanline = m_screen->vpos();
+	int scanline = screen().vpos();
 
 	switch (id)
 	{
@@ -203,16 +204,16 @@ void uv201_device::device_timer(emu_timer &timer, device_timer_id id, int param,
 
 void uv201_device::initialize_palette()
 {
-	UINT8 offlointensity = 0x00;
-	UINT8 offhiintensity = 0xc0;
+	uint8_t offlointensity = 0x00;
+	uint8_t offhiintensity = 0xc0;
 
-	UINT8 onlointensity = 0xa0;
-	UINT8 onhiintensity = 0xff;
+	uint8_t onlointensity = 0xa0;
+	uint8_t onhiintensity = 0xff;
 
 	for (int i = 0; i < 4; i++)
 	{
 		int offset = i * 8;
-		UINT8 onvalue, offvalue;
+		uint8_t onvalue, offvalue;
 
 		if (offset < 16)
 		{
@@ -243,7 +244,7 @@ void uv201_device::initialize_palette()
 
 int uv201_device::get_field_vpos()
 {
-	int vpos = m_screen->vpos();
+	int vpos = screen().vpos();
 
 	if (vpos >= SCREEN_HEIGHT)
 	{
@@ -261,7 +262,7 @@ int uv201_device::get_field_vpos()
 
 int uv201_device::get_field()
 {
-	return m_screen->vpos() < SCREEN_HEIGHT;
+	return screen().vpos() < SCREEN_HEIGHT;
 }
 
 
@@ -273,8 +274,8 @@ void uv201_device::set_y_interrupt()
 {
 	int scanline = ((m_cmd & COMMAND_YINT_H_O) << 1) | m_y_int;
 
-	m_timer_y_odd->adjust(m_screen->time_until_pos(scanline), 0, m_screen->frame_period());
-	//m_timer_y_even->adjust(m_screen->time_until_pos(scanline + SCREEN_HEIGHT), 0, m_screen->frame_period());
+	m_timer_y_odd->adjust(screen().time_until_pos(scanline), 0, screen().frame_period());
+	//m_timer_y_even->adjust(screen().time_until_pos(scanline + SCREEN_HEIGHT), 0, screen().frame_period());
 }
 
 
@@ -284,11 +285,11 @@ void uv201_device::set_y_interrupt()
 
 void uv201_device::do_partial_update()
 {
-	int vpos = m_screen->vpos();
+	int vpos = screen().vpos();
 
 	if (LOG) logerror("Partial screen update at scanline %u\n", vpos);
 
-	m_screen->update_partial(vpos);
+	screen().update_partial(vpos);
 }
 
 
@@ -296,9 +297,9 @@ void uv201_device::do_partial_update()
 //  read -
 //-------------------------------------------------
 
-READ8_MEMBER( uv201_device::read )
+uint8_t uv201_device::read(offs_t offset)
 {
-	UINT8 data = 0xff;
+	uint8_t data = 0xff;
 
 	switch (offset)
 	{
@@ -356,7 +357,7 @@ READ8_MEMBER( uv201_device::read )
 //  write -
 //-------------------------------------------------
 
-WRITE8_MEMBER( uv201_device::write )
+void uv201_device::write(offs_t offset, uint8_t data)
 {
 	switch (offset)
 	{
@@ -463,7 +464,7 @@ WRITE_LINE_MEMBER( uv201_device::ext_int_w )
 	if (!state && (m_cmd & COMMAND_FRZ))
 	{
 		m_freeze_y = get_field_vpos();
-		m_freeze_x = m_screen->hpos();
+		m_freeze_x = screen().hpos();
 	}
 }
 
@@ -482,7 +483,7 @@ READ_LINE_MEMBER( uv201_device::kbd_r )
 //  screen_update -
 //-------------------------------------------------
 
-UINT32 uv201_device::screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
+uint32_t uv201_device::screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
 {
 	bitmap.fill(rgb_t(0x00,0x00,0x00), cliprect);
 
@@ -502,23 +503,23 @@ UINT32 uv201_device::screen_update(screen_device &screen, bitmap_rgb32 &bitmap, 
 
 	for (int i = 0; i < 16; i++)
 	{
-		UINT8 xy_hi = (m_cmd & COMMAND_A_B) ? RAM(RAM_XY_HI_A) : RAM(RAM_XY_HI_B);
-		UINT8 y_lo = (m_cmd & COMMAND_A_B) ? RAM(RAM_Y_LO_A) : RAM(RAM_Y_LO_B);
-		UINT16 y = (BIT(xy_hi, 7) << 8) | y_lo;
+		uint8_t xy_hi = (m_cmd & COMMAND_A_B) ? RAM(RAM_XY_HI_A) : RAM(RAM_XY_HI_B);
+		uint8_t y_lo = (m_cmd & COMMAND_A_B) ? RAM(RAM_Y_LO_A) : RAM(RAM_Y_LO_B);
+		uint16_t y = (BIT(xy_hi, 7) << 8) | y_lo;
 		int xord = xy_hi & 0x0f;
 
-		UINT8 rp_hi_color = RAM_XORD(RAM_RP_HI_COLOR);
-		UINT8 rp_lo = RAM_XORD(RAM_RP_LO);
-		UINT16 rp = ((rp_hi_color << 8) | rp_lo) & 0x1fff;
+		uint8_t rp_hi_color = RAM_XORD(RAM_RP_HI_COLOR);
+		uint8_t rp_lo = RAM_XORD(RAM_RP_LO);
+		uint16_t rp = ((rp_hi_color << 8) | rp_lo) & 0x1fff;
 
 		if (rp < 0x800) rp |= 0x2000;
 
-		UINT8 dx_int_xcopy = RAM_XORD(RAM_DX_INT_XCOPY);
+		uint8_t dx_int_xcopy = RAM_XORD(RAM_DX_INT_XCOPY);
 		int color = ((dx_int_xcopy & 0x60) >> 2) | (BIT(rp_hi_color, 5) << 2) | (BIT(rp_hi_color, 6) << 1) | (BIT(rp_hi_color, 7));
-		UINT8 dx = dx_int_xcopy & 0x1f;
-		UINT8 dy = RAM_XORD(RAM_DY);
+		uint8_t dx = dx_int_xcopy & 0x1f;
+		uint8_t dy = RAM_XORD(RAM_DY);
 		int xcopy = BIT(dx_int_xcopy, 7);
-		UINT8 x = RAM_XORD(RAM_X);
+		uint8_t x = RAM_XORD(RAM_X);
 
 		if (LOG) logerror("Object %u xord %u y %u x %u dy %u dx %u xcopy %u color %u rp %04x\n", i, xord, y, x, dy, dx, xcopy, color, rp);
 
@@ -529,7 +530,7 @@ UINT32 uv201_device::screen_update(screen_device &screen, bitmap_rgb32 &bitmap, 
 		{
 			for (int sx = 0; sx < dx; sx++)
 			{
-				UINT8 data = m_read_db(rp);
+				uint8_t data = m_read_db(rp);
 
 				for (int bit = 0; bit < 8; bit++)
 				{

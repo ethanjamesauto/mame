@@ -56,7 +56,7 @@ Setting it up:
     Fire button. SPLAT would normally require 4 joysticks, but since the WMG only has 2, it is
     limited to a one-player game. Cocktail mode is not supported, WMG must be played on an upright
     only. After playing a game, returning to the menu will return to the place you left from. You
-    can force a return to the Setup by holding F1 and pressing F3. You can also clear out the
+    can force a return to the Setup by Auto Up and pressing F3. You can also clear out the
     menu's NVRAM (not the game's NVRAM), by holding down L and pressing F3.
 
 ToDo:
@@ -68,54 +68,269 @@ of save-state is also needed.
 
 ***********************************************************************************************************/
 
+#include "emu.h"
 #include "includes/williams.h"
+
 #include "cpu/m6800/m6800.h"
+#include "machine/input_merger.h"
 #include "machine/nvram.h"
+#include "sound/dac.h"
+#include "speaker.h"
 
-#define MASTER_CLOCK        (XTAL_12MHz)
-#define SOUND_CLOCK         (XTAL_3_579545MHz)
 
-class wmg_state : public williams_state
+#define MASTER_CLOCK        (XTAL(12'000'000))
+#define SOUND_CLOCK         (XTAL(3'579'545))
+
+class wmg_state : public defender_state
 {
 public:
 	wmg_state(const machine_config &mconfig, device_type type, const char *tag)
-		: williams_state(mconfig, type, tag)
+		: defender_state(mconfig, type, tag)
 		, m_p_ram(*this, "nvram")
+		, m_keyboard(*this, "X%d", 0)
+		, m_codebank(*this, "codebank")
+		, m_soundbank(*this, "soundbank")
 	{ }
 
-	DECLARE_WRITE8_MEMBER(wmg_rombank_w);
-	DECLARE_MACHINE_RESET(wmg);
-	DECLARE_DRIVER_INIT(wmg);
-	UINT8 m_wmg_bank;
-	UINT8 m_wmg_def_bank;
-	UINT8 m_wmg_port_select;
-	UINT8 m_wmg_vram_bank;
-	DECLARE_READ8_MEMBER(wmg_nvram_r);
-	DECLARE_WRITE8_MEMBER(wmg_nvram_w);
-	DECLARE_READ8_MEMBER(wmg_pia_0_r);
-	DECLARE_WRITE8_MEMBER(wmg_def_rombank_w);
+	void wmg(machine_config &config);
+
+	template <int N> DECLARE_CUSTOM_INPUT_MEMBER(wmg_mux_r);
+
+private:
+	virtual void driver_init() override;
+
+	u8 wmg_nvram_r(offs_t offset);
+	void wmg_nvram_w(offs_t offset, u8 data);
+	u8 wmg_pia_0_r(offs_t offset);
+	void wmg_c400_w(u8 data);
+	void wmg_d000_w(u8 data);
 	DECLARE_WRITE_LINE_MEMBER(wmg_port_select_w);
-	DECLARE_WRITE8_MEMBER(wmg_sound_reset_w);
-	DECLARE_WRITE8_MEMBER(wmg_vram_select_w);
-	DECLARE_CUSTOM_INPUT_MEMBER(wmg_mux_r);
-	void wmg_def_install_io_space(address_space &space);
-	required_shared_ptr<UINT8> m_p_ram;
+	void wmg_sound_reset_w(u8 data);
+	void wmg_vram_select_w(u8 data);
+
+	void wmg_cpu1(address_map &map);
+	void wmg_cpu2(address_map &map);
+	void wmg_banked_map(address_map &map);
+
+	virtual void machine_start() override;
+	virtual void machine_reset() override;
+
+	uint8_t m_wmg_c400;
+	uint8_t m_wmg_d000;
+	uint8_t m_wmg_port_select;
+	uint8_t m_wmg_vram_bank;
+	required_shared_ptr<uint8_t> m_p_ram;
+	required_ioport_array<17> m_keyboard;
+	required_memory_bank m_codebank;
+	required_memory_bank m_soundbank;
 };
 
+
+
+/*************************************
+ *
+ *  Address Map
+ *
+ *************************************/
+void wmg_state::wmg_cpu1(address_map &map)
+{
+	map(0x0000, 0xbfff).ram().share("videoram");
+	map(0x0000, 0x8fff).bankr("mainbank");
+	map(0xc000, 0xcfff).m(m_bankc000, FUNC(address_map_bank_device::amap8));
+	map(0xd000, 0xffff).bankr("codebank");
+	map(0xd000, 0xd000).w(FUNC(wmg_state::wmg_d000_w));
+}
+
+void wmg_state::wmg_cpu2(address_map &map)
+{
+	map(0x0000, 0x007f).ram();     /* internal RAM */
+	map(0x0080, 0x00ff).ram();     /* MC6810 RAM */
+	map(0x0400, 0x0403).mirror(0x8000).rw(m_pia[2], FUNC(pia6821_device::read), FUNC(pia6821_device::write));
+	map(0xf000, 0xffff).bankr("soundbank");
+}
+
+void wmg_state::wmg_banked_map(address_map &map)
+{
+	map(0x0000, 0x000f).mirror(0x03e0).writeonly().share("paletteram");
+	map(0x0010, 0x001f).mirror(0x03e0).w(FUNC(wmg_state::video_control_w));
+	map(0x0400, 0x0400).w(FUNC(wmg_state::wmg_c400_w));
+	map(0x0401, 0x0401).w(FUNC(wmg_state::wmg_sound_reset_w));
+	map(0x0804, 0x0807).r(FUNC(wmg_state::wmg_pia_0_r)).w(m_pia[0], FUNC(pia6821_device::write));
+	map(0x080c, 0x080f).rw(m_pia[1], FUNC(pia6821_device::read), FUNC(pia6821_device::write));
+	map(0x0900, 0x09ff).w(FUNC(wmg_state::wmg_vram_select_w));
+	map(0x0a00, 0x0a07).w(FUNC(wmg_state::blitter_w));
+	map(0x0b00, 0x0bff).r(FUNC(wmg_state::video_counter_r));
+	map(0x0bff, 0x0bff).w(FUNC(wmg_state::watchdog_reset_w));
+	map(0x0c00, 0x0fff).rw(FUNC(wmg_state::wmg_nvram_r), FUNC(wmg_state::wmg_nvram_w));
+	map(0x1000, 0x4fff).rom().region("maincpu", 0x68000); // Defender roms
+/* These next one is actually banked in CPU 1, but its not something Mame can handle very well. Placed here instead. */
+	map(0xd000, 0xefff).ram().share("nvram");
+}
+
+/***************************************************************
+ *
+ *  Inputs, banked. One set for each game.
+ *  Note: defaults from original games are used.
+ *  JOYSTICK PLAYER(1) is really JOYSTICKLEFT on WMG hardware
+ *  JOYSTICK PLAYER(2) is really JOYSTICKRIGHT on WMG hardware
+ *
+ ***************************************************************/
+static INPUT_PORTS_START( wmg )
+	PORT_START("IN0")
+	PORT_BIT( 0xff, IP_ACTIVE_HIGH, IPT_CUSTOM ) PORT_CUSTOM_MEMBER(wmg_state, wmg_mux_r<0>)
+
+	PORT_START("IN1")
+	PORT_BIT( 0xff, IP_ACTIVE_HIGH, IPT_CUSTOM ) PORT_CUSTOM_MEMBER(wmg_state, wmg_mux_r<1>)
+
+	PORT_START("IN2")
+	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_SERVICE1 ) PORT_NAME("Auto Up / Manual Down") PORT_TOGGLE
+	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_SERVICE ) PORT_NAME("Advance")
+	PORT_BIT( 0x04, IP_ACTIVE_HIGH, IPT_COIN3 )
+	PORT_BIT( 0x08, IP_ACTIVE_HIGH, IPT_MEMORY_RESET ) PORT_NAME("High Score Reset")
+	PORT_BIT( 0x10, IP_ACTIVE_HIGH, IPT_COIN1 )
+	PORT_BIT( 0x20, IP_ACTIVE_HIGH, IPT_COIN2 )
+	PORT_BIT( 0x40, IP_ACTIVE_HIGH, IPT_TILT )
+	PORT_BIT( 0x80, IP_ACTIVE_HIGH, IPT_UNKNOWN )
+
+/* menu */
+	PORT_START("X0") // IN000 (game,port,player)
+	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_JOYSTICK_UP ) PORT_8WAY PORT_NAME("Menu/Left/Up")
+	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_JOYSTICK_DOWN ) PORT_8WAY PORT_NAME("Menu/Left/Down")
+	PORT_BIT( 0x04, IP_ACTIVE_HIGH, IPT_JOYSTICK_LEFT ) PORT_8WAY PORT_NAME("Menu/Left/Left")
+	PORT_BIT( 0x08, IP_ACTIVE_HIGH, IPT_JOYSTICK_RIGHT ) PORT_8WAY PORT_NAME("Menu/Left/Right")
+	PORT_BIT( 0x10, IP_ACTIVE_HIGH, IPT_START1 )
+	PORT_BIT( 0x20, IP_ACTIVE_HIGH, IPT_START2 )
+	PORT_BIT( 0x40, IP_ACTIVE_HIGH, IPT_JOYSTICKRIGHT_UP ) PORT_8WAY PORT_NAME("Menu/Right/Up")
+	PORT_BIT( 0x80, IP_ACTIVE_HIGH, IPT_JOYSTICKRIGHT_DOWN ) PORT_8WAY PORT_NAME("Menu/Right/Down")
+
+	PORT_START("X1") // IN010
+	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_JOYSTICKRIGHT_LEFT ) PORT_8WAY PORT_NAME("Menu/Right/Left")
+	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_JOYSTICKRIGHT_RIGHT ) PORT_8WAY PORT_NAME("Menu/Right/Right")
+	PORT_BIT( 0x04, IP_ACTIVE_HIGH, IPT_BUTTON1 ) PORT_NAME("Menu/Fire")
+	PORT_BIT( 0x08, IP_ACTIVE_HIGH, IPT_BUTTON2 ) PORT_NAME("Menu/Thrust")
+	PORT_BIT( 0x10, IP_ACTIVE_HIGH, IPT_BUTTON3 ) PORT_NAME("Menu/Smart Bomb")
+	PORT_BIT( 0x20, IP_ACTIVE_HIGH, IPT_BUTTON4 ) PORT_NAME("Menu/Hyperspace")
+	PORT_BIT( 0x40, IP_ACTIVE_HIGH, IPT_BUTTON5 ) PORT_NAME("Menu/Reverse")
+	PORT_BIT( 0x80, IP_ACTIVE_HIGH, IPT_BUTTON6 ) PORT_NAME("Menu/Inviso or Flap")
+
+/* robotron */
+	PORT_START("X2") // IN100
+	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_JOYSTICK_UP ) PORT_8WAY PORT_NAME("Robotron/Left/Move Up")
+	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_JOYSTICK_DOWN ) PORT_8WAY PORT_NAME("Robotron/Left/Move Down")
+	PORT_BIT( 0x04, IP_ACTIVE_HIGH, IPT_JOYSTICK_LEFT ) PORT_8WAY PORT_NAME("Robotron/Left/Move Left")
+	PORT_BIT( 0x08, IP_ACTIVE_HIGH, IPT_JOYSTICK_RIGHT ) PORT_8WAY PORT_NAME("Robotron/Left/Move Right")
+	PORT_BIT( 0x10, IP_ACTIVE_HIGH, IPT_START2 )
+	PORT_BIT( 0x20, IP_ACTIVE_HIGH, IPT_START1 )
+	PORT_BIT( 0x40, IP_ACTIVE_HIGH, IPT_JOYSTICKRIGHT_UP ) PORT_8WAY PORT_NAME("Robotron/Right/Fire Up")
+	PORT_BIT( 0x80, IP_ACTIVE_HIGH, IPT_JOYSTICKRIGHT_DOWN ) PORT_8WAY PORT_NAME("Robotron/Right/Fire Down")
+
+	PORT_START("X3") // IN110
+	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_JOYSTICKRIGHT_LEFT ) PORT_8WAY PORT_NAME("Robotron/Right/Fire Left")
+	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_JOYSTICKRIGHT_RIGHT ) PORT_8WAY PORT_NAME("Robotron/Right/Fire Right")
+	PORT_BIT( 0xfc, IP_ACTIVE_HIGH, IPT_UNKNOWN )
+
+/* joust */
+	PORT_START("X4") // IN201
+	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_JOYSTICK_LEFT ) PORT_2WAY PORT_PLAYER(1) PORT_NAME("Joust/P1/Left")
+	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_JOYSTICK_RIGHT ) PORT_2WAY PORT_PLAYER(1) PORT_NAME("Joust/P1/Right")
+	PORT_BIT( 0x04, IP_ACTIVE_HIGH, IPT_BUTTON6 ) PORT_NAME("Joust/P1/Flap")
+	PORT_BIT( 0x10, IP_ACTIVE_HIGH, IPT_START2 )
+	PORT_BIT( 0x20, IP_ACTIVE_HIGH, IPT_START1 )
+	PORT_BIT( 0xc8, IP_ACTIVE_HIGH, IPT_UNUSED )
+
+	PORT_START("X5") // IN202
+	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_JOYSTICK_LEFT ) PORT_2WAY PORT_PLAYER(2) PORT_NAME("Joust/P2/Left")
+	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_JOYSTICK_RIGHT ) PORT_2WAY PORT_PLAYER(2) PORT_NAME("Joust/P2/Right")
+	PORT_BIT( 0x04, IP_ACTIVE_HIGH, IPT_BUTTON1 ) PORT_NAME("Joust/P2/Flap")
+	PORT_BIT( 0x10, IP_ACTIVE_HIGH, IPT_START2 )
+	PORT_BIT( 0x20, IP_ACTIVE_HIGH, IPT_START1 )
+	PORT_BIT( 0xc8, IP_ACTIVE_HIGH, IPT_UNUSED )
+
+	PORT_START("X6") // IN210
+	PORT_BIT( 0xff, IP_ACTIVE_HIGH, IPT_UNUSED )
+
+/* stargate */
+	PORT_START("X7") // IN300
+	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_BUTTON1 ) PORT_NAME("Stargate/Fire")
+	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_BUTTON2 ) PORT_NAME("Stargate/Thrust")
+	PORT_BIT( 0x04, IP_ACTIVE_HIGH, IPT_BUTTON3 ) PORT_NAME("Stargate/Smart Bomb")
+	PORT_BIT( 0x08, IP_ACTIVE_HIGH, IPT_BUTTON4 ) PORT_NAME("Stargate/Hyperspace")
+	PORT_BIT( 0x10, IP_ACTIVE_HIGH, IPT_START2 )
+	PORT_BIT( 0x20, IP_ACTIVE_HIGH, IPT_START1 )
+	PORT_BIT( 0x40, IP_ACTIVE_HIGH, IPT_BUTTON5 ) PORT_NAME("Stargate/Reverse")
+	PORT_BIT( 0x80, IP_ACTIVE_HIGH, IPT_JOYSTICK_DOWN ) PORT_2WAY PORT_NAME("Stargate/Down")
+
+	PORT_START("X8") // IN310
+	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_JOYSTICK_UP ) PORT_2WAY PORT_NAME("Stargate/Up")
+	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_BUTTON6 ) PORT_NAME("Stargate/Inviso")
+	PORT_BIT( 0xfc, IP_ACTIVE_HIGH, IPT_UNKNOWN )
+
+/* bubbles */
+	PORT_START("X9") // IN400
+	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_JOYSTICK_UP ) PORT_8WAY PORT_NAME("Bubbles/Up")
+	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_JOYSTICK_DOWN ) PORT_8WAY PORT_NAME("Bubbles/Down")
+	PORT_BIT( 0x04, IP_ACTIVE_HIGH, IPT_JOYSTICK_LEFT ) PORT_8WAY PORT_NAME("Bubbles/Left")
+	PORT_BIT( 0x08, IP_ACTIVE_HIGH, IPT_JOYSTICK_RIGHT ) PORT_8WAY PORT_NAME("Bubble/Right")
+	PORT_BIT( 0x10, IP_ACTIVE_HIGH, IPT_START2 )
+	PORT_BIT( 0x20, IP_ACTIVE_HIGH, IPT_START1 )
+	PORT_BIT( 0xc0, IP_ACTIVE_HIGH, IPT_UNKNOWN )
+
+	PORT_START("X10") // IN410
+	PORT_BIT( 0xff, IP_ACTIVE_HIGH, IPT_UNKNOWN )
+
+/* defender */
+	PORT_START("X11") // IN500
+	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_BUTTON1 ) PORT_NAME("Defender/Fire")
+	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_BUTTON2 ) PORT_NAME("Defender/Thrust")
+	PORT_BIT( 0x04, IP_ACTIVE_HIGH, IPT_BUTTON3 ) PORT_NAME("Defender/Smart Bomb")
+	PORT_BIT( 0x08, IP_ACTIVE_HIGH, IPT_BUTTON4 ) PORT_NAME("Defender/Hyperspace")
+	PORT_BIT( 0x10, IP_ACTIVE_HIGH, IPT_START2 )
+	PORT_BIT( 0x20, IP_ACTIVE_HIGH, IPT_START1 )
+	PORT_BIT( 0x40, IP_ACTIVE_HIGH, IPT_BUTTON5 ) PORT_NAME("Defender/Reverse")
+	PORT_BIT( 0x80, IP_ACTIVE_HIGH, IPT_JOYSTICK_DOWN) PORT_2WAY PORT_NAME("Defender/Down")
+
+	PORT_START("X12") // IN510
+	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_JOYSTICK_UP ) PORT_2WAY PORT_NAME("Defender/Up")
+	PORT_BIT( 0xfe, IP_ACTIVE_HIGH, IPT_UNKNOWN )
+
+/* splat - there are no P2 controls, so it can only be played by a single player */
+	PORT_START("X13") // IN601
+	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_JOYSTICK_UP ) PORT_8WAY PORT_PLAYER(1) PORT_NAME("Splat/P1/Left/Move Up")
+	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_JOYSTICK_DOWN ) PORT_8WAY PORT_PLAYER(1) PORT_NAME("Splat/P1/Left/Move Down")
+	PORT_BIT( 0x04, IP_ACTIVE_HIGH, IPT_JOYSTICK_LEFT ) PORT_8WAY PORT_PLAYER(1) PORT_NAME("Splat/P1/Left/Move Left")
+	PORT_BIT( 0x08, IP_ACTIVE_HIGH, IPT_JOYSTICK_RIGHT ) PORT_8WAY PORT_PLAYER(1) PORT_NAME("Splat/P1/Left/Move Right")
+	PORT_BIT( 0x10, IP_ACTIVE_HIGH, IPT_START1 )
+	PORT_BIT( 0x20, IP_ACTIVE_HIGH, IPT_START2 )
+	PORT_BIT( 0x40, IP_ACTIVE_HIGH, IPT_JOYSTICKRIGHT_UP ) PORT_8WAY PORT_PLAYER(1) PORT_NAME("Splat/P1/Right/Fire Up")
+	PORT_BIT( 0x80, IP_ACTIVE_HIGH, IPT_JOYSTICKRIGHT_DOWN ) PORT_8WAY PORT_PLAYER(1) PORT_NAME("Splat/P1/Right/Fire Down")
+
+	PORT_START("X14") // IN602
+	PORT_BIT( 0x10, IP_ACTIVE_HIGH, IPT_START1 )
+	PORT_BIT( 0x20, IP_ACTIVE_HIGH, IPT_START2 )
+	PORT_BIT( 0xcf, IP_ACTIVE_HIGH, IPT_UNKNOWN )
+
+	PORT_START("X15") // IN611
+	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_JOYSTICKRIGHT_LEFT ) PORT_8WAY PORT_PLAYER(1) PORT_NAME("Splat/P1/Right/Fire Left")
+	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_JOYSTICKRIGHT_RIGHT ) PORT_8WAY PORT_PLAYER(1) PORT_NAME("Splat/P1/Right/Fire Right")
+	PORT_BIT( 0xfc, IP_ACTIVE_HIGH, IPT_UNKNOWN )
+
+	PORT_START("X16") // IN612
+	PORT_BIT( 0xff, IP_ACTIVE_HIGH, IPT_UNKNOWN )
+INPUT_PORTS_END
 
 /*************************************
  *
  *  NVRAM (8k x 8), banked
  *
  *************************************/
-READ8_MEMBER( wmg_state::wmg_nvram_r )
+u8 wmg_state::wmg_nvram_r(offs_t offset)
 {
-	return m_p_ram[offset+(m_wmg_bank<<10)];
+	return m_p_ram[offset+(m_wmg_c400<<10)];
 }
 
-WRITE8_MEMBER( wmg_state::wmg_nvram_w )
+void wmg_state::wmg_nvram_w(offs_t offset, u8 data)
 {
-	m_p_ram[offset+(m_wmg_bank<<10)] = data;
+	m_p_ram[offset+(m_wmg_c400<<10)] = data;
 }
 
 /*************************************
@@ -127,108 +342,102 @@ WRITE8_MEMBER( wmg_state::wmg_nvram_w )
 /* switches the banks around when given a game number.
    The hardware has a lock feature, so that once a bank is selected, the next choice must be the menu */
 
-WRITE8_MEMBER( wmg_state::wmg_rombank_w )
+void wmg_state::wmg_c400_w(u8 data)
 {
-	address_space &space1 = m_maincpu->space(AS_PROGRAM);
-	UINT8 *RAM = memregion("maincpu")->base();
-
 	data &= 7;
+	if (m_wmg_c400 == data)
+		return;
 
-	if ((!data) || (!m_wmg_bank))   // we must be going to/from the menu
+	if ((data == 0) || (m_wmg_c400 == 0))   // we must be going to/from the menu
 	{
-		m_wmg_bank = data;
-		wmg_def_rombank_w( space1, 0, 0);
-		memcpy( &RAM[0x10000], &RAM[(data << 16) + 0x20000], 0x9000 );      /* Gfx etc */
-		membank("bank5")->set_entry(data);      /* Code */
-		membank("bank6")->set_entry(data);      /* Sound */
+		m_wmg_c400 = data;
+		wmg_d000_w(0); // select i/o
+		m_mainbank->set_entry(m_wmg_vram_bank ? (1+m_wmg_c400) : 0);      // Gfx etc
+		m_codebank->set_entry(data);      // Code
+		m_soundbank->set_entry(data);      // Sound
+		m_soundcpu->reset();
 	}
 }
 
-WRITE8_MEMBER( wmg_state::wmg_sound_reset_w )
+void wmg_state::wmg_sound_reset_w(u8 data)
 {
 	/* This resets the sound card when bit 0 is low */
 	if (!BIT(data, 0)) m_soundcpu->reset();
 }
 
-WRITE8_MEMBER( wmg_state::wmg_vram_select_w )
+void wmg_state::wmg_vram_select_w(u8 data)
 {
 	/* VRAM/ROM banking from bit 0 */
 	m_wmg_vram_bank = BIT(data, 0);
-	membank("bank1")->set_entry(m_wmg_vram_bank);
+	m_mainbank->set_entry(m_wmg_vram_bank ? (1+m_wmg_c400) : 0);
 
 	/* cocktail flip from bit 1 */
 	m_cocktail = BIT(data, 1);
 }
 
-void wmg_state::wmg_def_install_io_space(address_space &space)
-{
-	pia6821_device *pia_0 = space.machine().device<pia6821_device>("pia_0");
-	pia6821_device *pia_1 = space.machine().device<pia6821_device>("pia_1");
 
-	/* this routine dynamically installs the memory mapped above from c000-cfff */
-	space.install_write_bank       (0xc000, 0xc00f, 0, 0, "bank4");
-	space.install_write_handler    (0xc010, 0xc01f, write8_delegate(FUNC(williams_state::defender_video_control_w),this));
-	space.install_write_handler    (0xc400, 0xc400, write8_delegate(FUNC(wmg_state::wmg_rombank_w),this));
-	space.install_write_handler    (0xc401, 0xc401, write8_delegate(FUNC(wmg_state::wmg_sound_reset_w),this));
-	space.install_readwrite_handler(0xc804, 0xc807, read8_delegate(FUNC(wmg_state::wmg_pia_0_r),this), write8_delegate(FUNC(pia6821_device::write), pia_0));
-	space.install_readwrite_handler(0xc80c, 0xc80f, read8_delegate(FUNC(pia6821_device::read), pia_1), write8_delegate(FUNC(pia6821_device::write), pia_1));
-	space.install_write_handler    (0xc900, 0xc9ff, write8_delegate(FUNC(wmg_state::wmg_vram_select_w),this));
-	space.install_write_handler    (0xca00, 0xca07, write8_delegate(FUNC(williams_state::williams_blitter_w),this));
-	space.install_write_handler    (0xcbff, 0xcbff, write8_delegate(FUNC(williams_state::williams_watchdog_reset_w),this));
-	space.install_read_handler     (0xcb00, 0xcbff, read8_delegate(FUNC(williams_state::williams_video_counter_r),this));
-	space.install_readwrite_handler(0xcc00, 0xcfff, read8_delegate(FUNC(wmg_state::wmg_nvram_r), this), write8_delegate(FUNC(wmg_state::wmg_nvram_w),this));
-	membank("bank4")->set_base(m_generic_paletteram_8);
-}
-
-WRITE8_MEMBER( wmg_state::wmg_def_rombank_w )
+// if defender, choose a rom, else enable i/o
+void wmg_state::wmg_d000_w(u8 data)
 {
-	address_space &space1 = m_maincpu->space(AS_PROGRAM);
 	data &= 15;
+	if (m_wmg_d000 == data)
+		return;
 
-	if ((m_wmg_def_bank != data) && (m_wmg_bank == 5) && (data != 0))
+	// defender && data > 0
+	if ((m_wmg_c400 == 5) && (data))
 	{
-		m_wmg_def_bank = data;
-
-		/* set bank address */
+		// replace i/o with defender roms
 		switch (data)
 		{
 			/* pages 1,2,3,7 map to ROM banks */
 			case 1:
 			case 2:
 			case 3:
-				space1.install_read_bank(0xc000, 0xcfff, 0, 0, "bank7");
-				space1.unmap_write(0xc000, 0xcfff);
-				membank("bank7")->set_entry(data);
+				m_bankc000->set_bank(data);
 				break;
 
 			case 7:
-				space1.install_read_bank(0xc000, 0xcfff, 0, 0, "bank7");
-				space1.unmap_write(0xc000, 0xcfff);
-				membank("bank7")->set_entry(4);
+				m_bankc000->set_bank(4);
 				break;
 
 			default:
 				printf("Unknown bank %X selected\n",data);
 		}
 	}
-	else if ((m_wmg_def_bank != data) && (!data))
+	else
+	// everything else - choose i/o space
+	if (data == 0)
 	{
-		/* page 0 is I/O space */
-		m_wmg_def_bank = data;
-		wmg_def_install_io_space(space1);
+		/* install the i/o devices into c000-cfff */
+		m_bankc000->set_bank(0);
 	}
+
+	m_wmg_d000 = data;
 }
 
 
-MACHINE_RESET_MEMBER( wmg_state, wmg )
+void wmg_state::machine_start()
 {
-	address_space &space1 = m_maincpu->space(AS_PROGRAM);
-	m_wmg_bank=0;
-	m_wmg_def_bank=8;
+	uint8_t *cpu = memregion("maincpu")->base();
+	uint8_t *snd = memregion("soundcpu")->base();
+	m_mainbank->configure_entry(0, m_videoram);
+	m_mainbank->configure_entries(1, 8, &cpu[0x10000], 0x10000);  // Gfx etc
+	m_codebank->configure_entries(0, 8, &cpu[0x1d000], 0x10000);  // Code
+	m_soundbank->configure_entries(0, 8, &snd[0x10000], 0x1000);  // Sound
+
+	save_item(NAME(m_wmg_c400));
+	save_item(NAME(m_wmg_d000));
+	save_item(NAME(m_wmg_port_select));
+	save_item(NAME(m_wmg_vram_bank));
+}
+
+void wmg_state::machine_reset()
+{
+	m_wmg_c400=0xff;
+	m_wmg_d000=0xff;
 	m_wmg_port_select=0;
 	m_wmg_vram_bank=0;
-	wmg_rombank_w( space1, 0, 0);
-	MACHINE_RESET_CALL_MEMBER(williams_common);
+	wmg_c400_w(0);
 	m_maincpu->reset();
 }
 
@@ -240,33 +449,35 @@ MACHINE_RESET_MEMBER( wmg_state, wmg )
 
 WRITE_LINE_MEMBER( wmg_state::wmg_port_select_w )
 {
-	m_wmg_port_select = state | (m_wmg_bank << 1);
+	m_wmg_port_select = state | (m_wmg_c400 << 1);
 }
 
+template <int N>
 CUSTOM_INPUT_MEMBER(wmg_state::wmg_mux_r)
 {
-	const char *tag = (const char *)param;
-
-	if (m_wmg_port_select)
-		for (int i = 0; i < m_wmg_port_select; i++)
-			tag += strlen(tag) + 1;
-
-	return ioport(tag)->read();
+	if (N == 0)
+	{
+		uint8_t ports[17] = { 0,0,2,2,5,4,7,7,9,9,11,11,14,13,9,9 };
+		return m_keyboard[ports[m_wmg_port_select]]->read();
+	}
+	else
+	{
+		uint8_t ports[17] = { 1,1,3,3,6,6,8,8,10,10,12,12,16,15,10,10 };
+		return m_keyboard[ports[m_wmg_port_select]]->read();
+	}
 }
 
-READ8_MEMBER( wmg_state::wmg_pia_0_r )
+u8 wmg_state::wmg_pia_0_r(offs_t offset)
 {
 /* if player presses P1 and P2 in a game, return to the menu.
     Since there is no code in rom to handle this, it must be a hardware feature
     which probably just resets the cpu. */
 
-	address_space &space1 = m_maincpu->space(AS_PROGRAM);
-	pia6821_device *pia_0 = space1.machine().device<pia6821_device>("pia_0");
-	UINT8 data = pia_0->read(space1, offset);
+	uint8_t data = m_pia[0]->read(offset);
 
-	if ((m_wmg_bank) && (!offset) && ((data & 0x30) == 0x30))   // P1 and P2 pressed
+	if ((m_wmg_c400) && (offset == 0) && ((data & 0x30) == 0x30))   // P1 and P2 pressed
 	{
-		wmg_rombank_w( space1, 0, 0);
+		wmg_c400_w(0);
 		m_maincpu->reset();
 	}
 
@@ -275,243 +486,74 @@ READ8_MEMBER( wmg_state::wmg_pia_0_r )
 
 /*************************************
  *
- *  Address Map
+ *  Driver Initialisation
  *
  *************************************/
-static ADDRESS_MAP_START( wmg_cpu1, AS_PROGRAM, 8, wmg_state )
-	AM_RANGE(0x0000, 0x8fff) AM_READ_BANK("bank1") AM_WRITEONLY AM_SHARE("videoram")
-	AM_RANGE(0x9000, 0xbfff) AM_RAM
-	AM_RANGE(0xc000, 0xcfff) AM_ROMBANK("bank7")
-	AM_RANGE(0xd000, 0xffff) AM_ROMBANK("bank5")
-	AM_RANGE(0xd000, 0xd000) AM_WRITE(wmg_def_rombank_w)
-ADDRESS_MAP_END
-
-static ADDRESS_MAP_START( wmg_cpu2, AS_PROGRAM, 8, wmg_state )
-	AM_RANGE(0x0000, 0x007f) AM_RAM     /* internal RAM */
-	AM_RANGE(0x0080, 0x00ff) AM_RAM     /* MC6810 RAM */
-	AM_RANGE(0x0400, 0x0403) AM_MIRROR(0x8000) AM_DEVREADWRITE("pia_2", pia6821_device, read, write)
-/* These next 2 are actually banked in CPU 1, but its not something Mame can handle very well. Placed here instead. */
-	AM_RANGE(0xc000, 0xc00f) AM_MIRROR(0x03f0) AM_WRITEONLY AM_SHARE("paletteram")
-	AM_RANGE(0xd000, 0xefff) AM_RAM AM_SHARE("nvram")
-	AM_RANGE(0xf000, 0xffff) AM_ROMBANK("bank6")
-ADDRESS_MAP_END
-
-/******************************************
- *
- *  Inputs, banked. One set for each game.
- *
- ******************************************/
-static INPUT_PORTS_START( wmg )
-	PORT_START("IN0")
-	PORT_BIT( 0xff, IP_ACTIVE_HIGH, IPT_SPECIAL ) PORT_CUSTOM_MEMBER(DEVICE_SELF, wmg_state, wmg_mux_r, "IN000\0IN000\0IN100\0IN100\0IN202\0IN201\0IN300\0IN300\0IN400\0IN400\0IN500\0IN500\0IN602\0IN601\0IN400\0IN400")
-
-	PORT_START("IN1")
-	PORT_BIT( 0xff, IP_ACTIVE_HIGH, IPT_SPECIAL ) PORT_CUSTOM_MEMBER(DEVICE_SELF, wmg_state, wmg_mux_r, "IN010\0IN010\0IN110\0IN110\0IN210\0IN210\0IN310\0IN310\0IN410\0IN410\0IN510\0IN510\0IN612\0IN611\0IN410\0IN410")
-
-	PORT_START("IN2")
-	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_OTHER ) PORT_NAME("Auto Up / Manual Down") PORT_TOGGLE PORT_CODE(KEYCODE_F1)
-	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_OTHER ) PORT_NAME("Advance") PORT_CODE(KEYCODE_F2)
-	PORT_BIT( 0x04, IP_ACTIVE_HIGH, IPT_COIN3 )
-	PORT_BIT( 0x08, IP_ACTIVE_HIGH, IPT_OTHER ) PORT_NAME("High Score Reset") PORT_CODE(KEYCODE_9)
-	PORT_BIT( 0x10, IP_ACTIVE_HIGH, IPT_COIN1 )
-	PORT_BIT( 0x20, IP_ACTIVE_HIGH, IPT_COIN2 )
-	PORT_BIT( 0x40, IP_ACTIVE_HIGH, IPT_TILT )
-	PORT_BIT( 0x80, IP_ACTIVE_HIGH, IPT_UNKNOWN )
-
-/* menu */
-	PORT_START("IN000")
-	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_JOYSTICKLEFT_UP ) PORT_8WAY PORT_NAME("Menu/Left/Up")
-	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_JOYSTICKLEFT_DOWN ) PORT_8WAY PORT_NAME("Menu/Left/Down")
-	PORT_BIT( 0x04, IP_ACTIVE_HIGH, IPT_JOYSTICKLEFT_LEFT ) PORT_8WAY PORT_NAME("Menu/Left/Left")
-	PORT_BIT( 0x08, IP_ACTIVE_HIGH, IPT_JOYSTICKLEFT_RIGHT ) PORT_8WAY PORT_NAME("Menu/Left/Right")
-	PORT_BIT( 0x10, IP_ACTIVE_HIGH, IPT_START1 )
-	PORT_BIT( 0x20, IP_ACTIVE_HIGH, IPT_START2 )
-	PORT_BIT( 0x40, IP_ACTIVE_HIGH, IPT_JOYSTICKRIGHT_UP ) PORT_8WAY PORT_NAME("Menu/Right/Up")
-	PORT_BIT( 0x80, IP_ACTIVE_HIGH, IPT_JOYSTICKRIGHT_DOWN ) PORT_8WAY PORT_NAME("Menu/Right/Down")
-
-	PORT_START("IN010")
-	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_JOYSTICKRIGHT_LEFT ) PORT_8WAY PORT_NAME("Menu/Right/Left")
-	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_JOYSTICKRIGHT_RIGHT ) PORT_8WAY PORT_NAME("Menu/Right/Right")
-	PORT_BIT( 0x04, IP_ACTIVE_HIGH, IPT_BUTTON1 ) PORT_NAME("Menu/Fire")
-	PORT_BIT( 0x08, IP_ACTIVE_HIGH, IPT_BUTTON2 ) PORT_NAME("Menu/Thrust")
-	PORT_BIT( 0x10, IP_ACTIVE_HIGH, IPT_BUTTON3 ) PORT_NAME("Menu/Smart Bomb")
-	PORT_BIT( 0x20, IP_ACTIVE_HIGH, IPT_BUTTON4 ) PORT_NAME("Menu/Hyperspace")
-	PORT_BIT( 0x40, IP_ACTIVE_HIGH, IPT_BUTTON5 ) PORT_NAME("Menu/Reverse")
-	PORT_BIT( 0x80, IP_ACTIVE_HIGH, IPT_BUTTON6 ) PORT_NAME("Menu/Inviso or Flap")
-
-/* robotron */
-	PORT_START("IN100")
-	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_JOYSTICKLEFT_UP ) PORT_8WAY PORT_NAME("Robotron/Left/Up")
-	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_JOYSTICKLEFT_DOWN ) PORT_8WAY PORT_NAME("Robotron/Left/Down")
-	PORT_BIT( 0x04, IP_ACTIVE_HIGH, IPT_JOYSTICKLEFT_LEFT ) PORT_8WAY PORT_NAME("Robotron/Left/Left")
-	PORT_BIT( 0x08, IP_ACTIVE_HIGH, IPT_JOYSTICKLEFT_RIGHT ) PORT_8WAY PORT_NAME("Robotron/Left/Right")
-	PORT_BIT( 0x10, IP_ACTIVE_HIGH, IPT_START2 )
-	PORT_BIT( 0x20, IP_ACTIVE_HIGH, IPT_START1 )
-	PORT_BIT( 0x40, IP_ACTIVE_HIGH, IPT_JOYSTICKRIGHT_UP ) PORT_8WAY PORT_NAME("Robotron/Right/Up")
-	PORT_BIT( 0x80, IP_ACTIVE_HIGH, IPT_JOYSTICKRIGHT_DOWN ) PORT_8WAY PORT_NAME("Robotron/Right/Down")
-
-	PORT_START("IN110")
-	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_JOYSTICKRIGHT_LEFT ) PORT_8WAY PORT_NAME("Robotron/Right/Left")
-	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_JOYSTICKRIGHT_RIGHT ) PORT_8WAY PORT_NAME("Robotron/Right/Right")
-	PORT_BIT( 0xfc, IP_ACTIVE_HIGH, IPT_UNKNOWN )
-
-/* joust */
-	PORT_START("IN201") /* muxed into IN0 */
-	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_JOYSTICKLEFT_LEFT ) PORT_2WAY PORT_NAME("Joust/P1/Left")
-	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_JOYSTICKLEFT_RIGHT ) PORT_2WAY PORT_NAME("Joust/P1/Right")
-	PORT_BIT( 0x04, IP_ACTIVE_HIGH, IPT_BUTTON6 ) PORT_NAME("Joust/P1/Flap")
-	PORT_BIT( 0x10, IP_ACTIVE_HIGH, IPT_START2 )
-	PORT_BIT( 0x20, IP_ACTIVE_HIGH, IPT_START1 )
-	PORT_BIT( 0xc8, IP_ACTIVE_HIGH, IPT_UNUSED )
-
-	PORT_START("IN202") /* muxed into IN0 */
-	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_JOYSTICKRIGHT_LEFT ) PORT_2WAY PORT_NAME("Joust/P2/Left")
-	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_JOYSTICKRIGHT_RIGHT ) PORT_2WAY PORT_NAME("Joust/P2/Right")
-	PORT_BIT( 0x04, IP_ACTIVE_HIGH, IPT_BUTTON1 ) PORT_NAME("Joust/P2/Flap")
-	PORT_BIT( 0x10, IP_ACTIVE_HIGH, IPT_START2 )
-	PORT_BIT( 0x20, IP_ACTIVE_HIGH, IPT_START1 )
-	PORT_BIT( 0xc8, IP_ACTIVE_HIGH, IPT_UNUSED )
-
-	PORT_START("IN210")
-	PORT_BIT( 0xff, IP_ACTIVE_HIGH, IPT_UNUSED )
-
-/* stargate */
-	PORT_START("IN300")
-	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_BUTTON1 ) PORT_NAME("Stargate/Fire")
-	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_BUTTON2 ) PORT_NAME("Stargate/Thrust")
-	PORT_BIT( 0x04, IP_ACTIVE_HIGH, IPT_BUTTON3 ) PORT_NAME("Stargate/Smart Bomb")
-	PORT_BIT( 0x08, IP_ACTIVE_HIGH, IPT_BUTTON4 ) PORT_NAME("Stargate/Hyperspace")
-	PORT_BIT( 0x10, IP_ACTIVE_HIGH, IPT_START2 )
-	PORT_BIT( 0x20, IP_ACTIVE_HIGH, IPT_START1 )
-	PORT_BIT( 0x40, IP_ACTIVE_HIGH, IPT_BUTTON5 ) PORT_NAME("Stargate/Reverse")
-	PORT_BIT( 0x80, IP_ACTIVE_HIGH, IPT_JOYSTICKLEFT_DOWN ) PORT_2WAY PORT_NAME("Stargate/Down")
-
-	PORT_START("IN310")
-	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_JOYSTICKLEFT_UP ) PORT_2WAY PORT_NAME("Stargate/Up")
-	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_BUTTON6 ) PORT_NAME("Stargate/Inviso")
-	PORT_BIT( 0xfc, IP_ACTIVE_HIGH, IPT_UNKNOWN )
-
-/* bubbles */
-	PORT_START("IN400")
-	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_JOYSTICKLEFT_UP ) PORT_8WAY PORT_NAME("Bubbles/Up")
-	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_JOYSTICKLEFT_DOWN ) PORT_8WAY PORT_NAME("Bubbles/Down")
-	PORT_BIT( 0x04, IP_ACTIVE_HIGH, IPT_JOYSTICKLEFT_LEFT ) PORT_8WAY PORT_NAME("Bubbles/Left")
-	PORT_BIT( 0x08, IP_ACTIVE_HIGH, IPT_JOYSTICKLEFT_RIGHT ) PORT_8WAY PORT_NAME("Bubble/Right")
-	PORT_BIT( 0x10, IP_ACTIVE_HIGH, IPT_START2 )
-	PORT_BIT( 0x20, IP_ACTIVE_HIGH, IPT_START1 )
-	PORT_BIT( 0xc0, IP_ACTIVE_HIGH, IPT_UNKNOWN )
-
-	PORT_START("IN410")
-	PORT_BIT( 0xff, IP_ACTIVE_HIGH, IPT_UNKNOWN )
-
-/* defender */
-	PORT_START("IN500")
-	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_BUTTON1 ) PORT_NAME("Defender/Fire")
-	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_BUTTON2 ) PORT_NAME("Defender/Thrust")
-	PORT_BIT( 0x04, IP_ACTIVE_HIGH, IPT_BUTTON3 ) PORT_NAME("Defender/Smart Bomb")
-	PORT_BIT( 0x08, IP_ACTIVE_HIGH, IPT_BUTTON4 ) PORT_NAME("Defender/Hyperspace")
-	PORT_BIT( 0x10, IP_ACTIVE_HIGH, IPT_START2 )
-	PORT_BIT( 0x20, IP_ACTIVE_HIGH, IPT_START1 )
-	PORT_BIT( 0x40, IP_ACTIVE_HIGH, IPT_BUTTON5 ) PORT_NAME("Defender/Reverse")
-	PORT_BIT( 0x80, IP_ACTIVE_HIGH, IPT_JOYSTICKLEFT_DOWN) PORT_2WAY PORT_NAME("Defender/Down")
-
-	PORT_START("IN510")
-	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_JOYSTICKLEFT_UP ) PORT_2WAY PORT_NAME("Defender/Up")
-	PORT_BIT( 0xfe, IP_ACTIVE_HIGH, IPT_UNKNOWN )
-
-/* splat - there are no P2 controls, so it can only be played by a single player */
-	PORT_START("IN601") /* muxed into IN0 */
-	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_JOYSTICKLEFT_UP ) PORT_8WAY PORT_PLAYER(1) PORT_NAME("Splat/P1/Left/Up")
-	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_JOYSTICKLEFT_DOWN ) PORT_8WAY PORT_PLAYER(1) PORT_NAME("Splat/P1/Left/Down")
-	PORT_BIT( 0x04, IP_ACTIVE_HIGH, IPT_JOYSTICKLEFT_LEFT ) PORT_8WAY PORT_PLAYER(1) PORT_NAME("Splat/P1/Left/Left")
-	PORT_BIT( 0x08, IP_ACTIVE_HIGH, IPT_JOYSTICKLEFT_RIGHT ) PORT_8WAY PORT_PLAYER(1) PORT_NAME("Splat/P1/Left/Right")
-	PORT_BIT( 0x10, IP_ACTIVE_HIGH, IPT_START1 )
-	PORT_BIT( 0x20, IP_ACTIVE_HIGH, IPT_START2 )
-	PORT_BIT( 0x40, IP_ACTIVE_HIGH, IPT_JOYSTICKRIGHT_UP ) PORT_8WAY PORT_PLAYER(1) PORT_NAME("Splat/P1/Right/Up")
-	PORT_BIT( 0x80, IP_ACTIVE_HIGH, IPT_JOYSTICKRIGHT_DOWN ) PORT_8WAY PORT_PLAYER(1) PORT_NAME("Splat/P1/Right/Down")
-
-	PORT_START("IN602") /* muxed into IN0 */
-	PORT_BIT( 0x10, IP_ACTIVE_HIGH, IPT_START1 )
-	PORT_BIT( 0x20, IP_ACTIVE_HIGH, IPT_START2 )
-	PORT_BIT( 0xcf, IP_ACTIVE_HIGH, IPT_UNKNOWN )
-
-	PORT_START("IN611") /* muxed into IN1 */
-	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_JOYSTICKRIGHT_LEFT ) PORT_8WAY PORT_PLAYER(1) PORT_NAME("Splat/P1/Right/Left")
-	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_JOYSTICKRIGHT_RIGHT ) PORT_8WAY PORT_PLAYER(1) PORT_NAME("Splat/P1/Right/Right")
-	PORT_BIT( 0xfc, IP_ACTIVE_HIGH, IPT_UNKNOWN )
-
-	PORT_START("IN612") /* muxed into IN1 */
-	PORT_BIT( 0xff, IP_ACTIVE_HIGH, IPT_UNKNOWN )
-INPUT_PORTS_END
+void wmg_state::driver_init()
+{
+	m_blitter_config = WILLIAMS_BLITTER_SC1;
+	m_blitter_clip_address = 0xc000;
+}
 
 /*************************************
  *
  *  Machine Driver
  *
  *************************************/
-static MACHINE_CONFIG_START( wmg, wmg_state )
-
+void wmg_state::wmg(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", M6809, MASTER_CLOCK/3/4)
-	MCFG_CPU_PROGRAM_MAP(wmg_cpu1)
+	MC6809E(config, m_maincpu, MASTER_CLOCK/3/4);
+	m_maincpu->set_addrmap(AS_PROGRAM, &wmg_state::wmg_cpu1);
 
-	MCFG_CPU_ADD("soundcpu", M6808, SOUND_CLOCK)
-	MCFG_CPU_PROGRAM_MAP(wmg_cpu2)
+	M6808(config, m_soundcpu, SOUND_CLOCK);
+	m_soundcpu->set_addrmap(AS_PROGRAM, &wmg_state::wmg_cpu2);
 
-	MCFG_MACHINE_START_OVERRIDE(williams_state,williams)
-	MCFG_MACHINE_RESET_OVERRIDE(wmg_state, wmg)
-	MCFG_NVRAM_ADD_0FILL("nvram")
+	NVRAM(config, "nvram", nvram_device::DEFAULT_ALL_0);
 
-	MCFG_TIMER_DRIVER_ADD("scan_timer", williams_state, williams_va11_callback)
-	MCFG_TIMER_DRIVER_ADD("240_timer", williams_state, williams_count240_callback)
+	ADDRESS_MAP_BANK(config, "bankc000").set_map(&wmg_state::wmg_banked_map).set_options(ENDIANNESS_BIG, 8, 16, 0x1000);
+
+	// set a timer to go off every 32 scanlines, to toggle the VA11 line and update the screen
+	TIMER(config, "scan_timer").configure_scanline(FUNC(wmg_state::va11_callback), "screen", 0, 32);
+
+	// also set a timer to go off on scanline 240
+	TIMER(config, "240_timer").configure_scanline(FUNC(wmg_state::count240_callback), "screen", 0, 240);
+
+	WATCHDOG_TIMER(config, "watchdog");
 
 	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_VIDEO_ATTRIBUTES(VIDEO_UPDATE_SCANLINE | VIDEO_ALWAYS_UPDATE)
-	MCFG_SCREEN_RAW_PARAMS(MASTER_CLOCK*2/3, 512, 6, 298, 260, 7, 247)
-	MCFG_SCREEN_UPDATE_DRIVER(williams_state, screen_update_williams)
+	SCREEN(config, m_screen, SCREEN_TYPE_RASTER);
+	m_screen->set_video_attributes(VIDEO_UPDATE_SCANLINE | VIDEO_ALWAYS_UPDATE);
+	m_screen->set_raw(MASTER_CLOCK*2/3, 512, 6, 298, 260, 7, 247);
+	m_screen->set_screen_update(FUNC(wmg_state::screen_update));
 
-	MCFG_VIDEO_START_OVERRIDE(williams_state,williams)
+	PALETTE(config, m_palette, FUNC(wmg_state::palette_init), 256);
 
 	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_MONO("mono")
+	SPEAKER(config, "speaker").front_center();
 
-	MCFG_DAC_ADD("wmsdac")
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.50)
+	MC1408(config, "dac", 0).add_route(ALL_OUTPUTS, "speaker", 0.25); // unknown DAC
 
 	/* pia */
-	MCFG_DEVICE_ADD("pia_0", PIA6821, 0)
-	MCFG_PIA_READPA_HANDLER(IOPORT("IN0"))
-	MCFG_PIA_READPB_HANDLER(IOPORT("IN1"))
-	MCFG_PIA_CB2_HANDLER(WRITELINE(wmg_state, wmg_port_select_w))
+	INPUT_MERGER_ANY_HIGH(config, "mainirq").output_handler().set_inputline(m_maincpu, M6809_IRQ_LINE);
 
-	MCFG_DEVICE_ADD("pia_1", PIA6821, 0)
-	MCFG_PIA_READPA_HANDLER(IOPORT("IN2"))
-	MCFG_PIA_WRITEPB_HANDLER(WRITE8(williams_state, williams_snd_cmd_w))
-	MCFG_PIA_IRQA_HANDLER(WRITELINE(williams_state, williams_main_irq))
-	MCFG_PIA_IRQB_HANDLER(WRITELINE(williams_state, williams_main_irq))
+	INPUT_MERGER_ANY_HIGH(config, "soundirq").output_handler().set_inputline(m_soundcpu, M6808_IRQ_LINE);
 
-	MCFG_DEVICE_ADD("pia_2", PIA6821, 0)
-	MCFG_PIA_WRITEPA_HANDLER(DEVWRITE8("wmsdac", dac_device, write_unsigned8))
-	MCFG_PIA_IRQA_HANDLER(WRITELINE(williams_state,williams_snd_irq))
-	MCFG_PIA_IRQB_HANDLER(WRITELINE(williams_state,williams_snd_irq))
-MACHINE_CONFIG_END
+	pia6821_device &pia0(PIA6821(config, "pia_0", 0));
+	pia0.readpa_handler().set_ioport("IN0");
+	pia0.readpb_handler().set_ioport("IN1");
+	pia0.cb2_handler().set(FUNC(wmg_state::wmg_port_select_w));
 
-/*************************************
- *
- *  Driver Initialisation
- *
- *************************************/
-DRIVER_INIT_MEMBER( wmg_state, wmg )
-{
-	UINT8 *RAM = memregion("maincpu")->base();
-	UINT8 *ROM = memregion("soundcpu")->base();
-	membank("bank5")->configure_entries(0, 8, &RAM[0x2d000], 0x10000);  /* Code */
-	membank("bank6")->configure_entries(0, 8, &ROM[0x10000], 0x1000);   /* Sound */
-	membank("bank7")->configure_entries(1, 4, &RAM[0x78000], 0x1000);   /* Defender roms */
-//  CONFIGURE_BLITTER(WILLIAMS_BLITTER_SC01, 0xc000);
-	m_blitter_config = WILLIAMS_BLITTER_SC01;
-	m_blitter_clip_address = 0xc000;
+	pia6821_device &pia1(PIA6821(config, "pia_1", 0));
+	pia1.readpa_handler().set_ioport("IN2");
+	pia1.writepb_handler().set(FUNC(wmg_state::snd_cmd_w));
+	pia1.irqa_handler().set("mainirq", FUNC(input_merger_any_high_device::in_w<0>));
+	pia1.irqb_handler().set("mainirq", FUNC(input_merger_any_high_device::in_w<1>));
+
+	pia6821_device &pia2(PIA6821(config, "pia_2", 0));
+	pia2.writepa_handler().set("dac", FUNC(dac_byte_interface::data_w));
+	pia2.irqa_handler().set("soundirq", FUNC(input_merger_any_high_device::in_w<0>));
+	pia2.irqb_handler().set("soundirq", FUNC(input_merger_any_high_device::in_w<1>));
 }
 
 /*************************************
@@ -520,20 +562,20 @@ DRIVER_INIT_MEMBER( wmg_state, wmg )
  *
  *************************************/
 ROM_START( wmg )
-	ROM_REGION( 0xa0000, "maincpu", 0 )
-	ROM_LOAD( "wmg.cpu",         0x20000, 0x80000, CRC(975516ec) SHA1(571aaf9bff8ebfc36448cd9394b47bcfae7d1b83) )
+	ROM_REGION( 0x90000, "maincpu", 0 )
+	ROM_LOAD( "wmg.cpu", 0x10000, 0x80000, CRC(975516ec) SHA1(571aaf9bff8ebfc36448cd9394b47bcfae7d1b83) )
 
 	/* This little HACK! lets the menu boot up.
 	It patches a jump to some new code, which sets a few memory locations, and sets the stack pointer.
 	Then it jumps back to continue the main run. */
 
-	ROM_COPY( "maincpu", 0x2e0da, 0x2f800, 0x0001b )
-	ROM_FILL( 0x2f81b, 1, 0x7e )
-	ROM_FILL( 0x2f81c, 1, 0xe0 )
-	ROM_FILL( 0x2f81d, 1, 0xba )
-	ROM_FILL( 0x2e0b7, 1, 0x7e )
-	ROM_FILL( 0x2e0b8, 1, 0xf8 )
-	ROM_FILL( 0x2e0b9, 1, 0x00 )
+	ROM_COPY( "maincpu", 0x1e0da, 0x1f800, 0x0001b )
+	ROM_FILL( 0x1f81b, 1, 0x7e )
+	ROM_FILL( 0x1f81c, 1, 0xe0 )
+	ROM_FILL( 0x1f81d, 1, 0xba )
+	ROM_FILL( 0x1e0b7, 1, 0x7e )
+	ROM_FILL( 0x1e0b8, 1, 0xf8 )
+	ROM_FILL( 0x1e0b9, 1, 0x00 )
 
 	ROM_REGION( 0x18000, "soundcpu", 0 )
 	ROM_LOAD( "wmg.snd",         0x10000, 0x8000, CRC(1d08990e) SHA1(7bfb29426b3876f113e6ec3bc6c2fce9d2d1eb0c) )
@@ -550,4 +592,4 @@ ROM_END
  *
  *******************************************************/
 
-GAME( 2001, wmg, 0, wmg, wmg, wmg_state, wmg, ROT0, "hack (Clay Cowgill)", "Williams Multigame", 0 )
+GAME( 2001, wmg, 0, wmg, wmg, wmg_state, empty_init, ROT0, "hack (Clay Cowgill)", "Williams Multigame", 0 )

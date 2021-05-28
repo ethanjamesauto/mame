@@ -48,6 +48,7 @@ static PFNGLGETSHADERIVPROC glGetShaderiv;
 #include <OpenGL/gl.h>
 #include <OpenGL/CGLTypes.h>
 #include <dirent.h>
+#include <stdlib.h>
 static CGLContextObj s_GLContext;
 static CGLContextObj s_GLContext3;
 static bool s_GL3Active = false;
@@ -315,9 +316,9 @@ static bool CheckGLSL (bool vertex, bool gles, const std::string& testName, cons
 
 static bool CheckMetal (bool vertex, bool gles, const std::string& testName, const char* prefix, const std::string& source)
 {
-#if !GOT_GFX
+#if !GOT_GFX || !defined(__APPLE__)
 	return true; // just assume it's ok
-#endif
+#else
 	
 	FILE* f = fopen ("metalTemp.metal", "wb");
 	fwrite (source.c_str(), source.size(), 1, f);
@@ -333,6 +334,7 @@ static bool CheckMetal (bool vertex, bool gles, const std::string& testName, con
 #endif //
 
 	return true;
+#endif
 }
 
 

@@ -1,65 +1,50 @@
-// license:GPL-2.0+
+// license:BSD-3-Clause
 // copyright-holders:Couriersud
-/*
- * nld_ms_direct1.h
- *
- */
 
 #ifndef NLD_MS_DIRECT1_H_
 #define NLD_MS_DIRECT1_H_
 
-#include "solver/nld_ms_direct.h"
-#include "solver/nld_solver.h"
+///
+/// \file nld_ms_direct1.h
+///
 
-NETLIB_NAMESPACE_DEVICES_START()
+#include "nld_matrix_solver_ext.h"
+#include "nld_ms_direct.h"
+#include "nld_solver.h"
 
-class matrix_solver_direct1_t: public matrix_solver_direct_t<1,1>
+namespace netlist
 {
-public:
-
-	matrix_solver_direct1_t(const solver_parameters_t *params)
-		: matrix_solver_direct_t<1, 1>(params, 1)
-		{}
-	ATTR_HOT inline int vsolve_non_dynamic(const bool newton_raphson);
-protected:
-	ATTR_HOT virtual nl_double vsolve() override;
-private:
-};
-
-// ----------------------------------------------------------------------------------------
-// matrix_solver - Direct1
-// ----------------------------------------------------------------------------------------
-
-ATTR_HOT nl_double matrix_solver_direct1_t::vsolve()
+namespace solver
 {
-	solve_base<matrix_solver_direct1_t>(this);
-	return this->compute_next_timestep();
-}
-
-ATTR_HOT inline int matrix_solver_direct1_t::vsolve_non_dynamic(ATTR_UNUSED const bool newton_raphson)
-{
-	analog_net_t *net = m_nets[0];
-	this->build_LE_A();
-	this->build_LE_RHS(m_RHS);
-	//NL_VERBOSE_OUT(("{1} {2}\n", new_val, m_RHS[0] / m_A[0][0]);
-
-	nl_double new_val =  m_RHS[0] / A(0,0);
-
-	nl_double e = (new_val - net->m_cur_Analog);
-	nl_double cerr = nl_math::abs(e);
-
-	net->m_cur_Analog = new_val;
-
-	if (is_dynamic() && (cerr  > m_params.m_accuracy))
+	template <typename FT>
+	class matrix_solver_direct1_t: public matrix_solver_direct_t<FT, 1>
 	{
-		return 2;
-	}
-	else
-		return 1;
+	public:
 
-}
+		using float_type = FT;
+		using base_type = matrix_solver_direct_t<FT, 1>;
 
-NETLIB_NAMESPACE_DEVICES_END()
+		matrix_solver_direct1_t(devices::nld_solver &main_solver, const pstring &name,
+			const matrix_solver_t::net_list_t &nets,
+			const solver::solver_parameters_t *params)
+			: matrix_solver_direct_t<FT, 1>(main_solver, name, nets, params, 1)
+			{}
+
+		// ----------------------------------------------------------------------------------------
+		// matrix_solver - Direct1
+		// ----------------------------------------------------------------------------------------
+		void vsolve_non_dynamic() override
+		{
+			this->clear_square_mat(this->m_A);
+			this->fill_matrix_and_rhs();
+
+			this->m_new_V[0] = this->m_RHS[0] / this->m_A[0][0];
+		}
+	};
 
 
-#endif /* NLD_MS_DIRECT1_H_ */
+} // namespace solver
+} // namespace netlist
+
+
+#endif // NLD_MS_DIRECT1_H_

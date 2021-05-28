@@ -19,7 +19,7 @@
 
  About the game:
 
- The worst game i have :) Enjoy it so much as me :D
+ The worst game I have :) Enjoy it so much as me :D
 
  ----
 
@@ -51,39 +51,52 @@
 #include "emu.h"
 #include "cpu/z80/z80.h"
 #include "cpu/m68000/m68000.h"
+#include "machine/gen_latch.h"
 #include "sound/okim6295.h"
+#include "emupal.h"
+#include "screen.h"
+#include "speaker.h"
 
 
 
 class diverboy_state : public driver_device
 {
 public:
-	diverboy_state(const machine_config &mconfig, device_type type, const char *tag)
-		: driver_device(mconfig, type, tag),
+	diverboy_state(const machine_config &mconfig, device_type type, const char *tag) :
+		driver_device(mconfig, type, tag),
 		m_spriteram(*this, "spriteram"),
-		m_audiocpu(*this, "audiocpu"),
 		m_maincpu(*this, "maincpu"),
+		m_audiocpu(*this, "audiocpu"),
 		m_oki(*this, "oki"),
 		m_gfxdecode(*this, "gfxdecode"),
 		m_screen(*this, "screen"),
-		m_palette(*this, "palette") { }
+		m_palette(*this, "palette"),
+		m_soundlatch(*this, "soundlatch")
+	{ }
 
+	void diverboy(machine_config &config);
+
+private:
 	/* memory pointers */
-	required_shared_ptr<UINT16> m_spriteram;
+	required_shared_ptr<uint16_t> m_spriteram;
 
 	/* devices */
-	required_device<cpu_device> m_audiocpu;
-	DECLARE_WRITE16_MEMBER(soundcmd_w);
-	DECLARE_WRITE8_MEMBER(okibank_w);
-	virtual void machine_start() override;
-	virtual void video_start() override;
-	UINT32 screen_update_diverboy(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
-	void draw_sprites(  bitmap_ind16 &bitmap, const rectangle &cliprect );
 	required_device<cpu_device> m_maincpu;
+	required_device<cpu_device> m_audiocpu;
 	required_device<okim6295_device> m_oki;
 	required_device<gfxdecode_device> m_gfxdecode;
 	required_device<screen_device> m_screen;
 	required_device<palette_device> m_palette;
+	required_device<generic_latch_8_device> m_soundlatch;
+
+	void soundcmd_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	void okibank_w(uint8_t data);
+	virtual void machine_start() override;
+	virtual void video_start() override;
+	uint32_t screen_update_diverboy(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
+	void draw_sprites(  bitmap_ind16 &bitmap, const rectangle &cliprect );
+	void diverboy_map(address_map &map);
+	void snd_map(address_map &map);
 };
 
 
@@ -93,12 +106,12 @@ void diverboy_state::video_start()
 
 void diverboy_state::draw_sprites(  bitmap_ind16 &bitmap, const rectangle &cliprect )
 {
-	UINT16 *source = m_spriteram;
-	UINT16 *finish = source + (m_spriteram.bytes() / 2);
+	uint16_t *source = m_spriteram;
+	uint16_t *finish = source + (m_spriteram.bytes() / 2);
 
 	while (source < finish)
 	{
-		INT16 xpos, ypos, number, colr, bank, flash;
+		int16_t xpos, ypos, number, colr, bank, flash;
 
 		ypos = source[4];
 		xpos = source[0];
@@ -126,7 +139,7 @@ void diverboy_state::draw_sprites(  bitmap_ind16 &bitmap, const rectangle &clipr
 	}
 }
 
-UINT32 diverboy_state::screen_update_diverboy(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t diverboy_state::screen_update_diverboy(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 //  bitmap.fill(m_palette->black_pen(), cliprect);
 	draw_sprites(bitmap, cliprect);
@@ -134,48 +147,50 @@ UINT32 diverboy_state::screen_update_diverboy(screen_device &screen, bitmap_ind1
 }
 
 
-WRITE16_MEMBER(diverboy_state::soundcmd_w)
+void diverboy_state::soundcmd_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	if (ACCESSING_BITS_0_7)
 	{
-		soundlatch_byte_w(space, 0, data & 0xff);
+		m_soundlatch->write(data & 0xff);
 		m_audiocpu->set_input_line(0, HOLD_LINE);
 	}
 }
 
-WRITE8_MEMBER(diverboy_state::okibank_w)
+void diverboy_state::okibank_w(uint8_t data)
 {
 	/* bit 2 might be reset */
 //  popmessage("%02x",data);
-	m_oki->set_bank_base((data & 3) * 0x40000);
+	m_oki->set_rom_bank(data & 3);
 }
 
 
 
-static ADDRESS_MAP_START( diverboy_map, AS_PROGRAM, 16, diverboy_state )
-	AM_RANGE(0x000000, 0x03ffff) AM_ROM
-	AM_RANGE(0x040000, 0x04ffff) AM_RAM
-	AM_RANGE(0x080000, 0x083fff) AM_RAM AM_SHARE("spriteram")
-	AM_RANGE(0x100000, 0x100001) AM_WRITE(soundcmd_w)
-	AM_RANGE(0x140000, 0x1407ff) AM_DEVWRITE("palette", palette_device, write) AM_SHARE("palette")
-	AM_RANGE(0x180000, 0x180001) AM_READ_PORT("P1_P2")
-	AM_RANGE(0x180002, 0x180003) AM_READ_PORT("DSW")
-	AM_RANGE(0x180008, 0x180009) AM_READ_PORT("COINS")
-//  AM_RANGE(0x18000a, 0x18000b) AM_READNOP
-//  AM_RANGE(0x18000c, 0x18000d) AM_WRITENOP
-	AM_RANGE(0x320000, 0x3207ff) AM_WRITEONLY /* ?? */
-	AM_RANGE(0x322000, 0x3227ff) AM_WRITEONLY /* ?? */
-//  AM_RANGE(0x340000, 0x340001) AM_WRITENOP
-//  AM_RANGE(0x340002, 0x340003) AM_WRITENOP
-ADDRESS_MAP_END
+void diverboy_state::diverboy_map(address_map &map)
+{
+	map(0x000000, 0x03ffff).rom();
+	map(0x040000, 0x04ffff).ram();
+	map(0x080000, 0x083fff).ram().share("spriteram");
+	map(0x100000, 0x100001).w(FUNC(diverboy_state::soundcmd_w));
+	map(0x140000, 0x1407ff).w(m_palette, FUNC(palette_device::write16)).share("palette");
+	map(0x180000, 0x180001).portr("P1_P2");
+	map(0x180002, 0x180003).portr("DSW");
+	map(0x180008, 0x180009).portr("COINS");
+//  map(0x18000a, 0x18000b).nopr();
+//  map(0x18000c, 0x18000d).nopw();
+	map(0x320000, 0x3207ff).nopw(); /* ?? */
+	map(0x322000, 0x3227ff).nopw(); /* ?? */
+//  map(0x340000, 0x340001).nopw();
+//  map(0x340002, 0x340003).nopw();
+}
 
-static ADDRESS_MAP_START( snd_map, AS_PROGRAM, 8, diverboy_state )
-	AM_RANGE(0x0000, 0x7fff) AM_ROM
-	AM_RANGE(0x8000, 0x87ff) AM_RAM
-	AM_RANGE(0x9000, 0x9000) AM_WRITE(okibank_w)
-	AM_RANGE(0x9800, 0x9800) AM_DEVREADWRITE("oki", okim6295_device, read, write)
-	AM_RANGE(0xa000, 0xa000) AM_READ(soundlatch_byte_r)
-ADDRESS_MAP_END
+void diverboy_state::snd_map(address_map &map)
+{
+	map(0x0000, 0x7fff).rom();
+	map(0x8000, 0x87ff).ram();
+	map(0x9000, 0x9000).w(FUNC(diverboy_state::okibank_w));
+	map(0x9800, 0x9800).rw(m_oki, FUNC(okim6295_device::read), FUNC(okim6295_device::write));
+	map(0xa000, 0xa000).r(m_soundlatch, FUNC(generic_latch_8_device::read));
+}
 
 
 
@@ -249,7 +264,7 @@ static const gfx_layout diverboy_spritelayout =
 	16*64
 };
 
-static GFXDECODE_START( diverboy )
+static GFXDECODE_START( gfx_diverboy )
 	GFXDECODE_ENTRY( "gfx1", 0, diverboy_spritelayout, 0, 4*16 )
 	GFXDECODE_ENTRY( "gfx2", 0, diverboy_spritelayout, 0, 4*16 )
 GFXDECODE_END
@@ -259,35 +274,35 @@ void diverboy_state::machine_start()
 {
 }
 
-static MACHINE_CONFIG_START( diverboy, diverboy_state )
+void diverboy_state::diverboy(machine_config &config)
+{
+	M68000(config, m_maincpu, 12000000); /* guess */
+	m_maincpu->set_addrmap(AS_PROGRAM, &diverboy_state::diverboy_map);
+	m_maincpu->set_vblank_int("screen", FUNC(diverboy_state::irq6_line_hold));
 
-	MCFG_CPU_ADD("maincpu", M68000, 12000000) /* guess */
-	MCFG_CPU_PROGRAM_MAP(diverboy_map)
-	MCFG_CPU_VBLANK_INT_DRIVER("screen", diverboy_state,  irq6_line_hold)
-
-	MCFG_CPU_ADD("audiocpu", Z80, 4000000)
-	MCFG_CPU_PROGRAM_MAP(snd_map)
-
-
-	MCFG_GFXDECODE_ADD("gfxdecode", "palette", diverboy)
-
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_REFRESH_RATE(60)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(0))
-	MCFG_SCREEN_SIZE(64*8, 32*8)
-	MCFG_SCREEN_VISIBLE_AREA(0*8+4, 40*8+1, 2*8, 32*8-1)
-	MCFG_SCREEN_UPDATE_DRIVER(diverboy_state, screen_update_diverboy)
-	MCFG_SCREEN_PALETTE("palette")
-
-	MCFG_PALETTE_ADD("palette", 0x400)
-	MCFG_PALETTE_FORMAT(xxxxBBBBGGGGRRRR)
+	Z80(config, m_audiocpu, 4000000);
+	m_audiocpu->set_addrmap(AS_PROGRAM, &diverboy_state::snd_map);
 
 
-	MCFG_SPEAKER_STANDARD_MONO("mono")
+	GFXDECODE(config, m_gfxdecode, m_palette, gfx_diverboy);
 
-	MCFG_OKIM6295_ADD("oki", 1320000, OKIM6295_PIN7_HIGH) // clock frequency & pin 7 not verified
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.50)
-MACHINE_CONFIG_END
+	SCREEN(config, m_screen, SCREEN_TYPE_RASTER);
+	m_screen->set_refresh_hz(60);
+	m_screen->set_vblank_time(ATTOSECONDS_IN_USEC(0));
+	m_screen->set_size(64*8, 32*8);
+	m_screen->set_visarea(0*8+4, 40*8+1, 2*8, 32*8-1);
+	m_screen->set_screen_update(FUNC(diverboy_state::screen_update_diverboy));
+	m_screen->set_palette(m_palette);
+
+	PALETTE(config, m_palette).set_format(palette_device::xBGR_444, 0x400);
+
+
+	SPEAKER(config, "mono").front_center();
+
+	GENERIC_LATCH_8(config, m_soundlatch);
+
+	OKIM6295(config, m_oki, 1320000, okim6295_device::PIN7_HIGH).add_route(ALL_OUTPUTS, "mono", 0.50); // clock frequency & pin 7 not verified
+}
 
 /*
 
@@ -332,4 +347,4 @@ ROM_END
 
 
 
-GAME( 1992, diverboy, 0, diverboy, diverboy, driver_device, 0, ORIENTATION_FLIP_X, "Gamart (Electronic Devices Italy license)", "Diver Boy", MACHINE_SUPPORTS_SAVE )
+GAME( 1992, diverboy, 0, diverboy, diverboy, diverboy_state, empty_init, ORIENTATION_FLIP_X, "Gamart (Electronic Devices Italy license)", "Diver Boy", MACHINE_SUPPORTS_SAVE )

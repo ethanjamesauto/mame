@@ -94,12 +94,15 @@
 ***************************************************************************/
 
 #include "emu.h"
-#include "cpu/z80/z80.h"
-#include "sound/sn76496.h"
 #include "includes/bankp.h"
 
+#include "cpu/z80/z80.h"
+#include "sound/sn76496.h"
+#include "screen.h"
+#include "speaker.h"
 
-#define MASTER_CLOCK    XTAL_15_468MHz
+
+#define MASTER_CLOCK    XTAL(15'468'480)
 
 // Video timing
 // PCB measured: H = 15.61khz V = 60.99hz, +/- 0.01hz
@@ -121,24 +124,26 @@
  *
  *************************************/
 
-static ADDRESS_MAP_START( bankp_map, AS_PROGRAM, 8, bankp_state )
-	AM_RANGE(0x0000, 0xdfff) AM_ROM
-	AM_RANGE(0xe000, 0xefff) AM_RAM
-	AM_RANGE(0xf000, 0xf3ff) AM_RAM_WRITE(bankp_videoram_w) AM_SHARE("videoram")
-	AM_RANGE(0xf400, 0xf7ff) AM_RAM_WRITE(bankp_colorram_w) AM_SHARE("colorram")
-	AM_RANGE(0xf800, 0xfbff) AM_RAM_WRITE(bankp_videoram2_w) AM_SHARE("videoram2")
-	AM_RANGE(0xfc00, 0xffff) AM_RAM_WRITE(bankp_colorram2_w) AM_SHARE("colorram2")
-ADDRESS_MAP_END
+void bankp_state::bankp_map(address_map &map)
+{
+	map(0x0000, 0xdfff).rom();
+	map(0xe000, 0xefff).ram();
+	map(0xf000, 0xf3ff).ram().w(FUNC(bankp_state::videoram_w)).share("videoram");
+	map(0xf400, 0xf7ff).ram().w(FUNC(bankp_state::colorram_w)).share("colorram");
+	map(0xf800, 0xfbff).ram().w(FUNC(bankp_state::videoram2_w)).share("videoram2");
+	map(0xfc00, 0xffff).ram().w(FUNC(bankp_state::colorram2_w)).share("colorram2");
+}
 
-static ADDRESS_MAP_START( bankp_io_map, AS_IO, 8, bankp_state )
-	ADDRESS_MAP_GLOBAL_MASK(0xff)
-	AM_RANGE(0x00, 0x00) AM_READ_PORT("IN0") AM_DEVWRITE("sn1", sn76489_device, write)
-	AM_RANGE(0x01, 0x01) AM_READ_PORT("IN1") AM_DEVWRITE("sn2", sn76489_device, write)
-	AM_RANGE(0x02, 0x02) AM_READ_PORT("IN2") AM_DEVWRITE("sn3", sn76489_device, write)
-	AM_RANGE(0x04, 0x04) AM_READ_PORT("DSW1")
-	AM_RANGE(0x05, 0x05) AM_WRITE(bankp_scroll_w)
-	AM_RANGE(0x07, 0x07) AM_WRITE(bankp_out_w)
-ADDRESS_MAP_END
+void bankp_state::bankp_io_map(address_map &map)
+{
+	map.global_mask(0xff);
+	map(0x00, 0x00).portr("IN0").w("sn1", FUNC(sn76489_device::write));
+	map(0x01, 0x01).portr("IN1").w("sn2", FUNC(sn76489_device::write));
+	map(0x02, 0x02).portr("IN2").w("sn3", FUNC(sn76489_device::write));
+	map(0x04, 0x04).portr("DSW1");
+	map(0x05, 0x05).w(FUNC(bankp_state::scroll_w));
+	map(0x07, 0x07).w(FUNC(bankp_state::out_w));
+}
 
 
 /*************************************
@@ -155,7 +160,7 @@ static INPUT_PORTS_START( bankp )
 	PORT_BIT( 0x08, IP_ACTIVE_HIGH, IPT_JOYSTICK_LEFT ) PORT_2WAY
 	PORT_BIT( 0x10, IP_ACTIVE_HIGH, IPT_BUTTON1 )
 	PORT_BIT( 0x20, IP_ACTIVE_HIGH, IPT_COIN1 )
-	PORT_BIT( 0x40, IP_ACTIVE_HIGH, IPT_COIN2 )
+	PORT_BIT( 0x40, IP_ACTIVE_HIGH, IPT_SERVICE1 )
 	PORT_BIT( 0x80, IP_ACTIVE_HIGH, IPT_BUTTON2 )
 
 	PORT_START("IN1")
@@ -171,16 +176,16 @@ static INPUT_PORTS_START( bankp )
 	PORT_START("IN2")
 	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_BUTTON3 )
 	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_BUTTON3 ) PORT_COCKTAIL
-	PORT_BIT( 0x04, IP_ACTIVE_HIGH, IPT_COIN3 )
+	PORT_BIT( 0x04, IP_ACTIVE_HIGH, IPT_COIN2 )
 	PORT_BIT( 0xf8, IP_ACTIVE_HIGH, IPT_UNUSED )
 
 	PORT_START("DSW1")
-	PORT_DIPNAME( 0x03, 0x00, "Coin A/B" )                  PORT_DIPLOCATION("SW1:1,2")
+	PORT_DIPNAME( 0x03, 0x00, "Coin Switch 1" )                  PORT_DIPLOCATION("SW1:1,2")
 	PORT_DIPSETTING(    0x03, DEF_STR( 3C_1C ) )
 	PORT_DIPSETTING(    0x02, DEF_STR( 2C_1C ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( 1C_1C ) )
 	PORT_DIPSETTING(    0x01, DEF_STR( 1C_2C ) )
-	PORT_DIPNAME( 0x04, 0x00, "Coin C" )                    PORT_DIPLOCATION("SW1:3")
+	PORT_DIPNAME( 0x04, 0x00, "Coin Switch 2" )                    PORT_DIPLOCATION("SW1:3")
 	PORT_DIPSETTING(    0x04, DEF_STR( 2C_1C ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( 1C_1C ) )
 	PORT_DIPNAME( 0x08, 0x00, DEF_STR( Lives ) )            PORT_DIPLOCATION("SW1:4")
@@ -264,7 +269,7 @@ static const gfx_layout charlayout2 =
 	8*8 /* every char takes 8 consecutive bytes */
 };
 
-static GFXDECODE_START( bankp )
+static GFXDECODE_START( gfx_bankp )
 	GFXDECODE_ENTRY( "gfx1", 0, charlayout,      0, 32 )
 	GFXDECODE_ENTRY( "gfx2", 0, charlayout2,  32*4, 16 )
 GFXDECODE_END
@@ -279,46 +284,42 @@ void bankp_state::machine_reset()
 {
 	m_scroll_x = 0;
 	m_priority = 0;
+	m_nmi_mask = 0;
 }
 
 INTERRUPT_GEN_MEMBER(bankp_state::vblank_irq)
 {
 	if(m_nmi_mask)
-		device.execute().set_input_line(INPUT_LINE_NMI, PULSE_LINE);
+		device.execute().pulse_input_line(INPUT_LINE_NMI, attotime::zero);
 }
 
-static MACHINE_CONFIG_START( bankp, bankp_state )
-
+void bankp_state::bankp(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", Z80, MASTER_CLOCK/6)
-	MCFG_CPU_PROGRAM_MAP(bankp_map)
-	MCFG_CPU_IO_MAP(bankp_io_map)
-	MCFG_CPU_VBLANK_INT_DRIVER("screen", bankp_state,  vblank_irq)
+	Z80(config, m_maincpu, MASTER_CLOCK/6);
+	m_maincpu->set_addrmap(AS_PROGRAM, &bankp_state::bankp_map);
+	m_maincpu->set_addrmap(AS_IO, &bankp_state::bankp_io_map);
+	m_maincpu->set_vblank_int("screen", FUNC(bankp_state::vblank_irq));
 
 
 	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_RAW_PARAMS(PIXEL_CLOCK, HTOTAL, HBEND, HBSTART, VTOTAL, VBEND, VBSTART)
-	MCFG_SCREEN_UPDATE_DRIVER(bankp_state, screen_update_bankp)
-	MCFG_SCREEN_PALETTE("palette")
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_RASTER));
+	screen.set_raw(PIXEL_CLOCK, HTOTAL, HBEND, HBSTART, VTOTAL, VBEND, VBSTART);
+	screen.set_screen_update(FUNC(bankp_state::screen_update));
+	screen.set_palette(m_palette);
 
-	MCFG_GFXDECODE_ADD("gfxdecode", "palette", bankp)
-	MCFG_PALETTE_ADD("palette", 32*4+16*8)
-	MCFG_PALETTE_INDIRECT_ENTRIES(32)
-	MCFG_PALETTE_INIT_OWNER(bankp_state, bankp)
+	GFXDECODE(config, m_gfxdecode, m_palette, gfx_bankp);
+	PALETTE(config, m_palette, FUNC(bankp_state::bankp_palette), 32*4+16*8, 32);
 
 	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_MONO("mono")
+	SPEAKER(config, "mono").front_center();
 
-	MCFG_SOUND_ADD("sn1", SN76489, MASTER_CLOCK/6)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 1.0)
+	SN76489(config, "sn1", MASTER_CLOCK/6).add_route(ALL_OUTPUTS, "mono", 1.0);
 
-	MCFG_SOUND_ADD("sn2", SN76489, MASTER_CLOCK/6)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 1.0)
+	SN76489(config, "sn2", MASTER_CLOCK/6).add_route(ALL_OUTPUTS, "mono", 1.0);
 
-	MCFG_SOUND_ADD("sn3", SN76489, MASTER_CLOCK/6)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 1.0)
-MACHINE_CONFIG_END
+	SN76489(config, "sn3", MASTER_CLOCK/6).add_route(ALL_OUTPUTS, "mono", 1.0);
+}
 
 
 
@@ -394,5 +395,5 @@ ROM_END
  *
  *************************************/
 
-GAME( 1984, bankp, 0, bankp, bankp, driver_device, 0, ROT0,   "Sanritsu / Sega", "Bank Panic",  MACHINE_SUPPORTS_SAVE )
-GAME( 1987, combh, 0, bankp, combh, driver_device, 0, ROT270, "Sanritsu / Sega", "Combat Hawk", MACHINE_SUPPORTS_SAVE )
+GAME( 1984, bankp, 0, bankp, bankp, bankp_state, empty_init, ROT0,   "Sanritsu / Sega", "Bank Panic",  MACHINE_SUPPORTS_SAVE )
+GAME( 1987, combh, 0, bankp, combh, bankp_state, empty_init, ROT270, "Sanritsu / Sega", "Combat Hawk", MACHINE_SUPPORTS_SAVE )

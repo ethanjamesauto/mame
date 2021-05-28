@@ -18,9 +18,9 @@
 
 *****************************************************************************/
 
-#include <string.h>
-#include <stdarg.h>
-#include <ctype.h>
+#include <cstring>
+#include <cstdarg>
+#include <cctype>
 
 #include "imgtool.h"
 #include "formats/imageutl.h"
@@ -40,8 +40,8 @@
 
 struct basictoken_tableent
 {
-	UINT8 shift;
-	UINT8 base;
+	uint8_t shift;
+	uint8_t base;
 	const char *const *tokens;
 	int num_tokens;
 };
@@ -50,8 +50,10 @@ struct basictoken_tableent
 
 struct basictokens
 {
-	UINT16 baseaddress;
+	uint16_t baseaddress;
+	uint8_t size_pos;
 	unsigned int skip_bytes : 15;
+	unsigned char bytes[20];
 	unsigned int be : 1;
 	const basictoken_tableent *entries;
 	int num_entries;
@@ -69,60 +71,59 @@ struct basictokens
 -------------------------------------------------*/
 
 static imgtoolerr_t basic_readfile(const basictokens *tokens,
-	imgtool_partition *partition, const char *filename,
-	const char *fork, imgtool_stream *destf)
+	imgtool::partition &partition, const char *filename,
+	const char *fork, imgtool::stream &destf)
 {
 	imgtoolerr_t err;
-	imgtool_stream *mem_stream;
-	UINT8 line_header[4];
-	UINT16 line_number; //, address;
-	UINT8 b, shift;
+	imgtool::stream::ptr mem_stream;
+	uint8_t line_header[4];
+	uint16_t line_number; //, address;
+	uint8_t b, shift;
 	int i;
-	int in_string = FALSE;
+	int in_string = false;
 	const basictoken_tableent *token_table;
 	const char *token;
 
 	/* open a memory stream */
-	mem_stream = stream_open_mem(nullptr, 0);
-	if (mem_stream == nullptr)
-	{
-		err = IMGTOOLERR_OUTOFMEMORY;
-		goto done;
-	}
+	mem_stream = imgtool::stream::open_mem(nullptr, 0);
+	if (!mem_stream)
+		return IMGTOOLERR_OUTOFMEMORY;
 
 	/* read actual file */
-	err = imgtool_partition_read_file(partition, filename, fork, mem_stream, nullptr);
+	err = partition.read_file(filename, fork, *mem_stream, nullptr);
 	if (err)
-		goto done;
+		return err;
 
 	/* skip first few bytes */
-	stream_seek(mem_stream, tokens->skip_bytes, SEEK_SET);
+	mem_stream->seek(tokens->skip_bytes, SEEK_SET);
 
 	/* keep reading line headers */
-	while(stream_read(mem_stream, line_header, sizeof(line_header)) == sizeof(line_header))
+	while(mem_stream->read(line_header, sizeof(line_header)) == sizeof(line_header))
 	{
 		/* pluck the address and line number out */
 		if (tokens->be)
 		{
-			//address = (UINT16)
+			//address = (uint16_t)
 			pick_integer_be(line_header, 0, 2);
-			line_number = (UINT16) pick_integer_be(line_header, 2, 2);
+			line_number = (uint16_t) pick_integer_be(line_header, 2, 2);
 		}
 		else
 		{
-			//address = (UINT16)
+			//address = (uint16_t)
 			pick_integer_le(line_header, 0, 2);
-			line_number = (UINT16) pick_integer_le(line_header, 2, 2);
+			line_number = (uint16_t) pick_integer_le(line_header, 2, 2);
 		}
 
 		/* write the line number */
-		stream_printf(destf, "%u ", (unsigned) line_number);
+		destf.printf("%u ", (unsigned) line_number);
 		shift = 0x00;
 
-		while((stream_read(mem_stream, &b, 1) > 0) && (b != 0x00))
+		in_string = false; // in case the last line didn't terminate a string
+
+		while((mem_stream->read(&b, 1) > 0) && (b != 0x00))
 		{
 			if (b == 0x22)
-				in_string = in_string ? FALSE : TRUE;
+				in_string = in_string ? false : true;
 
 			if ((b & 0x80) && (!in_string))
 			{
@@ -149,20 +150,17 @@ static imgtoolerr_t basic_readfile(const basictokens *tokens,
 				}
 
 				if (shift == 0x00)
-					stream_puts(destf, token ? token : "!");
+					destf.puts(token ? token : "!");
 			}
 			else
 			{
-				stream_putc(destf, (char) b);
+				destf.putc((char) b);
 			}
 		}
 
-		stream_puts(destf, EOLN);
+		destf.puts(EOLN);
 	}
 
-done:
-	if (mem_stream != nullptr)
-		stream_close(mem_stream);
 	return err;
 }
 
@@ -174,47 +172,42 @@ done:
 -------------------------------------------------*/
 
 static imgtoolerr_t basic_writefile(const basictokens *tokens,
-	imgtool_partition *partition, const char *filename,
-	const char *fork, imgtool_stream *sourcef, option_resolution *opts)
+	imgtool::partition &partition, const char *filename,
+	const char *fork, imgtool::stream &sourcef, util::option_resolution *opts)
 {
-	imgtoolerr_t err;
-	imgtool_stream *mem_stream;
+	imgtool::stream::ptr mem_stream;
 	char buf[1024];
-	int eof = FALSE;
-	UINT32 len;
+	int eof = false;
+	uint32_t len;
 	char c;
 	int i, j, pos, in_quotes;
-	UINT16 line_number;
-	UINT8 line_header[4];
-	UINT8 file_header[3];
+	uint16_t line_number;
+	uint8_t line_header[4];
+	uint8_t file_size[2];
 	const basictoken_tableent *token_table;
 	const char *token;
-	UINT8 token_shift, token_value;
-	UINT16 address;
+	uint8_t token_shift, token_value;
+	uint16_t address;
 
 	/* open a memory stream */
-	mem_stream = stream_open_mem(nullptr, 0);
-	if (mem_stream == nullptr)
-	{
-		err = IMGTOOLERR_OUTOFMEMORY;
-		goto done;
-	}
+	mem_stream = imgtool::stream::open_mem(nullptr, 0);
+	if (!mem_stream)
+		return IMGTOOLERR_OUTOFMEMORY;
 
-	/* skip first few bytes */
-	stream_fill(mem_stream, 0x00, tokens->skip_bytes);
-
+	/* write header */
+	mem_stream->write(tokens->bytes, tokens->skip_bytes);
 	/* loop until the file is complete */
 	while(!eof)
 	{
 		/* read a line */
 		pos = 0;
-		while((len = stream_read(sourcef, &c, 1)) > 0)
+		while((len = sourcef.read(&c, 1)) > 0)
 		{
 			/* break if at end of line */
 			if ((c == '\r') || (c == '\n'))
 				break;
 
-			if (pos <= ARRAY_LENGTH(buf) - 1)
+			if (pos <= std::size(buf) - 1)
 			{
 				buf[pos++] = c;
 			}
@@ -239,7 +232,7 @@ static imgtoolerr_t basic_writefile(const basictokens *tokens,
 			/* determine address */
 			if (tokens->baseaddress != 0)
 			{
-				address = tokens->baseaddress + (UINT16)stream_size(mem_stream) + 4;
+				address = tokens->baseaddress + (uint16_t)mem_stream->size() + 4;
 			}
 			else
 			{
@@ -255,19 +248,19 @@ static imgtoolerr_t basic_writefile(const basictokens *tokens,
 			}
 			else
 			{
-				place_integer_be(line_header, 0, 2, address);
-				place_integer_be(line_header, 2, 2, line_number);
+				place_integer_le(line_header, 0, 2, address);
+				place_integer_le(line_header, 2, 2, line_number);
 			}
 
 			/* emit line header */
-			stream_write(mem_stream, line_header, sizeof(line_header));
+			mem_stream->write(line_header, sizeof(line_header));
 
 			/* skip spaces */
 			while(isspace(buf[pos]))
 				pos++;
 
 			/* when we start out, we are not within quotation marks */
-			in_quotes = FALSE;
+			in_quotes = false;
 
 			/* read until end of line */
 			while(buf[pos] != '\0')
@@ -285,6 +278,7 @@ static imgtoolerr_t basic_writefile(const basictokens *tokens,
 				{
 					for (i = 0; (token == nullptr) && (i < tokens->num_entries); i++)
 					{
+						bool found = false;
 						token_table = &tokens->entries[i];
 						for (j = 0; (token == nullptr) && (j < token_table->num_tokens); j++)
 						{
@@ -294,8 +288,12 @@ static imgtoolerr_t basic_writefile(const basictokens *tokens,
 								token_shift = token_table->shift;
 								token_value = token_table->base + j;
 								pos += strlen(token);
+								found = true;
+								break;
 							}
 						}
+						if (found)
+							break;
 					}
 				}
 
@@ -304,53 +302,44 @@ static imgtoolerr_t basic_writefile(const basictokens *tokens,
 				{
 					/* emit the token */
 					if (token_shift != 0)
-						stream_write(mem_stream, &token_shift, 1);
-					stream_write(mem_stream, &token_value, 1);
+						mem_stream->write(&token_shift, 1);
+					mem_stream->write(&token_value, 1);
 				}
 				else
 				{
 					/* no token; emit the byte */
-					stream_write(mem_stream, &buf[pos++], 1);
+					mem_stream->write(&buf[pos++], 1);
 				}
 			}
 
 			/* emit line terminator */
-			stream_fill(mem_stream, 0x00, 1);
+			mem_stream->fill(0x00, 1);
 		}
 	}
 
 	/* emit program terminator */
-	stream_fill(mem_stream, 0x00, 2);
+	mem_stream->fill(0x00, 2);
 
 	/* reset stream */
-	stream_seek(mem_stream, 0, SEEK_SET);
+	mem_stream->seek(tokens->size_pos, SEEK_SET);
 
 	/* this is somewhat gross */
 	if (tokens->skip_bytes >= 3)
 	{
 		if (tokens->be)
 		{
-			place_integer_be(file_header, 0, 1, 0xFF);
-			place_integer_be(file_header, 1, 2, stream_size(mem_stream));
+			place_integer_be(file_size, 0, 2, mem_stream->size());
 		}
 		else
 		{
-			place_integer_le(file_header, 0, 1, 0xFF);
-			place_integer_le(file_header, 1, 2, stream_size(mem_stream));
+			place_integer_le(file_size, 0, 2, mem_stream->size());
 		}
-		stream_write(mem_stream, file_header, 3);
-		stream_seek(mem_stream, 0, SEEK_SET);
+		mem_stream->write(file_size, 2);
+		mem_stream->seek(0, SEEK_SET);
 	}
 
 	/* write actual file */
-	err = imgtool_partition_write_file(partition, filename, fork, mem_stream, opts, nullptr);
-	if (err)
-		goto done;
-
-done:
-	if (mem_stream != nullptr)
-		stream_close(mem_stream);
-	return err;
+	return partition.write_file(filename, fork, *mem_stream, opts, nullptr);
 }
 
 
@@ -613,25 +602,32 @@ static const char *const dragonbas_statements[] =
 	"=",        /* 0xcb */
 	"<",        /* 0xcc */
 	"USING",    /* 0xcd */
-	"DIR",      /* 0xce */
-	"DRIVE",    /* 0xcf */
-	"FIELD",    /* 0xd0 */
-	"FILES",    /* 0xd1 */
-	"KILL",     /* 0xd2 */
-	"LOAD",     /* 0xd3 */
-	"LSET",     /* 0xd4 */
-	"MERGE",    /* 0xd5 */
-	"RENAME",   /* 0xd6 */
-	"RSET",     /* 0xd7 */
-	"SAVE",     /* 0xd8 */
-	"WRITE",    /* 0xd9 */
-	"VERIFY",   /* 0xda */
-	"UNLOAD",   /* 0xdb */
-	"DSKINI",   /* 0xdc */
-	"BACKUP",   /* 0xdd */
-	"COPY",     /* 0xde */
-	"DSKI$",    /* 0xdf */
-	"DSKO$"     /* 0xe0 */
+	"AUTO",     /* 0xce */
+	"BACKUP",   /* 0xcf */
+	"BEEP",     /* 0xd0 */
+	"BOOT",     /* 0xd1 */
+	"CHAIN",    /* 0xd2 */
+	"COPY",     /* 0xd3 */
+	"CREATE",   /* 0xd4 */
+	"DIR",      /* 0xd5 */
+	"DRIVE",    /* 0xd6 */
+	"DSKINIT",  /* 0xd7 */
+	"FREAD",    /* 0xd8 */
+	"FWRITE",   /* 0xd9 */
+	"ERROR",    /* 0xda */
+	"KILL",     /* 0xdb */
+	"LOAD",     /* 0xdc */
+	"MERGE",    /* 0xdd */
+	"PROTECT",  /* 0xde */
+	"WAIT",     /* 0xdf */
+	"RENAME",   /* 0xe0 */
+	"SAVE",     /* 0xe1 */
+	"SREAD",    /* 0xe2 */
+	"SWRITE",   /* 0xe3 */
+	"VERIFY",   /* 0xe4 */
+	"FROM",     /* 0xe5 */
+	"FLREAD",   /* 0xe6 */
+	"SWAP"      /* 0xe7 */
 };
 
 static const char *const dragonbas_functions[] =
@@ -669,12 +665,14 @@ static const char *const dragonbas_functions[] =
 	"TIMER",    /* 0xff9e */
 	"PPOINT",   /* 0xff9f */
 	"STRING$",  /* 0xffa0 */
-	"USR"       /* 0xffa1 */
-	"CVN",      /* 0xffa2 */
+	"USR",      /* 0xffa1 */
+	"LOF",      /* 0xffa2 */
 	"FREE",     /* 0xffa3 */
-	"LOC",      /* 0xffa4 */
-	"LOF",      /* 0xffa5 */
-	"MKN$"      /* 0xffa6 */
+	"ERL",      /* 0xffa4 */
+	"ERR",      /* 0xffa5 */
+	"HIMEM",    /* 0xffa6 */
+	"LOC",      /* 0xffa7 */
+	"FRE$"      /* 0xffa8 */
 };
 
 static const char *const vzbas[] =
@@ -2945,32 +2943,34 @@ static const char *const basic_100[] = /* "BASIC 10.0" - supported by c65 & clon
 
 static const basictoken_tableent cocobas_tokenents[] =
 {
-	{ 0x00, 0x80,   cocobas_statements, ARRAY_LENGTH(cocobas_statements) },
-	{ 0xff, 0x80,   cocobas_functions,  ARRAY_LENGTH(cocobas_functions) }
+	{ 0x00, 0x80,   cocobas_statements, std::size(cocobas_statements) },
+	{ 0xff, 0x80,   cocobas_functions,  std::size(cocobas_functions) }
 };
 
 static const basictokens cocobas_tokens =
 {
 	0x2600,
+	1,
 	3,
-	TRUE,
+	{0xFF, 0x00, 0x00},
+	true,
 	cocobas_tokenents,
-	ARRAY_LENGTH(cocobas_tokenents)
+	std::size(cocobas_tokenents)
 };
 
-static imgtoolerr_t cocobas_readfile(imgtool_partition *partition, const char *filename,
-	const char *fork, imgtool_stream *destf)
+static imgtoolerr_t cocobas_readfile(imgtool::partition &partition, const char *filename,
+	const char *fork, imgtool::stream &destf)
 {
 	return basic_readfile(&cocobas_tokens, partition, filename, fork, destf);
 }
 
-static imgtoolerr_t cocobas_writefile(imgtool_partition *partition, const char *filename,
-	const char *fork, imgtool_stream *sourcef, option_resolution *opts)
+static imgtoolerr_t cocobas_writefile(imgtool::partition &partition, const char *filename,
+	const char *fork, imgtool::stream &sourcef, util::option_resolution *opts)
 {
 	return basic_writefile(&cocobas_tokens, partition, filename, fork, sourcef, opts);
 }
 
-void filter_cocobas_getinfo(UINT32 state, union filterinfo *info)
+void filter_cocobas_getinfo(uint32_t state, union filterinfo *info)
 {
 	switch(state)
 	{
@@ -2989,32 +2989,34 @@ void filter_cocobas_getinfo(UINT32 state, union filterinfo *info)
 
 static const basictoken_tableent dragonbas_tokenents[] =
 {
-	{ 0x00, 0x80,   dragonbas_statements,   ARRAY_LENGTH(dragonbas_statements) },
-	{ 0xff, 0x80,   dragonbas_functions,    ARRAY_LENGTH(dragonbas_functions) }
+	{ 0x00, 0x80,   dragonbas_statements,   std::size(dragonbas_statements) },
+	{ 0xff, 0x80,   dragonbas_functions,    std::size(dragonbas_functions) }
 };
 
 static const basictokens dragonbas_tokens =
 {
-	0x2600,
+	0x2415,
 	4,
-	TRUE,
+	9,
+	{0x55, 0x01, 0x24, 0x01, 0x00, 0x2A, 0x8B, 0x8D, 0xAA},
+	true,
 	dragonbas_tokenents,
-	ARRAY_LENGTH(dragonbas_tokenents)
+	std::size(dragonbas_tokenents)
 };
 
-static imgtoolerr_t dragonbas_readfile(imgtool_partition *partition, const char *filename,
-	const char *fork, imgtool_stream *destf)
+static imgtoolerr_t dragonbas_readfile(imgtool::partition &partition, const char *filename,
+	const char *fork, imgtool::stream &destf)
 {
 	return basic_readfile(&dragonbas_tokens, partition, filename, fork, destf);
 }
 
-static imgtoolerr_t dragonbas_writefile(imgtool_partition *partition, const char *filename,
-	const char *fork, imgtool_stream *sourcef, option_resolution *opts)
+static imgtoolerr_t dragonbas_writefile(imgtool::partition &partition, const char *filename,
+	const char *fork, imgtool::stream &sourcef, util::option_resolution *opts)
 {
 	return basic_writefile(&dragonbas_tokens, partition, filename, fork, sourcef, opts);
 }
 
-void filter_dragonbas_getinfo(UINT32 state, union filterinfo *info)
+void filter_dragonbas_getinfo(uint32_t state, union filterinfo *info)
 {
 	switch(state)
 	{
@@ -3033,7 +3035,7 @@ void filter_dragonbas_getinfo(UINT32 state, union filterinfo *info)
 
 static const basictoken_tableent vzbas_tokenents[] =
 {
-	{ 0x00, 0x80,   vzbas,  ARRAY_LENGTH(vzbas) }
+	{ 0x00, 0x80,   vzbas,  std::size(vzbas) }
 };
 
 
@@ -3042,24 +3044,26 @@ static const basictokens vzbas_tokens =
 {
 	0x7ae9,
 	0,
-	FALSE,
+	0,
+	{0x00},
+	false,
 	vzbas_tokenents,
-	ARRAY_LENGTH(vzbas_tokenents)
+	std::size(vzbas_tokenents)
 };
 
-static imgtoolerr_t vzbas_readfile(imgtool_partition *partition, const char *filename,
-	const char *fork, imgtool_stream *destf)
+static imgtoolerr_t vzbas_readfile(imgtool::partition &partition, const char *filename,
+	const char *fork, imgtool::stream &destf)
 {
 	return basic_readfile(&vzbas_tokens, partition, filename, fork, destf);
 }
 
-static imgtoolerr_t vzbas_writefile(imgtool_partition *partition, const char *filename,
-	const char *fork, imgtool_stream *sourcef, option_resolution *opts)
+static imgtoolerr_t vzbas_writefile(imgtool::partition &partition, const char *filename,
+	const char *fork, imgtool::stream &sourcef, util::option_resolution *opts)
 {
 	return basic_writefile(&vzbas_tokens, partition, filename, fork, sourcef, opts);
 }
 
-void filter_vzbas_getinfo(UINT32 state, union filterinfo *info)
+void filter_vzbas_getinfo(uint32_t state, union filterinfo *info)
 {
 	switch(state)
 	{
@@ -3078,32 +3082,34 @@ void filter_vzbas_getinfo(UINT32 state, union filterinfo *info)
 
 static const basictoken_tableent bml3bas_tokenents[] =
 {
-	{ 0x00, 0x80,   bml3bas_statements, ARRAY_LENGTH(bml3bas_statements) },
-	{ 0xff, 0x80,   bml3bas_functions,  ARRAY_LENGTH(bml3bas_functions) }
+	{ 0x00, 0x80,   bml3bas_statements, std::size(bml3bas_statements) },
+	{ 0xff, 0x80,   bml3bas_functions,  std::size(bml3bas_functions) }
 };
 
 static const basictokens bml3bas_tokens =
 {
 	0x2600,
+	1,
 	3,
-	TRUE,
+	{0xFF, 0x00, 0x00},
+	true,
 	bml3bas_tokenents,
-	ARRAY_LENGTH(bml3bas_tokenents)
+	std::size(bml3bas_tokenents)
 };
 
-static imgtoolerr_t bml3bas_readfile(imgtool_partition *partition, const char *filename,
-	const char *fork, imgtool_stream *destf)
+static imgtoolerr_t bml3bas_readfile(imgtool::partition &partition, const char *filename,
+	const char *fork, imgtool::stream &destf)
 {
 	return basic_readfile(&bml3bas_tokens, partition, filename, fork, destf);
 }
 
-static imgtoolerr_t bml3bas_writefile(imgtool_partition *partition, const char *filename,
-	const char *fork, imgtool_stream *sourcef, option_resolution *opts)
+static imgtoolerr_t bml3bas_writefile(imgtool::partition &partition, const char *filename,
+	const char *fork, imgtool::stream &sourcef, util::option_resolution *opts)
 {
 	return basic_writefile(&bml3bas_tokens, partition, filename, fork, sourcef, opts);
 }
 
-void filter_bml3bas_getinfo(UINT32 state, union filterinfo *info)
+void filter_bml3bas_getinfo(uint32_t state, union filterinfo *info)
 {
 	switch(state)
 	{

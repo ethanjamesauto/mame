@@ -29,62 +29,12 @@
 
 **********************************************************************/
 
+#ifndef MAME_MACHINE_ZX8302_H
+#define MAME_MACHINE_ZX8302_H
+
 #pragma once
 
-#ifndef __ZX8302__
-#define __ZX8302__
-
-#include "emu.h"
-
-
-///*************************************************************************
-//  INTERFACE CONFIGURATION MACROS
-///*************************************************************************
-
-#define MCFG_ZX8302_RTC_CLOCK(_clk) \
-	zx8302_device::set_rtc_clock(*device, _clk);
-
-#define MCFG_ZX8302_OUT_IPL1L_CB(_devcb) \
-	devcb = &zx8302_device::set_out_ipl1l_callback(*device, DEVCB_##_devcb);
-
-#define MCFG_ZX8302_OUT_BAUDX4_CB(_devcb) \
-	devcb = &zx8302_device::set_out_baudx4_callback(*device, DEVCB_##_devcb);
-
-#define MCFG_ZX8302_OUT_COMDATA_CB(_devcb) \
-	devcb = &zx8302_device::set_out_comdata_callback(*device, DEVCB_##_devcb);
-
-#define MCFG_ZX8302_OUT_TXD1_CB(_devcb) \
-	devcb = &zx8302_device::set_out_txd1_callback(*device, DEVCB_##_devcb);
-
-#define MCFG_ZX8302_OUT_TXD2_CB(_devcb) \
-	devcb = &zx8302_device::set_out_txd2_callback(*device, DEVCB_##_devcb);
-
-#define MCFG_ZX8302_OUT_NETOUT_CB(_devcb) \
-	devcb = &zx8302_device::set_out_netout_callback(*device, DEVCB_##_devcb);
-
-#define MCFG_ZX8302_OUT_MDSELCK_CB(_devcb) \
-	devcb = &zx8302_device::set_out_mdselck_callback(*device, DEVCB_##_devcb);
-
-#define MCFG_ZX8302_OUT_MDSELD_CB(_devcb) \
-	devcb = &zx8302_device::set_out_mdseld_callback(*device, DEVCB_##_devcb);
-
-#define MCFG_ZX8302_OUT_MDRDW_CB(_devcb) \
-	devcb = &zx8302_device::set_out_mdrdw_callback(*device, DEVCB_##_devcb);
-
-#define MCFG_ZX8302_OUT_ERASE_CB(_devcb) \
-	devcb = &zx8302_device::set_out_erase_callback(*device, DEVCB_##_devcb);
-
-#define MCFG_ZX8302_OUT_RAW1_CB(_devcb) \
-	devcb = &zx8302_device::set_out_raw1_callback(*device, DEVCB_##_devcb);
-
-#define MCFG_ZX8302_IN_RAW1_CB(_devcb) \
-	devcb = &zx8302_device::set_in_raw1_callback(*device, DEVCB_##_devcb);
-
-#define MCFG_ZX8302_OUT_RAW2_CB(_devcb) \
-	devcb = &zx8302_device::set_out_raw2_callback(*device, DEVCB_##_devcb);
-
-#define MCFG_ZX8302_IN_RAW2_CB(_devcb) \
-	devcb = &zx8302_device::set_in_raw2_callback(*device, DEVCB_##_devcb);
+#include "diserial.h"
 
 
 ///*************************************************************************
@@ -98,34 +48,35 @@ class zx8302_device :  public device_t,
 {
 public:
 	// construction/destruction
-	zx8302_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	zx8302_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
-	static void set_rtc_clock(device_t &device, int rtc_clock) { downcast<zx8302_device &>(device).m_rtc_clock = rtc_clock; }
-	template<class _Object> static devcb_base &set_out_ipl1l_callback(device_t &device, _Object object) { return downcast<zx8302_device &>(device).m_out_ipl1l_cb.set_callback(object); }
-	template<class _Object> static devcb_base &set_out_baudx4_callback(device_t &device, _Object object) { return downcast<zx8302_device &>(device).m_out_baudx4_cb.set_callback(object); }
-	template<class _Object> static devcb_base &set_out_comdata_callback(device_t &device, _Object object) { return downcast<zx8302_device &>(device).m_out_comdata_cb.set_callback(object); }
-	template<class _Object> static devcb_base &set_out_txd1_callback(device_t &device, _Object object) { return downcast<zx8302_device &>(device).m_out_txd1_cb.set_callback(object); }
-	template<class _Object> static devcb_base &set_out_txd2_callback(device_t &device, _Object object) { return downcast<zx8302_device &>(device).m_out_txd2_cb.set_callback(object); }
-	template<class _Object> static devcb_base &set_out_netout_callback(device_t &device, _Object object) { return downcast<zx8302_device &>(device).m_out_netout_cb.set_callback(object); }
-	template<class _Object> static devcb_base &set_out_mdselck_callback(device_t &device, _Object object) { return downcast<zx8302_device &>(device).m_out_mdselck_cb.set_callback(object); }
-	template<class _Object> static devcb_base &set_out_mdseld_callback(device_t &device, _Object object) { return downcast<zx8302_device &>(device).m_out_mdseld_cb.set_callback(object); }
-	template<class _Object> static devcb_base &set_out_mdrdw_callback(device_t &device, _Object object) { return downcast<zx8302_device &>(device).m_out_mdrdw_cb.set_callback(object); }
-	template<class _Object> static devcb_base &set_out_erase_callback(device_t &device, _Object object) { return downcast<zx8302_device &>(device).m_out_erase_cb.set_callback(object); }
-	template<class _Object> static devcb_base &set_out_raw1_callback(device_t &device, _Object object) { return downcast<zx8302_device &>(device).m_out_raw1_cb.set_callback(object); }
-	template<class _Object> static devcb_base &set_in_raw1_callback(device_t &device, _Object object) { return downcast<zx8302_device &>(device).m_in_raw1_cb.set_callback(object); }
-	template<class _Object> static devcb_base &set_out_raw2_callback(device_t &device, _Object object) { return downcast<zx8302_device &>(device).m_out_raw2_cb.set_callback(object); }
-	template<class _Object> static devcb_base &set_in_raw2_callback(device_t &device, _Object object) { return downcast<zx8302_device &>(device).m_in_raw2_cb.set_callback(object); }
+	void set_rtc_clock(int rtc_clock) { m_rtc_clock = rtc_clock; }
+	void set_rtc_clock(const XTAL &rtc_clock) { set_rtc_clock(rtc_clock.value()); }
+	auto out_ipl1l_callback() { return m_out_ipl1l_cb.bind(); }
+	auto out_baudx4_callback() { return m_out_baudx4_cb.bind(); }
+	auto out_comdata_callback() { return m_out_comdata_cb.bind(); }
+	auto out_txd1_callback() { return m_out_txd1_cb.bind(); }
+	auto out_txd2_callback() { return m_out_txd2_cb.bind(); }
+	auto out_netout_callback() { return m_out_netout_cb.bind(); }
+	auto out_mdselck_callback() { return m_out_mdselck_cb.bind(); }
+	auto out_mdseld_callback() { return m_out_mdseld_cb.bind(); }
+	auto out_mdrdw_callback() { return m_out_mdrdw_cb.bind(); }
+	auto out_erase_callback() { return m_out_erase_cb.bind(); }
+	auto out_raw1_callback() { return m_out_raw1_cb.bind(); }
+	auto in_raw1_callback() { return m_in_raw1_cb.bind(); }
+	auto out_raw2_callback() { return m_out_raw2_cb.bind(); }
+	auto in_raw2_callback() { return m_in_raw2_cb.bind(); }
 
-	DECLARE_READ8_MEMBER( rtc_r );
-	DECLARE_WRITE8_MEMBER( rtc_w );
-	DECLARE_WRITE8_MEMBER( control_w );
-	DECLARE_READ8_MEMBER( mdv_track_r );
-	DECLARE_READ8_MEMBER( status_r );
-	DECLARE_WRITE8_MEMBER( ipc_command_w );
-	DECLARE_WRITE8_MEMBER( mdv_control_w );
-	DECLARE_READ8_MEMBER( irq_status_r );
-	DECLARE_WRITE8_MEMBER( irq_acknowledge_w );
-	DECLARE_WRITE8_MEMBER( data_w );
+	uint8_t rtc_r(offs_t offset);
+	void rtc_w(uint8_t data);
+	void control_w(uint8_t data);
+	uint8_t mdv_track_r();
+	uint8_t status_r();
+	void ipc_command_w(uint8_t data);
+	void mdv_control_w(uint8_t data);
+	uint8_t irq_status_r();
+	void irq_acknowledge_w(uint8_t data);
+	void data_w(uint8_t data);
 	DECLARE_WRITE_LINE_MEMBER( vsync_w );
 	DECLARE_WRITE_LINE_MEMBER( comctl_w );
 	DECLARE_WRITE_LINE_MEMBER( comdata_w );
@@ -146,7 +97,7 @@ protected:
 	virtual void rcv_callback() override;
 	virtual void rcv_complete() override;
 
-	inline void trigger_interrupt(UINT8 line);
+	inline void trigger_interrupt(uint8_t line);
 	inline void transmit_ipc_data();
 
 private:
@@ -228,12 +179,12 @@ private:
 	int m_cts2;
 
 	// registers
-	UINT8 m_idr;                    // IPC data register
-	UINT8 m_tcr;                    // transfer control register
-	UINT8 m_tdr;                    // transfer data register
-	UINT8 m_irq;                    // interrupt register
-	UINT32 m_ctr;                   // counter register
-	UINT8 m_status;                 // status register
+	uint8_t m_idr;                    // IPC data register
+	uint8_t m_tcr;                    // transfer control register
+	uint8_t m_tdr;                    // transfer data register
+	uint8_t m_irq;                    // interrupt register
+	uint32_t m_ctr;                   // counter register
+	uint8_t m_status;                 // status register
 
 	// IPC communication state
 	int m_comdata_from_ipc;         // pending data from IPC->68000
@@ -245,7 +196,7 @@ private:
 	int m_baudx4;                   // IPC baud x4
 
 	// microdrive state
-	UINT8 m_mdv_data[2];            // track data register
+	uint8_t m_mdv_data[2];            // track data register
 	int m_track;                    // current track
 
 	// timers
@@ -256,8 +207,8 @@ private:
 
 
 // device type definition
-extern const device_type ZX8302;
+DECLARE_DEVICE_TYPE(ZX8302, zx8302_device)
 
 
 
-#endif
+#endif // MAME_MACHINE_ZX8302_H

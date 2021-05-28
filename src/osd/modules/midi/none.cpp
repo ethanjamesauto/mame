@@ -9,7 +9,6 @@
 *******************************************************************c********/
 
 #include "osdcore.h"
-#include "corealloc.h"
 #include "modules/osdmodule.h"
 #include "midi_module.h"
 
@@ -17,8 +16,7 @@ class none_module : public osd_module, public midi_module
 {
 public:
 
-	none_module()
-	: osd_module(OSD_MIDI_PROVIDER, "pm"), midi_module()
+	none_module() : osd_module(OSD_MIDI_PROVIDER, "pm"), midi_module()
 	{
 	}
 	virtual ~none_module() { }
@@ -26,8 +24,8 @@ public:
 	virtual int init(const osd_options &options) override;
 	virtual void exit() override;
 
-	virtual osd_midi_device *create_midi_device() override;
-	virtual void list_midi_devices(void) override;
+	virtual std::unique_ptr<osd_midi_device> create_midi_device() override;
+	virtual void list_midi_devices() override;
 };
 
 
@@ -39,13 +37,13 @@ public:
 	virtual bool open_output(const char *devname) override;
 	virtual void close() override;
 	virtual bool poll() override;
-	virtual int read(UINT8 *pOut) override;
-	virtual void write(UINT8 data) override;
+	virtual int read(uint8_t *pOut) override;
+	virtual void write(uint8_t data) override;
 };
 
-osd_midi_device *none_module::create_midi_device()
+std::unique_ptr<osd_midi_device> none_module::create_midi_device()
 {
-	return global_alloc(osd_midi_device_none());
+	return std::make_unique<osd_midi_device_none>();
 }
 
 
@@ -58,7 +56,7 @@ void none_module::exit()
 {
 }
 
-void none_module::list_midi_devices(void)
+void none_module::list_midi_devices()
 {
 	osd_printf_warning("\nMIDI is not supported in this build\n");
 }
@@ -82,12 +80,12 @@ bool osd_midi_device_none::poll()
 	return false;
 }
 
-int osd_midi_device_none::read(UINT8 *pOut)
+int osd_midi_device_none::read(uint8_t *pOut)
 {
 	return 0;
 }
 
-void osd_midi_device_none::write(UINT8 data)
+void osd_midi_device_none::write(uint8_t data)
 {
 }
 

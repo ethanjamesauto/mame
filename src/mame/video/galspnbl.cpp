@@ -4,12 +4,10 @@
 #include "includes/galspnbl.h"
 
 
-PALETTE_INIT_MEMBER(galspnbl_state, galspnbl)
+void galspnbl_state::galspnbl_palette(palette_device &palette) const
 {
-	int i;
-
-	/* initialize 555 RGB lookup */
-	for (i = 0; i < 32768; i++)
+	// initialize 555 RGB lookup
+	for (int i = 0; i < 32768; i++)
 		palette.set_pen_color(i + 1024, pal5bit(i >> 5), pal5bit(i >> 10), pal5bit(i >> 0));
 }
 
@@ -17,16 +15,14 @@ PALETTE_INIT_MEMBER(galspnbl_state, galspnbl)
 
 void galspnbl_state::draw_background( bitmap_ind16 &bitmap, const rectangle &cliprect )
 {
-	offs_t offs;
+//  int const screenscroll = 4 - (m_scroll[0] & 0xff);
 
-//  int screenscroll = 4 - (m_scroll[0] & 0xff);
-
-	for (offs = 0; offs < 0x20000; offs++)
+	for (offs_t offs = 0; offs < 0x20000; offs++)
 	{
-		int y = offs >> 9;
-		int x = offs & 0x1ff;
+		int const y = offs >> 9;
+		int const x = offs & 0x1ff;
 
-		bitmap.pix16(y, x) = 1024 + (m_bgvideoram[offs] >> 1);
+		bitmap.pix(y, x) = 1024 + (m_bgvideoram[offs] >> 1);
 	}
 }
 
@@ -38,16 +34,16 @@ VIDEO_START_MEMBER(galspnbl_state,galspnbl)
 
 void galspnbl_state::mix_sprite_layer(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect, int pri)
 {
-	for (int y = cliprect.min_y; y <= cliprect.max_y; y++)
+	for (int y = cliprect.top(); y <= cliprect.bottom(); y++)
 	{
-		UINT16 *dd = &bitmap.pix16(y);
-		UINT16 *sd2 = &m_sprite_bitmap.pix16(y);
+		uint16_t *const dd = &bitmap.pix(y);
+		uint16_t const *const sd2 = &m_sprite_bitmap.pix(y);
 
-		for (int x = cliprect.min_x; x <= cliprect.max_x; x++)
+		for (int x = cliprect.left(); x <= cliprect.right(); x++)
 		{
-			UINT16 sprpixel = (sd2[x]);
-			//UINT16 sprpri = (sprpixel >> 8) & 3;
-			UINT16 sprpri = (sprpixel >> 9) & 1; // only upper priority bit matters on the bootleg hw?
+			uint16_t sprpixel = (sd2[x]);
+			//uint16_t sprpri = (sprpixel >> 8) & 3;
+			uint16_t sprpri = (sprpixel >> 9) & 1; // only upper priority bit matters on the bootleg hw?
 
 			sprpixel &= 0xff;
 
@@ -57,16 +53,16 @@ void galspnbl_state::mix_sprite_layer(screen_device &screen, bitmap_ind16 &bitma
 					dd[x] = sprpixel;
 			}
 
-			//  UINT16 sprbln = (sprpixel >> 10) & 1; // we handle 'blending' from the original as a simple on/off flicker in the bootleg sprite function, I don't think the bootleg hw can blend
+			//  uint16_t sprbln = (sprpixel >> 10) & 1; // we handle 'blending' from the original as a simple on/off flicker in the bootleg sprite function, I don't think the bootleg hw can blend
 		}
 	}
 }
 
-UINT32 galspnbl_state::screen_update_galspnbl(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t galspnbl_state::screen_update_galspnbl(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	int offs;
 	m_sprite_bitmap.fill(0, cliprect);
-	m_sprgen->gaiden_draw_sprites(screen, m_gfxdecode, cliprect, m_spriteram, 0, 0, flip_screen(), m_sprite_bitmap);
+	m_sprgen->gaiden_draw_sprites(screen, m_gfxdecode->gfx(1), cliprect, m_spriteram, 0, 0, flip_screen(), m_sprite_bitmap);
 
 
 	draw_background(bitmap, cliprect);

@@ -6,6 +6,7 @@
 
 **********************************************************************/
 
+#include "emu.h"
 #include "ds75160a.h"
 
 
@@ -14,7 +15,7 @@
 //  DEVICE TYPE DEFINITIONS
 //**************************************************************************
 
-const device_type DS75160A = &device_creator<ds75160a_device>;
+DEFINE_DEVICE_TYPE(DS75160A, ds75160a_device, "ds75160a", "DS75160A GPIB Transceiver")
 
 
 
@@ -26,8 +27,8 @@ const device_type DS75160A = &device_creator<ds75160a_device>;
 //  ds75160a_device - constructor
 //-------------------------------------------------
 
-ds75160a_device::ds75160a_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: device_t(mconfig, DS75160A, "DS75160A", tag, owner, clock, "ds75160a", __FILE__),
+ds75160a_device::ds75160a_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: device_t(mconfig, DS75160A, tag, owner, clock),
 		m_read(*this),
 		m_write(*this),
 		m_data(0xff),
@@ -58,9 +59,9 @@ void ds75160a_device::device_start()
 //  read - read data bus
 //-------------------------------------------------
 
-READ8_MEMBER( ds75160a_device::read )
+uint8_t ds75160a_device::read()
 {
-	UINT8 data = 0;
+	uint8_t data = 0;
 
 	if (!m_te)
 	{
@@ -75,7 +76,7 @@ READ8_MEMBER( ds75160a_device::read )
 //  write - write data bus
 //-------------------------------------------------
 
-WRITE8_MEMBER( ds75160a_device::write )
+void ds75160a_device::write(uint8_t data)
 {
 	m_data = data;
 

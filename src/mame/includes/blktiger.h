@@ -1,65 +1,73 @@
-// license:???
+// license:BSD-3-Clause
 // copyright-holders:Paul Leaman
 /***************************************************************************
 
     Black Tiger
 
 ***************************************************************************/
+#ifndef MAME_INCLUDES_BLKTIGER_H
+#define MAME_INCLUDES_BLKTIGER_H
 
+#pragma once
+
+#include "cpu/mcs51/mcs51.h"
 #include "video/bufsprite.h"
+#include "emupal.h"
+#include "tilemap.h"
 
 class blktiger_state : public driver_device
 {
 public:
-	blktiger_state(const machine_config &mconfig, device_type type, const char *tag)
-		: driver_device(mconfig, type, tag),
-			m_spriteram(*this, "spriteram") ,
+	blktiger_state(const machine_config &mconfig, device_type type, const char *tag) :
+		driver_device(mconfig, type, tag),
+		m_spriteram(*this, "spriteram"),
 		m_txvideoram(*this, "txvideoram"),
 		m_mcu(*this, "mcu"),
 		m_audiocpu(*this, "audiocpu"),
 		m_maincpu(*this, "maincpu"),
 		m_gfxdecode(*this, "gfxdecode"),
-		m_palette(*this, "palette") { }
+		m_palette(*this, "palette")
+	{ }
 
 	/* memory pointers */
 	required_device<buffered_spriteram8_device> m_spriteram;
-	required_shared_ptr<UINT8> m_txvideoram;
+	required_shared_ptr<uint8_t> m_txvideoram;
 
 	/* video-related */
 	tilemap_t *m_tx_tilemap;
 	tilemap_t *m_bg_tilemap8x4;
 	tilemap_t *m_bg_tilemap4x8;
-	UINT32  m_scroll_bank;
-	UINT8   m_scroll_x[2];
-	UINT8   m_scroll_y[2];
-	std::unique_ptr<UINT8[]>   m_scroll_ram;
-	UINT8   m_screen_layout;
-	UINT8   m_chon;
-	UINT8   m_objon;
-	UINT8   m_bgon;
+	uint32_t  m_scroll_bank;
+	uint8_t   m_scroll_x[2];
+	uint8_t   m_scroll_y[2];
+	std::unique_ptr<uint8_t[]>   m_scroll_ram;
+	uint8_t   m_screen_layout;
+	uint8_t   m_chon;
+	uint8_t   m_objon;
+	uint8_t   m_bgon;
 
 	/* mcu-related */
-	UINT8   m_z80_latch;
-	UINT8   m_i8751_latch;
+	uint8_t   m_z80_latch;
+	uint8_t   m_i8751_latch;
 
 	/* devices */
-	optional_device<cpu_device> m_mcu;
+	optional_device<i8751_device> m_mcu;
 	required_device<cpu_device> m_audiocpu;
-	DECLARE_READ8_MEMBER(blktiger_from_mcu_r);
-	DECLARE_WRITE8_MEMBER(blktiger_to_mcu_w);
-	DECLARE_READ8_MEMBER(blktiger_from_main_r);
-	DECLARE_WRITE8_MEMBER(blktiger_to_main_w);
-	DECLARE_WRITE8_MEMBER(blktiger_bankswitch_w);
-	DECLARE_WRITE8_MEMBER(blktiger_coinlockout_w);
-	DECLARE_WRITE8_MEMBER(blktiger_txvideoram_w);
-	DECLARE_READ8_MEMBER(blktiger_bgvideoram_r);
-	DECLARE_WRITE8_MEMBER(blktiger_bgvideoram_w);
-	DECLARE_WRITE8_MEMBER(blktiger_bgvideoram_bank_w);
-	DECLARE_WRITE8_MEMBER(blktiger_scrolly_w);
-	DECLARE_WRITE8_MEMBER(blktiger_scrollx_w);
-	DECLARE_WRITE8_MEMBER(blktiger_video_control_w);
-	DECLARE_WRITE8_MEMBER(blktiger_video_enable_w);
-	DECLARE_WRITE8_MEMBER(blktiger_screen_layout_w);
+	uint8_t blktiger_from_mcu_r();
+	void blktiger_to_mcu_w(uint8_t data);
+	uint8_t blktiger_from_main_r();
+	void blktiger_to_main_w(uint8_t data);
+	void blktiger_bankswitch_w(uint8_t data);
+	void blktiger_coinlockout_w(uint8_t data);
+	void blktiger_txvideoram_w(offs_t offset, uint8_t data);
+	uint8_t blktiger_bgvideoram_r(offs_t offset);
+	void blktiger_bgvideoram_w(offs_t offset, uint8_t data);
+	void blktiger_bgvideoram_bank_w(uint8_t data);
+	void blktiger_scrolly_w(offs_t offset, uint8_t data);
+	void blktiger_scrollx_w(offs_t offset, uint8_t data);
+	void blktiger_video_control_w(uint8_t data);
+	void blktiger_video_enable_w(uint8_t data);
+	void blktiger_screen_layout_w(uint8_t data);
 	TILEMAP_MAPPER_MEMBER(bg8x4_scan);
 	TILEMAP_MAPPER_MEMBER(bg4x8_scan);
 	TILE_GET_INFO_MEMBER(get_bg_tile_info);
@@ -67,12 +75,19 @@ public:
 	virtual void machine_start() override;
 	virtual void machine_reset() override;
 	virtual void video_start() override;
-	UINT32 screen_update_blktiger(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
+	uint32_t screen_update_blktiger(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
 	void draw_sprites( bitmap_ind16 &bitmap, const rectangle &cliprect );
-	DECLARE_WRITE_LINE_MEMBER(irqhandler);
 	required_device<cpu_device> m_maincpu;
 	required_device<gfxdecode_device> m_gfxdecode;
 	required_device<palette_device> m_palette;
 
-	DECLARE_DRIVER_INIT(blktigerb3);
+	void init_blktigerb3();
+	void blktiger(machine_config &config);
+	void blktigerbl(machine_config &config);
+	void blktiger_io_map(address_map &map);
+	void blktiger_map(address_map &map);
+	void blktiger_sound_map(address_map &map);
+	void blktigerbl_io_map(address_map &map);
 };
+
+#endif // MAME_INCLUDES_BLKTIGER_H

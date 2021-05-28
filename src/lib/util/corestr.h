@@ -8,13 +8,15 @@
 
 ***************************************************************************/
 
+#ifndef MAME_UTIL_CORESTR_H
+#define MAME_UTIL_CORESTR_H
+
 #pragma once
 
-#ifndef __CORESTR_H__
-#define __CORESTR_H__
+#include <string>
+#include <string_view>
 
-#include "osdcore.h"
-#include <string.h>
+#include <cstring>
 
 
 /***************************************************************************
@@ -45,36 +47,24 @@ int core_strnicmp(const char *s1, const char *s2, size_t n);
 #define strncasecmp MUST_USE_CORE_STRNICMP_INSTEAD
 
 
-/* since strdup is not part of the standard, we use this instead - free with osd_free() */
-char *core_strdup(const char *str);
-
-/* this macro prevents people from using strdup directly */
-#undef strdup
-#define strdup MUST_USE_CORE_STRDUP_INSTEAD
-
-
 /* additional string compare helper (up to 16 characters at the moment) */
 int core_strwildcmp(const char *sp1, const char *sp2);
+bool core_iswildstr(const char *sp);
 
-
-/* I64 printf helper */
-char *core_i64_format(UINT64 value, UINT8 mindigits, bool is_octal);
-char *core_i64_hex_format(UINT64 value, UINT8 mindigits);
-char *core_i64_oct_format(UINT64 value, UINT8 mindigits);
-
-#include <string>
-
-int strvprintf(std::string &str, const char *format, va_list args);
-int strcatvprintf(std::string &str, const char *format, va_list args);
-int strprintf(std::string &str, const char *format, ...) ATTR_PRINTF(2, 3);
-int strcatprintf(std::string &str, const char *format, ...) ATTR_PRINTF(2, 3);
-std::string strformat(std::string &str, const char *format, ...) ATTR_PRINTF(2, 3);
 
 void strdelchr(std::string& str, char chr);
 void strreplacechr(std::string& str, char ch, char newch);
-std::string strtrimspace(std::string& str);
-std::string strmakeupper(std::string& str);
-std::string strmakelower(std::string& str);
+[[nodiscard]] std::string_view strtrimspace(std::string_view str);
+[[nodiscard]] std::string_view strtrimrightspace(std::string_view str);
+[[nodiscard]] std::string strmakeupper(std::string_view str);
+[[nodiscard]] std::string strmakelower(std::string_view str);
 int strreplace(std::string &str, const std::string& search, const std::string& replace);
 
-#endif /* __CORESTR_H__ */
+namespace util {
+
+// based on Jaro-Winkler distance - returns value from 0.0 (totally dissimilar) to 1.0 (identical)
+double edit_distance(std::u32string_view lhs, std::u32string_view rhs);
+
+} // namespace util
+
+#endif // MAME_UTIL_CORESTR_H

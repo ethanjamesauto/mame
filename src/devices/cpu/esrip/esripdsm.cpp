@@ -10,14 +10,18 @@
 ***************************************************************************/
 
 #include "emu.h"
-#include "debugger.h"
+#include "esripdsm.h"
 
+u32 esrip_disassembler::opcode_alignment() const
+{
+	return 1;
+}
 
 /***************************************************************************
     DISASSEMBLY HOOK (TODO: FINISH)
 ***************************************************************************/
 
-CPU_DISASSEMBLE( esrip )
+offs_t esrip_disassembler::disassemble(std::ostream &stream, offs_t pc, const data_buffer &opcodes, const data_buffer &params)
 {
 #if 0
 	static const char* const jmp_types[] =
@@ -45,22 +49,22 @@ CPU_DISASSEMBLE( esrip )
 	};
 #endif
 
-	UINT64 inst = BIG_ENDIANIZE_INT64(*(UINT64 *)oprom);
+	uint64_t inst = opcodes.r64(pc);
 
-	UINT32 inst_hi = inst >> 32;
-	UINT32 inst_lo = inst & 0xffffffff;
+	uint32_t inst_hi = inst >> 32;
+	uint32_t inst_lo = inst & 0xffffffff;
 
-	UINT16 ins = (inst_hi >> 16) & 0xffff;
-	UINT8  ctrl = (inst_hi >> 8) & 0xff;
-	UINT8  jmp_dest = (inst_lo >> 8) & 0xff;
+	uint16_t ins = (inst_hi >> 16) & 0xffff;
+	uint8_t  ctrl = (inst_hi >> 8) & 0xff;
+	uint8_t  jmp_dest = (inst_lo >> 8) & 0xff;
 
-	UINT8 jmp_ctrl = (ctrl >> 3) & 0x1f;
+	uint8_t jmp_ctrl = (ctrl >> 3) & 0x1f;
 
-	UINT8 ctrl1 = (inst_lo >> 16) & 0xff;
-	UINT8 ctrl2 = (inst_lo >> 24) & 0xff;
-	UINT8 ctrl3 = (inst_hi) & 0xff;
+	uint8_t ctrl1 = (inst_lo >> 16) & 0xff;
+	uint8_t ctrl2 = (inst_lo >> 24) & 0xff;
+	uint8_t ctrl3 = (inst_hi) & 0xff;
 
-	sprintf(buffer, "%.4x %c%c%c%c %.2x %s%s%s%s%s%s%s%s %c%s%s%s %c%c%c%c%c%c%c%c",
+	util::stream_format(stream, "%04x %c%c%c%c %02x %s%s%s%s%s%s%s%s %c%s%s%s %c%c%c%c%c%c%c%c",
 			ins,
 			ctrl & 1 ? 'D' : ' ',
 			ctrl & 2 ? ' ' : 'Y',
@@ -91,5 +95,5 @@ CPU_DISASSEMBLE( esrip )
 			ctrl3 & 0x80 ? ' ' : '7'
 			);
 
-	return 1 | DASMFLAG_SUPPORTED;
+	return 1 | SUPPORTED;
 }

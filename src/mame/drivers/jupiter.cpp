@@ -5,14 +5,21 @@
 Wave Mate Jupiter
 
 
+Jupiter 2
+*********
+Status: Preliminary
+Doesn't show anything until a disk is loaded
+
+
 
 Jupiter 3
 *********
-
 Status: Preliminary
 Hangs if your input line starts with 'k'.
 
-ToDo:
+
+
+ToDo: (both)
 - Connect all devices
 - Everything!
 
@@ -21,14 +28,86 @@ ToDo:
 #include "emu.h"
 #include "cpu/m6800/m6800.h"
 #include "cpu/z80/z80.h"
-#include "machine/ram.h"
+#include "imagedev/floppy.h"
 #include "machine/keyboard.h"
-#include "machine/terminal.h"
+#include "machine/6850acia.h"
+#include "bus/rs232/rs232.h"
+#include "machine/ram.h"
 #include "machine/wd_fdc.h"
-#include "includes/jupiter.h"
+#include "emupal.h"
+#include "screen.h"
 
-#define TERMINAL_TAG "terminal"
-#define KEYBOARD_TAG "keyboard"
+
+namespace {
+
+#define MCM6571AP_TAG   "vid125_6c"
+#define S6820_TAG       "vid125_4a"
+#define Z80_TAG         "cpu126_4c"
+#define INS1771N1_TAG   "fdi027_4c"
+#define MC6820P_TAG     "fdi027_4b"
+#define MC6850P_TAG     "rsi068_6a"
+#define MC6821P_TAG     "sdm058_4b"
+
+class jupiter2_state : public driver_device
+{
+public:
+	jupiter2_state(const machine_config &mconfig, device_type type, const char *tag)
+		: driver_device(mconfig, type, tag)
+		, m_maincpu(*this, MCM6571AP_TAG)
+		, m_acia0(*this, "acia0")
+		, m_acia1(*this, "acia1")
+	{ }
+
+	void jupiter2(machine_config &config);
+
+	void init_jupiter2();
+
+protected:
+	virtual void machine_start() override;
+
+private:
+	void jupiter2_mem(address_map &map);
+
+	required_device<cpu_device> m_maincpu;
+	required_device<acia6850_device> m_acia0;
+	required_device<acia6850_device> m_acia1;
+};
+
+class jupiter3_state : public driver_device
+{
+public:
+	jupiter3_state(const machine_config &mconfig, device_type type, const char *tag)
+		: driver_device(mconfig, type, tag)
+		, m_maincpu(*this, Z80_TAG)
+		, m_p_videoram(*this, "videoram")
+		, m_p_ram(*this, "ram")
+		, m_p_chargen(*this, "chargen")
+	{ }
+
+	void jupiter3(machine_config &config);
+
+	void init_jupiter3();
+
+protected:
+	virtual void machine_reset() override;
+
+private:
+	uint32_t screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
+	void kbd_put(u8 data);
+	uint8_t status_r();
+	uint8_t key_r();
+	uint8_t ff_r();
+
+	void jupiter3_io(address_map &map);
+	void jupiter3_mem(address_map &map);
+
+	uint8_t m_term_data;
+	required_device<cpu_device> m_maincpu;
+	required_shared_ptr<uint8_t> m_p_videoram;
+	required_shared_ptr<uint8_t> m_p_ram;
+	required_region_ptr<u8> m_p_chargen;
+};
+
 
 
 //**************************************************************************
@@ -39,60 +118,57 @@ ToDo:
 //  ADDRESS_MAP( jupiter_m6800_mem )
 //-------------------------------------------------
 
-static ADDRESS_MAP_START( jupiter_m6800_mem, AS_PROGRAM, 8, jupiter2_state )
-	AM_RANGE(0x0000, 0x7fff) AM_RAM
-//  AM_RANGE(0xc000, 0xcfff) Video RAM
-	AM_RANGE(0xf000, 0xffff) AM_ROM AM_REGION(MCM6571AP_TAG, 0)
-//  AM_RANGE(0xff58, 0xff5c) Cartridge Disk Controller PIA
-//  AM_RANGE(0xff60, 0xff76) DMA Controller
-//  AM_RANGE(0xff80, 0xff83) Floppy PIA
-	AM_RANGE(0xff84, 0xff87) AM_DEVREADWRITE(INS1771N1_TAG, wd_fdc_t, read, write)
-//  AM_RANGE(0xff90, 0xff93) Hytype Parallel Printer PIA
-//  AM_RANGE(0xffa0, 0xffa7) Persci Floppy Disk Controller
-//  AM_RANGE(0xffb0, 0xffb3) Video PIA
-//  AM_RANGE(0xffc0, 0xffc1) Serial Port 0 ACIA
-//  AM_RANGE(0xffc4, 0xffc5) Serial Port 1 ACIA
-//  AM_RANGE(0xffc8, 0xffc9) Serial Port 2 ACIA
-//  AM_RANGE(0xffcc, 0xffcd) Serial Port 3 ACIA
-//  AM_RANGE(0xffd0, 0xffd1) Serial Port 4 ACIA / Cassette
-//  AM_RANGE(0xffd4, 0xffd5) Serial Port 5 ACIA / EPROM Programmer (2704/2708)
-//  AM_RANGE(0xffd8, 0xffd9) Serial Port 6 ACIA / Hardware Breakpoint Registers
-//  AM_RANGE(0xffdc, 0xffdd) Serial Port 7 ACIA
-ADDRESS_MAP_END
+void jupiter2_state::jupiter2_mem(address_map &map)
+{
+	map(0x0000, 0x7fff).ram();
+	map(0xc000, 0xcfff).ram();  // Video RAM
+	map(0xf000, 0xff00).rom().region(MCM6571AP_TAG, 0);
+//  map(0xff58, 0xff5c) Cartridge Disk Controller PIA
+//  map(0xff60, 0xff76) DMA Controller
+//  map(0xff80, 0xff83) Floppy PIA
+	map(0xff84, 0xff87).rw(INS1771N1_TAG, FUNC(wd_fdc_device_base::read), FUNC(wd_fdc_device_base::write));
+//  map(0xff90, 0xff93) Hytype Parallel Printer PIA
+//  map(0xffa0, 0xffa7) Persci Floppy Disk Controller
+//  map(0xffb0, 0xffb3) Video PIA
+	map(0xffc0, 0xffc1).rw(m_acia0, FUNC(acia6850_device::read), FUNC(acia6850_device::write)); // Serial Port 0 ACIA
+	map(0xffc4, 0xffc5).rw(m_acia1, FUNC(acia6850_device::read), FUNC(acia6850_device::write)); // Serial Port 1 ACIA
+//  map(0xffc8, 0xffc9) Serial Port 2 ACIA
+//  map(0xffcc, 0xffcd) Serial Port 3 ACIA
+//  map(0xffd0, 0xffd1) Serial Port 4 ACIA / Cassette
+//  map(0xffd4, 0xffd5) Serial Port 5 ACIA / EPROM Programmer (2704/2708)
+//  map(0xffd8, 0xffd9) Serial Port 6 ACIA / Hardware Breakpoint Registers
+//  map(0xffdc, 0xffdd) Serial Port 7 ACIA
+	map(0xfff8, 0xffff).rom().region(MCM6571AP_TAG, 0x0ff8); // vectors
+}
 
-
-//-------------------------------------------------
-//  ADDRESS_MAP( jupiter_m6800_io )
-//-------------------------------------------------
-
-static ADDRESS_MAP_START( jupiter_m6800_io, AS_IO, 8, jupiter2_state )
-ADDRESS_MAP_END
 
 
 //-------------------------------------------------
 //  ADDRESS_MAP( jupiter3_mem )
 //-------------------------------------------------
 
-static ADDRESS_MAP_START( jupiter3_mem, AS_PROGRAM, 8, jupiter3_state )
-	AM_RANGE(0x0000, 0xbfff) AM_RAM AM_SHARE("p_ram")
-	AM_RANGE(0xc000, 0xdfff) AM_RAM AM_SHARE("p_videoram")
-	AM_RANGE(0xe000, 0xefff) AM_ROM AM_REGION(Z80_TAG, 0)
-	AM_RANGE(0xf000, 0xffff) AM_RAM
-ADDRESS_MAP_END
+void jupiter3_state::jupiter3_mem(address_map &map)
+{
+	map(0x0000, 0xbfff).ram().share("ram");
+	map(0xc000, 0xdfff).ram().share("videoram");
+	map(0xe000, 0xefff).rom().region(Z80_TAG, 0);
+	map(0xf000, 0xffff).ram();
+}
 
 
 //-------------------------------------------------
 //  ADDRESS_MAP( jupiter3_io )
 //-------------------------------------------------
 
-static ADDRESS_MAP_START( jupiter3_io, AS_IO, 8, jupiter3_state )
-	ADDRESS_MAP_GLOBAL_MASK(0xff)
-	AM_RANGE(0xa1, 0xa4) AM_READ(ff_r)
-	AM_RANGE(0xb0, 0xb0) AM_READ(status_r)
-	AM_RANGE(0xb2, 0xb2) AM_READ(key_r)
-ADDRESS_MAP_END
+void jupiter3_state::jupiter3_io(address_map &map)
+{
+	map.global_mask(0xff);
+	map(0xa1, 0xa4).r(FUNC(jupiter3_state::ff_r));
+	map(0xb0, 0xb0).r(FUNC(jupiter3_state::status_r));
+	map(0xb2, 0xb2).r(FUNC(jupiter3_state::key_r));
+}
 
-READ8_MEMBER( jupiter3_state::ff_r )
+uint8_t jupiter3_state::ff_r()
 {
 	return 0xfd;
 }
@@ -108,19 +184,19 @@ READ8_MEMBER( jupiter3_state::ff_r )
 static INPUT_PORTS_START( jupiter )
 INPUT_PORTS_END
 
-READ8_MEMBER( jupiter3_state::key_r )
+uint8_t jupiter3_state::key_r()
 {
-	UINT8 ret = m_term_data;
+	uint8_t ret = m_term_data;
 	m_term_data = 0;
 	return ret;
 }
 
-READ8_MEMBER( jupiter3_state::status_r )
+uint8_t jupiter3_state::status_r()
 {
 	return (m_term_data) ? 0x80 : 0x00;
 }
 
-WRITE8_MEMBER( jupiter3_state::kbd_put )
+void jupiter3_state::kbd_put(u8 data)
 {
 	if (data)
 		m_term_data = data ^ 0x80;
@@ -131,28 +207,22 @@ WRITE8_MEMBER( jupiter3_state::kbd_put )
 //  VIDEO
 //**************************************************************************
 
-void jupiter3_state::video_start()
+uint32_t jupiter3_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
-	m_p_chargen = memregion("chargen")->base();
-}
+	uint16_t sy=0,ma=0;
 
-UINT32 jupiter3_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
-{
-	UINT8 y,ra,chr,gfx;
-	UINT16 sy=0,ma=0,x;
-
-	for (y = 0; y < 32; y++)
+	for (uint8_t y = 0; y < 32; y++)
 	{
-		for (ra = 0; ra < 10; ra++)
+		for (uint8_t ra = 0; ra < 10; ra++)
 		{
-			UINT16 *p = &bitmap.pix16(sy++);
+			uint16_t *p = &bitmap.pix(sy++);
 
-			for (x = ma; x < ma + 64; x++)
+			for (uint16_t x = ma; x < ma + 64; x++)
 			{
-				gfx = 0;
+				uint8_t gfx = 0;
 				if (ra < 9)
 				{
-					chr = m_p_videoram[x];
+					uint8_t chr = m_p_videoram[x];
 					gfx = m_p_chargen[(chr<<4) | ra ];
 				}
 
@@ -179,9 +249,10 @@ UINT32 jupiter3_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap
 //  DEVICE CONFIGURATION
 //**************************************************************************
 
-static SLOT_INTERFACE_START( jupiter_floppies )
-	SLOT_INTERFACE( "525ssdd", FLOPPY_525_SSDD )
-SLOT_INTERFACE_END
+static void jupiter_floppies(device_slot_interface &device)
+{
+	device.option_add("525ssdd", FLOPPY_525_SSDD);
+}
 
 
 //**************************************************************************
@@ -203,9 +274,11 @@ void jupiter2_state::machine_start()
 
 void jupiter3_state::machine_reset()
 {
-	UINT8* ROM = memregion(Z80_TAG)->base();
+	uint8_t* ROM = memregion(Z80_TAG)->base();
 	memcpy(m_p_ram, ROM, 0x1000);
 	m_maincpu->set_pc(0xe000);
+
+	m_term_data = 0;
 }
 
 
@@ -215,61 +288,74 @@ void jupiter3_state::machine_reset()
 //**************************************************************************
 
 //-------------------------------------------------
-//  MACHINE_CONFIG( jupiter )
+//  machine_config( jupiter )
 //-------------------------------------------------
 
-static MACHINE_CONFIG_START( jupiter, jupiter2_state )
+void jupiter2_state::jupiter2(machine_config &config)
+{
 	// basic machine hardware
-	MCFG_CPU_ADD(MCM6571AP_TAG, M6800, 2000000)
-	MCFG_CPU_PROGRAM_MAP(jupiter_m6800_mem)
-	MCFG_CPU_IO_MAP(jupiter_m6800_io)
+	M6800(config, m_maincpu, 2000000);
+	m_maincpu->set_addrmap(AS_PROGRAM, &jupiter2_state::jupiter2_mem);
 
 	// devices
-	MCFG_DEVICE_ADD(INS1771N1_TAG, FD1771, 1000000)
-	MCFG_FLOPPY_DRIVE_ADD(INS1771N1_TAG":0", jupiter_floppies, "525ssdd", floppy_image_device::default_floppy_formats)
-	MCFG_FLOPPY_DRIVE_ADD(INS1771N1_TAG":1", jupiter_floppies, nullptr, floppy_image_device::default_floppy_formats)
+	FD1771(config, INS1771N1_TAG, 1000000);
+	FLOPPY_CONNECTOR(config, INS1771N1_TAG":0", jupiter_floppies, "525ssdd", floppy_image_device::default_mfm_floppy_formats);
+	FLOPPY_CONNECTOR(config, INS1771N1_TAG":1", jupiter_floppies, nullptr, floppy_image_device::default_mfm_floppy_formats);
 
-	MCFG_DEVICE_ADD(TERMINAL_TAG, GENERIC_TERMINAL, 0)
+	ACIA6850(config, m_acia0, XTAL(2'000'000)); // unknown frequency
+	m_acia0->txd_handler().set("serial0", FUNC(rs232_port_device::write_txd));
+	m_acia0->rts_handler().set("serial0", FUNC(rs232_port_device::write_rts));
+
+	rs232_port_device &serial0(RS232_PORT(config, "serial0", default_rs232_devices, "terminal"));
+	serial0.rxd_handler().set(m_acia0, FUNC(acia6850_device::write_rxd));
+	serial0.cts_handler().set(m_acia0, FUNC(acia6850_device::write_cts));
+
+	ACIA6850(config, m_acia1, XTAL(2'000'000)); // unknown frequency
+	m_acia1->txd_handler().set("serial1", FUNC(rs232_port_device::write_txd));
+	m_acia1->rts_handler().set("serial1", FUNC(rs232_port_device::write_rts));
+
+	rs232_port_device &serial1(RS232_PORT(config, "serial1", default_rs232_devices, "terminal"));
+	serial1.rxd_handler().set(m_acia1, FUNC(acia6850_device::write_rxd));
+	serial1.cts_handler().set(m_acia1, FUNC(acia6850_device::write_cts));
 
 	// internal ram
-	MCFG_RAM_ADD(RAM_TAG)
-	MCFG_RAM_DEFAULT_SIZE("64K")
-MACHINE_CONFIG_END
+	RAM(config, RAM_TAG).set_default_size("64K");
+}
 
 
 //-------------------------------------------------
-//  MACHINE_CONFIG( jupiter3 )
+//  machine_config( jupiter3 )
 //-------------------------------------------------
 
-static MACHINE_CONFIG_START( jupiter3, jupiter3_state )
+void jupiter3_state::jupiter3(machine_config &config)
+{
 	// basic machine hardware
-	MCFG_CPU_ADD(Z80_TAG, Z80, 4000000)
-	MCFG_CPU_PROGRAM_MAP(jupiter3_mem)
-	MCFG_CPU_IO_MAP(jupiter3_io)
+	Z80(config, m_maincpu, 4000000);
+	m_maincpu->set_addrmap(AS_PROGRAM, &jupiter3_state::jupiter3_mem);
+	m_maincpu->set_addrmap(AS_IO, &jupiter3_state::jupiter3_io);
 
 	// video hardware
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_REFRESH_RATE(60)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(2500)) /* not accurate */
-	MCFG_SCREEN_UPDATE_DRIVER(jupiter3_state, screen_update)
-	MCFG_SCREEN_SIZE(512, 320)
-	MCFG_SCREEN_VISIBLE_AREA(0, 512-1, 0, 320-1)
-	MCFG_SCREEN_PALETTE("palette")
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_RASTER));
+	screen.set_refresh_hz(60);
+	screen.set_vblank_time(ATTOSECONDS_IN_USEC(2500)); /* not accurate */
+	screen.set_screen_update(FUNC(jupiter3_state::screen_update));
+	screen.set_size(512, 320);
+	screen.set_visarea(0, 512-1, 0, 320-1);
+	screen.set_palette("palette");
 
-	MCFG_PALETTE_ADD_BLACK_AND_WHITE("palette")
+	PALETTE(config, "palette", palette_device::MONOCHROME);
 
 	// devices
-	MCFG_DEVICE_ADD(INS1771N1_TAG, FD1771, 1000000)
-	MCFG_FLOPPY_DRIVE_ADD(INS1771N1_TAG":0", jupiter_floppies, "525ssdd", floppy_image_device::default_floppy_formats)
-	MCFG_FLOPPY_DRIVE_ADD(INS1771N1_TAG":1", jupiter_floppies, nullptr, floppy_image_device::default_floppy_formats)
+	FD1771(config, INS1771N1_TAG, 1000000);
+	FLOPPY_CONNECTOR(config, INS1771N1_TAG":0", jupiter_floppies, "525ssdd", floppy_image_device::default_mfm_floppy_formats);
+	FLOPPY_CONNECTOR(config, INS1771N1_TAG":1", jupiter_floppies, nullptr, floppy_image_device::default_mfm_floppy_formats);
 
-	MCFG_DEVICE_ADD(KEYBOARD_TAG, GENERIC_KEYBOARD, 0)
-	MCFG_GENERIC_KEYBOARD_CB(WRITE8(jupiter3_state, kbd_put))
+	generic_keyboard_device &keyboard(GENERIC_KEYBOARD(config, "keyboard", 0));
+	keyboard.set_keyboard_callback(FUNC(jupiter3_state::kbd_put));
 
 	// internal ram
-	MCFG_RAM_ADD(RAM_TAG)
-	MCFG_RAM_DEFAULT_SIZE("64K")
-MACHINE_CONFIG_END
+	RAM(config, RAM_TAG).set_default_size("64K");
+}
 
 
 
@@ -317,10 +403,10 @@ ROM_END
 //  DRIVER_INIT( jupiter )
 //-------------------------------------------------
 
-DRIVER_INIT_MEMBER(jupiter2_state,jupiter)
+void jupiter2_state::init_jupiter2()
 {
-	UINT8 *rom = memregion(MCM6571AP_TAG)->base();
-	UINT8 inverted[0x1000];
+	uint8_t *rom = memregion(MCM6571AP_TAG)->base();
+	uint8_t inverted[0x1000];
 
 	memcpy(inverted, rom, 0x1000);
 
@@ -339,10 +425,10 @@ DRIVER_INIT_MEMBER(jupiter2_state,jupiter)
 //  DRIVER_INIT( jupiter3 )
 //-------------------------------------------------
 
-DRIVER_INIT_MEMBER(jupiter3_state,jupiter3)
+void jupiter3_state::init_jupiter3()
 {
-	UINT8 *rom = memregion(Z80_TAG)->base();
-	UINT8 inverted[0x1000];
+	uint8_t *rom = memregion(Z80_TAG)->base();
+	uint8_t inverted[0x1000];
 
 	memcpy(inverted, rom, 0x1000);
 
@@ -356,10 +442,13 @@ DRIVER_INIT_MEMBER(jupiter3_state,jupiter3)
 	}
 }
 
+} // Anonymous namespace
+
+
 //**************************************************************************
 //  SYSTEM DRIVERS
 //**************************************************************************
 
-//    YEAR  NAME      PARENT  COMPAT   MACHINE    INPUT    INIT      COMPANY          FULLNAME       FLAGS
-COMP( 1976, jupiter2, 0,      0,       jupiter,   jupiter, jupiter2_state, jupiter, "Wave Mate",   "Jupiter II",  MACHINE_NOT_WORKING | MACHINE_NO_SOUND_HW )
-COMP( 1976, jupiter3, 0,      0,       jupiter3,  jupiter, jupiter3_state, jupiter3,"Wave Mate",   "Jupiter III", MACHINE_NOT_WORKING | MACHINE_NO_SOUND_HW )
+//    YEAR  NAME      PARENT  COMPAT  MACHINE   INPUT    CLASS           INIT           COMPANY      FULLNAME       FLAGS
+COMP( 1976, jupiter2, 0,      0,      jupiter2, jupiter, jupiter2_state, init_jupiter2, "Wave Mate", "Jupiter II",  MACHINE_NOT_WORKING | MACHINE_NO_SOUND_HW )
+COMP( 1976, jupiter3, 0,      0,      jupiter3, jupiter, jupiter3_state, init_jupiter3, "Wave Mate", "Jupiter III", MACHINE_NOT_WORKING | MACHINE_NO_SOUND_HW )

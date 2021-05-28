@@ -12,6 +12,7 @@
 
 #include "emu.h"
 #include "video/gtia.h"
+#include "screen.h"
 
 #define GTIA_P0 0x01
 #define GTIA_P1 0x02
@@ -100,27 +101,28 @@
  * set left color clock for one color
  **********************************************/
 #define SETCOL_L(o, d) \
-	*((UINT8*)&m_color_lookup[o] + 0) = d
+	*((uint8_t*)&m_color_lookup[o] + 0) = d
 
 /**********************************************
  * set right color clock for one color
  **********************************************/
 #define SETCOL_R(o, d) \
-	*((UINT8*)&m_color_lookup[o] + 1) = d
+	*((uint8_t*)&m_color_lookup[o] + 1) = d
 
 
 
 // devices
-const device_type ATARI_GTIA = &device_creator<gtia_device>;
+DEFINE_DEVICE_TYPE(ATARI_GTIA, gtia_device, "gtia", "Atari GTIA")
 
 //-------------------------------------------------
 //  upd7220_device - constructor
 //-------------------------------------------------
 
-gtia_device::gtia_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock) :
-				device_t(mconfig, ATARI_GTIA, "Atari GTIA", tag, owner, clock, "gtia", __FILE__),
-				m_read_cb(*this),
-				m_write_cb(*this)
+gtia_device::gtia_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: device_t(mconfig, ATARI_GTIA, tag, owner, clock)
+	, m_region(GTIA_NTSC)
+	, m_read_cb(*this)
+	, m_write_cb(*this)
 {
 }
 
@@ -250,7 +252,7 @@ void gtia_device::device_reset()
 
 	/* reset the GTIA read/write/helper registers */
 	for (int i = 0; i < 32; i++)
-		write(machine().driver_data()->generic_space(), i, 0);
+		write(i, 0);
 
 	if (is_ntsc())
 		m_r.pal = 0xff;
@@ -283,10 +285,10 @@ void gtia_device::device_reset()
 
 int gtia_device::is_ntsc()
 {
-	return ATTOSECONDS_TO_HZ(machine().first_screen()->frame_period().attoseconds()) > 55;
+	return m_region == GTIA_NTSC;
 }
 
-void gtia_device::button_interrupt(int button_count, UINT8 button_port)
+void gtia_device::button_interrupt(int button_count, uint8_t button_port)
 {
 	/* specify buttons relevant to this Atari variant */
 	for (int i = 0; i < button_count; i++)
@@ -313,7 +315,7 @@ void gtia_device::button_interrupt(int button_count, UINT8 button_port)
  *
  **************************************************************/
 
-READ8_MEMBER( gtia_device::read )
+uint8_t gtia_device::read(offs_t offset)
 {
 	switch (offset & 31)
 	{
@@ -507,13 +509,13 @@ void gtia_device::recalc_m3()
 
 
 
-WRITE8_MEMBER( gtia_device::write )
+void gtia_device::write(offs_t offset, uint8_t data)
 {
 	/* used for mixing hue/lum of different colors */
-//  static UINT8 lumpm0=0,lumpm1=0,lumpm2=0,lumpm3=0,lumpm4=0;
-//  static UINT8 lumpf2=0;
-//  static UINT8 lumbk= 0;
-//  static UINT8 huepf1=0;
+//  static uint8_t lumpm0=0,lumpm1=0,lumpm2=0,lumpm3=0,lumpm4=0;
+//  static uint8_t lumpf2=0;
+//  static uint8_t lumbk= 0;
+//  static uint8_t huepf1=0;
 
 	switch (offset & 31)
 	{
@@ -899,7 +901,7 @@ void gtia_device::gtia_postload()
 
 
 
-static const UINT8 pf_collision[256] = {
+static const uint8_t pf_collision[256] = {
 	0,1,2,0,4,0,0,0,8,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
@@ -938,7 +940,7 @@ static const int    pf_prioindex[256] = {
 /*     */   0x000,0x000,0x000,0x000,0x000,0x000,0x000,0x000,0x000,0x000,0x000,0x000,0x000,0x000,0x000,0x000
 };
 
-inline void gtia_device::player_render(UINT8 gfx, int size, UINT8 color, UINT8 *dst)
+inline void gtia_device::player_render(uint8_t gfx, int size, uint8_t color, uint8_t *dst)
 {
 	// size is the number of bits in *dst to be filled: 1, 2 or 4
 	if (size == 3)
@@ -949,7 +951,7 @@ inline void gtia_device::player_render(UINT8 gfx, int size, UINT8 color, UINT8 *
 				dst[i * size + s] |= color;
 }
 
-inline void gtia_device::missile_render(UINT8 gfx, int size, UINT8 color, UINT8 *dst)
+inline void gtia_device::missile_render(uint8_t gfx, int size, uint8_t color, uint8_t *dst)
 {
 	// size is the number of bits in *dst to be filled: 1, 2 or 4
 	if (size == 3)
@@ -961,7 +963,7 @@ inline void gtia_device::missile_render(UINT8 gfx, int size, UINT8 color, UINT8 
 }
 
 
-void gtia_device::render(UINT8 *src, UINT8 *dst, UINT8 *prio, UINT8 *pmbits)
+void gtia_device::render(uint8_t *src, uint8_t *dst, uint8_t *prio, uint8_t *pmbits)
 {
 	if (m_h.grafp0)
 		player_render(m_h.grafp0, m_w.sizep0 + 1, GTIA_P0, &pmbits[m_w.hposp0]);
@@ -983,7 +985,7 @@ void gtia_device::render(UINT8 *src, UINT8 *dst, UINT8 *prio, UINT8 *pmbits)
 
 	for (int x = 0; x < GTIA_HWIDTH * 4; x++, src++, dst++)
 	{
-		UINT8 pm, pc, pf;
+		uint8_t pm, pc, pf;
 		if (!*src)
 			continue;
 		/* get the player/missile combination bits and reset the buffer */

@@ -14,38 +14,23 @@
 #error Dont include this file directly; include emu.h instead.
 #endif
 
-#ifndef __SCHEDULE_H__
-#define __SCHEDULE_H__
+#ifndef MAME_EMU_SCHEDULE_H
+#define MAME_EMU_SCHEDULE_H
 
 
 //**************************************************************************
 //  MACROS
 //**************************************************************************
 
-// macro for the RC time constant on a 74LS123 with C > 1000pF
-// R is in ohms, C is in farads
-#define TIME_OF_74LS123(r,c)            (0.45 * (double)(r) * (double)(c))
+#define TIMER_CALLBACK_MEMBER(name)     void name(void *ptr, s32 param)
 
-// macros for the RC time constant on a 555 timer IC
-// R is in ohms, C is in farads
-#define PERIOD_OF_555_MONOSTABLE_NSEC(r,c)  ((attoseconds_t)(1100000000 * (double)(r) * (double)(c)))
-#define PERIOD_OF_555_ASTABLE_NSEC(r1,r2,c) ((attoseconds_t)( 693000000 * ((double)(r1) + 2.0 * (double)(r2)) * (double)(c)))
-#define PERIOD_OF_555_MONOSTABLE(r,c)       attotime::from_nsec(PERIOD_OF_555_MONOSTABLE_NSEC(r,c))
-#define PERIOD_OF_555_ASTABLE(r1,r2,c)      attotime::from_nsec(PERIOD_OF_555_ASTABLE_NSEC(r1,r2,c))
-
-#define TIMER_CALLBACK(name)            void name(running_machine &machine, void *ptr, int param)
-#define TIMER_CALLBACK_MEMBER(name)     void name(void *ptr, INT32 param)
 
 //**************************************************************************
 //  TYPE DEFINITIONS
 //**************************************************************************
 
 // timer callbacks look like this
-typedef delegate<void (void *, INT32)> timer_expired_delegate;
-
-// old-skool callbacks are like this
-typedef void (*timer_expired_func)(running_machine &machine, void *ptr, INT32 param);
-
+typedef named_delegate<void (void *, s32)> timer_expired_delegate;
 
 // ======================> emu_timer
 
@@ -68,7 +53,7 @@ class emu_timer
 public:
 	// getters
 	emu_timer *next() const { return m_next; }
-	running_machine &machine() const { assert(m_machine != nullptr); return *m_machine; }
+	running_machine &machine() const noexcept { assert(m_machine != nullptr); return *m_machine; }
 	bool enabled() const { return m_enabled; }
 	int param() const { return m_param; }
 	void *ptr() const { return m_ptr; }
@@ -80,26 +65,28 @@ public:
 
 	// control
 	void reset(const attotime &duration = attotime::never) { adjust(duration, m_param, m_period); }
-	void adjust(attotime start_delay, INT32 param = 0, const attotime &periodicity = attotime::never);
+	void adjust(attotime start_delay, s32 param = 0, const attotime &periodicity = attotime::never);
 
 	// timing queries
-	attotime elapsed() const;
-	attotime remaining() const;
+	attotime elapsed() const noexcept;
+	attotime remaining() const noexcept;
 	attotime start() const { return m_start; }
 	attotime expire() const { return m_expire; }
+	attotime period() const { return m_period; }
 
 private:
 	// internal helpers
 	void register_save();
 	void schedule_next_period();
 	void dump() const;
+	static void device_timer_expired(emu_timer &timer, void *ptr, s32 param);
 
 	// internal state
 	running_machine *   m_machine;      // reference to the owning machine
 	emu_timer *         m_next;         // next timer in order in the list
 	emu_timer *         m_prev;         // previous timer in order in the list
 	timer_expired_delegate m_callback;  // callback function
-	INT32               m_param;        // integer parameter
+	s32                 m_param;        // integer parameter
 	void *              m_ptr;          // pointer parameter
 	bool                m_enabled;      // is the timer enabled?
 	bool                m_temporary;    // is the timer temporary?
@@ -124,10 +111,10 @@ public:
 	~device_scheduler();
 
 	// getters
-	running_machine &machine() const { return m_machine; }
-	attotime time() const;
+	running_machine &machine() const noexcept { return m_machine; }
+	attotime time() const noexcept;
 	emu_timer *first_timer() const { return m_timer_list; }
-	device_execute_interface *currently_executing() const { return m_executing_device; }
+	device_execute_interface *currently_executing() const noexcept { return m_executing_device; }
 	bool can_save() const;
 
 	// execution
@@ -140,16 +127,7 @@ public:
 	// timers, specified by callback/name
 	emu_timer *timer_alloc(timer_expired_delegate callback, void *ptr = nullptr);
 	void timer_set(const attotime &duration, timer_expired_delegate callback, int param = 0, void *ptr = nullptr);
-	void timer_pulse(const attotime &period, timer_expired_delegate callback, int param = 0, void *ptr = nullptr);
 	void synchronize(timer_expired_delegate callback = timer_expired_delegate(), int param = 0, void *ptr = nullptr) { timer_set(attotime::zero, callback, param, ptr); }
-
-	// timers with old-skool callbacks
-#ifdef USE_STATIC_DELEGATE
-	emu_timer *timer_alloc(timer_expired_func callback, const char *name, void *ptr = nullptr) { return timer_alloc(timer_expired_delegate(callback, name, &machine()), ptr); }
-	void timer_set(const attotime &duration, timer_expired_func callback, const char *name, int param = 0, void *ptr = nullptr) { timer_set(duration, timer_expired_delegate(callback, name, &machine()), param, ptr); }
-	void timer_pulse(const attotime &period, timer_expired_func callback, const char *name, int param = 0, void *ptr = nullptr) { timer_pulse(period, timer_expired_delegate(callback, name, &machine()), param, ptr); }
-	void synchronize(timer_expired_func callback, const char *name = nullptr, int param = 0, void *ptr = nullptr) { timer_set(attotime::zero, callback, name, param, ptr); }
-#endif
 
 	// timers, specified by device/id; generally devices should use the device_t methods instead
 	emu_timer *timer_alloc(device_t &device, device_timer_id id = 0, void *ptr = nullptr);
@@ -163,7 +141,7 @@ public:
 
 private:
 	// callbacks
-	void timed_trigger(void *ptr, INT32 param);
+	void timed_trigger(void *ptr, s32 param);
 	void presave();
 	void postload();
 
@@ -213,4 +191,4 @@ private:
 };
 
 
-#endif  // __SCHEDULE_H__ */
+#endif  // MAME_EMU_SCHEDULE_H

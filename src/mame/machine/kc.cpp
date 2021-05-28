@@ -9,16 +9,16 @@
 
 struct kcc_header
 {
-	UINT8   name[10];
-	UINT8   reserved[6];
-	UINT8   number_addresses;
-	UINT8   load_address_l;
-	UINT8   load_address_h;
-	UINT8   end_address_l;
-	UINT8   end_address_h;
-	UINT8   execution_address_l;
-	UINT8   execution_address_h;
-	UINT8   pad[128-2-2-2-1-16];
+	uint8_t   name[10];
+	uint8_t   reserved[6];
+	uint8_t   number_addresses;
+	uint8_t   load_address_l;
+	uint8_t   load_address_h;
+	uint8_t   end_address_l;
+	uint8_t   end_address_h;
+	uint8_t   execution_address_l;
+	uint8_t   execution_address_h;
+	uint8_t   pad[128-2-2-2-1-16];
 };
 
 /* appears to work a bit.. */
@@ -26,21 +26,21 @@ struct kcc_header
 /* now type name that has appeared! */
 
 /* load snapshot */
-QUICKLOAD_LOAD_MEMBER( kc_state,kc)
+QUICKLOAD_LOAD_MEMBER(kc_state::quickload_cb)
 {
 	struct kcc_header *header;
-	UINT16 addr;
-	UINT16 datasize;
-	UINT16 execution_address;
-	UINT16 i;
+	uint16_t addr;
+	uint16_t datasize;
+	uint16_t execution_address;
+	uint16_t i;
 
 	/* get file size */
-	UINT64 size = image.length();
+	uint64_t size = image.length();
 
 	if (size == 0)
-		return IMAGE_INIT_FAIL;
+		return image_init_result::FAIL;
 
-	dynamic_buffer data(size);
+	std::vector<uint8_t> data(size);
 	image.fread( &data[0], size);
 
 	header = (struct kcc_header *) &data[0];
@@ -50,7 +50,7 @@ QUICKLOAD_LOAD_MEMBER( kc_state,kc)
 
 	if (datasize > size - 128)
 	{
-		osd_printf_info("Invalid snapshot size: expected 0x%04x, found 0x%04x\n", datasize, (UINT32)size - 128);
+		osd_printf_info("Invalid snapshot size: expected 0x%04x, found 0x%04x\n", datasize, (uint32_t)size - 128);
 		datasize = size - 128;
 	}
 
@@ -67,7 +67,7 @@ QUICKLOAD_LOAD_MEMBER( kc_state,kc)
 
 	logerror("Snapshot loaded at: 0x%04x-0x%04x, execution address: 0x%04x\n", addr, addr + datasize - 1, execution_address);
 
-	return IMAGE_INIT_PASS;
+	return image_init_result::PASS;
 }
 
 
@@ -77,9 +77,9 @@ QUICKLOAD_LOAD_MEMBER( kc_state,kc)
 
 // The KC85/4 and KC85/3 are "modular systems". These computers can be expanded with modules.
 
-READ8_MEMBER( kc_state::expansion_read )
+uint8_t kc_state::expansion_read(offs_t offset)
 {
-	UINT8 result = 0xff;
+	uint8_t result = 0xff;
 
 	// assert MEI line of first slot
 	m_expansions[0]->mei_w(ASSERT_LINE);
@@ -90,7 +90,7 @@ READ8_MEMBER( kc_state::expansion_read )
 	return result;
 }
 
-WRITE8_MEMBER( kc_state::expansion_write )
+void kc_state::expansion_write(offs_t offset, uint8_t data)
 {
 	// assert MEI line of first slot
 	m_expansions[0]->mei_w(ASSERT_LINE);
@@ -104,23 +104,23 @@ WRITE8_MEMBER( kc_state::expansion_write )
 
     - xx is module id.
 
-    Only addressess divisible by 4 are checked.
+    Only addresses divisible by 4 are checked.
     If module does not exist, 0x0ff is returned.
 
     When xx80 is read, if a module exists a id will be returned.
     Id's for known modules are listed above.
 */
 
-READ8_MEMBER( kc_state::expansion_io_read )
+uint8_t kc_state::expansion_io_read(offs_t offset)
 {
-	UINT8 result = 0xff;
+	uint8_t result = 0xff;
 
 	// assert MEI line of first slot
 	m_expansions[0]->mei_w(ASSERT_LINE);
 
 	if ((offset & 0xff) == 0x80)
 	{
-		UINT8 slot_id = (offset>>8) & 0xff;
+		uint8_t slot_id = (offset>>8) & 0xff;
 
 		if (slot_id == 0x08 || slot_id == 0x0c)
 			result = m_expansions[(slot_id - 8) >> 2]->module_id_r();
@@ -136,14 +136,14 @@ READ8_MEMBER( kc_state::expansion_io_read )
 	return result;
 }
 
-WRITE8_MEMBER( kc_state::expansion_io_write )
+void kc_state::expansion_io_write(offs_t offset, uint8_t data)
 {
 	// assert MEI line of first slot
 	m_expansions[0]->mei_w(ASSERT_LINE);
 
 	if ((offset & 0xff) == 0x80)
 	{
-		UINT8 slot_id = (offset>>8) & 0xff;
+		uint8_t slot_id = (offset>>8) & 0xff;
 
 		if (slot_id == 0x08 || slot_id == 0x0c)
 			m_expansions[(slot_id - 8) >> 2]->control_w(data);
@@ -158,14 +158,14 @@ WRITE8_MEMBER( kc_state::expansion_io_write )
 }
 
 // module read/write handlers
-READ8_MEMBER ( kc_state::expansion_4000_r ){ return expansion_read(space, offset + 0x4000); }
-WRITE8_MEMBER( kc_state::expansion_4000_w ){ expansion_write(space, offset + 0x4000, data); }
-READ8_MEMBER ( kc_state::expansion_8000_r ){ return expansion_read(space, offset + 0x8000); }
-WRITE8_MEMBER( kc_state::expansion_8000_w ){ expansion_write(space, offset + 0x8000, data); }
-READ8_MEMBER ( kc_state::expansion_c000_r ){ return expansion_read(space, offset + 0xc000); }
-WRITE8_MEMBER( kc_state::expansion_c000_w ){ expansion_write(space, offset + 0xc000, data); }
-READ8_MEMBER ( kc_state::expansion_e000_r ){ return expansion_read(space, offset + 0xe000); }
-WRITE8_MEMBER( kc_state::expansion_e000_w ){ expansion_write(space, offset + 0xe000, data); }
+uint8_t kc_state::expansion_4000_r(offs_t offset){ return expansion_read(offset + 0x4000); }
+void kc_state::expansion_4000_w(offs_t offset, uint8_t data){ expansion_write(offset + 0x4000, data); }
+uint8_t kc_state::expansion_8000_r(offs_t offset){ return expansion_read(offset + 0x8000); }
+void kc_state::expansion_8000_w(offs_t offset, uint8_t data){ expansion_write(offset + 0x8000, data); }
+uint8_t kc_state::expansion_c000_r(offs_t offset){ return expansion_read(offset + 0xc000); }
+void kc_state::expansion_c000_w(offs_t offset, uint8_t data){ expansion_write(offset + 0xc000, data); }
+uint8_t kc_state::expansion_e000_r(offs_t offset){ return expansion_read(offset + 0xe000); }
+void kc_state::expansion_e000_w(offs_t offset, uint8_t data){ expansion_write(offset + 0xe000, data); }
 
 
 //**************************************************************************
@@ -285,8 +285,7 @@ void kc_state::update_0x00000()
 		LOG(("ram0 enabled\n"));
 
 		/* yes; set address of bank */
-		space.install_read_bank(0x0000, 0x3fff, "bank1");
-		membank("bank1")->set_base(m_ram_base);
+		space.install_rom(0x0000, 0x3fff, m_ram_base);
 
 		/* write protect ram? */
 		if ((m_pio_data[0] & (1<<3)) == 0)
@@ -302,15 +301,15 @@ void kc_state::update_0x00000()
 			LOG(("ram0 write enabled\n"));
 
 			/* ram is enabled and write enabled */
-			space.install_write_bank(0x0000, 0x3fff, "bank1");
+			space.install_writeonly(0x0000, 0x3fff, m_ram_base);
 		}
 	}
 	else
 	{
 		LOG(("Module at 0x0000\n"));
 
-		space.install_read_handler (0x0000, 0x3fff, 0, 0, read8_delegate(FUNC(kc_state::expansion_read), this), 0);
-		space.install_write_handler(0x0000, 0x3fff, 0, 0, write8_delegate(FUNC(kc_state::expansion_write), this), 0);
+		space.install_read_handler (0x0000, 0x3fff, read8sm_delegate(*this, FUNC(kc_state::expansion_read)), 0);
+		space.install_write_handler(0x0000, 0x3fff, write8sm_delegate(*this, FUNC(kc_state::expansion_write)), 0);
 	}
 }
 
@@ -321,8 +320,8 @@ void kc_state::update_0x04000()
 
 	LOG(("Module at 0x4000\n"));
 
-	space.install_read_handler (0x4000, 0x7fff, 0, 0, read8_delegate(FUNC(kc_state::expansion_4000_r), this), 0);
-	space.install_write_handler(0x4000, 0x7fff, 0, 0, write8_delegate(FUNC(kc_state::expansion_4000_w), this), 0);
+	space.install_read_handler (0x4000, 0x7fff, read8sm_delegate(*this, FUNC(kc_state::expansion_4000_r)), 0);
+	space.install_write_handler(0x4000, 0x7fff, write8sm_delegate(*this, FUNC(kc_state::expansion_4000_w)), 0);
 
 }
 
@@ -332,21 +331,20 @@ void kc_state::update_0x0c000()
 {
 	address_space &space = m_maincpu->space( AS_PROGRAM );
 
-	if ((m_pio_data[0] & (1<<7)) && memregion("basic")->base() != nullptr)
+	if ((m_pio_data[0] & (1<<7)) && memregion("basic") != nullptr)
 	{
 		/* BASIC takes next priority */
 			LOG(("BASIC rom 0x0c000\n"));
 
-		membank("bank4")->set_base(memregion("basic")->base());
-		space.install_read_bank(0xc000, 0xdfff, "bank4");
+		space.install_rom(0xc000, 0xdfff, memregion("basic")->base());
 		space.unmap_write(0xc000, 0xdfff);
 	}
 	else
 	{
 		LOG(("Module at 0x0c000\n"));
 
-		space.install_read_handler (0xc000, 0xdfff, 0, 0, read8_delegate(FUNC(kc_state::expansion_c000_r), this), 0);
-		space.install_write_handler(0xc000, 0xdfff, 0, 0, write8_delegate(FUNC(kc_state::expansion_c000_w), this), 0);
+		space.install_read_handler (0xc000, 0xdfff, read8sm_delegate(*this, FUNC(kc_state::expansion_c000_r)), 0);
+		space.install_write_handler(0xc000, 0xdfff, write8sm_delegate(*this, FUNC(kc_state::expansion_c000_w)), 0);
 	}
 }
 
@@ -360,16 +358,15 @@ void kc_state::update_0x0e000()
 		/* enable CAOS rom in memory range 0x0e000-0x0ffff */
 		LOG(("CAOS rom 0x0e000\n"));
 		/* read will access the rom */
-		membank("bank5")->set_base(memregion("caos")->base() + 0x2000);
-		space.install_read_bank(0xe000, 0xffff, "bank5");
+		space.install_rom(0xe000, 0xffff, memregion("caos")->base() + 0x2000);
 		space.unmap_write(0xe000, 0xffff);
 	}
 	else
 	{
 		LOG(("Module at 0x0e000\n"));
 
-		space.install_read_handler (0xe000, 0xffff, 0, 0, read8_delegate(FUNC(kc_state::expansion_e000_r), this), 0);
-		space.install_write_handler(0xe000, 0xffff, 0, 0, write8_delegate(FUNC(kc_state::expansion_e000_w), this), 0);
+		space.install_read_handler (0xe000, 0xffff, read8sm_delegate(*this, FUNC(kc_state::expansion_e000_r)), 0);
+		space.install_write_handler(0xe000, 0xffff, write8sm_delegate(*this, FUNC(kc_state::expansion_e000_w)), 0);
 	}
 }
 
@@ -384,15 +381,14 @@ void kc_state::update_0x08000()
 		/* IRM enabled */
 		LOG(("IRM enabled\n"));
 
-		membank("bank3")->set_base(m_video_ram);
-		space.install_readwrite_bank(0x8000, 0xbfff, "bank3");
+		space.install_ram(0x8000, 0xbfff, &m_video_ram[0]);
 	}
 	else
 	{
 		LOG(("Module at 0x8000!\n"));
 
-		space.install_read_handler(0x8000, 0xbfff, 0, 0, read8_delegate(FUNC(kc_state::expansion_8000_r), this), 0);
-		space.install_write_handler(0x8000, 0xbfff, 0, 0, write8_delegate(FUNC(kc_state::expansion_8000_w), this), 0);
+		space.install_read_handler(0x8000, 0xbfff, read8sm_delegate(*this, FUNC(kc_state::expansion_8000_r)), 0);
+		space.install_write_handler(0x8000, 0xbfff, write8sm_delegate(*this, FUNC(kc_state::expansion_8000_w)), 0);
 	}
 }
 
@@ -408,9 +404,7 @@ void kc85_4_state::update_0x04000()
 		LOG(("RAM4 enabled\n"));
 
 		/* yes */
-		space.install_read_bank(0x4000, 0x7fff, "bank2");
-		/* set address of bank */
-		membank("bank2")->set_base(m_ram_base + 0x4000);
+		space.install_rom(0x4000, 0x7fff, m_ram_base + 0x4000);
 
 		/* write protect ram? */
 		if ((m_port_86_data & (1<<1)) == 0)
@@ -426,15 +420,15 @@ void kc85_4_state::update_0x04000()
 			LOG(("ram4 write enabled\n"));
 
 			/* ram is enabled and write enabled */
-			space.install_write_bank(0x4000, 0x7fff, "bank2");
+			space.install_writeonly(0x4000, 0x7fff, m_ram_base + 0x4000);
 		}
 	}
 	else
 	{
 		LOG(("Module at 0x4000\n"));
 
-		space.install_read_handler (0x4000, 0x7fff, 0, 0, read8_delegate(FUNC(kc_state::expansion_4000_r), this), 0);
-		space.install_write_handler(0x4000, 0x7fff, 0, 0, write8_delegate(FUNC(kc_state::expansion_4000_w), this), 0);
+		space.install_read_handler (0x4000, 0x7fff, read8sm_delegate(*this, FUNC(kc_state::expansion_4000_r)), 0);
+		space.install_write_handler(0x4000, 0x7fff, write8sm_delegate(*this, FUNC(kc_state::expansion_4000_w)), 0);
 	}
 
 }
@@ -449,8 +443,7 @@ void kc85_4_state::update_0x0c000()
 		/* CAOS rom takes priority */
 		LOG(("CAOS rom 0x0c000\n"));
 
-		membank("bank4")->set_base(memregion("caos")->base());
-		space.install_read_bank(0xc000, 0xdfff, "bank4");
+		space.install_rom(0xc000, 0xdfff, memregion("caos")->base());
 		space.unmap_write(0xc000, 0xdfff);
 	}
 	else
@@ -462,16 +455,15 @@ void kc85_4_state::update_0x0c000()
 
 			int bank = memregion("basic")->bytes() == 0x8000 ? (m_port_86_data>>5) & 0x03 : 0;
 
-			membank("bank4")->set_base(memregion("basic")->base() + (bank << 13));
-			space.install_read_bank(0xc000, 0xdfff, "bank4");
+			space.install_rom(0xc000, 0xdfff, memregion("basic")->base() + (bank << 13));
 			space.unmap_write(0xc000, 0xdfff);
 		}
 		else
 		{
 			LOG(("Module at 0x0c000\n"));
 
-			space.install_read_handler (0xc000, 0xdfff, 0, 0, read8_delegate(FUNC(kc_state::expansion_c000_r), this), 0);
-			space.install_write_handler(0xc000, 0xdfff, 0, 0, write8_delegate(FUNC(kc_state::expansion_c000_w), this), 0);
+			space.install_read_handler (0xc000, 0xdfff, read8sm_delegate(*this, FUNC(kc_state::expansion_c000_r)), 0);
+			space.install_write_handler(0xc000, 0xdfff, write8sm_delegate(*this, FUNC(kc_state::expansion_c000_w)), 0);
 		}
 	}
 }
@@ -485,20 +477,17 @@ void kc85_4_state::update_0x08000()
 		/* IRM enabled - has priority over RAM8 enabled */
 		LOG(("IRM enabled\n"));
 
-		UINT8* ram_page = m_video_ram + ((BIT(m_port_84_data, 2)<<15) | (BIT(m_port_84_data, 1)<<14));
+		uint8_t* ram_page = &m_video_ram[(BIT(m_port_84_data, 2)<<15) | (BIT(m_port_84_data, 1)<<14)];
 
-		membank("bank3")->set_base(ram_page);
-		space.install_readwrite_bank(0x8000, 0xa7ff, "bank3");
-
-		membank("bank6")->set_base(m_video_ram + 0x2800);
-		space.install_readwrite_bank(0xa800, 0xbfff, "bank6");
+		space.install_ram(0x8000, 0xa7ff, ram_page);
+		space.install_ram(0xa800, 0xbfff, &m_video_ram[0x2800]);
 	}
 	else if (m_pio_data[1] & (1<<5))
 	{
 		LOG(("RAM8 enabled\n"));
 
 		int ram8_block;
-		UINT8 *mem_ptr;
+		uint8_t *mem_ptr;
 
 		/* ram8 block chosen */
 
@@ -515,10 +504,8 @@ void kc85_4_state::update_0x08000()
 			mem_ptr = m_ram_base + (ram8_block<<14);
 		}
 
-		membank("bank3")->set_base(mem_ptr);
-		membank("bank6")->set_base(mem_ptr + 0x2800);
-		space.install_read_bank(0x8000, 0xa7ff, "bank3");
-		space.install_read_bank(0xa800, 0xbfff, "bank6");
+		space.install_rom(0x8000, 0xa7ff, mem_ptr);
+		space.install_rom(0xa800, 0xbfff, mem_ptr + 0x2800);
 
 		/* write protect RAM8 ? */
 		if ((m_pio_data[1] & (1<<6)) == 0)
@@ -534,16 +521,16 @@ void kc85_4_state::update_0x08000()
 			LOG(("RAM8 write enabled\n"));
 
 			/* ram8 is enabled and write enabled */
-			space.install_write_bank(0x8000, 0xa7ff, "bank3");
-			space.install_write_bank(0xa800, 0xbfff, "bank6");
+			space.install_writeonly(0x8000, 0xa7ff, mem_ptr);
+			space.install_writeonly(0xa800, 0xbfff, mem_ptr + 0x2800);
 		}
 	}
 	else
 	{
 		LOG(("Module at 0x8000\n"));
 
-		space.install_read_handler(0x8000, 0xbfff, 0, 0, read8_delegate(FUNC(kc_state::expansion_8000_r), this), 0);
-		space.install_write_handler(0x8000, 0xbfff, 0, 0, write8_delegate(FUNC(kc_state::expansion_8000_w), this), 0);
+		space.install_read_handler(0x8000, 0xbfff, read8sm_delegate(*this, FUNC(kc_state::expansion_8000_r)), 0);
+		space.install_write_handler(0x8000, 0xbfff, write8sm_delegate(*this, FUNC(kc_state::expansion_8000_w)), 0);
 	}
 }
 
@@ -564,12 +551,12 @@ bit 1: ACCESS RAM 0
 bit 0: CAOS ROM E
 */
 
-READ8_MEMBER( kc_state::pio_porta_r )
+uint8_t kc_state::pio_porta_r()
 {
 	return m_pio_data[0];
 }
 
-WRITE8_MEMBER( kc_state::pio_porta_w )
+void kc_state::pio_porta_w(uint8_t data)
 {
 	if (m_pio_data[0] != data) // to avoid a severe slowdown during cassette loading
 	{
@@ -595,12 +582,12 @@ bit 2: TONE 2
 bit 1: TONE 1
 bit 0: TRUCK */
 
-READ8_MEMBER( kc_state::pio_portb_r )
+uint8_t kc_state::pio_portb_r()
 {
 	return m_pio_data[1];
 }
 
-WRITE8_MEMBER( kc_state::pio_portb_w )
+void kc_state::pio_portb_w(uint8_t data)
 {
 	m_pio_data[1] = data;
 
@@ -624,7 +611,7 @@ bit 1: BLA0 .pixel/color
 bit 0: BILD .display screen 0 or 1
 */
 
-WRITE8_MEMBER( kc85_4_state::kc85_4_84_w )
+void kc85_4_state::kc85_4_84_w(uint8_t data)
 {
 	LOG(("0x84 W: %02x\n", data));
 
@@ -635,7 +622,7 @@ WRITE8_MEMBER( kc85_4_state::kc85_4_84_w )
 	update_0x08000();
 }
 
-READ8_MEMBER( kc85_4_state::kc85_4_84_r )
+uint8_t kc85_4_state::kc85_4_84_r()
 {
 	return m_port_84_data;
 }
@@ -651,7 +638,7 @@ bit 1: WRITE PROTECT RAM 4
 bit 0: ACCESS RAM 4
 */
 
-WRITE8_MEMBER( kc85_4_state::kc85_4_86_w )
+void kc85_4_state::kc85_4_86_w(uint8_t data)
 {
 	LOG(("0x86 W: %02x\n", data));
 
@@ -661,7 +648,7 @@ WRITE8_MEMBER( kc85_4_state::kc85_4_86_w )
 	update_0x04000();
 }
 
-READ8_MEMBER( kc85_4_state::kc85_4_86_r )
+uint8_t kc85_4_state::kc85_4_86_r()
 {
 	return m_port_86_data;
 }
@@ -749,10 +736,6 @@ void kc_state::machine_start()
 	m_cassette_oneshot_timer = machine().scheduler().timer_alloc(timer_expired_delegate(FUNC(kc_state::kc_cassette_oneshot_timer),this));
 
 	m_ram_base = m_ram->pointer();
-
-	m_expansions[0] = machine().device<kcexp_slot_device>("m8");
-	m_expansions[1] = machine().device<kcexp_slot_device>("mc");
-	m_expansions[2] = machine().device<kcexp_slot_device>("exp");
 }
 
 void kc_state::machine_reset()

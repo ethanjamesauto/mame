@@ -7,7 +7,6 @@
 
  ***********************************************************************************************************/
 
-
 #include "emu.h"
 #include "slot.h"
 
@@ -15,7 +14,7 @@
 //  GLOBAL VARIABLES
 //**************************************************************************
 
-const device_type SCV_CART_SLOT = &device_creator<scv_cart_slot_device>;
+DEFINE_DEVICE_TYPE(SCV_CART_SLOT, scv_cart_slot_device, "scv_cart_slot", "SCV Cartridge Slot")
 
 //**************************************************************************
 //    SCV cartridges Interface
@@ -25,10 +24,10 @@ const device_type SCV_CART_SLOT = &device_creator<scv_cart_slot_device>;
 //  device_scv_cart_interface - constructor
 //-------------------------------------------------
 
-device_scv_cart_interface::device_scv_cart_interface(const machine_config &mconfig, device_t &device)
-	: device_slot_card_interface(mconfig, device),
-		m_rom(nullptr),
-		m_rom_size(0)
+device_scv_cart_interface::device_scv_cart_interface(const machine_config &mconfig, device_t &device) :
+	device_interface(device, "scvcart"),
+	m_rom(nullptr),
+	m_rom_size(0)
 {
 }
 
@@ -45,7 +44,7 @@ device_scv_cart_interface::~device_scv_cart_interface()
 //  rom_alloc - alloc the space for the cart
 //-------------------------------------------------
 
-void device_scv_cart_interface::rom_alloc(UINT32 size, const char *tag)
+void device_scv_cart_interface::rom_alloc(uint32_t size, const char *tag)
 {
 	if (m_rom == nullptr)
 	{
@@ -59,7 +58,7 @@ void device_scv_cart_interface::rom_alloc(UINT32 size, const char *tag)
 //  ram_alloc - alloc the space for the ram
 //-------------------------------------------------
 
-void device_scv_cart_interface::ram_alloc(UINT32 size)
+void device_scv_cart_interface::ram_alloc(uint32_t size)
 {
 	m_ram.resize(size);
 }
@@ -72,11 +71,11 @@ void device_scv_cart_interface::ram_alloc(UINT32 size)
 //-------------------------------------------------
 //  scv_cart_slot_device - constructor
 //-------------------------------------------------
-scv_cart_slot_device::scv_cart_slot_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock) :
-						device_t(mconfig, SCV_CART_SLOT, "SCV Cartridge Slot", tag, owner, clock, "scv_cart_slot", __FILE__),
-						device_image_interface(mconfig, *this),
-						device_slot_interface(mconfig, *this),
-						m_type(SCV_8K), m_cart(nullptr)
+scv_cart_slot_device::scv_cart_slot_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock) :
+	device_t(mconfig, SCV_CART_SLOT, tag, owner, clock),
+	device_image_interface(mconfig, *this),
+	device_single_card_slot_interface<device_scv_cart_interface>(mconfig, *this),
+	m_type(SCV_8K), m_cart(nullptr)
 {
 }
 
@@ -95,19 +94,7 @@ scv_cart_slot_device::~scv_cart_slot_device()
 
 void scv_cart_slot_device::device_start()
 {
-	m_cart = dynamic_cast<device_scv_cart_interface *>(get_card_device());
-}
-
-//-------------------------------------------------
-//  device_config_complete - perform any
-//  operations now that the configuration is
-//  complete
-//-------------------------------------------------
-
-void scv_cart_slot_device::device_config_complete()
-{
-	// set brief and instance name
-	update_names();
+	m_cart = get_card_device();
 }
 
 
@@ -137,7 +124,7 @@ static int scv_get_pcb_id(const char *slot)
 {
 	for (auto & elem : slot_list)
 	{
-		if (!core_stricmp(elem.slot_option, slot))
+		if (!strcmp(elem.slot_option, slot))
 			return elem.pcb_id;
 	}
 
@@ -160,18 +147,18 @@ static const char *scv_get_slot(int type)
  call load
  -------------------------------------------------*/
 
-bool scv_cart_slot_device::call_load()
+image_init_result scv_cart_slot_device::call_load()
 {
 	if (m_cart)
 	{
-		UINT8 *ROM;
-		UINT32 len = (software_entry() == nullptr) ? length() : get_software_region_length("rom");
-		bool has_ram = (software_entry() != nullptr) && get_software_region("ram");
+		uint8_t *ROM;
+		uint32_t len = !loaded_through_softlist() ? length() : get_software_region_length("rom");
+		bool has_ram = loaded_through_softlist() && get_software_region("ram");
 
 		if (len > 0x20000)
 		{
 			seterror(IMAGE_ERROR_UNSPECIFIED, "Unsupported cartridge size");
-			return IMAGE_INIT_FAIL;
+			return image_init_result::FAIL;
 		}
 
 		m_cart->rom_alloc(len, tag());
@@ -180,12 +167,12 @@ bool scv_cart_slot_device::call_load()
 
 		ROM = m_cart->get_rom_base();
 
-		if (software_entry() == nullptr)
+		if (!loaded_through_softlist())
 			fread(ROM, len);
 		else
 			memcpy(ROM, get_software_region("rom"), len);
 
-		if (software_entry() == nullptr)
+		if (!loaded_through_softlist())
 			m_type = get_cart_type(ROM, len);
 		else
 		{
@@ -203,23 +190,11 @@ bool scv_cart_slot_device::call_load()
 
 		//printf("Type: %s\n", scv_get_slot(m_type));
 
-		return IMAGE_INIT_PASS;
+		return image_init_result::PASS;
 	}
 
-	return IMAGE_INIT_PASS;
+	return image_init_result::PASS;
 }
-
-
-/*-------------------------------------------------
- call softlist load
- -------------------------------------------------*/
-
-bool scv_cart_slot_device::call_softlist_load(software_list_device &swlist, const char *swname, const rom_entry *start_entry)
-{
-	load_software_part_region(*this, swlist, swname, start_entry);
-	return TRUE;
-}
-
 
 
 /*-------------------------------------------------
@@ -227,7 +202,7 @@ bool scv_cart_slot_device::call_softlist_load(software_list_device &swlist, cons
  fullpath
  -------------------------------------------------*/
 
-int scv_cart_slot_device::get_cart_type(UINT8 *ROM, UINT32 len)
+int scv_cart_slot_device::get_cart_type(const uint8_t *ROM, uint32_t len)
 {
 	int type = SCV_8K;
 
@@ -259,38 +234,36 @@ int scv_cart_slot_device::get_cart_type(UINT8 *ROM, UINT32 len)
  get default card software
  -------------------------------------------------*/
 
-void scv_cart_slot_device::get_default_card_software(std::string &result)
+std::string scv_cart_slot_device::get_default_card_software(get_default_card_software_hook &hook) const
 {
-	if (open_image_file(mconfig().options()))
+	if (hook.image_file())
 	{
-		const char *slot_string = "rom8k";
-		UINT32 len = core_fsize(m_file);
-		dynamic_buffer rom(len);
+		const char *slot_string;
+		uint32_t len = hook.image_file()->size();
+		std::vector<uint8_t> rom(len);
 		int type;
 
-		core_fread(m_file, &rom[0], len);
+		hook.image_file()->read(&rom[0], len);
 
 		type = get_cart_type(&rom[0], len);
 		slot_string = scv_get_slot(type);
 
 		//printf("type: %s\n", slot_string);
-		clear();
 
-		result.assign(slot_string);
-		return;
+		return std::string(slot_string);
 	}
 
-	software_get_default_slot(result, "rom8k");
+	return software_get_default_slot("rom8k");
 }
 
 /*-------------------------------------------------
  read
  -------------------------------------------------*/
 
-READ8_MEMBER(scv_cart_slot_device::read_cart)
+uint8_t scv_cart_slot_device::read_cart(offs_t offset)
 {
 	if (m_cart)
-		return m_cart->read_cart(space, offset);
+		return m_cart->read_cart(offset);
 	else
 		return 0xff;
 }
@@ -299,10 +272,10 @@ READ8_MEMBER(scv_cart_slot_device::read_cart)
  write
  -------------------------------------------------*/
 
-WRITE8_MEMBER(scv_cart_slot_device::write_cart)
+void scv_cart_slot_device::write_cart(offs_t offset, uint8_t data)
 {
 	if (m_cart)
-		m_cart->write_cart(space, offset, data);
+		m_cart->write_cart(offset, data);
 }
 
 
@@ -310,8 +283,8 @@ WRITE8_MEMBER(scv_cart_slot_device::write_cart)
  write_bank
  -------------------------------------------------*/
 
-WRITE8_MEMBER(scv_cart_slot_device::write_bank)
+void scv_cart_slot_device::write_bank(uint8_t data)
 {
 	if (m_cart)
-		m_cart->write_bank(space, offset, data);
+		m_cart->write_bank(data);
 }

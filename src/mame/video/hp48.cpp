@@ -26,13 +26,13 @@
     GLOBAL VARIABLES & CONSTANTS
 ***************************************************************************/
 
-/* base colors */
-static const int hp48_bg_color[3] = { 136, 147, 109 };  /* yellow */
-static const int hp48_fg_color[3] = {   0,   0,  64 };  /* dark blue */
+// base colors
+static constexpr int hp48_bg_color[3] = { 136, 147, 109 };  // yellow
+static constexpr int hp48_fg_color[3] = {   0,   0,  64 };  // dark blue
 
-/* color mixing */
-#define mix(c1,c2,x) (c1)*(1-(x))+(c2)*(x)
-#define mix2(i,x) mix(hp48_bg_color[i],hp48_fg_color[i],x)
+// color mixing
+constexpr float mix(int c1, int c2, float x) { return (c1 * (1 - x)) + (c2 * x); }
+inline float mix2(int i, float x) { return mix(hp48_bg_color[i], hp48_fg_color[i], x); }
 
 
 
@@ -41,13 +41,12 @@ static const int hp48_fg_color[3] = {   0,   0,  64 };  /* dark blue */
     FUNCTIONS
 ***************************************************************************/
 
-PALETTE_INIT_MEMBER(hp48_state, hp48)
+void hp48_state::hp48_palette(palette_device &palette) const
 {
-	int i;
-	for ( i = 0; i < 255; i++ )
+	for (int i = 0; i < 256; i++)
 	{
-		float c = i/255.;
-		m_palette->set_pen_color( i, rgb_t( 0, mix2(0,c), mix2(1,c), mix2(2,c) ) );
+		float const c = i / 255.;
+		m_palette->set_pen_color(i, rgb_t(mix2(0, c), mix2(1, c), mix2(2, c)));
 	}
 }
 
@@ -125,11 +124,11 @@ PALETTE_INIT_MEMBER(hp48_state, hp48)
 	data >>= 1
 
 #define draw_quart                  \
-	UINT8 data = space.read_byte( addr );   \
+	uint8_t data = space.read_byte( addr );   \
 	draw_pixel; draw_pixel; draw_pixel; draw_pixel;
 
 
-UINT32 hp48_state::screen_update_hp48(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t hp48_state::screen_update_hp48(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	address_space &space = m_maincpu->space(AS_PROGRAM);
 	int x, y, xp, i, addr;
@@ -193,7 +192,7 @@ UINT32 hp48_state::screen_update_hp48(screen_device &screen, bitmap_ind16 &bitma
 				acc += m_screens[ i ][ y ][ x+8 ];
 			}
 			acc = (acc * 255) / (33 * HP48_NB_SCREENS);
-			bitmap.pix16(y, x ) = acc;
+			bitmap.pix(y, x ) = acc;
 		}
 	}
 

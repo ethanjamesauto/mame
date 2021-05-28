@@ -8,9 +8,14 @@ A down-grade of the Seibu SPI Hardware with SH-2 as main cpu.
 
 driver by Angelo Salese & Nicola Salmoria
 
+The input routines are very convoluted in comparison to previous Seibu games,
+looping over a complex control structure. Could these be derived from the
+"Touch Panel System" DVD mahjong games Seibu released under the CATS label?
+
 TODO:
-- Add eeprom emulation;
-- Real Time Clock emulation (uses a JRC 6355E / NJU6355E)
+- Layout including lamps
+- Hopper only works in "COIN HOPPER" mode
+- Do button 5 or remaining DIPs actually do anything outside service mode?
 
 ============================================================================
 
@@ -58,51 +63,83 @@ U0562 LH28F800SU OBJ2-1
 U0563 LH28F800SU OBJ3-1
 U0564 LH28F800SU OBJ4-1
 
+U0218 RTL8019AS Realtek Full-Duplex Ethernet Controller with Plug and Play Function
+X221 20MHz
+U0225 YCL20F001N 10 Base T Low Pass Filter
+
+U089 MAX232 Dual EIA Driver/Receiver
+
 *******************************************************************************************/
 
 #include "emu.h"
-#include "cpu/sh2/sh2.h"
+#include "cpu/sh/sh2.h"
 #include "machine/seibuspi.h"
 #include "sound/okim6295.h"
+#include "machine/eepromser.h"
+#include "machine/rtc4543.h"
+#include "machine/nvram.h"
+#include "machine/ticket.h"
+#include "emupal.h"
+#include "screen.h"
+#include "speaker.h"
 
 
 class feversoc_state : public driver_device
 {
 public:
-	feversoc_state(const machine_config &mconfig, device_type type, const char *tag)
-		: driver_device(mconfig, type, tag),
-		m_mainram(*this, "workram"),
+	feversoc_state(const machine_config &mconfig, device_type type, const char *tag) :
+		driver_device(mconfig, type, tag),
+		m_mainram1(*this, "workram1"),
+		m_mainram2(*this, "workram2"),
+		m_nvram(*this, "nvram"),
 		m_spriteram(*this, "spriteram"),
+		m_in(*this, {"IN1", "IN0"}),
+		m_lamps(*this, "lamp%u", 1U),
 		m_maincpu(*this, "maincpu"),
 		m_oki(*this, "oki"),
+		m_eeprom(*this, "eeprom"),
+		m_rtc(*this, "rtc"),
+		m_hopper(*this, "hopper"),
 		m_gfxdecode(*this, "gfxdecode"),
-		m_palette(*this, "palette") { }
+		m_palette(*this, "palette")
+	{ }
 
-	UINT16 m_x;
-	required_shared_ptr<UINT32> m_mainram;
-	required_shared_ptr<UINT32> m_spriteram;
-	DECLARE_READ32_MEMBER(in0_r);
-	DECLARE_WRITE32_MEMBER(output_w);
-	DECLARE_DRIVER_INIT(feversoc);
-	virtual void video_start() override;
-	UINT32 screen_update_feversoc(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
-	INTERRUPT_GEN_MEMBER(feversoc_irq);
+	void init_feversoc();
+	void feversoc(machine_config &config);
+
+private:
+	uint16_t in_r(offs_t offset);
+	void output_w(uint16_t data);
+	void output2_w(uint16_t data);
+	void feversoc_map(address_map &map);
+	uint32_t screen_update_feversoc(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
+	DECLARE_WRITE_LINE_MEMBER(feversoc_irq);
+	void feversoc_irq_ack(uint16_t data);
+	virtual void machine_start() override;
+
+	required_shared_ptr<uint32_t> m_mainram1;
+	required_shared_ptr<uint32_t> m_mainram2;
+	required_shared_ptr<uint32_t> m_nvram;
+	required_shared_ptr<uint32_t> m_spriteram;
+	required_ioport_array<2> m_in;
+	output_finder<7> m_lamps;
+
 	required_device<sh2_device> m_maincpu;
 	required_device<okim6295_device> m_oki;
+	required_device<eeprom_serial_93cxx_device> m_eeprom;
+	required_device<jrc6355e_device> m_rtc;
+	required_device<ticket_dispenser_device> m_hopper;
 	required_device<gfxdecode_device> m_gfxdecode;
 	required_device<palette_device> m_palette;
 };
 
 
-#define MASTER_CLOCK XTAL_28_63636MHz
+#define MASTER_CLOCK XTAL(28'636'363)
 
-void feversoc_state::video_start()
-{
-}
 
-UINT32 feversoc_state::screen_update_feversoc(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t feversoc_state::screen_update_feversoc(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
-	UINT32 *spriteram32 = m_spriteram;
+	uint32_t *spriteram32 = m_spriteram;
 	int offs,spr_offs,colour,sx,sy,h,w,dx,dy;
 
 	bitmap.fill(m_palette->pen(0), cliprect); //black pen
@@ -131,47 +168,57 @@ UINT32 feversoc_state::screen_update_feversoc(screen_device &screen, bitmap_ind1
 
 
 
-READ32_MEMBER(feversoc_state::in0_r)
+uint16_t feversoc_state::in_r(offs_t offset)
 {
-	UINT32 io0 = (ioport("IN1")->read()&0xffff) << 16;
-	UINT32 io1 = (ioport("IN0")->read()&0xffff) << 0;
-	m_x^=0x40; //vblank? eeprom read bit?
-	return io0 | io1 | m_x;
+	return m_in[offset]->read() & 0xffff;
 }
 
-WRITE32_MEMBER(feversoc_state::output_w)
+void feversoc_state::output_w(uint16_t data)
 {
-	if(ACCESSING_BITS_16_31)
-	{
-		/* probably eeprom stuff too */
-		coin_lockout_w(machine(), 0,~data>>16 & 0x40);
-		coin_lockout_w(machine(), 1,~data>>16 & 0x40);
-		coin_counter_w(machine(), 0,data>>16 & 1);
-		//data>>16 & 2 coin out
-		coin_counter_w(machine(), 1,data>>16 & 4);
-		//data>>16 & 8 coin hopper
-		m_oki->set_bank_base(0x40000 * (((data>>16) & 0x20)>>5));
-	}
-	if(ACCESSING_BITS_0_15)
-	{
-		/* -xxx xxxx lamps*/
-		coin_counter_w(machine(), 2,data & 0x2000); //key in
-		//data & 0x4000 key out
-	}
+	machine().bookkeeping().coin_lockout_w(0, ~data & 0x40);
+	machine().bookkeeping().coin_lockout_w(1, ~data & 0x40);
+	machine().bookkeeping().coin_counter_w(0, data & 1);
+	// data & 2 coin out counter
+	machine().bookkeeping().coin_counter_w(1, data & 4);
+	m_hopper->motor_w((data & 0x08) >> 3); // coin hopper or prize hopper
+	m_oki->set_rom_bank((data & 0x20) >> 5);
+
+	m_eeprom->di_write((data & 0x8000) ? 1 : 0);
+	m_eeprom->clk_write((data & 0x4000) ? ASSERT_LINE : CLEAR_LINE);
+	m_eeprom->cs_write((data & 0x2000) ? ASSERT_LINE : CLEAR_LINE);
+
+	m_rtc->data_w((data & 0x0800) ? 1 : 0);
+	m_rtc->wr_w((data & 0x0400) ? ASSERT_LINE : CLEAR_LINE);
+	m_rtc->clk_w((data & 0x0200) ? ASSERT_LINE : CLEAR_LINE);
+	m_rtc->ce_w((data & 0x0100) ? ASSERT_LINE : CLEAR_LINE);
 }
 
-static ADDRESS_MAP_START( feversoc_map, AS_PROGRAM, 32, feversoc_state )
-	AM_RANGE(0x00000000, 0x0003ffff) AM_ROM
-	AM_RANGE(0x02000000, 0x0203dfff) AM_RAM AM_SHARE("workram") //work ram
-	AM_RANGE(0x0203e000, 0x0203ffff) AM_RAM AM_SHARE("spriteram")
-	AM_RANGE(0x06000000, 0x06000003) AM_WRITE(output_w)
-	AM_RANGE(0x06000004, 0x06000007) AM_WRITENOP //???
-	AM_RANGE(0x06000008, 0x0600000b) AM_READ(in0_r)
-	AM_RANGE(0x0600000c, 0x0600000f) AM_DEVREADWRITE8("oki", okim6295_device, read, write, 0x00ff0000)
-//  AM_RANGE(0x06010000, 0x06017fff) AM_RAM //contains RISE11 keys and other related stuff.
-//  AM_RANGE(0x06010060, 0x06010063) //bit 0 almost certainly irq ack
-	AM_RANGE(0x06018000, 0x06019fff) AM_RAM_DEVWRITE("palette",  palette_device, write) AM_SHARE("palette")
-ADDRESS_MAP_END
+void feversoc_state::output2_w(uint16_t data)
+{
+	for (int n = 0; n < 7; n++)
+		m_lamps[n] = BIT(data, n); // LAMP1-LAMP7
+
+	machine().bookkeeping().coin_counter_w(2, data & 0x2000); // key in
+	//data & 0x4000 key out
+}
+
+
+void feversoc_state::feversoc_map(address_map &map)
+{
+	map(0x00000000, 0x0003ffff).rom();
+	map(0x02000000, 0x0202ffff).ram().share("workram1"); //work ram
+	map(0x02030000, 0x02033fff).ram().share("nvram");
+	map(0x02034000, 0x0203dfff).ram().share("workram2"); //work ram
+	map(0x0203e000, 0x0203ffff).ram().share("spriteram");
+	map(0x06000000, 0x06000001).w(FUNC(feversoc_state::output_w));
+	map(0x06000002, 0x06000003).w(FUNC(feversoc_state::output2_w));
+	map(0x06000006, 0x06000007).w(FUNC(feversoc_state::feversoc_irq_ack));
+	map(0x06000008, 0x0600000b).r(FUNC(feversoc_state::in_r));
+	map(0x0600000d, 0x0600000d).rw(m_oki, FUNC(okim6295_device::read), FUNC(okim6295_device::write));
+	//map(0x06010000, 0x0601007f).rw("obj", FUNC(seibu_encrypted_sprite_device::read), FUNC(seibu_encrypted_sprite_device::write));
+	map(0x06010060, 0x06010063).nopw(); // sprite buffering
+	map(0x06018000, 0x06019fff).ram().w(m_palette, FUNC(palette_device::write32)).share("palette");
+}
 
 static const gfx_layout spi_spritelayout =
 {
@@ -189,89 +236,93 @@ static const gfx_layout spi_spritelayout =
 };
 
 
-static GFXDECODE_START( feversoc )
+static GFXDECODE_START( gfx_feversoc )
 	GFXDECODE_ENTRY( "gfx1", 0, spi_spritelayout,   0, 0x40 )
 GFXDECODE_END
 
 static INPUT_PORTS_START( feversoc )
+	// The "ANALIZE" input shown in test mode does not exist on this hardware.
 	PORT_START("IN0")
 	PORT_BIT( 0x0001, IP_ACTIVE_LOW, IPT_START1 )
 	PORT_BIT( 0x0002, IP_ACTIVE_LOW, IPT_COIN2 )
 	PORT_BIT( 0x0004, IP_ACTIVE_LOW, IPT_SERVICE )
-	PORT_BIT( 0x0008, IP_ACTIVE_LOW, IPT_SERVICE1 )
+	PORT_BIT( 0x0008, IP_ACTIVE_LOW, IPT_GAMBLE_KEYIN ) PORT_NAME("Key In (Service)")
 	PORT_BIT( 0x0010, IP_ACTIVE_LOW, IPT_COIN1 )
-	PORT_DIPNAME( 0x20, 0x20, DEF_STR( Unknown ) ) //hopper i/o
-	PORT_DIPSETTING(    0x20, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
-	PORT_BIT( 0x0040, IP_ACTIVE_HIGH, IPT_UNKNOWN ) // maybe eeprom in / vblank
-	PORT_BIT( 0x0080, IP_ACTIVE_LOW, IPT_UNUSED ) //PORT_NAME("Slottle") PORT_CODE(KEYCODE_Z)
-	PORT_DIPNAME( 0x0100, 0x0100, "DIP 1-1" )
+	PORT_BIT( 0x0020, IP_ACTIVE_HIGH, IPT_CUSTOM ) PORT_READ_LINE_DEVICE_MEMBER("hopper", ticket_dispenser_device, line_r)
+	PORT_BIT( 0x0040, IP_ACTIVE_HIGH, IPT_CUSTOM ) PORT_READ_LINE_DEVICE_MEMBER("eeprom", eeprom_serial_93cxx_device, do_read)
+	PORT_BIT( 0x0080, IP_ACTIVE_HIGH, IPT_CUSTOM ) PORT_READ_LINE_DEVICE_MEMBER("rtc", rtc4543_device, data_r)
+	PORT_DIPNAME( 0x0100, 0x0100, DEF_STR( Service_Mode ) ) PORT_DIPLOCATION( "DIP1:1" )
 	PORT_DIPSETTING(    0x0100, DEF_STR( Off ) )
 	PORT_DIPSETTING(    0x0000, DEF_STR( On ) )
-	PORT_DIPNAME( 0x0200, 0x0200, "DIP 1-2"  )
-	PORT_DIPSETTING(    0x0200, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x0000, DEF_STR( On ) )
-	PORT_DIPNAME( 0x0400, 0x0400, "DIP 1-3"  )
-	PORT_DIPSETTING(    0x0400, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x0000, DEF_STR( On ) )
-	PORT_DIPNAME( 0x0800, 0x0800, "DIP 1-4"  )
-	PORT_DIPSETTING(    0x0800, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x0000, DEF_STR( On ) )
-	PORT_DIPNAME( 0x1000, 0x1000, "DIP 1-5"  )
-	PORT_DIPSETTING(    0x1000, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x0000, DEF_STR( On ) )
-	PORT_DIPNAME( 0x2000, 0x2000, "DIP 1-6"  )
-	PORT_DIPSETTING(    0x2000, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x0000, DEF_STR( On ) )
-	PORT_DIPNAME( 0x4000, 0x4000, "DIP 1-7"  )
-	PORT_DIPSETTING(    0x4000, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x0000, DEF_STR( On ) )
-	PORT_DIPNAME( 0x8000, 0x8000, "DIP 1-8" )
-	PORT_DIPSETTING(    0x8000, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x0000, DEF_STR( On ) )
+	PORT_DIPUNKNOWN_DIPLOC( 0x0200, 0x0200, "DIP1:2" )
+	PORT_DIPNAME( 0x0400, 0x0400, "Backup Memory" ) PORT_DIPLOCATION( "DIP1:3" )
+	PORT_DIPSETTING(    0x0400, "Use" )
+	PORT_DIPSETTING(    0x0000, "Reset" )
+	PORT_DIPUNKNOWN_DIPLOC( 0x0800, 0x0800, "DIP1:4" )
+	PORT_DIPUNKNOWN_DIPLOC( 0x1000, 0x1000, "DIP1:5" )
+	PORT_DIPUNKNOWN_DIPLOC( 0x2000, 0x2000, "DIP1:6" )
+	PORT_DIPUNKNOWN_DIPLOC( 0x4000, 0x4000, "DIP1:7" )
+	PORT_DIPUNKNOWN_DIPLOC( 0x8000, 0x8000, "DIP1:8" )
+
 	PORT_START("IN1")
-	PORT_BIT( 0x0001, IP_ACTIVE_LOW, IPT_SLOT_STOP1 )
-	PORT_BIT( 0x0002, IP_ACTIVE_LOW, IPT_SLOT_STOP2 )
-	PORT_BIT( 0x0004, IP_ACTIVE_LOW, IPT_SLOT_STOP3 )
-	PORT_BIT( 0x0008, IP_ACTIVE_LOW, IPT_GAMBLE_BET )
-	PORT_BIT( 0x0010, IP_ACTIVE_LOW, IPT_BUTTON5 ) PORT_CODE(KEYCODE_V) // ?
-	PORT_BIT( 0x0020, IP_ACTIVE_LOW, IPT_BUTTON6 ) PORT_CODE(KEYCODE_B) // ?
-	PORT_BIT( 0x0040, IP_ACTIVE_LOW, IPT_BUTTON7 ) PORT_CODE(KEYCODE_N) // ?
-	PORT_BIT( 0x0080, IP_ACTIVE_LOW, IPT_SERVICE2 ) PORT_NAME("Reset")
+	PORT_BIT( 0x0001, IP_ACTIVE_LOW, IPT_SLOT_STOP1 ) PORT_NAME("Stop 1 (BTN1)")
+	PORT_BIT( 0x0002, IP_ACTIVE_LOW, IPT_SLOT_STOP2 ) PORT_NAME("Stop 2 (BTN2)")
+	PORT_BIT( 0x0004, IP_ACTIVE_LOW, IPT_SLOT_STOP3 ) PORT_NAME("Stop 3 (BTN3)")
+	PORT_BIT( 0x0008, IP_ACTIVE_LOW, IPT_GAMBLE_BET ) PORT_NAME("Bet (BTN4)")
+	PORT_BIT( 0x0010, IP_ACTIVE_LOW, IPT_OTHER ) PORT_NAME("Unknown (BTN5)") PORT_CODE(KEYCODE_J)
+	PORT_BIT( 0x0020, IP_ACTIVE_LOW, IPT_GAMBLE_KEYOUT ) PORT_NAME("Key Out (BTN6)")
+	PORT_BIT( 0x0040, IP_ACTIVE_LOW, IPT_GAMBLE_PAYOUT ) PORT_NAME("Coin Out (BTN7)")
+	PORT_BIT( 0x0080, IP_ACTIVE_LOW, IPT_MEMORY_RESET )
 	PORT_BIT( 0xff00, IP_ACTIVE_LOW, IPT_UNUSED )
 INPUT_PORTS_END
 
-INTERRUPT_GEN_MEMBER(feversoc_state::feversoc_irq)
+WRITE_LINE_MEMBER(feversoc_state::feversoc_irq)
 {
-	m_maincpu->set_input_line(8, HOLD_LINE );
+	if (state)
+		m_maincpu->set_input_line(8, ASSERT_LINE);
 }
 
-static MACHINE_CONFIG_START( feversoc, feversoc_state )
+void feversoc_state::feversoc_irq_ack(uint16_t data)
+{
+	m_maincpu->set_input_line(8, CLEAR_LINE);
+}
 
+void feversoc_state::machine_start()
+{
+	m_lamps.resolve();
+}
+
+void feversoc_state::feversoc(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu",SH2,MASTER_CLOCK)
-	MCFG_CPU_PROGRAM_MAP(feversoc_map)
-	MCFG_CPU_VBLANK_INT_DRIVER("screen", feversoc_state, feversoc_irq)
+	SH2(config, m_maincpu, MASTER_CLOCK);
+	m_maincpu->set_addrmap(AS_PROGRAM, &feversoc_state::feversoc_map);
 
 	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_REFRESH_RATE(60)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(0))
-	MCFG_SCREEN_SIZE(40*8, 32*8)
-	MCFG_SCREEN_VISIBLE_AREA(0*8, 40*8-1, 0*8, 30*8-1) //dynamic resolution?
-	MCFG_SCREEN_UPDATE_DRIVER(feversoc_state, screen_update_feversoc)
-	MCFG_SCREEN_PALETTE("palette")
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_RASTER));
+	screen.set_refresh_hz(60);
+	screen.set_vblank_time(ATTOSECONDS_IN_USEC(0));
+	screen.set_size(40*8, 32*8);
+	screen.set_visarea(0*8, 40*8-1, 0*8, 30*8-1); //dynamic resolution?
+	screen.set_screen_update(FUNC(feversoc_state::screen_update_feversoc));
+	screen.set_palette(m_palette);
+	screen.screen_vblank().set(FUNC(feversoc_state::feversoc_irq));
 
-	MCFG_GFXDECODE_ADD("gfxdecode", "palette", feversoc)
-	MCFG_PALETTE_ADD("palette", 0x1000)
-	MCFG_PALETTE_FORMAT(xBBBBBGGGGGRRRRR)
-
+	GFXDECODE(config, m_gfxdecode, m_palette, gfx_feversoc);
+	PALETTE(config, m_palette).set_format(palette_device::xBGR_555, 0x1000);
 
 	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_MONO("mono")
-	MCFG_OKIM6295_ADD("oki", MASTER_CLOCK/16, OKIM6295_PIN7_LOW) //pin 7 & frequency not verified (clock should be 28,6363 / n)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.6)
-MACHINE_CONFIG_END
+	SPEAKER(config, "mono").front_center();
+	OKIM6295(config, m_oki, MASTER_CLOCK/16, okim6295_device::PIN7_LOW).add_route(ALL_OUTPUTS, "mono", 0.6); //pin 7 & frequency not verified (clock should be 28,6363 / n)
+
+	EEPROM_93C56_16BIT(config, "eeprom");
+
+	JRC6355E(config, m_rtc, XTAL(32'768));
+
+	NVRAM(config, "nvram", nvram_device::DEFAULT_ALL_0);
+
+	TICKET_DISPENSER(config, m_hopper, attotime::from_msec(60), TICKET_MOTOR_ACTIVE_HIGH, TICKET_STATUS_ACTIVE_HIGH);
+}
 
 /***************************************************************************
 
@@ -279,6 +330,8 @@ MACHINE_CONFIG_END
 
 ***************************************************************************/
 
+// Date of build, as displayed in service mode, is Apr 30 2004/22:44:21.
+// Program ROMs also contain leftover strings and tables from a previous build dated Apr 26 2004/20:25:31.
 ROM_START( feversoc )
 	ROM_REGION32_BE( 0x40000, "maincpu", 0 )
 	ROM_LOAD16_BYTE( "prog0.u0139",   0x00001, 0x20000, CRC(fa699503) SHA1(96a834d4f7d5b764aa51db745afc2cd9a7c9783d) )
@@ -293,16 +346,18 @@ ROM_START( feversoc )
 	ROM_LOAD( "pcm.u0743", 0x00000, 0x80000, CRC(20b0c0e3) SHA1(dcf2f620a8fe695688057dbaf5c431a32a832440) )
 ROM_END
 
-DRIVER_INIT_MEMBER(feversoc_state,feversoc)
+void feversoc_state::init_feversoc()
 {
-	UINT32 *rom = (UINT32 *)memregion("maincpu")->base();
+	uint32_t *rom = (uint32_t *)memregion("maincpu")->base();
 
 	seibuspi_rise11_sprite_decrypt_feversoc(memregion("gfx1")->base(), 0x200000);
 
 	m_maincpu->sh2drc_set_options(SH2DRC_FASTEST_OPTIONS);
 	m_maincpu->sh2drc_add_fastram(0x00000000, 0x0003ffff, 1, rom);
-	m_maincpu->sh2drc_add_fastram(0x02000000, 0x0203dfff, 0, &m_mainram[0]);
+	m_maincpu->sh2drc_add_fastram(0x02000000, 0x0202ffff, 0, &m_mainram1[0]);
+	m_maincpu->sh2drc_add_fastram(0x02030000, 0x02033fff, 0, &m_nvram[0]);
+	m_maincpu->sh2drc_add_fastram(0x02034000, 0x0203dfff, 0, &m_mainram2[0]);
 	m_maincpu->sh2drc_add_fastram(0x0203e000, 0x0203ffff, 0, &m_spriteram[0]);
 }
 
-GAME( 2004, feversoc,  0,       feversoc,  feversoc, feversoc_state,  feversoc, ROT0, "Seibu Kaihatsu", "Fever Soccer", 0 )
+GAME( 2004, feversoc, 0, feversoc, feversoc, feversoc_state, init_feversoc, ROT0, "Seibu Kaihatsu", "Fever Soccer", 0 )

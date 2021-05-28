@@ -1,4 +1,4 @@
-// license:???
+// license:BSD-3-Clause
 // copyright-holders:Steve Baines, Frank Palazzolo
 /***************************************************************************
 
@@ -11,13 +11,7 @@
 
 #include "emu.h"
 #include "includes/starwars.h"
-#include "machine/x2212.h"
 
-
-/* Control select values for ADC_R */
-#define kPitch      0
-#define kYaw        1
-#define kThrust     2
 
 /* Constants for matrix processor operations */
 #define NOP         0x00
@@ -42,62 +36,38 @@ TIMER_CALLBACK_MEMBER(starwars_state::math_run_clear)
 	m_math_run = 0;
 }
 
-
 /*************************************
  *
  *  X2212 nvram store
  *
  *************************************/
 
-WRITE8_MEMBER(starwars_state::starwars_nstore_w)
+void starwars_state::starwars_nstore_w(uint8_t data)
 {
-	machine().device<x2212_device>("x2212")->store(0);
-	machine().device<x2212_device>("x2212")->store(1);
-	machine().device<x2212_device>("x2212")->store(0);
+	m_novram->store(0);
+	m_novram->store(1);
+	m_novram->store(0);
+}
+
+WRITE_LINE_MEMBER(starwars_state::recall_w)
+{
+	m_novram->recall(!state);
 }
 
 /*************************************
  *
- *  Output latch
+ *  Coin counters and LEDs
  *
  *************************************/
 
-WRITE8_MEMBER(starwars_state::starwars_out_w)
+WRITE_LINE_MEMBER(starwars_state::coin1_counter_w)
 {
-	switch (offset & 7)
-	{
-		case 0:     /* Coin counter 1 */
-			coin_counter_w(machine(), 0, data);
-			break;
+	machine().bookkeeping().coin_counter_w(0, state);
+}
 
-		case 1:     /* Coin counter 2 */
-			coin_counter_w(machine(), 1, data);
-			break;
-
-		case 2:     /* LED 3 */
-			set_led_status(machine(), 2, ~data & 0x80);
-			break;
-
-		case 3:     /* LED 2 */
-			set_led_status(machine(), 1, ~data & 0x80);
-			break;
-
-		case 4:     /* bank switch */
-			membank("bank1")->set_entry((data >> 7) & 1);
-			if (m_is_esb)
-				membank("bank2")->set_entry((data >> 7) & 1);
-			break;
-		case 5:     /* reset PRNG */
-			break;
-
-		case 6:     /* LED 1 */
-			set_led_status(machine(), 0, ~data & 0x80);
-			break;
-
-		case 7:     /* NVRAM array recall */
-			machine().device<x2212_device>("x2212")->recall(~data & 0x80);
-			break;
-	}
+WRITE_LINE_MEMBER(starwars_state::coin2_counter_w)
+{
+	machine().bookkeeping().coin_counter_w(1, state);
 }
 
 
@@ -108,39 +78,10 @@ WRITE8_MEMBER(starwars_state::starwars_out_w)
  *
  *************************************/
 
-CUSTOM_INPUT_MEMBER(starwars_state::matrix_flag_r)
+READ_LINE_MEMBER(starwars_state::matrix_flag_r)
 {
 	/* set the matrix processor flag */
 	return m_math_run ? 1 : 0;
-}
-
-
-
-/*************************************
- *
- *  ADC input and control
- *
- *************************************/
-
-READ8_MEMBER(starwars_state::starwars_adc_r)
-{
-	/* pitch */
-	if (m_control_num == kPitch)
-		return ioport("STICKY")->read();
-
-	/* yaw */
-	else if (m_control_num == kYaw)
-		return ioport("STICKX")->read();
-
-	/* default to unused thrust */
-	else
-		return 0;
-}
-
-
-WRITE8_MEMBER(starwars_state::starwars_adc_select_w)
-{
-	m_control_num = offset;
 }
 
 
@@ -153,12 +94,12 @@ WRITE8_MEMBER(starwars_state::starwars_adc_select_w)
 
 void starwars_state::starwars_mproc_init()
 {
-	UINT8 *src = memregion("user2")->base();
+	uint8_t *src = memregion("user2")->base();
 	int cnt, val;
 
-	m_PROM_STR = std::make_unique<UINT8[]>(1024);
-	m_PROM_MAS = std::make_unique<UINT8[]>(1024);
-	m_PROM_AM = std::make_unique<UINT8[]>(1024);
+	m_PROM_STR = std::make_unique<uint8_t[]>(1024);
+	m_PROM_MAS = std::make_unique<uint8_t[]>(1024);
+	m_PROM_AM = std::make_unique<uint8_t[]>(1024);
 
 	for (cnt = 0; cnt < 1024; cnt++)
 	{
@@ -208,8 +149,6 @@ void starwars_state::run_mproc()
 	int MA;
 	int IP15_8, IP7, IP6_0; /* Instruction PROM values */
 	int mptime;
-
-	logerror("Running Matrix Processor...\n");
 
 	mptime = 0;
 	m_math_run = 1;
@@ -318,7 +257,7 @@ void starwars_state::run_mproc()
 			 * takes 33 clock pulses to do a full rotation.
 			 */
 
-			m_ACC += (((INT32)(m_A - m_B) << 1) * m_C) << 1;
+			m_ACC += (((int32_t)(m_A - m_B) << 1) * m_C) << 1;
 
 			/* A and B are sign extended (requred by the ls384). After
 			 * multiplication they just contain the sign.
@@ -363,7 +302,7 @@ void starwars_state::run_mproc()
  *
  *************************************/
 
-READ8_MEMBER(starwars_state::starwars_prng_r)
+uint8_t starwars_state::starwars_prng_r()
 {
 	/*
 	 * The PRNG is a modified 23 bit LFSR. Taps are at 4 and 22 so the
@@ -381,6 +320,10 @@ READ8_MEMBER(starwars_state::starwars_prng_r)
 	return machine().rand();
 }
 
+WRITE_LINE_MEMBER(starwars_state::prng_reset_w)
+{
+}
+
 
 
 /*************************************
@@ -389,19 +332,19 @@ READ8_MEMBER(starwars_state::starwars_prng_r)
  *
  *************************************/
 
-READ8_MEMBER(starwars_state::starwars_div_reh_r)
+uint8_t starwars_state::starwars_div_reh_r()
 {
 	return (m_quotient_shift & 0xff00) >> 8;
 }
 
 
-READ8_MEMBER(starwars_state::starwars_div_rel_r)
+uint8_t starwars_state::starwars_div_rel_r()
 {
 	return m_quotient_shift & 0x00ff;
 }
 
 
-WRITE8_MEMBER(starwars_state::starwars_math_w)
+void starwars_state::starwars_math_w(offs_t offset, uint8_t data)
 {
 	int i;
 
@@ -445,7 +388,7 @@ WRITE8_MEMBER(starwars_state::starwars_math_w)
 			for (i = 1; i < 16; i++)
 			{
 				m_quotient_shift <<= 1;
-				if (((INT32)m_dvd_shift + (m_divisor ^ 0xffff) + 1) & 0x10000)
+				if (((int32_t)m_dvd_shift + (m_divisor ^ 0xffff) + 1) & 0x10000)
 				{
 					m_quotient_shift |= 1;
 					m_dvd_shift = (m_dvd_shift + (m_divisor ^ 0xffff) + 1) << 1;

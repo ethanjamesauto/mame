@@ -1,124 +1,133 @@
-// license:GPL-2.0+
+// license:BSD-3-Clause
 // copyright-holders:Couriersud
 /*
- * nld_7493.c
+ * nld_7493.cpp
+ *
+ *  DM7493: Binary Counters
+ *
+ *          +--------------+
+ *        B |1     ++    14| A
+ *      R01 |2           13| NC
+ *      R02 |3           12| QA
+ *       NC |4    7493   11| QD
+ *      VCC |5           10| GND
+ *       NC |6            9| QB
+ *       NC |7            8| QC
+ *          +--------------+
+ *
+ *          Counter Sequence
+ *
+ *          +-------++----+----+----+----+
+ *          | COUNT || QD | QC | QB | QA |
+ *          +=======++====+====+====+====+
+ *          |    0  ||  0 |  0 |  0 |  0 |
+ *          |    1  ||  0 |  0 |  0 |  1 |
+ *          |    2  ||  0 |  0 |  1 |  0 |
+ *          |    3  ||  0 |  0 |  1 |  1 |
+ *          |    4  ||  0 |  1 |  0 |  0 |
+ *          |    5  ||  0 |  1 |  0 |  1 |
+ *          |    6  ||  0 |  1 |  1 |  0 |
+ *          |    7  ||  0 |  1 |  1 |  1 |
+ *          |    8  ||  1 |  0 |  0 |  0 |
+ *          |    9  ||  1 |  0 |  0 |  1 |
+ *          |   10  ||  1 |  0 |  1 |  0 |
+ *          |   11  ||  1 |  0 |  1 |  1 |
+ *          |   12  ||  1 |  1 |  0 |  0 |
+ *          |   13  ||  1 |  1 |  0 |  1 |
+ *          |   14  ||  1 |  1 |  1 |  0 |
+ *          |   15  ||  1 |  1 |  1 |  1 |
+ *          +-------++----+----+----+----+
+ *
+ *          Note C Output QA is connected to input B
+ *
+ *          Reset Count Function table
+ *
+ *          +-----+-----++----+----+----+----+
+ *          | R01 | R02 || QD | QC | QB | QA |
+ *          +=====+=====++====+====+====+====+
+ *          |  1  |  1  ||  0 |  0 |  0 |  0 |
+ *          |  0  |  X  ||       COUNT       |
+ *          |  X  |  0  ||       COUNT       |
+ *          +-----+-----++----+----+----+----+
+ *
+ *  Naming conventions follow National Semiconductor datasheet
  *
  */
 
-#include "nld_7493.h"
-#include "nl_setup.h"
+#include "nl_base.h"
 
-NETLIB_NAMESPACE_DEVICES_START()
 
-NETLIB_START(7493)
-{
-	register_sub("A", A);
-	register_sub("B", B);
-	register_sub("C", C);
-	register_sub("D", D);
+namespace netlist::devices {
 
-	register_subalias("CLKA", A.m_I);
-	register_subalias("CLKB", B.m_I);
-	register_input("R1",  m_R1);
-	register_input("R2",  m_R2);
+	static constexpr std::array<netlist_time, 3> out_delay { NLTIME_FROM_NS(18), NLTIME_FROM_NS(36), NLTIME_FROM_NS(54) };
 
-	register_subalias("QA", A.m_Q);
-	register_subalias("QB", B.m_Q);
-	register_subalias("QC", C.m_Q);
-	register_subalias("QD", D.m_Q);
-
-	connect_late(C.m_I, B.m_Q);
-	connect_late(D.m_I, C.m_Q);
-}
-
-NETLIB_RESET(7493)
-{
-	A.do_reset();
-	B.do_reset();
-	C.do_reset();
-	D.do_reset();
-}
-
-NETLIB_START(7493ff)
-{
-	register_input("CLK", m_I);
-	register_output("Q", m_Q);
-
-	save(NLNAME(m_reset));
-	save(NLNAME(m_state));
-}
-
-NETLIB_RESET(7493ff)
-{
-	m_reset = 1;
-	m_state = 0;
-	m_I.set_state(logic_t::STATE_INP_HL);
-}
-
-NETLIB_UPDATE(7493ff)
-{
-	const netlist_time out_delay = NLTIME_FROM_NS(18);
-	if (m_reset != 0)
+	NETLIB_OBJECT(7493)
 	{
-		m_state ^= 1;
-		OUTLOGIC(m_Q, m_state, out_delay);
-	}
-}
+		NETLIB_CONSTRUCTOR(7493)
+		, m_CLKA(*this, "CLKA", NETLIB_DELEGATE(updA))
+		, m_CLKB(*this, "CLKB", NETLIB_DELEGATE(updB))
+		, m_QA(*this, "QA")
+		, m_QB(*this, {"QB", "QC", "QD"})
+		, m_a(*this, "m_a", 0)
+		, m_bcd(*this, "m_b", 0)
+		, m_R1(*this, "R1", NETLIB_DELEGATE(inputs))
+		, m_R2(*this, "R2", NETLIB_DELEGATE(inputs))
+		, m_power_pins(*this)
+		{
+		}
 
-NETLIB_UPDATE(7493)
-{
-	const netlist_sig_t r = INPLOGIC(m_R1) & INPLOGIC(m_R2);
+	private:
+		NETLIB_RESETI()
+		{
+			m_a = m_bcd = 0;
+			m_CLKA.set_state(logic_t::STATE_INP_HL);
+			m_CLKB.set_state(logic_t::STATE_INP_HL);
+		}
 
-	if (r)
-	{
-		A.m_I.inactivate();
-		B.m_I.inactivate();
-		OUTLOGIC(A.m_Q, 0, NLTIME_FROM_NS(40));
-		OUTLOGIC(B.m_Q, 0, NLTIME_FROM_NS(40));
-		OUTLOGIC(C.m_Q, 0, NLTIME_FROM_NS(40));
-		OUTLOGIC(D.m_Q, 0, NLTIME_FROM_NS(40));
-		A.m_reset = B.m_reset = C.m_reset = D.m_reset = 0;
-		A.m_state = B.m_state = C.m_state = D.m_state = 0;
-	}
-	else
-	{
-		A.m_I.activate_hl();
-		B.m_I.activate_hl();
-		A.m_reset = B.m_reset = C.m_reset = D.m_reset = 1;
-	}
-}
+		NETLIB_HANDLERI(inputs)
+		{
+			if (!(m_R1() && m_R2()))
+			{
+				m_CLKA.activate_hl();
+				m_CLKB.activate_hl();
+			}
+			else
+			{
+				m_CLKA.inactivate();
+				m_CLKB.inactivate();
+				m_QA.push(0, NLTIME_FROM_NS(40));
+				m_QB.push(0, NLTIME_FROM_NS(40));
+				m_a = m_bcd = 0;
+			}
+		}
 
-NETLIB_START(7493_dip)
-{
-	NETLIB_NAME(7493)::start();
+		NETLIB_HANDLERI(updA)
+		{
+			m_a ^= 1;
+			m_QA.push(m_a, out_delay[0]);
+		}
 
-	register_subalias("1", B.m_I);
-	register_subalias("2", m_R1);
-	register_subalias("3", m_R2);
+		NETLIB_HANDLERI(updB)
+		{
+			const auto cnt(++m_bcd &= 0x07);
+			m_QB.push(cnt, out_delay);
+		}
 
-	// register_subalias("4", ); --> NC
-	// register_subalias("5", ); --> VCC
-	// register_subalias("6", ); --> NC
-	// register_subalias("7", ); --> NC
+		logic_input_t m_CLKA;
+		logic_input_t m_CLKB;
 
-	register_subalias("8", C.m_Q);
-	register_subalias("9", B.m_Q);
-	// register_subalias("10", ); --> GND
-	register_subalias("11", D.m_Q);
-	register_subalias("12", A.m_Q);
-	// register_subalias("13", ); --> NC
-	register_subalias("14", A.m_I);
-}
+		logic_output_t m_QA;
+		object_array_t<logic_output_t, 3> m_QB;
 
+		state_var<unsigned> m_a;
+		state_var<unsigned> m_bcd;
 
-NETLIB_UPDATE(7493_dip)
-{
-	NETLIB_NAME(7493)::update();
-}
+		logic_input_t m_R1;
+		logic_input_t m_R2;
 
-NETLIB_RESET(7493_dip)
-{
-	NETLIB_NAME(7493)::reset();
-}
+		nld_power_pins m_power_pins;
+	};
 
-NETLIB_NAMESPACE_DEVICES_END()
+	NETLIB_DEVICE_IMPL(7493,        "TTL_7493", "+CLKA,+CLKB,+R1,+R2,@VCC,@GND")
+
+} // namespace netlist::devices

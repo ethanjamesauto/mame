@@ -3,28 +3,25 @@
 
 
 #include "emu.h"
-#include "cpu/upd7810/upd7810.h"
-#include "sound/speaker.h"
-#include "bus/generic/carts.h"
 #include "includes/gamepock.h"
-#include "rendlay.h"
+
+#include "bus/generic/carts.h"
+#include "cpu/upd7810/upd7810.h"
+
+#include "emupal.h"
+#include "screen.h"
 #include "softlist.h"
-
-static ADDRESS_MAP_START(gamepock_mem, AS_PROGRAM, 8, gamepock_state)
-	ADDRESS_MAP_UNMAP_HIGH
-	AM_RANGE(0x0000,0x0fff) AM_ROM
-	AM_RANGE(0x1000,0x3fff) AM_NOP
-	//AM_RANGE(0x4000,0xbfff) AM_ROM        // mapped by the cartslot
-	AM_RANGE(0xc000,0xc7ff) AM_MIRROR(0x0800) AM_RAM
-	AM_RANGE(0xff80,0xffff) AM_RAM              /* 128 bytes microcontroller RAM */
-ADDRESS_MAP_END
+#include "speaker.h"
 
 
-static ADDRESS_MAP_START(gamepock_io, AS_IO, 8, gamepock_state )
-	AM_RANGE( 0x00, 0x00 ) AM_WRITE( port_a_w )
-	AM_RANGE( 0x01, 0x01 ) AM_READWRITE( port_b_r, port_b_w )
-	AM_RANGE( 0x02, 0x02 ) AM_READ( port_c_r )
-ADDRESS_MAP_END
+void gamepock_state::gamepock_mem(address_map &map)
+{
+	map.unmap_value_high();
+	map(0x0000, 0x0fff).rom();
+	map(0x1000, 0x3fff).noprw();
+	//map(0x4000,0xbfff).rom();        // mapped by the cartslot
+	map(0xc000, 0xc7ff).mirror(0x0800).ram();
+}
 
 
 static INPUT_PORTS_START( gamepock )
@@ -44,34 +41,35 @@ static INPUT_PORTS_START( gamepock )
 INPUT_PORTS_END
 
 
-static MACHINE_CONFIG_START( gamepock, gamepock_state )
-	MCFG_CPU_ADD("maincpu", UPD78C06, XTAL_6MHz)    /* uPD78C06AG */
-	MCFG_CPU_PROGRAM_MAP( gamepock_mem)
-	MCFG_CPU_IO_MAP( gamepock_io)
-	MCFG_UPD7810_TO(WRITELINE(gamepock_state,gamepock_to_w))
+void gamepock_state::gamepock(machine_config &config)
+{
+	upd78c06_device &upd(UPD78C06(config, m_maincpu, 6_MHz_XTAL)); // uPD78C06AG
+	upd.set_addrmap(AS_PROGRAM, &gamepock_state::gamepock_mem);
+	upd.pa_out_cb().set(FUNC(gamepock_state::port_a_w));
+	upd.pb_in_cb().set(FUNC(gamepock_state::port_b_r));
+	upd.pb_out_cb().set(FUNC(gamepock_state::port_b_w));
+	upd.pc_in_cb().set(FUNC(gamepock_state::port_c_r));
+	upd.to_func().set(FUNC(gamepock_state::gamepock_to_w));
 
-	MCFG_SCREEN_ADD("screen", LCD)
-	MCFG_SCREEN_REFRESH_RATE( 60 )
-	MCFG_SCREEN_SIZE( 75, 64 )
-	MCFG_SCREEN_VISIBLE_AREA( 0, 74, 0, 63 )
-	MCFG_SCREEN_UPDATE_DRIVER(gamepock_state, screen_update_gamepock)
-	MCFG_SCREEN_PALETTE("palette")
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_LCD));
+	screen.set_refresh_hz(60);
+	screen.set_size(75, 64);
+	screen.set_visarea(0, 74, 0, 63);
+	screen.set_screen_update(FUNC(gamepock_state::screen_update_gamepock));
+	screen.set_palette("palette");
 
-	MCFG_DEFAULT_LAYOUT(layout_lcd)
-
-	MCFG_PALETTE_ADD_BLACK_AND_WHITE("palette")
+	PALETTE(config, "palette", palette_device::MONOCHROME);
 
 	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_MONO("mono")
-	MCFG_SOUND_ADD("speaker", SPEAKER_SOUND, 0)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.50)
+	SPEAKER(config, "mono").front_center();
+	SPEAKER_SOUND(config, m_speaker).add_route(ALL_OUTPUTS, "mono", 0.50);
 
 	/* cartridge */
-	MCFG_GENERIC_CARTSLOT_ADD("cartslot", generic_plain_slot, "gamepock_cart")
+	GENERIC_CARTSLOT(config, m_cart, generic_plain_slot, "gamepock_cart");
 
 	/* Software lists */
-	MCFG_SOFTWARE_LIST_ADD("cart_list","gamepock")
-MACHINE_CONFIG_END
+	SOFTWARE_LIST(config, "cart_list").set_original("gamepock");
+}
 
 
 ROM_START( gamepock )
@@ -80,4 +78,4 @@ ROM_START( gamepock )
 ROM_END
 
 
-CONS( 1984, gamepock, 0, 0, gamepock, gamepock, driver_device, 0, "Epoch", "Game Pocket Computer", 0 )
+CONS( 1984, gamepock, 0, 0, gamepock, gamepock, gamepock_state, empty_init, "Epoch", "Game Pocket Computer", 0 )

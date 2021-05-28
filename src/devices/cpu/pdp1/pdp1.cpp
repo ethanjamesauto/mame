@@ -15,7 +15,7 @@
  * mid-instruction sequence break.  And it enables us to emulate the control panel fairly
  * accurately.
  *
- * Additionnally, IOT functions have been modified to be external: IOT callback pointers are set
+ * Additionally, IOT functions have been modified to be external: IOT callback pointers are set
  * at emulation initiation, and most IOT callback functions are part of the machine emulation.
  *
  *
@@ -342,13 +342,14 @@
 #include "emu.h"
 #include "debugger.h"
 #include "pdp1.h"
+#include "pdp1dasm.h"
 
 #define LOG 0
 #define LOG_EXTRA 0
 #define LOG_IOT_EXTRA 0
 
-#define READ_PDP_18BIT(A) ((signed)m_program->read_dword((A)<<2))
-#define WRITE_PDP_18BIT(A,V) (m_program->write_dword((A)<<2,(V)))
+#define READ_PDP_18BIT(A) ((signed)m_program->read_dword(A))
+#define WRITE_PDP_18BIT(A,V) (m_program->write_dword((A),(V)))
 
 
 #define PC      m_pc
@@ -377,45 +378,47 @@
 #define PREVIOUS_PC     ((PC & ADDRESS_EXTENSION_MASK) | ((PC-1) & BASE_ADDRESS_MASK))
 
 
-const device_type PDP1 = &device_creator<pdp1_device>;
+DEFINE_DEVICE_TYPE(PDP1, pdp1_device, "pdp1_cpu", "DEC PDP-1 Central Processor")
 
 
-pdp1_device::pdp1_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: cpu_device(mconfig, PDP1, "PDP1", tag, owner, clock, "pdp1_cpu", __FILE__)
-	, m_program_config("program", ENDIANNESS_BIG, 32, 18, 0)
+pdp1_device::pdp1_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: cpu_device(mconfig, PDP1, tag, owner, clock)
+	, m_program_config("program", ENDIANNESS_BIG, 32, 18, -2) // data is actually 18 bits wide
+	, m_extern_iot(*this)
+	, m_io_sc_callback(*this)
+	, m_program(nullptr)
+	, m_reset_param(nullptr)
 {
-	m_is_octal = true;
+	m_program_config.m_is_octal = true;
 }
 
+device_memory_interface::space_config_vector pdp1_device::memory_space_config() const
+{
+	return space_config_vector {
+		std::make_pair(AS_PROGRAM, &m_program_config)
+	};
+}
 
 void pdp1_device::device_config_complete()
 {
 	// inherit a copy of the static data
-	const pdp1_reset_param_t *intf = reinterpret_cast<const pdp1_reset_param_t *>(static_config());
+	const pdp1_reset_param_t *intf = m_reset_param;
 	if (intf != nullptr)
 		*static_cast<pdp1_reset_param_t *>(this) = *intf;
 
 	// or initialize to defaults if none provided
 	else
 	{
-		memset(&read_binary_word, 0, sizeof(read_binary_word));
-		memset(&io_sc_callback, 0, sizeof(io_sc_callback));
 		extend_support = 0;
 		hw_mul_div = 0;
 		type_20_sbs = 0;
-
-		for (auto & elem : extern_iot)
-		{
-			memset(&elem, 0, sizeof(elem));
-		}
 	}
 }
 
 
-offs_t pdp1_device::disasm_disassemble(char *buffer, offs_t pc, const UINT8 *oprom, const UINT8 *opram, UINT32 options)
+std::unique_ptr<util::disasm_interface> pdp1_device::create_disassembler()
 {
-	extern CPU_DISASSEMBLE( pdp1 );
-	return CPU_DISASSEMBLE_NAME(pdp1)(this, buffer, pc, oprom, opram, options);
+	return std::make_unique<pdp1_disassembler>();
 }
 
 
@@ -425,7 +428,7 @@ offs_t pdp1_device::disasm_disassemble(char *buffer, offs_t pc, const UINT8 *opr
     There are several interrupt lines.  With the standard sequence break system, all lines
     are logically or'ed to trigger a single interrupt level.  Interrupts can be triggered
     by either a pulse or a level on the interrupt lines.  With the optional type 120 sequence
-    break system, each of 16 lines triggers is wired to a different priority level: additionnally,
+    break system, each of 16 lines triggers is wired to a different priority level: additionally,
     each interrupt line can be masked out, and interrupt can be triggered through software.
 
     Also, instructions can be interrupted in the middle of execution.  This is done by
@@ -489,34 +492,6 @@ void pdp1_device::execute_set_input(int irqline, int state)
 }
 
 
-static void null_iot(device_t *device, int op2, int nac, int mb, int *io, int ac)
-{
-	pdp1_device *pdp1 = dynamic_cast<pdp1_device*>(device);
-
-	pdp1->pdp1_null_iot(op2, nac, mb, io, ac);
-}
-
-static void lem_eem_iot(device_t *device, int op2, int nac, int mb, int *io, int ac)
-{
-	pdp1_device *pdp1 = dynamic_cast<pdp1_device*>(device);
-
-	pdp1->pdp1_lem_eem_iot(op2, nac, mb, io, ac);
-}
-
-static void sbs_iot(device_t *device, int op2, int nac, int mb, int *io, int ac)
-{
-	pdp1_device *pdp1 = dynamic_cast<pdp1_device*>(device);
-
-	pdp1->pdp1_sbs_iot(op2, nac, mb, io, ac);
-}
-
-static void type_20_sbs_iot(device_t *device, int op2, int nac, int mb, int *io, int ac)
-{
-	pdp1_device *pdp1 = dynamic_cast<pdp1_device*>(device);
-
-	pdp1->pdp1_type_20_sbs_iot(op2, nac, mb, io, ac);
-}
-
 void pdp1_device::device_start()
 {
 	int i;
@@ -563,12 +538,11 @@ void pdp1_device::device_start()
 	/* set up params and callbacks */
 	for (i=0; i<64; i++)
 	{
-		m_extern_iot[i] = (extern_iot[i])
-										? extern_iot[i]
-										: null_iot;
+		m_extern_iot[i].resolve();
+		if (m_extern_iot[i].isnull())
+			m_extern_iot[i] = iot_delegate(*this, FUNC(pdp1_device::null_iot));
 	}
-	m_read_binary_word = read_binary_word;
-	m_io_sc_callback = io_sc_callback;
+	m_io_sc_callback.resolve();
 	m_extend_support = extend_support;
 	m_hw_mul_div = hw_mul_div;
 	m_type_20_sbs = type_20_sbs;
@@ -577,6 +551,7 @@ void pdp1_device::device_start()
 	{
 	default:
 		m_extend_support = 0;
+		[[fallthrough]];
 	case 0:     /* no extension */
 		m_extended_address_mask = 07777;
 		m_address_extension_mask = 00000;
@@ -593,13 +568,13 @@ void pdp1_device::device_start()
 
 	if (m_extend_support)
 	{
-		m_extern_iot[074] = lem_eem_iot;
+		m_extern_iot[074] = iot_delegate(*this, FUNC(pdp1_device::lem_eem_iot));
 	}
-	m_extern_iot[054] = m_extern_iot[055] = m_extern_iot[056] = sbs_iot;
+	m_extern_iot[054] = m_extern_iot[055] = m_extern_iot[056] = iot_delegate(*this, FUNC(pdp1_device::sbs_iot));
 	if (m_type_20_sbs)
 	{
 		m_extern_iot[050] = m_extern_iot[051] = m_extern_iot[052] = m_extern_iot[053]
-				= type_20_sbs_iot;
+				= iot_delegate(*this, FUNC(pdp1_device::type_20_sbs_iot));
 	}
 
 	state_add( PDP1_PC,        "PC", m_pc).formatstr("%06O");
@@ -640,9 +615,10 @@ void pdp1_device::device_start()
 	state_add( PDP1_IOS,       "IOS", m_ios).mask(1).formatstr("%1X");
 
 	state_add( STATE_GENPC, "GENPC", m_pc ).noshow();
+	state_add( STATE_GENPCBASE, "CURPC", m_pc ).noshow();
 	state_add( STATE_GENFLAGS, "GENFLAGS", m_pf ).formatstr("%13s").noshow();
 
-	m_icountptr = &m_icount;
+	set_icountptr(m_icount);
 
 	/* reset CPU flip-flops */
 	pulse_start_clear();
@@ -737,12 +713,12 @@ void pdp1_device::state_export(const device_state_entry &entry)
 }
 
 
-void pdp1_device::state_string_export(const device_state_entry &entry, std::string &str)
+void pdp1_device::state_string_export(const device_state_entry &entry, std::string &str) const
 {
 	switch (entry.index())
 	{
 		case STATE_GENFLAGS:
-			strprintf(str, "%c%c%c%c%c%c-%c%c%c%c%c%c",
+			str = string_format("%c%c%c%c%c%c-%c%c%c%c%c%c",
 					(FLAGS & 040) ? '1' : '.',
 					(FLAGS & 020) ? '2' : '.',
 					(FLAGS & 010) ? '3' : '.',
@@ -771,7 +747,7 @@ void pdp1_device::device_reset()
       except cal and jda, and with the addition of jmp and jsp)
     * 2 for memory reference instructions
 */
-static const UINT8 instruction_kind[32] =
+static const uint8_t instruction_kind[32] =
 {
 /*      and ior xor xct         cal/jda */
 	0,  3,  3,  3,  3,  0,  0,  2,
@@ -789,9 +765,6 @@ void pdp1_device::execute_run()
 {
 	do
 	{
-		debugger_instruction_hook(this, PC);
-
-
 		/* ioh should be cleared at the end of the instruction cycle, and ios at the
 		start of next instruction cycle, but who cares? */
 		if (m_ioh && m_ios)
@@ -801,15 +774,19 @@ void pdp1_device::execute_run()
 
 
 		if ((! m_run) && (! m_rim))
+		{
+			debugger_instruction_hook(PC);
 			m_icount = 0;   /* if processor is stopped, just burn cycles */
+		}
 		else if (m_rim)
 		{
 			switch (m_rim_step)
 			{
 			case 0:
 				/* read first word as instruction */
-				if (m_read_binary_word)
-					(*m_read_binary_word)(this);        /* data will be transferred to IO register */
+				MB = 0;
+				/* data will be transferred to IO register in response to RPB */
+				m_extern_iot[2](2, 1, MB, IO, AC);
 				m_rim_step = 1;
 				m_ios = 0;
 				break;
@@ -834,9 +811,9 @@ void pdp1_device::execute_run()
 					}
 					else if ((IR == DIO) || (IR == DAC))    /* dio or dac instruction ? */
 					{   /* there is a discrepancy: the pdp1 handbook tells that only dio should be used,
-                        but the lisp tape uses the dac instruction instead */
+					    but the lisp tape uses the dac instruction instead */
 						/* Yet maintenance manual p. 6-25 states clearly that the data is located
-						in IO and transfered to MB, so DAC is likely to be a mistake. */
+						in IO and transferred to MB, so DAC is likely to be a mistake. */
 						m_rim_step = 2;
 					}
 					else
@@ -853,8 +830,8 @@ void pdp1_device::execute_run()
 
 			case 2:
 				/* read second word as data */
-				if (m_read_binary_word)
-					(*m_read_binary_word)(this);        /* data will be transferred to IO register */
+				/* data will be transferred to IO register in response to RPB */
+				m_extern_iot[2](2, 1, MB, IO, AC);
 				m_rim_step = 3;
 				m_ios = 0;
 				break;
@@ -933,6 +910,7 @@ void pdp1_device::execute_run()
 
 				if (! m_cycle)
 				{   /* no instruction in progress: time to fetch a new instruction, I guess */
+					debugger_instruction_hook(PC);
 					MB = READ_PDP_18BIT(MA = PC);
 					INCREMENT_PC;
 					IR = MB >> 13;      /* basic opcode */
@@ -1122,9 +1100,9 @@ void pdp1_device::execute_instruction()
 		}
 	case SUB:       /* Subtract */
 		{   /* maintenance manual 7-14 seems to imply that substract does not test for -0.
-              The sim 2.3 source says so explicitely, though they do not give a reference.
-              It sounds a bit weird, but the reason is probably that doing so would
-              require additionnal logic that does not exist. */
+		      The sim 2.3 source says so explicitely, though they do not give a reference.
+		      It sounds a bit weird, but the reason is probably that doing so would
+		      require additional logic that does not exist. */
 			/* overflow is set if the 2 operands have the same sign and the final result has another */
 			int ov2;    /* 1 if the operands have the same sign*/
 
@@ -1251,7 +1229,7 @@ void pdp1_device::execute_instruction()
 			/* As a side note, the order of -0 detection and overflow checking does not matter,
 			because the sum of two positive number cannot give 0777777 (since positive
 			numbers are 0377777 at most, their sum is 0777776 at most).
-			Additionnally, we cannot have carry set and a result equal to 0777777  (since numbers
+			Additionally, we cannot have carry set and a result equal to 0777777  (since numbers
 			are 0777777 at most, their sum is 01777776 at most): this is nice, because it makes
 			the sequence:
 			    AC = (AC + (AC >> 18)) & 0777777;   // propagate carry around
@@ -1557,7 +1535,7 @@ void pdp1_device::execute_instruction()
 		{   /* IOT with IO wait */
 			if (m_ioc)
 			{   /* the iot command line is pulsed only if ioc is asserted */
-				(*m_extern_iot[MB & 0000077])(this, MB & 0000077, (MB & 0004000) == 0, MB, &IO, AC);
+				m_extern_iot[MB & 0000077](MB & 0000077, (MB & 0004000) == 0, MB, IO, AC);
 
 				m_ioh = 1;  /* enable io wait */
 
@@ -1580,7 +1558,7 @@ void pdp1_device::execute_instruction()
 		}
 		else
 		{   /* IOT with no IO wait */
-			(*m_extern_iot[MB & 0000077])(this, MB & 0000077, (MB & 0004000) != 0, MB, &IO, AC);
+			m_extern_iot[MB & 0000077](MB & 0000077, (MB & 0004000) != 0, MB, IO, AC);
 		}
 		break;
 	case OPR:       /* Operate Instruction Group */
@@ -1632,7 +1610,7 @@ no_fetch:
 /*
     Handle unimplemented IOT
 */
-void pdp1_device::pdp1_null_iot(int op2, int nac, int mb, int *io, int ac)
+void pdp1_device::null_iot(int op2, int nac, int mb, int &io, int ac)
 {
 	/* Note that the dummy IOT 0 is used to wait for the completion pulse
 	generated by the a pending IOT (IOT with completion pulse but no IO wait) */
@@ -1654,7 +1632,7 @@ void pdp1_device::pdp1_null_iot(int op2, int nac, int mb, int *io, int ac)
 
     IOT 74: LEM/EEM
 */
-void pdp1_device::pdp1_lem_eem_iot(int op2, int nac, int mb, int *io, int ac)
+void pdp1_device::lem_eem_iot(int op2, int nac, int mb, int &io, int ac)
 {
 	if (! m_extend_support) /* extend mode supported? */
 	{
@@ -1677,7 +1655,7 @@ void pdp1_device::pdp1_lem_eem_iot(int op2, int nac, int mb, int *io, int ac)
     IOT 55: esm
     IOT 56: cbs
 */
-void pdp1_device::pdp1_sbs_iot(int op2, int nac, int mb, int *io, int ac)
+void pdp1_device::sbs_iot(int op2, int nac, int mb, int &io, int ac)
 {
 	switch (op2)
 	{
@@ -1720,7 +1698,7 @@ void pdp1_device::pdp1_sbs_iot(int op2, int nac, int mb, int *io, int ac)
     IOT 52: isb
     IOT 53: cac
 */
-void pdp1_device::pdp1_type_20_sbs_iot(int op2, int nac, int mb, int *io, int ac)
+void pdp1_device::type_20_sbs_iot(int op2, int nac, int mb, int &io, int ac)
 {
 	int channel, mask;
 	if (! m_type_20_sbs)    /* type 20 sequence break system supported? */
@@ -1813,6 +1791,6 @@ void pdp1_device::pulse_start_clear()
 	field_interrupt();
 
 	/* now, we kindly ask IO devices to reset, too */
-	if (m_io_sc_callback)
-		(*m_io_sc_callback)(this);
+	if (!m_io_sc_callback.isnull())
+		m_io_sc_callback();
 }

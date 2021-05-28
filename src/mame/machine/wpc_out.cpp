@@ -4,10 +4,10 @@
 #include "emu.h"
 #include "wpc_out.h"
 
-const device_type WPC_OUT = &device_creator<wpc_out_device>;
+DEFINE_DEVICE_TYPE(WPC_OUT, wpc_out_device, "wpc_out", "Williams Pinball Controller Output Control")
 
-wpc_out_device::wpc_out_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock) :
-	device_t(mconfig, WPC_OUT, "Williams Pinball Controller Output Control", tag, owner, clock, "wpc_out", __FILE__)
+wpc_out_device::wpc_out_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock) :
+	device_t(mconfig, WPC_OUT, tag, owner, clock)
 {
 	names = nullptr;
 }
@@ -35,7 +35,7 @@ void wpc_out_device::gi_update()
 {
 	attotime now = machine().time();
 	attotime delta = now - previous_gi_update;
-	UINT32 delta_us = delta.as_ticks(1e6);
+	uint32_t delta_us = delta.as_ticks(1e6);
 	for(int i=0; i<gi_count; i++)
 		if(gi & (1 <<i))
 			gi_time[i] += delta_us;
@@ -55,16 +55,16 @@ void wpc_out_device::send_output(int sid, int state)
 		sprintf(buffer, "u:output %02d", sid);
 		name = buffer;
 	}
-	output_set_value(name, state);
+	machine().output().set_value(name, state);
 
 	if(sid == 41)
-		coin_counter_w(machine(), 0, state);
+		machine().bookkeeping().coin_counter_w(0, state);
 }
 
-WRITE8_MEMBER(wpc_out_device::out_w)
+void wpc_out_device::out_w(offs_t offset, uint8_t data)
 {
 	first_after_led = false;
-	UINT8 diff = state[offset] ^ data;
+	uint8_t diff = state[offset] ^ data;
 	state[offset] = data;
 	if(diff)
 		for(int i=0; i<8; i++)
@@ -90,14 +90,14 @@ WRITE8_MEMBER(wpc_out_device::out_w)
 			}
 }
 
-WRITE8_MEMBER(wpc_out_device::out4_w)
+void wpc_out_device::out4_w(uint8_t data)
 {
 	// This is gross, probably wrong, but also the best I could find.
 	// Test case is No Good Gofers (ngg_13).
-	out_w(space, first_after_led ? 5 : 4, data, mem_mask);
+	out_w(first_after_led ? 5 : 4, data);
 }
 
-WRITE8_MEMBER(wpc_out_device::gi_w)
+void wpc_out_device::gi_w(uint8_t data)
 {
 	gi_update();
 	if((gi^data) & 0x80)
@@ -105,10 +105,10 @@ WRITE8_MEMBER(wpc_out_device::gi_w)
 	gi = data;
 }
 
-WRITE8_MEMBER(wpc_out_device::led_w)
+void wpc_out_device::led_w(uint8_t data)
 {
 	first_after_led = true;
-	output_set_value("L:cpu led", data & 0x80 ? 1 : 0);
+	machine().output().set_value("L:cpu led", data & 0x80 ? 1 : 0);
 }
 
 void wpc_out_device::device_start()

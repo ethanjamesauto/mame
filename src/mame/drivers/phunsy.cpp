@@ -28,49 +28,57 @@
 
 #include "emu.h"
 #include "cpu/s2650/s2650.h"
-#include "machine/keyboard.h"
-#include "sound/speaker.h"
 #include "imagedev/cassette.h"
-#include "sound/wave.h"
 #include "imagedev/snapquik.h"
+#include "machine/keyboard.h"
+#include "sound/spkrdev.h"
+#include "emupal.h"
+#include "screen.h"
+#include "speaker.h"
 
 
 #define LOG 1
-
-#define KEYBOARD_TAG "keyboard"
 
 class phunsy_state : public driver_device
 {
 public:
 	phunsy_state(const machine_config &mconfig, device_type type, const char *tag)
-		: driver_device(mconfig, type, tag),
-		m_maincpu(*this, "maincpu"),
-		m_speaker(*this, "speaker"),
-		m_cass(*this, "cassette"),
-		m_p_videoram(*this, "videoram")
+		: driver_device(mconfig, type, tag)
+		, m_maincpu(*this, "maincpu")
+		, m_speaker(*this, "speaker")
+		, m_cass(*this, "cassette")
+		, m_p_videoram(*this, "videoram")
+		, m_p_chargen(*this, "chargen")
 	{
 	}
 
-	DECLARE_DRIVER_INIT(phunsy);
-	DECLARE_READ8_MEMBER( phunsy_data_r );
-	DECLARE_WRITE8_MEMBER( phunsy_ctrl_w );
-	DECLARE_WRITE8_MEMBER( phunsy_data_w );
-	DECLARE_WRITE8_MEMBER( kbd_put );
-	DECLARE_READ8_MEMBER(cass_r);
-	DECLARE_WRITE_LINE_MEMBER(cass_w);
-	DECLARE_QUICKLOAD_LOAD_MEMBER(phunsy);
-	DECLARE_PALETTE_INIT(phunsy);
-	UINT32 screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
+	void phunsy(machine_config &config);
+
+	void init_phunsy();
+
 private:
-	const UINT8 *m_p_chargen;
-	UINT8       m_data_out;
-	UINT8       m_keyboard_input;
+	uint8_t phunsy_data_r();
+	void phunsy_ctrl_w(uint8_t data);
+	void phunsy_data_w(uint8_t data);
+	void kbd_put(u8 data);
+	DECLARE_READ_LINE_MEMBER(cass_r);
+	DECLARE_WRITE_LINE_MEMBER(cass_w);
+	DECLARE_QUICKLOAD_LOAD_MEMBER(quickload_cb);
+	void phunsy_palette(palette_device &palette) const;
+	uint32_t screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
+
+	void phunsy_data(address_map &map);
+	void phunsy_io(address_map &map);
+	void phunsy_mem(address_map &map);
+
+	uint8_t       m_data_out;
+	uint8_t       m_keyboard_input;
 	virtual void machine_reset() override;
-	virtual void video_start() override;
-	required_device<cpu_device> m_maincpu;
+	required_device<s2650_device> m_maincpu;
 	required_device<speaker_sound_device> m_speaker;
 	required_device<cassette_image_device> m_cass;
-	required_shared_ptr<UINT8> m_p_videoram;
+	required_shared_ptr<uint8_t> m_p_videoram;
+	required_region_ptr<u8> m_p_chargen;
 };
 
 
@@ -79,29 +87,35 @@ WRITE_LINE_MEMBER( phunsy_state::cass_w )
 	m_cass->output(state ? -1.0 : +1.0);
 }
 
-READ8_MEMBER( phunsy_state::cass_r )
+READ_LINE_MEMBER(phunsy_state::cass_r)
 {
 	return (m_cass->input() > 0.03) ? 0 : 1;
 }
 
-static ADDRESS_MAP_START( phunsy_mem, AS_PROGRAM, 8, phunsy_state )
-	AM_RANGE(0x0000, 0x07ff) AM_ROM AM_REGION("roms", 0)
-	AM_RANGE(0x0800, 0x0fff) AM_RAM
-	AM_RANGE(0x1000, 0x17ff) AM_RAM AM_SHARE("videoram") // Video RAM
-	AM_RANGE(0x1800, 0x1fff) AM_READ_BANK("bankru") AM_WRITE_BANK("bankwu") // Banked RAM/ROM
-	AM_RANGE(0x2000, 0x3fff) AM_RAM
-	AM_RANGE(0x4000, 0x7fff) AM_RAMBANK("bankq") // Banked RAM
-ADDRESS_MAP_END
+void phunsy_state::phunsy_mem(address_map &map)
+{
+	map(0x0000, 0x07ff).rom().region("roms", 0);
+	map(0x0800, 0x0fff).ram();
+	map(0x1000, 0x17ff).ram().share("videoram"); // Video RAM
+	map(0x1800, 0x1fff).bankr("bankru").bankw("bankwu"); // Banked RAM/ROM
+	map(0x2000, 0x3fff).ram();
+	map(0x4000, 0x7fff).bankrw("bankq"); // Banked RAM
+}
 
-static ADDRESS_MAP_START( phunsy_io, AS_IO, 8, phunsy_state )
-	ADDRESS_MAP_UNMAP_HIGH
-	AM_RANGE( S2650_CTRL_PORT, S2650_CTRL_PORT ) AM_WRITE( phunsy_ctrl_w )
-	AM_RANGE( S2650_DATA_PORT,S2650_DATA_PORT) AM_READWRITE( phunsy_data_r, phunsy_data_w )
-	AM_RANGE(S2650_SENSE_PORT, S2650_SENSE_PORT) AM_READ(cass_r)
-ADDRESS_MAP_END
+void phunsy_state::phunsy_io(address_map &map)
+{
+	map.unmap_value_high();
+}
+
+void phunsy_state::phunsy_data(address_map &map)
+{
+	map.unmap_value_high();
+	map(S2650_CTRL_PORT, S2650_CTRL_PORT).w(FUNC(phunsy_state::phunsy_ctrl_w));
+	map(S2650_DATA_PORT, S2650_DATA_PORT).rw(FUNC(phunsy_state::phunsy_data_r), FUNC(phunsy_state::phunsy_data_w));
+}
 
 
-WRITE8_MEMBER( phunsy_state::phunsy_ctrl_w )
+void phunsy_state::phunsy_ctrl_w(uint8_t data)
 {
 	if (LOG)
 		logerror("%s: phunsy_ctrl_w %02x\n", machine().describe_context(), data);
@@ -117,7 +131,7 @@ WRITE8_MEMBER( phunsy_state::phunsy_ctrl_w )
 }
 
 
-WRITE8_MEMBER( phunsy_state::phunsy_data_w )
+void phunsy_state::phunsy_data_w(uint8_t data)
 {
 	if (LOG)
 		logerror("%s: phunsy_data_w %02x\n", machine().describe_context(), data);
@@ -142,9 +156,9 @@ WRITE8_MEMBER( phunsy_state::phunsy_data_w )
 }
 
 
-READ8_MEMBER( phunsy_state::phunsy_data_r )
+uint8_t phunsy_state::phunsy_data_r()
 {
-	UINT8 data = 0xff;
+	uint8_t data = 0xff;
 
 	//if (LOG)
 		//logerror("%s: phunsy_data_r\n", machine().describe_context());
@@ -179,7 +193,7 @@ static INPUT_PORTS_START( phunsy )
 INPUT_PORTS_END
 
 
-WRITE8_MEMBER( phunsy_state::kbd_put )
+void phunsy_state::kbd_put(u8 data)
 {
 	if (data)
 		m_keyboard_input = data;
@@ -195,38 +209,28 @@ void phunsy_state::machine_reset()
 }
 
 
-PALETTE_INIT_MEMBER(phunsy_state, phunsy)
+void phunsy_state::phunsy_palette(palette_device &palette) const
 {
-	for ( int i = 0; i < 8; i++ )
-	{
-		int j = ( i << 5 ) | ( i << 2 ) | ( i >> 1 );
-
-		palette.set_pen_color( i, j, j, j );
-	}
+	for (int i = 0; i < 8; i++)
+		palette.set_pen_color(i, pal3bit(i), pal3bit(i), pal3bit(i));
 }
 
 
-void phunsy_state::video_start()
+uint32_t phunsy_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
-	m_p_chargen = memregion( "chargen" )->base();
-}
+	uint16_t sy=0,ma=0;
 
-
-UINT32 phunsy_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
-{
-	UINT8 y,ra,chr,gfx,col;
-	UINT16 sy=0,ma=0,x;
-
-	for (y = 0; y < 32; y++)
+	for (uint8_t y = 0; y < 32; y++)
 	{
-		for (ra = 0; ra < 8; ra++)
+		for (uint8_t ra = 0; ra < 8; ra++)
 		{
-			UINT16 *p = &bitmap.pix16(sy++);
+			uint16_t *p = &bitmap.pix(sy++);
 
-			for (x = ma; x < ma+64; x++)
+			for (uint16_t x = ma; x < ma+64; x++)
 			{
-				chr = m_p_videoram[x];
+				uint8_t const chr = m_p_videoram[x];
 
+				uint8_t gfx,col;
 				if (BIT(chr, 7))
 				{
 					/* Graphics mode */
@@ -272,18 +276,18 @@ static const gfx_layout phunsy_charlayout =
 	8*8                 /* every char takes 8 bytes */
 };
 
-static GFXDECODE_START( phunsy )
+static GFXDECODE_START( gfx_phunsy )
 	GFXDECODE_ENTRY( "chargen", 0x0000, phunsy_charlayout, 1, 3 )
 GFXDECODE_END
 
 // quickloads can start from various addresses, and the files have no header.
-QUICKLOAD_LOAD_MEMBER( phunsy_state, phunsy )
+QUICKLOAD_LOAD_MEMBER(phunsy_state::quickload_cb)
 {
 	address_space &space = m_maincpu->space(AS_PROGRAM);
-	UINT16 i;
-	UINT16 quick_addr = 0x1800;
-	dynamic_buffer quick_data;
-	int result = IMAGE_INIT_FAIL;
+	uint16_t i;
+	uint16_t quick_addr = 0x1800;
+	std::vector<uint8_t> quick_data;
+	image_init_result result = image_init_result::FAIL;
 	int quick_length = image.length();
 	if (quick_length > 0x4000)
 	{
@@ -295,7 +299,7 @@ QUICKLOAD_LOAD_MEMBER( phunsy_state, phunsy )
 		quick_data.resize(quick_length);
 		membank("bankru")->set_entry(0); // point at ram
 
-		UINT16 exec_addr = quick_addr + 2;
+		uint16_t exec_addr = quick_addr + 2;
 
 		for (i = 0; i < quick_length; i++)
 			space.write_byte(i+quick_addr, quick_data[i]);
@@ -310,17 +314,17 @@ QUICKLOAD_LOAD_MEMBER( phunsy_state, phunsy )
 		m_maincpu->set_state_int(S2650_R3, 0x83);
 		m_maincpu->set_state_int(S2650_PC, exec_addr);
 
-		result = IMAGE_INIT_PASS;
+		result = image_init_result::PASS;
 	}
 
 	return result;
 }
 
-DRIVER_INIT_MEMBER( phunsy_state, phunsy )
+void phunsy_state::init_phunsy()
 {
-	UINT8 *main = memregion("maincpu")->base();
-	UINT8 *roms = memregion("roms")->base();
-	UINT8 *ram = memregion("ram_4000")->base();
+	uint8_t *main = memregion("maincpu")->base();
+	uint8_t *roms = memregion("roms")->base();
+	uint8_t *ram = memregion("ram_4000")->base();
 
 	membank("bankru")->configure_entry(0, &main[0x1800]);
 	membank("bankwu")->configure_entry(0, &main[0x1800]);
@@ -332,44 +336,45 @@ DRIVER_INIT_MEMBER( phunsy_state, phunsy )
 	membank("bankq")->set_entry(0);
 }
 
-static MACHINE_CONFIG_START( phunsy, phunsy_state )
+void phunsy_state::phunsy(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu",S2650, XTAL_1MHz)
-	MCFG_CPU_PROGRAM_MAP(phunsy_mem)
-	MCFG_CPU_IO_MAP(phunsy_io)
-	MCFG_S2650_FLAG_HANDLER(WRITELINE(phunsy_state, cass_w))
+	S2650(config, m_maincpu, XTAL(1'000'000));
+	m_maincpu->set_addrmap(AS_PROGRAM, &phunsy_state::phunsy_mem);
+	m_maincpu->set_addrmap(AS_IO, &phunsy_state::phunsy_io);
+	m_maincpu->set_addrmap(AS_DATA, &phunsy_state::phunsy_data);
+	m_maincpu->sense_handler().set(FUNC(phunsy_state::cass_r));
+	m_maincpu->flag_handler().set(FUNC(phunsy_state::cass_w));
 
 	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_RASTER));
 	/* Display (page 12 of pdf)
 	   - 8Mhz clock
 	   - 64 6 pixel characters on a line.
 	   - 16us not active, 48us active: ( 64 * 6 ) * 60 / 48 => 480 pixels wide
 	   - 313 line display of which 256 are displayed.
 	*/
-	MCFG_SCREEN_RAW_PARAMS(XTAL_8MHz, 480, 0, 64*6, 313, 0, 256)
-	MCFG_SCREEN_UPDATE_DRIVER(phunsy_state, screen_update)
-	MCFG_SCREEN_PALETTE("palette")
+	screen.set_raw(XTAL(8'000'000), 480, 0, 64*6, 313, 0, 256);
+	screen.set_screen_update(FUNC(phunsy_state::screen_update));
+	screen.set_palette("palette");
 
-	MCFG_GFXDECODE_ADD("gfxdecode", "palette", phunsy)
-	MCFG_PALETTE_ADD("palette", 8)
-	MCFG_PALETTE_INIT_OWNER(phunsy_state, phunsy)
+	GFXDECODE(config, "gfxdecode", "palette", gfx_phunsy);
+	PALETTE(config, "palette", FUNC(phunsy_state::phunsy_palette), 8);
 
 	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_MONO("mono")
-	MCFG_SOUND_WAVE_ADD(WAVE_TAG, "cassette")
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.25)
-	MCFG_SOUND_ADD("speaker", SPEAKER_SOUND, 0)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.50)
+	SPEAKER(config, "mono").front_center();
+	SPEAKER_SOUND(config, m_speaker).add_route(ALL_OUTPUTS, "mono", 0.50);
 
 	/* Devices */
-	MCFG_DEVICE_ADD(KEYBOARD_TAG, GENERIC_KEYBOARD, 0)
-	MCFG_GENERIC_KEYBOARD_CB(WRITE8(phunsy_state, kbd_put))
-	MCFG_CASSETTE_ADD( "cassette" )
+	generic_keyboard_device &keyboard(GENERIC_KEYBOARD(config, "keyboard", 0));
+	keyboard.set_keyboard_callback(FUNC(phunsy_state::kbd_put));
+
+	CASSETTE(config, m_cass);
+	m_cass->add_route(ALL_OUTPUTS, "mono", 0.05);
 
 	/* quickload */
-	MCFG_QUICKLOAD_ADD("quickload", phunsy_state, phunsy, "bin", 2)
-MACHINE_CONFIG_END
+	QUICKLOAD(config, "quickload", "bin", attotime::from_seconds(2)).set_load_callback(FUNC(phunsy_state::quickload_cb));
+}
 
 
 /* ROM definition */
@@ -394,5 +399,5 @@ ROM_END
 
 /* Driver */
 
-/*    YEAR  NAME    PARENT  COMPAT   MACHINE    INPUT   CLASS          INIT         COMPANY        FULLNAME       FLAGS */
-COMP( 1980, phunsy, 0,      0,       phunsy,    phunsy, phunsy_state,  phunsy, "J.F.P. Philipse", "PHUNSY", MACHINE_NOT_WORKING )
+/*    YEAR  NAME    PARENT  COMPAT  MACHINE  INPUT   CLASS         INIT         COMPANY            FULLNAME  FLAGS */
+COMP( 1980, phunsy, 0,      0,      phunsy,  phunsy, phunsy_state, init_phunsy, "J.F.P. Philipse", "PHUNSY", MACHINE_NOT_WORKING )

@@ -2,12 +2,11 @@
 // copyright-holders:Aaron Giles
 //============================================================
 //
-//  winmenu.c - Win32 OSD core dummy menu implementation
+//  winmenu.cpp - Win32 OSD core dummy menu implementation
 //
 //============================================================
 
 // standard windows headers
-#define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
 #include "emu.h"

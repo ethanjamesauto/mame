@@ -1,4 +1,4 @@
-// license:LGPL-2.1+
+// license:BSD-3-Clause
 // copyright-holders:Tomasz Slanina
 /*******************************************
 
@@ -21,10 +21,70 @@ Dips verified for Neratte Chu (nratechu) from manual
 #include "emu.h"
 #include "cpu/v810/v810.h"
 #include "cpu/z80/z80.h"
-#include "sound/st0016.h"
-#include "includes/simple_st0016.h"
 #include "machine/st0016.h"
+#include "machine/timer.h"
+#include "sound/st0016.h"
+#include "screen.h"
 
+
+namespace {
+
+class st0016_state : public driver_device
+{
+public:
+	st0016_state(const machine_config &mconfig, device_type type, const char *tag)
+		: driver_device(mconfig, type, tag),
+		m_maincpu(*this,"maincpu"),
+		m_subcpu(*this, "sub"),
+		m_screen(*this, "screen"),
+		m_mainbank(*this, "mainbank"),
+		m_system(*this, "SYSTEM"),
+		m_dsw(*this, "DSW%u", 1U)
+	{ }
+
+	void st0016(machine_config &config);
+	void renju(machine_config &config);
+	void mayjinsn(machine_config &config);
+
+	void init_nratechu();
+	void init_mayjinsn();
+	void init_mayjisn2();
+	void init_renju();
+
+protected:
+	virtual void machine_start() override;
+
+private:
+	uint8_t m_mux_port;
+	uint32_t m_latches[8];
+
+	required_device<st0016_cpu_device> m_maincpu;
+	optional_device<cpu_device> m_subcpu;
+	required_device<screen_device> m_screen;
+
+	required_memory_bank m_mainbank;
+
+	required_ioport m_system;
+	required_ioport_array<2> m_dsw;
+
+	uint8_t mux_r();
+	void mux_select_w(uint8_t data);
+	uint32_t latch32_r(offs_t offset);
+	void latch32_w(offs_t offset, uint32_t data, uint32_t mem_mask = ~0);
+	uint8_t latch8_r(offs_t offset);
+	void latch8_w(offs_t offset, uint8_t data);
+
+	void rom_bank_w(uint8_t data);
+
+	uint32_t screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
+	TIMER_DEVICE_CALLBACK_MEMBER(interrupt);
+
+	void renju_mem(address_map &map);
+	void st0016_io(address_map &map);
+	void st0016_m2_io(address_map &map);
+	void st0016_mem(address_map &map);
+	void v810_mem(address_map &map);
+};
 
 
 /*************************************
@@ -35,69 +95,77 @@ Dips verified for Neratte Chu (nratechu) from manual
 
 void st0016_state::machine_start()
 {
-	membank("bank1")->configure_entries(0, 256, memregion("maincpu")->base(), 0x4000);
+	m_mainbank->configure_entries(0, 256, memregion("maincpu")->base(), 0x4000);
+
+	m_mux_port = 0;
+	std::fill(std::begin(m_latches), std::end(m_latches), 0);
+
+	save_item(NAME(m_mux_port));
+	save_item(NAME(m_latches));
 }
 
-static ADDRESS_MAP_START( st0016_mem, AS_PROGRAM, 8, st0016_state )
-	AM_RANGE(0x0000, 0x7fff) AM_ROM
-	AM_RANGE(0x8000, 0xbfff) AM_ROMBANK("bank1")
-	AM_RANGE(0xe000, 0xe7ff) AM_RAM
-	AM_RANGE(0xe800, 0xe87f) AM_RAM /* common ram */
-	AM_RANGE(0xf000, 0xffff) AM_RAM /* work ram */
-ADDRESS_MAP_END
+void st0016_state::st0016_mem(address_map &map)
+{
+	map(0x0000, 0x7fff).rom();
+	map(0x8000, 0xbfff).bankr(m_mainbank);
+	map(0xe000, 0xe7ff).ram();
+	map(0xe800, 0xe87f).ram(); // common ram
+	map(0xf000, 0xffff).ram(); // work ram
+}
 
-static ADDRESS_MAP_START( renju_mem, AS_PROGRAM, 8, st0016_state )
-	AM_RANGE(0x0000, 0x7fff) AM_ROM AM_REGION("maincpu", 0x200000 )
-	AM_IMPORT_FROM( st0016_mem )
-ADDRESS_MAP_END
+void st0016_state::renju_mem(address_map &map)
+{
+	st0016_mem(map);
+	map(0x0000, 0x7fff).rom().region("maincpu", 0x200000);
+}
 
 
-READ8_MEMBER(st0016_state::mux_r)
+uint8_t st0016_state::mux_r()
 {
 /*
     76543210
         xxxx - input port #2
     xxxx     - dip switches (2x8 bits) (multiplexed)
 */
-	int retval = ioport("SYSTEM")->read() & 0x0f;
+	int retval = m_system->read() & 0x0f;
 
-	switch(mux_port & 0x30)
+	switch(m_mux_port & 0x30)
 	{
-		case 0x00: retval |= ((ioport("DSW1")->read() & 1) << 4) | ((ioport("DSW1")->read() & 0x10) << 1)
-								| ((ioport("DSW2")->read() & 1) << 6) | ((ioport("DSW2")->read() & 0x10) <<3); break;
-		case 0x10: retval |= ((ioport("DSW1")->read() & 2) << 3) | ((ioport("DSW1")->read() & 0x20)   )
-								| ((ioport("DSW2")->read() & 2) << 5) | ((ioport("DSW2")->read() & 0x20) <<2); break;
-		case 0x20: retval |= ((ioport("DSW1")->read() & 4) << 2) | ((ioport("DSW1")->read() & 0x40) >> 1)
-								| ((ioport("DSW2")->read() & 4) << 4) | ((ioport("DSW2")->read() & 0x40) <<1); break;
-		case 0x30: retval |= ((ioport("DSW1")->read() & 8) << 1) | ((ioport("DSW1")->read() & 0x80) >> 2)
-								| ((ioport("DSW2")->read() & 8) << 3) | ((ioport("DSW2")->read() & 0x80)    ); break;
+		case 0x00: retval |= ((m_dsw[0]->read() & 1) << 4) | ((m_dsw[0]->read() & 0x10) << 1)
+								| ((m_dsw[1]->read() & 1) << 6) | ((m_dsw[1]->read() & 0x10) <<3); break;
+		case 0x10: retval |= ((m_dsw[0]->read() & 2) << 3) | ((m_dsw[0]->read() & 0x20)   )
+								| ((m_dsw[1]->read() & 2) << 5) | ((m_dsw[1]->read() & 0x20) <<2); break;
+		case 0x20: retval |= ((m_dsw[0]->read() & 4) << 2) | ((m_dsw[0]->read() & 0x40) >> 1)
+								| ((m_dsw[1]->read() & 4) << 4) | ((m_dsw[1]->read() & 0x40) <<1); break;
+		case 0x30: retval |= ((m_dsw[0]->read() & 8) << 1) | ((m_dsw[0]->read() & 0x80) >> 2)
+								| ((m_dsw[1]->read() & 8) << 3) | ((m_dsw[1]->read() & 0x80)    ); break;
 	}
 
 	return retval;
 }
 
-WRITE8_MEMBER(st0016_state::mux_select_w)
+void st0016_state::mux_select_w(uint8_t data)
 {
-	mux_port=data;
+	m_mux_port = data;
 }
 
-WRITE8_MEMBER(st0016_state::st0016_rom_bank_w)
+void st0016_state::rom_bank_w(uint8_t data)
 {
-	membank("bank1")->set_entry(data);
-	// st0016_rom_bank = data;
+	m_mainbank->set_entry(data);
 }
 
-static ADDRESS_MAP_START( st0016_io, AS_IO, 8, st0016_state )
-	ADDRESS_MAP_GLOBAL_MASK(0xff)
-	AM_RANGE(0xc0, 0xc0) AM_READ_PORT("P1") AM_WRITE(mux_select_w)
-	AM_RANGE(0xc1, 0xc1) AM_READ_PORT("P2") AM_WRITENOP
-	AM_RANGE(0xc2, 0xc2) AM_READ(mux_r) AM_WRITENOP
-	AM_RANGE(0xc3, 0xc3) AM_READ_PORT("P2") AM_WRITENOP
-	AM_RANGE(0xe0, 0xe0) AM_WRITENOP /* renju = $40, neratte = 0 */
-	AM_RANGE(0xe1, 0xe1) AM_WRITE(st0016_rom_bank_w)
-	AM_RANGE(0xe6, 0xe6) AM_WRITENOP /* banking ? ram bank ? shared rambank ? */
-	AM_RANGE(0xe7, 0xe7) AM_WRITENOP /* watchdog */
-ADDRESS_MAP_END
+void st0016_state::st0016_io(address_map &map)
+{
+	map.global_mask(0xff);
+	map(0xc0, 0xc0).portr("P1").w(FUNC(st0016_state::mux_select_w));
+	map(0xc1, 0xc1).portr("P2").nopw();
+	map(0xc2, 0xc2).r(FUNC(st0016_state::mux_r)).nopw();
+	map(0xc3, 0xc3).portr("P2").nopw();
+	map(0xe0, 0xe0).nopw(); // renju = $40, neratte = 0
+	map(0xe1, 0xe1).w(FUNC(st0016_state::rom_bank_w));
+	map(0xe6, 0xe6).nopw(); // banking ? ram bank ? shared rambank ?
+	map(0xe7, 0xe7).nopw(); // watchdog
+}
 
 
 /*************************************
@@ -106,58 +174,58 @@ ADDRESS_MAP_END
  *
  *************************************/
 
-static UINT32 latches[8];
-
-READ32_MEMBER(st0016_state::latch32_r)
+uint32_t st0016_state::latch32_r(offs_t offset)
 {
 	if(!offset)
-		latches[2]&=~2;
-	return latches[offset];
+		m_latches[2] &= ~2;
+	return m_latches[offset];
 }
 
-WRITE32_MEMBER(st0016_state::latch32_w)
+void st0016_state::latch32_w(offs_t offset, uint32_t data, uint32_t mem_mask)
 {
 	if(!offset)
-		latches[2]|=1;
-	COMBINE_DATA(&latches[offset]);
+		m_latches[2] |= 1;
+	COMBINE_DATA(&m_latches[offset]);
 	machine().scheduler().synchronize();
 }
 
-READ8_MEMBER(st0016_state::latch8_r)
+uint8_t st0016_state::latch8_r(offs_t offset)
 {
 	if(!offset)
-		latches[2]&=~1;
-	return latches[offset];
+		m_latches[2] &= ~1;
+	return m_latches[offset];
 }
 
-WRITE8_MEMBER(st0016_state::latch8_w)
+void st0016_state::latch8_w(offs_t offset, uint8_t data)
 {
 	if(!offset)
-		latches[2]|=2;
-	latches[offset]=data;
+		m_latches[2] |= 2;
+	m_latches[offset] = data;
 	machine().scheduler().synchronize();
 }
 
-static ADDRESS_MAP_START( v810_mem,AS_PROGRAM, 32, st0016_state )
-	AM_RANGE(0x00000000, 0x0001ffff) AM_RAM
-	AM_RANGE(0x80000000, 0x8001ffff) AM_RAM
-	AM_RANGE(0xc0000000, 0xc001ffff) AM_RAM
-	AM_RANGE(0x40000000, 0x4000000f) AM_READ(latch32_r) AM_WRITE(latch32_w)
-	AM_RANGE(0xfff80000, 0xffffffff) AM_ROMBANK("bank2")
-ADDRESS_MAP_END
+void st0016_state::v810_mem(address_map &map)
+{
+	map(0x00000000, 0x0001ffff).ram();
+	map(0x80000000, 0x8001ffff).ram();
+	map(0xc0000000, 0xc001ffff).ram();
+	map(0x40000000, 0x4000000f).r(FUNC(st0016_state::latch32_r)).w(FUNC(st0016_state::latch32_w));
+	map(0xfff80000, 0xffffffff).rom().region("sub", 0);
+}
 
-static ADDRESS_MAP_START( st0016_m2_io, AS_IO, 8, st0016_state )
-	ADDRESS_MAP_GLOBAL_MASK(0xff)
-	AM_RANGE(0xc0, 0xc3) AM_READ(latch8_r) AM_WRITE(latch8_w)
-	AM_RANGE(0xd0, 0xd0) AM_READ_PORT("P1") AM_WRITE(mux_select_w)
-	AM_RANGE(0xd1, 0xd1) AM_READ_PORT("P2") AM_WRITENOP
-	AM_RANGE(0xd2, 0xd2) AM_READ(mux_r) AM_WRITENOP
-	AM_RANGE(0xd3, 0xd3) AM_READ_PORT("P2") AM_WRITENOP
-	AM_RANGE(0xe0, 0xe0) AM_WRITENOP
-	AM_RANGE(0xe1, 0xe1) AM_WRITE(st0016_rom_bank_w)
-	AM_RANGE(0xe6, 0xe6) AM_WRITENOP /* banking ? ram bank ? shared rambank ? */
-	AM_RANGE(0xe7, 0xe7) AM_WRITENOP /* watchdog */
-ADDRESS_MAP_END
+void st0016_state::st0016_m2_io(address_map &map)
+{
+	map.global_mask(0xff);
+	map(0xc0, 0xc3).r(FUNC(st0016_state::latch8_r)).w(FUNC(st0016_state::latch8_w));
+	map(0xd0, 0xd0).portr("P1").w(FUNC(st0016_state::mux_select_w));
+	map(0xd1, 0xd1).portr("P2").nopw();
+	map(0xd2, 0xd2).r(FUNC(st0016_state::mux_r)).nopw();
+	map(0xd3, 0xd3).portr("P2").nopw();
+	map(0xe0, 0xe0).nopw();
+	map(0xe1, 0xe1).w(FUNC(st0016_state::rom_bank_w));
+	map(0xe6, 0xe6).nopw(); // banking ? ram bank ? shared rambank ?
+	map(0xe7, 0xe7).nopw(); // watchdog
+}
 
 /*************************************
  *
@@ -192,7 +260,7 @@ static INPUT_PORTS_START( st0016 )
 	PORT_SERVICE( 0x08, IP_ACTIVE_LOW)
 
 	PORT_START("UNK")
-	PORT_BIT( 0xff, IP_ACTIVE_LOW, IPT_UNKNOWN ) /* unused ? */
+	PORT_BIT( 0xff, IP_ACTIVE_LOW, IPT_UNKNOWN ) // unused ?
 
 	PORT_START("DSW1")
 	PORT_DIPUNKNOWN_DIPLOC( 0x01, IP_ACTIVE_LOW, "SW1:1" )
@@ -228,7 +296,7 @@ static INPUT_PORTS_START( renju )
 	PORT_BIT( 0x04, IP_ACTIVE_LOW, IPT_SERVICE1 )
 	PORT_BIT( 0x08, IP_ACTIVE_LOW, IPT_UNKNOWN )
 
-	PORT_MODIFY("DSW1") /* Dip switch A  */
+	PORT_MODIFY("DSW1") // Dip switch A
 	PORT_DIPNAME( 0x02, 0x02, DEF_STR( Flip_Screen ) ) PORT_DIPLOCATION("SW1:2")
 	PORT_DIPSETTING(    0x02, DEF_STR( Off ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
@@ -247,7 +315,7 @@ static INPUT_PORTS_START( renju )
 	PORT_DIPSETTING(    0x00, DEF_STR( 2C_3C ) )
 	PORT_DIPSETTING(    0x80, DEF_STR( 1C_2C ) )
 
-	PORT_MODIFY("DSW2") /* Dip switch B */
+	PORT_MODIFY("DSW2") // Dip switch B
 	PORT_DIPNAME( 0x03, 0x03, DEF_STR( Difficulty ) ) PORT_DIPLOCATION("SW2:1,2")
 	PORT_DIPSETTING(    0x00, DEF_STR( Very_Hard ) )
 	PORT_DIPSETTING(    0x01, DEF_STR( Hard ) )
@@ -267,7 +335,7 @@ static INPUT_PORTS_START( koikois )
 	PORT_BIT( 0x04, IP_ACTIVE_LOW, IPT_SERVICE1 )
 	PORT_BIT( 0x08, IP_ACTIVE_LOW, IPT_UNKNOWN )
 
-	PORT_MODIFY("DSW1") /* Dip switch A  */
+	PORT_MODIFY("DSW1") // Dip switch A
 	PORT_DIPNAME( 0x01, 0x01, DEF_STR( Unknown ) ) PORT_DIPLOCATION("SW1:1")
 	PORT_DIPSETTING(    0x01, DEF_STR( Off ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
@@ -287,7 +355,7 @@ static INPUT_PORTS_START( koikois )
 	PORT_DIPSETTING(    0x00, "Majyan Panel" )
 	PORT_DIPSETTING(    0x40, DEF_STR( Joystick ) )
 
-	PORT_MODIFY("DSW2") /* Dip switch B */
+	PORT_MODIFY("DSW2") // Dip switch B
 	PORT_DIPNAME( 0x03, 0x03, DEF_STR( Difficulty ) ) PORT_DIPLOCATION("SW2:1,2")
 	PORT_DIPSETTING(    0x00, DEF_STR( Very_Hard ) )
 	PORT_DIPSETTING(    0x01, DEF_STR( Hard ) )
@@ -302,7 +370,7 @@ static INPUT_PORTS_START( nratechu )
 	PORT_BIT( 0x04, IP_ACTIVE_LOW, IPT_SERVICE1 )
 	PORT_BIT( 0x08, IP_ACTIVE_LOW, IPT_UNKNOWN )
 
-	PORT_MODIFY("DSW1") /* Dip switch A  */
+	PORT_MODIFY("DSW1") // Dip switch A
 	PORT_DIPNAME( 0x07, 0x07, DEF_STR( Coinage ) ) PORT_DIPLOCATION("SW1:1,2,3")
 	PORT_DIPSETTING(    0x00, DEF_STR( 5C_1C ) )
 	PORT_DIPSETTING(    0x01, DEF_STR( 4C_1C ) )
@@ -322,7 +390,7 @@ static INPUT_PORTS_START( nratechu )
 	PORT_DIPSETTING(    0x00, DEF_STR( English ) )
 	PORT_DIPSETTING(    0x80, DEF_STR( Japanese ) )
 
-	PORT_MODIFY("DSW2") /* Dip switch B */
+	PORT_MODIFY("DSW2") // Dip switch B
 	PORT_DIPNAME( 0x03, 0x03, DEF_STR( Difficulty ) ) PORT_DIPLOCATION("SW2:1,2") //  speed / time..
 	PORT_DIPSETTING(    0x02, DEF_STR( Easy ) )
 	PORT_DIPSETTING(    0x03, DEF_STR( Normal ))
@@ -349,7 +417,7 @@ static INPUT_PORTS_START( mayjisn2 )
 	PORT_MODIFY("SYSTEM")
 	PORT_BIT( 0x04, IP_ACTIVE_LOW, IPT_UNKNOWN )
 
-	PORT_MODIFY("DSW1") /* Dip switch A  */
+	PORT_MODIFY("DSW1") // Dip switch A
 	PORT_DIPNAME( 0x07, 0x07, DEF_STR( Coinage ) ) PORT_DIPLOCATION("SW1:1,2,3")
 	PORT_DIPSETTING(    0x01, DEF_STR( 4C_1C ) )
 	PORT_DIPSETTING(    0x02, DEF_STR( 3C_1C ) )
@@ -364,7 +432,7 @@ static INPUT_PORTS_START( mayjisn2 )
 	PORT_DIPSETTING(    0x18, "4:00" )
 	PORT_DIPSETTING(    0x10, "3:00" )
 
-	PORT_MODIFY("DSW2") /* Dip switch B */
+	PORT_MODIFY("DSW2") // Dip switch B
 	PORT_DIPNAME( 0x18, 0x18, "Music in Game"  ) PORT_DIPLOCATION("SW2:4,5")
 	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
 	PORT_DIPSETTING(    0x08, "Remixed" )
@@ -436,15 +504,15 @@ static INPUT_PORTS_START( gostop )
 INPUT_PORTS_END
 
 
-TIMER_DEVICE_CALLBACK_MEMBER(st0016_state::st0016_int)
+TIMER_DEVICE_CALLBACK_MEMBER(st0016_state::interrupt)
 {
 	int scanline = param;
 
-	if(scanline == 240)
-		m_maincpu->set_input_line(0,HOLD_LINE);
-	else if((scanline % 64) == 0)
-		if(m_maincpu->state_int(Z80_IFF1)) /* dirty hack ... */
-			m_maincpu->set_input_line(INPUT_LINE_NMI, PULSE_LINE );
+	if (scanline == 240)
+		m_maincpu->set_input_line(0, HOLD_LINE);
+	else if ((scanline % 64) == 0)
+		if (m_maincpu->state_int(Z80_IFF1)) // dirty hack ...
+			m_maincpu->pulse_input_line(INPUT_LINE_NMI, attotime::zero);
 }
 
 
@@ -456,51 +524,55 @@ TIMER_DEVICE_CALLBACK_MEMBER(st0016_state::st0016_int)
  *
  *************************************/
 
-UINT32 st0016_state::screen_update_st0016(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t st0016_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
-	return m_maincpu->update(screen,bitmap,cliprect);
+	return m_maincpu->update(screen, bitmap, cliprect);
 }
 
 
-static MACHINE_CONFIG_START( st0016, st0016_state )
-	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu",ST0016_CPU,8000000) /* 8 MHz ? */
-	MCFG_CPU_PROGRAM_MAP(st0016_mem)
-	MCFG_CPU_IO_MAP(st0016_io)
-	MCFG_TIMER_DRIVER_ADD_SCANLINE("scantimer", st0016_state, st0016_int, "screen", 0, 1)
+void st0016_state::st0016(machine_config &config)
+{
+	// basic machine hardware
+	ST0016_CPU(config, m_maincpu, 8000000); // 8 MHz ?
+	m_maincpu->set_addrmap(AS_PROGRAM, &st0016_state::st0016_mem);
+	m_maincpu->set_addrmap(AS_IO, &st0016_state::st0016_io);
 
-	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_REFRESH_RATE(60)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(0))
-	MCFG_SCREEN_SIZE(48*8, 48*8)
-	MCFG_SCREEN_VISIBLE_AREA(0*8, 48*8-1, 0*8, 48*8-1)
-	MCFG_SCREEN_UPDATE_DRIVER(st0016_state, screen_update_st0016)
-	MCFG_SCREEN_PALETTE("maincpu:palette")
+	TIMER(config, "scantimer").configure_scanline(FUNC(st0016_state::interrupt), "screen", 0, 1);
 
+	// video hardware
+	SCREEN(config, m_screen, SCREEN_TYPE_RASTER);
+	m_screen->set_refresh_hz(60);
+	m_screen->set_vblank_time(ATTOSECONDS_IN_USEC(0));
+	m_screen->set_size(48*8, 48*8);
+	m_screen->set_visarea(0*8, 48*8-1, 0*8, 48*8-1);
+	m_screen->set_screen_update(FUNC(st0016_state::screen_update));
+	m_screen->set_palette("maincpu:palette");
+}
 
-//  MCFG_VIDEO_START_OVERRIDE(st0016_state,st0016)
+void st0016_state::mayjinsn(machine_config &config)
+{
+	st0016(config);
 
-MACHINE_CONFIG_END
+	m_maincpu->set_addrmap(AS_IO, &st0016_state::st0016_m2_io);
 
-static MACHINE_CONFIG_DERIVED( mayjinsn, st0016 )
-	MCFG_CPU_MODIFY("maincpu")
-	MCFG_CPU_IO_MAP(st0016_m2_io)
-	MCFG_CPU_ADD("sub", V810, 10000000)//25 Mhz ?
-	MCFG_CPU_PROGRAM_MAP(v810_mem)
-	MCFG_QUANTUM_TIME(attotime::from_hz(60))
-MACHINE_CONFIG_END
+	V810(config, m_subcpu, 10000000); //25 Mhz ?
+	m_subcpu->set_addrmap(AS_PROGRAM, &st0016_state::v810_mem);
 
-static MACHINE_CONFIG_DERIVED( renju, st0016 )
-	MCFG_CPU_MODIFY("maincpu")
-	MCFG_CPU_PROGRAM_MAP(renju_mem)
-MACHINE_CONFIG_END
+	config.set_maximum_quantum(attotime::from_hz(60));
+}
+
+void st0016_state::renju(machine_config &config)
+{
+	st0016(config);
+	m_maincpu->set_addrmap(AS_PROGRAM, &st0016_state::renju_mem);
+}
 
 /*************************************
  *
  *  ROM definition(s)
  *
  *************************************/
+
 /*
 Renjyu Kizoku
 Visco, 1994
@@ -516,8 +588,8 @@ E51-00001-A
 |J        74273                      |
 |A        74273            42.9545MHz|
 |M                                   |
-|M        74245         UNKNOWN      |
-|A        74245          QFP208      |
+|M        74245        *ST-0016      |
+|A        74245         TC6210AF     |
 |         74245                      |
 |         74245                 48MHz|
 |                                    |
@@ -528,38 +600,38 @@ E51-00001-A
 |------------------------------------|
 
 Note:
-      Unknown QFP (surface scratched off) is the CPU
-        + GFX generator - it's possibly NEC V70/V810
+ *ST-0016: was surface scratched to hide its identity on PCB E51-00001-A
+           On similar PCBs, the chip was unaltered
 */
 
-ROM_START( renju )
+ROM_START( renju ) // PCB E51-00001-A
 	ROM_REGION( 0x280000, "maincpu", 0 )
-	ROM_LOAD( "renjyu-1.u31",0x000000, 0x200000, CRC(e0fdbe9b) SHA1(52d31024d1a88b8fcca1f87366fcaf80e3c387a1) )
-	ROM_LOAD( "rnj2.u32",    0x200000, 0x080000, CRC(2015289c) SHA1(5223b6d3dbe4657cd63cf5b527eaab84cf23587a ) )
+	ROM_LOAD( "renjyu-1.u31", 0x000000, 0x200000, CRC(e0fdbe9b) SHA1(52d31024d1a88b8fcca1f87366fcaf80e3c387a1) )
+	ROM_LOAD( "rnj2.u32",     0x200000, 0x080000, CRC(2015289c) SHA1(5223b6d3dbe4657cd63cf5b527eaab84cf23587a) )
 ROM_END
 
-ROM_START( nratechu )
+ROM_START( nratechu ) // PCB E56-00002 (almost identical to above)
 	ROM_REGION( 0x200000, "maincpu", 0 )
-	ROM_LOAD( "sx012-01",   0x000000, 0x080000, CRC(6ca01d57) SHA1(065848f19ecf2dc1f7bbc7ddd87bca502e4b8b16) )
-	ROM_LOAD( "sx012-02",   0x100000, 0x100000, CRC(40a4e354) SHA1(8120ce8deee6805050a5b083a334c3743c09566b) )
+	ROM_LOAD( "sx012-01.u31", 0x000000, 0x080000, CRC(6ca01d57) SHA1(065848f19ecf2dc1f7bbc7ddd87bca502e4b8b16) )
+	ROM_LOAD( "sx012-02.u32", 0x100000, 0x100000, CRC(40a4e354) SHA1(8120ce8deee6805050a5b083a334c3743c09566b) )
+	// U33 not populated
+	// U34 not populated
 ROM_END
 
-/* PCB E51-00001 (almost identical to above) */
-
-ROM_START( dcrown )
+ROM_START( dcrown ) // PCB E51-00001 (almost identical to above)
 	ROM_REGION( 0x200000, "maincpu", 0 )
-	ROM_LOAD( "dc1.u31",0x000000, 0x80000, CRC(e55200b8) SHA1(20a968dc895bb636b064c29b4b53c6ffa49fea36) )
-	ROM_LOAD( "dc2.u32",0x080000, 0x80000, CRC(05b6192f) SHA1(6af6e7b2c681f2791a7f89a528a95eb976c8ba84) )
-	ROM_LOAD( "dc3.u33",0x100000, 0x80000, CRC(f23c1975) SHA1(118d6054922a733d23363c53bb331d84c78e50ad) )
-	ROM_LOAD( "dc4.u34",0x180000, 0x80000, CRC(0d1c2c61) SHA1(7e4dc20ab683ce0f61dd939cfd9b17714ba2343a) )
+	ROM_LOAD( "dc1.u31", 0x000000, 0x80000, CRC(e55200b8) SHA1(20a968dc895bb636b064c29b4b53c6ffa49fea36) )
+	ROM_LOAD( "dc2.u32", 0x080000, 0x80000, CRC(05b6192f) SHA1(6af6e7b2c681f2791a7f89a528a95eb976c8ba84) )
+	ROM_LOAD( "dc3.u33", 0x100000, 0x80000, CRC(f23c1975) SHA1(118d6054922a733d23363c53bb331d84c78e50ad) )
+	ROM_LOAD( "dc4.u34", 0x180000, 0x80000, CRC(0d1c2c61) SHA1(7e4dc20ab683ce0f61dd939cfd9b17714ba2343a) )
 ROM_END
 
-ROM_START( dcrowna )
+ROM_START( dcrowna ) // PCB E51-00001 (almost identical to above)
 	ROM_REGION( 0x200000, "maincpu", 0 )
-	ROM_LOAD( "dcn-0.1c",     0x000000, 0x080000, CRC(5dd0615d) SHA1(b859994bd79229da4c687deefe1997313724b26e) )
-	ROM_LOAD( "dcn-1.1d",     0x080000, 0x080000, CRC(6c6f14e7) SHA1(2a3474e44420cc78e3ead777eb91481c4bb46eef) )
-	ROM_LOAD( "dcn-2.1e",     0x100000, 0x080000, CRC(e9401a5e) SHA1(db24ebe5a0073c7c1c2da957772e223545f3c778) )
-	ROM_LOAD( "dcn-3.1f",     0x180000, 0x080000, CRC(ec2e88bc) SHA1(2a8deee63e123dae411e2b834eca69be6f646d66) )
+	ROM_LOAD( "dcn-0.u31", 0x000000, 0x080000, CRC(5dd0615d) SHA1(b859994bd79229da4c687deefe1997313724b26e) ) // U31 @ 1C
+	ROM_LOAD( "dcn-1.u32", 0x080000, 0x080000, CRC(6c6f14e7) SHA1(2a3474e44420cc78e3ead777eb91481c4bb46eef) ) // U32 @ 1D
+	ROM_LOAD( "dcn-2.u33", 0x100000, 0x080000, CRC(e9401a5e) SHA1(db24ebe5a0073c7c1c2da957772e223545f3c778) ) // U33 @ 1E
+	ROM_LOAD( "dcn-3.u34", 0x180000, 0x080000, CRC(ec2e88bc) SHA1(2a8deee63e123dae411e2b834eca69be6f646d66) ) // U34 @ 1F
 ROM_END
 
 ROM_START( gostop )
@@ -567,6 +639,7 @@ ROM_START( gostop )
 	ROM_LOAD( "go-stop_rom1.u31",0x000000, 0x80000, CRC(93decaa2) SHA1(a30958b76dfe5752a341ecdc950119c10e864586) )
 	ROM_LOAD( "go-stop_rom2.u32",0x080000, 0x80000, CRC(3c5402ff) SHA1(bdc38922b5cbad0150adf9c6cc0fefc5705a16a2) )
 ROM_END
+
 
 /*
 Koi Koi Shimasho
@@ -604,7 +677,7 @@ ROM_START( koikois )
 	ROM_LOAD16_BYTE( "koi-1.4c", 0x000000, 0x080000, CRC(c79e2b43) SHA1(868174f7ab8e68e31d3302ae94dd742048deed9f) )
 	ROM_LOAD16_BYTE( "koi-4.8c", 0x100001, 0x080000, CRC(ace236df) SHA1(4bf56affe5b6d0ba3cc677eaa91f9be77f26c654) )
 	ROM_LOAD16_BYTE( "koi-3.5c", 0x100000, 0x080000, CRC(6fd88149) SHA1(87b1be32770232eb041e3ef9d1da45282af8a5d4) )
-	ROM_LOAD( "koi-5.2c", 0x200000, 0x200000, CRC(561e12c8) SHA1(a7aedf549bc3141fc01bc4a10c235af265ba4ee9) )
+	ROM_LOAD(        "koi-5.2c", 0x200000, 0x200000, CRC(561e12c8) SHA1(a7aedf549bc3141fc01bc4a10c235af265ba4ee9) )
 ROM_END
 
 
@@ -663,26 +736,26 @@ E52-00001
 
 ROM_START(mayjinsn )
 	ROM_REGION( 0x180000, "maincpu", 0 )
-	ROM_LOAD( "sx003.05d",   0x000000, 0x80000, CRC(2be6d620) SHA1(113db888fb657d45be55708bbbf9a9ac159a9636) )
-	ROM_LOAD( "sx003.06",    0x080000, 0x80000, CRC(f0553386) SHA1(8915cb3ce03b9a12612694caec9bbec6de4dd070) )
-	ROM_LOAD( "sx003.07d",   0x100000, 0x80000, CRC(8db281c3) SHA1(f8b488dd28010f01f789217a4d62ba2116e06e94) )
+	ROM_LOAD( "sx003.05d", 0x000000, 0x80000, CRC(2be6d620) SHA1(113db888fb657d45be55708bbbf9a9ac159a9636) )
+	ROM_LOAD( "sx003.06",  0x080000, 0x80000, CRC(f0553386) SHA1(8915cb3ce03b9a12612694caec9bbec6de4dd070) )
+	ROM_LOAD( "sx003.07d", 0x100000, 0x80000, CRC(8db281c3) SHA1(f8b488dd28010f01f789217a4d62ba2116e06e94) )
 
-	ROM_REGION32_LE( 0x20000*4, "user1", 0 ) /* V810 code */
-	ROM_LOAD32_BYTE( "sx003.04",   0x00003, 0x20000,   CRC(fa15459f) SHA1(4163ab842943705c550f137abbdd2cb51ba5390f) )
-	ROM_LOAD32_BYTE( "sx003.03",   0x00002, 0x20000,   CRC(71a438ea) SHA1(613bab6a59aa1bced2ab37177c61a0fd7ce7e64f) )
-	ROM_LOAD32_BYTE( "sx003.02",   0x00001, 0x20000,   CRC(61911eed) SHA1(1442b3867b85120ba652ec8205d74332addffb67) )
-	ROM_LOAD32_BYTE( "sx003.01",   0x00000, 0x20000,   CRC(d210bfe5) SHA1(96d9f2b198d98125df4bd6b15705646d472a8a87) )
+	ROM_REGION32_LE( 0x20000*4, "sub", 0 ) // V810 code
+	ROM_LOAD32_BYTE( "sx003.04", 0x00003, 0x20000, CRC(fa15459f) SHA1(4163ab842943705c550f137abbdd2cb51ba5390f) )
+	ROM_LOAD32_BYTE( "sx003.03", 0x00002, 0x20000, CRC(71a438ea) SHA1(613bab6a59aa1bced2ab37177c61a0fd7ce7e64f) )
+	ROM_LOAD32_BYTE( "sx003.02", 0x00001, 0x20000, CRC(61911eed) SHA1(1442b3867b85120ba652ec8205d74332addffb67) )
+	ROM_LOAD32_BYTE( "sx003.01", 0x00000, 0x20000, CRC(d210bfe5) SHA1(96d9f2b198d98125df4bd6b15705646d472a8a87) )
 ROM_END
 
 ROM_START(mayjisn2 )
 	ROM_REGION( 0x100000, "maincpu", 0 )
-	ROM_LOAD( "sx007-05.8b",   0x00000, 0x100000,  CRC(b13ea605) SHA1(75c067df02c988f170c24153d3852c472355fc9d) )
+	ROM_LOAD( "sx007-05.8b", 0x00000, 0x100000, CRC(b13ea605) SHA1(75c067df02c988f170c24153d3852c472355fc9d) )
 
-	ROM_REGION32_LE( 0x20000*4, "user1", 0 ) /* V810 code */
-	ROM_LOAD32_BYTE( "sx007-04.4b",   0x00003, 0x20000,   CRC(fa15459f) SHA1(4163ab842943705c550f137abbdd2cb51ba5390f) )
-	ROM_LOAD32_BYTE( "sx007-03.4j",   0x00002, 0x20000,   CRC(71a438ea) SHA1(613bab6a59aa1bced2ab37177c61a0fd7ce7e64f) )
-	ROM_LOAD32_BYTE( "sx007-02.4m",   0x00001, 0x20000,   CRC(61911eed) SHA1(1442b3867b85120ba652ec8205d74332addffb67) )
-	ROM_LOAD32_BYTE( "sx007-01.4s",   0x00000, 0x20000,   CRC(d210bfe5) SHA1(96d9f2b198d98125df4bd6b15705646d472a8a87) )
+	ROM_REGION32_LE( 0x20000*4, "sub", 0 ) // V810 code
+	ROM_LOAD32_BYTE( "sx007-04.4b", 0x00003, 0x20000, CRC(fa15459f) SHA1(4163ab842943705c550f137abbdd2cb51ba5390f) )
+	ROM_LOAD32_BYTE( "sx007-03.4j", 0x00002, 0x20000, CRC(71a438ea) SHA1(613bab6a59aa1bced2ab37177c61a0fd7ce7e64f) )
+	ROM_LOAD32_BYTE( "sx007-02.4m", 0x00001, 0x20000, CRC(61911eed) SHA1(1442b3867b85120ba652ec8205d74332addffb67) )
+	ROM_LOAD32_BYTE( "sx007-01.4s", 0x00000, 0x20000, CRC(d210bfe5) SHA1(96d9f2b198d98125df4bd6b15705646d472a8a87) )
 ROM_END
 
 /*************************************
@@ -691,30 +764,27 @@ ROM_END
  *
  *************************************/
 
-DRIVER_INIT_MEMBER(st0016_state,renju)
+void st0016_state::init_renju()
 {
-	m_maincpu->st0016_game=0;
+	m_maincpu->set_game_flag(0);
 }
 
-DRIVER_INIT_MEMBER(st0016_state,nratechu)
+void st0016_state::init_nratechu()
 {
-	m_maincpu->st0016_game=1;
+	m_maincpu->set_game_flag(1);
 }
 
-DRIVER_INIT_MEMBER(st0016_state,mayjinsn)
+void st0016_state::init_mayjinsn()
 {
-	m_maincpu->st0016_game=4;//|0x80;
-	membank("bank2")->set_base(memregion("user1")->base());
+	m_maincpu->set_game_flag(4 /*| 0x80*/);
 }
 
-DRIVER_INIT_MEMBER(st0016_state,mayjisn2)
+void st0016_state::init_mayjisn2()
 {
-	m_maincpu->st0016_game=4;
-	membank("bank2")->set_base(memregion("user1")->base());
+	m_maincpu->set_game_flag(4);
 }
 
-
-
+} // Anonymous namespace
 
 
 /*************************************
@@ -723,13 +793,13 @@ DRIVER_INIT_MEMBER(st0016_state,mayjisn2)
  *
  *************************************/
 
-GAME( 1994, renju,      0,      renju,    renju,    st0016_state, renju,    ROT0, "Visco",            "Renju Kizoku", 0)
-GAME( 1996, nratechu,   0,      st0016,   nratechu, st0016_state, nratechu, ROT0, "Seta",             "Neratte Chu", 0)
-GAME( 1994, mayjisn2,   0,      mayjinsn, mayjisn2, st0016_state, mayjisn2, ROT0, "Seta",             "Mayjinsen 2", 0)
-GAME( 1995, koikois,    0,      st0016,   koikois,  st0016_state, renju,    ROT0, "Visco",            "Koi Koi Shimasho", MACHINE_IMPERFECT_GRAPHICS)
-GAME( 2001, gostop,     0,      st0016,   gostop,   st0016_state, renju,    ROT0, "Visco",            "Kankoku Hanafuda Go-Stop", 0)
+GAME( 1994, renju,      0,      renju,    renju,    st0016_state, init_renju,    ROT0, "Visco",            "Renju Kizoku",             MACHINE_NO_COCKTAIL | MACHINE_SUPPORTS_SAVE )
+GAME( 1996, nratechu,   0,      st0016,   nratechu, st0016_state, init_nratechu, ROT0, "Seta",             "Neratte Chu",              MACHINE_NO_COCKTAIL | MACHINE_SUPPORTS_SAVE )
+GAME( 1994, mayjisn2,   0,      mayjinsn, mayjisn2, st0016_state, init_mayjisn2, ROT0, "Seta",             "Mayjinsen 2",              MACHINE_NO_COCKTAIL | MACHINE_SUPPORTS_SAVE )
+GAME( 1995, koikois,    0,      st0016,   koikois,  st0016_state, init_renju,    ROT0, "Visco",            "Koi Koi Shimasho",         MACHINE_IMPERFECT_GRAPHICS | MACHINE_NO_COCKTAIL | MACHINE_SUPPORTS_SAVE )
+GAME( 2001, gostop,     0,      st0016,   gostop,   st0016_state, init_renju,    ROT0, "Visco",            "Kankoku Hanafuda Go-Stop", MACHINE_NO_COCKTAIL | MACHINE_SUPPORTS_SAVE )
 
-/* Not working */
-GAME( 1994, mayjinsn,   0,      mayjinsn, st0016,   st0016_state, mayjinsn, ROT0, "Seta",             "Mayjinsen",MACHINE_IMPERFECT_GRAPHICS|MACHINE_NOT_WORKING)
-GAME( 1994, dcrown,     0,      st0016,   renju,    st0016_state, renju,    ROT0, "Nippon Data Kiki", "Dream Crown (Set 1)", MACHINE_NOT_WORKING) // (c) 1994 Nippon Data Kiki is uploaded near the Japanese Insert coin text
-GAME( 1994, dcrowna,    dcrown, st0016,   renju,    st0016_state, renju,    ROT0, "Nippon Data Kiki", "Dream Crown (Set 2)", MACHINE_NOT_WORKING) // the Insert Coin text has been translated to English and no (c) is uploaded
+// Not working
+GAME( 1994, mayjinsn,   0,      mayjinsn, st0016,   st0016_state, init_mayjinsn, ROT0, "Seta",             "Mayjinsen",           MACHINE_IMPERFECT_GRAPHICS | MACHINE_NOT_WORKING | MACHINE_NO_COCKTAIL | MACHINE_SUPPORTS_SAVE )
+GAME( 1994, dcrown,     0,      st0016,   renju,    st0016_state, init_renju,    ROT0, "Nippon Data Kiki", "Dream Crown (set 1)", MACHINE_NOT_WORKING | MACHINE_NO_COCKTAIL | MACHINE_SUPPORTS_SAVE ) // (c) 1994 Nippon Data Kiki is uploaded near the Japanese Insert coin text
+GAME( 1994, dcrowna,    dcrown, st0016,   renju,    st0016_state, init_renju,    ROT0, "Nippon Data Kiki", "Dream Crown (set 2)", MACHINE_NOT_WORKING | MACHINE_NO_COCKTAIL | MACHINE_SUPPORTS_SAVE ) // the Insert Coin text has been translated to English and no (c) is uploaded

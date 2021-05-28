@@ -2,30 +2,58 @@
 // copyright-holders:Vas Crabb
 /*
     Laser Battle / Lazarian (c) 1981 Zaccaria
+    Cat and Mouse           (c) 1982 Zaccaria
 
     audio emulation by Vas Crabb
+*/
 
+#include "emu.h"
+#include "includes/laserbat.h"
+
+
+uint8_t laserbat_state_base::rhsc_r()
+{
+	return m_rhsc;
+}
+
+void laserbat_state_base::whsc_w(uint8_t data)
+{
+	m_whsc = data;
+}
+
+void laserbat_state_base::csound1_w(uint8_t data)
+{
+	m_csound1 = data;
+}
+
+void laserbat_state_base::csound2_w(uint8_t data)
+{
+	m_csound2 = data;
+}
+
+
+/*
     The Laser Battle/Lazarian sound board has a SN76477 CSG, two TMS3615
     tone synthesisers, and a TDA1010 power amplifier.  It receives
     commands from the game board over a 16-bit unidirectional data bus.
-    The CPU cannot write all sixteen lines atomically, it write to lines
-    1-8 as one group and 9-16 as another group.
+    The CPU cannot write all sixteen lines atomically, it writes to
+    lines 1-8 as one group and 9-16 as another group.
 
-    The game board makes the the audio output from the first S2636 PVI
-    (5E) available on a pin at the sound board interface connector, but
-    it isn't routed anywhere, so you won't hear it.
+    The game board makes the audio output from the first S2636 PVI (5E)
+    available on a pin at the sound board interface connector, but it
+    isn't routed anywhere, so you won't hear it.
 
     The TMS3615 at 05 is clocked at 250kHz (4MHz crystal oscillator
     divided by 16), and its divide-by-two output is used to clock the
     TMS3615 at 04.  This gives a base 16' note of C3.  The combined 8'
-    or 16' outputs are selectable by jumper, allowing board to be
+    or 16' outputs are selectable by jumper, allowing the board to be
     switched between two octaves.  There's no indication of which octave
     would have been selected in the Lazarian manual.
 
     There's a filter network between the TMS3615 outputs and the power
     amplifier with several parameters controllable from the game board.
 
-    The audio output of the SN76477 isn't actually used.  Rather the
+    The audio output of the SN76477 isn't actually used.  Rather, the
     signal from before the output amplifier is taken and used to gate
     distortion elements in the analog filter network.
 
@@ -99,20 +127,10 @@
 
 */
 
-#include "includes/laserbat.h"
-
-
-WRITE8_MEMBER(laserbat_state::csound1_w)
-{
-	// all the chips using this are edge-triggered on CSOUND2 lines
-	m_csound1 = data;
-}
-
-
-WRITE8_MEMBER(laserbat_state::csound2_w)
+void laserbat_state::csound2_w(uint8_t data)
 {
 	// there are a bunch of edge-triggered things, so grab changes
-	unsigned const diff = data ^ m_csound2;
+	uint8_t const diff = data ^ m_csound2;
 
 	// SN76477 and distortion control
 	if (data & diff & 0x01)
@@ -205,5 +223,104 @@ WRITE8_MEMBER(laserbat_state::csound2_w)
 	// TODO: BIT15 TMS reset
 
 	// keep for detecting changes next time
+	m_csound2 = data;
+}
+
+
+/*
+    The Cat and Mouse sound board has a 6802 processor with three ROMs,
+    a 6821 PIA, two AY-3-8910 PSGs, and some other logic and analog
+    circuitry.  Unfortunately we lack a schematic, so all knowledge of
+    this board is based on tracing the sound program, examining PCB
+    photos and cross-referencing with the schematic for the 1B11142
+    schematic.
+
+    The 6821 PIA is mapped at addresses $005C..$005F.  The known PIA
+    signal assignments are as follows:
+
+    +------+-----------------------+
+    | PA0  | PSG1/PSG2 DA0         |
+    | PA1  | PSG1/PSG2 DA1         |
+    | PA2  | PSG1/PSG2 DA2         |
+    | PA3  | PSG1/PSG2 DA3         |
+    | PA4  | PSG1/PSG2 DA4         |
+    | PA5  | PSG1/PSG2 DA5         |
+    | PA6  | PSG1/PSG2 DA6         |
+    | PA7  | PSG1/PSG2 DA7         |
+    | PB0  | PSG1 BC1              |
+    | PB1  | PSG1 BDIR             |
+    | PB2  | PSG2 BC1              |
+    | PB3  | PSG2 BDIR             |
+    | CA1  | Host interface bit 6  |
+    | CB1  | periodic IRQ source   |
+    | IRQA | 6802 NMI              |
+    | IRQB | 6802 IRQ              |
+    +------+-----------------------+
+
+    The program makes use of I/O port A on the first PSG as outputs.  At
+    a guess, it could have the same function as it does on other
+    Zaccaria sound boards.
+
+    The first PSG receives commands from the game board in the low five
+    bits of port B.  Commands are processed on receiving an NMI.  The
+    sound program always masks out the high three bits of the value so
+    they could be connected to anything on the board.
+
+    The I/O ports on the second PSG don't appear to be used at all.
+
+    The game board sends commands to the sound board over a 16-bit
+    unidirectional data bus.  The CPU cannot write all sixteen lines
+    atomically, it write to lines 1-8 as one group and 9-16 as another
+    group.  However only seven lines are actually connected to the sound
+    board:
+
+    +-----+----------+-------------+
+    | Bit | Name     | Connection  |
+    +-----+----------+-------------+
+    |   1 | SOUND 0  | PSG1 IOB0   |
+    |   2 | SOUND 1  | PSG1 IOB1   |
+    |   3 | SOUND 2  | PSG1 IOB2   |
+    |   4 | SOUND 3  | PSG1 IOB3   |
+    |   5 | SOUND 4  | PSG1 IOB4   |
+    |   6 | SOUND 5  | PIA CA1     |
+    |   7 |          |             |
+    |   8 |          |             |
+    |   9 |          | 14L A11     |
+    |  10 |          |             |
+    |  11 |          |             |
+    |  12 |          |             |
+    |  13 |          |             |
+    |  14 |          |             |
+    |  15 |          |             |
+    |  16 | RESET    | Unknown     |
+    +-----+----------+-------------+
+
+    Bit 9 is used to select the sprite ROM bank.  There's a wire visible
+    on the component side of the PCB connecting it to the high address
+    bit (A11) of the sprite ROM at 14L.
+
+    There could well be other connections on the sound board - these are
+    just what can be deduced by tracing the sound program.
+
+    The game board makes the audio output from the first S2636 PVI
+    (5E) available on a pin at the sound board interface connector, but
+    it isn't routed anywhere.
+*/
+
+void catnmous_state::csound1_w(uint8_t data)
+{
+	m_audiopcb->sound_w(data);
+
+	m_csound1 = data;
+}
+
+void catnmous_state::csound2_w(uint8_t data)
+{
+	// the bottom bit is used for sprite banking, of all things
+	m_gfx2_base = uint16_t(BIT(data, 0)) << 11;
+
+	// the top bit is called RESET on the wiring diagram
+	m_audiopcb->reset_w(BIT(data, 7));
+
 	m_csound2 = data;
 }

@@ -9,13 +9,13 @@
 #include "emu.h"
 #include "includes/pc4.h"
 
-void pc4_state::set_busy_flag(UINT16 usec)
+void pc4_state::set_busy_flag(uint16_t usec)
 {
 	m_busy_flag = 1;
 	m_busy_timer->adjust( attotime::from_usec( usec ) );
 }
 
-UINT32 pc4_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t pc4_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	bitmap.fill(0, cliprect);
 
@@ -23,19 +23,19 @@ UINT32 pc4_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, con
 		for (int l=0; l<4; l++)
 			for (int i=0; i<40; i++)
 			{
-				UINT16 char_pos = l*40 + i;
+				uint16_t char_pos = l*40 + i;
 
 				for (int y=0; y<8; y++)
 					for (int x=0; x<5; x++)
 						if (m_ddram[char_pos] <= 0x10)
 						{
 							//draw CGRAM characters
-							bitmap.pix16(l*9 + y, i*6 + x) = BIT(m_cgram[(m_ddram[char_pos]&0x07)*8+y], 4-x);
+							bitmap.pix(l*9 + y, i*6 + x) = BIT(m_cgram[(m_ddram[char_pos]&0x07)*8+y], 4-x);
 						}
 						else
 						{
 							//draw CGROM characters
-							bitmap.pix16(l*9 + y, i*6 + x) = BIT(m_region_charset->base()[m_ddram[char_pos]*8+y], 4-x);
+							bitmap.pix(l*9 + y, i*6 + x) = BIT(m_region_charset->base()[m_ddram[char_pos]*8+y], 4-x);
 
 						}
 
@@ -45,12 +45,12 @@ UINT32 pc4_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, con
 					//draw the cursor
 					if (m_cursor_on)
 						for (int x=0; x<5; x++)
-							bitmap.pix16(l*9 + 7, i * 6 + x) = 1;
+							bitmap.pix(l*9 + 7, i * 6 + x) = 1;
 
 					if (!m_blink && m_blink_on)
 						for (int y=0; y<7; y++)
 							for (int x=0; x<5; x++)
-								bitmap.pix16(l*9 + y, i * 6 + x) = 1;
+								bitmap.pix(l*9 + y, i * 6 + x) = 1;
 				}
 			}
 
@@ -72,7 +72,7 @@ void pc4_state::device_timer(emu_timer &timer, device_timer_id id, int param, vo
 	}
 }
 
-WRITE8_MEMBER(pc4_state::lcd_control_w)
+void pc4_state::lcd_control_w(uint8_t data)
 {
 	if (BIT(data, 7))
 	{
@@ -94,7 +94,7 @@ WRITE8_MEMBER(pc4_state::lcd_control_w)
 	}
 	else if (BIT(data, 4))
 	{
-		UINT8 direct = (BIT(data, 2)) ? +1 : -1;
+		uint8_t direct = (BIT(data, 2)) ? +1 : -1;
 
 		if (BIT(data, 3))
 			m_disp_shift += direct;
@@ -142,9 +142,9 @@ WRITE8_MEMBER(pc4_state::lcd_control_w)
 }
 
 
-READ8_MEMBER(pc4_state::lcd_control_r)
+uint8_t pc4_state::lcd_control_r()
 {
-	return m_busy_flag<<7 || m_ac&0x7f;
+	return (m_busy_flag<<7) | (m_ac & 0x7f);
 }
 
 void pc4_state::update_ac(void)
@@ -162,13 +162,13 @@ void pc4_state::update_ac(void)
 	m_data_bus_flag = 0;
 }
 
-WRITE8_MEMBER( pc4_state::lcd_offset_w )
+void pc4_state::lcd_offset_w(uint8_t data)
 {
 	m_cursor_pos = m_ac = (data%0xa0);
 }
 
 
-WRITE8_MEMBER(pc4_state::lcd_data_w)
+void pc4_state::lcd_data_w(uint8_t data)
 {
 	if (m_ac_mode == 0)
 		m_ddram[m_ac] = data;
@@ -179,9 +179,9 @@ WRITE8_MEMBER(pc4_state::lcd_data_w)
 	set_busy_flag(41);
 }
 
-READ8_MEMBER(pc4_state::lcd_data_r)
+uint8_t pc4_state::lcd_data_r()
 {
-	UINT8 data;
+	uint8_t data;
 
 	if (m_ac_mode == 0)
 		data = m_ddram[m_ac];

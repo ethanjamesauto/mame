@@ -1,12 +1,16 @@
 // license:BSD-3-Clause
 // copyright-holders:Carl,Olivier Galibert
 
+#include "emu.h"
 #include "i8271.h"
 
-const device_type I8271 = &device_creator<i8271_device>;
+#define VERBOSE 0
+#include "logmacro.h"
 
-i8271_device::i8271_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: device_t(mconfig, I8271, "Intel 8271", tag, owner, clock, "i8271", __FILE__), ready_connected(false), mode(0), main_phase(0),
+DEFINE_DEVICE_TYPE(I8271, i8271_device, "i8271", "Intel 8271 FDC")
+
+i8271_device::i8271_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: device_t(mconfig, I8271, tag, owner, clock), ready_connected(false), mode(0), main_phase(0),
 	intrq_cb(*this),
 	drq_cb(*this),
 	hdl_cb(*this),
@@ -17,11 +21,12 @@ i8271_device::i8271_device(const machine_config &mconfig, const char *tag, devic
 	external_ready = false;
 }
 
-DEVICE_ADDRESS_MAP_START(map, 8, i8271_device)
-	AM_RANGE(0x0, 0x0) AM_READWRITE(sr_r, cmd_w)
-	AM_RANGE(0x1, 0x1) AM_READWRITE(rr_r, param_w)
-	AM_RANGE(0x2, 0x2) AM_WRITE(reset_w)
-ADDRESS_MAP_END
+void i8271_device::map(address_map &map)
+{
+	map(0x0, 0x0).rw(FUNC(i8271_device::sr_r), FUNC(i8271_device::cmd_w));
+	map(0x1, 0x1).rw(FUNC(i8271_device::rr_r), FUNC(i8271_device::param_w));
+	map(0x2, 0x2).w(FUNC(i8271_device::reset_w));
+}
 
 void i8271_device::set_ready_line_connected(bool _ready)
 {
@@ -51,7 +56,7 @@ void i8271_device::device_start()
 			if(con) {
 				flopi[i].dev = con->get_device();
 				if (flopi[i].dev != nullptr)
-					flopi[i].dev->setup_index_pulse_cb(floppy_image_device::index_pulse_cb(FUNC(i8271_device::index_callback), this));
+					flopi[i].dev->setup_index_pulse_cb(floppy_image_device::index_pulse_cb(&i8271_device::index_callback, this));
 			} else
 				flopi[i].dev = nullptr;
 		} else
@@ -88,6 +93,7 @@ void i8271_device::soft_reset()
 		flopi[i].live = false;
 		flopi[i].ready = get_ready(i);
 	}
+	hdl_cb(false);
 	set_irq(false);
 	set_drq(false);
 	command_pos = 0;
@@ -117,20 +123,28 @@ bool i8271_device::get_ready(int fid)
 	return !external_ready;
 }
 
-void i8271_device::set_floppy(floppy_image_device *flop)
+void i8271_device::set_floppies(floppy_connector *f0, floppy_connector *f1)
 {
-	for(auto & elem : flopi) {
-		if(elem.dev)
-			elem.dev->setup_index_pulse_cb(floppy_image_device::index_pulse_cb());
-		elem.dev = flop;
+	if (f0) {
+		flopi[0].dev = f0->get_device();
+		if (flopi[0].dev != nullptr)
+			flopi[0].dev->setup_index_pulse_cb(floppy_image_device::index_pulse_cb(&i8271_device::index_callback, this));
 	}
-	if(flop)
-		flop->setup_index_pulse_cb(floppy_image_device::index_pulse_cb(FUNC(i8271_device::index_callback), this));
+	else
+		flopi[0].dev = nullptr;
+
+	if (f1) {
+		flopi[1].dev = f1->get_device();
+		if (flopi[1].dev != nullptr)
+			flopi[1].dev->setup_index_pulse_cb(floppy_image_device::index_pulse_cb(&i8271_device::index_callback, this));
+	}
+	else
+		flopi[1].dev = nullptr;
 }
 
-READ8_MEMBER(i8271_device::sr_r)
+uint8_t i8271_device::sr_r()
 {
-	UINT32 ret = (irq ? SR_IRQ : 0);
+	uint32_t ret = (irq ? SR_IRQ : 0);
 	switch(main_phase) {
 	case PHASE_CMD:
 		ret |= SR_CF;
@@ -147,11 +161,13 @@ READ8_MEMBER(i8271_device::sr_r)
 	return ret;
 }
 
-READ8_MEMBER(i8271_device::rr_r)
+uint8_t i8271_device::rr_r()
 {
-	if(main_phase == PHASE_RESULT)
-		main_phase = PHASE_IDLE;
-	set_irq(false);
+	if (!machine().side_effects_disabled()) {
+		if (main_phase == PHASE_RESULT)
+			main_phase = PHASE_IDLE;
+		set_irq(false);
+	}
 	return rr;
 }
 
@@ -160,13 +176,32 @@ void i8271_device::set_rate(int rate)
 	cur_rate = rate;
 }
 
-READ8_MEMBER(i8271_device::data_r)
+uint8_t i8271_device::read(offs_t offset)
 {
-	set_drq(false);
+	switch(offset & 0x03) {
+	case 0x00: return sr_r();
+	case 0x01: return rr_r();
+	}
+	return 0xff;
+}
+
+void i8271_device::write(offs_t offset, uint8_t data)
+{
+	switch(offset & 0x03) {
+	case 0x00: cmd_w(data); break;
+	case 0x01: param_w(data); break;
+	case 0x02: reset_w(data); break;
+	}
+}
+
+uint8_t i8271_device::data_r()
+{
+	if (!machine().side_effects_disabled())
+		set_drq(false);
 	return dma_data;
 }
 
-WRITE8_MEMBER(i8271_device::data_w)
+void i8271_device::data_w(uint8_t data)
 {
 	if(drq) {
 		set_drq(false);
@@ -174,7 +209,7 @@ WRITE8_MEMBER(i8271_device::data_w)
 	}
 }
 
-WRITE8_MEMBER(i8271_device::cmd_w)
+void i8271_device::cmd_w(uint8_t data)
 {
 	if(main_phase == PHASE_IDLE) {
 		command[0] = data;
@@ -189,7 +224,7 @@ WRITE8_MEMBER(i8271_device::cmd_w)
 	}
 }
 
-WRITE8_MEMBER(i8271_device::param_w)
+void i8271_device::param_w(uint8_t data)
 {
 	if(main_phase == PHASE_CMD) {
 		command[command_pos++] = data;
@@ -199,7 +234,7 @@ WRITE8_MEMBER(i8271_device::param_w)
 	}
 }
 
-bool i8271_device::set_output(UINT8 data)
+bool i8271_device::set_output(uint8_t data)
 {
 	if(main_phase == PHASE_EXEC) {
 		if(drq) {
@@ -212,7 +247,7 @@ bool i8271_device::set_output(UINT8 data)
 	return true;
 }
 
-bool i8271_device::get_input(UINT8 *data)
+bool i8271_device::get_input(uint8_t *data)
 {
 	if(main_phase == PHASE_EXEC) {
 		if(drq) {
@@ -354,18 +389,16 @@ void i8271_device::live_run(attotime limit)
 		case SEARCH_ADDRESS_MARK_HEADER:
 			if(read_one_bit(limit))
 				return;
-#if 0
-			fprintf(stderr, "%s: shift = %04x data=%02x c=%d\n", tts(cur_live.tm).c_str(), cur_live.shift_reg,
-					(cur_live.shift_reg & 0x4000 ? 0x80 : 0x00) |
-					(cur_live.shift_reg & 0x1000 ? 0x40 : 0x00) |
-					(cur_live.shift_reg & 0x0400 ? 0x20 : 0x00) |
-					(cur_live.shift_reg & 0x0100 ? 0x10 : 0x00) |
-					(cur_live.shift_reg & 0x0040 ? 0x08 : 0x00) |
-					(cur_live.shift_reg & 0x0010 ? 0x04 : 0x00) |
-					(cur_live.shift_reg & 0x0004 ? 0x02 : 0x00) |
-					(cur_live.shift_reg & 0x0001 ? 0x01 : 0x00),
-					cur_live.bit_counter);
-#endif
+			LOG("%s: shift = %04x data=%02x c=%d\n", cur_live.tm.to_string(), cur_live.shift_reg,
+				(cur_live.shift_reg & 0x4000 ? 0x80 : 0x00) |
+				(cur_live.shift_reg & 0x1000 ? 0x40 : 0x00) |
+				(cur_live.shift_reg & 0x0400 ? 0x20 : 0x00) |
+				(cur_live.shift_reg & 0x0100 ? 0x10 : 0x00) |
+				(cur_live.shift_reg & 0x0040 ? 0x08 : 0x00) |
+				(cur_live.shift_reg & 0x0010 ? 0x04 : 0x00) |
+				(cur_live.shift_reg & 0x0004 ? 0x02 : 0x00) |
+				(cur_live.shift_reg & 0x0001 ? 0x01 : 0x00),
+				cur_live.bit_counter);
 
 			if(cur_live.shift_reg == 0xf57e) {
 				cur_live.crc = 0xef21;
@@ -382,8 +415,7 @@ void i8271_device::live_run(attotime limit)
 				break;
 			int slot = (cur_live.bit_counter >> 4)-1;
 
-			if(0)
-				fprintf(stderr, "%s: slot=%d data=%02x crc=%04x\n", tts(cur_live.tm).c_str(), slot, cur_live.data_reg, cur_live.crc);
+			LOG("%s: slot=%d data=%02x crc=%04x\n", cur_live.tm.to_string(), slot, cur_live.data_reg, cur_live.crc);
 			cur_live.idbuf[slot] = cur_live.data_reg;
 			if(cur_live.fi->main_state == READ_ID) {
 				if(!set_output(cur_live.data_reg)) {
@@ -401,18 +433,16 @@ void i8271_device::live_run(attotime limit)
 		case SEARCH_ADDRESS_MARK_DATA:
 			if(read_one_bit(limit))
 				return;
-#if 0
-			fprintf(stderr, "%s: shift = %04x data=%02x c=%d.%x\n", tts(cur_live.tm).c_str(), cur_live.shift_reg,
-					(cur_live.shift_reg & 0x4000 ? 0x80 : 0x00) |
-					(cur_live.shift_reg & 0x1000 ? 0x40 : 0x00) |
-					(cur_live.shift_reg & 0x0400 ? 0x20 : 0x00) |
-					(cur_live.shift_reg & 0x0100 ? 0x10 : 0x00) |
-					(cur_live.shift_reg & 0x0040 ? 0x08 : 0x00) |
-					(cur_live.shift_reg & 0x0010 ? 0x04 : 0x00) |
-					(cur_live.shift_reg & 0x0004 ? 0x02 : 0x00) |
-					(cur_live.shift_reg & 0x0001 ? 0x01 : 0x00),
-					cur_live.bit_counter >> 4, cur_live.bit_counter & 15);
-#endif
+			LOG("%s: shift = %04x data=%02x c=%d.%x\n", cur_live.tm.to_string(), cur_live.shift_reg,
+				(cur_live.shift_reg & 0x4000 ? 0x80 : 0x00) |
+				(cur_live.shift_reg & 0x1000 ? 0x40 : 0x00) |
+				(cur_live.shift_reg & 0x0400 ? 0x20 : 0x00) |
+				(cur_live.shift_reg & 0x0100 ? 0x10 : 0x00) |
+				(cur_live.shift_reg & 0x0040 ? 0x08 : 0x00) |
+				(cur_live.shift_reg & 0x0010 ? 0x04 : 0x00) |
+				(cur_live.shift_reg & 0x0004 ? 0x02 : 0x00) |
+				(cur_live.shift_reg & 0x0001 ? 0x01 : 0x00),
+				cur_live.bit_counter >> 4, cur_live.bit_counter & 15);
 
 			if(cur_live.bit_counter > 23*16) {
 				live_delay(SEARCH_ADDRESS_MARK_DATA_FAILED);
@@ -469,7 +499,7 @@ void i8271_device::live_run(attotime limit)
 		case SCAN_SECTOR_DATA_BYTE:
 			if(!scan_done)
 			{
-				UINT8 data = 0;
+				uint8_t data = 0;
 				if(!get_input(&data)) {
 					live_delay(IDLE);
 					return;
@@ -544,7 +574,7 @@ void i8271_device::live_run(attotime limit)
 				cur_live.crc = 0xffff;
 				live_write_raw(BIT(command[0], 2) ? 0xf56a : 0xf56f);
 			} else if(cur_live.byte_counter < 7+sector_size) {
-				UINT8 data = 0;
+				uint8_t data = 0;
 				if(!get_input(&data)) {
 					live_delay(IDLE);
 					return;
@@ -601,7 +631,7 @@ void i8271_device::live_run(attotime limit)
 				cur_live.crc = 0xffff;
 				live_write_raw(0xf57e);
 			} else if(cur_live.byte_counter < 11) {
-				UINT8 data = 0;
+				uint8_t data = 0;
 				if(!get_input(&data)) {
 					live_delay(IDLE);
 					return;
@@ -654,7 +684,7 @@ void i8271_device::live_run(attotime limit)
 			break;
 
 		default:
-			logerror("%s: Unknown live state %d\n", tts(cur_live.tm).c_str(), cur_live.state);
+			logerror("%s: Unknown live state %d\n", cur_live.tm.to_string(), cur_live.state);
 			return;
 		}
 	}
@@ -722,12 +752,14 @@ void i8271_device::start_command(int cmd)
 	switch(cmd) {
 	case C_READ_DATA_SINGLE:
 		command[3] = 1;
+		[[fallthrough]];
 	case C_READ_DATA_MULTI:
 		read_data_start(flopi[BIT(command[0], 7)]);
 		break;
 
 	case C_VERIFY_DATA_SINGLE:
 		command[3] = 1;
+		[[fallthrough]];
 	case C_VERIFY_DATA_MULTI:
 		verify_data_start(flopi[BIT(command[0], 7)]);
 		break;
@@ -754,17 +786,16 @@ void i8271_device::start_command(int cmd)
 	case C_READ_DRIVE_STATUS:
 	{
 		floppy_info &fi = flopi[BIT(command[0], 7)];
-		rr = (get_ready(1) ? 0x40 : 0) | (fi.dev->idx_r() ? 0x10 : 0) | (fi.dev->wpt_r() ? 0 : 8) |
-				(get_ready(0) ? 4 : 0) | (fi.dev->trk00_r() ? 1 : 0);
+		rr = (get_ready(1) ? 0x40 : 0) | (fi.dev && fi.dev->idx_r() ? 0x10 : 0) | (fi.dev && fi.dev->wpt_r() ? 0 : 8) |
+				(get_ready(0) ? 4 : 0) | (fi.dev && fi.dev->trk00_r() ? 1 : 0);
 		flopi[0].ready = true;
 		flopi[1].ready = true;
 		main_phase = PHASE_IDLE;
 		break;
 	}
 	case C_SPECIFY:
-		logerror("%s: command specify %02x %02x %02x %02x\n",
-					tag(), command[1],
-					command[2], command[3], command[4]);
+		logerror("command specify %02x %02x %02x %02x\n",
+					command[1], command[2], command[3], command[4]);
 		switch(command[1]) {
 		case 0x0d:
 			srate = command[2];
@@ -786,6 +817,7 @@ void i8271_device::start_command(int cmd)
 
 	case C_WRITE_DATA_SINGLE:
 		command[3] = 1;
+		[[fallthrough]];
 	case C_WRITE_DATA_MULTI:
 		write_data_start(flopi[BIT(command[0], 7)]);
 		break;
@@ -820,8 +852,8 @@ void i8271_device::start_command(int cmd)
 			break;
 		case 0x22: {
 			floppy_info &fi = flopi[BIT(command[0], 7)];
-			rr = (get_ready(1) ? 0x40 : 0) | (fi.dev->idx_r() ? 0x10 : 0) | (fi.dev->wpt_r() ? 0 : 8) |
-					(get_ready(0) ? 4 : 0) | (fi.dev->trk00_r() ? 1 : 0);
+			rr = (get_ready(1) ? 0x40 : 0) | (fi.dev && fi.dev->idx_r() ? 0x10 : 0) | (fi.dev && fi.dev->wpt_r() ? 0 : 8) |
+					(get_ready(0) ? 4 : 0) | (fi.dev && fi.dev->trk00_r() ? 1 : 0);
 			break;
 		}
 		case 0x23:
@@ -867,8 +899,10 @@ void i8271_device::start_command(int cmd)
 		case 0x23: {
 			oport = command[2] & ~0xc0;
 			floppy_info &fi = flopi[BIT(command[0], 7)];
-			fi.dev->dir_w(BIT(command[2], 2));
-			fi.dev->stp_w(BIT(command[2], 1));
+			if (fi.dev) {
+				fi.dev->dir_w(BIT(command[2], 2));
+				fi.dev->stp_w(!BIT(command[2], 1));
+			}
 			opt_cb(BIT(command[2], 5));
 			hdl_cb(BIT(command[2], 3));
 			break;
@@ -878,22 +912,23 @@ void i8271_device::start_command(int cmd)
 		break;
 
 	default:
-		fprintf(stderr, "start command %d\n", cmd);
-		exit(1);
+		logerror("start command %d\n", cmd);
+		break;
 	}
 }
 
 void i8271_device::command_end(floppy_info &fi, bool data_completion)
 {
-	logerror("%s: command done (%s) - %02x\n", tag(), data_completion ? "data" : "seek", rr);
+	logerror("command done (%s) - %02x\n", data_completion ? "data" : "seek", rr);
 	fi.main_state = fi.sub_state = IDLE;
+	idle_icnt = 0;
 	main_phase = PHASE_RESULT;
 	set_irq(true);
 }
 
 void i8271_device::recalibrate_start(floppy_info &fi)
 {
-	logerror("%s: command recalibrate\n", tag());
+	logerror("command recalibrate\n");
 	fi.main_state = RECALIBRATE;
 	fi.sub_state = SEEK_WAIT_STEP_TIME_DONE;
 	fi.dir = 1;
@@ -903,7 +938,7 @@ void i8271_device::recalibrate_start(floppy_info &fi)
 
 void i8271_device::seek_start(floppy_info &fi)
 {
-	logerror("%s: command seek %d\n", tag(), command[1]);
+	logerror("command seek %d\n", command[1]);
 	fi.main_state = SEEK;
 	fi.sub_state = SEEK_WAIT_STEP_TIME_DONE;
 	fi.dir = fi.pcn > command[1] ? 1 : 0;
@@ -981,10 +1016,10 @@ void i8271_device::seek_continue(floppy_info &fi)
 void i8271_device::read_data_start(floppy_info &fi)
 {
 	fi.main_state = READ_DATA;
+	hdl_cb(true);
 	fi.sub_state = HEAD_LOAD_DONE;
 
-	logerror("%s: command read%s data%s cmd=%02x crn=(%d, %d, %d) len=%02x rate=%d\n",
-				tag(),
+	logerror("command read%s data%s cmd=%02x crn=(%d, %d, %d) len=%02x rate=%d\n",
 				command[0] & 0x04 ? " deleted" : "",
 				command[0] & 0x01 ? " multi" : "",
 				command[0],
@@ -1010,10 +1045,10 @@ void i8271_device::read_data_start(floppy_info &fi)
 void i8271_device::scan_start(floppy_info &fi)
 {
 	fi.main_state = SCAN_DATA;
+	hdl_cb(true);
 	fi.sub_state = HEAD_LOAD_DONE;
 
-	logerror("%s: command scan%s data%s cmd=%02x crn=(%d, %d, %d) len=%02x rate=%d\n",
-				tag(),
+	logerror("command scan%s data%s cmd=%02x crn=(%d, %d, %d) len=%02x rate=%d\n",
 				command[0] & 0x04 ? " deleted" : "",
 				command[0] & 0x01 ? " multi" : "",
 				command[0],
@@ -1041,10 +1076,10 @@ void i8271_device::scan_start(floppy_info &fi)
 void i8271_device::verify_data_start(floppy_info &fi)
 {
 	fi.main_state = VERIFY_DATA;
+	hdl_cb(true);
 	fi.sub_state = HEAD_LOAD_DONE;
 
-	logerror("%s: command verify%s data%s cmd=%02x crn=(%d, %d, %d) len=%02x rate=%d\n",
-				tag(),
+	logerror("command verify%s data%s cmd=%02x crn=(%d, %d, %d) len=%02x rate=%d\n",
 				command[0] & 0x04 ? " deleted" : "",
 				command[0] & 0x01 ? " multi" : "",
 				command[0],
@@ -1098,6 +1133,7 @@ void i8271_device::read_data_continue(floppy_info &fi)
 			return;
 
 		case SEEK_WAIT_STEP_TIME_DONE:
+			hdl_cb(true);
 			do {
 				if(fi.pcn > command[1])
 					fi.pcn--;
@@ -1128,8 +1164,7 @@ void i8271_device::read_data_continue(floppy_info &fi)
 				live_start(fi, SEARCH_ADDRESS_MARK_HEADER);
 				return;
 			}
-			logerror("%s: reading sector %02x %02x %02x %02x\n",
-						tag(),
+			logerror("reading sector %02x %02x %02x %02x\n",
 						cur_live.idbuf[0],
 						cur_live.idbuf[1],
 						cur_live.idbuf[2],
@@ -1172,7 +1207,7 @@ void i8271_device::read_data_continue(floppy_info &fi)
 			return;
 
 		default:
-			logerror("%s: read sector unknown sub-state %d\n", ttsn().c_str(), fi.sub_state);
+			logerror("%s: read sector unknown sub-state %d\n", ttsn(), fi.sub_state);
 			return;
 		}
 	}
@@ -1181,9 +1216,10 @@ void i8271_device::read_data_continue(floppy_info &fi)
 void i8271_device::write_data_start(floppy_info &fi)
 {
 	fi.main_state = WRITE_DATA;
+	hdl_cb(true);
 	fi.sub_state = HEAD_LOAD_DONE;
-	logerror("%s: command write%s data%s cmd=%02x crn=(%d, %d, %d) len=%02x rate=%d\n",
-				tag(),
+
+	logerror("command write%s data%s cmd=%02x crn=(%d, %d, %d) len=%02x rate=%d\n",
 				command[0] & 0x04 ? " deleted" : "",
 				command[0] & 0x01 ? " multi" : "",
 				command[0],
@@ -1238,6 +1274,7 @@ void i8271_device::write_data_continue(floppy_info &fi)
 			return;
 
 		case SEEK_WAIT_STEP_TIME_DONE:
+			hdl_cb(true);
 			do {
 				if(fi.pcn > command[1])
 					fi.pcn--;
@@ -1297,13 +1334,13 @@ void i8271_device::write_data_continue(floppy_info &fi)
 			return;
 
 		default:
-			logerror("%s: write sector unknown sub-state %d\n", ttsn().c_str(), fi.sub_state);
+			logerror("%s: write sector unknown sub-state %d\n", ttsn(), fi.sub_state);
 			return;
 		}
 	}
 }
 
-int i8271_device::calc_sector_size(UINT8 size)
+int i8271_device::calc_sector_size(uint8_t size)
 {
 	return size > 7 ? 16384 : 128 << size;
 }
@@ -1311,10 +1348,10 @@ int i8271_device::calc_sector_size(UINT8 size)
 void i8271_device::format_track_start(floppy_info &fi)
 {
 	fi.main_state = FORMAT_TRACK;
+	hdl_cb(true);
 	fi.sub_state = HEAD_LOAD_DONE;
 
-	logerror("%s: command format track c=%02x n=%02x sc=%02x gap3=%02x gap5=%02x gap1=%02x\n",
-				tag(),
+	logerror("command format track c=%02x n=%02x sc=%02x gap3=%02x gap5=%02x gap1=%02x\n",
 				command[1], command[3] >> 5, command[3] & 0x1f, command[2], command[4], command[5]);
 
 	rr = ERR_NONE;
@@ -1364,6 +1401,7 @@ void i8271_device::format_track_continue(floppy_info &fi)
 			return;
 
 		case SEEK_WAIT_STEP_TIME_DONE:
+			hdl_cb(true);
 			do {
 				if(fi.pcn > command[1])
 					fi.pcn--;
@@ -1381,7 +1419,7 @@ void i8271_device::format_track_continue(floppy_info &fi)
 			return;
 
 		case WAIT_INDEX_DONE:
-			logerror("%s: index found, writing track\n", tag());
+			logerror("index found, writing track\n");
 			fi.sub_state = TRACK_DONE;
 			cur_live.pll.start_writing(machine().time());
 			set_drq(true);
@@ -1393,7 +1431,7 @@ void i8271_device::format_track_continue(floppy_info &fi)
 			return;
 
 		default:
-			logerror("%s: format track unknown sub-state %d\n", ttsn().c_str(), fi.sub_state);
+			logerror("%s: format track unknown sub-state %d\n", ttsn(), fi.sub_state);
 			return;
 		}
 	}
@@ -1402,11 +1440,10 @@ void i8271_device::format_track_continue(floppy_info &fi)
 void i8271_device::read_id_start(floppy_info &fi)
 {
 	fi.main_state = READ_ID;
+	hdl_cb(true);
 	fi.sub_state = HEAD_LOAD_DONE;
 
-	logerror("%s: command read id, rate=%d\n",
-				tag(),
-				cur_rate);
+	logerror("command read id, rate=%d\n", cur_rate);
 
 	rr = ERR_NONE;
 
@@ -1457,6 +1494,7 @@ void i8271_device::read_id_continue(floppy_info &fi)
 			return;
 
 		case SEEK_WAIT_STEP_TIME_DONE:
+			hdl_cb(true);
 			do {
 				if(fi.pcn > command[1])
 					fi.pcn--;
@@ -1497,28 +1535,15 @@ void i8271_device::read_id_continue(floppy_info &fi)
 			return;
 
 		default:
-			logerror("%s: read id unknown sub-state %d\n", ttsn().c_str(), fi.sub_state);
+			logerror("%s: read id unknown sub-state %d\n", ttsn(), fi.sub_state);
 			return;
 		}
 	}
 }
 
-std::string i8271_device::tts(attotime t)
+std::string i8271_device::ttsn() const
 {
-	char buf[256];
-	const char *sign = "";
-	if(t.seconds() < 0) {
-		t = attotime::zero-t;
-		sign = "-";
-	}
-	int nsec = t.attoseconds() / ATTOSECONDS_PER_NANOSECOND;
-	sprintf(buf, "%s%04d.%03d,%03d,%03d", sign, int(t.seconds()), nsec/1000000, (nsec/1000)%1000, nsec % 1000);
-	return buf;
-}
-
-std::string i8271_device::ttsn()
-{
-	return tts(machine().time());
+	return machine().time().to_string();
 }
 
 void i8271_device::device_timer(emu_timer &timer, device_timer_id id, int param, void *ptr)
@@ -1541,7 +1566,6 @@ void i8271_device::device_timer(emu_timer &timer, device_timer_id id, int param,
 void i8271_device::index_callback(floppy_image_device *floppy, int state)
 {
 	for(auto & fi : flopi) {
-		
 		if(fi.dev != floppy)
 			continue;
 
@@ -1552,6 +1576,13 @@ void i8271_device::index_callback(floppy_image_device *floppy, int state)
 		if(!state) {
 			general_continue(fi);
 			continue;
+		}
+
+		if (fi.main_state == IDLE) {
+			idle_icnt++;
+			if (icnt != 0x0f && idle_icnt >= icnt) {
+				hdl_cb(false);
+			}
 		}
 
 		switch(fi.sub_state) {
@@ -1583,7 +1614,7 @@ void i8271_device::index_callback(floppy_image_device *floppy, int state)
 			break;
 
 		default:
-			logerror("%s: Index pulse on unknown sub-state %d\n", ttsn().c_str(), fi.sub_state);
+			logerror("%s: Index pulse on unknown sub-state %d\n", ttsn(), fi.sub_state);
 			break;
 		}
 
@@ -1628,7 +1659,7 @@ void i8271_device::general_continue(floppy_info &fi)
 		break;
 
 	default:
-		logerror("%s: general_continue on unknown main-state %d\n", ttsn().c_str(), fi.main_state);
+		logerror("%s: general_continue on unknown main-state %d\n", ttsn(), fi.main_state);
 		break;
 	}
 }
@@ -1667,16 +1698,16 @@ bool i8271_device::write_one_bit(const attotime &limit)
 	return false;
 }
 
-void i8271_device::live_write_raw(UINT16 raw)
+void i8271_device::live_write_raw(uint16_t raw)
 {
 	//  logerror("write %04x %04x\n", raw, cur_live.crc);
 	cur_live.shift_reg = raw;
 	cur_live.data_bit_context = raw & 1;
 }
 
-void i8271_device::live_write_fm(UINT8 fm)
+void i8271_device::live_write_fm(uint8_t fm)
 {
-	UINT16 raw = 0xaaaa;
+	uint16_t raw = 0xaaaa;
 	for(int i=0; i<8; i++)
 		if(fm & (0x80 >> i))
 			raw |= 0x4000 >> (2*i);
@@ -1689,7 +1720,7 @@ void i8271_device::live_write_fm(UINT8 fm)
 bool i8271_device::sector_matches() const
 {
 	if(0)
-		logerror("%s: matching %02x %02x %02x - %02x %02x %02x\n", tag(),
+		logerror("matching %02x %02x %02x - %02x %02x %02x\n",
 					cur_live.idbuf[0], cur_live.idbuf[2], cur_live.idbuf[3],
 					command[1], command[2], command[3] >> 5);
 	return

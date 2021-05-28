@@ -4,11 +4,14 @@
 #ifndef GL_SHADER_MGR_H
 #define GL_SHADER_MGR_H
 
+#include "osd_opengl.h"
+
 // #define GLSL_SOURCE_ON_DISK 1
 
 enum GLSL_SHADER_FEATURE {
 	GLSL_SHADER_FEAT_PLAIN,
 	GLSL_SHADER_FEAT_BILINEAR,
+	GLSL_SHADER_FEAT_BICUBIC,
 	GLSL_SHADER_FEAT_INT_NUMBER,
 	GLSL_SHADER_FEAT_CUSTOM = GLSL_SHADER_FEAT_INT_NUMBER,
 	GLSL_SHADER_FEAT_MAX_NUMBER
@@ -24,7 +27,7 @@ struct glsl_shader_info
 
 
 /**
- * returns pointer if ok, otherwise NULL
+ * returns pointer if ok, otherwise nullptr
  */
 glsl_shader_info *glsl_shader_init(osd_gl_context *gl_ctx);
 

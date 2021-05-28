@@ -12,6 +12,8 @@
 
     Known bugs:
         * ASIC65 for Road Riot not quite perfect
+        * Missing DSPCOM board for Road Riot 4WD
+            +or shared ram pcb that bridges both pcbs for the twin cab kind of like in F1: Exhaust Note and Air Rescue from segas32.cpp
 
 ****************************************************************************
 
@@ -20,8 +22,11 @@
 ***************************************************************************/
 
 #include "emu.h"
-#include "video/atarirle.h"
 #include "includes/atarig42.h"
+#include "machine/eeprompar.h"
+#include "machine/watchdog.h"
+#include "emupal.h"
+#include "speaker.h"
 
 
 /*************************************
@@ -30,29 +35,22 @@
  *
  *************************************/
 
-void atarig42_state::update_interrupts()
+void atarig42_state::video_int_ack_w(uint16_t data)
 {
-	m_maincpu->set_input_line(4, m_video_int_state ? ASSERT_LINE : CLEAR_LINE);
-	m_maincpu->set_input_line(5, m_sound_int_state ? ASSERT_LINE : CLEAR_LINE);
+	m_maincpu->set_input_line(M68K_IRQ_4, CLEAR_LINE);
 }
 
 
-MACHINE_START_MEMBER(atarig42_state,atarig42)
+void atarig42_state::machine_start()
 {
 	atarigen_state::machine_start();
 
-	save_item(NAME(m_analog_data));
 	save_item(NAME(m_sloop_bank));
 	save_item(NAME(m_sloop_next_bank));
 	save_item(NAME(m_sloop_offset));
 	save_item(NAME(m_sloop_state));
-}
 
-
-MACHINE_RESET_MEMBER(atarig42_state,atarig42)
-{
-	atarigen_state::machine_reset();
-	scanline_timer_reset(*m_screen, 8);
+	m_sloop_bank = 0;
 }
 
 
@@ -63,29 +61,26 @@ MACHINE_RESET_MEMBER(atarig42_state,atarig42)
  *
  *************************************/
 
-READ16_MEMBER(atarig42_state::special_port2_r)
+void atarig42_state::a2d_select_w(offs_t offset, uint8_t data)
 {
-	int temp = ioport("IN2")->read();
-	temp ^= 0x0008;     /* A2D.EOC always high for now */
-	return temp;
+	if (m_adc.found())
+		m_adc->address_offset_start_w(offset, 0);
 }
 
 
-WRITE16_MEMBER(atarig42_state::a2d_select_w)
+uint8_t atarig42_state::a2d_data_r(offs_t offset)
 {
-	static const char *const portnames[] = { "A2D0", "A2D1" };
+	if (!m_adc.found())
+		return 0xff;
 
-	m_analog_data = ioport(portnames[offset != 0])->read();
+	uint8_t result = m_adc->data_r();
+	if (!machine().side_effects_disabled())
+		m_adc->address_offset_start_w(offset, 0);
+	return result;
 }
 
 
-READ16_MEMBER(atarig42_state::a2d_data_r)
-{
-	return m_analog_data << 8;
-}
-
-
-WRITE16_MEMBER(atarig42_state::io_latch_w)
+void atarig42_state::io_latch_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	/* upper byte */
 	if (ACCESSING_BITS_8_15)
@@ -94,7 +89,7 @@ WRITE16_MEMBER(atarig42_state::io_latch_w)
 		m_asic65->reset_line((~data >> 14) & 1);
 
 		/* bits 13-11 are the MO control bits */
-		m_rle->control_write(space, 0, (data >> 11) & 7);
+		m_rle->control_write((data >> 11) & 7);
 	}
 
 	/* lower byte */
@@ -112,10 +107,10 @@ WRITE16_MEMBER(atarig42_state::io_latch_w)
 }
 
 
-WRITE16_MEMBER(atarig42_state::mo_command_w)
+void atarig42_state::mo_command_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	COMBINE_DATA(m_mo_command);
-	m_rle->command_write(space, offset, (data == 0) ? ATARIRLE_COMMAND_CHECKSUM : ATARIRLE_COMMAND_DRAW);
+	m_rle->command_write((data == 0) ? ATARIRLE_COMMAND_CHECKSUM : ATARIRLE_COMMAND_DRAW);
 }
 
 
@@ -126,18 +121,7 @@ WRITE16_MEMBER(atarig42_state::mo_command_w)
  *
  *************************************/
 
-DIRECT_UPDATE_MEMBER( atarig42_state::atarig42_sloop_direct_handler )
-{
-	if (address < 0x80000)
-	{
-		direct.explicit_configure(0x00000, 0x7ffff, 0x7ffff, m_sloop_base);
-		return (offs_t)-1;
-	}
-	return address;
-}
-
-
-void atarig42_state::roadriot_sloop_tweak(int offset)
+void atarig42_0x200_state::roadriot_sloop_tweak(int offset)
 {
 /*
     sequence 1:
@@ -249,7 +233,7 @@ void atarig42_state::roadriot_sloop_tweak(int offset)
 }
 
 
-READ16_MEMBER(atarig42_state::roadriot_sloop_data_r)
+uint16_t atarig42_0x200_state::roadriot_sloop_data_r(offs_t offset)
 {
 	roadriot_sloop_tweak(offset);
 	if (offset < 0x78000/2)
@@ -259,7 +243,7 @@ READ16_MEMBER(atarig42_state::roadriot_sloop_data_r)
 }
 
 
-WRITE16_MEMBER(atarig42_state::roadriot_sloop_data_w)
+void atarig42_0x200_state::roadriot_sloop_data_w(offs_t offset, uint16_t data)
 {
 	roadriot_sloop_tweak(offset);
 }
@@ -272,9 +256,9 @@ WRITE16_MEMBER(atarig42_state::roadriot_sloop_data_w)
  *
  *************************************/
 
-void atarig42_state::guardians_sloop_tweak(int offset)
+void atarig42_0x400_state::guardians_sloop_tweak(int offset)
 {
-	UINT32 *last_accesses = m_last_accesses;
+	uint32_t *last_accesses = m_last_accesses;
 
 	if (offset >= 0x7f7c0/2)
 	{
@@ -306,7 +290,7 @@ void atarig42_state::guardians_sloop_tweak(int offset)
 }
 
 
-READ16_MEMBER(atarig42_state::guardians_sloop_data_r)
+uint16_t atarig42_0x400_state::guardians_sloop_data_r(offs_t offset)
 {
 	guardians_sloop_tweak(offset);
 	if (offset < 0x78000/2)
@@ -316,7 +300,7 @@ READ16_MEMBER(atarig42_state::guardians_sloop_data_r)
 }
 
 
-WRITE16_MEMBER(atarig42_state::guardians_sloop_data_w)
+void atarig42_0x400_state::guardians_sloop_data_w(offs_t offset, uint16_t data)
 {
 	guardians_sloop_tweak(offset);
 }
@@ -329,31 +313,33 @@ WRITE16_MEMBER(atarig42_state::guardians_sloop_data_w)
  *
  *************************************/
 
-static ADDRESS_MAP_START( main_map, AS_PROGRAM, 16, atarig42_state )
-	AM_RANGE(0x000000, 0x080001) AM_ROM
-	AM_RANGE(0xe00000, 0xe00001) AM_READ_PORT("IN0")
-	AM_RANGE(0xe00002, 0xe00003) AM_READ_PORT("IN1")
-	AM_RANGE(0xe00010, 0xe00011) AM_READ(special_port2_r)
-	AM_RANGE(0xe00012, 0xe00013) AM_READ_PORT("jsa:JSAIII")
-	AM_RANGE(0xe00020, 0xe00027) AM_READWRITE(a2d_data_r, a2d_select_w)
-	AM_RANGE(0xe00030, 0xe00031) AM_DEVREAD8("jsa", atari_jsa_iii_device, main_response_r, 0x00ff)
-	AM_RANGE(0xe00040, 0xe00041) AM_DEVWRITE8("jsa", atari_jsa_iii_device, main_command_w, 0x00ff)
-	AM_RANGE(0xe00050, 0xe00051) AM_WRITE(io_latch_w)
-	AM_RANGE(0xe00060, 0xe00061) AM_DEVWRITE("eeprom", atari_eeprom_device, unlock_write)
-	AM_RANGE(0xe03000, 0xe03001) AM_WRITE(video_int_ack_w)
-	AM_RANGE(0xe03800, 0xe03801) AM_WRITE(watchdog_reset16_w)
-	AM_RANGE(0xe80000, 0xe80fff) AM_RAM
-	AM_RANGE(0xf40000, 0xf40001) AM_DEVREAD("asic65", asic65_device, io_r)
-	AM_RANGE(0xf60000, 0xf60001) AM_DEVREAD("asic65", asic65_device, read)
-	AM_RANGE(0xf80000, 0xf80003) AM_DEVWRITE("asic65", asic65_device, data_w)
-	AM_RANGE(0xfa0000, 0xfa0fff) AM_DEVREADWRITE8("eeprom", atari_eeprom_device, read, write, 0x00ff)
-	AM_RANGE(0xfc0000, 0xfc0fff) AM_RAM_DEVWRITE("palette", palette_device, write) AM_SHARE("palette")
-	AM_RANGE(0xff0000, 0xff0fff) AM_RAM AM_SHARE("rle")
-	AM_RANGE(0xff2000, 0xff5fff) AM_DEVWRITE("playfield", tilemap_device, write) AM_SHARE("playfield")
-	AM_RANGE(0xff6000, 0xff6fff) AM_DEVWRITE("alpha", tilemap_device, write) AM_SHARE("alpha")
-	AM_RANGE(0xff7000, 0xff7001) AM_WRITE(mo_command_w) AM_SHARE("mo_command")
-	AM_RANGE(0xff0000, 0xffffff) AM_RAM
-ADDRESS_MAP_END
+void atarig42_state::main_map(address_map &map)
+{
+	map(0x000000, 0x080001).rom();
+	map(0xe00000, 0xe00001).portr("IN0");
+	map(0xe00002, 0xe00003).portr("IN1");
+	map(0xe00010, 0xe00011).portr("IN2");
+	map(0xe00012, 0xe00013).portr("jsa:JSAIII");
+	map(0xe00020, 0xe0002f).rw(FUNC(atarig42_state::a2d_data_r), FUNC(atarig42_state::a2d_select_w)).umask16(0xff00);
+	map(0xe00031, 0xe00031).r(m_jsa, FUNC(atari_jsa_iii_device::main_response_r));
+	map(0xe00041, 0xe00041).w(m_jsa, FUNC(atari_jsa_iii_device::main_command_w));
+	map(0xe00050, 0xe00051).w(FUNC(atarig42_state::io_latch_w));
+	map(0xe00060, 0xe00061).w("eeprom", FUNC(eeprom_parallel_28xx_device::unlock_write16));
+	map(0xe03000, 0xe03001).w(FUNC(atarig42_state::video_int_ack_w));
+	map(0xe03800, 0xe03801).w("watchdog", FUNC(watchdog_timer_device::reset16_w));
+	map(0xe80000, 0xe80fff).ram();
+	map(0xf40000, 0xf40001).r(m_asic65, FUNC(asic65_device::io_r));
+	map(0xf60000, 0xf60001).r(m_asic65, FUNC(asic65_device::read));
+	map(0xf80000, 0xf80003).w(m_asic65, FUNC(asic65_device::data_w));
+	map(0xfa0000, 0xfa0fff).rw("eeprom", FUNC(eeprom_parallel_28xx_device::read), FUNC(eeprom_parallel_28xx_device::write)).umask16(0x00ff);
+	map(0xfc0000, 0xfc0fff).ram().w("palette", FUNC(palette_device::write16)).share("palette");
+	map(0xff0000, 0xff0fff).ram().share("rle");
+	map(0xff1000, 0xff1fff).ram();
+	map(0xff2000, 0xff5fff).ram().w(m_playfield_tilemap, FUNC(tilemap_device::write16)).share("playfield");
+	map(0xff6000, 0xff6fff).ram().w(m_alpha_tilemap, FUNC(tilemap_device::write16)).share("alpha");
+	map(0xff7000, 0xff7001).ram().w(FUNC(atarig42_state::mo_command_w)).share("mo_command");
+	map(0xff7002, 0xffffff).ram();
+}
 
 
 
@@ -375,7 +361,8 @@ static INPUT_PORTS_START( roadriot )
 	PORT_BIT( 0xffff, IP_ACTIVE_LOW, IPT_UNUSED )
 
 	PORT_START("IN2")       /* e00010 */
-	PORT_BIT( 0x000f, IP_ACTIVE_LOW, IPT_UNUSED )
+	PORT_BIT( 0x0007, IP_ACTIVE_LOW, IPT_UNUSED )
+	PORT_BIT( 0x0008, IP_ACTIVE_HIGH, IPT_CUSTOM ) PORT_READ_LINE_DEVICE_MEMBER("adc", adc0808_device, eoc_r)
 	PORT_BIT( 0x0010, IP_ACTIVE_LOW, IPT_CUSTOM ) PORT_ATARI_JSA_SOUND_TO_MAIN_READY("jsa")
 	PORT_BIT( 0x0020, IP_ACTIVE_LOW, IPT_CUSTOM ) PORT_ATARI_JSA_MAIN_TO_SOUND_READY("jsa")
 	PORT_SERVICE( 0x0040, IP_ACTIVE_LOW )
@@ -432,12 +419,6 @@ static INPUT_PORTS_START( guardian )
 	PORT_SERVICE( 0x0040, IP_ACTIVE_LOW )
 	PORT_BIT(  0x0080, IP_ACTIVE_LOW, IPT_CUSTOM ) PORT_VBLANK("screen")
 	PORT_BIT( 0xff00, IP_ACTIVE_LOW, IPT_UNUSED )
-
-	PORT_START("A2D0")      /* analog 0 */
-	PORT_BIT( 0xff, IP_ACTIVE_LOW, IPT_UNUSED )
-
-	PORT_START("A2D1")      /* analog 1 */
-	PORT_BIT( 0xff, IP_ACTIVE_LOW, IPT_UNUSED )
 INPUT_PORTS_END
 
 
@@ -481,7 +462,7 @@ static const gfx_layout anlayout =
 	32*8
 };
 
-static GFXDECODE_START( atarig42 )
+static GFXDECODE_START( gfx_atarig42 )
 	GFXDECODE_ENTRY( "gfx1", 0, pflayout, 0x000, 64 )
 	GFXDECODE_ENTRY( "gfx2", 0, anlayout, 0x000, 16 )
 	GFXDECODE_ENTRY( "gfx1", 0, pftoplayout, 0x000, 64 )
@@ -531,57 +512,68 @@ static const atari_rle_objects_config modesc_0x400 =
  *
  *************************************/
 
-static MACHINE_CONFIG_START( atarig42, atarig42_state )
-
+void atarig42_state::atarig42(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", M68000, ATARI_CLOCK_14MHz)
-	MCFG_CPU_PROGRAM_MAP(main_map)
-	MCFG_DEVICE_VBLANK_INT_DRIVER("screen", atarigen_state, video_int_gen)
+	M68000(config, m_maincpu, 14.318181_MHz_XTAL);
+	m_maincpu->set_addrmap(AS_PROGRAM, &atarig42_state::main_map);
 
-	MCFG_MACHINE_START_OVERRIDE(atarig42_state,atarig42)
-	MCFG_MACHINE_RESET_OVERRIDE(atarig42_state,atarig42)
+	TIMER(config, "scantimer").configure_scanline(FUNC(atarig42_state::scanline_update), m_screen, 0, 8);
 
-	MCFG_ATARI_EEPROM_2816_ADD("eeprom")
+	EEPROM_2816(config, "eeprom").lock_after_write(true);
+
+	WATCHDOG_TIMER(config, "watchdog");
 
 	/* video hardware */
-	MCFG_GFXDECODE_ADD("gfxdecode", "palette", atarig42)
-	MCFG_PALETTE_ADD("palette", 2048)
-	MCFG_PALETTE_FORMAT(IRRRRRGGGGGBBBBB)
+	GFXDECODE(config, m_gfxdecode, "palette", gfx_atarig42);
+	PALETTE(config, "palette").set_format(palette_device::IRGB_1555, 2048);
 
-	MCFG_TILEMAP_ADD_CUSTOM("playfield", "gfxdecode", 2, atarig42_state, get_playfield_tile_info, 8,8, atarig42_playfield_scan, 128,64)
-	MCFG_TILEMAP_ADD_STANDARD_TRANSPEN("alpha", "gfxdecode", 2, atarig42_state, get_alpha_tile_info, 8,8, SCAN_ROWS, 64,32, 0)
+	TILEMAP(config, m_playfield_tilemap, m_gfxdecode, 2, 8,8);
+	m_playfield_tilemap->set_layout(FUNC(atarig42_state::atarig42_playfield_scan), 128,64);
+	m_playfield_tilemap->set_info_callback(FUNC(atarig42_state::get_playfield_tile_info));
+	TILEMAP(config, m_alpha_tilemap, m_gfxdecode, 2, 8,8, TILEMAP_SCAN_ROWS, 64,32, 0).set_info_callback(FUNC(atarig42_state::get_alpha_tile_info));
 
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_VIDEO_ATTRIBUTES(VIDEO_UPDATE_BEFORE_VBLANK)
+	SCREEN(config, m_screen, SCREEN_TYPE_RASTER);
+	m_screen->set_video_attributes(VIDEO_UPDATE_BEFORE_VBLANK);
 	/* note: these parameters are from published specs, not derived */
 	/* the board uses an SOS chip to generate video signals */
-	MCFG_SCREEN_RAW_PARAMS(ATARI_CLOCK_14MHz/2, 456, 0, 336, 262, 0, 240)
-	MCFG_SCREEN_UPDATE_DRIVER(atarig42_state, screen_update_atarig42)
-	MCFG_SCREEN_PALETTE("palette")
+	m_screen->set_raw(14.318181_MHz_XTAL/2, 456, 0, 336, 262, 0, 240);
+	m_screen->set_screen_update(FUNC(atarig42_state::screen_update_atarig42));
+	m_screen->set_palette("palette");
+	m_screen->screen_vblank().set_inputline(m_maincpu, M68K_IRQ_4, ASSERT_LINE);
 
 	MCFG_VIDEO_START_OVERRIDE(atarig42_state,atarig42)
 
 	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_MONO("mono")
+	SPEAKER(config, "mono").front_center();
 
-	MCFG_ATARI_JSA_III_ADD("jsa", WRITELINE(atarigen_state, sound_int_write_line))
-	MCFG_ATARI_JSA_TEST_PORT("IN2", 6)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 1.0)
-MACHINE_CONFIG_END
+	ATARI_JSA_III(config, m_jsa, 0);
+	m_jsa->main_int_cb().set_inputline(m_maincpu, M68K_IRQ_5);
+	m_jsa->test_read_cb().set_ioport("IN2").bit(6);
+	m_jsa->add_route(ALL_OUTPUTS, "mono", 1.0);
+}
 
-static MACHINE_CONFIG_DERIVED( atarig42_0x200, atarig42 )
-	MCFG_ATARIRLE_ADD("rle", modesc_0x200)
+void atarig42_0x200_state::atarig42_0x200(machine_config &config)
+{
+	atarig42(config);
+	ATARI_RLE_OBJECTS(config, m_rle, 0, modesc_0x200);
+
+	ADC0809(config, m_adc, 14.318181_MHz_XTAL / 16);
+	m_adc->in_callback<0>().set_ioport("A2D0");
+	m_adc->in_callback<1>().set_ioport("A2D1");
 
 	/* ASIC65 */
-	MCFG_ASIC65_ADD("asic65", ASIC65_ROMBASED)
-MACHINE_CONFIG_END
+	ASIC65(config, m_asic65, 0, ASIC65_ROMBASED);
+}
 
-static MACHINE_CONFIG_DERIVED( atarig42_0x400, atarig42 )
-	MCFG_ATARIRLE_ADD("rle", modesc_0x400)
+void atarig42_0x400_state::atarig42_0x400(machine_config &config)
+{
+	atarig42(config);
+	ATARI_RLE_OBJECTS(config, m_rle, 0, modesc_0x400);
 
 	/* ASIC65 */
-	MCFG_ASIC65_ADD("asic65", ASIC65_GUARDIANS)
-MACHINE_CONFIG_END
+	ASIC65(config, m_asic65, 0, ASIC65_GUARDIANS);
+}
 
 
 
@@ -594,17 +586,16 @@ MACHINE_CONFIG_END
 
 ROM_START( roadriot )
 	ROM_REGION( 0x80004, "maincpu", 0 ) /* 68000 code */
-	ROM_LOAD16_BYTE( "136089-3114.8d", 0x00000, 0x20000, CRC(a2bd949c) SHA1(f96064d491b4d488cadebd3a63a6d3edf9236046) )
-	ROM_LOAD16_BYTE( "136089-3113.8c", 0x00001, 0x20000, CRC(68c45cb1) SHA1(e38c7ad3f3d301e59a1d9f53e8f2c28e91d691fe) )
+	ROM_LOAD16_BYTE( "136089-3214.8d", 0x00000, 0x20000, CRC(6b4dc220) SHA1(43517d8adbc8771ac4e4dcde221def12e1859b61) )
+	ROM_LOAD16_BYTE( "136089-3213.8c", 0x00001, 0x20000, CRC(2f182b74) SHA1(b6b30bc068b5eeb52e0000236b7f58b1e88bb154) )
 	ROM_LOAD16_BYTE( "136089-2016.9d", 0x40000, 0x20000, CRC(6191653c) SHA1(97d1a84a585149e8f2c49cab7af22dc755dff350) )
 	ROM_LOAD16_BYTE( "136089-2015.9c", 0x40001, 0x20000, CRC(0d34419a) SHA1(f16e9fb4cd537d727611cb7dd5537c030671fe1e) )
 
 	ROM_REGION( 0x2000, "asic65:asic65cpu", 0 )   /* ASIC65 TMS32015 code */
 	ROM_LOAD( "136089-1012.3f", 0x00000, 0x0a80, CRC(7c5498e7) SHA1(9d8b235baf7b75bef8ef9b168647c5b2b80b2cb3) )
 
-	ROM_REGION( 0x14000, "jsa:cpu", 0 ) /* 6502 code */
-	ROM_LOAD( "136089-1047.12c", 0x10000, 0x4000, CRC(849dd26c) SHA1(05a0b2a5f7ee4437448b5f076d3066d96dec2320) )
-	ROM_CONTINUE(           0x04000, 0xc000 )
+	ROM_REGION( 0x10000, "jsa:cpu", 0 ) /* 6502 code */
+	ROM_LOAD( "136089-1047.12c", 0x00000, 0x10000, CRC(849dd26c) SHA1(05a0b2a5f7ee4437448b5f076d3066d96dec2320) )
 
 	ROM_REGION( 0xc0000, "gfx1", 0 )
 	ROM_LOAD( "136089-1041.22d",    0x000000, 0x20000, CRC(b7451f92) SHA1(9fd17913630e457e406e596f2d86afff98787750) ) /* playfield, planes 0-1 */
@@ -641,7 +632,7 @@ ROM_START( roadriot )
 	ROM_LOAD( "136089-1050.15e",  0x40000, 0x20000, CRC(64d410bb) SHA1(877bccca7ff37a9dd8294bc1453487a2f516ca7d) )
 	ROM_LOAD( "136089-1051.12e",  0x60000, 0x20000, CRC(bffd01c8) SHA1(f6de000f61ea0c1ddb31ee5301506e5e966638c2) )
 
-	ROM_REGION( 0x800, "eeprom:eeprom", 0 )
+	ROM_REGION( 0x800, "eeprom", 0 )
 	ROM_LOAD( "roadriot-eeprom.5c", 0x0000, 0x800, CRC(8d9b957d) SHA1(9d895c5977a3f405130594a10d530a82a6aa265f) )
 
 	ROM_REGION( 0x0600, "proms", 0 )    /* microcode for growth renderer */
@@ -650,7 +641,64 @@ ROM_START( roadriot )
 	ROM_LOAD( "136089-1003.21p",  0x0400, 0x0200, CRC(1f571706) SHA1(26d5ea59163b3482ab1f8a26178d0849c5fd9692) )
 ROM_END
 
-ROM_START( roadrioto )
+ROM_START( roadriota )
+	ROM_REGION( 0x80004, "maincpu", 0 ) /* 68000 code */
+	ROM_LOAD16_BYTE( "136089-3114.8d", 0x00000, 0x20000, CRC(a2bd949c) SHA1(f96064d491b4d488cadebd3a63a6d3edf9236046) )
+	ROM_LOAD16_BYTE( "136089-3113.8c", 0x00001, 0x20000, CRC(68c45cb1) SHA1(e38c7ad3f3d301e59a1d9f53e8f2c28e91d691fe) )
+	ROM_LOAD16_BYTE( "136089-2016.9d", 0x40000, 0x20000, CRC(6191653c) SHA1(97d1a84a585149e8f2c49cab7af22dc755dff350) )
+	ROM_LOAD16_BYTE( "136089-2015.9c", 0x40001, 0x20000, CRC(0d34419a) SHA1(f16e9fb4cd537d727611cb7dd5537c030671fe1e) )
+
+	ROM_REGION( 0x2000, "asic65:asic65cpu", 0 )   /* ASIC65 TMS32015 code */
+	ROM_LOAD( "136089-1012.3f", 0x00000, 0x0a80, CRC(7c5498e7) SHA1(9d8b235baf7b75bef8ef9b168647c5b2b80b2cb3) )
+
+	ROM_REGION( 0x10000, "jsa:cpu", 0 ) /* 6502 code */
+	ROM_LOAD( "136089-1047.12c", 0x00000, 0x10000, CRC(849dd26c) SHA1(05a0b2a5f7ee4437448b5f076d3066d96dec2320) )
+
+	ROM_REGION( 0xc0000, "gfx1", 0 )
+	ROM_LOAD( "136089-1041.22d",    0x000000, 0x20000, CRC(b7451f92) SHA1(9fd17913630e457e406e596f2d86afff98787750) ) /* playfield, planes 0-1 */
+	ROM_LOAD( "136089-1038.22c",    0x020000, 0x20000, CRC(90f3c6ee) SHA1(7607509e2d3b2080a918cfaf2879dbed6b79d029) )
+	ROM_LOAD( "136089-1037.2021d",  0x040000, 0x20000, CRC(d40de62b) SHA1(fa6dfd20bdad7874ae33a1027a9bb0ea200f86ca) ) /* playfield, planes 2-3 */
+	ROM_LOAD( "136089-1039.2021c",  0x060000, 0x20000, CRC(a7e836b1) SHA1(d41f1e4166ca757176c6976be2a953db5db05e48) )
+	ROM_LOAD( "136089-1040.20d",    0x080000, 0x20000, CRC(a81ae93f) SHA1(b694ba5fab35f8fa505a02039ae62f7af3c7ae1d) ) /* playfield, planes 4-5 */
+	ROM_LOAD( "136089-1042.20c",    0x0a0000, 0x20000, CRC(b8a6d15a) SHA1(43d2be9d40a84b2c01d80bbcac737eda04d55999) )
+
+	ROM_REGION( 0x020000, "gfx2", 0 )
+	ROM_LOAD( "136089-1046.22j",    0x000000, 0x20000, CRC(0005bab0) SHA1(257e1b23eea117fe6701a67134b96d9d9fe10caf) ) /* alphanumerics */
+
+	ROM_REGION16_BE( 0x200000, "rle", 0 )
+	ROM_LOAD16_BYTE( "136089-1018.2s", 0x000000, 0x20000, CRC(19590a94) SHA1(e375b7e01a8b1f366bb4e7750e33f0b6d9ae2042) )
+	ROM_LOAD16_BYTE( "136089-1017.2p", 0x000001, 0x20000, CRC(c2bf3f69) SHA1(f822359070b1907973ee7ee35469f4a59f720830) )
+	ROM_LOAD16_BYTE( "136089-1020.3s", 0x040000, 0x20000, CRC(bab110e4) SHA1(0c4e3521474249517e7832df1bc63aca6d6a6c91) )
+	ROM_LOAD16_BYTE( "136089-1019.3p", 0x040001, 0x20000, CRC(791ad2c5) SHA1(4ef218fbf38a9c6b58c86f203843988df1c935f6) )
+	ROM_LOAD16_BYTE( "136089-1022.4s", 0x080000, 0x20000, CRC(79cba484) SHA1(ce361a432f1fe627086bab3c1131118fd15056f1) )
+	ROM_LOAD16_BYTE( "136089-1021.4p", 0x080001, 0x20000, CRC(86a2e257) SHA1(98d95d2e67fecc332f6c66358a1f8d58b168c74b) )
+	ROM_LOAD16_BYTE( "136089-1024.5s", 0x0c0000, 0x20000, CRC(67d28478) SHA1(cfc9da6d20c65d11c2a59a38660a8da4d1cc219d) )
+	ROM_LOAD16_BYTE( "136089-1023.5p", 0x0c0001, 0x20000, CRC(74638838) SHA1(bea0fb21ccb946e023c88791ce5a8dd92b44baec) )
+	ROM_LOAD16_BYTE( "136089-1026.6s", 0x100000, 0x20000, CRC(24933c37) SHA1(516393aae51fc9634a5c6d5134be058d6067e114) )
+	ROM_LOAD16_BYTE( "136089-1025.6p", 0x100001, 0x20000, CRC(054a163b) SHA1(1b0b129c093398bc5c14b3fdd87dfe149f555fac) )
+	ROM_LOAD16_BYTE( "136089-1028.7s", 0x140000, 0x20000, CRC(31ff090a) SHA1(7b43ed37901c3f94cae90c84b3c8c689d7b64dd6) )
+	ROM_LOAD16_BYTE( "136089-1027.7p", 0x140001, 0x20000, CRC(bbe5b69b) SHA1(9eaa551fba763824d36fc41bfe0e6d735a9e68c5) )
+	ROM_LOAD16_BYTE( "136089-1030.8s", 0x180000, 0x20000, CRC(6c89d2c5) SHA1(0bf2990ce1cd5ec5b84f7e3171725540e6238408) )
+	ROM_LOAD16_BYTE( "136089-1029.8p", 0x180001, 0x20000, CRC(40d9bde5) SHA1(aca6e07ea96e4618412d32fe4d4cd293ae82d940) )
+	ROM_LOAD16_BYTE( "136089-1032.9s", 0x1c0000, 0x20000, CRC(eca3c595) SHA1(5d067b7c02675b1e6dd3c4046697a16f873f80af) )
+	ROM_LOAD16_BYTE( "136089-1031.9p", 0x1c0001, 0x20000, CRC(88acdb53) SHA1(5bf2424ee75a25248a8ce38c8605b6780da4e323) )
+
+	ROM_REGION( 0x80000, "jsa:oki1", 0 )
+	ROM_LOAD( "136089-1048.19e",  0x00000, 0x20000, CRC(2db638a7) SHA1(45da8088f7439beacc3056952a4d631d9633efa7) )
+	ROM_LOAD( "136089-1049.17e",  0x20000, 0x20000, CRC(e1dd7f9e) SHA1(6b9a240aa84d210d3052daab6ea26f9cd0e62dc1) )
+	ROM_LOAD( "136089-1050.15e",  0x40000, 0x20000, CRC(64d410bb) SHA1(877bccca7ff37a9dd8294bc1453487a2f516ca7d) )
+	ROM_LOAD( "136089-1051.12e",  0x60000, 0x20000, CRC(bffd01c8) SHA1(f6de000f61ea0c1ddb31ee5301506e5e966638c2) )
+
+	ROM_REGION( 0x800, "eeprom", 0 )
+	ROM_LOAD( "roadriot-eeprom.5c", 0x0000, 0x800, CRC(8d9b957d) SHA1(9d895c5977a3f405130594a10d530a82a6aa265f) )
+
+	ROM_REGION( 0x0600, "proms", 0 )    /* microcode for growth renderer */
+	ROM_LOAD( "136089-1001.20p",  0x0000, 0x0200, CRC(5836cb5a) SHA1(2c797f6a1227d6e1fd7a12f99f0254072c8c266e) )
+	ROM_LOAD( "136089-1002.22p",  0x0200, 0x0200, CRC(44288753) SHA1(811582015264f85a32643196cdb331a41430318f) )
+	ROM_LOAD( "136089-1003.21p",  0x0400, 0x0200, CRC(1f571706) SHA1(26d5ea59163b3482ab1f8a26178d0849c5fd9692) )
+ROM_END
+
+ROM_START( roadriotb )
 	ROM_REGION( 0x80004, "maincpu", 0 ) /* 68000 code */
 	ROM_LOAD16_BYTE( "136089-2014.8d", 0x00000, 0x20000, CRC(bf8aaafc) SHA1(1594d91b56609d49921c866d8f5796619e79217b) ) /* Program ROMs in Blue labels,  */
 	ROM_LOAD16_BYTE( "136089-2013.8c", 0x00001, 0x20000, CRC(5dd2dd70) SHA1(8f6a0e809ec1f6feea8a18197a789086a7b9dd6a) ) /* other ROMs in Yellow labels   */
@@ -660,9 +708,8 @@ ROM_START( roadrioto )
 	ROM_REGION( 0x2000, "asic65:asic65cpu", 0 )   /* ASIC65 TMS32015 code */
 	ROM_LOAD( "136089-1012.3f", 0x00000, 0x0a80, CRC(7c5498e7) SHA1(9d8b235baf7b75bef8ef9b168647c5b2b80b2cb3) )
 
-	ROM_REGION( 0x14000, "jsa:cpu", 0 ) /* 6502 code */
-	ROM_LOAD( "136089-1047.12c", 0x10000, 0x4000, CRC(849dd26c) SHA1(05a0b2a5f7ee4437448b5f076d3066d96dec2320) )
-	ROM_CONTINUE(           0x04000, 0xc000 )
+	ROM_REGION( 0x10000, "jsa:cpu", 0 ) /* 6502 code */
+	ROM_LOAD( "136089-1047.12c", 0x00000, 0x10000, CRC(849dd26c) SHA1(05a0b2a5f7ee4437448b5f076d3066d96dec2320) )
 
 	ROM_REGION( 0xc0000, "gfx1", 0 )
 	ROM_LOAD( "136089-1041.22d",    0x000000, 0x20000, CRC(b7451f92) SHA1(9fd17913630e457e406e596f2d86afff98787750) ) /* playfield, planes 0-1 */
@@ -699,7 +746,7 @@ ROM_START( roadrioto )
 	ROM_LOAD( "136089-1050.15e",  0x40000, 0x20000, CRC(64d410bb) SHA1(877bccca7ff37a9dd8294bc1453487a2f516ca7d) )
 	ROM_LOAD( "136089-1051.12e",  0x60000, 0x20000, CRC(bffd01c8) SHA1(f6de000f61ea0c1ddb31ee5301506e5e966638c2) )
 
-	ROM_REGION( 0x800, "eeprom:eeprom", 0 )
+	ROM_REGION( 0x800, "eeprom", 0 )
 	ROM_LOAD( "roadriot-eeprom.5c", 0x0000, 0x800, CRC(8d9b957d) SHA1(9d895c5977a3f405130594a10d530a82a6aa265f) )
 
 	ROM_REGION( 0x0600, "proms", 0 )    /* microcode for growth renderer */
@@ -719,9 +766,8 @@ ROM_START( guardian )
 	ROM_REGION( 0x2000, "asic65:asic65cpu", 0 )   /* ASIC65 TMS32015 code */
 	ROM_LOAD( "136089-1012.3f", 0x00000, 0x0a80, NO_DUMP )
 
-	ROM_REGION( 0x14000, "jsa:cpu", 0 ) /* 6502 code */
-	ROM_LOAD( "136092-0080-snd.12c", 0x10000, 0x4000, CRC(0388f805) SHA1(49c11313bc4192dbe294cf68b652cb19047889fd) )
-	ROM_CONTINUE(             0x04000, 0xc000 )
+	ROM_REGION( 0x10000, "jsa:cpu", 0 ) /* 6502 code */
+	ROM_LOAD( "136092-0080-snd.12c", 0x00000, 0x10000, CRC(0388f805) SHA1(49c11313bc4192dbe294cf68b652cb19047889fd) )
 
 	ROM_REGION( 0x180000, "gfx1", 0 )
 	ROM_LOAD( "136092-0037a.23e",  0x000000, 0x80000, CRC(ca10b63e) SHA1(243a2a440e1bc9135d3dbe6553d39c54b9bdcd13) ) /* playfield, planes 0-1 */
@@ -748,7 +794,7 @@ ROM_START( guardian )
 	ROM_REGION( 0x80000, "jsa:oki1", 0 )
 	ROM_LOAD( "136092-0010-snd.19e",  0x00000, 0x80000, CRC(bca27f40) SHA1(91a41eac116eb7d9a790abc590eb06328726d1c2) )
 
-	ROM_REGION( 0x800, "eeprom:eeprom", 0 )
+	ROM_REGION( 0x800, "eeprom", 0 )
 	ROM_LOAD( "guardian-eeprom.5c", 0x0000, 0x800, CRC(85835fab) SHA1(747e2851c8baa0e7f1c0784b0d6900514230ab07) )
 
 	ROM_REGION( 0x0600, "proms", 0 )    /* microcode for growth renderer */
@@ -776,13 +822,13 @@ ROM_END
  *
  *************************************/
 
-DRIVER_INIT_MEMBER(atarig42_state,roadriot)
+void atarig42_0x200_state::init_roadriot()
 {
 	m_playfield_base = 0x400;
 
 	address_space &main = m_maincpu->space(AS_PROGRAM);
-	m_sloop_base = main.install_readwrite_handler(0x000000, 0x07ffff, read16_delegate(FUNC(atarig42_state::roadriot_sloop_data_r),this), write16_delegate(FUNC(atarig42_state::roadriot_sloop_data_w),this));
-	main.set_direct_update_handler(direct_update_delegate(FUNC(atarig42_state::atarig42_sloop_direct_handler), this));
+	main.install_readwrite_handler(0x000000, 0x07ffff, read16sm_delegate(*this, FUNC(atarig42_0x200_state::roadriot_sloop_data_r)), write16sm_delegate(*this, FUNC(atarig42_0x200_state::roadriot_sloop_data_w)));
+	m_sloop_base = (uint16_t *)memregion("maincpu")->base();
 
 	/*
 	Road Riot color MUX
@@ -807,17 +853,17 @@ DRIVER_INIT_MEMBER(atarig42_state,roadriot)
 }
 
 
-DRIVER_INIT_MEMBER(atarig42_state,guardian)
+void atarig42_0x400_state::init_guardian()
 {
 	m_playfield_base = 0x000;
 
 	/* it looks like they jsr to $80000 as some kind of protection */
 	/* put an RTS there so we don't die */
-	*(UINT16 *)&memregion("maincpu")->base()[0x80000] = 0x4E75;
+	*(uint16_t *)&memregion("maincpu")->base()[0x80000] = 0x4E75;
 
 	address_space &main = m_maincpu->space(AS_PROGRAM);
-	m_sloop_base = main.install_readwrite_handler(0x000000, 0x07ffff, read16_delegate(FUNC(atarig42_state::guardians_sloop_data_r),this), write16_delegate(FUNC(atarig42_state::guardians_sloop_data_w),this));
-	main.set_direct_update_handler(direct_update_delegate(FUNC(atarig42_state::atarig42_sloop_direct_handler), this));
+	main.install_readwrite_handler(0x000000, 0x07ffff, read16sm_delegate(*this, FUNC(atarig42_0x400_state::guardians_sloop_data_r)), write16sm_delegate(*this, FUNC(atarig42_0x400_state::guardians_sloop_data_w)));
+	m_sloop_base = (uint16_t *)memregion("maincpu")->base();
 
 	/*
 	Guardians color MUX
@@ -849,6 +895,7 @@ DRIVER_INIT_MEMBER(atarig42_state,guardian)
  *
  *************************************/
 
-GAME( 1991, roadriot, 0,        atarig42_0x200, roadriot, atarig42_state, roadriot, ROT0, "Atari Games", "Road Riot 4WD (set 1, 13 Nov 1991)", MACHINE_UNEMULATED_PROTECTION )
-GAME( 1991, roadrioto,roadriot, atarig42_0x200, roadriot, atarig42_state, roadriot, ROT0, "Atari Games", "Road Riot 4WD (set 2, 04 Jun 1991)", MACHINE_UNEMULATED_PROTECTION )
-GAME( 1992, guardian, 0,        atarig42_0x400, guardian, atarig42_state, guardian, ROT0, "Atari Games", "Guardians of the 'Hood", 0 )
+GAME( 1991, roadriot,  0,        atarig42_0x200, roadriot, atarig42_0x200_state, init_roadriot, ROT0, "Atari Games", "Road Riot 4WD (set 1, 04 Dec 1991)", MACHINE_UNEMULATED_PROTECTION | MACHINE_NODEVICE_LAN )
+GAME( 1991, roadriota, roadriot, atarig42_0x200, roadriot, atarig42_0x200_state, init_roadriot, ROT0, "Atari Games", "Road Riot 4WD (set 2, 13 Nov 1991)", MACHINE_UNEMULATED_PROTECTION | MACHINE_NODEVICE_LAN )
+GAME( 1991, roadriotb, roadriot, atarig42_0x200, roadriot, atarig42_0x200_state, init_roadriot, ROT0, "Atari Games", "Road Riot 4WD (set 3, 04 Jun 1991)", MACHINE_UNEMULATED_PROTECTION | MACHINE_NODEVICE_LAN )
+GAME( 1992, guardian,  0,        atarig42_0x400, guardian, atarig42_0x400_state, init_guardian, ROT0, "Atari Games", "Guardians of the 'Hood", 0 )

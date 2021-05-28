@@ -1,102 +1,142 @@
 // license:BSD-3-Clause
-// copyright-holders:Miodrag Milanovic, Robbbert
+// copyright-holders:Miodrag Milanovic
 /***************************************************************************
 
-        Mera-Elzab Konin
+Mera-Elzab Konin
 
-        It's industrial computer used in Poland
+It's an industrial computer used in Poland
 
-        29/12/2011 Skeleton driver.
+No information has been found. All code is guesswork.
 
-'maincpu' (0384): unmapped i/o memory write to 00F8 = 56 & FF
-'maincpu' (0388): unmapped i/o memory write to 00F8 = B6 & FF
-'maincpu' (038C): unmapped i/o memory write to 0024 = 00 & FF
-'maincpu' (0A0B): unmapped i/o memory write to 0080 = BE & FF
-'maincpu' (0A0F): unmapped i/o memory write to 0080 = 08 & FF
-'maincpu' (0A13): unmapped i/o memory write to 0080 = 0C & FF
-'maincpu' (0A15): unmapped i/o memory read from 0082 & FF
-'maincpu' (0A19): unmapped i/o memory write to 0080 = 05 & FF
-'maincpu' (04DE): unmapped i/o memory write to 00F6 = 27 & FF
-'maincpu' (04E2): unmapped i/o memory write to 00F6 = 40 & FF
-'maincpu' (04E6): unmapped i/o memory write to 00F6 = CE & FF
-'maincpu' (04EA): unmapped i/o memory write to 00F6 = 27 & FF
-'maincpu' (043B): unmapped i/o memory write to 00F8 = B6 & FF
-'maincpu' (043F): unmapped i/o memory write to 00F6 = 27 & FF
-'maincpu' (2AA3): unmapped i/o memory write to 00F8 = 14 & FF
-'maincpu' (2AA7): unmapped i/o memory write to 00FB = C0 & FF
-'maincpu' (2AC2): unmapped i/o memory write to 00F8 = 56 & FF
-'maincpu' (2AC6): unmapped i/o memory write to 00FA = 03 & FF
-'maincpu' (0082): unmapped i/o memory write to 0024 = 06 & FF
+2011-12-29 Skeleton driver.
+2016-07-15 Added terminal and uart.
+
+Press E to see some messages.
+
+Terminal settings: 8 data bits, 2 stop bits, no parity @ 9600
 
 ****************************************************************************/
 
 #include "emu.h"
-#include "cpu/z80/z80.h"
+#include "cpu/i8085/i8085.h"
+#include "machine/i8212.h"
+#include "machine/i8214.h"
+#include "machine/i8251.h"
+#include "machine/pit8253.h"
+#include "machine/i8255.h"
+#include "bus/rs232/rs232.h"
 
 class konin_state : public driver_device
 {
 public:
 	konin_state(const machine_config &mconfig, device_type type, const char *tag)
-		: driver_device(mconfig, type, tag) ,
-		m_maincpu(*this, "maincpu") { }
+		: driver_device(mconfig, type, tag)
+		, m_maincpu(*this, "maincpu")
+		, m_picu(*this, "picu")
+		, m_ioppi(*this, "ioppi")
+		, m_iopit(*this, "iopit")
+	{ }
 
-	virtual void machine_reset() override;
-	virtual void video_start() override;
-	UINT32 screen_update_konin(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
+	void konin(machine_config &config);
+
+private:
+	DECLARE_WRITE_LINE_MEMBER(picu_r3_w);
+
+	void io_map(address_map &map);
+	void mem_map(address_map &map);
+
+	virtual void machine_start() override;
 	required_device<cpu_device> m_maincpu;
+	required_device<i8214_device> m_picu;
+	required_device<i8255_device> m_ioppi;
+	required_device<pit8253_device> m_iopit;
 };
 
-static ADDRESS_MAP_START( konin_mem, AS_PROGRAM, 8, konin_state )
-	ADDRESS_MAP_UNMAP_HIGH
-	AM_RANGE(0x0000, 0x4fff) AM_ROM
-	AM_RANGE(0x5000, 0xffff) AM_RAM
-ADDRESS_MAP_END
+WRITE_LINE_MEMBER(konin_state::picu_r3_w)
+{
+	m_picu->r_w(4, !state);
+}
 
-static ADDRESS_MAP_START( konin_io, AS_IO, 8, konin_state )
-	ADDRESS_MAP_UNMAP_HIGH
-	ADDRESS_MAP_GLOBAL_MASK(0xff)
-ADDRESS_MAP_END
+void konin_state::mem_map(address_map &map)
+{
+	map.unmap_value_high();
+	map(0x0000, 0x4fff).rom();
+	map(0x5000, 0x7fff).ram();
+	map(0xf200, 0xf200).nopw(); // watchdog?
+	map(0xf400, 0xfbff).ram();
+	map(0xfc80, 0xfc83).rw("mainppi", FUNC(i8255_device::read), FUNC(i8255_device::write));
+	map(0xfc84, 0xfc87).rw("mainpit", FUNC(pit8253_device::read), FUNC(pit8253_device::write));
+	map(0xff00, 0xffff).ram();
+}
+
+void konin_state::io_map(address_map &map)
+{
+	map.unmap_value_high();
+	map.global_mask(0xff);
+	map(0x24, 0x24).w(m_picu, FUNC(i8214_device::b_w));
+	map(0x80, 0x83).lrw8(
+		NAME([this](offs_t offset) { return m_ioppi->read(offset^3); }),
+		NAME([this](offs_t offset, u8 data) { m_ioppi->write(offset^3, data); }));
+	map(0xf6, 0xf6).rw("uart", FUNC(i8251_device::status_r), FUNC(i8251_device::control_w));
+	map(0xf7, 0xf7).rw("uart", FUNC(i8251_device::data_r), FUNC(i8251_device::data_w));
+	map(0xf8, 0xfb).lrw8(
+		NAME([this](offs_t offset) { return m_iopit->read(offset^3); }),
+		NAME([this](offs_t offset, u8 data) { m_iopit->write(offset^3, data); }));
+}
 
 /* Input ports */
 static INPUT_PORTS_START( konin )
 INPUT_PORTS_END
 
 
-void konin_state::machine_reset()
+void konin_state::machine_start()
 {
 }
 
-void konin_state::video_start()
+void konin_state::konin(machine_config &config)
 {
-}
-
-UINT32 konin_state::screen_update_konin(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
-{
-	return 0;
-}
-
-static MACHINE_CONFIG_START( konin, konin_state )
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu",Z80, XTAL_4MHz)
-	MCFG_CPU_PROGRAM_MAP(konin_mem)
-	MCFG_CPU_IO_MAP(konin_io)
+	i8080_cpu_device &maincpu(I8080(config, m_maincpu, XTAL(4'000'000)));
+	maincpu.set_addrmap(AS_PROGRAM, &konin_state::mem_map);
+	maincpu.set_addrmap(AS_IO, &konin_state::io_map);
+	maincpu.out_inte_func().set(m_picu, FUNC(i8214_device::inte_w));
+	maincpu.set_irq_acknowledge_callback("intlatch", FUNC(i8212_device::inta_cb));
 
+	i8212_device &intlatch(I8212(config, "intlatch", 0));
+	intlatch.md_rd_callback().set_constant(0);
+	intlatch.di_rd_callback().set(m_picu, FUNC(i8214_device::vector_r));
+	intlatch.int_wr_callback().set_inputline("maincpu", I8085_INTR_LINE);
 
-	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_REFRESH_RATE(50)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(2500)) /* not accurate */
-	MCFG_SCREEN_SIZE(640, 480)
-	MCFG_SCREEN_VISIBLE_AREA(0, 640-1, 0, 480-1)
-	MCFG_SCREEN_UPDATE_DRIVER(konin_state, screen_update_konin)
-	MCFG_SCREEN_PALETTE("palette")
+	I8214(config, m_picu, XTAL(4'000'000));
+	m_picu->int_wr_callback().set("intlatch", FUNC(i8212_device::stb_w));
 
-	MCFG_PALETTE_ADD_BLACK_AND_WHITE("palette")
-MACHINE_CONFIG_END
+	pit8253_device &mainpit(PIT8253(config, "mainpit", 0));
+	// wild guess at UART clock and source
+	mainpit.set_clk<0>(1536000);
+	mainpit.out_handler<0>().set("uart", FUNC(i8251_device::write_txc));
+	mainpit.out_handler<0>().append("uart", FUNC(i8251_device::write_rxc));
+
+	I8255(config, "mainppi", 0);
+
+	PIT8253(config, m_iopit, 0);
+
+	I8255(config, m_ioppi, 0);
+
+	i8251_device &uart(I8251(config, "uart", 0));
+	uart.txd_handler().set("rs232", FUNC(rs232_port_device::write_txd));
+	uart.dtr_handler().set("rs232", FUNC(rs232_port_device::write_dtr));
+	uart.rts_handler().set("rs232", FUNC(rs232_port_device::write_rts));
+	uart.rxrdy_handler().set(FUNC(konin_state::picu_r3_w));
+
+	rs232_port_device &rs232(RS232_PORT(config, "rs232", default_rs232_devices, "terminal"));
+	rs232.rxd_handler().set("uart", FUNC(i8251_device::write_rxd));
+	rs232.dsr_handler().set("uart", FUNC(i8251_device::write_dsr));
+	rs232.cts_handler().set("uart", FUNC(i8251_device::write_cts));
+}
 
 /* ROM definition */
 ROM_START( konin )
-	ROM_REGION( 0x10000, "maincpu", ROMREGION_ERASEFF )
+	ROM_REGION( 0x5000, "maincpu", 0 )
 	ROM_LOAD( "001.bin", 0x0000, 0x0800, CRC(0b13208a) SHA1(38ea17be591b729158d601c03bfd9954f32e0e67))
 	ROM_LOAD( "008.bin", 0x0800, 0x0800, CRC(f003e407) SHA1(11f79ef3b90788cf627ee39705bbbd04dbf45f50))
 	ROM_LOAD( "007.bin", 0x1000, 0x0800, CRC(3d390c03) SHA1(ac2fe31c065e8f630381d6cebd2eb58b403c1e02))
@@ -111,5 +151,5 @@ ROM_END
 
 /* Driver */
 
-/*    YEAR  NAME    PARENT  COMPAT   MACHINE    INPUT    INIT    COMPANY       FULLNAME       FLAGS */
-COMP( 198?, konin,  0,      0,       konin,     konin, driver_device,   0,    "Mera-Elzab",   "Konin", MACHINE_IS_SKELETON | MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
+//    YEAR  NAME   PARENT  COMPAT  MACHINE  INPUT  CLASS        INIT        COMPANY       FULLNAME  FLAGS
+COMP( 198?, konin, 0,      0,      konin,   konin, konin_state, empty_init, "Mera-Elzab", "Konin",  MACHINE_IS_SKELETON | MACHINE_SUPPORTS_SAVE )

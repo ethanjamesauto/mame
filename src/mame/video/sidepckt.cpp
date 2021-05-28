@@ -12,35 +12,34 @@
 #include "includes/sidepckt.h"
 
 
-PALETTE_INIT_MEMBER(sidepckt_state, sidepckt)
+void sidepckt_state::sidepckt_palette(palette_device &palette) const
 {
-	const UINT8 *color_prom = memregion("proms")->base();
-	int i;
+	uint8_t const *const color_prom = memregion("proms")->base();
 
-	for (i = 0;i < palette.entries();i++)
+	for (int i = 0; i < palette.entries(); i++)
 	{
-		int bit0,bit1,bit2,bit3,r,g,b;
+		int bit0, bit1, bit2, bit3;
 
-		/* red component */
-		bit0 = (color_prom[i] >> 4) & 0x01;
-		bit1 = (color_prom[i] >> 5) & 0x01;
-		bit2 = (color_prom[i] >> 6) & 0x01;
-		bit3 = (color_prom[i] >> 7) & 0x01;
-		r = 0x0e * bit0 + 0x1f * bit1 + 0x43 * bit2 + 0x8f * bit3;
-		/* green component */
-		bit0 = (color_prom[i] >> 0) & 0x01;
-		bit1 = (color_prom[i] >> 1) & 0x01;
-		bit2 = (color_prom[i] >> 2) & 0x01;
-		bit3 = (color_prom[i] >> 3) & 0x01;
-		g = 0x0e * bit0 + 0x1f * bit1 + 0x43 * bit2 + 0x8f * bit3;
-		/* blue component */
-		bit0 = (color_prom[i + palette.entries()] >> 0) & 0x01;
-		bit1 = (color_prom[i + palette.entries()] >> 1) & 0x01;
-		bit2 = (color_prom[i + palette.entries()] >> 2) & 0x01;
-		bit3 = (color_prom[i + palette.entries()] >> 3) & 0x01;
-		b = 0x0e * bit0 + 0x1f * bit1 + 0x43 * bit2 + 0x8f * bit3;
+		// red component
+		bit0 = BIT(color_prom[i], 4);
+		bit1 = BIT(color_prom[i], 5);
+		bit2 = BIT(color_prom[i], 6);
+		bit3 = BIT(color_prom[i], 7);
+		int const r = 0x0e * bit0 + 0x1f * bit1 + 0x43 * bit2 + 0x8f * bit3;
+		// green component
+		bit0 = BIT(color_prom[i], 0);
+		bit1 = BIT(color_prom[i], 1);
+		bit2 = BIT(color_prom[i], 2);
+		bit3 = BIT(color_prom[i], 3);
+		int const g = 0x0e * bit0 + 0x1f * bit1 + 0x43 * bit2 + 0x8f * bit3;
+		// blue component
+		bit0 = BIT(color_prom[i + palette.entries()], 0);
+		bit1 = BIT(color_prom[i + palette.entries()], 1);
+		bit2 = BIT(color_prom[i + palette.entries()], 2);
+		bit3 = BIT(color_prom[i + palette.entries()], 3);
+		int const b = 0x0e * bit0 + 0x1f * bit1 + 0x43 * bit2 + 0x8f * bit3;
 
-		palette.set_pen_color(i,rgb_t(r,g,b));
+		palette.set_pen_color(i, rgb_t(r, g, b));
 	}
 }
 
@@ -54,8 +53,8 @@ PALETTE_INIT_MEMBER(sidepckt_state, sidepckt)
 
 TILE_GET_INFO_MEMBER(sidepckt_state::get_tile_info)
 {
-	UINT8 attr = m_colorram[tile_index];
-	SET_TILE_INFO_MEMBER(0,
+	uint8_t attr = m_colorram[tile_index];
+	tileinfo.set(0,
 			m_videoram[tile_index] + ((attr & 0x07) << 8),
 			((attr & 0x10) >> 3) | ((attr & 0x20) >> 5),
 			TILE_FLIPX);
@@ -72,12 +71,14 @@ TILE_GET_INFO_MEMBER(sidepckt_state::get_tile_info)
 
 void sidepckt_state::video_start()
 {
-	m_bg_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(sidepckt_state::get_tile_info),this),TILEMAP_SCAN_ROWS,8,8,32,32);
+	m_bg_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(sidepckt_state::get_tile_info)), TILEMAP_SCAN_ROWS, 8,8, 32,32);
 
 	m_bg_tilemap->set_transmask(0,0xff,0x00); /* split type 0 is totally transparent in front half */
 	m_bg_tilemap->set_transmask(1,0x01,0xfe); /* split type 1 has pen 0 transparent in front half */
 
 	machine().tilemap().set_flip_all(TILEMAP_FLIPX);
+
+	save_item(NAME(m_scroll_y));
 }
 
 
@@ -88,22 +89,31 @@ void sidepckt_state::video_start()
 
 ***************************************************************************/
 
-WRITE8_MEMBER(sidepckt_state::videoram_w)
+void sidepckt_state::videoram_w(offs_t offset, uint8_t data)
 {
 	m_videoram[offset] = data;
 	m_bg_tilemap->mark_tile_dirty(offset);
 }
 
-WRITE8_MEMBER(sidepckt_state::colorram_w)
+void sidepckt_state::colorram_w(offs_t offset, uint8_t data)
 {
 	m_colorram[offset] = data;
 	m_bg_tilemap->mark_tile_dirty(offset);
 }
 
-WRITE8_MEMBER(sidepckt_state::flipscreen_w)
+uint8_t sidepckt_state::scroll_y_r()
 {
-	int flipscreen = data;
-	machine().tilemap().set_flip_all(flipscreen ? TILEMAP_FLIPY : TILEMAP_FLIPX);
+	return (m_scroll_y);
+}
+
+void sidepckt_state::scroll_y_w(uint8_t data)
+{
+	// Bits 0-5: Scroll y
+	m_scroll_y = data & 0x3F;
+
+	// Other bits: Unknown, but they seem never written
+	if (data > 0x3F)
+		logerror ("scroll_y_w: Unknown write -> data = 0x%02X\n", data);
 }
 
 
@@ -117,22 +127,22 @@ void sidepckt_state::draw_sprites(bitmap_ind16 &bitmap,const rectangle &cliprect
 {
 	for (int offs = 0;offs < m_spriteram.bytes(); offs += 4)
 	{
-		int sx,sy,code,color,flipx,flipy;
+		int attr  = m_spriteram[offs | 1];
+		int code  = ((attr & 0x03) << 8) | m_spriteram[offs | 3];
+		int color = (attr & 0xf0) >> 4;
 
-		code = m_spriteram[offs+3] + ((m_spriteram[offs+1] & 0x03) << 8);
-		color = (m_spriteram[offs+1] & 0xf0) >> 4;
+		int sx = m_spriteram[offs | 2] - 2;
+		int sy = m_spriteram[offs];
 
-		sx = m_spriteram[offs+2]-2;
-		sy = m_spriteram[offs];
-
-		flipx = m_spriteram[offs+1] & 0x08;
-		flipy = m_spriteram[offs+1] & 0x04;
+		int flipx = attr & 0x08;
+		int flipy = attr & 0x04;
 
 		m_gfxdecode->gfx(1)->transpen(bitmap,cliprect,
 				code,
 				color,
 				flipx,flipy,
 				sx,sy,0);
+
 		/* wraparound */
 		m_gfxdecode->gfx(1)->transpen(bitmap,cliprect,
 				code,
@@ -143,8 +153,10 @@ void sidepckt_state::draw_sprites(bitmap_ind16 &bitmap,const rectangle &cliprect
 }
 
 
-UINT32 sidepckt_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t sidepckt_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
+	m_bg_tilemap->set_scrolly (0, m_scroll_y);
+
 	m_bg_tilemap->draw(screen, bitmap, cliprect, TILEMAP_DRAW_LAYER1,0);
 	draw_sprites(bitmap,cliprect);
 	m_bg_tilemap->draw(screen, bitmap, cliprect, TILEMAP_DRAW_LAYER0,0);

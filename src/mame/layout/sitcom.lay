@@ -1,10 +1,27 @@
-<!-- Basic display of LEDs for the SITCOM85 -->
+<?xml version="1.0"?>
+<!--
+license:CC0
+
+Basic display of LEDs for the SITCOM85
+-->
 
 <mamelayout version="2">
 
 	<element name="a_led">
-		<disk>
+		<disk state="0">
 			<color red="0.0" green="0.75" blue="0.0" />
+		</disk>
+		<disk state="1">
+			<color red="0.0" green="0.15" blue="0.0" />
+		</disk>
+	</element>
+
+	<element name="b_led">
+		<disk state="0">
+			<color red="1.0" green="0.0" blue="0.0" />
+		</disk>
+		<disk state="1">
+			<color red="0.15" green="0.0" blue="0.0" />
 		</disk>
 	</element>
 
@@ -23,41 +40,37 @@
 
 	<view name="Default Layout">
 		<!-- Black background -->
-		<bezel element="background">
-			<bounds left="34" top="60" right="341" bottom="130" />
-		</bezel>
-		<bezel name="sod_led" element="a_led">
-			<bounds left="46" right="56" top="90" bottom="100" />
-		</bezel>
+		<element ref="background">
+			<bounds left="34" top="60" right="341" bottom="160" />
+		</element>
+		<element name="sod_led" ref="a_led">
+			<bounds left="46" top="90" right="56" bottom="100" />
+		</element>
 
-		<!-- DL1414 left -->
-		<bezel name="digit3" element="a_digit">
-			<bounds left="65" top="70" right="90" bottom="120" />
-		</bezel>
-		<bezel name="digit2" element="a_digit">
-			<bounds left="99" top="70" right="124" bottom="120" />
-		</bezel>
-		<bezel name="digit1" element="a_digit">
-			<bounds left="133" top="70" right="158" bottom="120" />
-		</bezel>
-		<bezel name="digit0" element="a_digit">
-			<bounds left="167" top="70" right="192" bottom="120" />
-		</bezel>
+		<!-- DL1414 left/right -->
+		<repeat count="2">
+			<param name="moduleno" start="3" increment="4" />
+			<param name="modulex" start="65" increment="139" />
+			<repeat count="4">
+				<param name="digitno" start="~moduleno~" increment="-1" />
+				<param name="digitx" start="~modulex~" increment="34" />
+				<element name="digit~digitno~" ref="a_digit">
+					<bounds x="~digitx~" y="70" width="25" height="50" />
+				</element>
+			</repeat>
+		</repeat>
 
-		<!-- DL1414 right -->
-		<bezel name="digit7" element="a_digit">
-			<bounds left="204" top="70" right="229" bottom="120" />
-		</bezel>
-		<bezel name="digit6" element="a_digit">
-			<bounds left="238" top="70" right="263" bottom="120" />
-		</bezel>
-		<bezel name="digit5" element="a_digit">
-			<bounds left="272" top="70" right="297" bottom="120" />
-		</bezel>
-		<bezel name="digit4" element="a_digit">
-			<bounds left="306" top="70" right="331" bottom="120" />
-		</bezel>
-
+		<repeat count="8">
+			<param name="ledno" start="7" increment="-1" />
+			<param name="bx" start="65" increment="15" />
+			<param name="ax" start="185" increment="15" />
+			<element name="pb~ledno~" ref="b_led">
+				<bounds x="~bx~" y="140" width="10" height="10" />
+			</element>
+			<element name="pa~ledno~" ref="b_led">
+				<bounds x="~ax~" y="140" width="10" height="10" />
+			</element>
+		</repeat>
 	</view>
 
 </mamelayout>

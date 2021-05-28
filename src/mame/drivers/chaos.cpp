@@ -4,8 +4,8 @@
 
     Chaos2
 
-    08/04/2010 Skeleton driver.
-    19/05/2012 Connected to a terminal, system is usable [Robbbert]
+    2010-04-08 Skeleton driver.
+    2012-05-19 Connected to a terminal, system is usable [Robbbert]
 
     This is a homebrew system: http://koo.corpus.cam.ac.uk/chaos/
 
@@ -21,11 +21,12 @@
     end, exec, execute, fill, find, goto, if, input, let, list, load, lowercase,
     memdis, memset, open, port, read, reboot, runhex, run, save, type, typesl,
     verify.
-    An example is: memdis 0 f
+    An example is: memdis 0 8 (memory dump starting at 0, show 8 lines)
     Don't try 'fill' - it fills all memory with zeroes, crashing the system.
 
     ToDo:
-    - Connect up floppy disk (no info available on this)
+    - Connect up floppy disk (WD1771 fdc, 5.25", single density,
+      no other info available)
 
 ****************************************************************************/
 
@@ -33,47 +34,61 @@
 #include "cpu/s2650/s2650.h"
 #include "machine/terminal.h"
 
-#define TERMINAL_TAG "terminal"
+
+namespace {
 
 class chaos_state : public driver_device
 {
 public:
 	chaos_state(const machine_config &mconfig, device_type type, const char *tag)
-		: driver_device(mconfig, type, tag),
-		m_terminal(*this, TERMINAL_TAG),
-		m_p_ram(*this, "p_ram") ,
-		m_maincpu(*this, "maincpu")
-	{
-	}
+		: driver_device(mconfig, type, tag)
+		, m_terminal(*this, "terminal")
+		, m_p_ram(*this, "ram")
+		, m_maincpu(*this, "maincpu")
+	{ }
 
-	DECLARE_READ8_MEMBER(port1e_r);
-	DECLARE_WRITE8_MEMBER(port1f_w);
-	DECLARE_READ8_MEMBER(port90_r);
-	DECLARE_READ8_MEMBER(port91_r);
-	DECLARE_WRITE8_MEMBER(port92_w);
-	DECLARE_WRITE8_MEMBER(kbd_put);
-	UINT8 m_term_data;
+	void chaos(machine_config &config);
+
+protected:
 	virtual void machine_reset() override;
+	virtual void machine_start() override;
+
+private:
+	u8 port1e_r();
+	void port1f_w(u8 data);
+	u8 port90_r();
+	u8 port91_r();
+	void kbd_put(u8 data);
+	void data_map(address_map &map);
+	void io_map(address_map &map);
+	void mem_map(address_map &map);
+	u8 m_term_data;
 	required_device<generic_terminal_device> m_terminal;
-	required_shared_ptr<UINT8> m_p_ram;
+	required_shared_ptr<u8> m_p_ram;
 	required_device<cpu_device> m_maincpu;
 };
 
 
-static ADDRESS_MAP_START( chaos_mem, AS_PROGRAM, 8, chaos_state )
-	ADDRESS_MAP_UNMAP_HIGH
-	AM_RANGE(0x0000, 0x7fff) AM_RAM AM_SHARE("p_ram")
-ADDRESS_MAP_END
+void chaos_state::mem_map(address_map &map)
+{
+	map.unmap_value_high();
+	map(0x0000, 0x7fff).ram().share("ram");
+}
 
-static ADDRESS_MAP_START( chaos_io, AS_IO, 8, chaos_state )
-	ADDRESS_MAP_UNMAP_HIGH
-	AM_RANGE(0x1e, 0x1e) AM_READ(port1e_r)
-	AM_RANGE(0x1f, 0x1f) AM_READWRITE(port90_r, port1f_w)
-	AM_RANGE(0x90, 0x90) AM_READ(port90_r)
-	AM_RANGE(0x91, 0x91) AM_READ(port91_r)
-	AM_RANGE(0x92, 0x92) AM_DEVWRITE(TERMINAL_TAG, generic_terminal_device, write)
-	AM_RANGE(0x101, 0x103) AM_NOP // stops error log filling up while using debug
-ADDRESS_MAP_END
+void chaos_state::io_map(address_map &map)
+{
+	map.unmap_value_high();
+	map(0x1e, 0x1e).r(FUNC(chaos_state::port1e_r));
+	map(0x1f, 0x1f).rw(FUNC(chaos_state::port90_r), FUNC(chaos_state::port1f_w));
+	map(0x90, 0x90).r(FUNC(chaos_state::port90_r));
+	map(0x91, 0x91).r(FUNC(chaos_state::port91_r));
+	map(0x92, 0x92).w(m_terminal, FUNC(generic_terminal_device::write));
+}
+
+void chaos_state::data_map(address_map &map)
+{
+	map(S2650_DATA_PORT, S2650_DATA_PORT).noprw(); // stops error log filling up while using debug
+}
 
 /* Input ports */
 static INPUT_PORTS_START( chaos )
@@ -86,12 +101,12 @@ INPUT_PORTS_END
 
 // Port 1E - Bit 0 indicates key pressed, Bit 1 indicates ok to output
 
-READ8_MEMBER( chaos_state::port1e_r )
+u8 chaos_state::port1e_r()
 {
 	return (m_term_data) ? 1 : 0;
 }
 
-WRITE8_MEMBER( chaos_state::port1f_w )
+void chaos_state::port1f_w(u8 data)
 {
 	// make the output readable on our terminal
 	if (data == 0x09)
@@ -100,15 +115,15 @@ WRITE8_MEMBER( chaos_state::port1f_w )
 	if (!data)
 		data = 0x24;
 
-	m_terminal->write(space, 0, data);
+	m_terminal->write(data);
 
 	if (data == 0x0d)
-		m_terminal->write(space, 0, 0x0a);
+		m_terminal->write(0x0a);
 }
 
-READ8_MEMBER( chaos_state::port90_r )
+u8 chaos_state::port90_r()
 {
-	UINT8 ret = m_term_data;
+	u8 ret = m_term_data;
 	m_term_data = 0;
 	return ret;
 }
@@ -118,47 +133,59 @@ READ8_MEMBER( chaos_state::port90_r )
 // Bit 3 = key pressed
 // Bit 7 = ok to output
 
-READ8_MEMBER( chaos_state::port91_r )
+u8 chaos_state::port91_r()
 {
-	UINT8 ret = 0x80 | ioport("CONFIG")->read();
+	u8 ret = 0x80 | ioport("CONFIG")->read();
 	ret |= (m_term_data) ? 8 : 0;
 	return ret;
 }
 
-WRITE8_MEMBER( chaos_state::kbd_put )
+void chaos_state::kbd_put(u8 data)
 {
 	m_term_data = data;
+}
+
+void chaos_state::machine_start()
+{
+	save_item(NAME(m_term_data));
+
+	m_term_data = 0;
 }
 
 void chaos_state::machine_reset()
 {
 	// copy the roms into ram
-	UINT8* ROM = memregion("maincpu")->base();
+	u8* ROM = memregion("roms")->base();
 	memcpy(m_p_ram, ROM, 0x3000);
-	memcpy(m_p_ram+0x7000, ROM+0x7000, 0x1000);
+	memcpy(m_p_ram+0x7000, ROM+0x3000, 0x1000);
 }
 
-static MACHINE_CONFIG_START( chaos, chaos_state )
+void chaos_state::chaos(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu",S2650, XTAL_1MHz)
-	MCFG_CPU_PROGRAM_MAP(chaos_mem)
-	MCFG_CPU_IO_MAP(chaos_io)
+	S2650(config, m_maincpu, XTAL(1'000'000));
+	m_maincpu->set_addrmap(AS_PROGRAM, &chaos_state::mem_map);
+	m_maincpu->set_addrmap(AS_IO, &chaos_state::io_map);
+	m_maincpu->set_addrmap(AS_DATA, &chaos_state::data_map);
 
 	/* video hardware */
-	MCFG_DEVICE_ADD(TERMINAL_TAG, GENERIC_TERMINAL, 0)
-	MCFG_GENERIC_TERMINAL_KEYBOARD_CB(WRITE8(chaos_state, kbd_put))
-MACHINE_CONFIG_END
+	GENERIC_TERMINAL(config, m_terminal, 0);
+	m_terminal->set_keyboard_callback(FUNC(chaos_state::kbd_put));
+}
 
 /* ROM definition */
 ROM_START( chaos )
-	ROM_REGION( 0x10000, "maincpu", ROMREGION_ERASEFF )
+	ROM_REGION( 0x4000, "roms", 0 )
 	ROM_LOAD( "chaos.001", 0x0000, 0x1000, CRC(3b433e72) SHA1(5b487337d71253d0e64e123f405da9eaf20e87ac))
 	ROM_LOAD( "chaos.002", 0x1000, 0x1000, CRC(8b0b487f) SHA1(0d167cf3004a81c87446f2f1464e3debfa7284fe))
 	ROM_LOAD( "chaos.003", 0x2000, 0x1000, CRC(5880db81) SHA1(29b8f1b03c83953f66464ad1fbbfe2e019637ce1))
-	ROM_LOAD( "chaos.004", 0x7000, 0x1000, CRC(5d6839d6) SHA1(237f52f0780ac2e29d57bf06d0f7a982eb523084))
+	ROM_LOAD( "chaos.004", 0x3000, 0x1000, CRC(5d6839d6) SHA1(237f52f0780ac2e29d57bf06d0f7a982eb523084))
 ROM_END
+
+} // Anonymous namespace
+
 
 /* Driver */
 
-/*    YEAR  NAME    PARENT  COMPAT   MACHINE    INPUT    INIT     COMPANY     FULLNAME       FLAGS */
-COMP( 1983, chaos,  0,      0,       chaos,     chaos, driver_device,   0,     "<unknown>",  "Chaos 2", MACHINE_NO_SOUND_HW )
+//    YEAR  NAME   PARENT  COMPAT  MACHINE  INPUT  CLASS        INIT        COMPANY          FULLNAME   FLAGS
+COMP( 1983, chaos, 0,      0,      chaos,   chaos, chaos_state, empty_init, "David Greaves", "Chaos 2", MACHINE_NO_SOUND_HW | MACHINE_SUPPORTS_SAVE )

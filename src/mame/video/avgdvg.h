@@ -1,111 +1,53 @@
 // license:BSD-3-Clause
-// copyright-holders:Eric Smith, Brad Oliver, Bernd Wiebelt, Aaron Giles, Andrew Caldwell
-#ifndef __AVGDVG__
-#define __AVGDVG__
+// copyright-holders:Mathis Rosenhauer
+// thanks-to:Eric Smith, Brad Oliver, Bernd Wiebelt, Aaron Giles, Andrew Caldwell
+#ifndef MAME_VIDEO_AVGDVG_H
+#define MAME_VIDEO_AVGDVG_H
 
-#define MAXVECT      (10000)
+#pragma once
 
 #include "video/vector.h"
 
-#define MCFG_AVGDVG_VECTOR(_tag) \
-	avgdvg_device::static_set_vector_tag(*device, "^" _tag);
 
-struct vgvector
-{
-	int x; int y;
-	rgb_t color;
-	int intensity;
-	int arg1; int arg2;
-	int status;
-};
-
-// ======================> avgdvg_device
-
-class avgdvg_device : public device_t
+class avgdvg_device_base : public device_t
 {
 public:
-	// construction/destruction
-	avgdvg_device(const machine_config &mconfig, device_type type, const char *name, const char *tag, device_t *owner, UINT32 clock, const char *shortname, const char *source);
+	template <typename T> void set_vector(T &&tag)
+	{
+		m_vector.set_tag(std::forward<T>(tag));
+	}
+	template <typename T> void set_memory(T &&tag, int no, offs_t base)
+	{
+		m_memspace.set_tag(std::forward<T>(tag), no);
+		m_membase = base;
+	}
 
-	static void static_set_vector_tag(device_t &device, const char *tag);
+	DECLARE_READ_LINE_MEMBER(done_r);
+	void go_w(u8 data = 0);
+	void reset_w(u8 data = 0);
 
-	DECLARE_CUSTOM_INPUT_MEMBER(done_r);
-	DECLARE_WRITE8_MEMBER(go_w);
-	DECLARE_WRITE8_MEMBER(reset_w);
+	void go_word_w(u16 data = 0);
+	void reset_word_w(u16 data = 0);
 
-	DECLARE_WRITE16_MEMBER(go_word_w);
-	DECLARE_WRITE16_MEMBER(reset_word_w);
+	// Tempest and Quantum use this capability
+	void set_flip_x(bool flip) { m_flip_x = flip; }
+	void set_flip_y(bool flip) { m_flip_y = flip; }
 
-	/* Tempest and Quantum use this capability */
-	void set_flip_x(int flip);
-	void set_flip_y(int flip);
-
-	TIMER_CALLBACK_MEMBER(vg_set_halt_callback);
-	TIMER_CALLBACK_MEMBER(run_state_machine);
 protected:
-	void apply_flipping(int *x, int *y);
-	void vg_set_halt(int dummy);
+	static constexpr unsigned MAXVECT = 10000;
 
-	void vg_flush();
-	void vg_add_point_buf(int x, int y, rgb_t color, int intensity);
-	void vg_add_clip (int xmin, int ymin, int xmax, int ymax);
+	struct vgvector
+	{
+		int x; int y;
+		rgb_t color;
+		int intensity;
+		int arg1; int arg2;
+		int status;
+	};
 
-	void register_state();
+	avgdvg_device_base(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, u32 clock);
 
-	UINT8 *avgdvg_vectorram;
-	size_t avgdvg_vectorram_size;
-
-	UINT8 *avgdvg_colorram;
-
-
-	int xmin, xmax, ymin, ymax;
-	int xcenter, ycenter;
-	emu_timer *vg_run_timer, *vg_halt_timer;
-
-	int flip_x, flip_y;
-
-	int nvect;
-	vgvector vectbuf[MAXVECT];
-
-
-	UINT16 m_pc;
-	UINT8 m_sp;
-	UINT16 m_dvx;
-	UINT16 m_dvy;
-	UINT8 m_dvy12;
-	UINT16 m_timer;
-	UINT16 m_stack[4];
-	UINT16 m_data;
-
-	UINT8 m_state_latch;
-	UINT8 m_int_latch;
-	UINT8 m_scale;
-	UINT8 m_bin_scale;
-	UINT8 m_intensity;
-	UINT8 m_color;
-	UINT8 m_enspkl;
-	UINT8 m_spkl_shift;
-	UINT8 m_map;
-
-	UINT16 m_hst;
-	UINT16 m_lst;
-	UINT16 m_izblank;
-
-	UINT8 m_op;
-	UINT8 m_halt;
-	UINT8 m_sync_halt;
-
-	UINT16 m_xdac_xor;
-	UINT16 m_ydac_xor;
-
-	INT32 m_xpos;
-	INT32 m_ypos;
-
-	INT32 m_clipx_min;
-	INT32 m_clipy_min;
-	INT32 m_clipx_max;
-	INT32 m_clipy_max;
-
+	virtual void device_start() override;
 
 	virtual int handler_0() = 0;
 	virtual int handler_1() = 0;
@@ -115,21 +57,71 @@ protected:
 	virtual int handler_5() = 0;
 	virtual int handler_6() = 0;
 	virtual int handler_7() = 0;
-	virtual UINT8 state_addr() = 0;
+	virtual u8 state_addr() = 0;
 	virtual void update_databus() = 0;
 	virtual void vggo() = 0;
 	virtual void vgrst() = 0;
 
+	u8 OP0() const { return BIT(m_op, 0); }
+	u8 OP1() const { return BIT(m_op, 1); }
+	u8 OP2() const { return BIT(m_op, 2); }
+	u8 OP3() const { return BIT(m_op, 3); }
+
+	u8 ST3() const { return BIT(m_state_latch, 3); }
+
+	void apply_flipping(int &x, int &y) const;
+	void vg_set_halt(int dummy);
+
+	void vg_flush();
+	void vg_add_point_buf(int x, int y, rgb_t color, int intensity);
+	void vg_add_clip(int xmin, int ymin, int xmax, int ymax);
+
 	required_device<vector_device> m_vector;
+	required_address_space m_memspace;
+	offs_t m_membase;
+
+	int m_xmin, m_ymin;
+	int m_xcenter, m_ycenter;
+
+	int m_nvect;
+	vgvector m_vectbuf[MAXVECT];
+
+	u16 m_pc;
+	u8 m_sp;
+	u16 m_dvx;
+	u16 m_dvy;
+	u16 m_stack[4];
+	u16 m_data;
+
+	u8 m_state_latch;
+	u8 m_scale;
+	u8 m_intensity;
+
+	u8 m_op;
+	u8 m_halt;
+	u8 m_sync_halt;
+
+	s32 m_xpos;
+	s32 m_ypos;
+
+private:
+	TIMER_CALLBACK_MEMBER(vg_set_halt_callback);
+	TIMER_CALLBACK_MEMBER(run_state_machine);
+
+	required_region_ptr<u8> m_prom;
+	emu_timer *m_vg_run_timer, *m_vg_halt_timer;
+
+	bool m_flip_x, m_flip_y;
 };
 
-class dvg_device : public avgdvg_device
+
+class dvg_device : public avgdvg_device_base
 {
 public:
-	// construction/destruction
-	dvg_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	dvg_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
 
-	void dvg_draw_to(int x, int y, int intensity);
+protected:
+	virtual void device_start() override;
 
 	virtual int handler_0() override;
 	virtual int handler_1() override;
@@ -139,96 +131,116 @@ public:
 	virtual int handler_5() override;
 	virtual int handler_6() override;
 	virtual int handler_7() override;
-	virtual UINT8 state_addr() override;
+	virtual u8 state_addr() override;
 	virtual void update_databus() override;
 	virtual void vggo() override;
 	virtual void vgrst() override;
 
-	virtual void device_start() override;
+private:
+	void dvg_draw_to(int x, int y, int intensity);
 };
 
-// device type definition
-extern const device_type DVG;
 
-class avg_device : public avgdvg_device
+class avg_device : public avgdvg_device_base
 {
 public:
-	// construction/destruction
-	avg_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
-	avg_device(const machine_config &mconfig, device_type type, const char *name, const char *tag, device_t *owner, UINT32 clock, const char *shortname, const char *source);
+	avg_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
+
+protected:
+	avg_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, u32 clock);
+
+	virtual void device_start() override;
+
+	virtual int handler_0() override;
+	virtual int handler_1() override;
+	virtual int handler_2() override;
+	virtual int handler_3() override;
+	virtual int handler_4() override;
+	virtual int handler_5() override;
+	virtual int handler_6() override;
+	virtual int handler_7() override;
+	virtual u8 state_addr() override;
+	virtual void update_databus() override;
+	virtual void vggo() override;
+	virtual void vgrst() override;
 
 	int avg_common_strobe1();
 	int avg_common_strobe2();
 	int avg_common_strobe3();
 
-	virtual int handler_0() override;
-	virtual int handler_1() override;
-	virtual int handler_2() override;
-	virtual int handler_3() override;
-	virtual int handler_4() override;
-	virtual int handler_5() override;
-	virtual int handler_6() override;
-	virtual int handler_7() override;
-	virtual UINT8 state_addr() override;
-	virtual void update_databus() override;
-	virtual void vggo() override;
-	virtual void vgrst() override;
+	int m_xmax, m_ymax;
 
-	virtual void device_start() override;
-	void avg_start_common();
+	u8 m_dvy12;
+	u16 m_timer;
+
+	u8 m_int_latch;
+	u8 m_bin_scale;
+	u8 m_color;
+
+	u16 m_xdac_xor;
+	u16 m_ydac_xor;
 };
 
-// device type definition
-extern const device_type AVG;
 
 class avg_tempest_device : public avg_device
 {
 public:
-	// construction/destruction
-	avg_tempest_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	avg_tempest_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
 
+protected:
 	virtual int handler_6() override;
 	virtual int handler_7() override;
 	//virtual void vggo();
+
+private:
+	required_shared_ptr<u8> m_colorram;
 };
 
-// device type definition
-extern const device_type AVG_TEMPEST;
 
 class avg_mhavoc_device : public avg_device
 {
 public:
-	// construction/destruction
-	avg_mhavoc_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	avg_mhavoc_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
+
+protected:
+	virtual void device_start() override;
 
 	virtual int handler_1() override;
 	virtual int handler_6() override;
 	virtual int handler_7() override;
 	virtual void update_databus() override;
 	virtual void vgrst() override;
+
+private:
+	required_shared_ptr<u8> m_colorram;
+	required_region_ptr<u8> m_bank_region;
+
+	u8 m_enspkl;
+	u8 m_spkl_shift;
+	u8 m_map;
+
+	u16 m_lst;
 };
 
-// device type definition
-extern const device_type AVG_MHAVOC;
 
 class avg_starwars_device : public avg_device
 {
 public:
-	// construction/destruction
-	avg_starwars_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	avg_starwars_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
+
+protected:
 	virtual int handler_6() override;
 	virtual int handler_7() override;
 	virtual void update_databus() override;
 };
 
-// device type definition
-extern const device_type AVG_STARWARS;
 
 class avg_quantum_device : public avg_device
 {
 public:
-	// construction/destruction
-	avg_quantum_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	avg_quantum_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
+
+protected:
 	virtual int handler_0() override;
 	virtual int handler_1() override;
 	virtual int handler_2() override;
@@ -239,36 +251,43 @@ public:
 	virtual int handler_7() override;
 	virtual void update_databus() override;
 	virtual void vggo() override;
+
+private:
+	required_shared_ptr<u16> m_colorram;
 };
 
-// device type definition
-extern const device_type AVG_QUANTUM;
 
 class avg_bzone_device : public avg_device
 {
 public:
-	// construction/destruction
-	avg_bzone_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	avg_bzone_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
+
+protected:
+	virtual void device_start() override;
+
 	virtual int handler_1() override;
 	virtual int handler_6() override;
 	virtual int handler_7() override;
+
+private:
+	u16 m_hst;
+	u16 m_lst;
+	u16 m_izblank;
+
+	s32 m_clipx_min;
+	s32 m_clipy_min;
+	s32 m_clipx_max;
+	s32 m_clipy_max;
 };
 
-// device type definition
-extern const device_type AVG_BZONE;
 
-class avg_tomcat_device : public avg_device
-{
-public:
-	// construction/destruction
-	avg_tomcat_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+// device type declarations
+DECLARE_DEVICE_TYPE(DVG,          dvg_device)
+DECLARE_DEVICE_TYPE(AVG,          avg_device)
+DECLARE_DEVICE_TYPE(AVG_TEMPEST,  avg_tempest_device)
+DECLARE_DEVICE_TYPE(AVG_MHAVOC,   avg_mhavoc_device)
+DECLARE_DEVICE_TYPE(AVG_STARWARS, avg_starwars_device)
+DECLARE_DEVICE_TYPE(AVG_QUANTUM,  avg_quantum_device)
+DECLARE_DEVICE_TYPE(AVG_BZONE,    avg_bzone_device)
 
-	virtual int handler_6() override;
-	virtual int handler_7() override;
-};
-
-// device type definition
-extern const device_type AVG_TOMCAT;
-
-
-#endif
+#endif // MAME_VIDEO_AVGDVG_H

@@ -12,11 +12,11 @@ Road generator. Two roads allow for forking. Gfx data fetched from ROM. Refer to
 
 #define TC0150ROD_RAM_SIZE 0x2000
 
-const device_type TC0150ROD = &device_creator<tc0150rod_device>;
+DEFINE_DEVICE_TYPE(TC0150ROD, tc0150rod_device, "tc0150rod", "Taito TC0150ROD")
 
-tc0150rod_device::tc0150rod_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: device_t(mconfig, TC0150ROD, "Taito TC0150ROD", tag, owner, clock, "tc0150rod", __FILE__),
-	m_roadgfx(nullptr)
+tc0150rod_device::tc0150rod_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock)
+	: device_t(mconfig, TC0150ROD, tag, owner, clock)
+	, m_roadgfx(*this, DEVICE_SELF)
 {
 }
 
@@ -29,9 +29,6 @@ void tc0150rod_device::device_start()
 	m_ram.resize(TC0150ROD_RAM_SIZE / 2);
 	memset(&m_ram[0], 0, TC0150ROD_RAM_SIZE);
 	save_item(NAME(m_ram));
-
-	m_roadgfx = (UINT16 *)region()->base();
-	assert(m_roadgfx);
 }
 
 
@@ -39,12 +36,12 @@ void tc0150rod_device::device_start()
     DEVICE HANDLERS
 *****************************************************************************/
 
-READ16_MEMBER( tc0150rod_device::word_r )
+uint16_t tc0150rod_device::word_r(offs_t offset)
 {
 	return m_ram[offset];
 }
 
-WRITE16_MEMBER( tc0150rod_device::word_w )
+void tc0150rod_device::word_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	COMBINE_DATA(&m_ram[offset]);
 }
@@ -212,23 +209,23 @@ lookup table from rom for the TaitoZ sprites.
 
 ******************************************************************************/
 
-void tc0150rod_device::draw( bitmap_ind16 &bitmap, const rectangle &cliprect, int y_offs, int palette_offs, int type, int road_trans, bitmap_ind8 &priority_bitmap, UINT32 low_priority, UINT32 high_priority )
+void tc0150rod_device::draw( bitmap_ind16 &bitmap, const rectangle &cliprect, int y_offs, int palette_offs, int type, int road_trans, bitmap_ind8 &priority_bitmap, u8 low_priority, u8 high_priority, u8 pmask )
 {
 	#ifdef MAME_DEBUG
 	static int dislayer[6]; /* Road Layer toggles to help get road correct */
 	#endif
 
 	int x_offs = 0xa7;  /* Increasing this shifts road to right */
-	UINT16 scanline[512];
-	UINT16 roada_line[512], roadb_line[512];
-	UINT16 *dst16;
-	UINT16 *roada, *roadb;
+	u16 scanline[512];
+	u16 roada_line[512], roadb_line[512];
+	u16 *dst16;
+	u16 *roada, *roadb;
 
-	UINT16 pixel, color, gfx_word;
-	UINT16 roada_clipl, roada_clipr, roada_bodyctrl;
-	UINT16 roadb_clipl, roadb_clipr, roadb_bodyctrl;
-	UINT16 pri, pixpri;
-	UINT8 priorities[6];
+	u16 pixel, color, gfx_word;
+	u16 roada_clipl, roada_clipr, roada_bodyctrl;
+	u16 roadb_clipl, roadb_clipr, roadb_bodyctrl;
+	u16 pri, pixpri;
+	u8 priorities[6];
 	int x_index, roadram_index, roadram2_index, i;
 	int xoffset, paloffs, palloffs, palroffs;
 	int road_gfx_tilenum, colbank, road_center;
@@ -769,7 +766,7 @@ void tc0150rod_device::draw( bitmap_ind16 &bitmap, const rectangle &cliprect, in
 				}
 			}
 
-			taitoic_drawscanline(bitmap, cliprect, 0, y, scanline, 1, ROT0, priority_bitmap, (y > priority_switch_line) ? high_priority : low_priority);
+			taitoic_drawscanline(bitmap, cliprect, 0, y, scanline, true, ROT0, priority_bitmap, (y > priority_switch_line) ? high_priority : low_priority, pmask);
 		}
 
 		y++;

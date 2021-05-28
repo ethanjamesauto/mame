@@ -6,21 +6,11 @@
 
 ***************************************************************************/
 
+#ifndef MAME_MACHINE_MCF5206E_H
+#define MAME_MACHINE_MCF5206E_H
+
 #pragma once
 
-#ifndef __MCF5206E_PERIPHERAL_H__
-#define __MCF5206E_PERIPHERAL_H__
-
-#include "emu.h"
-
-
-
-/***************************************************************************
-    DEVICE CONFIGURATION MACROS
-***************************************************************************/
-
-#define MCFG_MCF5206E_PERIPHERAL_ADD(_tag) \
-	MCFG_DEVICE_ADD(_tag, MCF5206E_PERIPHERAL, 0)
 
 /***************************************************************************
     TYPE DEFINITIONS
@@ -28,188 +18,183 @@
 
 // ======================> mcf5206e_peripheral_device
 
-enum
-{
-	ICR1 = 0,
-	ICR2,
-	ICR3,
-	ICR4,
-	ICR5,
-	ICR6,
-	ICR7,
-	ICR8,
-	ICR9,
-	ICR10,
-	ICR11,
-	ICR12,
-	ICR13,
-	MAX_ICR
-};
-
 class mcf5206e_peripheral_device :  public device_t,
 									public device_memory_interface
 {
 public:
 	// construction/destruction
-	mcf5206e_peripheral_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	mcf5206e_peripheral_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
-	void ICR_info(UINT8 ICR);
-
-	DECLARE_READ32_MEMBER( dev_r );
-	DECLARE_WRITE32_MEMBER( dev_w );
-	DECLARE_READ32_MEMBER( seta2_coldfire_regs_r );
-	DECLARE_WRITE32_MEMBER( seta2_coldfire_regs_w );
-
-	DECLARE_READ8_MEMBER( ICR1_ICR2_ICR3_ICR4_r );
-	DECLARE_WRITE8_MEMBER( ICR1_ICR2_ICR3_ICR4_w );
-
-	DECLARE_READ8_MEMBER( ICR9_ICR10_ICR11_ICR12_r );
-	DECLARE_WRITE8_MEMBER( ICR9_ICR10_ICR11_ICR12_w );
-	DECLARE_READ8_MEMBER( ICR13_r );
-	DECLARE_WRITE8_MEMBER( ICR13_w );
-
-	UINT16 CSAR_r(int which, int offset, UINT16 mem_mask);
-	void CSAR_w(int which, int offset, UINT16 data, UINT16 mem_mask);
-	UINT32 CSMR_r(int which, UINT32 mem_mask);
-	void CSMR_w(int which, UINT32 data, UINT32 mem_mask);
-	UINT16 CSCR_r(int which, int offset, UINT16 mem_mask);
-	void CSCR_w(int which, int offset, UINT16 data, UINT16 mem_mask);
-
-	DECLARE_READ16_MEMBER(  CSAR0_r );
-	DECLARE_WRITE16_MEMBER( CSAR0_w );
-	DECLARE_READ32_MEMBER(  CSMR0_r );
-	DECLARE_WRITE32_MEMBER( CSMR0_w );
-	DECLARE_READ16_MEMBER(  CSCR0_r );
-	DECLARE_WRITE16_MEMBER( CSCR0_w );
-	DECLARE_READ16_MEMBER(  CSAR1_r );
-	DECLARE_WRITE16_MEMBER( CSAR1_w );
-	DECLARE_READ32_MEMBER(  CSMR1_r );
-	DECLARE_WRITE32_MEMBER( CSMR1_w );
-	DECLARE_READ16_MEMBER(  CSCR1_r );
-	DECLARE_WRITE16_MEMBER( CSCR1_w );
-	DECLARE_READ16_MEMBER(  CSAR2_r );
-	DECLARE_WRITE16_MEMBER( CSAR2_w );
-	DECLARE_READ32_MEMBER(  CSMR2_r );
-	DECLARE_WRITE32_MEMBER( CSMR2_w );
-	DECLARE_READ16_MEMBER(  CSCR2_r );
-	DECLARE_WRITE16_MEMBER( CSCR2_w );
-	DECLARE_READ16_MEMBER(  CSAR3_r );
-	DECLARE_WRITE16_MEMBER( CSAR3_w );
-	DECLARE_READ32_MEMBER(  CSMR3_r );
-	DECLARE_WRITE32_MEMBER( CSMR3_w );
-	DECLARE_READ16_MEMBER(  CSCR3_r );
-	DECLARE_WRITE16_MEMBER( CSCR3_w );
-	DECLARE_READ16_MEMBER(  CSAR4_r );
-	DECLARE_WRITE16_MEMBER( CSAR4_w );
-	DECLARE_READ32_MEMBER(  CSMR4_r );
-	DECLARE_WRITE32_MEMBER( CSMR4_w );
-	DECLARE_READ16_MEMBER(  CSCR4_r );
-	DECLARE_WRITE16_MEMBER( CSCR4_w );
-	DECLARE_READ16_MEMBER(  CSAR5_r );
-	DECLARE_WRITE16_MEMBER( CSAR5_w );
-	DECLARE_READ32_MEMBER(  CSMR5_r );
-	DECLARE_WRITE32_MEMBER( CSMR5_w );
-	DECLARE_READ16_MEMBER(  CSCR5_r );
-	DECLARE_WRITE16_MEMBER( CSCR5_w );
-	DECLARE_READ16_MEMBER(  CSAR6_r );
-	DECLARE_WRITE16_MEMBER( CSAR6_w );
-	DECLARE_READ32_MEMBER(  CSMR6_r );
-	DECLARE_WRITE32_MEMBER( CSMR6_w );
-	DECLARE_READ16_MEMBER(  CSCR6_r );
-	DECLARE_WRITE16_MEMBER( CSCR6_w );
-	DECLARE_READ16_MEMBER(  CSAR7_r );
-	DECLARE_WRITE16_MEMBER( CSAR7_w );
-	DECLARE_READ32_MEMBER(  CSMR7_r );
-	DECLARE_WRITE32_MEMBER( CSMR7_w );
-	DECLARE_READ16_MEMBER(  CSCR7_r );
-	DECLARE_WRITE16_MEMBER( CSCR7_w );
-
-	DECLARE_READ16_MEMBER( DMCR_r );
-	DECLARE_WRITE16_MEMBER( DMCR_w );
-	DECLARE_READ16_MEMBER( PAR_r );
-	DECLARE_WRITE16_MEMBER( PAR_w );
-
-	DECLARE_READ16_MEMBER( TMR1_r );
-	DECLARE_WRITE16_MEMBER( TMR1_w );
-	DECLARE_READ16_MEMBER( TRR1_r );
-	DECLARE_WRITE16_MEMBER( TRR1_w );
-	DECLARE_READ8_MEMBER( TER1_r );
-	DECLARE_WRITE8_MEMBER(TER1_w );
-	DECLARE_READ16_MEMBER( TCN1_r );
-	DECLARE_WRITE16_MEMBER( TCN1_w );
-
-	DECLARE_READ8_MEMBER( PPDDR_r );
-	DECLARE_WRITE8_MEMBER( PPDDR_w );
-	DECLARE_READ8_MEMBER( PPDAT_r );
-	DECLARE_WRITE8_MEMBER( PPDAT_w );
-
-	DECLARE_READ16_MEMBER( IMR_r );
-	DECLARE_WRITE16_MEMBER( IMR_w );
-
-
-	DECLARE_READ8_MEMBER( MBCR_r );
-	DECLARE_WRITE8_MEMBER( MBCR_w );
-	DECLARE_READ8_MEMBER( MBSR_r );
-	DECLARE_WRITE8_MEMBER( MBSR_w );
-	DECLARE_READ8_MEMBER( MFDR_r );
-	DECLARE_WRITE8_MEMBER( MFDR_w );
-	DECLARE_READ8_MEMBER( MBDR_r );
-	DECLARE_WRITE8_MEMBER( MBDR_w );
-
-
-
-
-	cpu_device* m_cpu;
+	uint32_t dev_r(offs_t offset, uint32_t mem_mask = ~0);
+	void dev_w(offs_t offset, uint32_t data, uint32_t mem_mask = ~0);
+	uint32_t seta2_coldfire_regs_r(offs_t offset);
+	void seta2_coldfire_regs_w(offs_t offset, uint32_t data, uint32_t mem_mask = ~0);
 
 protected:
 	// device-level overrides
-	virtual void device_config_complete() override;
 	virtual void device_start() override;
 	virtual void device_reset() override;
-	virtual void device_post_load() override { }
 	virtual void device_clock_changed() override { }
-	virtual const address_space_config *memory_space_config(address_spacenum spacenum = AS_0) const override;
-	address_space_config        m_space_config;
-
+	virtual space_config_vector memory_space_config() const override;
 
 private:
+	TIMER_CALLBACK_MEMBER(timer1_callback);
 
 	void init_regs(bool first_init);
 
-	UINT8 m_ICR[MAX_ICR];
+	void ICR_info(uint8_t ICR);
 
-	UINT16 m_CSAR[8];
-	UINT32 m_CSMR[8];
-	UINT16 m_CSCR[8];
+	uint16_t CSAR_r(int which, int offset, uint16_t mem_mask);
+	void CSAR_w(int which, int offset, uint16_t data, uint16_t mem_mask);
+	uint32_t CSMR_r(int which, uint32_t mem_mask);
+	void CSMR_w(int which, uint32_t data, uint32_t mem_mask);
+	uint16_t CSCR_r(int which, int offset, uint16_t mem_mask);
+	void CSCR_w(int which, int offset, uint16_t data, uint16_t mem_mask);
 
-	UINT16 m_DMCR;
-	UINT16 m_PAR;
+	uint8_t ICR1_ICR2_ICR3_ICR4_r(offs_t offset);
+	void ICR1_ICR2_ICR3_ICR4_w(offs_t offset, uint8_t data);
+
+	uint8_t ICR9_ICR10_ICR11_ICR12_r(offs_t offset);
+	void ICR9_ICR10_ICR11_ICR12_w(offs_t offset, uint8_t data);
+	uint8_t ICR13_r(offs_t offset);
+	void ICR13_w(offs_t offset, uint8_t data);
+
+	uint16_t CSAR0_r(offs_t offset, uint16_t mem_mask = ~0);
+	void CSAR0_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	uint32_t CSMR0_r(offs_t offset, uint32_t mem_mask = ~0);
+	void CSMR0_w(offs_t offset, uint32_t data, uint32_t mem_mask = ~0);
+	uint16_t CSCR0_r(offs_t offset, uint16_t mem_mask = ~0);
+	void CSCR0_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	uint16_t CSAR1_r(offs_t offset, uint16_t mem_mask = ~0);
+	void CSAR1_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	uint32_t CSMR1_r(offs_t offset, uint32_t mem_mask = ~0);
+	void CSMR1_w(offs_t offset, uint32_t data, uint32_t mem_mask = ~0);
+	uint16_t CSCR1_r(offs_t offset, uint16_t mem_mask = ~0);
+	void CSCR1_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	uint16_t CSAR2_r(offs_t offset, uint16_t mem_mask = ~0);
+	void CSAR2_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	uint32_t CSMR2_r(offs_t offset, uint32_t mem_mask = ~0);
+	void CSMR2_w(offs_t offset, uint32_t data, uint32_t mem_mask = ~0);
+	uint16_t CSCR2_r(offs_t offset, uint16_t mem_mask = ~0);
+	void CSCR2_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	uint16_t CSAR3_r(offs_t offset, uint16_t mem_mask = ~0);
+	void CSAR3_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	uint32_t CSMR3_r(offs_t offset, uint32_t mem_mask = ~0);
+	void CSMR3_w(offs_t offset, uint32_t data, uint32_t mem_mask = ~0);
+	uint16_t CSCR3_r(offs_t offset, uint16_t mem_mask = ~0);
+	void CSCR3_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	uint16_t CSAR4_r(offs_t offset, uint16_t mem_mask = ~0);
+	void CSAR4_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	uint32_t CSMR4_r(offs_t offset, uint32_t mem_mask = ~0);
+	void CSMR4_w(offs_t offset, uint32_t data, uint32_t mem_mask = ~0);
+	uint16_t CSCR4_r(offs_t offset, uint16_t mem_mask = ~0);
+	void CSCR4_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	uint16_t CSAR5_r(offs_t offset, uint16_t mem_mask = ~0);
+	void CSAR5_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	uint32_t CSMR5_r(offs_t offset, uint32_t mem_mask = ~0);
+	void CSMR5_w(offs_t offset, uint32_t data, uint32_t mem_mask = ~0);
+	uint16_t CSCR5_r(offs_t offset, uint16_t mem_mask = ~0);
+	void CSCR5_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	uint16_t CSAR6_r(offs_t offset, uint16_t mem_mask = ~0);
+	void CSAR6_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	uint32_t CSMR6_r(offs_t offset, uint32_t mem_mask = ~0);
+	void CSMR6_w(offs_t offset, uint32_t data, uint32_t mem_mask = ~0);
+	uint16_t CSCR6_r(offs_t offset, uint16_t mem_mask = ~0);
+	void CSCR6_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	uint16_t CSAR7_r(offs_t offset, uint16_t mem_mask = ~0);
+	void CSAR7_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	uint32_t CSMR7_r(offs_t offset, uint32_t mem_mask = ~0);
+	void CSMR7_w(offs_t offset, uint32_t data, uint32_t mem_mask = ~0);
+	uint16_t CSCR7_r(offs_t offset, uint16_t mem_mask = ~0);
+	void CSCR7_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+
+	uint16_t DMCR_r(offs_t offset, uint16_t mem_mask = ~0);
+	void DMCR_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	uint16_t PAR_r(offs_t offset, uint16_t mem_mask = ~0);
+	void PAR_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+
+	uint16_t TMR1_r(offs_t offset, uint16_t mem_mask = ~0);
+	void TMR1_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	uint16_t TRR1_r(offs_t offset, uint16_t mem_mask = ~0);
+	void TRR1_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	uint8_t TER1_r(offs_t offset);
+	void TER1_w(offs_t offset, uint8_t data);
+	uint16_t TCN1_r(offs_t offset, uint16_t mem_mask = ~0);
+	void TCN1_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+
+	uint8_t PPDDR_r(offs_t offset);
+	void PPDDR_w(offs_t offset, uint8_t data);
+	uint8_t PPDAT_r(offs_t offset);
+	void PPDAT_w(offs_t offset, uint8_t data);
+
+	uint16_t IMR_r(offs_t offset, uint16_t mem_mask = ~0);
+	void IMR_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+
+
+	uint8_t MBCR_r(offs_t offset);
+	void MBCR_w(offs_t offset, uint8_t data);
+	uint8_t MBSR_r(offs_t offset);
+	void MBSR_w(offs_t offset, uint8_t data);
+	uint8_t MFDR_r(offs_t offset);
+	void MFDR_w(offs_t offset, uint8_t data);
+	uint8_t MBDR_r(offs_t offset);
+	void MBDR_w(offs_t offset, uint8_t data);
+
+	void coldfire_regs_map(address_map &map);
+
+	enum
+	{
+		ICR1 = 0,
+		ICR2,
+		ICR3,
+		ICR4,
+		ICR5,
+		ICR6,
+		ICR7,
+		ICR8,
+		ICR9,
+		ICR10,
+		ICR11,
+		ICR12,
+		ICR13,
+		MAX_ICR
+	};
+
+	cpu_device* m_cpu;
+
+	address_space_config m_space_config;
+
+	uint8_t m_ICR[MAX_ICR];
+
+	uint16_t m_CSAR[8];
+	uint32_t m_CSMR[8];
+	uint16_t m_CSCR[8];
+
+	uint16_t m_DMCR;
+	uint16_t m_PAR;
 
 	emu_timer *m_timer1;
-	UINT16 m_TMR1;
-	UINT16 m_TRR1;
-	UINT8 m_TER1;
-	UINT16 m_TCN1;
-	TIMER_CALLBACK_MEMBER(timer1_callback);
+	uint16_t m_TMR1;
+	uint16_t m_TRR1;
+	uint8_t m_TER1;
+	uint16_t m_TCN1;
 
 
-	UINT8 m_PPDDR;
-	UINT8 m_PPDAT;
+	uint8_t m_PPDDR;
+	uint8_t m_PPDAT;
 
-	UINT16 m_IMR;
+	uint16_t m_IMR;
 
-	UINT8 m_MBCR;
-	UINT8 m_MBSR;
-	UINT8 m_MFDR;
-	UINT8 m_MBDR;
+	uint8_t m_MBCR;
+	uint8_t m_MBSR;
+	uint8_t m_MFDR;
+	uint8_t m_MBDR;
 
-	UINT32 m_coldfire_regs[0x400/4];
-
-private:
+	uint32_t m_coldfire_regs[0x400/4];
 };
 
 
 // device type definition
-extern const device_type MCF5206E_PERIPHERAL;
+DECLARE_DEVICE_TYPE(MCF5206E_PERIPHERAL, mcf5206e_peripheral_device)
 
-#endif  /* __MCF5206E_PERIPHERAL_H__ */
+#endif // MAME_MACHINE_MCF5206E_H

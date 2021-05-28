@@ -1,4 +1,4 @@
-// license:LGPL-2.1+
+// license:BSD-3-Clause
 // copyright-holders:Tomasz Slanina
 /****************************************************************************************
  Reality Tennis - (c) 1993 TCH
@@ -40,14 +40,14 @@ Blitter registers description (reg/bit names selected arbitrary ) :
   fedcba98 76543210
   -------- -------x BLTFLAG_DST_X_DIR    x dst direction (step inc or dec)
   -------- ------x- BLTFLAG_DST_Y_DIR    y dst direction
-  -------- -----x-- BLTFLAG_DST_LR       LR and UD controlls the quarter of framebuffer to use
+  -------- -----x-- BLTFLAG_DST_LR       LR and UD controls the quarter of framebuffer to use
   -------- ----x--- BLTFLAG_DST_UD       /
   -------- ---?----                      unknown
   -------- --x----- BLTFLAG_DISPLAY_UD   display buffer select
   -------- ??------                      unknown
   -------x -------- BLTFLAG_SRC_X_DIR    x src direction
   ------x- -------- BLTFLAG_SRC_Y_DIR    y src direction
-  -----x-- -------- BLTFLAG_SRC_LR       LR and UD controlls the quarter of src buffer to use
+  -----x-- -------- BLTFLAG_SRC_LR       LR and UD controls the quarter of src buffer to use
   ----x--- -------- BLTFLAG_SRC_UD       /
   xxxx---- --------                      src ROM num
 
@@ -112,7 +112,7 @@ enum
 
 #define SRC_SHIFT           8
 
-WRITE16_MEMBER(rltennis_state::blitter_w)
+void rltennis_state::blitter_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	int old_data=m_blitter[offset];
 	COMBINE_DATA(&m_blitter[offset]);
@@ -154,10 +154,6 @@ WRITE16_MEMBER(rltennis_state::blitter_w)
 		int x_src_step=(m_blitter[BLT_FLAGS] & BLTFLAG_SRC_X_DIR)?1:-1;
 		int y_src_step=(m_blitter[BLT_FLAGS] & BLTFLAG_SRC_Y_DIR)?1:-1;
 
-		int x,y;
-
-		int idx_x,idx_y;
-
 		int blit_w=src_x1-src_x0;
 		int blit_h=src_y1-src_y0;
 
@@ -193,9 +189,9 @@ WRITE16_MEMBER(rltennis_state::blitter_w)
 			force_blit=true;
 		}
 
-		for( x=dst_x0, idx_x=0 ; idx_x<=blit_w1; x+=x_dst_step, idx_x++ )
+		for( int x=dst_x0, idx_x=0 ; idx_x<=blit_w1; x+=x_dst_step, idx_x++ )
 		{
-			for( y=dst_y0, idx_y=0 ; idx_y<=blit_h1;y+=y_dst_step, idx_y++)
+			for( int y=dst_y0, idx_y=0 ; idx_y<=blit_h1;y+=y_dst_step, idx_y++)
 			{
 				int xx=src_x0+(x_src_step*idx_x);
 				int yy=src_y0+(y_src_step*idx_y);
@@ -208,12 +204,12 @@ WRITE16_MEMBER(rltennis_state::blitter_w)
 
 				int address=yy*512+xx;
 
-				int pix = m_gfx[ address & 0x0ffffff ];
+				int pix = m_gfx[address & (m_gfx.length() - 1)];
 				int screen_x=(x&0xff)+((m_blitter[BLT_FLAGS] & BLTFLAG_DST_LR )?256:0);
 
 				if((pix || force_blit)&& screen_x >0 && y >0 && screen_x < 512 && y < 256 )
 				{
-					m_tmp_bitmap[layer]->pix16(y  , screen_x ) = pix;
+					m_tmp_bitmap[layer]->pix(y  , screen_x ) = pix;
 				}
 			}
 		}
@@ -222,6 +218,9 @@ WRITE16_MEMBER(rltennis_state::blitter_w)
 
 void rltennis_state::video_start()
 {
+	// assumes it can make an address mask with m_gfx.length() - 1
+	assert(!(m_gfx.length() & (m_gfx.length() - 1)));
+
 	m_tmp_bitmap[BITMAP_BG] = std::make_unique<bitmap_ind16>(512, 256);
 	m_tmp_bitmap[BITMAP_FG_1] = std::make_unique<bitmap_ind16>(512, 256);
 	m_tmp_bitmap[BITMAP_FG_2] = std::make_unique<bitmap_ind16>(512, 256);
@@ -230,7 +229,7 @@ void rltennis_state::video_start()
 	save_item(NAME(m_blitter));
 }
 
-UINT32 rltennis_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t rltennis_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	copybitmap(bitmap, *m_tmp_bitmap[BITMAP_BG], 0, 0, 0, 0, cliprect);
 	copybitmap_trans(bitmap, *m_tmp_bitmap[BITMAP_FG_DISPLAY], 0, 0, 0, 0, cliprect, 0);

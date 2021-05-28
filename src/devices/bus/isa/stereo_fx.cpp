@@ -4,31 +4,37 @@
 //
 // TODO: UART is connected to MIDI port
 
+#include "emu.h"
 #include "stereo_fx.h"
 
-const device_type ISA8_STEREO_FX = &device_creator<stereo_fx_device>;
+#include "sound/dac.h"
+#include "speaker.h"
 
-READ8_MEMBER( stereo_fx_device::dev_dsp_data_r )
+
+DEFINE_DEVICE_TYPE(ISA8_STEREO_FX, stereo_fx_device, "stereo_fx", "ATi Stereo F/X Audio Adapter")
+
+uint8_t stereo_fx_device::dev_dsp_data_r()
 {
-	m_data_in = false;
+	if (!machine().side_effects_disabled())
+		m_data_in = false;
 	return m_in_byte;
 }
 
-WRITE8_MEMBER( stereo_fx_device::dev_dsp_data_w )
+void stereo_fx_device::dev_dsp_data_w(uint8_t data)
 {
 	m_data_out = true;
 	m_out_byte = data;
 }
 
 // port 1 is the left DAC but is written and read bitwise during capture
-READ8_MEMBER( stereo_fx_device::p1_r )
+uint8_t stereo_fx_device::p1_r()
 {
 	return 0x80;
 }
 
-READ8_MEMBER( stereo_fx_device::p3_r )
+uint8_t stereo_fx_device::p3_r()
 {
-	UINT8 ret = 0;
+	uint8_t ret = 0;
 
 	ret |= m_data_out << 2; // INT0
 	ret |= m_data_in << 3;  // INT1
@@ -37,17 +43,17 @@ READ8_MEMBER( stereo_fx_device::p3_r )
 	return ret;
 }
 
-WRITE8_MEMBER( stereo_fx_device::p3_w )
+void stereo_fx_device::p3_w(uint8_t data)
 {
 	m_t1 = (data & 0x20) >> 5;
 }
 
-WRITE8_MEMBER( stereo_fx_device::dev_host_irq_w )
+void stereo_fx_device::dev_host_irq_w(uint8_t data)
 {
 	m_isa->irq5_w(1);
 }
 
-WRITE8_MEMBER( stereo_fx_device::raise_drq_w )
+void stereo_fx_device::raise_drq_w(uint8_t data)
 {
 	m_isa->drq1_w(1);
 }
@@ -62,7 +68,7 @@ WRITE8_MEMBER( stereo_fx_device::raise_drq_w )
  * bit6 -
  * bit7 -
 */
-WRITE8_MEMBER( stereo_fx_device::port20_w )
+void stereo_fx_device::port20_w(uint8_t data)
 {
 	m_port20 = data;
 }
@@ -77,7 +83,7 @@ WRITE8_MEMBER( stereo_fx_device::port20_w )
  * bit6 -
  * bit7 -
 */
-WRITE8_MEMBER( stereo_fx_device::port00_w )
+void stereo_fx_device::port00_w(uint8_t data)
 {
 	m_port00 = data;
 }
@@ -87,110 +93,110 @@ ROM_START( stereo_fx )
 	ROM_LOAD("ati_stereo_fx.bin", 0x0000, 0x8000, CRC(1bebffa6) SHA1(e66c2619a6c05199554b5702d67877ae3799d415))
 ROM_END
 
-static ADDRESS_MAP_START(stereo_fx_io, AS_IO, 8, stereo_fx_device)
-	AM_RANGE(0xFF00, 0xFF00) AM_WRITE(port00_w)
-	AM_RANGE(0xFF10, 0xFF10) AM_DEVWRITE("dacr", dac_device, write_unsigned8)
-	AM_RANGE(0xFF20, 0xFF20) AM_WRITE(port20_w)
-	//AM_RANGE(0xFF30, 0xFF30) AM_WRITE()  //  used only on reset and undocumented cmd 0xc4
-	AM_RANGE(0xFF40, 0xFF40) AM_READWRITE(dev_dsp_data_r, dev_dsp_data_w)
-	AM_RANGE(0xFF50, 0xFF50) AM_WRITE(raise_drq_w)
-	AM_RANGE(0xFF60, 0xFF60) AM_WRITE(dev_host_irq_w)
-	AM_RANGE(MCS51_PORT_P1, MCS51_PORT_P1) AM_READ(p1_r) AM_DEVWRITE("dacl", dac_device, write_unsigned8)
-	AM_RANGE(MCS51_PORT_P3, MCS51_PORT_P3) AM_READWRITE(p3_r, p3_w)
-ADDRESS_MAP_END
+void stereo_fx_device::stereo_fx_io(address_map &map)
+{
+	map(0xFF00, 0xFF00).w(FUNC(stereo_fx_device::port00_w));
+	map(0xFF10, 0xFF10).w("rdac", FUNC(dac_byte_interface::data_w));
+	map(0xFF20, 0xFF20).w(FUNC(stereo_fx_device::port20_w));
+	//map(0xFF30, 0xFF30).w(FUNC(stereo_fx_device::));  //  used only on reset and undocumented cmd 0xc4
+	map(0xFF40, 0xFF40).rw(FUNC(stereo_fx_device::dev_dsp_data_r), FUNC(stereo_fx_device::dev_dsp_data_w));
+	map(0xFF50, 0xFF50).w(FUNC(stereo_fx_device::raise_drq_w));
+	map(0xFF60, 0xFF60).w(FUNC(stereo_fx_device::dev_host_irq_w));
+}
 
-static ADDRESS_MAP_START(stereo_fx_rom, AS_PROGRAM, 8, stereo_fx_device)
-	AM_RANGE(0x0000, 0x7fff) AM_ROM
-ADDRESS_MAP_END
+void stereo_fx_device::stereo_fx_rom(address_map &map)
+{
+	map(0x0000, 0x7fff).rom();
+}
 
-static MACHINE_CONFIG_FRAGMENT( stereo_fx )
-	MCFG_CPU_ADD("stereo_fx_cpu", I80C31, XTAL_30MHz)
-	MCFG_CPU_IO_MAP(stereo_fx_io)
-	MCFG_CPU_PROGRAM_MAP(stereo_fx_rom)
-
-	MCFG_SPEAKER_STANDARD_STEREO("lspeaker", "rspeaker")
-	MCFG_SOUND_ADD("ym3812", YM3812, XTAL_3_579545MHz)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "lspeaker", 1.00)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "rspeaker", 1.00)
-	/* no CM/S support (empty sockets) */
-
-	MCFG_SOUND_ADD("dacl", DAC, 0)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "lspeaker", 1.00)
-	MCFG_SOUND_ADD("dacr", DAC, 0)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "rspeaker", 1.00)
-
-	MCFG_PC_JOY_ADD("pc_joy")
-MACHINE_CONFIG_END
-
-const rom_entry *stereo_fx_device::device_rom_region() const
+const tiny_rom_entry *stereo_fx_device::device_rom_region() const
 {
 	return ROM_NAME( stereo_fx );
 }
 
-machine_config_constructor stereo_fx_device::device_mconfig_additions() const
+void stereo_fx_device::device_add_mconfig(machine_config &config)
 {
-	return MACHINE_CONFIG_NAME( stereo_fx );
+	I80C31(config, m_cpu, XTAL(30'000'000));
+	m_cpu->set_addrmap(AS_PROGRAM, &stereo_fx_device::stereo_fx_rom);
+	m_cpu->set_addrmap(AS_IO, &stereo_fx_device::stereo_fx_io);
+	m_cpu->port_in_cb<1>().set(FUNC(stereo_fx_device::p1_r));
+	m_cpu->port_out_cb<1>().set("ldac", FUNC(dac_byte_interface::data_w));
+	m_cpu->port_in_cb<3>().set(FUNC(stereo_fx_device::p3_r));
+	m_cpu->port_out_cb<3>().set(FUNC(stereo_fx_device::p3_w));
+
+	SPEAKER(config, "lspeaker").front_left();
+	SPEAKER(config, "rspeaker").front_right();
+	ym3812_device &ym3812(YM3812(config, "ym3812", XTAL(3'579'545)));
+	ym3812.add_route(ALL_OUTPUTS, "lspeaker", 1.00);
+	ym3812.add_route(ALL_OUTPUTS, "rspeaker", 1.00);
+	/* no CM/S support (empty sockets) */
+
+	DAC_8BIT_R2R(config, "ldac", 0).add_route(ALL_OUTPUTS, "lspeaker", 0.5); // unknown DAC
+	DAC_8BIT_R2R(config, "rdac", 0).add_route(ALL_OUTPUTS, "rspeaker", 0.5); // unknown DAC
+
+	PC_JOY(config, m_joy);
 }
 
-READ8_MEMBER( stereo_fx_device::dsp_data_r )
+uint8_t stereo_fx_device::dsp_data_r()
 {
-	m_data_out = false;
+	if (!machine().side_effects_disabled())
+		m_data_out = false;
 	return m_out_byte;
 }
 
-WRITE8_MEMBER( stereo_fx_device::dsp_cmd_w )
+void stereo_fx_device::dsp_cmd_w(uint8_t data)
 {
 	m_data_in = true;
 	m_in_byte = data;
 }
 
-UINT8 stereo_fx_device::dack_r(int line)
+uint8_t stereo_fx_device::dack_r(int line)
 {
 	m_data_out = false;
 	m_isa->drq1_w(0);
 	return m_out_byte;
 }
 
-void stereo_fx_device::dack_w(int line, UINT8 data)
+void stereo_fx_device::dack_w(int line, uint8_t data)
 {
 	m_data_in = true;
 	m_isa->drq1_w(0);
 	m_in_byte = data;
 }
 
-WRITE8_MEMBER( stereo_fx_device::dsp_reset_w )
+void stereo_fx_device::dsp_reset_w(uint8_t data)
 {
 	device_reset();
-	m_cpu->set_input_line(INPUT_LINE_RESET, PULSE_LINE);
+	m_cpu->pulse_input_line(INPUT_LINE_RESET, attotime::zero);
 }
 
-READ8_MEMBER( stereo_fx_device::dsp_wbuf_status_r )
+uint8_t stereo_fx_device::dsp_wbuf_status_r()
 {
 	return m_data_in << 7;
 }
 
-READ8_MEMBER( stereo_fx_device::dsp_rbuf_status_r )
+uint8_t stereo_fx_device::dsp_rbuf_status_r()
 {
-	m_isa->irq5_w(0);
+	if (!machine().side_effects_disabled())
+		m_isa->irq5_w(0);
 	return m_data_out << 7;
 }
 
-WRITE8_MEMBER( stereo_fx_device::invalid_w )
+void stereo_fx_device::invalid_w(uint8_t data)
 {
 	logerror("stereo fx: invalid port write\n");
 }
 
-READ8_MEMBER( stereo_fx_device::invalid_r )
+uint8_t stereo_fx_device::invalid_r()
 {
-	logerror("stereo fx: invalid port read\n");
+	if (!machine().side_effects_disabled())
+		logerror("stereo fx: invalid port read\n");
 	return 0xff;
 }
 
-stereo_fx_device::stereo_fx_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock) :
-	device_t(mconfig, ISA8_STEREO_FX, "ATI Stereo F/X Audio Adapter", tag, owner, clock, "stereo_fx", __FILE__),
+stereo_fx_device::stereo_fx_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock) :
+	device_t(mconfig, ISA8_STEREO_FX, tag, owner, clock),
 	device_isa8_card_interface(mconfig, *this),
-	m_dacl(*this, "dacl"),
-	m_dacr(*this, "dacr"),
 	m_joy(*this, "pc_joy"),
 	m_cpu(*this, "stereo_fx_cpu"), m_data_in(false), m_in_byte(0), m_data_out(false), m_out_byte(0), m_port20(0), m_port00(0), m_timer(nullptr), m_t0(0)
 {
@@ -199,19 +205,19 @@ stereo_fx_device::stereo_fx_device(const machine_config &mconfig, const char *ta
 
 void stereo_fx_device::device_start()
 {
-	ym3812_device *ym3812 = subdevice<ym3812_device>("ym3812");
+	ym3812_device &ym3812 = *subdevice<ym3812_device>("ym3812");
 	set_isa_device();
 
-	m_isa->install_device(0x0200, 0x0207, 0, 0, read8_delegate(FUNC(pc_joy_device::joy_port_r), subdevice<pc_joy_device>("pc_joy")), write8_delegate(FUNC(pc_joy_device::joy_port_w), subdevice<pc_joy_device>("pc_joy")));
-	m_isa->install_device(0x0226, 0x0227, 0, 0, read8_delegate(FUNC(stereo_fx_device::invalid_r), this), write8_delegate(FUNC(stereo_fx_device::dsp_reset_w), this));
-	m_isa->install_device(0x022a, 0x022b, 0, 0, read8_delegate(FUNC(stereo_fx_device::dsp_data_r), this), write8_delegate(FUNC(stereo_fx_device::invalid_w), this) );
-	m_isa->install_device(0x022c, 0x022d, 0, 0, read8_delegate(FUNC(stereo_fx_device::dsp_wbuf_status_r), this), write8_delegate(FUNC(stereo_fx_device::dsp_cmd_w), this) );
-	m_isa->install_device(0x022e, 0x022f, 0, 0, read8_delegate(FUNC(stereo_fx_device::dsp_rbuf_status_r), this), write8_delegate(FUNC(stereo_fx_device::invalid_w), this) );
-	m_isa->install_device(0x0388, 0x0389, 0, 0, read8_delegate(FUNC(ym3812_device::read), ym3812), write8_delegate(FUNC(ym3812_device::write), ym3812));
-	m_isa->install_device(0x0228, 0x0229, 0, 0, read8_delegate(FUNC(ym3812_device::read), ym3812), write8_delegate(FUNC(ym3812_device::write), ym3812));
+	m_isa->install_device(0x0200, 0x0207, read8smo_delegate(*subdevice<pc_joy_device>("pc_joy"), FUNC(pc_joy_device::joy_port_r)), write8smo_delegate(*subdevice<pc_joy_device>("pc_joy"), FUNC(pc_joy_device::joy_port_w)));
+	m_isa->install_device(0x0226, 0x0227, read8smo_delegate(*this, FUNC(stereo_fx_device::invalid_r)), write8smo_delegate(*this, FUNC(stereo_fx_device::dsp_reset_w)));
+	m_isa->install_device(0x022a, 0x022b, read8smo_delegate(*this, FUNC(stereo_fx_device::dsp_data_r)), write8smo_delegate(*this, FUNC(stereo_fx_device::invalid_w)));
+	m_isa->install_device(0x022c, 0x022d, read8smo_delegate(*this, FUNC(stereo_fx_device::dsp_wbuf_status_r)), write8smo_delegate(*this, FUNC(stereo_fx_device::dsp_cmd_w)));
+	m_isa->install_device(0x022e, 0x022f, read8smo_delegate(*this, FUNC(stereo_fx_device::dsp_rbuf_status_r)), write8smo_delegate(*this, FUNC(stereo_fx_device::invalid_w)));
+	m_isa->install_device(0x0388, 0x0389, read8sm_delegate(ym3812, FUNC(ym3812_device::read)), write8sm_delegate(ym3812, FUNC(ym3812_device::write)));
+	m_isa->install_device(0x0228, 0x0229, read8sm_delegate(ym3812, FUNC(ym3812_device::read)), write8sm_delegate(ym3812, FUNC(ym3812_device::write)));
 	m_timer = timer_alloc();
 	m_timer->adjust(attotime::from_hz(2000000), 0, attotime::from_hz(2000000));
-	m_isa->set_dma_channel(1, this, FALSE);
+	m_isa->set_dma_channel(1, this, false);
 }
 
 

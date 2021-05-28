@@ -1,64 +1,125 @@
 // license:BSD-3-Clause
-// copyright-holders:Barry Rodewald
+// copyright-holders:Barry Rodewald, Jonathan Gevaryahu
 /*
  * s11c_bg.h - Williams System 11C background sound (M68B09E + YM2151 + HC55516 + DAC)
  *
  *  Created on: 2/10/2013
  */
 
-#ifndef S11C_BG_H_
-#define S11C_BG_H_
+#ifndef MAME_AUDIO_S11C_BG_H
+#define MAME_AUDIO_S11C_BG_H
 
-#include "emu.h"
+#pragma once
+
 #include "cpu/m6809/m6809.h"
-#include "sound/2151intf.h"
-#include "sound/dac.h"
-#include "sound/hc55516.h"
 #include "machine/6821pia.h"
+#include "machine/rescap.h"
+#include "sound/dac.h"
+#include "sound/flt_biquad.h"
+#include "sound/hc55516.h"
+#include "sound/ymopm.h"
 
-#define MCFG_WMS_S11C_BG_ADD(_tag, _region) \
-	MCFG_DEVICE_ADD(_tag, S11C_BG, 0) \
-	s11c_bg_device::static_set_gfxregion(*device, _region);
 
-
-class s11c_bg_device : public device_t
+class s11c_bg_device : public device_t, public device_mixer_interface
 {
 public:
 	// construction/destruction
-	s11c_bg_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	s11c_bg_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock = 0);
 
-	required_device<cpu_device> m_cpu;
-	required_device<ym2151_device> m_ym2151;
-	required_device<hc55516_device> m_hc55516;
-	required_device<dac_device> m_dac1;
-	required_device<pia6821_device> m_pia40;
-	required_memory_bank m_cpubank;
-	memory_region* m_rom;
+	// base config
+	void s11_bg_base(machine_config &config);
+	// add ym2151
+	void s11_bg_ym(machine_config &config);
+	// add cvsd
+	void s11_bg_cvsd(machine_config &config);
 
-	DECLARE_WRITE8_MEMBER(pia40_pa_w);
-	DECLARE_WRITE8_MEMBER(pia40_pb_w);
-	DECLARE_WRITE_LINE_MEMBER(pia40_ca2_w);
-	DECLARE_WRITE_LINE_MEMBER(pia40_cb2_w);
-	DECLARE_WRITE8_MEMBER(bg_speech_clock_w);
-	DECLARE_WRITE8_MEMBER(bg_speech_digit_w);
-	DECLARE_WRITE8_MEMBER(bgbank_w);
-	DECLARE_WRITE_LINE_MEMBER(ym2151_irq_w);
-	void ctrl_w(UINT8 data);
-	void data_w(UINT8 data);
+	// note to keep synchronization working, the host machine should have synchronization timer expired delegates
+	// before writing to the following 3 things:
+	DECLARE_WRITE_LINE_MEMBER(extra_w); // external write to board CB2 (J4 pin 12), does anything actually do this?
+	DECLARE_WRITE_LINE_MEMBER(ctrl_w); // external write to board CB1 (J4 pin 13)
+	void data_w(uint8_t data); // external write to board data bus (J4 pins 3 thru 10 for D0-D7)
+	virtual void device_reset() override; // power up reset
+	DECLARE_WRITE_LINE_MEMBER(resetq_w); // external write to board /RESET (J4 pin 18)
 
-	static void static_set_gfxregion(device_t &device, const char *tag);
+	// callbacks
+	auto cb2_cb() { return m_cb2_cb.bind(); }
+	auto pb_cb() { return m_pb_cb.bind(); }
 
+	void s11c_bg_map(address_map &map);
+	void s11c_bgm_map(address_map &map);
+	void s11c_bgs_map(address_map &map);
+
+	//mc6809e_device *get_cpu() { return m_cpu; }
 protected:
+	// constructor with overridable type for subclass
+	s11c_bg_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock = 0);
+
 	// overrides
 	virtual void device_start() override;
-	virtual void device_reset() override;
-	virtual machine_config_constructor device_mconfig_additions() const override;
+	virtual void device_add_mconfig(machine_config &config) override;
+
+	TIMER_CALLBACK_MEMBER(deferred_cb2_w);
+	TIMER_CALLBACK_MEMBER(deferred_pb_w);
+
+	required_device<mc6809e_device> m_cpu;
+	required_device<mc1408_device> m_dac;
+	optional_device<ym2151_device> m_ym2151;
+	optional_device<hc55516_device> m_cvsd;
+	optional_device<filter_biquad_device> m_cvsd_filter;
+	optional_device<filter_biquad_device> m_cvsd_filter2;
+	required_device<pia6821_device> m_pia40;
+	required_memory_bank m_cpubank;
 
 private:
-	const char* m_regiontag;
+	devcb_write_line m_cb2_cb;
+	devcb_write8 m_pb_cb;
 
+	void common_reset(); // common reset function used by both internal and external reset
+	uint8_t m_old_resetq_state;
+	DECLARE_WRITE_LINE_MEMBER(pia40_cb2_w);
+	void pia40_pb_w(uint8_t data);
+
+	void bg_cvsd_clock_set_w(uint8_t data);
+	void bg_cvsd_digit_clock_clear_w(uint8_t data);
+	void bgbank_w(uint8_t data);
 };
 
-extern const device_type S11C_BG;
+class s11_bg_device : public s11c_bg_device
+{
+public:
+	s11_bg_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock = 0);
+protected:
+	virtual void device_add_mconfig(machine_config &config) override;
+};
 
-#endif /* S11C_BG_H_ */
+class s11_obg_device : public s11c_bg_device
+{
+public:
+	s11_obg_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock = 0);
+protected:
+	virtual void device_add_mconfig(machine_config &config) override;
+};
+
+class s11_bgm_device : public s11c_bg_device
+{
+public:
+	s11_bgm_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock = 0);
+protected:
+	virtual void device_add_mconfig(machine_config &config) override;
+};
+
+class s11_bgs_device : public s11c_bg_device
+{
+public:
+	s11_bgs_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock = 0);
+protected:
+	virtual void device_add_mconfig(machine_config &config) override;
+};
+
+DECLARE_DEVICE_TYPE(S11C_BG, s11c_bg_device)
+DECLARE_DEVICE_TYPE(S11_BG, s11_bg_device)
+DECLARE_DEVICE_TYPE(S11_OBG, s11_obg_device)
+DECLARE_DEVICE_TYPE(S11_BGM, s11_bgm_device)
+DECLARE_DEVICE_TYPE(S11_BGS, s11_bgs_device)
+
+#endif // MAME_AUDIO_S11C_BG_H

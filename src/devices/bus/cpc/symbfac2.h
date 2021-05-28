@@ -6,35 +6,32 @@
  *  Created on: 2/08/2014
  */
 
-#ifndef SYMBFAC2_H_
-#define SYMBFAC2_H_
+#ifndef MAME_BUS_CPC_SYMBFAC2_H
+#define MAME_BUS_CPC_SYMBFAC2_H
 
-#include "emu.h"
-#include "machine/ataintf.h"
+#pragma once
+
+#include "cpcexp.h"
+#include "bus/ata/ataintf.h"
 #include "machine/ds128x.h"
 #include "machine/nvram.h"
-#include "cpcexp.h"
 
 class cpc_symbiface2_device  : public device_t,
 								public device_cpc_expansion_card_interface
 {
 public:
 	// construction/destruction
-	cpc_symbiface2_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	cpc_symbiface2_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
-	// optional information overrides
-	virtual machine_config_constructor device_mconfig_additions() const override;
-	virtual ioport_constructor device_input_ports() const override;
-
-	DECLARE_READ8_MEMBER(ide_cs0_r);
-	DECLARE_WRITE8_MEMBER(ide_cs0_w);
-	DECLARE_READ8_MEMBER(ide_cs1_r);
-	DECLARE_WRITE8_MEMBER(ide_cs1_w);
-	DECLARE_READ8_MEMBER(rtc_r);
-	DECLARE_WRITE8_MEMBER(rtc_w);
-	DECLARE_READ8_MEMBER(mouse_r);
-	DECLARE_READ8_MEMBER(rom_rewrite_r);
-	DECLARE_WRITE8_MEMBER(rom_rewrite_w);
+	uint8_t ide_cs0_r(offs_t offset);
+	void ide_cs0_w(offs_t offset, uint8_t data);
+	uint8_t ide_cs1_r(offs_t offset);
+	void ide_cs1_w(offs_t offset, uint8_t data);
+	uint8_t rtc_r(offs_t offset);
+	void rtc_w(offs_t offset, uint8_t data);
+	uint8_t mouse_r();
+	uint8_t rom_rewrite_r();
+	void rom_rewrite_w(uint8_t data);
 	DECLARE_INPUT_CHANGED_MEMBER(mouse_change_x);
 	DECLARE_INPUT_CHANGED_MEMBER(mouse_change_y);
 	DECLARE_INPUT_CHANGED_MEMBER(mouse_change_buttons);
@@ -47,10 +44,15 @@ public:
 		PS2_MOUSE_BUTTONS,
 		PS2_MOUSE_SCROLL
 	};
+
 protected:
 	// device-level overrides
 	virtual void device_start() override;
 	virtual void device_reset() override;
+
+// optional information overrides
+	virtual void device_add_mconfig(machine_config &config) override;
+	virtual ioport_constructor device_input_ports() const override;
 
 private:
 	cpc_expansion_slot_device *m_slot;
@@ -62,24 +64,24 @@ private:
 	required_ioport m_mouse_y;
 	required_ioport m_mouse_buttons;
 
-	dynamic_buffer m_rom_space;
+	std::vector<uint8_t> m_rom_space;
 
 	bool m_iohigh;
-	UINT16 m_ide_data;
+	uint16_t m_ide_data;
 
-	UINT8 m_mouse_state;
-	UINT8 m_input_x;
-	UINT8 m_input_y;
+	uint8_t m_mouse_state;
+	uint8_t m_input_x;
+	uint8_t m_input_y;
 
 	// stores backup pointers so that mapping can be restored
-	UINT8* m_4xxx_ptr_r;
-	UINT8* m_4xxx_ptr_w;
-	UINT8* m_6xxx_ptr_r;
-	UINT8* m_6xxx_ptr_w;
+	uint8_t* m_4xxx_ptr_r;
+	uint8_t* m_4xxx_ptr_w;
+	uint8_t* m_6xxx_ptr_r;
+	uint8_t* m_6xxx_ptr_w;
 };
 
 // device type definition
-extern const device_type CPC_SYMBIFACE2;
+DECLARE_DEVICE_TYPE(CPC_SYMBIFACE2, cpc_symbiface2_device)
 
 
-#endif /* SYMBFAC2_H_ */
+#endif // MAME_BUS_CPC_SYMBFAC2_H

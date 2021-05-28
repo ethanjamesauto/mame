@@ -1,5 +1,5 @@
 // license:BSD-3-Clause
-// copyright-holders:Angelo Salese
+// copyright-holders:Angelo Salese, R. Belmont
 /***************************************************************************
 
 Centipede / Millipede / Missile Command / Let's Go Bowling
@@ -13,14 +13,17 @@ Earlier revisions of this cabinet did not include the bowling game.
  a port or prototype of an old Atari game.
 
 TODO:
-- program banking;
+- flash ROM hookup
 - finish video emulation;
-- inputs;
+- trackball inputs
 - sound;
-- NVRAM (EEPROM) at U8 or U11 on PCB
-- driver probably needs rewriting, at least the i/o part;
-- Is the W65C02S the same as the 65SC02 core or are there any
-  extra Op-codes & addressing modes?
+- NVRAM (flash ROM, as per NVRAM test at 0xC2A7).
+- untangle switch-cases for inputs;
+- IRQs are problematic.  Haven't yet found a reliable enable that works
+  for both mainline and service mode; maybe there's no mask and the
+  processor's SEI/CLI instructions are used for that?
+  - If IRQs are enabled in service mode, they eventually trash all of memory.
+
 
 Probably on the CPLD (CY39100V208B) - Quoted from Cosmodog's website:
  "Instead, we used a programmable chip that we could reconfigure very
@@ -48,35 +51,50 @@ OSC @ 72.576MHz
 
 #include "emu.h"
 #include "cpu/m6502/m65sc02.h"
+#include "machine/at29x.h"
+#include "machine/bankdev.h"
+#include "emupal.h"
+#include "screen.h"
 
+#define MAIN_CLOCK XTAL(72'576'000)
 
 class cmmb_state : public driver_device
 {
 public:
-	cmmb_state(const machine_config &mconfig, device_type type, const char *tag)
-		: driver_device(mconfig, type, tag),
+	cmmb_state(const machine_config &mconfig, device_type type, const char *tag) :
+		driver_device(mconfig, type, tag),
 		m_maincpu(*this, "maincpu"),
+		m_flash(*this, "at29c020" ),
 		m_videoram(*this, "videoram"),
+		m_charram(*this, "charram"),
 		m_gfxdecode(*this, "gfxdecode"),
-		m_palette(*this, "palette")
+		m_palette(*this, "palette"),
+		m_bnk2000(*this, "bnk2000")
 	{ }
 
 	required_device<cpu_device> m_maincpu;
-	required_shared_ptr<UINT8> m_videoram;
+	required_device<at29c020_device> m_flash;
+	required_shared_ptr<uint8_t> m_videoram;
+	required_shared_ptr<uint8_t> m_charram;
 	required_device<gfxdecode_device> m_gfxdecode;
 	required_device<palette_device> m_palette;
+	required_device<address_map_bank_device> m_bnk2000;
 
-	UINT8 m_irq_mask;
+	uint8_t m_irq_mask;
 
-	DECLARE_READ8_MEMBER(cmmb_charram_r);
-	DECLARE_WRITE8_MEMBER(cmmb_charram_w);
-	DECLARE_READ8_MEMBER(cmmb_input_r);
-	DECLARE_WRITE8_MEMBER(cmmb_output_w);
-	DECLARE_READ8_MEMBER(kludge_r);
+	void cmmb_charram_w(offs_t offset, uint8_t data);
+	uint8_t cmmb_input_r(offs_t offset);
+	void cmmb_output_w(offs_t offset, uint8_t data);
+	uint8_t flash_r(offs_t offset);
+	void flash_w(offs_t offset, uint8_t data);
+
 	virtual void machine_reset() override;
 	virtual void video_start() override;
-	UINT32 screen_update_cmmb(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
-	INTERRUPT_GEN_MEMBER(cmmb_irq);
+	uint32_t screen_update_cmmb(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
+	INTERRUPT_GEN_MEMBER(vblank_irq);
+	void cmmb(machine_config &config);
+	void cmmb_map(address_map &map);
+	void bnk2000_map(address_map &map);
 };
 
 
@@ -84,9 +102,9 @@ void cmmb_state::video_start()
 {
 }
 
-UINT32 cmmb_state::screen_update_cmmb(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t cmmb_state::screen_update_cmmb(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
-	UINT8 *videoram = m_videoram;
+	uint8_t *videoram = m_videoram;
 	gfx_element *gfx = m_gfxdecode->gfx(0);
 	int count = 0x00000;
 
@@ -96,7 +114,7 @@ UINT32 cmmb_state::screen_update_cmmb(screen_device &screen, bitmap_ind16 &bitma
 	{
 		for (x=0;x<32;x++)
 		{
-			int tile = videoram[count] & 0x3f;
+			int tile = videoram[count] & 0x7f;
 			int colour = (videoram[count] & 0xc0)>>6;
 			gfx->opaque(bitmap,cliprect,tile,colour,0,0,x*8,y*8);
 
@@ -107,33 +125,32 @@ UINT32 cmmb_state::screen_update_cmmb(screen_device &screen, bitmap_ind16 &bitma
 	return 0;
 }
 
-READ8_MEMBER(cmmb_state::cmmb_charram_r)
+void cmmb_state::cmmb_charram_w(offs_t offset, uint8_t data)
 {
-	UINT8 *GFX = memregion("gfx")->base();
-
-	return GFX[offset];
-}
-
-WRITE8_MEMBER(cmmb_state::cmmb_charram_w)
-{
-	UINT8 *GFX = memregion("gfx")->base();
-
-	GFX[offset] = data;
-
-	offset&=0xfff;
+	m_charram[offset] = data;
 
 	/* dirty char */
 	m_gfxdecode->gfx(0)->mark_dirty(offset >> 4);
 	m_gfxdecode->gfx(1)->mark_dirty(offset >> 5);
 }
 
-READ8_MEMBER(cmmb_state::cmmb_input_r)
+uint8_t cmmb_state::flash_r(offs_t offset)
+{
+	return m_flash->read(offset + 0x2000);
+}
+
+void cmmb_state::flash_w(offs_t offset, uint8_t data)
+{
+	m_flash->write(offset + 0x2000, data);
+}
+
+uint8_t cmmb_state::cmmb_input_r(offs_t offset)
 {
 	//printf("%02x R\n",offset);
 	switch(offset)
 	{
 		case 0x00: return ioport("IN2")->read();
-		case 0x03: return 4; //eeprom?
+		case 0x03: return 4; // incorrect image U9 otherwise (???)
 		case 0x0e: return ioport("IN0")->read();
 		case 0x0f: return ioport("IN1")->read();
 	}
@@ -141,64 +158,82 @@ READ8_MEMBER(cmmb_state::cmmb_input_r)
 	return 0xff;
 }
 
-
-/*
-    {
-        UINT8 *ROM = space.memregion("maincpu")->base();
-        UINT32 bankaddress;
-
-        bankaddress = 0x10000 + (0x10000 * (data & 0x03));
-        space.membank("bank1")->set_base(&ROM[bankaddress]);
-    }
-*/
-
-WRITE8_MEMBER(cmmb_state::cmmb_output_w)
+void cmmb_state::cmmb_output_w(offs_t offset, uint8_t data)
 {
 	//printf("%02x -> [%02x] W\n",data,offset);
 	switch(offset)
 	{
+		case 0x00:  // IRQ ack?  may also be 0x09.
+			m_maincpu->set_input_line(0, CLEAR_LINE);
+			//printf("IRQ ack\n");
+			break;
 		case 0x01:
-			{
-				UINT8 *ROM = memregion("maincpu")->base();
-				UINT32 bankaddress;
+			m_irq_mask = data;
+			break;
+		case 0x02:
+			// bit 7 toggled - watchdog or status LED
+			// toggled by code at E3DB in IRQ handler - it's on when the frame count & 0x30 is 1 and off otherwise
+			// bit 6 set means accessing flash ROM at 0x2000
+			m_bnk2000->set_bank((data & 0x40) ? 1 : 0);
+			break;
 
-				bankaddress = 0x1c000 + (0x10000 * (data & 0x03));
+		case 0x03:
+			{
+				uint8_t *ROM = memregion("maincpu")->base();
+				uint32_t bankaddress;
+
+				//bankaddress = 0x10000 + (0x4000 * ((data & 0x0f)^0xf));
+				//printf("bank %02x => %x\n", data, bankaddress);
+				bankaddress = 0x10000 + 0x3a000;
 				membank("bank1")->set_base(&ROM[bankaddress]);
+				// bit 7 sub-devCB's flash at 0x2000-0x4000?
 			}
 			break;
-		case 0x03:
-			m_irq_mask = data & 0x80;
-			break;
+
 		case 0x07:
+			break;
+
+		case 0x09:
 			break;
 	}
 }
 
-READ8_MEMBER(cmmb_state::kludge_r)
+/* overlap empty addresses */
+void cmmb_state::cmmb_map(address_map &map)
 {
-	return machine().rand();
+	map(0x0000, 0x0fff).ram(); /* zero page address */
+//  map(0x13c0, 0x13ff).ram(); //spriteram
+	map(0x1000, 0x1fff).ram().share("videoram");
+	map(0x2000, 0x9fff).m(m_bnk2000, FUNC(address_map_bank_device::amap8));
+	map(0xa000, 0xafff).ram();
+	map(0xb000, 0xbfff).ram().w(FUNC(cmmb_state::cmmb_charram_w)).share(m_charram);
+	map(0xc000, 0xc00f).rw(FUNC(cmmb_state::cmmb_input_r), FUNC(cmmb_state::cmmb_output_w));
+	map(0xc010, 0xffff).rom().region("maincpu", 0x1c010);
 }
 
-/* overlap empty addresses */
-static ADDRESS_MAP_START( cmmb_map, AS_PROGRAM, 8, cmmb_state )
-	ADDRESS_MAP_GLOBAL_MASK(0xffff)
-	AM_RANGE(0x0000, 0x01ff) AM_RAM /* zero page address */
-//  AM_RANGE(0x13c0, 0x13ff) AM_RAM //spriteram
-	AM_RANGE(0x1000, 0x13ff) AM_RAM AM_SHARE("videoram")
-	AM_RANGE(0x2480, 0x249f) AM_RAM_DEVWRITE("palette", palette_device, write) AM_SHARE("palette")
-	AM_RANGE(0x4000, 0x400f) AM_READWRITE(cmmb_input_r,cmmb_output_w) //i/o
-	AM_RANGE(0x4900, 0x4900) AM_READ(kludge_r)
-	AM_RANGE(0x4000, 0x7fff) AM_ROMBANK("bank1")
-	AM_RANGE(0xa000, 0xafff) AM_RAM
-	AM_RANGE(0xb000, 0xbfff) AM_READWRITE(cmmb_charram_r,cmmb_charram_w)
-	AM_RANGE(0xc000, 0xc00f) AM_READWRITE(cmmb_input_r,cmmb_output_w) //i/o
-	AM_RANGE(0x8000, 0xffff) AM_ROM
-ADDRESS_MAP_END
+void cmmb_state::bnk2000_map(address_map &map)
+{
+	map(0x0000, 0x5fff).bankr("bank1");
+	map(0x0000, 0x0000).portr("IN3");
+	map(0x0001, 0x0001).portr("IN4");
+	map(0x0011, 0x0011).portr("IN5");
+	map(0x0480, 0x049f).ram().w(m_palette, FUNC(palette_device::write8)).share("palette");
+//  map(0x0505, 0x0505).w(FUNC(cmmb_state::irq_enable_w));
+//  map(0x0600, 0x0600).w(FUNC(cmmb_state::irq_ack_w));
+	map(0x0680, 0x0680).nopw();
+	map(0x6000, 0x7fff).rom().region("maincpu", 0x18000);
 
+	map(0x8000, 0xffff).rw(FUNC(cmmb_state::flash_r), FUNC(cmmb_state::flash_w));
+}
 
 static INPUT_PORTS_START( cmmb )
-	PORT_START("IN0")
-	PORT_DIPNAME( 0x01, 0x01, "SYSTEM0" )
+	PORT_START("IN3")
+	#if 1
+	PORT_BIT( 0x10, IP_ACTIVE_LOW, IPT_SERVICE2 )
+	PORT_BIT( 0x20, IP_ACTIVE_LOW, IPT_JOYSTICK_UP ) PORT_PLAYER(1)
+	PORT_BIT( 0xcf, IP_ACTIVE_LOW, IPT_UNKNOWN )
+	#else
+	PORT_DIPNAME( 0x01, 0x01, "IN3" )
 	PORT_DIPSETTING(    0x01, DEF_STR( Off ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
 	PORT_DIPNAME( 0x02, 0x02, DEF_STR( Unknown ) )
@@ -222,8 +257,14 @@ static INPUT_PORTS_START( cmmb )
 	PORT_DIPNAME( 0x80, 0x80, DEF_STR( Unknown ) )
 	PORT_DIPSETTING(    0x80, DEF_STR( Off ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
-	PORT_START("IN1")
-	PORT_DIPNAME( 0x01, 0x01, "SYSTEM1" )
+	#endif
+
+	PORT_START("IN4")
+	#if 1
+	PORT_BIT( 0x20, IP_ACTIVE_LOW, IPT_JOYSTICK_DOWN ) PORT_PLAYER(1)
+	PORT_BIT( 0xdf, IP_ACTIVE_LOW, IPT_UNKNOWN)
+	#else
+	PORT_DIPNAME( 0x01, 0x01, "IN4" )
 	PORT_DIPSETTING(    0x01, DEF_STR( Off ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
 	PORT_DIPNAME( 0x02, 0x02, DEF_STR( Unknown ) )
@@ -242,13 +283,67 @@ static INPUT_PORTS_START( cmmb )
 	PORT_DIPSETTING(    0x20, DEF_STR( Off ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
 	PORT_DIPNAME( 0x40, 0x40, DEF_STR( Unknown ) )
+	PORT_DIPSETTING(    0x40, DEF_STR( Off ) )
+	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
+	PORT_DIPNAME( 0x80, 0x80, DEF_STR( Unknown ) )
+	PORT_DIPSETTING(    0x80, DEF_STR( Off ) )
+	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
+	#endif
+	// TODO: pin-point writes for trackball
+	// TODO: bit 7 of 0x2507 selects trackball 1 and 2
+	PORT_START("IN5")
+	PORT_DIPNAME( 0x01, 0x01, "IN5" ) // trackball V clk
+	PORT_DIPSETTING(    0x01, DEF_STR( Off ) )
+	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
+	PORT_DIPNAME( 0x02, 0x02, DEF_STR( Unknown ) ) // trackball V dir
+	PORT_DIPSETTING(    0x02, DEF_STR( Off ) )
+	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
+	PORT_DIPNAME( 0x04, 0x04, DEF_STR( Unknown ) ) // trackball H clk
+	PORT_DIPSETTING(    0x04, DEF_STR( Off ) )
+	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
+	PORT_DIPNAME( 0x08, 0x08, DEF_STR( Unknown ) ) // trackball H dir
+	PORT_DIPSETTING(    0x08, DEF_STR( Off ) )
+	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
+	PORT_BIT( 0x10, IP_ACTIVE_LOW, IPT_COIN2 )
+	PORT_DIPNAME( 0x20, 0x20, DEF_STR( Unknown ) )
+	PORT_DIPSETTING(    0x20, DEF_STR( Off ) )
+	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
+	PORT_BIT( 0x40, IP_ACTIVE_LOW, IPT_COIN1 )
+	PORT_DIPNAME( 0x80, 0x80, DEF_STR( Unknown ) )
+	PORT_DIPSETTING(    0x80, DEF_STR( Off ) )
+	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
+
+	PORT_START("IN0")
+	PORT_BIT( 0x01, IP_ACTIVE_LOW, IPT_BUTTON1 ) PORT_PLAYER(1)
+	PORT_BIT( 0x02, IP_ACTIVE_LOW, IPT_BUTTON2 ) PORT_PLAYER(1)
+	PORT_BIT( 0x04, IP_ACTIVE_LOW, IPT_BUTTON3 ) PORT_PLAYER(1)
+	PORT_BIT( 0x08, IP_ACTIVE_LOW, IPT_BUTTON1 ) PORT_PLAYER(2)
+	PORT_BIT( 0x10, IP_ACTIVE_LOW, IPT_BUTTON2 ) PORT_PLAYER(2)
+	PORT_BIT( 0x20, IP_ACTIVE_LOW, IPT_BUTTON3 ) PORT_PLAYER(2)
+	PORT_DIPNAME( 0x40, 0x40, "IN0" )
+	PORT_DIPSETTING(    0x40, DEF_STR( Off ) )
+	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
+	PORT_DIPNAME( 0x80, 0x80, DEF_STR( Unknown ) )
+	PORT_DIPSETTING(    0x80, DEF_STR( Off ) )
+	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
+
+	PORT_START("IN1")
+	PORT_BIT( 0x01, IP_ACTIVE_LOW, IPT_VOLUME_DOWN )
+	PORT_BIT( 0x02, IP_ACTIVE_LOW, IPT_VOLUME_UP )
+	PORT_BIT( 0x04, IP_ACTIVE_LOW, IPT_START2 )
+	PORT_BIT( 0x08, IP_ACTIVE_LOW, IPT_START1 )
+	PORT_DIPNAME( 0x10, 0x10, DEF_STR( Unknown ) )
+	PORT_DIPSETTING(    0x10, DEF_STR( Off ) )
+	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
+	PORT_BIT( 0x20, IP_ACTIVE_LOW, IPT_SERVICE1 )
+	PORT_DIPNAME( 0x40, 0x40, "Magic" ) // makes part of the IRQ handler skip if ON
 	PORT_DIPSETTING(    0x40, DEF_STR( Off ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
 	PORT_DIPNAME( 0x80, 0x80, DEF_STR( Service_Mode ) )
 	PORT_DIPSETTING(    0x80, DEF_STR( Off ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
 	PORT_START("IN2")
-	PORT_DIPNAME( 0x01, 0x01, "SYSTEM2" )
+	PORT_DIPNAME( 0x01, 0x01, "IN2" )
 	PORT_DIPSETTING(    0x01, DEF_STR( Off ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
 	PORT_DIPNAME( 0x02, 0x02, DEF_STR( Unknown ) )
@@ -266,12 +361,7 @@ static INPUT_PORTS_START( cmmb )
 	PORT_DIPNAME( 0x20, 0x20, DEF_STR( Unknown ) )
 	PORT_DIPSETTING(    0x20, DEF_STR( Off ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
-	PORT_DIPNAME( 0x40, 0x40, DEF_STR( Unknown ) )
-	PORT_DIPSETTING(    0x40, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
-	PORT_DIPNAME( 0x80, 0x80, DEF_STR( Unknown ) )
-	PORT_DIPSETTING(    0x80, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
+	PORT_BIT( 0xc0, IP_ACTIVE_LOW, IPT_SERVICE2 )   // if this is lit up, coins will auto-insert each frame until they hit 99 (?!)
 INPUT_PORTS_END
 
 static const gfx_layout charlayout =
@@ -297,48 +387,50 @@ static const gfx_layout spritelayout =
 };
 
 
-static GFXDECODE_START( cmmb )
-	GFXDECODE_ENTRY( "gfx", 0, charlayout,     0x00, 4 )
-	GFXDECODE_ENTRY( "gfx", 0, spritelayout,   0x10, 4 )
+static GFXDECODE_START( gfx_cmmb )
+	GFXDECODE_RAM( "charram", 0, charlayout,     0x00, 4 )
+	GFXDECODE_RAM( "charram", 0, spritelayout,   0x10, 4 )
 GFXDECODE_END
 
-INTERRUPT_GEN_MEMBER(cmmb_state::cmmb_irq)
+INTERRUPT_GEN_MEMBER(cmmb_state::vblank_irq)
 {
-	//if(machine().input().code_pressed_once(KEYCODE_Z))
-	//if(machine().input().code_pressed(KEYCODE_Z))
-//      device.execute().set_input_line(0, HOLD_LINE);
+	if (m_irq_mask & 0x08)
+	{
+		m_maincpu->set_input_line(0, ASSERT_LINE);
+	}
 }
 
 void cmmb_state::machine_reset()
 {
+	m_irq_mask = 0;
 }
 
-static MACHINE_CONFIG_START( cmmb, cmmb_state )
 
+void cmmb_state::cmmb(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", M65SC02, XTAL_72_576MHz/5) // Unknown clock, but chip rated for 14MHz
-	MCFG_CPU_PROGRAM_MAP(cmmb_map)
-	MCFG_CPU_VBLANK_INT_DRIVER("screen", cmmb_state, cmmb_irq)
+	M65SC02(config, m_maincpu, MAIN_CLOCK/5); // Unknown clock, but chip rated for 14MHz
+	m_maincpu->set_addrmap(AS_PROGRAM, &cmmb_state::cmmb_map);
+	m_maincpu->set_vblank_int("screen", FUNC(cmmb_state::vblank_irq));
+
+	AT29C020(config, "at29c020");
+
+	ADDRESS_MAP_BANK(config, "bnk2000").set_map(&cmmb_state::bnk2000_map).set_options(ENDIANNESS_LITTLE, 8, 32, 0x8000);
 
 	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_REFRESH_RATE(60)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(2500)) // unknown
-	MCFG_SCREEN_SIZE(32*8, 32*8)
-	MCFG_SCREEN_VISIBLE_AREA(0*8, 32*8-1, 0*8, 32*8-1)
-	MCFG_SCREEN_UPDATE_DRIVER(cmmb_state, screen_update_cmmb)
-	MCFG_SCREEN_PALETTE("palette")
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_RASTER));
+	screen.set_raw(MAIN_CLOCK/12, 384, 0, 256, 264, 0, 240); // TBD, not real measurements
+	screen.set_screen_update(FUNC(cmmb_state::screen_update_cmmb));
+	screen.set_palette(m_palette);
 
-	MCFG_GFXDECODE_ADD("gfxdecode", "palette", cmmb)
+	GFXDECODE(config, m_gfxdecode, m_palette, gfx_cmmb);
 
-	MCFG_PALETTE_ADD("palette", 512)
-	MCFG_PALETTE_FORMAT(RRRGGGBB_inverted)
+	PALETTE(config, m_palette).set_format(palette_device::RGB_332_inverted, 512);
 
 	/* sound hardware */
-//  MCFG_SPEAKER_STANDARD_MONO("mono")
-//  MCFG_SOUND_ADD("aysnd", AY8910, 8000000/4)
-//  MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.30)
-MACHINE_CONFIG_END
+//  SPEAKER(config, "mono").front_center();
+//  AY8910(config, "aysnd", 8000000/4).add_route(ALL_OUTPUTS, "mono", 0.30);
+}
 
 
 /***************************************************************************
@@ -351,8 +443,15 @@ ROM_START( cmmb162 )
 	ROM_REGION( 0x50000, "maincpu", 0 )
 	ROM_LOAD( "cmmb162.u2",   0x10000, 0x40000, CRC(71a5a75d) SHA1(0ad7b97580082cda98cb1e8aab8efcf491d0ed25) )
 	ROM_COPY( "maincpu",      0x18000, 0x08000, 0x08000 )
-
-	ROM_REGION( 0x1000, "gfx", ROMREGION_ERASE00 )
+	ROM_FILL( 0x1c124, 2, 0xea ) // temporary patch to avoid waiting on IRQs
 ROM_END
 
-GAME( 2002, cmmb162,  0,       cmmb,  cmmb, driver_device,  0, ROT270, "Cosmodog / Team Play (Licensed from Infogrames via Midway Games West)", "Centipede / Millipede / Missile Command / Let's Go Bowling (rev 1.62)", MACHINE_NO_SOUND|MACHINE_NOT_WORKING )
+ROM_START( cmmb103 )
+	ROM_REGION( 0x50000, "maincpu", 0 )
+	ROM_LOAD( "cmm103.u2",    0x10000, 0x40000, CRC(5e925b6b) SHA1(ac675d65bf5cdbd8b0456bb23e46bb00dcae916a) )
+	ROM_COPY( "maincpu",      0x18000, 0x08000, 0x08000 )
+	//ROM_FILL( 0x1c124, 2, 0xea ) // temporary patch to avoid waiting on IRQs
+ROM_END
+
+GAME( 2001, cmmb103, 0, cmmb, cmmb, cmmb_state, empty_init, ROT270, "Cosmodog / Team Play (licensed from Infogrames via Midway Games West)", "Centipede / Millipede / Missile Command (rev 1.03)", MACHINE_NO_SOUND|MACHINE_NOT_WORKING )
+GAME( 2002, cmmb162, 0, cmmb, cmmb, cmmb_state, empty_init, ROT270, "Cosmodog / Team Play (licensed from Infogrames via Midway Games West)", "Centipede / Millipede / Missile Command / Let's Go Bowling (rev 1.62)", MACHINE_NO_SOUND|MACHINE_NOT_WORKING )

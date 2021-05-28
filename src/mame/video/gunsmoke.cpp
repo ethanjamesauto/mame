@@ -1,4 +1,4 @@
-// license:???
+// license:BSD-3-Clause
 // copyright-holders:Paul Leaman
 #include "emu.h"
 #include "includes/gunsmoke.h"
@@ -18,63 +18,62 @@
 
 ***************************************************************************/
 
-PALETTE_INIT_MEMBER(gunsmoke_state, gunsmoke)
+void gunsmoke_state::gunsmoke_palette(palette_device &palette) const
 {
-	const UINT8 *color_prom = memregion("proms")->base();
-	int i;
+	const uint8_t *color_prom = memregion("proms")->base();
 
-	/* create a lookup table for the palette */
-	for (i = 0; i < 0x100; i++)
+	// create a lookup table for the palette
+	for (int i = 0; i < 0x100; i++)
 	{
-		int r = pal4bit(color_prom[i + 0x000]);
-		int g = pal4bit(color_prom[i + 0x100]);
-		int b = pal4bit(color_prom[i + 0x200]);
+		int const r = pal4bit(color_prom[i + 0x000]);
+		int const g = pal4bit(color_prom[i + 0x100]);
+		int const b = pal4bit(color_prom[i + 0x200]);
 
 		palette.set_indirect_color(i, rgb_t(r, g, b));
 	}
 
-	/* color_prom now points to the beginning of the lookup table */
+	// color_prom now points to the beginning of the lookup table
 	color_prom += 0x300;
 
-	/* characters use colors 0x40-0x4f */
-	for (i = 0; i < 0x80; i++)
+	// characters use colors 0x40-0x4f
+	for (int i = 0; i < 0x80; i++)
 	{
-		UINT8 ctabentry = color_prom[i] | 0x40;
+		uint8_t const ctabentry = color_prom[i] | 0x40;
 		palette.set_pen_indirect(i, ctabentry);
 	}
 
-	/* background tiles use colors 0-0x3f */
-	for (i = 0x100; i < 0x200; i++)
+	// background tiles use colors 0-0x3f
+	for (int i = 0x100; i < 0x200; i++)
 	{
-		UINT8 ctabentry = color_prom[i] | ((color_prom[i + 0x100] & 0x03) << 4);
+		uint8_t const ctabentry = color_prom[i] | ((color_prom[i + 0x100] & 0x03) << 4);
 		palette.set_pen_indirect(i - 0x80, ctabentry);
 	}
 
-	/* sprites use colors 0x80-0xff */
-	for (i = 0x300; i < 0x400; i++)
+	// sprites use colors 0x80-0xff
+	for (int i = 0x300; i < 0x400; i++)
 	{
-		UINT8 ctabentry = color_prom[i] | ((color_prom[i + 0x100] & 0x07) << 4) | 0x80;
+		uint8_t const ctabentry = color_prom[i] | ((color_prom[i + 0x100] & 0x07) << 4) | 0x80;
 		palette.set_pen_indirect(i - 0x180, ctabentry);
 	}
 }
 
-WRITE8_MEMBER(gunsmoke_state::gunsmoke_videoram_w)
+void gunsmoke_state::gunsmoke_videoram_w(offs_t offset, uint8_t data)
 {
 	m_videoram[offset] = data;
 	m_fg_tilemap->mark_tile_dirty(offset);
 }
 
-WRITE8_MEMBER(gunsmoke_state::gunsmoke_colorram_w)
+void gunsmoke_state::gunsmoke_colorram_w(offs_t offset, uint8_t data)
 {
 	m_colorram[offset] = data;
 	m_fg_tilemap->mark_tile_dirty(offset);
 }
 
-WRITE8_MEMBER(gunsmoke_state::gunsmoke_c804_w)
+void gunsmoke_state::gunsmoke_c804_w(uint8_t data)
 {
 	/* bits 0 and 1 are for coin counters */
-	coin_counter_w(machine(), 1, data & 0x01);
-	coin_counter_w(machine(), 0, data & 0x02);
+	machine().bookkeeping().coin_counter_w(1, data & 0x01);
+	machine().bookkeeping().coin_counter_w(0, data & 0x02);
 
 	/* bits 2 and 3 select the ROM bank */
 	membank("bank1")->set_entry((data & 0x0c) >> 2);
@@ -88,7 +87,7 @@ WRITE8_MEMBER(gunsmoke_state::gunsmoke_c804_w)
 	m_chon = data & 0x80;
 }
 
-WRITE8_MEMBER(gunsmoke_state::gunsmoke_d806_w)
+void gunsmoke_state::gunsmoke_d806_w(uint8_t data)
 {
 	/* bits 0-2 select the sprite 3 bank */
 	m_sprite3bank = data & 0x07;
@@ -102,7 +101,7 @@ WRITE8_MEMBER(gunsmoke_state::gunsmoke_d806_w)
 
 TILE_GET_INFO_MEMBER(gunsmoke_state::get_bg_tile_info)
 {
-	UINT8 *tilerom = memregion("gfx4")->base();
+	uint8_t *tilerom = memregion("gfx4")->base();
 
 	int offs = tile_index * 2;
 	int attr = tilerom[offs + 1];
@@ -110,7 +109,7 @@ TILE_GET_INFO_MEMBER(gunsmoke_state::get_bg_tile_info)
 	int color = (attr & 0x3c) >> 2;
 	int flags = TILE_FLIPYX((attr & 0xc0) >> 6);
 
-	SET_TILE_INFO_MEMBER(1, code, color, flags);
+	tileinfo.set(1, code, color, flags);
 }
 
 TILE_GET_INFO_MEMBER(gunsmoke_state::get_fg_tile_info)
@@ -121,20 +120,25 @@ TILE_GET_INFO_MEMBER(gunsmoke_state::get_fg_tile_info)
 
 	tileinfo.group = color;
 
-	SET_TILE_INFO_MEMBER(0, code, color, 0);
+	tileinfo.set(0, code, color, 0);
 }
 
 void gunsmoke_state::video_start()
 {
-	m_bg_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(gunsmoke_state::get_bg_tile_info),this), TILEMAP_SCAN_COLS,  32, 32, 2048, 8);
-	m_fg_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(gunsmoke_state::get_fg_tile_info),this), TILEMAP_SCAN_ROWS,  8, 8, 32, 32);
+	m_bg_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(gunsmoke_state::get_bg_tile_info)), TILEMAP_SCAN_COLS,  32, 32, 2048, 8);
+	m_fg_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(gunsmoke_state::get_fg_tile_info)), TILEMAP_SCAN_ROWS,  8, 8, 32, 32);
+
+	m_bg_tilemap->set_scrolldx(128, 128);
+	m_bg_tilemap->set_scrolldy(  6,   6);
+	m_fg_tilemap->set_scrolldx(128, 128);
+	m_fg_tilemap->set_scrolldy(  6,   6);
 
 	m_fg_tilemap->configure_groups(*m_gfxdecode->gfx(0), 0x4f);
 }
 
 void gunsmoke_state::draw_sprites( bitmap_ind16 &bitmap, const rectangle &cliprect )
 {
-	UINT8 *spriteram = m_spriteram;
+	uint8_t *spriteram = m_spriteram;
 	int offs;
 
 	for (offs = m_spriteram.bytes() - 32; offs >= 0; offs -= 32)
@@ -161,11 +165,11 @@ void gunsmoke_state::draw_sprites( bitmap_ind16 &bitmap, const rectangle &clipre
 			flipy = !flipy;
 		}
 
-		m_gfxdecode->gfx(2)->transpen(bitmap,cliprect, code, color, flipx, flipy, sx, sy, 0);
+		m_gfxdecode->gfx(2)->transpen(bitmap,cliprect, code, color, flipx, flipy, sx+128, sy+6, 0);
 	}
 }
 
-UINT32 gunsmoke_state::screen_update_gunsmoke(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t gunsmoke_state::screen_update_gunsmoke(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	m_bg_tilemap->set_scrollx(0, m_scrollx[0] + 256 * m_scrollx[1]);
 	m_bg_tilemap->set_scrolly(0, m_scrolly[0]);

@@ -8,7 +8,7 @@
     After that, it uploads 4 ranges of code to checksum, followed by the 4 checksums.
     The 68K does the checksumming, and returns the results to the protection device.
 
-    Apart from inital protection calls and code upload, the vblank in both games writes
+    Apart from initial protection calls and code upload, the vblank in both games writes
     info to the protection but they seem to ignore the returned data.
     Maybe the protection is tied to something else, or maybe it was preliminary work on
     further security.
@@ -45,17 +45,17 @@ enum DEV_STATUS
 
 struct prot_data
 {
-	UINT8 passwd_len;
-	const UINT8* passwd;
-	const UINT8* code;
-	UINT8 checksum_ranges[17];
-	UINT8 checksums[4];
+	u8 passwd_len;
+	const u8* passwd;
+	const u8* code;
+	u8 checksum_ranges[17];
+	u8 checksums[4];
 };
 
 
 // deroon prot data
-static const UINT8 deroon_passwd[] = {'L','U','N','A',0};
-static const UINT8 deroon_upload[] = {0x02, 0x4e, 0x75, 0x00 }; // code length, code, 0x00 trailer
+static const u8 deroon_passwd[] = {'L','U','N','A',0};
+static const u8 deroon_upload[] = {0x02, 0x4e, 0x75, 0x00 }; // code length, code, 0x00 trailer
 static const struct prot_data deroon_data =
 {
 	5,
@@ -72,8 +72,8 @@ static const struct prot_data deroon_data =
 };
 
 // tkdensho prot data
-static const UINT8 tkdensho_passwd[] = {'A','G','E','P','R','O','T','E','C','T',' ','S','T','A','R','T',0};
-static const UINT8 tkdensho_upload[] = {0x06, 0x4e, 0xf9, 0x00, 0x00, 0x22, 0xc4,0x00};
+static const u8 tkdensho_passwd[] = {'A','G','E','P','R','O','T','E','C','T',' ','S','T','A','R','T',0};
+static const u8 tkdensho_upload[] = {0x06, 0x4e, 0xf9, 0x00, 0x00, 0x22, 0xc4,0x00};
 static const struct prot_data tkdensho_data =
 {
 	0x11,
@@ -121,10 +121,10 @@ void tecmosys_state::prot_init(int which)
 	case 2: m_device_data = &tkdensha_data; break;
 	}
 
-	machine().add_notifier(MACHINE_NOTIFY_RESET, machine_notify_delegate(FUNC(tecmosys_state::prot_reset),this));
+	machine().add_notifier(MACHINE_NOTIFY_RESET, machine_notify_delegate(&tecmosys_state::prot_reset,this));
 }
 
-READ16_MEMBER(tecmosys_state::prot_status_r)
+u16 tecmosys_state::prot_status_r(offs_t offset, u16 mem_mask)
 {
 	if (ACCESSING_BITS_8_15)
 	{
@@ -136,24 +136,24 @@ READ16_MEMBER(tecmosys_state::prot_status_r)
 	return 0xc0; // simulation is always ready
 }
 
-WRITE16_MEMBER(tecmosys_state::prot_status_w)
+void tecmosys_state::prot_status_w(u16 data)
 {
 	// deroon clears the status in one place.
 }
 
 
-READ16_MEMBER(tecmosys_state::prot_data_r)
+u16 tecmosys_state::prot_data_r()
 {
 	// prot appears to be read-ready for two consecutive reads
 	// but returns 0xff for subsequent reads.
-	UINT8 ret = m_device_value;
+	u8 ret = m_device_value;
 	m_device_value = 0xff;
 	//logerror("- prot_r = 0x%02x\n", ret );
 	return ret << 8;
 }
 
 
-WRITE16_MEMBER(tecmosys_state::prot_data_w)
+void tecmosys_state::prot_data_w(u16 data)
 {
 	// Only LSB
 	data >>= 8;

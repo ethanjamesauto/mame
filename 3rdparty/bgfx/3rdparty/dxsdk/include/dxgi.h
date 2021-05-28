@@ -3,7 +3,7 @@
 /* this ALWAYS GENERATED file contains the definitions for the interfaces */
 
 
- /* File created by MIDL compiler version 8.00.0613 */
+ /* File created by MIDL compiler version 8.01.0622 */
 /* @@MIDL_FILE_HEADING(  ) */
 
 
@@ -140,6 +140,7 @@ typedef interface IDXGIDevice1 IDXGIDevice1;
 /* header files for imported files */
 #include "oaidl.h"
 #include "ocidl.h"
+#include "dxgicommon.h"
 #include "dxgitype.h"
 
 #ifdef __cplusplus
@@ -180,6 +181,8 @@ typedef struct DXGI_MAPPED_RECT
     } 	DXGI_MAPPED_RECT;
 
 #ifdef __midl
+#ifndef LUID_DEFINED
+#define LUID_DEFINED 1
 typedef struct _LUID
     {
     DWORD LowPart;
@@ -188,6 +191,7 @@ typedef struct _LUID
 
 typedef struct _LUID *PLUID;
 
+#endif
 #endif
 typedef struct DXGI_ADAPTER_DESC
     {
@@ -272,7 +276,9 @@ enum DXGI_SWAP_CHAIN_FLAG
         DXGI_SWAP_CHAIN_FLAG_FOREGROUND_LAYER	= 128,
         DXGI_SWAP_CHAIN_FLAG_FULLSCREEN_VIDEO	= 256,
         DXGI_SWAP_CHAIN_FLAG_YUV_VIDEO	= 512,
-        DXGI_SWAP_CHAIN_FLAG_HW_PROTECTED	= 1024
+        DXGI_SWAP_CHAIN_FLAG_HW_PROTECTED	= 1024,
+        DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING	= 2048,
+        DXGI_SWAP_CHAIN_FLAG_RESTRICTED_TO_ALL_HOLOGRAPHIC_DISPLAYS	= 4096
     } 	DXGI_SWAP_CHAIN_FLAG;
 
 typedef struct DXGI_SWAP_CHAIN_DESC
@@ -318,7 +324,7 @@ EXTERN_C const IID IID_IDXGIObject;
             /* [annotation][in] */ 
             _In_  REFGUID Name,
             /* [annotation][in] */ 
-            _In_  const IUnknown *pUnknown) = 0;
+            _In_opt_  const IUnknown *pUnknown) = 0;
         
         virtual HRESULT STDMETHODCALLTYPE GetPrivateData( 
             /* [annotation][in] */ 
@@ -368,7 +374,7 @@ EXTERN_C const IID IID_IDXGIObject;
             /* [annotation][in] */ 
             _In_  REFGUID Name,
             /* [annotation][in] */ 
-            _In_  const IUnknown *pUnknown);
+            _In_opt_  const IUnknown *pUnknown);
         
         HRESULT ( STDMETHODCALLTYPE *GetPrivateData )( 
             IDXGIObject * This,
@@ -487,7 +493,7 @@ EXTERN_C const IID IID_IDXGIDeviceSubObject;
             /* [annotation][in] */ 
             _In_  REFGUID Name,
             /* [annotation][in] */ 
-            _In_  const IUnknown *pUnknown);
+            _In_opt_  const IUnknown *pUnknown);
         
         HRESULT ( STDMETHODCALLTYPE *GetPrivateData )( 
             IDXGIDeviceSubObject * This,
@@ -625,7 +631,7 @@ EXTERN_C const IID IID_IDXGIResource;
             /* [annotation][in] */ 
             _In_  REFGUID Name,
             /* [annotation][in] */ 
-            _In_  const IUnknown *pUnknown);
+            _In_opt_  const IUnknown *pUnknown);
         
         HRESULT ( STDMETHODCALLTYPE *GetPrivateData )( 
             IDXGIResource * This,
@@ -787,7 +793,7 @@ EXTERN_C const IID IID_IDXGIKeyedMutex;
             /* [annotation][in] */ 
             _In_  REFGUID Name,
             /* [annotation][in] */ 
-            _In_  const IUnknown *pUnknown);
+            _In_opt_  const IUnknown *pUnknown);
         
         HRESULT ( STDMETHODCALLTYPE *GetPrivateData )( 
             IDXGIKeyedMutex * This,
@@ -952,7 +958,7 @@ EXTERN_C const IID IID_IDXGISurface;
             /* [annotation][in] */ 
             _In_  REFGUID Name,
             /* [annotation][in] */ 
-            _In_  const IUnknown *pUnknown);
+            _In_opt_  const IUnknown *pUnknown);
         
         HRESULT ( STDMETHODCALLTYPE *GetPrivateData )( 
             IDXGISurface * This,
@@ -1109,7 +1115,7 @@ EXTERN_C const IID IID_IDXGISurface1;
             /* [annotation][in] */ 
             _In_  REFGUID Name,
             /* [annotation][in] */ 
-            _In_  const IUnknown *pUnknown);
+            _In_opt_  const IUnknown *pUnknown);
         
         HRESULT ( STDMETHODCALLTYPE *GetPrivateData )( 
             IDXGISurface1 * This,
@@ -1299,7 +1305,7 @@ EXTERN_C const IID IID_IDXGIAdapter;
             /* [annotation][in] */ 
             _In_  REFGUID Name,
             /* [annotation][in] */ 
-            _In_  const IUnknown *pUnknown);
+            _In_opt_  const IUnknown *pUnknown);
         
         HRESULT ( STDMETHODCALLTYPE *GetPrivateData )( 
             IDXGIAdapter * This,
@@ -1505,7 +1511,7 @@ EXTERN_C const IID IID_IDXGIOutput;
             /* [annotation][in] */ 
             _In_  REFGUID Name,
             /* [annotation][in] */ 
-            _In_  const IUnknown *pUnknown);
+            _In_opt_  const IUnknown *pUnknown);
         
         HRESULT ( STDMETHODCALLTYPE *GetPrivateData )( 
             IDXGIOutput * This,
@@ -1683,6 +1689,7 @@ EXTERN_C const IID IID_IDXGIOutput;
 #define DXGI_PRESENT_STEREO_TEMPORARY_MONO     0x00000020UL
 #define DXGI_PRESENT_RESTRICT_TO_OUTPUT        0x00000040UL
 #define DXGI_PRESENT_USE_DURATION              0x00000100UL
+#define DXGI_PRESENT_ALLOW_TEARING             0x00000200UL
 
 
 extern RPC_IF_HANDLE __MIDL_itf_dxgi_0000_0008_v0_0_c_ifspec;
@@ -1786,7 +1793,7 @@ EXTERN_C const IID IID_IDXGISwapChain;
             /* [annotation][in] */ 
             _In_  REFGUID Name,
             /* [annotation][in] */ 
-            _In_  const IUnknown *pUnknown);
+            _In_opt_  const IUnknown *pUnknown);
         
         HRESULT ( STDMETHODCALLTYPE *GetPrivateData )( 
             IDXGISwapChain * This,
@@ -2038,7 +2045,7 @@ EXTERN_C const IID IID_IDXGIFactory;
             /* [annotation][in] */ 
             _In_  REFGUID Name,
             /* [annotation][in] */ 
-            _In_  const IUnknown *pUnknown);
+            _In_opt_  const IUnknown *pUnknown);
         
         HRESULT ( STDMETHODCALLTYPE *GetPrivateData )( 
             IDXGIFactory * This,
@@ -2236,7 +2243,7 @@ EXTERN_C const IID IID_IDXGIDevice;
             /* [annotation][in] */ 
             _In_  REFGUID Name,
             /* [annotation][in] */ 
-            _In_  const IUnknown *pUnknown);
+            _In_opt_  const IUnknown *pUnknown);
         
         HRESULT ( STDMETHODCALLTYPE *GetPrivateData )( 
             IDXGIDevice * This,
@@ -2443,7 +2450,7 @@ EXTERN_C const IID IID_IDXGIFactory1;
             /* [annotation][in] */ 
             _In_  REFGUID Name,
             /* [annotation][in] */ 
-            _In_  const IUnknown *pUnknown);
+            _In_opt_  const IUnknown *pUnknown);
         
         HRESULT ( STDMETHODCALLTYPE *GetPrivateData )( 
             IDXGIFactory1 * This,
@@ -2623,7 +2630,7 @@ EXTERN_C const IID IID_IDXGIAdapter1;
             /* [annotation][in] */ 
             _In_  REFGUID Name,
             /* [annotation][in] */ 
-            _In_  const IUnknown *pUnknown);
+            _In_opt_  const IUnknown *pUnknown);
         
         HRESULT ( STDMETHODCALLTYPE *GetPrivateData )( 
             IDXGIAdapter1 * This,
@@ -2780,7 +2787,7 @@ EXTERN_C const IID IID_IDXGIDevice1;
             /* [annotation][in] */ 
             _In_  REFGUID Name,
             /* [annotation][in] */ 
-            _In_  const IUnknown *pUnknown);
+            _In_opt_  const IUnknown *pUnknown);
         
         HRESULT ( STDMETHODCALLTYPE *GetPrivateData )( 
             IDXGIDevice1 * This,

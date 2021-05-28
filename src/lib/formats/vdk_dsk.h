@@ -1,4 +1,4 @@
-// license:GPL-2.0+
+// license:BSD-3-Clause
 // copyright-holders:Dirk Best
 /***************************************************************************
 
@@ -9,11 +9,10 @@
     Used by Paul Burgin's PC-Dragon emulator
 
 ***************************************************************************/
+#ifndef MAME_FORMATS_VDK_DSK_H
+#define MAME_FORMATS_VDK_DSK_H
 
 #pragma once
-
-#ifndef __VDK_DSK_H__
-#define __VDK_DSK_H__
 
 #include "flopimg.h"
 
@@ -26,9 +25,9 @@ public:
 	virtual const char *description() const override;
 	virtual const char *extensions() const override;
 
-	virtual int identify(io_generic *io, UINT32 form_factor) override;
-	virtual bool load(io_generic *io, UINT32 form_factor, floppy_image *image) override;
-	virtual bool save(io_generic *io, floppy_image *image) override;
+	virtual int identify(io_generic *io, uint32_t form_factor, const std::vector<uint32_t> &variants) override;
+	virtual bool load(io_generic *io, uint32_t form_factor, const std::vector<uint32_t> &variants, floppy_image *image) override;
+	virtual bool save(io_generic *io, const std::vector<uint32_t> &variants, floppy_image *image) override;
 	virtual bool supports_save() const override;
 
 private:
@@ -39,4 +38,4 @@ private:
 
 extern const floppy_format_type FLOPPY_VDK_FORMAT;
 
-#endif // __VDK_DSK_H__
+#endif // MAME_FORMATS_VDK_DSK_H

@@ -10,7 +10,7 @@ one has priority, but I'm not sure of that either.
 It seems the chip accepts three inputs from three different sources, and
 each one of them can declare to have four different priority levels.
 
-000 Top two bits indicate special blend mode (see taito_f2.c).  Other bits unused?
+000 Top two bits indicate special blend mode (see taito_f2.cpp).  Other bits unused?
 001 in games with a roz layer, this is the roz palette bank (bottom 6 bits
     affect roz color, top 2 bits affect priority)
 002 unknown
@@ -43,10 +43,10 @@ each one of them can declare to have four different priority levels.
 #include "tc0360pri.h"
 
 
-const device_type TC0360PRI = &device_creator<tc0360pri_device>;
+DEFINE_DEVICE_TYPE(TC0360PRI, tc0360pri_device, "tc0360pri", "Taito TC0360PRI")
 
-tc0360pri_device::tc0360pri_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: device_t(mconfig, TC0360PRI, "Taito TC0360PRI", tag, owner, clock, "tc0360pri", __FILE__)
+tc0360pri_device::tc0360pri_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: device_t(mconfig, TC0360PRI, tag, owner, clock)
 {
 }
 
@@ -74,22 +74,21 @@ void tc0360pri_device::device_reset()
     DEVICE HANDLERS
 *****************************************************************************/
 
-WRITE8_MEMBER( tc0360pri_device::write )
+void tc0360pri_device::write(offs_t offset, u8 data)
 {
 	m_regs[offset] = data;
 
 if (offset >= 0x0a)
 	popmessage("write %02x to unused TC0360PRI reg %x", data, offset);
 #if 0
-#define regs m_regs
 	popmessage("%02x %02x  %02x %02x  %02x %02x %02x %02x %02x %02x",
-		regs[0x00], regs[0x01], regs[0x02], regs[0x03],
-		regs[0x04], regs[0x05], regs[0x06], regs[0x07],
-		regs[0x08], regs[0x09]);
+		m_regs[0x00], m_regs[0x01], m_regs[0x02], m_regs[0x03],
+		m_regs[0x04], m_regs[0x05], m_regs[0x06], m_regs[0x07],
+		m_regs[0x08], m_regs[0x09]);
 #endif
 }
 
-READ8_MEMBER( tc0360pri_device::read )
+u8 tc0360pri_device::read(offs_t offset)
 {
 	return m_regs[offset];
 }

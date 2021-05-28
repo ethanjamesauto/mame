@@ -98,48 +98,58 @@ dumped by sayu
 #include "cpu/z80/z80.h"
 #include "sound/sn76496.h"
 #include "sound/msm5205.h"
+#include "emupal.h"
+#include "screen.h"
+#include "speaker.h"
 
-#define MAIN_CLOCK XTAL_18_432MHz
+
+#define MAIN_CLOCK XTAL(18'432'000)
 
 class jantotsu_state : public driver_device
 {
 public:
-	jantotsu_state(const machine_config &mconfig, device_type type, const char *tag)
-		: driver_device(mconfig, type, tag),
+	jantotsu_state(const machine_config &mconfig, device_type type, const char *tag) :
+		driver_device(mconfig, type, tag),
 		m_maincpu(*this, "maincpu"),
 		m_adpcm(*this, "adpcm") ,
-		m_palette(*this, "palette"){ }
+		m_palette(*this, "palette")
+	{ }
 
+	void jantotsu(machine_config &config);
+
+private:
 	/* sound-related */
-	UINT32   m_adpcm_pos;
-	UINT8    m_adpcm_idle;
+	uint32_t   m_adpcm_pos;
+	uint8_t    m_adpcm_idle;
 	int      m_adpcm_data;
-	UINT8    m_adpcm_trigger;
+	uint8_t    m_adpcm_trigger;
 
 	/* misc */
-	UINT8    m_mux_data;
+	uint8_t    m_mux_data;
 
 	/* video-related */
-	UINT8    m_vram_bank;
-	UINT8    m_col_bank;
-	UINT8    m_display_on;
-	UINT8    m_bitmap[0x8000];
-	DECLARE_READ8_MEMBER(jantotsu_bitmap_r);
-	DECLARE_WRITE8_MEMBER(jantotsu_bitmap_w);
-	DECLARE_WRITE8_MEMBER(bankaddr_w);
-	DECLARE_READ8_MEMBER(jantotsu_mux_r);
-	DECLARE_WRITE8_MEMBER(jantotsu_mux_w);
-	DECLARE_READ8_MEMBER(jantotsu_dsw2_r);
-	DECLARE_WRITE8_MEMBER(jan_adpcm_w);
+	uint8_t    m_vram_bank;
+	uint8_t    m_col_bank;
+	uint8_t    m_display_on;
+	uint8_t    m_bitmap[0x8000];
+	uint8_t jantotsu_bitmap_r(offs_t offset);
+	void jantotsu_bitmap_w(offs_t offset, uint8_t data);
+	void bankaddr_w(uint8_t data);
+	uint8_t jantotsu_mux_r();
+	void jantotsu_mux_w(uint8_t data);
+	uint8_t jantotsu_dsw2_r();
+	void jan_adpcm_w(offs_t offset, uint8_t data);
 	virtual void machine_start() override;
 	virtual void machine_reset() override;
 	virtual void video_start() override;
-	DECLARE_PALETTE_INIT(jantotsu);
-	UINT32 screen_update_jantotsu(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect);
+	void jantotsu_palette(palette_device &palette) const;
+	uint32_t screen_update_jantotsu(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect);
 	DECLARE_WRITE_LINE_MEMBER(jan_adpcm_int);
 	required_device<cpu_device> m_maincpu;
 	required_device<msm5205_device> m_adpcm;
 	required_device<palette_device> m_palette;
+	void jantotsu_io(address_map &map);
+	void jantotsu_map(address_map &map);
 };
 
 
@@ -154,30 +164,25 @@ void jantotsu_state::video_start()
 	save_item(NAME(m_bitmap));
 }
 
-UINT32 jantotsu_state::screen_update_jantotsu(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
+uint32_t jantotsu_state::screen_update_jantotsu(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
 {
-	int x, y, i;
-	int count = 0;
-	UINT8 pen_i;
-
 	if(!m_display_on)
 		return 0;
 
-	for (y = 0; y < 256; y++)
+	int count = 0;
+	for (int y = 0; y < 256; y++)
 	{
-		for (x = 0; x < 256; x += 8)
+		for (int x = 0; x < 256; x += 8)
 		{
-			UINT8 color;
-
-			for (i = 0; i < 8; i++)
+			for (int i = 0; i < 8; i++)
 			{
-				color = m_col_bank;
+				uint8_t color = m_col_bank;
 
-				for(pen_i = 0;pen_i<4;pen_i++)
+				for (uint8_t pen_i = 0;pen_i<4;pen_i++)
 					color |= (((m_bitmap[count + pen_i*0x2000]) >> (7 - i)) & 1) << pen_i;
 
 				if (cliprect.contains(x + i, y))
-					bitmap.pix32(y, x + i) = m_palette->pen(color);
+					bitmap.pix(y, x + i) = m_palette->pen(color);
 			}
 
 			count++;
@@ -188,17 +193,17 @@ UINT32 jantotsu_state::screen_update_jantotsu(screen_device &screen, bitmap_rgb3
 }
 
 /* banked vram */
-READ8_MEMBER(jantotsu_state::jantotsu_bitmap_r)
+uint8_t jantotsu_state::jantotsu_bitmap_r(offs_t offset)
 {
 	return m_bitmap[offset + ((m_vram_bank & 3) * 0x2000)];
 }
 
-WRITE8_MEMBER(jantotsu_state::jantotsu_bitmap_w)
+void jantotsu_state::jantotsu_bitmap_w(offs_t offset, uint8_t data)
 {
 	m_bitmap[offset + ((m_vram_bank & 3) * 0x2000)] = data;
 }
 
-WRITE8_MEMBER(jantotsu_state::bankaddr_w)
+void jantotsu_state::bankaddr_w(uint8_t data)
 {
 	m_vram_bank = ((data & 0xc0) >> 6);
 
@@ -209,26 +214,26 @@ WRITE8_MEMBER(jantotsu_state::bankaddr_w)
 		logerror("I/O port $07 write trips %02x\n",data);
 }
 
-PALETTE_INIT_MEMBER(jantotsu_state, jantotsu)
+void jantotsu_state::jantotsu_palette(palette_device &palette) const
 {
-	const UINT8 *color_prom = memregion("proms")->base();
-	int bit0, bit1, bit2, r, g, b;
-	int i;
+	const uint8_t *color_prom = memregion("proms")->base();
 
-	for (i = 0; i < 0x20; ++i)
+	for (int i = 0; i < 0x20; ++i)
 	{
-		bit0 = (color_prom[0] >> 0) & 0x01;
-		bit1 = (color_prom[0] >> 1) & 0x01;
-		bit2 = (color_prom[0] >> 2) & 0x01;
-		r = 0x21 * bit0 + 0x47 * bit1 + 0x97 * bit2;
-		bit0 = (color_prom[0] >> 3) & 0x01;
-		bit1 = (color_prom[0] >> 4) & 0x01;
-		bit2 = (color_prom[0] >> 5) & 0x01;
-		g = 0x21 * bit0 + 0x47 * bit1 + 0x97 * bit2;
+		int bit0, bit1, bit2;
+
+		bit0 = BIT(color_prom[0], 0);
+		bit1 = BIT(color_prom[0], 1);
+		bit2 = BIT(color_prom[0], 2);
+		int const r = 0x21 * bit0 + 0x47 * bit1 + 0x97 * bit2;
+		bit0 = BIT(color_prom[0], 3);
+		bit1 = BIT(color_prom[0], 4);
+		bit2 = BIT(color_prom[0], 5);
+		int const g = 0x21 * bit0 + 0x47 * bit1 + 0x97 * bit2;
 		bit0 = 0;
-		bit1 = (color_prom[0] >> 6) & 0x01;
-		bit2 = (color_prom[0] >> 7) & 0x01;
-		b = 0x21 * bit0 + 0x47 * bit1 + 0x97 * bit2;
+		bit1 = BIT(color_prom[0], 6);
+		bit2 = BIT(color_prom[0], 7);
+		int const b = 0x21 * bit0 + 0x47 * bit1 + 0x97 * bit2;
 
 		palette.set_pen_color(i, rgb_t(r, g, b));
 		color_prom++;
@@ -242,11 +247,11 @@ PALETTE_INIT_MEMBER(jantotsu_state, jantotsu)
  *************************************/
 
 /*Multiplexer is mapped as 6-bits reads,bits 6 & 7 are always connected to the coin mechs.*/
-READ8_MEMBER(jantotsu_state::jantotsu_mux_r)
+uint8_t jantotsu_state::jantotsu_mux_r()
 {
 	const char *const portnames[] = { "PL1_1", "PL1_2", "PL1_3", "PL1_4",
 										"PL2_1", "PL2_2", "PL2_3", "PL2_4" };
-	UINT8 i,res;
+	uint8_t i,res;
 
 	//  printf("%02x\n", m_mux_data);
 	res = ioport("COINS")->read();
@@ -260,7 +265,7 @@ READ8_MEMBER(jantotsu_state::jantotsu_mux_r)
 	return res;
 }
 
-WRITE8_MEMBER(jantotsu_state::jantotsu_mux_w)
+void jantotsu_state::jantotsu_mux_w(uint8_t data)
 {
 	m_mux_data = data;
 }
@@ -269,12 +274,12 @@ WRITE8_MEMBER(jantotsu_state::jantotsu_mux_w)
   so I'm guessing that these bits can't be read by the z80 at all but directly
   hard-wired to the video chip. However I need the schematics / pcb snaps and/or
   a side-by-side test (to know if the background colors really works) to be sure. */
-READ8_MEMBER(jantotsu_state::jantotsu_dsw2_r)
+uint8_t jantotsu_state::jantotsu_dsw2_r()
 {
 	return (ioport("DSW2")->read() & 0x3f) | 0x80;
 }
 
-WRITE8_MEMBER(jantotsu_state::jan_adpcm_w)
+void jantotsu_state::jan_adpcm_w(offs_t offset, uint8_t data)
 {
 	switch (offset)
 	{
@@ -307,7 +312,7 @@ WRITE_LINE_MEMBER(jantotsu_state::jan_adpcm_int)
 	}
 	else
 	{
-		UINT8 *ROM = memregion("adpcm")->base();
+		uint8_t *ROM = memregion("adpcm")->base();
 
 		m_adpcm_data = ((m_adpcm_trigger ? (ROM[m_adpcm_pos] & 0x0f) : (ROM[m_adpcm_pos] & 0xf0) >> 4));
 		m_adpcm->data_w(m_adpcm_data & 0xf);
@@ -328,20 +333,22 @@ WRITE_LINE_MEMBER(jantotsu_state::jan_adpcm_int)
  *
  *************************************/
 
-static ADDRESS_MAP_START( jantotsu_map, AS_PROGRAM, 8, jantotsu_state )
-	AM_RANGE(0x0000, 0xbfff) AM_ROM
-	AM_RANGE(0xc000, 0xc7ff) AM_RAM
-	AM_RANGE(0xe000, 0xffff) AM_READWRITE(jantotsu_bitmap_r, jantotsu_bitmap_w)
-ADDRESS_MAP_END
+void jantotsu_state::jantotsu_map(address_map &map)
+{
+	map(0x0000, 0xbfff).rom();
+	map(0xc000, 0xc7ff).ram();
+	map(0xe000, 0xffff).rw(FUNC(jantotsu_state::jantotsu_bitmap_r), FUNC(jantotsu_state::jantotsu_bitmap_w));
+}
 
-static ADDRESS_MAP_START( jantotsu_io, AS_IO, 8, jantotsu_state )
-	ADDRESS_MAP_GLOBAL_MASK(0xff)
-	AM_RANGE(0x00, 0x00) AM_READ_PORT("DSW1") AM_DEVWRITE("sn1", sn76489a_device, write)
-	AM_RANGE(0x01, 0x01) AM_READ(jantotsu_dsw2_r) AM_DEVWRITE("sn2", sn76489a_device, write)
-	AM_RANGE(0x02, 0x03) AM_WRITE(jan_adpcm_w)
-	AM_RANGE(0x04, 0x04) AM_READWRITE(jantotsu_mux_r, jantotsu_mux_w)
-	AM_RANGE(0x07, 0x07) AM_WRITE(bankaddr_w)
-ADDRESS_MAP_END
+void jantotsu_state::jantotsu_io(address_map &map)
+{
+	map.global_mask(0xff);
+	map(0x00, 0x00).portr("DSW1").w("sn1", FUNC(sn76489a_device::write));
+	map(0x01, 0x01).r(FUNC(jantotsu_state::jantotsu_dsw2_r)).w("sn2", FUNC(sn76489a_device::write));
+	map(0x02, 0x03).w(FUNC(jantotsu_state::jan_adpcm_w));
+	map(0x04, 0x04).rw(FUNC(jantotsu_state::jantotsu_mux_r), FUNC(jantotsu_state::jantotsu_mux_w));
+	map(0x07, 0x07).w(FUNC(jantotsu_state::bankaddr_w));
+}
 
 
 /*************************************
@@ -491,40 +498,35 @@ void jantotsu_state::machine_reset()
 	m_adpcm_trigger = 0;
 }
 
-static MACHINE_CONFIG_START( jantotsu, jantotsu_state )
-
+void jantotsu_state::jantotsu(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", Z80,MAIN_CLOCK/4)
-	MCFG_CPU_PROGRAM_MAP(jantotsu_map)
-	MCFG_CPU_IO_MAP(jantotsu_io)
-	MCFG_CPU_VBLANK_INT_DRIVER("screen", jantotsu_state,  nmi_line_pulse)
-
+	Z80(config, m_maincpu, MAIN_CLOCK/4);
+	m_maincpu->set_addrmap(AS_PROGRAM, &jantotsu_state::jantotsu_map);
+	m_maincpu->set_addrmap(AS_IO, &jantotsu_state::jantotsu_io);
 
 	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_REFRESH_RATE(60)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(2500)) //not accurate
-	MCFG_SCREEN_SIZE(256, 256)
-	MCFG_SCREEN_VISIBLE_AREA(0, 256-1, 16, 240-1)
-	MCFG_SCREEN_UPDATE_DRIVER(jantotsu_state, screen_update_jantotsu)
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_RASTER));
+	screen.set_refresh_hz(60);
+	screen.set_vblank_time(ATTOSECONDS_IN_USEC(2500)); //not accurate
+	screen.set_size(256, 256);
+	screen.set_visarea(0, 256-1, 16, 240-1);
+	screen.set_screen_update(FUNC(jantotsu_state::screen_update_jantotsu));
+	screen.screen_vblank().set_inputline(m_maincpu, INPUT_LINE_NMI);
 
-	MCFG_PALETTE_ADD("palette", 0x20)
-	MCFG_PALETTE_INIT_OWNER(jantotsu_state, jantotsu)
+	PALETTE(config, m_palette, FUNC(jantotsu_state::jantotsu_palette), 0x20);
 
 	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_MONO("mono")
+	SPEAKER(config, "mono").front_center();
 
-	MCFG_SOUND_ADD("sn1", SN76489A, MAIN_CLOCK/4)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.50)
+	SN76489A(config, "sn1", MAIN_CLOCK/4).add_route(ALL_OUTPUTS, "mono", 0.50);
+	SN76489A(config, "sn2", MAIN_CLOCK/4).add_route(ALL_OUTPUTS, "mono", 0.50);
 
-	MCFG_SOUND_ADD("sn2", SN76489A, MAIN_CLOCK/4)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.50)
-
-	MCFG_SOUND_ADD("adpcm", MSM5205, XTAL_384kHz)
-	MCFG_MSM5205_VCLK_CB(WRITELINE(jantotsu_state, jan_adpcm_int))  /* interrupt function */
-	MCFG_MSM5205_PRESCALER_SELECTOR(MSM5205_S64_4B)  /* 6 KHz */
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 1.00)
-MACHINE_CONFIG_END
+	MSM5205(config, m_adpcm, XTAL(384'000));
+	m_adpcm->vck_legacy_callback().set(FUNC(jantotsu_state::jan_adpcm_int));  /* interrupt function */
+	m_adpcm->set_prescaler_selector(msm5205_device::S64_4B);  /* 6 KHz */
+	m_adpcm->add_route(ALL_OUTPUTS, "mono", 1.00);
+}
 
 
 /*************************************
@@ -559,4 +561,4 @@ ROM_END
  *
  *************************************/
 
-GAME( 1983, jantotsu,  0,    jantotsu, jantotsu, driver_device,  0, ROT270, "Sanritsu", "4nin-uchi Mahjong Jantotsu", MACHINE_SUPPORTS_SAVE )
+GAME( 1983, jantotsu, 0, jantotsu, jantotsu, jantotsu_state, empty_init, ROT270, "Sanritsu", "4nin-uchi Mahjong Jantotsu", MACHINE_SUPPORTS_SAVE )

@@ -8,8 +8,8 @@
 **************************************************************************/
 
 #include "emu.h"
-#include "cpu/tms34010/tms34010.h"
 #include "includes/midyunit.h"
+#include "screen.h"
 
 
 /* compile-time options */
@@ -42,11 +42,14 @@ enum
 VIDEO_START_MEMBER(midyunit_state,common)
 {
 	/* allocate memory */
-	m_cmos_ram = std::make_unique<UINT16[]>((0x2000 * 4)/2);
-	m_local_videoram = make_unique_clear<UINT16[]>(0x80000/2);
+	m_cmos_ram = std::make_unique<uint16_t[]>((0x2000 * 4)/2);
+	m_local_videoram = make_unique_clear<uint16_t[]>(0x80000/2);
 	m_pen_map = std::make_unique<pen_t[]>(65536);
 
-	machine().device<nvram_device>("nvram")->set_base(m_cmos_ram.get(), 0x2000 * 4);
+	m_nvram->set_base(m_cmos_ram.get(), 0x2000 * 4);
+
+	m_dma_timer = timer_alloc(TIMER_DMA);
+	m_autoerase_line_timer = timer_alloc(TIMER_AUTOERASE_LINE);
 
 	/* reset all the globals */
 	m_cmos_page = 0;
@@ -59,8 +62,8 @@ VIDEO_START_MEMBER(midyunit_state,common)
 
 	/* register for state saving */
 	save_item(NAME(m_autoerase_enable));
-	save_pointer(NAME(m_local_videoram.get()), 0x80000/2);
-	save_pointer(NAME(m_cmos_ram.get()), (0x2000 * 4)/2);
+	save_pointer(NAME(m_local_videoram), 0x80000/2);
+	save_pointer(NAME(m_cmos_ram), (0x2000 * 4)/2);
 	save_item(NAME(m_videobank_select));
 	save_item(NAME(m_dma_register));
 }
@@ -119,7 +122,7 @@ VIDEO_START_MEMBER(midyunit_state,midzunit)
  *
  *************************************/
 
-READ16_MEMBER(midyunit_state::midyunit_gfxrom_r)
+uint16_t midyunit_state::midyunit_gfxrom_r(offs_t offset)
 {
 	offset *= 2;
 	if (m_palette_mask == 0x00ff)
@@ -137,7 +140,7 @@ READ16_MEMBER(midyunit_state::midyunit_gfxrom_r)
  *
  *************************************/
 
-WRITE16_MEMBER(midyunit_state::midyunit_vram_w)
+void midyunit_state::midyunit_vram_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	offset *= 2;
 	if (m_videobank_select)
@@ -157,7 +160,7 @@ WRITE16_MEMBER(midyunit_state::midyunit_vram_w)
 }
 
 
-READ16_MEMBER(midyunit_state::midyunit_vram_r)
+uint16_t midyunit_state::midyunit_vram_r(offs_t offset)
 {
 	offset *= 2;
 	if (m_videobank_select)
@@ -176,13 +179,13 @@ READ16_MEMBER(midyunit_state::midyunit_vram_r)
 
 TMS340X0_TO_SHIFTREG_CB_MEMBER(midyunit_state::to_shiftreg)
 {
-	memcpy(shiftreg, &m_local_videoram[address >> 3], 2 * 512 * sizeof(UINT16));
+	memcpy(shiftreg, &m_local_videoram[address >> 3], 2 * 512 * sizeof(uint16_t));
 }
 
 
 TMS340X0_FROM_SHIFTREG_CB_MEMBER(midyunit_state::from_shiftreg)
 {
-	memcpy(&m_local_videoram[address >> 3], shiftreg, 2 * 512 * sizeof(UINT16));
+	memcpy(&m_local_videoram[address >> 3], shiftreg, 2 * 512 * sizeof(uint16_t));
 }
 
 
@@ -193,19 +196,39 @@ TMS340X0_FROM_SHIFTREG_CB_MEMBER(midyunit_state::from_shiftreg)
  *
  *************************************/
 
-WRITE16_MEMBER(midyunit_state::midyunit_control_w)
+void midyunit_state::midyunit_control_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	/*
-	 * Narc system register
+	 * Narc 'Z-unit' system register, accessed via '/SEL.MISC' being asserted
 	 * ------------------
 	 *
 	 *   | Bit              | Use
 	 * --+-FEDCBA9876543210-+------------
-	 *   | xxxxxxxx-------- |   7 segment led on CPU board
-	 *   | --------xx------ |   CMOS page
-	 *   | ----------x----- | - OBJ PAL RAM select
-	 *   | -----------x---- | - autoerase enable
-	 *   | ---------------- | - watchdog
+	 *   | xxxxxxxx-------- | 7 segment led on CPU board
+	 *   | --------xx------ | CMOS page, selected by feeding the '/SPK.0' D6 and '/SPK.1' D7 through an EP800 PLD @U12
+	 *   | ----------x----- | /OBJ PAL RAM select
+	 *   | -----------x---- | /autoerase enable
+	 *   | ------------x--- | /bg enable
+	 *   | -------------x-- | /bg priority
+	 *   | --------------x- | fg scroll 1
+	 *   | ---------------x | fg scroll 0
+	 *   | --------xx----xx | watchdog is triggered on any (state change? rising edge? needs testing, the EP800 @U12 controls this) of these bits, and the EP800 likely also counts pulses the /BLANK bit from the tms34010
+	 *
+	 */
+	/*
+	 * Y-unit system register, accessed via '/SEL.MISC' being asserted ('later' is from the super high impact schematics vs main labels are from the trog schematics)
+	 * ------------------
+	 *
+	 *   | Bit              | Use
+	 * --+-FEDCBA9876543210-+------------
+	 *   | OPEN_BUS-------- |  upper 8 bits are open bus
+	 *   |   " "   xx------ |  CMOS page, selected by feeding the '/SPK.0' (later CBANK1) D6 and '/SPK.1' (later CBANK0) D7 through an EP800 PLD @U12
+	 *   |   " "   --x----- |  /OBJ PAL RAM select
+	 *   |   " "   ---x---- |  /autoerase enable
+	 *   |   " "   ----x--- |  N/C (later 'EXT')
+	 *   |   " "   -----x-- |  /LED
+	 *   |   " "   ------x- |  fg scroll 1 (later 'WD.DAT')
+	 *   |   " "   -------x |  fg scroll 0 (later 'WD.CLK')
 	 *
 	 */
 
@@ -230,7 +253,7 @@ WRITE16_MEMBER(midyunit_state::midyunit_control_w)
  *
  *************************************/
 
-WRITE16_MEMBER(midyunit_state::midyunit_paletteram_w)
+void midyunit_state::midyunit_paletteram_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	int newword;
 
@@ -247,16 +270,16 @@ WRITE16_MEMBER(midyunit_state::midyunit_paletteram_w)
  *
  *************************************/
 
-void midyunit_state::dma_draw(UINT16 command)
+void midyunit_state::dma_draw(uint16_t command)
 {
 	struct dma_state_t &dma_state = m_dma_state;
 	int dx = (command & 0x10) ? -1 : 1;
 	int height = dma_state.height;
 	int width = dma_state.width;
-	UINT8 *base = m_gfx_rom;
-	UINT32 offset = dma_state.offset >> 3;
-	UINT16 pal = dma_state.palette;
-	UINT16 color = pal | dma_state.color;
+	uint8_t *base = m_gfx_rom;
+	uint32_t offset = dma_state.offset >> 3;
+	uint16_t pal = dma_state.palette;
+	uint16_t color = pal | dma_state.color;
 	int x, y;
 
 	/* we only need the low 4 bits of the command */
@@ -267,8 +290,8 @@ void midyunit_state::dma_draw(UINT16 command)
 	{
 		int tx = dma_state.xpos;
 		int ty = dma_state.ypos;
-		UINT32 o = offset;
-		UINT16 *dest;
+		uint32_t o = offset;
+		uint16_t *dest;
 
 		/* determine Y position */
 		ty = (ty + y) & 0x1ff;
@@ -369,7 +392,7 @@ void midyunit_state::device_timer(emu_timer &timer, device_timer_id id, int para
 		autoerase_line(ptr, param);
 		break;
 	default:
-		assert_always(FALSE, "Unknown id in midyunit_state::device_timer");
+		throw emu_fatalerror("Unknown id in midyunit_state::device_timer");
 	}
 }
 
@@ -387,7 +410,7 @@ TIMER_CALLBACK_MEMBER(midyunit_state::dma_callback)
  *
  *************************************/
 
-READ16_MEMBER(midyunit_state::midyunit_dma_r)
+uint16_t midyunit_state::midyunit_dma_r(offs_t offset)
 {
 	return m_dma_register[offset];
 }
@@ -425,10 +448,10 @@ READ16_MEMBER(midyunit_state::midyunit_dma_r)
  *     9     | xxxxxxxxxxxxxxxx | color
  */
 
-WRITE16_MEMBER(midyunit_state::midyunit_dma_w)
+void midyunit_state::midyunit_dma_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	struct dma_state_t &dma_state = m_dma_state;
-	UINT32 gfxoffset;
+	uint32_t gfxoffset;
 	int command;
 
 	/* blend with the current register contents */
@@ -453,8 +476,8 @@ if (LOG_DMA)
 				command, (command >> 4) & 1, (command >> 5) & 1);
 		logerror("  offset=%08X pos=(%d,%d) w=%d h=%d rb=%d\n",
 				m_dma_register[DMA_OFFSETLO] | (m_dma_register[DMA_OFFSETHI] << 16),
-				(INT16)m_dma_register[DMA_XSTART], (INT16)m_dma_register[DMA_YSTART],
-				m_dma_register[DMA_WIDTH], m_dma_register[DMA_HEIGHT], (INT16)m_dma_register[DMA_ROWBYTES]);
+				(int16_t)m_dma_register[DMA_XSTART], (int16_t)m_dma_register[DMA_YSTART],
+				m_dma_register[DMA_WIDTH], m_dma_register[DMA_HEIGHT], (int16_t)m_dma_register[DMA_ROWBYTES]);
 		logerror("  palette=%04X color=%04X\n",
 				m_dma_register[DMA_PALETTE], m_dma_register[DMA_COLOR]);
 	}
@@ -463,9 +486,9 @@ if (LOG_DMA)
 	g_profiler.start(PROFILER_USER1);
 
 	/* fill in the basic data */
-	dma_state.rowbytes = (INT16)m_dma_register[DMA_ROWBYTES];
-	dma_state.xpos = (INT16)m_dma_register[DMA_XSTART];
-	dma_state.ypos = (INT16)m_dma_register[DMA_YSTART];
+	dma_state.rowbytes = (int16_t)m_dma_register[DMA_ROWBYTES];
+	dma_state.xpos = (int16_t)m_dma_register[DMA_XSTART];
+	dma_state.ypos = (int16_t)m_dma_register[DMA_YSTART];
 	dma_state.width = m_dma_register[DMA_WIDTH];
 	dma_state.height = m_dma_register[DMA_HEIGHT];
 	dma_state.palette = m_dma_register[DMA_PALETTE] << 8;
@@ -530,7 +553,7 @@ if (LOG_DMA)
 	}
 
 	/* signal we're done */
-	timer_set(attotime::from_nsec(41 * dma_state.width * dma_state.height), TIMER_DMA);
+	m_dma_timer->adjust(attotime::from_nsec(41 * dma_state.width * dma_state.height));
 
 	g_profiler.stop();
 }
@@ -548,19 +571,18 @@ TIMER_CALLBACK_MEMBER(midyunit_state::autoerase_line)
 	int scanline = param;
 
 	if (m_autoerase_enable && scanline >= 0 && scanline < 510)
-		memcpy(&m_local_videoram[512 * scanline], &m_local_videoram[512 * (510 + (scanline & 1))], 512 * sizeof(UINT16));
+		memcpy(&m_local_videoram[512 * scanline], &m_local_videoram[512 * (510 + (scanline & 1))], 512 * sizeof(uint16_t));
 }
 
 
 TMS340X0_SCANLINE_IND16_CB_MEMBER(midyunit_state::scanline_update)
 {
-	UINT16 *src = &m_local_videoram[(params->rowaddr << 9) & 0x3fe00];
-	UINT16 *dest = &bitmap.pix16(scanline);
+	uint16_t const *const src = &m_local_videoram[(params->rowaddr << 9) & 0x3fe00];
+	uint16_t *const dest = &bitmap.pix(scanline);
 	int coladdr = params->coladdr << 1;
-	int x;
 
 	/* adjust the display address to account for ignored bits */
-	for (x = params->heblnk; x < params->hsblnk; x++)
+	for (int x = params->heblnk; x < params->hsblnk; x++)
 		dest[x] = m_pen_map[src[coladdr++ & 0x1ff]];
 
 	/* handle autoerase on the previous line */
@@ -569,5 +591,5 @@ TMS340X0_SCANLINE_IND16_CB_MEMBER(midyunit_state::scanline_update)
 	/* if this is the last update of the screen, set a timer to clear out the final line */
 	/* (since we update one behind) */
 	if (scanline == screen.visible_area().max_y)
-		timer_set(screen.time_until_pos(scanline + 1), midyunit_state::TIMER_AUTOERASE_LINE, params->rowaddr);
+		m_autoerase_line_timer->adjust(screen.time_until_pos(scanline + 1), params->rowaddr);
 }

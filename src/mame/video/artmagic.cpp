@@ -21,14 +21,14 @@
  *
  *************************************/
 
-inline UINT16 *artmagic_state::address_to_vram(offs_t *address)
+inline uint16_t *artmagic_state::address_to_vram(offs_t *address)
 {
 	offs_t original = *address;
-	*address = TOWORD(original & 0x001fffff);
+	*address = (original & 0x001fffff) >> 4;
 	if (original < 0x001fffff)
-		return m_vram0;
+		return m_vram[0];
 	else if (original >= 0x00400000 && original < 0x005fffff)
-		return m_vram1;
+		return m_vram[1];
 	return nullptr;
 }
 
@@ -42,8 +42,8 @@ inline UINT16 *artmagic_state::address_to_vram(offs_t *address)
 
 void artmagic_state::video_start()
 {
-	m_blitter_base = (UINT16 *)memregion("gfx1")->base();
-	m_blitter_mask = memregion("gfx1")->bytes()/2 - 1;
+	// assumes it can make an address mask from m_blitter_base.length() - 1
+	assert(!(m_blitter_base.length() & (m_blitter_base.length() - 1)));
 
 	save_item(NAME(m_xor));
 	save_item(NAME(m_is_stoneball));
@@ -61,17 +61,17 @@ void artmagic_state::video_start()
 
 TMS340X0_TO_SHIFTREG_CB_MEMBER(artmagic_state::to_shiftreg)
 {
-	UINT16 *vram = address_to_vram(&address);
+	uint16_t *vram = address_to_vram(&address);
 	if (vram)
-		memcpy(shiftreg, &vram[address], TOBYTE(0x2000));
+		memcpy(shiftreg, &vram[address], 0x400);
 }
 
 
 TMS340X0_FROM_SHIFTREG_CB_MEMBER(artmagic_state::from_shiftreg)
 {
-	UINT16 *vram = address_to_vram(&address);
+	uint16_t *vram = address_to_vram(&address);
 	if (vram)
-		memcpy(&vram[address], shiftreg, TOBYTE(0x2000));
+		memcpy(&vram[address], shiftreg, 0x400);
 }
 
 
@@ -84,11 +84,11 @@ TMS340X0_FROM_SHIFTREG_CB_MEMBER(artmagic_state::from_shiftreg)
 
 void artmagic_state::execute_blit()
 {
-	UINT16 *dest = m_blitter_page ? m_vram0 : m_vram1;
+	uint16_t *dest = m_vram[m_blitter_page ^ 1];
 	int offset = ((m_blitter_data[1] & 0xff) << 16) | m_blitter_data[0];
 	int color = (m_blitter_data[1] >> 4) & 0xf0;
-	int x = (INT16)m_blitter_data[2];
-	int y = (INT16)m_blitter_data[3];
+	int x = (int16_t)m_blitter_data[2];
+	int y = (int16_t)m_blitter_data[3];
 	int maskx = m_blitter_data[6] & 0xff;
 	int masky = m_blitter_data[6] >> 8;
 	int w = ((m_blitter_data[7] & 0xff) + 1) * 4;
@@ -97,12 +97,12 @@ void artmagic_state::execute_blit()
 
 #if 0
 {
-	static UINT32 hit_list[50000];
+	static uint32_t hit_list[50000];
 	static int hit_index;
 	static FILE *f;
 
 	logerror("%s:Blit from %06X to (%d,%d) %dx%d -- %04X %04X %04X %04X %04X %04X %04X %04X\n",
-				machine.describe_context(), offset, x, y, w, h,
+				machine().describe_context(), offset, x, y, w, h,
 				m_blitter_data[0], m_blitter_data[1],
 				m_blitter_data[2], m_blitter_data[3],
 				m_blitter_data[4], m_blitter_data[5],
@@ -120,7 +120,7 @@ void artmagic_state::execute_blit()
 
 		fprintf(f, "----------------------\n"
 					"%s:Blit from %06X to (%d,%d) %dx%d -- %04X %04X %04X %04X %04X %04X %04X %04X\n",
-					machine.describe_context(), offset, x, y, w, h,
+					machine().describe_context(), offset, x, y, w, h,
 					m_blitter_data[0], m_blitter_data[1],
 					m_blitter_data[2], m_blitter_data[3],
 					m_blitter_data[4], m_blitter_data[5],
@@ -194,7 +194,7 @@ void artmagic_state::execute_blit()
 		{
 			if (sy >= 0 && sy < 256)
 			{
-				int tsy = sy * TOWORD(0x2000);
+				int tsy = sy * 0x200;
 				sx = x;
 
 				/* The first pixel of every line doesn't have a previous pixel
@@ -222,7 +222,7 @@ void artmagic_state::execute_blit()
 				}
 				else    /* following lines */
 				{
-					int val = m_blitter_base[offset & m_blitter_mask];
+					int val = m_blitter_base[offset & (m_blitter_base.length() - 1)];
 
 					/* ultennis, stonebal */
 					last ^= 4;
@@ -237,7 +237,7 @@ void artmagic_state::execute_blit()
 
 				for (j = 0; j < w; j += 4)
 				{
-					UINT16 val = m_blitter_base[(offset + j/4) & m_blitter_mask];
+					uint16_t val = m_blitter_base[(offset + j/4) & (m_blitter_base.length() - 1)];
 					if (sx < 508)
 					{
 						if (h == 1 && m_is_stoneball)
@@ -297,14 +297,14 @@ void artmagic_state::execute_blit()
 }
 
 
-READ16_MEMBER(artmagic_state::artmagic_blitter_r)
+uint16_t artmagic_state::blitter_r()
 {
 	/*
 	    bit 1 is a busy flag; loops tightly if clear
 	    bit 2 is tested in a similar fashion
 	    bit 4 reflects the page
 	*/
-	UINT16 result = 0xffef | (m_blitter_page << 4);
+	uint16_t result = 0xffef | (m_blitter_page << 4);
 #if (!INSTANT_BLIT)
 	if (attotime_compare(machine().time(), m_blitter_busy_until) < 0)
 		result ^= 6;
@@ -313,7 +313,7 @@ READ16_MEMBER(artmagic_state::artmagic_blitter_r)
 }
 
 
-WRITE16_MEMBER(artmagic_state::artmagic_blitter_w)
+void artmagic_state::blitter_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	COMBINE_DATA(&m_blitter_data[offset]);
 
@@ -337,13 +337,12 @@ WRITE16_MEMBER(artmagic_state::artmagic_blitter_w)
 TMS340X0_SCANLINE_RGB32_CB_MEMBER(artmagic_state::scanline)
 {
 	offs_t offset = (params->rowaddr << 12) & 0x7ff000;
-	UINT16 *vram = address_to_vram(&offset);
-	UINT32 *dest = &bitmap.pix32(scanline);
-	const rgb_t *pens = m_tlc34076->get_pens();
+	uint16_t const *vram = address_to_vram(&offset);
+	uint32_t *const dest = &bitmap.pix(scanline);
+	pen_t const *const pens = m_tlc34076->pens();
 	int coladdr = params->coladdr << 1;
-	int x;
 
 	vram += offset;
-	for (x = params->heblnk; x < params->hsblnk; x++)
+	for (int x = params->heblnk; x < params->hsblnk; x++)
 		dest[x] = pens[vram[coladdr++ & 0x1ff] & 0xff];
 }

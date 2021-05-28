@@ -39,7 +39,7 @@ Offset 0:
 
 #define STEP 0x10000
 
-WRITE8_MEMBER( t6w28_device::write )
+void t6w28_device::write(offs_t offset, uint8_t data)
 {
 	int n, r, c;
 
@@ -104,11 +104,11 @@ WRITE8_MEMBER( t6w28_device::write )
 //  sound_stream_update - handle a stream update
 //-------------------------------------------------
 
-void t6w28_device::sound_stream_update(sound_stream &stream, stream_sample_t **inputs, stream_sample_t **outputs, int samples)
+void t6w28_device::sound_stream_update(sound_stream &stream, std::vector<read_stream_view> const &inputs, std::vector<write_stream_view> &outputs)
 {
 	int i;
-	stream_sample_t *buffer0 = outputs[0];
-	stream_sample_t *buffer1 = outputs[1];
+	auto &buffer0 = outputs[0];
+	auto &buffer1 = outputs[1];
 
 
 	/* If the volume is 0, increase the counter */
@@ -119,11 +119,11 @@ void t6w28_device::sound_stream_update(sound_stream &stream, stream_sample_t **i
 			/* note that I do count += samples, NOT count = samples + 1. You might think */
 			/* it's the same since the volume is 0, but doing the latter could cause */
 			/* interferencies when the program is rapidly modulating the volume. */
-			if (m_count[i] <= samples*STEP) m_count[i] += samples*STEP;
+			if (m_count[i] <= buffer0.samples()*STEP) m_count[i] += buffer0.samples()*STEP;
 		}
 	}
 
-	while (samples > 0)
+	for (int sampindex = 0; sampindex < buffer0.samples(); sampindex++)
 	{
 		int vol[8];
 		unsigned int out0, out1;
@@ -252,10 +252,8 @@ void t6w28_device::sound_stream_update(sound_stream &stream, stream_sample_t **i
 		if (out0 > MAX_OUTPUT * STEP) out0 = MAX_OUTPUT * STEP;
 		if (out1 > MAX_OUTPUT * STEP) out1 = MAX_OUTPUT * STEP;
 
-		*(buffer0++) = out0 / STEP;
-		*(buffer1++) = out1 / STEP;
-
-		samples--;
+		buffer0.put_int(sampindex, out0 / STEP, 32768);
+		buffer1.put_int(sampindex, out1 / STEP, 32768);
 	}
 }
 
@@ -296,7 +294,7 @@ void t6w28_device::device_start()
 	int i;
 
 	m_sample_rate = clock() / 16;
-	m_channel = machine().sound().stream_alloc(*this, 0, 2, m_sample_rate);
+	m_channel = stream_alloc(0, 2, m_sample_rate);
 
 	for (i = 0;i < 8;i++) m_volume[i] = 0;
 
@@ -328,7 +326,7 @@ void t6w28_device::device_start()
 	/* values from sn76489a */
 	m_feedback_mask = 0x8000;
 	m_whitenoise_taps = 0x06;
-	m_whitenoise_invert = FALSE;
+	m_whitenoise_invert = false;
 
 	save_item(NAME(m_register));
 	save_item(NAME(m_last_register));
@@ -347,10 +345,11 @@ void t6w28_device::set_enable(bool enable)
 	m_enabled = enable;
 }
 
-const device_type T6W28 = &device_creator<t6w28_device>;
+DEFINE_DEVICE_TYPE(T6W28, t6w28_device, "t6w28", "T6W28")
 
-t6w28_device::t6w28_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: device_t(mconfig, T6W28, "T6W28", tag, owner, clock, "t6w28", __FILE__),
-		device_sound_interface(mconfig, *this)
+t6w28_device::t6w28_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: device_t(mconfig, T6W28, tag, owner, clock)
+	, device_sound_interface(mconfig, *this)
+	, m_channel(nullptr)
 {
 }

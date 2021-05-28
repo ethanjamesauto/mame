@@ -3,35 +3,25 @@
 /***************************************************************************
 
 Samsung SPC-1000 driver by Miodrag Milanovic
+This was the first computer from Samsung. It featured a cassette player
+embedded in the righthand side of the keyboard.
 
-    2009-05-10 Preliminary driver.
-    2014-02-16 Added cassette, many games are playable
+2009-05-10 Preliminary driver.
+2014-02-16 Added cassette, many games are playable
 
 ToDo:
 - Find out if any of the unconnected parts of 6000,4000,4001 are used
 
 
-NOTE: 2014-09-13: added code from someone's modified MESS driver for floppy
-                  disk. Since it is not to our coding standards, it is
-                  commented out with #if 0/#endif and 3 slashes (///).
-                  It is planned to be converted when time permits. The
-                  author is Meeso Kim.
+Hardware details of the fdc: Intelligent device, Z80 CPU,
+XTAL(8'000'000), PPI 8255, FDC uPD765C, 2 RAM chips, 28 other
+small ics.
 
-                  Hardware details of the fdc: Intelligent device, Z80 CPU,
-                  XTAL_8MHz, PPI 8255, FDC uPD765C, 2 RAM chips, 28 other
-                  small ics. And of course, no schematic.
-
-
-2014-10-11: Replaced above code with MESS-compliant code [Meeso Kim]
+2014-10-11: Added code for the floppy disk [Meeso Kim]
 
 2015-06-19: Added code for the centronics printer port
 
-IMPORTANT NOTE for tape usage: you *FIRST* press PLAY on the tape drive
-  (e.g. by pressing F2 in partial emulated keyboard mode) and *THEN* you
-  type LOAD on the BASIC prompt!
-  Otherwise, the system turns the tape motor ON but it does not receive any
-  data from tape, and it turns it OFF before the user can press PLAY.
-
+2016-01-14: Cassette tape motor fixed to work properly and ROM file changed for CP/M disk loading
 
 ****************************************************************************/
 /*
@@ -134,20 +124,23 @@ IMPORTANT NOTE for tape usage: you *FIRST* press PLAY on the tape drive
  */
 
 #include "emu.h"
+
 #include "cpu/z80/z80.h"
+#include "imagedev/cassette.h"
 #include "machine/ram.h"
 #include "sound/ay8910.h"
-#include "sound/wave.h"
 #include "video/mc6847.h"
-#include "imagedev/cassette.h"
-#include "formats/spc1000_cas.h"
-#include "bus/centronics/ctronics.h"
 
+#include "bus/centronics/ctronics.h"
 #include "bus/spc1000/exp.h"
 #include "bus/spc1000/fdd.h"
 #include "bus/spc1000/vdp.h"
 
 #include "softlist.h"
+#include "speaker.h"
+
+#include "formats/spc1000_cas.h"
+
 
 class spc1000_state : public driver_device
 {
@@ -159,31 +152,36 @@ public:
 		, m_cass(*this, "cassette")
 		, m_ram(*this, RAM_TAG)
 		, m_p_videoram(*this, "videoram")
-		, m_io_kb(*this, "LINE")
+		, m_io_kb(*this, "LINE.%u", 0)
 		, m_io_joy(*this, "JOY")
 		, m_centronics(*this, "centronics")
 	{}
 
-	DECLARE_WRITE8_MEMBER(iplk_w);
-	DECLARE_READ8_MEMBER(iplk_r);
+	void spc1000(machine_config &config);
+
+private:
+	void iplk_w(uint8_t data);
+	uint8_t iplk_r();
 	DECLARE_WRITE_LINE_MEMBER(irq_w);
-	DECLARE_WRITE8_MEMBER(gmode_w);
-	DECLARE_READ8_MEMBER(gmode_r);
-	DECLARE_READ8_MEMBER(porta_r);
+	void gmode_w(uint8_t data);
+	uint8_t gmode_r();
+	uint8_t porta_r();
 	DECLARE_WRITE_LINE_MEMBER( centronics_busy_w ) { m_centronics_busy = state; }
-	DECLARE_READ8_MEMBER(mc6847_videoram_r);
-	DECLARE_WRITE8_MEMBER(cass_w);
-	DECLARE_READ8_MEMBER(keyboard_r);
+	uint8_t mc6847_videoram_r(offs_t offset);
+	void cass_w(uint8_t data);
+	uint8_t keyboard_r(offs_t offset);
 	MC6847_GET_CHARROM_MEMBER(get_char_rom)
 	{
 		return m_p_videoram[0x1000 + (ch & 0x7f) * 16 + line];
 	}
 
-private:
-	UINT8 m_IPLK;
-	UINT8 m_GMODE;
-	UINT16 m_page;
-	std::unique_ptr<UINT8[]> m_work_ram;
+	void io_map(address_map &map);
+	void mem_map(address_map &map);
+
+	uint8_t m_IPLK;
+	uint8_t m_GMODE;
+	uint16_t m_page;
+	std::unique_ptr<uint8_t[]> m_work_ram;
 	attotime m_time;
 	bool m_centronics_busy;
 	virtual void machine_start() override;
@@ -192,26 +190,27 @@ private:
 	required_device<mc6847_base_device> m_vdg;
 	required_device<cassette_image_device> m_cass;
 	required_device<ram_device> m_ram;
-	required_shared_ptr<UINT8> m_p_videoram;
+	required_shared_ptr<uint8_t> m_p_videoram;
 	required_ioport_array<10> m_io_kb;
 	required_ioport m_io_joy;
 	required_device<centronics_device> m_centronics;
 };
 
-static ADDRESS_MAP_START(spc1000_mem, AS_PROGRAM, 8, spc1000_state )
-	ADDRESS_MAP_UNMAP_HIGH
-	AM_RANGE(0x0000, 0x7fff) AM_READ_BANK("bank1") AM_WRITE_BANK("bank2")
-	AM_RANGE(0x8000, 0xffff) AM_READ_BANK("bank3") AM_WRITE_BANK("bank4")
-ADDRESS_MAP_END
+void spc1000_state::mem_map(address_map &map)
+{
+	map.unmap_value_high();
+	map(0x0000, 0x7fff).bankr("bank1").bankw("bank2");
+	map(0x8000, 0xffff).bankr("bank3").bankw("bank4");
+}
 
-WRITE8_MEMBER(spc1000_state::iplk_w)
+void spc1000_state::iplk_w(uint8_t data)
 {
 	m_IPLK = m_IPLK ? 0 : 1;
 	membank("bank1")->set_entry(m_IPLK);
 	membank("bank3")->set_entry(m_IPLK);
 }
 
-READ8_MEMBER(spc1000_state::iplk_r)
+uint8_t spc1000_state::iplk_r()
 {
 	m_IPLK = m_IPLK ? 0 : 1;
 	membank("bank1")->set_entry(m_IPLK);
@@ -220,18 +219,22 @@ READ8_MEMBER(spc1000_state::iplk_r)
 	return 0;
 }
 
-WRITE8_MEMBER( spc1000_state::cass_w )
+void spc1000_state::cass_w(uint8_t data)
 {
 	attotime time = machine().scheduler().time();
 	m_cass->output(BIT(data, 0) ? -1.0 : 1.0);
-	if (BIT(data, 1) && ATTOSECONDS_IN_MSEC((time - m_time).as_attoseconds()) > 500) {
-		m_cass->change_state((m_cass->get_state() & CASSETTE_MASK_MOTOR) == CASSETTE_MOTOR_DISABLED ? CASSETTE_MOTOR_ENABLED : CASSETTE_MOTOR_DISABLED, CASSETTE_MASK_MOTOR);
+	if (BIT(data, 1) || (((time - m_time).as_attoseconds()/ATTOSECONDS_PER_MILLISECOND) < 1000))
+	{
+		m_cass->change_state(CASSETTE_MOTOR_ENABLED, CASSETTE_MASK_MOTOR);
 		m_time = time;
 	}
+	else
+		m_cass->change_state(CASSETTE_MOTOR_DISABLED, CASSETTE_MASK_MOTOR);
+
 	m_centronics->write_strobe(BIT(data, 2) ? true : false);
 }
 
-WRITE8_MEMBER(spc1000_state::gmode_w)
+void spc1000_state::gmode_w(uint8_t data)
 {
 	m_GMODE = data;
 
@@ -244,12 +247,12 @@ WRITE8_MEMBER(spc1000_state::gmode_w)
 	m_page = ((BIT(data, 5) << 1) | BIT(data, 4)) * 0x200;
 }
 
-READ8_MEMBER(spc1000_state::gmode_r)
+uint8_t spc1000_state::gmode_r()
 {
 	return m_GMODE;
 }
 
-READ8_MEMBER( spc1000_state::keyboard_r )
+uint8_t spc1000_state::keyboard_r(offs_t offset)
 {
 	// most games just read kb in $8000-$8009 but a few of them
 	// (e.g. Toiler Adventure II and Vela) use mirrored addr instead
@@ -262,17 +265,18 @@ READ8_MEMBER( spc1000_state::keyboard_r )
 }
 
 
-static ADDRESS_MAP_START( spc1000_io , AS_IO, 8, spc1000_state )
-	ADDRESS_MAP_UNMAP_HIGH
-	AM_RANGE(0x0000, 0x1fff) AM_RAM AM_SHARE("videoram")
-	AM_RANGE(0x2000, 0x3fff) AM_READWRITE(gmode_r, gmode_w)
-	AM_RANGE(0x4000, 0x4000) AM_DEVWRITE("ay8910", ay8910_device, address_w)
-	AM_RANGE(0x4001, 0x4001) AM_DEVREADWRITE("ay8910", ay8910_device, data_r, data_w)
-	AM_RANGE(0x6000, 0x6000) AM_WRITE(cass_w)
-	AM_RANGE(0x8000, 0x9fff) AM_READ(keyboard_r)
-	AM_RANGE(0xa000, 0xa000) AM_READWRITE(iplk_r, iplk_w)
-	AM_RANGE(0xc000, 0xdfff) AM_DEVREADWRITE("ext1", spc1000_exp_device, read, write)
-ADDRESS_MAP_END
+void spc1000_state::io_map(address_map &map)
+{
+	map.unmap_value_high();
+	map(0x0000, 0x1fff).ram().share("videoram");
+	map(0x2000, 0x3fff).rw(FUNC(spc1000_state::gmode_r), FUNC(spc1000_state::gmode_w));
+	map(0x4000, 0x4000).w("ay8910", FUNC(ay8910_device::address_w));
+	map(0x4001, 0x4001).rw("ay8910", FUNC(ay8910_device::data_r), FUNC(ay8910_device::data_w));
+	map(0x6000, 0x6000).w(FUNC(spc1000_state::cass_w));
+	map(0x8000, 0x9fff).r(FUNC(spc1000_state::keyboard_r));
+	map(0xa000, 0xa000).rw(FUNC(spc1000_state::iplk_r), FUNC(spc1000_state::iplk_w));
+	map(0xc000, 0xdfff).rw("ext1", FUNC(spc1000_exp_device::read), FUNC(spc1000_exp_device::write));
+}
 
 /* Input ports */
 static INPUT_PORTS_START( spc1000 )
@@ -319,8 +323,8 @@ static INPUT_PORTS_START( spc1000 )
 	PORT_START("LINE.4")
 	PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_UNUSED)
 	PORT_BIT(0x02, IP_ACTIVE_LOW, IPT_UNUSED)
-	PORT_BIT(0x04, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("Right") PORT_CODE(KEYCODE_RIGHT)
-	PORT_BIT(0x08, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("\\ |") PORT_CODE(KEYCODE_BACKSLASH) PORT_CHAR('\\') PORT_CHAR('|') PORT_CHAR(0x1c)
+	PORT_BIT(0x04, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("Right") PORT_CODE(KEYCODE_RIGHT) PORT_CHAR(UCHAR_MAMEKEY(RIGHT))
+	PORT_BIT(0x08, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("\\ |") PORT_CODE(KEYCODE_BACKSLASH) PORT_CHAR('\\') PORT_CHAR('|') PORT_CHAR(0x1c) // shows symbols
 	PORT_BIT(0x10, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("N") PORT_CODE(KEYCODE_N) PORT_CHAR('n') PORT_CHAR('N') PORT_CHAR(0x0e)
 	PORT_BIT(0x20, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("F") PORT_CODE(KEYCODE_F) PORT_CHAR('f') PORT_CHAR('F') PORT_CHAR(0x06)
 	PORT_BIT(0x40, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("R") PORT_CODE(KEYCODE_R) PORT_CHAR('r') PORT_CHAR('R') PORT_CHAR(0x12)
@@ -329,7 +333,7 @@ static INPUT_PORTS_START( spc1000 )
 	PORT_START("LINE.5")
 	PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_UNUSED)
 	PORT_BIT(0x02, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("F1") PORT_CODE(KEYCODE_F1)
-	PORT_BIT(0x04, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("Left") PORT_CODE(KEYCODE_LEFT)
+	PORT_BIT(0x04, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("Left") PORT_CODE(KEYCODE_LEFT) PORT_CHAR(UCHAR_MAMEKEY(LEFT))
 	PORT_BIT(0x08, IP_ACTIVE_LOW, IPT_UNUSED)
 	PORT_BIT(0x10, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("M") PORT_CODE(KEYCODE_M) PORT_CHAR('m') PORT_CHAR('M') PORT_CHAR(0x0d)
 	PORT_BIT(0x20, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("G") PORT_CODE(KEYCODE_G) PORT_CHAR('g') PORT_CHAR('G') PORT_CHAR(0x07)
@@ -349,7 +353,7 @@ static INPUT_PORTS_START( spc1000 )
 	PORT_START("LINE.7")
 	PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_UNUSED)
 	PORT_BIT(0x02, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("F3") PORT_CODE(KEYCODE_F3)
-	PORT_BIT(0x04, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("Up") PORT_CODE(KEYCODE_UP)
+	PORT_BIT(0x04, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("Up") PORT_CODE(KEYCODE_UP) PORT_CHAR(UCHAR_MAMEKEY(UP))
 	PORT_BIT(0x08, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("P") PORT_CODE(KEYCODE_P) PORT_CHAR('p') PORT_CHAR('P') PORT_CHAR(0x10)
 	PORT_BIT(0x10, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME(". >") PORT_CODE(KEYCODE_STOP) PORT_CHAR('.') PORT_CHAR('>')
 	PORT_BIT(0x20, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("J") PORT_CODE(KEYCODE_J) PORT_CHAR('j') PORT_CHAR('J') PORT_CHAR(0x0a)
@@ -359,7 +363,7 @@ static INPUT_PORTS_START( spc1000 )
 	PORT_START("LINE.8")
 	PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_UNUSED)
 	PORT_BIT(0x02, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("F4") PORT_CODE(KEYCODE_F4)
-	PORT_BIT(0x04, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("Down") PORT_CODE(KEYCODE_DOWN)
+	PORT_BIT(0x04, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("Down") PORT_CODE(KEYCODE_DOWN) PORT_CHAR(UCHAR_MAMEKEY(DOWN))
 	PORT_BIT(0x08, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME(": *") PORT_CODE(KEYCODE_QUOTE) PORT_CHAR(':') PORT_CHAR('*')
 	PORT_BIT(0x10, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("/ ?") PORT_CODE(KEYCODE_SLASH) PORT_CHAR('/') PORT_CHAR('?')
 	PORT_BIT(0x20, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("K") PORT_CODE(KEYCODE_K) PORT_CHAR('k') PORT_CHAR('K') PORT_CHAR(0x0b)
@@ -389,31 +393,39 @@ INPUT_PORTS_END
 
 void spc1000_state::machine_start()
 {
-	UINT8 *mem = memregion("maincpu")->base();
-	UINT8 *ram = m_ram->pointer();
+	m_work_ram = make_unique_clear<uint8_t[]>(0x10000);
+
+	uint8_t *mem = memregion("maincpu")->base();
+	uint8_t *ram = m_ram->pointer();
 
 	// configure and intialize banks 1 & 3 (read banks)
 	membank("bank1")->configure_entry(0, ram);
 	membank("bank1")->configure_entry(1, mem);
 	membank("bank3")->configure_entry(0, ram + 0x8000);
 	membank("bank3")->configure_entry(1, mem);
-	membank("bank1")->set_entry(1);
-	membank("bank3")->set_entry(1);
 
 	// intialize banks 2 & 4 (write banks)
 	membank("bank2")->set_base(ram);
 	membank("bank4")->set_base(ram + 0x8000);
-	
-    	m_time = machine().scheduler().time();	
+
+	m_time = machine().scheduler().time();
+
+	save_item(NAME(m_IPLK));
+	save_item(NAME(m_GMODE));
+	save_item(NAME(m_page));
+	save_pointer(NAME(m_work_ram), 0x10000);
+	save_item(NAME(m_time));
+	save_item(NAME(m_centronics_busy));
 }
 
 void spc1000_state::machine_reset()
 {
-	m_work_ram = make_unique_clear<UINT8[]>(0x10000);
 	m_IPLK = 1;
+	membank("bank1")->set_entry(1);
+	membank("bank3")->set_entry(1);
 }
 
-READ8_MEMBER(spc1000_state::mc6847_videoram_r)
+uint8_t spc1000_state::mc6847_videoram_r(offs_t offset)
 {
 	if (offset == ~0)
 		return 0xff;
@@ -421,7 +433,7 @@ READ8_MEMBER(spc1000_state::mc6847_videoram_r)
 	// m_GMODE layout: CSS|NA|PS2|PS1|~A/G|GM0|GM1|NA
 	if (!BIT(m_GMODE, 3))
 	{   // text mode (~A/G set to A)
-		UINT8 data = m_p_videoram[offset + m_page + 0x800];
+		uint8_t data = m_p_videoram[offset + m_page + 0x800];
 		m_vdg->inv_w(BIT(data, 0));
 		m_vdg->css_w(BIT(data, 1));
 		m_vdg->as_w (BIT(data, 2));
@@ -434,11 +446,11 @@ READ8_MEMBER(spc1000_state::mc6847_videoram_r)
 	}
 }
 
-READ8_MEMBER( spc1000_state::porta_r )
+uint8_t spc1000_state::porta_r()
 {
-	UINT8 data = 0x3f;
+	uint8_t data = 0x3f;
 	data |= (m_cass->input() > 0.0038) ? 0x80 : 0;
-	data |= ((m_cass->get_state() & CASSETTE_MASK_UISTATE) != CASSETTE_STOPPED) && ((m_cass->get_state() & CASSETTE_MASK_MOTOR) == CASSETTE_MOTOR_ENABLED)  ? 0x00 : 0x40;
+	data |= ((m_cass->get_state() & CASSETTE_MASK_UISTATE) == CASSETTE_STOPPED || ((m_cass->get_state() & CASSETTE_MASK_MOTOR) == CASSETTE_MOTOR_DISABLED)) ? 0x40 : 0;
 	data &= ~(m_io_joy->read() & 0x3f);
 	data &= ~((m_centronics_busy == 0)<< 5);
 	return data;
@@ -454,71 +466,68 @@ WRITE_LINE_MEMBER( spc1000_state::irq_w )
 //  address maps
 //-------------------------------------------------
 
-extern SLOT_INTERFACE_START(spc1000_exp)
-	SLOT_INTERFACE("fdd", SPC1000_FDD_EXP)
-	SLOT_INTERFACE("vdp", SPC1000_VDP_EXP)
-SLOT_INTERFACE_END
+void spc1000_exp(device_slot_interface &device)
+{
+	device.option_add("fdd", SPC1000_FDD_EXP);
+	device.option_add("vdp", SPC1000_VDP_EXP);
+}
 
-static MACHINE_CONFIG_START( spc1000, spc1000_state )
+void spc1000_state::spc1000(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu",Z80, XTAL_4MHz)
-	MCFG_CPU_PROGRAM_MAP(spc1000_mem)
-	MCFG_CPU_IO_MAP(spc1000_io)
+	Z80(config, m_maincpu, XTAL(4'000'000));
+	m_maincpu->set_addrmap(AS_PROGRAM, &spc1000_state::mem_map);
+	m_maincpu->set_addrmap(AS_IO, &spc1000_state::io_map);
 
 	/* video hardware */
-	MCFG_SCREEN_MC6847_NTSC_ADD("screen", "mc6847")
+	SCREEN(config, "screen", SCREEN_TYPE_RASTER);
 
-	MCFG_DEVICE_ADD("mc6847", MC6847_NTSC, XTAL_3_579545MHz)
-	MCFG_MC6847_FSYNC_CALLBACK(WRITELINE(spc1000_state, irq_w))
-	MCFG_MC6847_INPUT_CALLBACK(READ8(spc1000_state, mc6847_videoram_r))
-	MCFG_MC6847_CHARROM_CALLBACK(spc1000_state, get_char_rom)
-	MCFG_MC6847_FIXED_MODE(MC6847_MODE_GM2)
+	MC6847_NTSC(config, m_vdg, XTAL(3'579'545));
+	m_vdg->set_screen("screen");
+	m_vdg->fsync_wr_callback().set(FUNC(spc1000_state::irq_w));
+	m_vdg->input_callback().set(FUNC(spc1000_state::mc6847_videoram_r));
+	m_vdg->set_get_char_rom(FUNC(spc1000_state::get_char_rom));
+	m_vdg->set_get_fixed_mode(mc6847_ntsc_device::MODE_GM2);
 	// other lines not connected
 
 	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_MONO("mono")
-	MCFG_SOUND_ADD("ay8910", AY8910, XTAL_4MHz / 1)
-	MCFG_AY8910_PORT_A_READ_CB(READ8(spc1000_state, porta_r))
-	MCFG_AY8910_PORT_B_WRITE_CB(DEVWRITE8("cent_data_out", output_latch_device, write))
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 1.00)
-	MCFG_SOUND_WAVE_ADD(WAVE_TAG, "cassette")
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.25)
+	SPEAKER(config, "mono").front_center();
+	ay8910_device &ay8910(AY8910(config, "ay8910", XTAL(4'000'000) / 1));
+	ay8910.port_a_read_callback().set(FUNC(spc1000_state::porta_r));
+	ay8910.port_b_write_callback().set("cent_data_out", FUNC(output_latch_device::write));
+	ay8910.add_route(ALL_OUTPUTS, "mono", 1.00);
 
-	MCFG_DEVICE_ADD("ext1", SPC1000_EXP_SLOT, 0)
-	MCFG_DEVICE_SLOT_INTERFACE(spc1000_exp, nullptr, false)
+	SPC1000_EXP_SLOT(config, "ext1", spc1000_exp);
 
-	MCFG_CENTRONICS_ADD("centronics", centronics_devices, "printer")
-	MCFG_CENTRONICS_BUSY_HANDLER(WRITELINE(spc1000_state, centronics_busy_w))
-	MCFG_CENTRONICS_OUTPUT_LATCH_ADD("cent_data_out", "centronics")
-	MCFG_DEVICE_ADD("cent_status_in", INPUT_BUFFER, 0)
+	CENTRONICS(config, m_centronics, centronics_devices, "printer");
+	m_centronics->busy_handler().set(FUNC(spc1000_state::centronics_busy_w));
 
-	MCFG_CASSETTE_ADD("cassette")
-	MCFG_CASSETTE_FORMATS(spc1000_cassette_formats)
-	MCFG_CASSETTE_DEFAULT_STATE(CASSETTE_STOPPED | CASSETTE_SPEAKER_ENABLED | CASSETTE_MOTOR_DISABLED)
+	output_latch_device &cent_data_out(OUTPUT_LATCH(config, "cent_data_out"));
+	m_centronics->set_output_latch(cent_data_out);
 
-	MCFG_SOFTWARE_LIST_ADD("cass_list", "spc1000_cass")
+	INPUT_BUFFER(config, "cent_status_in");
+
+	CASSETTE(config, m_cass);
+	m_cass->set_formats(spc1000_cassette_formats);
+	m_cass->set_default_state(CASSETTE_STOPPED | CASSETTE_SPEAKER_ENABLED | CASSETTE_MOTOR_DISABLED);
+	m_cass->add_route(ALL_OUTPUTS, "mono", 0.05);
+	m_cass->set_interface("spc1000_cass");
+
+	SOFTWARE_LIST(config, "cass_list").set_original("spc1000_cass");
 
 	/* internal ram */
-	MCFG_RAM_ADD(RAM_TAG)
-	MCFG_RAM_DEFAULT_SIZE("64K")
-MACHINE_CONFIG_END
+	RAM(config, RAM_TAG).set_default_size("64K");
+}
 
 /* ROM definition */
 ROM_START( spc1000 )
-	ROM_REGION(0x10000, "maincpu", ROMREGION_ERASEFF)
-	ROM_LOAD("spcall.rom", 0x0000, 0x8000, CRC(19638fc9) SHA1(489f1baa7aebf3c8c660325fb1fd790d84203284))
+	ROM_REGION(0x8000, "maincpu", ROMREGION_ERASEFF)
+	//ROM_LOAD("spcall.rom", 0x0000, 0x8000, CRC(2fbb6eca) SHA1(cc9a076b0f00d54b2aec31f1f558b10f43ef61c8))  // bad?
+	ROM_LOAD("spcall.rom", 0x0000, 0x8000, CRC(240426be) SHA1(8eb32e147c17a6d0f947b8bb3c6844750a7b64a8))
 ROM_END
-
-#if 0
-ROM_START( spc1000 )
-	ROM_REGION(0x10000, "maincpu", ROMREGION_ERASEFF)
-	ROM_LOAD("spcall.rom", 0x0000, 0x8000, CRC(2fbb6eca) SHA1(cc9a076b0f00d54b2aec31f1f558b10f43ef61c8))
-	/// more roms to come...
-ROM_END
-#endif
 
 
 /* Driver */
 
-/*    YEAR  NAME      PARENT  COMPAT   MACHINE    INPUT    CLASS         INIT    COMPANY    FULLNAME       FLAGS */
-COMP( 1982, spc1000,  0,      0,       spc1000,   spc1000, driver_device,  0,   "Samsung", "SPC-1000", MACHINE_NOT_WORKING )
+//    YEAR  NAME     PARENT  COMPAT  MACHINE  INPUT    CLASS          INIT        COMPANY    FULLNAME    FLAGS
+COMP( 1982, spc1000, 0,      0,      spc1000, spc1000, spc1000_state, empty_init, "Samsung", "SPC-1000", MACHINE_SUPPORTS_SAVE )

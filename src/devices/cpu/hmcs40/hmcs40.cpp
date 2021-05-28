@@ -2,143 +2,184 @@
 // copyright-holders:hap
 /*
 
-  Hitachi HMCS40 MCU family cores
+Hitachi HMCS40 MCU family cores
 
-  References:
-  - 1985 #AP1 Hitachi 4-bit Single-Chip Microcomputer Data Book
-  - 1988 HMCS400 Series Handbook (note: *400 is a newer MCU series, with similarities)
-  - opcode decoding by Tatsuyuki Satoh, Olivier Galibert, Kevin Horton, Lord Nightmare
+References:
+- 1985 #AP1 Hitachi 4-bit Single-Chip Microcomputer Data Book
+- 1988 HMCS400 Series Handbook (note: *400 is a newer MCU series, with similarities)
+- opcode decoding by Tatsuyuki Satoh, Olivier Galibert, Kevin Horton, Lord Nightmare
+  (verified a while later after new documentation was found)
+
+TODO:
+- How the stack works, is probably m_stack_levels+1 program counters, and
+  an index pointing to the current program counter. Then push/pop simply
+  decrements/increments the index. The way it is implemented right now
+  behaves the same.
 
 */
 
-#define IS_PMOS 0
-#define IS_CMOS ~0
-
+#include "emu.h"
 #include "hmcs40.h"
 #include "debugger.h"
+#include "hmcs40d.h"
+
+#define IS_PMOS 0
+#define IS_CMOS ~0
 
 
 // MCU types
 
 // HMCS42/C/CL
-//const device_type HD38702 = &device_creator<hd38702_device>; // PMOS, 28 pins, 22 I/O lines, (512+32)x10 ROM, 32x4 RAM, no B or SPY register
-//const device_type HD44700 = &device_creator<hd44700_device>; // CMOS version
-//const device_type HD44708 = &device_creator<hd44708_device>; // CMOS version, low-power
+//DEFINE_DEVICE_TYPE(HD38702, hd38702_device, "hd38702", "Hitachi HD38702") // PMOS, 28 pins, 22 I/O lines, (512+32)x10 ROM, 32x4 RAM, no B or SPY register
+//DEFINE_DEVICE_TYPE(HD44700, hd44700_device, "hd44700", "Hitachi HD44700") // CMOS version
+//DEFINE_DEVICE_TYPE(HD44708, hd44708_device, "hd44708", "Hitachi HD44708") // CMOS version, low-power
 
 // HMCS43/C/CL
-const device_type HD38750 = &device_creator<hd38750_device>; // PMOS, 42 pins, 32 I/O lines, (1024+64)x10 ROM, 80x4 RAM
-const device_type HD38755 = &device_creator<hd38755_device>; // ceramic filter oscillator type
-const device_type HD44750 = &device_creator<hd44750_device>; // CMOS version
-const device_type HD44758 = &device_creator<hd44758_device>; // CMOS version, low-power
+DEFINE_DEVICE_TYPE(HD38750, hd38750_device, "hd38750", "Hitachi HD38750") // PMOS, 42 pins, 32 I/O lines, (1024+64)x10 ROM, 80x4 RAM
+DEFINE_DEVICE_TYPE(HD38755, hd38755_device, "hd38755", "Hitachi HD38755") // ceramic filter oscillator type
+DEFINE_DEVICE_TYPE(HD44750, hd44750_device, "hd44750", "Hitachi HD44750") // CMOS version
+DEFINE_DEVICE_TYPE(HD44758, hd44758_device, "hd44758", "Hitachi HD44758") // CMOS version, low-power
 
 // HMCS44A/C/CL
-const device_type HD38800 = &device_creator<hd38800_device>; // PMOS, 42 pins, 32 I/O lines, (2048+128)x10 ROM, 160x4 RAM
-const device_type HD38805 = &device_creator<hd38805_device>; // ceramic filter oscillator type
-const device_type HD44801 = &device_creator<hd44801_device>; // CMOS version
-const device_type HD44808 = &device_creator<hd44808_device>; // CMOS version, low-power
+DEFINE_DEVICE_TYPE(HD38800, hd38800_device, "hd38800", "Hitachi HD38800") // PMOS, 42 pins, 32 I/O lines, (2048+128)x10 ROM, 160x4 RAM
+DEFINE_DEVICE_TYPE(HD38805, hd38805_device, "hd38805", "Hitachi HD38805") // ceramic filter oscillator type
+DEFINE_DEVICE_TYPE(HD44801, hd44801_device, "hd44801", "Hitachi HD44801") // CMOS version
+DEFINE_DEVICE_TYPE(HD44808, hd44808_device, "hd44808", "Hitachi HD44808") // CMOS version, low-power
 
 // HMCS45A/C/CL
-const device_type HD38820 = &device_creator<hd38820_device>; // PMOS, 54 pins(QFP) or 64 pins(DIP), 44 I/O lines, (2048+128)x10 ROM, 160x4 RAM
-const device_type HD38825 = &device_creator<hd38825_device>; // ceramic filter oscillator type
-const device_type HD44820 = &device_creator<hd44820_device>; // CMOS version
-const device_type HD44828 = &device_creator<hd44828_device>; // CMOS version, low-power
+DEFINE_DEVICE_TYPE(HD38820, hd38820_device, "hd38820", "Hitachi HD38820") // PMOS, 54 pins(QFP) or 64 pins(DIP), 44 I/O lines, (2048+128)x10 ROM, 160x4 RAM
+DEFINE_DEVICE_TYPE(HD38825, hd38825_device, "hd38825", "Hitachi HD38825") // ceramic filter oscillator type
+DEFINE_DEVICE_TYPE(HD44820, hd44820_device, "hd44820", "Hitachi HD44820") // CMOS version
+DEFINE_DEVICE_TYPE(HD44828, hd44828_device, "hd44828", "Hitachi HD44828") // CMOS version, low-power
 
 // HMCS46C/CL (no PMOS version exists)
-//const device_type HD44840 = &device_creator<hd44840_device>; // CMOS, 42 pins, 32 I/O lines, 4096x10 ROM, 256x4 RAM
-//const device_type HD44848 = &device_creator<hd44848_device>; // CMOS, low-power
+//DEFINE_DEVICE_TYPE(HD44840, hd44840_device, "hd44840", "Hitachi HD44840") // CMOS, 42 pins, 32 I/O lines, 4096x10 ROM, 256x4 RAM
+//DEFINE_DEVICE_TYPE(HD44848, hd44848_device, "hd44848", "Hitachi HD44848") // CMOS, low-power
 
 // HMCS47A/C/CL
-//const device_type HD38870 = &device_creator<hd38870_device>; // PMOS, 54 pins(QFP) or 64 pins(DIP), 44 I/O lines, 4096x10 ROM, 256x4 RAM
-//const device_type HD44860 = &device_creator<hd44860_device>; // CMOS version
-//const device_type HD44868 = &device_creator<hd44868_device>; // CMOS version, low-power
+//DEFINE_DEVICE_TYPE(HD38870, hd38870_device, "hd38870", "Hitachi HD38870") // PMOS, 54 pins(QFP) or 64 pins(DIP), 44 I/O lines, 4096x10 ROM, 256x4 RAM
+//DEFINE_DEVICE_TYPE(HD44860, hd44860_device, "hd44860", "Hitachi HD44860") // CMOS version
+//DEFINE_DEVICE_TYPE(HD44868, hd44868_device, "hd44868", "Hitachi HD44868") // CMOS version, low-power
 
 
 // internal memory maps
-static ADDRESS_MAP_START(program_1k, AS_PROGRAM, 16, hmcs40_cpu_device)
-	AM_RANGE(0x0000, 0x03ff) AM_ROM
-	AM_RANGE(0x0780, 0x07bf) AM_ROM // patterns on page 30
-ADDRESS_MAP_END
 
-static ADDRESS_MAP_START(program_2k, AS_PROGRAM, 16, hmcs40_cpu_device)
-	AM_RANGE(0x0000, 0x07ff) AM_ROM
-	AM_RANGE(0x0f40, 0x0fbf) AM_ROM // patterns on page 61,62
-ADDRESS_MAP_END
+// On HMCS42/3/4/5, only half of the ROM address range contains user-executable code,
+// there is up to 128 bytes of pattern data in the 2nd half. The 2nd half also includes
+// a couple of pages with factory test code by Hitachi, only executable when MCU test
+// mode is enabled externally. This data can still be accessed with the P opcode.
+
+void hmcs40_cpu_device::program_1k(address_map &map)
+{
+	map(0x0000, 0x07ff).rom();
+}
+
+void hmcs40_cpu_device::program_2k(address_map &map)
+{
+	map(0x0000, 0x0fff).rom();
+}
 
 
-static ADDRESS_MAP_START(data_80x4, AS_DATA, 8, hmcs40_cpu_device)
-	AM_RANGE(0x00, 0x3f) AM_RAM
-	AM_RANGE(0x40, 0x4f) AM_RAM AM_MIRROR(0x30)
-ADDRESS_MAP_END
+void hmcs40_cpu_device::data_80x4(address_map &map)
+{
+	map(0x00, 0x3f).ram();
+	map(0x40, 0x4f).ram().mirror(0x30);
+}
 
-static ADDRESS_MAP_START(data_160x4, AS_DATA, 8, hmcs40_cpu_device)
-	AM_RANGE(0x00, 0x7f) AM_RAM
-	AM_RANGE(0x80, 0x8f) AM_RAM AM_MIRROR(0x30)
-	AM_RANGE(0xc0, 0xcf) AM_RAM AM_MIRROR(0x30)
-ADDRESS_MAP_END
+void hmcs40_cpu_device::data_160x4(address_map &map)
+{
+	map(0x00, 0x7f).ram();
+	map(0x80, 0x8f).ram().mirror(0x30);
+	map(0xc0, 0xcf).ram().mirror(0x30);
+}
 
 
 // device definitions
-hmcs43_cpu_device::hmcs43_cpu_device(const machine_config &mconfig, device_type type, const char *name, const char *tag, device_t *owner, UINT32 clock, UINT16 polarity, const char *shortname)
-	: hmcs40_cpu_device(mconfig, type, name, tag, owner, clock, HMCS40_FAMILY_HMCS43, polarity, 3 /* stack levels */, 10 /* pc width */, 11 /* prg width */, ADDRESS_MAP_NAME(program_1k), 7 /* data width */, ADDRESS_MAP_NAME(data_80x4), shortname, __FILE__)
+hmcs40_cpu_device::hmcs40_cpu_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, u32 clock, int family, u16 polarity, int stack_levels, int pcwidth, int prgwidth, address_map_constructor program, int datawidth, address_map_constructor data)
+	: cpu_device(mconfig, type, tag, owner, clock)
+	, m_program_config("program", ENDIANNESS_LITTLE, 16, prgwidth, -1, program)
+	, m_data_config("data", ENDIANNESS_LITTLE, 8, datawidth, 0, data)
+	, m_pcwidth(pcwidth)
+	, m_prgwidth(prgwidth)
+	, m_datawidth(datawidth)
+	, m_family(family)
+	, m_polarity(polarity)
+	, m_stack_levels(stack_levels)
+	, m_read_r(*this)
+	, m_write_r(*this)
+	, m_read_d(*this)
+	, m_write_d(*this)
+{
+}
+
+hmcs43_cpu_device::hmcs43_cpu_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, u32 clock, u16 polarity)
+	: hmcs40_cpu_device(mconfig, type, tag, owner, clock, HMCS40_FAMILY_HMCS43, polarity, 3 /* stack levels */, 10 /* pc width */, 11 /* prg width */, address_map_constructor(FUNC(hmcs43_cpu_device::program_1k), this), 7 /* data width */, address_map_constructor(FUNC(hmcs43_cpu_device::data_80x4), this))
 { }
 
-hd38750_device::hd38750_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: hmcs43_cpu_device(mconfig, HD38750, "HD38750", tag, owner, clock, IS_PMOS, "hd38750")
+hd38750_device::hd38750_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock)
+	: hmcs43_cpu_device(mconfig, HD38750, tag, owner, clock, IS_PMOS)
 { }
-hd38755_device::hd38755_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: hmcs43_cpu_device(mconfig, HD38755, "HD38755", tag, owner, clock, IS_PMOS, "hd38755")
+hd38755_device::hd38755_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock)
+	: hmcs43_cpu_device(mconfig, HD38755, tag, owner, clock, IS_PMOS)
 { }
-hd44750_device::hd44750_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: hmcs43_cpu_device(mconfig, HD44750, "HD44750", tag, owner, clock, IS_CMOS, "hd44750")
+hd44750_device::hd44750_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock)
+	: hmcs43_cpu_device(mconfig, HD44750, tag, owner, clock, IS_CMOS)
 { }
-hd44758_device::hd44758_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: hmcs43_cpu_device(mconfig, HD44758, "HD44758", tag, owner, clock, IS_CMOS, "hd44758")
-{ }
-
-
-hmcs44_cpu_device::hmcs44_cpu_device(const machine_config &mconfig, device_type type, const char *name, const char *tag, device_t *owner, UINT32 clock, UINT16 polarity, const char *shortname)
-	: hmcs40_cpu_device(mconfig, type, name, tag, owner, clock, HMCS40_FAMILY_HMCS44, polarity, 4, 11, 12, ADDRESS_MAP_NAME(program_2k), 8, ADDRESS_MAP_NAME(data_160x4), shortname, __FILE__)
-{ }
-
-hd38800_device::hd38800_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: hmcs44_cpu_device(mconfig, HD38800, "HD38800", tag, owner, clock, IS_PMOS, "hd38800")
-{ }
-hd38805_device::hd38805_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: hmcs44_cpu_device(mconfig, HD38805, "HD38805", tag, owner, clock, IS_PMOS, "hd38805")
-{ }
-hd44801_device::hd44801_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: hmcs44_cpu_device(mconfig, HD44801, "HD44801", tag, owner, clock, IS_CMOS, "hd44801")
-{ }
-hd44808_device::hd44808_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: hmcs44_cpu_device(mconfig, HD44808, "HD44808", tag, owner, clock, IS_CMOS, "hd44808")
+hd44758_device::hd44758_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock)
+	: hmcs43_cpu_device(mconfig, HD44758, tag, owner, clock, IS_CMOS)
 { }
 
 
-hmcs45_cpu_device::hmcs45_cpu_device(const machine_config &mconfig, device_type type, const char *name, const char *tag, device_t *owner, UINT32 clock, UINT16 polarity, const char *shortname)
-	: hmcs40_cpu_device(mconfig, type, name, tag, owner, clock, HMCS40_FAMILY_HMCS45, polarity, 4, 11, 12, ADDRESS_MAP_NAME(program_2k), 8, ADDRESS_MAP_NAME(data_160x4), shortname, __FILE__)
+hmcs44_cpu_device::hmcs44_cpu_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, u32 clock, u16 polarity)
+	: hmcs40_cpu_device(mconfig, type, tag, owner, clock, HMCS40_FAMILY_HMCS44, polarity, 4, 11, 12, address_map_constructor(FUNC(hmcs44_cpu_device::program_2k), this), 8, address_map_constructor(FUNC(hmcs44_cpu_device::data_160x4), this))
 { }
 
-hd38820_device::hd38820_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: hmcs45_cpu_device(mconfig, HD38820, "HD38820", tag, owner, clock, IS_PMOS, "hd38820")
+hd38800_device::hd38800_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock)
+	: hmcs44_cpu_device(mconfig, HD38800, tag, owner, clock, IS_PMOS)
 { }
-hd38825_device::hd38825_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: hmcs45_cpu_device(mconfig, HD38825, "HD38825", tag, owner, clock, IS_PMOS, "hd38825")
+hd38805_device::hd38805_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock)
+	: hmcs44_cpu_device(mconfig, HD38805, tag, owner, clock, IS_PMOS)
 { }
-hd44820_device::hd44820_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: hmcs45_cpu_device(mconfig, HD44820, "HD44820", tag, owner, clock, IS_CMOS, "hd44820")
+hd44801_device::hd44801_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock)
+	: hmcs44_cpu_device(mconfig, HD44801, tag, owner, clock, IS_CMOS)
 { }
-hd44828_device::hd44828_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: hmcs45_cpu_device(mconfig, HD44828, "HD44828", tag, owner, clock, IS_CMOS, "hd44828")
+hd44808_device::hd44808_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock)
+	: hmcs44_cpu_device(mconfig, HD44808, tag, owner, clock, IS_CMOS)
 { }
 
+
+hmcs45_cpu_device::hmcs45_cpu_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, u32 clock, u16 polarity)
+	: hmcs40_cpu_device(mconfig, type, tag, owner, clock, HMCS40_FAMILY_HMCS45, polarity, 4, 11, 12, address_map_constructor(FUNC(hmcs45_cpu_device::program_2k), this), 8, address_map_constructor(FUNC(hmcs45_cpu_device::data_160x4), this))
+{ }
+
+hd38820_device::hd38820_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock)
+	: hmcs45_cpu_device(mconfig, HD38820, tag, owner, clock, IS_PMOS)
+{ }
+hd38825_device::hd38825_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock)
+	: hmcs45_cpu_device(mconfig, HD38825, tag, owner, clock, IS_PMOS)
+{ }
+hd44820_device::hd44820_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock)
+	: hmcs45_cpu_device(mconfig, HD44820, tag, owner, clock, IS_CMOS)
+{ }
+hd44828_device::hd44828_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock)
+	: hmcs45_cpu_device(mconfig, HD44828, tag, owner, clock, IS_CMOS)
+{ }
+
+device_memory_interface::space_config_vector hmcs40_cpu_device::memory_space_config() const
+{
+	return space_config_vector {
+		std::make_pair(AS_PROGRAM, &m_program_config),
+		std::make_pair(AS_DATA,    &m_data_config)
+	};
+}
 
 // disasm
-void hmcs40_cpu_device::state_string_export(const device_state_entry &entry, std::string &str)
+void hmcs40_cpu_device::state_string_export(const device_state_entry &entry, std::string &str) const
 {
 	switch (entry.index())
 	{
 		case STATE_GENFLAGS:
-			strprintf(str, "%c%c",
+			str = string_format("%c%c",
 				m_c ? 'C':'c',
 				m_s ? 'S':'s'
 			);
@@ -148,12 +189,10 @@ void hmcs40_cpu_device::state_string_export(const device_state_entry &entry, std
 	}
 }
 
-offs_t hmcs40_cpu_device::disasm_disassemble(char *buffer, offs_t pc, const UINT8 *oprom, const UINT8 *opram, UINT32 options)
+std::unique_ptr<util::disasm_interface> hmcs40_cpu_device::create_disassembler()
 {
-	extern CPU_DISASSEMBLE(hmcs40);
-	return CPU_DISASSEMBLE_NAME(hmcs40)(this, buffer, pc, oprom, opram, options);
+	return std::make_unique<hmcs40_disassembler>();
 }
-
 
 
 //-------------------------------------------------
@@ -174,38 +213,21 @@ void hmcs40_cpu_device::device_start()
 	m_datamask = (1 << m_datawidth) - 1;
 	m_pcmask = (1 << m_pcwidth) - 1;
 
-	m_timer = machine().scheduler().timer_alloc(timer_expired_delegate(FUNC(hmcs40_cpu_device::simple_timer_cb), this));
-	reset_prescaler();
-
 	// resolve callbacks
-	m_read_r0.resolve_safe(m_polarity & 0xf);
-	m_read_r1.resolve_safe(m_polarity & 0xf);
-	m_read_r2.resolve_safe(m_polarity & 0xf);
-	m_read_r3.resolve_safe(m_polarity & 0xf);
-	m_read_r4.resolve_safe(m_polarity & 0xf);
-	m_read_r5.resolve_safe(m_polarity & 0xf);
-	m_read_r6.resolve_safe(m_polarity & 0xf);
-	m_read_r7.resolve_safe(m_polarity & 0xf);
-
-	m_write_r0.resolve_safe();
-	m_write_r1.resolve_safe();
-	m_write_r2.resolve_safe();
-	m_write_r3.resolve_safe();
-	m_write_r4.resolve_safe();
-	m_write_r5.resolve_safe();
-	m_write_r6.resolve_safe();
-	m_write_r7.resolve_safe();
-
+	m_read_r.resolve_all_safe(m_polarity & 0xf);
+	m_write_r.resolve_all_safe();
 	m_read_d.resolve_safe(m_polarity);
 	m_write_d.resolve_safe();
 
 	// zerofill
 	memset(m_stack, 0, sizeof(m_stack));
+	m_sp = 0;
 	m_op = 0;
 	m_prev_op = 0;
 	m_i = 0;
 	m_eint_line = 0;
 	m_halt = 0;
+	m_prescaler = 0;
 	m_pc = 0;
 	m_prev_pc = 0;
 	m_page = 0;
@@ -229,12 +251,12 @@ void hmcs40_cpu_device::device_start()
 
 	// register for savestates
 	save_item(NAME(m_stack));
+	save_item(NAME(m_sp));
 	save_item(NAME(m_op));
 	save_item(NAME(m_prev_op));
 	save_item(NAME(m_i));
 	save_item(NAME(m_eint_line));
 	save_item(NAME(m_halt));
-	save_item(NAME(m_timer_halted_remain));
 	save_item(NAME(m_pc));
 	save_item(NAME(m_prev_pc));
 	save_item(NAME(m_page));
@@ -247,6 +269,7 @@ void hmcs40_cpu_device::device_start()
 	save_item(NAME(m_s));
 	save_item(NAME(m_c));
 	save_item(NAME(m_tc));
+	save_item(NAME(m_prescaler));
 	save_item(NAME(m_cf));
 	save_item(NAME(m_ie));
 	save_item(NAME(m_iri));
@@ -267,10 +290,11 @@ void hmcs40_cpu_device::device_start()
 	state_add(HMCS40_Y,   "Y",   m_y).formatstr("%01X");
 	state_add(HMCS40_SPY, "SPY", m_spy).formatstr("%01X");
 
-	state_add(STATE_GENPC, "curpc", m_pc).formatstr("%04X").noshow();
+	state_add(STATE_GENPC, "GENPC", m_pc).formatstr("%04X").noshow();
+	state_add(STATE_GENPCBASE, "CURPC", m_pc).formatstr("%04X").noshow();
 	state_add(STATE_GENFLAGS, "GENFLAGS", m_s).formatstr("%2s").noshow();
 
-	m_icountptr = &m_icount;
+	set_icountptr(m_icount);
 }
 
 
@@ -305,22 +329,10 @@ void hmcs40_cpu_device::device_reset()
 //  i/o handling
 //-------------------------------------------------
 
-UINT8 hmcs40_cpu_device::read_r(int index)
+u8 hmcs40_cpu_device::read_r(int index)
 {
 	index &= 7;
-	UINT8 inp = 0;
-
-	switch (index)
-	{
-		case 0: inp = m_read_r0(index, 0xff); break;
-		case 1: inp = m_read_r1(index, 0xff); break;
-		case 2: inp = m_read_r2(index, 0xff); break;
-		case 3: inp = m_read_r3(index, 0xff); break;
-		case 4: inp = m_read_r4(index, 0xff); break;
-		case 5: inp = m_read_r5(index, 0xff); break;
-		case 6: inp = m_read_r6(index, 0xff); break;
-		case 7: inp = m_read_r7(index, 0xff); break;
-	}
+	u8 inp = m_read_r[index](index, 0xff);
 
 	if (m_polarity)
 		return (inp & m_r[index]) & 0xf;
@@ -328,23 +340,12 @@ UINT8 hmcs40_cpu_device::read_r(int index)
 		return (inp | m_r[index]) & 0xf;
 }
 
-void hmcs40_cpu_device::write_r(int index, UINT8 data)
+void hmcs40_cpu_device::write_r(int index, u8 data)
 {
 	index &= 7;
 	data &= 0xf;
 	m_r[index] = data;
-
-	switch (index)
-	{
-		case 0: m_write_r0(index, data, 0xff); break;
-		case 1: m_write_r1(index, data, 0xff); break;
-		case 2: m_write_r2(index, data, 0xff); break;
-		case 3: m_write_r3(index, data, 0xff); break;
-		case 4: m_write_r4(index, data, 0xff); break;
-		case 5: m_write_r5(index, data, 0xff); break;
-		case 6: m_write_r6(index, data, 0xff); break;
-		case 7: m_write_r7(index, data, 0xff); break;
-	}
+	m_write_r[index](index, data, 0xff);
 }
 
 int hmcs40_cpu_device::read_d(int index)
@@ -370,24 +371,24 @@ void hmcs40_cpu_device::write_d(int index, int state)
 // R0 is input-only, R1 is i/o, R2,R3 are output-only, no R4-R7
 // D0-D3 are i/o, D4-D15 are output-only
 
-UINT8 hmcs43_cpu_device::read_r(int index)
+u8 hmcs43_cpu_device::read_r(int index)
 {
 	index &= 7;
 
 	if (index >= 2)
-		logerror("%s read from %s port R%d at $%04X\n", tag(), (index >= 4) ? "unknown" : "output", index, m_prev_pc);
+		logerror("read from %s port R%d at $%04X\n", (index >= 4) ? "unknown" : "output", index, m_prev_pc);
 
 	return hmcs40_cpu_device::read_r(index);
 }
 
-void hmcs43_cpu_device::write_r(int index, UINT8 data)
+void hmcs43_cpu_device::write_r(int index, u8 data)
 {
 	index &= 7;
 
 	if (index != 0 && index < 4)
 		hmcs40_cpu_device::write_r(index, data);
 	else
-		logerror("%s ineffective write to port R%d = $%X at $%04X\n", tag(), index, data & 0xf, m_prev_pc);
+		logerror("ineffective write to port R%d = $%X at $%04X\n", index, data & 0xf, m_prev_pc);
 }
 
 int hmcs43_cpu_device::read_d(int index)
@@ -395,7 +396,7 @@ int hmcs43_cpu_device::read_d(int index)
 	index &= 15;
 
 	if (index >= 4)
-		logerror("%s read from output pin D%d at $%04X\n", tag(), index, m_prev_pc);
+		logerror("read from output pin D%d at $%04X\n", index, m_prev_pc);
 
 	return hmcs40_cpu_device::read_d(index);
 }
@@ -404,48 +405,48 @@ int hmcs43_cpu_device::read_d(int index)
 // R0-R3 are i/o, R4,R5 are extra registers, no R6,R7
 // D0-D15 are i/o
 
-UINT8 hmcs44_cpu_device::read_r(int index)
+u8 hmcs44_cpu_device::read_r(int index)
 {
 	index &= 7;
 
 	if (index >= 6)
-		logerror("%s read from unknown port R%d at $%04X\n", tag(), index, m_prev_pc);
+		logerror("read from unknown port R%d at $%04X\n", index, m_prev_pc);
 
 	return hmcs40_cpu_device::read_r(index);
 }
 
-void hmcs44_cpu_device::write_r(int index, UINT8 data)
+void hmcs44_cpu_device::write_r(int index, u8 data)
 {
 	index &= 7;
 
 	if (index < 6)
 		hmcs40_cpu_device::write_r(index, data);
 	else
-		logerror("%s ineffective write to port R%d = $%X at $%04X\n", tag(), index, data & 0xf, m_prev_pc);
+		logerror("ineffective write to port R%d = $%X at $%04X\n", index, data & 0xf, m_prev_pc);
 }
 
 // HMCS45:
 // R0-R5 are i/o, R6 is output-only, no R7
 // D0-D15 are i/o
 
-UINT8 hmcs45_cpu_device::read_r(int index)
+u8 hmcs45_cpu_device::read_r(int index)
 {
 	index &= 7;
 
 	if (index >= 6)
-		logerror("%s read from %s port R%d at $%04X\n", tag(), (index == 7) ? "unknown" : "output", index, m_prev_pc);
+		logerror("read from %s port R%d at $%04X\n", (index == 7) ? "unknown" : "output", index, m_prev_pc);
 
 	return hmcs40_cpu_device::read_r(index);
 }
 
-void hmcs45_cpu_device::write_r(int index, UINT8 data)
+void hmcs45_cpu_device::write_r(int index, u8 data)
 {
 	index &= 7;
 
 	if (index != 7)
 		hmcs40_cpu_device::write_r(index, data);
 	else
-		logerror("%s ineffective write to port R%d = $%X at $%04X\n", tag(), index, data & 0xf, m_prev_pc);
+		logerror("ineffective write to port R%d = $%X at $%04X\n", index, data & 0xf, m_prev_pc);
 }
 
 
@@ -456,7 +457,6 @@ void hmcs45_cpu_device::write_r(int index, UINT8 data)
 
 void hmcs40_cpu_device::do_interrupt()
 {
-	m_icount--;
 	push_stack();
 	m_ie = 0;
 
@@ -472,6 +472,9 @@ void hmcs40_cpu_device::do_interrupt()
 		m_irt = 0;
 
 	standard_irq_callback(line);
+	m_prev_pc = m_pc;
+
+	cycle();
 }
 
 void hmcs40_cpu_device::execute_set_input(int line, int state)
@@ -481,14 +484,6 @@ void hmcs40_cpu_device::execute_set_input(int line, int state)
 	// halt/unhalt mcu
 	if (line == HMCS40_INPUT_LINE_HLT && state != m_halt)
 	{
-		if (state)
-		{
-			m_timer_halted_remain = m_timer->remaining();
-			m_timer->reset();
-		}
-		else
-			m_timer->adjust(m_timer_halted_remain);
-
 		m_halt = state;
 		return;
 	}
@@ -514,20 +509,14 @@ void hmcs40_cpu_device::execute_set_input(int line, int state)
 	m_int[line] = state;
 }
 
-void hmcs40_cpu_device::reset_prescaler()
+void hmcs40_cpu_device::cycle()
 {
-	// reset 6-bit timer prescaler
-	attotime base = attotime::from_ticks(4 * 64, unscaled_clock());
-	m_timer->adjust(base);
-}
+	m_icount--;
+	m_prescaler = (m_prescaler + 1) & 0x3f;
 
-TIMER_CALLBACK_MEMBER( hmcs40_cpu_device::simple_timer_cb )
-{
 	// timer prescaler overflow
-	if (!m_cf)
+	if (m_prescaler == 0 && !m_cf)
 		increment_tc();
-
-	reset_prescaler();
 }
 
 void hmcs40_cpu_device::increment_tc()
@@ -552,8 +541,8 @@ void hmcs40_cpu_device::increment_tc()
 inline void hmcs40_cpu_device::increment_pc()
 {
 	// PC lower bits is a LFSR identical to TI TMS1000
-	UINT8 mask = 0x3f;
-	UINT8 low = m_pc & mask;
+	u8 mask = 0x3f;
+	u8 low = m_pc & mask;
 	int fb = (low << 1 & 0x20) == (low & 0x20);
 
 	if (low == (mask >> 1))
@@ -576,7 +565,7 @@ void hmcs40_cpu_device::execute_run()
 	while (m_icount > 0)
 	{
 		// LPU is handled 1 cycle later
-		if ((m_prev_op & 0x3e0) == 0x340)
+		if ((m_prev_op & 0x7e0) == 0x340)
 			m_pc = ((m_page << 6) | (m_pc & 0x3f)) & m_pcmask;
 
 		// remember previous state
@@ -585,17 +574,12 @@ void hmcs40_cpu_device::execute_run()
 
 		// check/handle interrupt, but not in the middle of a long jump
 		if (m_ie && (m_iri || m_irt) && (m_prev_op & 0x3e0) != 0x340)
-		{
 			do_interrupt();
-			if (m_icount <= 0)
-				break;
-		}
 
 		// fetch next opcode
-		debugger_instruction_hook(this, m_pc);
-		m_icount--;
-		m_op = m_program->read_word(m_pc << 1) & 0x3ff;
-		m_i = BITSWAP8(m_op,7,6,5,4,0,1,2,3) & 0xf; // reversed bit-order for 4-bit immediate param (except for XAMR, REDD, SEDD)
+		debugger_instruction_hook(m_pc);
+		m_op = m_program->read_word(m_pc) & 0x3ff;
+		m_i = bitswap<4>(m_op,0,1,2,3); // reversed bit-order for 4-bit immediate param (except for XAMR)
 		increment_pc();
 
 		// handle opcode
@@ -667,8 +651,7 @@ void hmcs40_cpu_device::execute_run()
 
 			case 0x0c0: case 0x0c1: case 0x0c2: case 0x0c3: case 0x0c4: case 0x0c5: case 0x0c6: case 0x0c7:
 				op_lar(); break;
-			case 0x0d0: case 0x0d1: case 0x0d2: case 0x0d3: case 0x0d4: case 0x0d5: case 0x0d6: case 0x0d7:
-			case 0x0d8: case 0x0d9: case 0x0da: case 0x0db: case 0x0dc: case 0x0dd: case 0x0de: case 0x0df:
+			case 0x0d0: case 0x0d1: case 0x0d2: case 0x0d3:
 				op_sedd(); break;
 			case 0x0e0: case 0x0e1: case 0x0e2: case 0x0e3: case 0x0e4: case 0x0e5: case 0x0e6: case 0x0e7:
 				op_lbr(); break;
@@ -787,8 +770,7 @@ void hmcs40_cpu_device::execute_run()
 
 			case 0x2c0: case 0x2c1: case 0x2c2: case 0x2c3: case 0x2c4: case 0x2c5: case 0x2c6: case 0x2c7:
 				op_lra(); break;
-			case 0x2d0: case 0x2d1: case 0x2d2: case 0x2d3: case 0x2d4: case 0x2d5: case 0x2d6: case 0x2d7:
-			case 0x2d8: case 0x2d9: case 0x2da: case 0x2db: case 0x2dc: case 0x2dd: case 0x2de: case 0x2df:
+			case 0x2d0: case 0x2d1: case 0x2d2: case 0x2d3:
 				op_redd(); break;
 			case 0x2e0: case 0x2e1: case 0x2e2: case 0x2e3: case 0x2e4: case 0x2e5: case 0x2e6: case 0x2e7:
 				op_lrb(); break;
@@ -829,5 +811,7 @@ void hmcs40_cpu_device::execute_run()
 			default:
 				op_illegal(); break;
 		} /* big switch */
+
+		cycle();
 	}
 }

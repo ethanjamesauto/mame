@@ -8,7 +8,6 @@
 **************************************************************************/
 
 #include "emu.h"
-#include "cpu/tms34010/tms34010.h"
 #include "cpu/m6809/m6809.h"
 #include "includes/midyunit.h"
 
@@ -19,6 +18,7 @@
 #define SOUND_CVSD                  3
 #define SOUND_ADPCM                 4
 #define SOUND_YAWDIM                5
+#define SOUND_YAWDIM2               6
 
 
 
@@ -28,14 +28,14 @@
  *
  *************************************/
 
-WRITE16_MEMBER(midyunit_state::midyunit_cmos_w)
+void midyunit_state::midyunit_cmos_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
-	logerror("%08x:CMOS Write @ %05X\n", space.device().safe_pc(), offset);
+	logerror("%08x:CMOS Write @ %05X\n", m_maincpu->pc(), offset);
 	COMBINE_DATA(&m_cmos_ram[offset + m_cmos_page]);
 }
 
 
-READ16_MEMBER(midyunit_state::midyunit_cmos_r)
+uint16_t midyunit_state::midyunit_cmos_r(offs_t offset)
 {
 	return m_cmos_ram[offset + m_cmos_page];
 }
@@ -48,11 +48,11 @@ READ16_MEMBER(midyunit_state::midyunit_cmos_r)
  *
  *************************************/
 
-WRITE16_MEMBER(midyunit_state::midyunit_cmos_enable_w)
+void midyunit_state::midyunit_cmos_enable_w(address_space &space, uint16_t data)
 {
 	m_cmos_w_enable = (~data >> 9) & 1;
 
-	logerror("%08x:Protection write = %04X\n", space.device().safe_pc(), data);
+	logerror("%08x:Protection write = %04X\n", m_maincpu->pc(), data);
 
 	/* only go down this path if we have a data structure */
 	if (m_prot_data)
@@ -70,7 +70,7 @@ WRITE16_MEMBER(midyunit_state::midyunit_cmos_enable_w)
 		{
 			if (data == 0x500)
 			{
-				m_prot_result = space.read_word(TOBYTE(0x10a4390)) << 4;
+				m_prot_result = space.read_word(0x10a4390) << 4;
 				logerror("  desired result = %04X\n", m_prot_result);
 			}
 		}
@@ -98,10 +98,10 @@ WRITE16_MEMBER(midyunit_state::midyunit_cmos_enable_w)
 }
 
 
-READ16_MEMBER(midyunit_state::midyunit_protection_r)
+uint16_t midyunit_state::midyunit_protection_r()
 {
 	/* return the most recently clocked value */
-	logerror("%08X:Protection read = %04X\n", space.device().safe_pc(), m_prot_result);
+	logerror("%08X:Protection read = %04X\n", m_maincpu->pc(), m_prot_result);
 	return m_prot_result;
 }
 
@@ -113,9 +113,7 @@ READ16_MEMBER(midyunit_state::midyunit_protection_r)
  *
  *************************************/
 
-IOPORT_ARRAY_MEMBER(midyunit_state::ports) { "IN0", "IN1", "IN2", "DSW", "UNK0", "UNK1" };
-
-READ16_MEMBER(midyunit_state::midyunit_input_r)
+uint16_t midyunit_state::midyunit_input_r(offs_t offset)
 {
 	return m_ports[offset]->read();
 }
@@ -128,52 +126,45 @@ READ16_MEMBER(midyunit_state::midyunit_input_r)
  *
  *************************************/
 
-READ16_MEMBER(midyunit_state::term2_input_r)
+uint16_t midyunit_state::term2_input_r(offs_t offset)
 {
 	if (offset != 2)
 		return m_ports[offset]->read();
 
-	switch (m_term2_analog_select)
-	{
-		default:
-		case 0:  return ioport("STICK0_X")->read();
-		case 1:  return ioport("STICK0_Y")->read();
-		case 2:  return ioport("STICK1_X")->read();
-		case 3:  return ioport("STICK1_Y")->read();
-	}
+	return m_term2_adc->read() | 0xff00;
 }
 
-WRITE16_MEMBER(midyunit_state::term2_sound_w)
+void midyunit_state::term2_sound_w(offs_t offset, uint16_t data)
 {
 	/* Flash Lamp Output Data */
 	if  ( ((data & 0x800) != 0x800) && ((data & 0x400) == 0x400 ) )
 	{
-	output_set_value("Left_Flash_1", data & 0x1);
-	output_set_value("Left_Flash_2", (data & 0x2) >> 1);
-	output_set_value("Left_Flash_3", (data & 0x4) >> 2);
-	output_set_value("Left_Flash_4", (data & 0x8) >> 3);
-	output_set_value("Right_Flash_1", (data & 0x10) >> 4);
-	output_set_value("Right_Flash_2", (data & 0x20) >> 5);
-	output_set_value("Right_Flash_3", (data & 0x40) >> 6);
-	output_set_value("Right_Flash_4", (data & 0x80) >> 7);
+	output().set_value("Left_Flash_1", data & 0x1);
+	output().set_value("Left_Flash_2", (data & 0x2) >> 1);
+	output().set_value("Left_Flash_3", (data & 0x4) >> 2);
+	output().set_value("Left_Flash_4", (data & 0x8) >> 3);
+	output().set_value("Right_Flash_1", (data & 0x10) >> 4);
+	output().set_value("Right_Flash_2", (data & 0x20) >> 5);
+	output().set_value("Right_Flash_3", (data & 0x40) >> 6);
+	output().set_value("Right_Flash_4", (data & 0x80) >> 7);
 	}
 
 	/* Gun Output Data */
 	if  ( ((data & 0x800) == 0x800) && ((data & 0x400) != 0x400 ) )
 	{
-	output_set_value("Left_Gun_Recoil", data & 0x1);
-	output_set_value("Right_Gun_Recoil", (data & 0x2) >> 1);
-	output_set_value("Left_Gun_Green_Led", (~data & 0x20) >> 5);
-	output_set_value("Left_Gun_Red_Led", (~data & 0x10) >> 4);
-	output_set_value("Right_Gun_Green_Led", (~data & 0x80) >> 7);
-	output_set_value("Right_Gun_Red_Led", (~data & 0x40) >> 6);
+	output().set_value("Left_Gun_Recoil", data & 0x1);
+	output().set_value("Right_Gun_Recoil", (data & 0x2) >> 1);
+	output().set_value("Left_Gun_Green_Led", (~data & 0x20) >> 5);
+	output().set_value("Left_Gun_Red_Led", (~data & 0x10) >> 4);
+	output().set_value("Right_Gun_Green_Led", (~data & 0x80) >> 7);
+	output().set_value("Right_Gun_Red_Led", (~data & 0x40) >> 6);
 	}
 
 	if (offset == 0)
-		m_term2_analog_select = (data >> 12) & 3;
+		m_term2_adc->write(((data >> 12) & 3) | 4);
 
 	m_adpcm_sound->reset_write((~data & 0x100) >> 1);
-	m_adpcm_sound->write(space, offset, data);
+	m_adpcm_sound->write(data);
 }
 
 
@@ -184,9 +175,9 @@ WRITE16_MEMBER(midyunit_state::term2_sound_w)
  *
  *************************************/
 
-WRITE16_MEMBER(midyunit_state::term2_hack_w)
+void midyunit_state::term2_hack_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
-	if (offset == 1 && space.device().safe_pc() == 0xffce6520)
+	if (offset == 1 && m_maincpu->pc() == 0xffce6520)
 	{
 		m_t2_hack_mem[offset] = 0;
 		return;
@@ -194,9 +185,9 @@ WRITE16_MEMBER(midyunit_state::term2_hack_w)
 	COMBINE_DATA(&m_t2_hack_mem[offset]);
 }
 
-WRITE16_MEMBER(midyunit_state::term2la3_hack_w)
+void midyunit_state::term2la3_hack_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
-	if (offset == 0 && space.device().safe_pc() == 0xffce5230)
+	if (offset == 0 && m_maincpu->pc() == 0xffce5230)
 	{
 		m_t2_hack_mem[offset] = 0;
 		return;
@@ -204,9 +195,9 @@ WRITE16_MEMBER(midyunit_state::term2la3_hack_w)
 	COMBINE_DATA(&m_t2_hack_mem[offset]);
 }
 
-WRITE16_MEMBER(midyunit_state::term2la2_hack_w)
+void midyunit_state::term2la2_hack_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
-	if (offset == 0 && space.device().safe_pc() == 0xffce4b80)
+	if (offset == 0 && m_maincpu->pc() == 0xffce4b80)
 	{
 		m_t2_hack_mem[offset] = 0;
 		return;
@@ -214,9 +205,9 @@ WRITE16_MEMBER(midyunit_state::term2la2_hack_w)
 	COMBINE_DATA(&m_t2_hack_mem[offset]);
 }
 
-WRITE16_MEMBER(midyunit_state::term2la1_hack_w)
+void midyunit_state::term2la1_hack_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
-	if (offset == 0 && space.device().safe_pc() == 0xffce33f0)
+	if (offset == 0 && m_maincpu->pc() == 0xffce33f0)
 	{
 		m_t2_hack_mem[offset] = 0;
 		return;
@@ -232,7 +223,7 @@ WRITE16_MEMBER(midyunit_state::term2la1_hack_w)
  *
  *************************************/
 
-WRITE8_MEMBER(midyunit_state::cvsd_protection_w)
+void midyunit_state::cvsd_protection_w(offs_t offset, uint8_t data)
 {
 	/* because the entire CVSD ROM is banked, we have to make sure that writes */
 	/* go to the proper location (i.e., bank 0); currently bank 0 always lives */
@@ -245,12 +236,11 @@ WRITE8_MEMBER(midyunit_state::cvsd_protection_w)
 void midyunit_state::init_generic(int bpp, int sound, int prot_start, int prot_end)
 {
 	offs_t gfx_chunk = m_gfx_rom.bytes() / 4;
-	UINT8 d1, d2, d3, d4, d5, d6;
-	UINT8 *base;
+	uint8_t d1, d2, d3, d4, d5, d6;
 	int i;
 
 	/* load graphics ROMs */
-	base = memregion("gfx1")->base();
+	uint8_t *base = memregion("gfx1")->base();
 	switch (bpp)
 	{
 		case 4:
@@ -297,23 +287,30 @@ void midyunit_state::init_generic(int bpp, int sound, int prot_start, int prot_e
 	switch (sound)
 	{
 		case SOUND_CVSD_SMALL:
-			machine().device("cvsd:cpu")->memory().space(AS_PROGRAM).install_write_handler(prot_start, prot_end, write8_delegate(FUNC(midyunit_state::cvsd_protection_w), this));
+			m_cvsd_sound->get_cpu()->space(AS_PROGRAM).install_write_handler(prot_start, prot_end, write8sm_delegate(*this, FUNC(midyunit_state::cvsd_protection_w)));
 			m_cvsd_protection_base = memregion("cvsd:cpu")->base() + 0x10000 + (prot_start - 0x8000);
 			break;
 
 		case SOUND_CVSD:
-			machine().device("cvsd:cpu")->memory().space(AS_PROGRAM).install_ram(prot_start, prot_end);
+			m_hidden_ram = std::make_unique<uint8_t[]>(prot_end - prot_start);
+			save_pointer(NAME(m_hidden_ram), prot_end - prot_start);
+			m_cvsd_sound->get_cpu()->space(AS_PROGRAM).install_ram(prot_start, prot_end, m_hidden_ram.get());
 			break;
 
 		case SOUND_ADPCM:
-			machine().device("adpcm:cpu")->memory().space(AS_PROGRAM).install_ram(prot_start, prot_end);
+			m_hidden_ram = std::make_unique<uint8_t[]>(prot_end - prot_start);
+			save_pointer(NAME(m_hidden_ram), prot_end - prot_start);
+			m_adpcm_sound->get_cpu()->space(AS_PROGRAM).install_ram(prot_start, prot_end, m_hidden_ram.get());
 			break;
 
 		case SOUND_NARC:
-			machine().device("narcsnd:cpu0")->memory().space(AS_PROGRAM).install_ram(prot_start, prot_end);
+			m_hidden_ram = std::make_unique<uint8_t[]>(prot_end - prot_start);
+			save_pointer(NAME(m_hidden_ram), prot_end - prot_start);
+			m_narc_sound->get_cpu()->space(AS_PROGRAM).install_ram(prot_start, prot_end, m_hidden_ram.get());
 			break;
 
 		case SOUND_YAWDIM:
+		case SOUND_YAWDIM2:
 			break;
 	}
 }
@@ -329,7 +326,7 @@ void midyunit_state::init_generic(int bpp, int sound, int prot_start, int prot_e
  *
  *************************************/
 
-DRIVER_INIT_MEMBER(midyunit_state,narc)
+void midyunit_state::init_narc()
 {
 	/* common init */
 	init_generic(8, SOUND_NARC, 0xcdff, 0xce29);
@@ -348,7 +345,7 @@ DRIVER_INIT_MEMBER(midyunit_state,narc)
 
 /********************** Trog **************************/
 
-DRIVER_INIT_MEMBER(midyunit_state,trog)
+void midyunit_state::init_trog()
 {
 	/* protection */
 	static const struct protection_data trog_protection_data =
@@ -368,16 +365,18 @@ DRIVER_INIT_MEMBER(midyunit_state,trog)
 
 /********************** Smash TV **********************/
 
-DRIVER_INIT_MEMBER(midyunit_state,smashtv)
+void midyunit_state::init_smashtv()
 {
 	/* common init */
 	init_generic(6, SOUND_CVSD_SMALL, 0x9cf6, 0x9d21);
+
+	m_prot_data = nullptr;
 }
 
 
 /********************** High Impact Football **********************/
 
-DRIVER_INIT_MEMBER(midyunit_state,hiimpact)
+void midyunit_state::init_hiimpact()
 {
 	/* protection */
 	static const struct protection_data hiimpact_protection_data =
@@ -395,7 +394,7 @@ DRIVER_INIT_MEMBER(midyunit_state,hiimpact)
 
 /********************** Super High Impact Football **********************/
 
-DRIVER_INIT_MEMBER(midyunit_state,shimpact)
+void midyunit_state::init_shimpact()
 {
 	/* protection */
 	static const struct protection_data shimpact_protection_data =
@@ -413,7 +412,7 @@ DRIVER_INIT_MEMBER(midyunit_state,shimpact)
 
 /********************** Strike Force **********************/
 
-DRIVER_INIT_MEMBER(midyunit_state,strkforc)
+void midyunit_state::init_strkforc()
 {
 	/* protection */
 	static const struct protection_data strkforc_protection_data =
@@ -439,7 +438,7 @@ DRIVER_INIT_MEMBER(midyunit_state,strkforc)
 
 /********************** Mortal Kombat **********************/
 
-DRIVER_INIT_MEMBER(midyunit_state,mkyunit)
+void midyunit_state::init_mkyunit()
 {
 	/* protection */
 	static const struct protection_data mk_protection_data =
@@ -455,10 +454,17 @@ DRIVER_INIT_MEMBER(midyunit_state,mkyunit)
 	init_generic(6, SOUND_ADPCM, 0xfb9c, 0xfbc6);
 }
 
-DRIVER_INIT_MEMBER(midyunit_state,mkyawdim)
+void midyunit_state::init_mkyawdim()
 {
 	/* common init */
 	init_generic(6, SOUND_YAWDIM, 0, 0);
+}
+
+void midyunit_state::init_mkyawdim2()
+{
+	m_audiocpu->space(AS_PROGRAM).install_write_handler(0x9000, 0x97ff, write8smo_delegate(*this, FUNC(midyunit_state::yawdim2_oki_bank_w)));
+	m_audiocpu->space(AS_PROGRAM).install_read_handler(0xa000, 0xa7ff, read8smo_delegate(*this, FUNC(midyunit_state::yawdim2_soundlatch_r)));
+	init_mkyawdim();
 }
 
 
@@ -468,55 +474,56 @@ DRIVER_INIT_MEMBER(midyunit_state,mkyawdim)
  *
  *************************************/
 
-READ16_MEMBER(midyunit_state::mkturbo_prot_r)
+uint16_t midyunit_state::mkturbo_prot_r()
 {
 	/* the security GAL overlays a counter of some sort at 0xfffff400 in ROM space.
 	 * A startup protection check expects to read back two different values in succession */
 	return machine().rand();
 }
 
-DRIVER_INIT_MEMBER(midyunit_state,mkyturbo)
+void midyunit_state::init_mkyturbo()
 {
 	/* protection */
-	m_maincpu->space(AS_PROGRAM).install_read_handler(0xfffff400, 0xfffff40f, read16_delegate(FUNC(midyunit_state::mkturbo_prot_r),this));
+	m_maincpu->space(AS_PROGRAM).install_read_handler(0xfffff400, 0xfffff40f, read16smo_delegate(*this, FUNC(midyunit_state::mkturbo_prot_r)));
 
-	DRIVER_INIT_CALL(mkyunit);
+	init_mkyunit();
 }
 
 /********************** Terminator 2 **********************/
 
-void midyunit_state::term2_init_common(write16_delegate hack_w)
+void midyunit_state::term2_init_common(write16s_delegate hack_w)
 {
-	/* protection */
-	static const struct protection_data term2_protection_data =
+	// protection
+	static constexpr struct protection_data term2_protection_data =
 	{
 		{ 0x0f00, 0x0f00, 0x0f00 },
 		{ 0x4000, 0xf000, 0xa000 }
 	};
 	m_prot_data = &term2_protection_data;
 
-	/* common init */
+	// common init
 	init_generic(6, SOUND_ADPCM, 0xfa8d, 0xfa9c);
 
-	/* special inputs */
-	m_maincpu->space(AS_PROGRAM).install_read_handler(0x01c00000, 0x01c0005f, read16_delegate(FUNC(midyunit_state::term2_input_r), this));
-	m_maincpu->space(AS_PROGRAM).install_write_handler(0x01e00000, 0x01e0001f, write16_delegate(FUNC(midyunit_state::term2_sound_w), this));
+	// special inputs */
+	m_maincpu->space(AS_PROGRAM).install_read_handler(0x01c00000, 0x01c0005f, read16sm_delegate(*this, FUNC(midyunit_state::term2_input_r)));
+	m_maincpu->space(AS_PROGRAM).install_write_handler(0x01e00000, 0x01e0001f, write16sm_delegate(*this, FUNC(midyunit_state::term2_sound_w)));
 
-	/* HACK: this prevents the freeze on the movies */
-	/* until we figure what's causing it, this is better than nothing */
-	m_t2_hack_mem = m_maincpu->space(AS_PROGRAM).install_write_handler(0x010aa0e0, 0x010aa0ff, hack_w);
+	// HACK: this prevents the freeze on the movies
+	// until we figure what's causing it, this is better than nothing
+	m_maincpu->space(AS_PROGRAM).install_write_handler(0x010aa0e0, 0x010aa0ff, hack_w);
+	m_t2_hack_mem = m_mainram + (0xaa0e0>>4);
 }
 
-DRIVER_INIT_MEMBER(midyunit_state,term2)    { term2_init_common(write16_delegate(FUNC(midyunit_state::term2_hack_w),this)); }
-DRIVER_INIT_MEMBER(midyunit_state,term2la3) { term2_init_common(write16_delegate(FUNC(midyunit_state::term2la3_hack_w),this)); }
-DRIVER_INIT_MEMBER(midyunit_state,term2la2) { term2_init_common(write16_delegate(FUNC(midyunit_state::term2la2_hack_w),this)); }
-DRIVER_INIT_MEMBER(midyunit_state,term2la1) { term2_init_common(write16_delegate(FUNC(midyunit_state::term2la1_hack_w),this)); }
+void midyunit_state::init_term2()    { term2_init_common(write16s_delegate(*this, FUNC(midyunit_state::term2_hack_w))); }
+void midyunit_state::init_term2la3() { term2_init_common(write16s_delegate(*this, FUNC(midyunit_state::term2la3_hack_w))); }
+void midyunit_state::init_term2la2() { term2_init_common(write16s_delegate(*this, FUNC(midyunit_state::term2la2_hack_w))); }
+void midyunit_state::init_term2la1() { term2_init_common(write16s_delegate(*this, FUNC(midyunit_state::term2la1_hack_w))); }
 
 
 
 /********************** Total Carnage **********************/
 
-DRIVER_INIT_MEMBER(midyunit_state,totcarn)
+void midyunit_state::init_totcarn()
 {
 	/* protection */
 	static const struct protection_data totcarn_protection_data =
@@ -561,6 +568,7 @@ MACHINE_RESET_MEMBER(midyunit_state,midyunit)
 			break;
 
 		case SOUND_YAWDIM:
+		case SOUND_YAWDIM2:
 			break;
 	}
 }
@@ -573,12 +581,12 @@ MACHINE_RESET_MEMBER(midyunit_state,midyunit)
  *
  *************************************/
 
-WRITE16_MEMBER(midyunit_state::midyunit_sound_w)
+void midyunit_state::midyunit_sound_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	/* check for out-of-bounds accesses */
 	if (offset)
 	{
-		logerror("%08X:Unexpected write to sound (hi) = %04X\n", space.device().safe_pc(), data);
+		logerror("%08X:Unexpected write to sound (hi) = %04X\n", m_maincpu->pc(), data);
 		return;
 	}
 
@@ -587,23 +595,28 @@ WRITE16_MEMBER(midyunit_state::midyunit_sound_w)
 		switch (m_chip_type)
 		{
 			case SOUND_NARC:
-				m_narc_sound->write(space, offset, data);
+				m_narc_sound->write(data);
 				break;
 
 			case SOUND_CVSD_SMALL:
 			case SOUND_CVSD:
 				m_cvsd_sound->reset_write((~data & 0x100) >> 8);
-				m_cvsd_sound->write(space, offset, (data & 0xff) | ((data & 0x200) >> 1));
+				m_cvsd_sound->write((data & 0xff) | ((data & 0x200) >> 1));
 				break;
 
 			case SOUND_ADPCM:
 				m_adpcm_sound->reset_write((~data & 0x100) >> 8);
-				m_adpcm_sound->write(space, offset, data);
+				m_adpcm_sound->write(data);
 				break;
 
 			case SOUND_YAWDIM:
-				soundlatch_byte_w(space, 0, data);
-				m_audiocpu->set_input_line(INPUT_LINE_NMI, PULSE_LINE);
+				m_soundlatch->write(data);
+				m_audiocpu->pulse_input_line(INPUT_LINE_NMI, attotime::zero);
+				break;
+
+			case SOUND_YAWDIM2:
+				m_soundlatch->write(data);
+				m_audiocpu->set_input_line(INPUT_LINE_NMI, ASSERT_LINE);
 				break;
 		}
 }

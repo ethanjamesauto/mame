@@ -2,9 +2,10 @@
 // copyright-holders:Nicola Salmoria, Aaron Giles
 /*********************************************************************
 
-    debugger.c
+    debugger.cpp
 
     Front-end debugger interfaces.
+
 *********************************************************************/
 
 #include "emu.h"
@@ -14,110 +15,85 @@
 #include "debug/debugcmd.h"
 #include "debug/debugcon.h"
 #include "debug/debugvw.h"
-#include <ctype.h>
-
-
-
-/***************************************************************************
-    TYPE DEFINITIONS
-***************************************************************************/
-
-struct machine_entry
-{
-	machine_entry *     next;
-	running_machine *   machine;
-};
-
-
+#include <cctype>
 
 /***************************************************************************
     GLOBAL VARIABLES
 ***************************************************************************/
 
-static machine_entry *machine_list;
-static int atexit_registered;
+static running_machine *g_machine = nullptr;
+static bool g_atexit_registered = false;
 
-
-
-/***************************************************************************
-    FUNCTION PROTOTYPES
-***************************************************************************/
-
-static void debugger_exit(running_machine &machine);
-
-
-
-/***************************************************************************
-    CENTRAL INITIALIZATION POINT
-***************************************************************************/
 
 /*-------------------------------------------------
-    debugger_init - start up all subsections
+    debug_break - stop in the debugger at the next
+    opportunity
 -------------------------------------------------*/
 
-void debugger_init(running_machine &machine)
+void debugger_manager::debug_break()
 {
-	/* only if debugging is enabled */
-	if (machine.debug_flags & DEBUG_FLAG_ENABLED)
-	{
-		machine_entry *entry;
-
-		/* initialize the submodules */
-		machine.m_debug_view.reset(global_alloc(debug_view_manager(machine)));
-		debug_cpu_init(machine);
-		debug_command_init(machine);
-		debug_console_init(machine);
-
-		/* allocate a new entry for our global list */
-		machine.add_notifier(MACHINE_NOTIFY_EXIT, machine_notify_delegate(FUNC(debugger_exit), &machine));
-		entry = global_alloc(machine_entry);
-		entry->next = machine_list;
-		entry->machine = &machine;
-		machine_list = entry;
-
-		/* register an atexit handler if we haven't yet */
-		if (!atexit_registered)
-			atexit(debugger_flush_all_traces_on_abnormal_exit);
-		atexit_registered = TRUE;
-
-		/* listen in on the errorlog */
-		machine.add_logerror_callback(debug_errorlog_write_line);
-
-		/* initialize osd debugger features */
-		machine.osd().init_debugger();
-	}
+	m_console->get_visible_cpu()->debug()->halt_on_next_instruction("Internal breakpoint\n");
 }
 
 
 /*-------------------------------------------------
-    debugger_refresh_display - redraw the current
+    within_instruction_hook - call this to
+    determine if the debugger is currently halted
+    within the instruction hook
+-------------------------------------------------*/
+
+bool debugger_manager::within_instruction_hook()
+{
+	if ((m_machine.debug_flags & DEBUG_FLAG_ENABLED) != 0)
+		return m_cpu->within_instruction_hook();
+	return false;
+}
+
+
+//**************************************************************************
+//  DEBUGGER MANAGER
+//**************************************************************************
+
+//-------------------------------------------------
+//  debugger_manager - constructor
+//-------------------------------------------------
+
+debugger_manager::debugger_manager(running_machine &machine)
+	: m_machine(machine)
+{
+	/* initialize the submodules */
+	m_cpu = std::make_unique<debugger_cpu>(machine);
+	m_console = std::make_unique<debugger_console>(machine);
+	m_commands = std::make_unique<debugger_commands>(machine, cpu(), console());
+
+	g_machine = &machine;
+
+	/* register an atexit handler if we haven't yet */
+	if (!g_atexit_registered)
+		atexit(debugger_flush_all_traces_on_abnormal_exit);
+	g_atexit_registered = true;
+
+	/* initialize osd debugger features */
+	machine.osd().init_debugger();
+}
+
+/*-------------------------------------------------
+//  debugger_manager - destructor
+-------------------------------------------------*/
+
+debugger_manager::~debugger_manager()
+{
+	g_machine = nullptr;
+}
+
+/*-------------------------------------------------
+    refresh_display - redraw the current
     video display
 -------------------------------------------------*/
 
-void debugger_refresh_display(running_machine &machine)
+void debugger_manager::refresh_display()
 {
-	machine.video().frame_update(true);
-}
-
-
-/*-------------------------------------------------
-    debugger_exit - remove ourself from the
-    global list of active machines for cleanup
--------------------------------------------------*/
-
-static void debugger_exit(running_machine &machine)
-{
-	machine_entry **entryptr;
-
-	/* remove this machine from the list; it came down cleanly */
-	for (entryptr = &machine_list; *entryptr != nullptr; entryptr = &(*entryptr)->next)
-		if ((*entryptr)->machine == &machine)
-		{
-			machine_entry *deleteme = *entryptr;
-			*entryptr = deleteme->next;
-			global_free(deleteme);
-			break;
-		}
+	machine().video().frame_update(true);
 }
 
 
@@ -127,14 +103,10 @@ static void debugger_exit(running_machine &machine)
     execution
 -------------------------------------------------*/
 
-void debugger_flush_all_traces_on_abnormal_exit(void)
+void debugger_flush_all_traces_on_abnormal_exit()
 {
-	/* clear out the machine list and flush traces on each one */
-	while (machine_list != nullptr)
+	if(g_machine != nullptr)
 	{
-		machine_entry *deleteme = machine_list;
-		debug_cpu_flush_traces(*deleteme->machine);
-		machine_list = deleteme->next;
-		global_free(deleteme);
+		g_machine->debugger().cpu().flush_traces();
 	}
 }

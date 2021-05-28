@@ -29,26 +29,21 @@ enum
 };
 
 
-const device_type MSX_SLOT_CARTRIDGE = &device_creator<msx_slot_cartridge_device>;
-const device_type MSX_SLOT_YAMAHA_EXPANSION = &device_creator<msx_slot_yamaha_expansion_device>;
+DEFINE_DEVICE_TYPE(MSX_SLOT_CARTRIDGE,        msx_slot_cartridge_device,        "msx_slot_cartridge",        "MSX Cartridge slot")
+DEFINE_DEVICE_TYPE(MSX_SLOT_YAMAHA_EXPANSION, msx_slot_yamaha_expansion_device, "msx_slot_yamaha_expansion", "MSX Yamaha Expansion slot")
 
 
-msx_slot_cartridge_device::msx_slot_cartridge_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: device_t(mconfig, MSX_SLOT_CARTRIDGE, "MSX Cartridge slot", tag, owner, clock, "msx_slot_cartridge", __FILE__)
-	, device_image_interface(mconfig, *this)
-	, device_slot_interface(mconfig, *this)
-	, msx_internal_slot_interface()
-	, m_irq_handler(*this)
-	, m_cartridge(nullptr)
+msx_slot_cartridge_device::msx_slot_cartridge_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: msx_slot_cartridge_device(mconfig, MSX_SLOT_CARTRIDGE, tag, owner, clock)
 {
 }
 
 
-msx_slot_cartridge_device::msx_slot_cartridge_device(const machine_config &mconfig, device_type type, const char *name, const char *tag, device_t *owner, UINT32 clock, const char *shortname, const char *source)
-	: device_t(mconfig, type, name, tag, owner, clock, shortname, source)
+msx_slot_cartridge_device::msx_slot_cartridge_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock)
+	: device_t(mconfig, type, tag, owner, clock)
 	, device_image_interface(mconfig, *this)
 	, device_slot_interface(mconfig, *this)
-	, msx_internal_slot_interface()
+	, msx_internal_slot_interface(mconfig, *this)
 	, m_irq_handler(*this)
 	, m_cartridge(nullptr)
 {
@@ -95,27 +90,34 @@ static const char *msx_cart_get_slot_option(int type)
 }
 
 
-void msx_slot_cartridge_device::device_start()
+void msx_slot_cartridge_device::device_resolve_objects()
 {
 	m_irq_handler.resolve_safe();
 	m_cartridge = dynamic_cast<msx_cart_interface *>(get_card_device());
+	if (m_cartridge)
+		m_cartridge->m_exp = this;
 }
 
 
-bool msx_slot_cartridge_device::call_load()
+void msx_slot_cartridge_device::device_start()
+{
+}
+
+
+image_init_result msx_slot_cartridge_device::call_load()
 {
 	if ( m_cartridge )
 	{
-		if ( software_entry() )
+		if (loaded_through_softlist())
 		{
-			UINT32 length;
+			uint32_t length;
 
 			// Allocate and copy rom contents
 			length = get_software_region_length("rom");
 			m_cartridge->rom_alloc( length );
 			if (length > 0)
 			{
-				UINT8 *rom_base = m_cartridge->get_rom_base();
+				uint8_t *rom_base = m_cartridge->get_rom_base();
 				memcpy(rom_base, get_software_region("rom"), length);
 			}
 
@@ -124,7 +126,7 @@ bool msx_slot_cartridge_device::call_load()
 			m_cartridge->rom_vlm5030_alloc(length);
 			if (length > 0)
 			{
-				UINT8 *rom_base = m_cartridge->get_rom_vlm5030_base();
+				uint8_t *rom_base = m_cartridge->get_rom_vlm5030_base();
 				memcpy(rom_base, get_software_region("vlm5030"), length);
 			}
 
@@ -138,10 +140,10 @@ bool msx_slot_cartridge_device::call_load()
 		}
 		else
 		{
-			UINT32 length = this->length();
+			uint32_t length = this->length();
 
 			// determine how much space to allocate
-			UINT32 length_aligned = 0x10000;
+			uint32_t length_aligned = 0x10000;
 
 			if (length <= 0x2000)
 				length_aligned = 0x2000;
@@ -164,7 +166,7 @@ bool msx_slot_cartridge_device::call_load()
 			if (fread(m_cartridge->get_rom_base(), length) != length)
 			{
 				seterror(IMAGE_ERROR_UNSPECIFIED, "Unable to fully read file");
-				return IMAGE_INIT_FAIL;
+				return image_init_result::FAIL;
 			}
 
 			// Check if there's some mapper related
@@ -174,7 +176,7 @@ bool msx_slot_cartridge_device::call_load()
 			}
 		}
 
-		m_cartridge->set_out_irq_cb(DEVCB_WRITELINE(msx_slot_cartridge_device, irq_out));
+		m_cartridge->m_exp = this;
 		m_cartridge->initialize_cartridge();
 
 		if (m_cartridge->get_sram_size() > 0)
@@ -182,7 +184,7 @@ bool msx_slot_cartridge_device::call_load()
 			battery_load(m_cartridge->get_sram_base(), m_cartridge->get_sram_size(), 0x00);
 		}
 	}
-	return IMAGE_INIT_PASS;
+	return image_init_result::PASS;
 }
 
 
@@ -198,20 +200,13 @@ void msx_slot_cartridge_device::call_unload()
 }
 
 
-bool msx_slot_cartridge_device::call_softlist_load(software_list_device &swlist, const char *swname, const rom_entry *start_entry)
-{
-	load_software_part_region(*this, swlist, swname, start_entry);
-	return true;
-}
-
-
 WRITE_LINE_MEMBER(msx_slot_cartridge_device::irq_out)
 {
 	m_irq_handler(state);
 }
 
 
-int msx_slot_cartridge_device::get_cart_type(UINT8 *rom, UINT32 length)
+int msx_slot_cartridge_device::get_cart_type(const uint8_t *rom, uint32_t length)
 {
 	if (length < 0x2000)
 	{
@@ -267,7 +262,7 @@ int msx_slot_cartridge_device::get_cart_type(UINT8 *rom, UINT32 length)
 		}
 	}
 
-	if (MAX (kon4, kon5) > MAX (asc8, asc16) )
+	if (std::max(kon4, kon5) > std::max(asc8, asc16))
 	{
 		return (kon5 > kon4) ? KONAMI_SCC : KONAMI;
 	}
@@ -278,18 +273,18 @@ int msx_slot_cartridge_device::get_cart_type(UINT8 *rom, UINT32 length)
 }
 
 
-void msx_slot_cartridge_device::get_default_card_software(std::string &result)
+std::string msx_slot_cartridge_device::get_default_card_software(get_default_card_software_hook &hook) const
 {
-	if (open_image_file(mconfig().options()))
+	if (hook.image_file())
 	{
 		const char *slot_string = "nomapper";
-		UINT32 length = core_fsize(m_file);
-		dynamic_buffer rom(length);
+		uint32_t length = hook.image_file()->size();
+		std::vector<uint8_t> rom(length);
 		int type = NOMAPPER;
 
 		// Check if there's some mapper related information in the hashfiles
 		std::string extrainfo;
-		if (hashfile_extrainfo(*this, extrainfo))
+		if (hook.hashfile_extrainfo(extrainfo))
 		{
 			int extrainfo_type = -1;
 			if (1 == sscanf(extrainfo.c_str(), "%d", &extrainfo_type))
@@ -328,7 +323,7 @@ void msx_slot_cartridge_device::get_default_card_software(std::string &result)
 		if (type == NOMAPPER)
 		{
 			// Not identified through hashfile, try automatic detection
-			core_fread(m_file, &rom[0], length);
+			hook.image_file()->read(&rom[0], length);
 			type = get_cart_type(&rom[0], length);
 		}
 
@@ -337,46 +332,39 @@ void msx_slot_cartridge_device::get_default_card_software(std::string &result)
 			slot_string = msx_cart_get_slot_option(type);
 		}
 
-		result.assign(slot_string);
-		return;
+		return std::string(slot_string);
 	}
-	software_get_default_slot(result, "nomapper");
+	return software_get_default_slot("nomapper");
 }
 
 
-READ8_MEMBER(msx_slot_cartridge_device::read)
+uint8_t msx_slot_cartridge_device::read(offs_t offset)
 {
 	if ( m_cartridge )
 	{
-		return m_cartridge->read_cart(space, offset);
+		return m_cartridge->read_cart(offset);
 	}
 	return 0xFF;
 }
 
 
-WRITE8_MEMBER(msx_slot_cartridge_device::write)
+void msx_slot_cartridge_device::write(offs_t offset, uint8_t data)
 {
 	if ( m_cartridge )
 	{
-		m_cartridge->write_cart(space, offset, data);
+		m_cartridge->write_cart(offset, data);
 	}
 }
 
 
 
 
-msx_slot_yamaha_expansion_device::msx_slot_yamaha_expansion_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: msx_slot_cartridge_device(mconfig, MSX_SLOT_YAMAHA_EXPANSION, "MSX Yamaha Expansion slot", tag, owner, clock, "msx_slot_yamaha_expansion", __FILE__)
+msx_slot_yamaha_expansion_device::msx_slot_yamaha_expansion_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: msx_slot_cartridge_device(mconfig, MSX_SLOT_YAMAHA_EXPANSION, tag, owner, clock)
 {
 }
 
 
 void msx_slot_yamaha_expansion_device::device_start()
 {
-	m_irq_handler.resolve_safe();
-	m_cartridge = dynamic_cast<msx_cart_interface *>(get_card_device());
-	if (m_cartridge)
-	{
-		m_cartridge->set_out_irq_cb(DEVCB_WRITELINE(msx_slot_cartridge_device, irq_out));
-	}
 }

@@ -2,7 +2,7 @@
 // copyright-holders:Wilbert Pol
 /***************************************************************************
 
-    drivers/amstr_pc.c
+    drivers/amstr_pc.cpp
 
     Driver file for Amstrad PC1512 and related machines.
 
@@ -24,6 +24,165 @@ Amstrad PC1640
 
 More information can be found at http://www.seasip.info/AmstradXT/1640tech/index.html
 
+***************************************************************************
+
+Amstrad PPC512/PPC640, Amstrad 1987
+Hardware info by Guru
+-----------------------------------
+
+The Amstrad PPC512/PPC640 is an XT-class portable PC with a built in
+mono 9" LCD screen supporting CGA and MDA.
+
+The specification includes:
+- NEC V30 (8086-compatible) 16-bit CPU at 8MHz (Sony CXQ70116P-8)
+- For PPC640, 640k RAM & 64k video memory
+  For PPC512, 512k RAM & 64k video memory. Main RAM can be expanded to 640k
+  by inserting the correct type of DRAMs into the 6 unpopulated locations on the motherboard
+- Integrated display adapter compatible with CGA and MDA
+- Built in mono 640 x 200 pixel 9" LCD screen, tiltable with contrast adjustment
+- 25 pin parallel printer port
+- 25 pin serial port
+- Internal 2400bps modem (PPC640 only, via optional plug-in PCB)
+- Enhanced AT-type keyboard with 101 or 102 keys
+- Single or twin 720k 3 1/2" floppy drive
+- MSDOS 3.3 (bundled with the unit)
+- Speaker with volume control
+- Battery-backed real time clock
+- Socket for 8087 Math Co-processor
+- Socket for external expansion box to accept IBM-compatible expansion cards and hard disk
+- Compartment for 10x alkaline 'C' cells for up to 8 hours of use
+
+
+CPU PCB
+-------
+
+MC0051D
+Z70850
+|-------------------------------------------------------------------|
+|   VIDEO     PARALLEL    SERIAL         EXP-B        EXP-A         |
+|                    LK2   1489                                     |
+|DIPSW(6)            LK3          28.63636MHz    24MHz              |
+|                    LK1  6845R      |------|        CX112          |
+|         1.8432MHz                  | 40104|                  CX902|
+|            INS82C50                |------|      |-------|        |
+|                                                  |40039  |        |
+|            1489  1488                            |       |        |
+|                           LC3664   |------|      |       |        |
+|      6MHz                 LC3664   |T4750 |      |-------|   CX901|
+|   40112    LCD-CONN                |------|                       |
+|KEYB1       KEYB2          40109.IC159                             |
+|            KEYB3    LA4140    LK6 LK7                     8087    |
+| LED   CONT           SPEAKER  VOLUME      CY903           V30     |
+|-------------------------------------------------------------------|
+Notes:
+      VIDEO       - 9 pin D-sub video port
+      PARALLEL    - 25 pin D-sub parallel port
+      SERIAL      - 25 pin D-sub serial port
+      EXP-B       - Expansion port B
+      EXP-A       - Expansion port A
+      DIPSW       - 6 position DIP switch (up is off, down is on. * = Default)
+                    SW1: Display Use
+                         ON  - Internal LCD *
+                         OFF - External monitor
+                    SW2: Video Emulation Mode
+                         ON  - CGA *
+                         OFF - MDA
+                    SW3: Video Adapter Enable
+                         ON  - Use internal video adapter *
+                         OFF - Use external video adapter in external expansion box
+                    SW4,5:  Initial Video Mode
+                            OFF, OFF - External video card
+                            OFF, ON  - CGA 40 column
+                            ON , OFF - CGA 80 column *
+                            ON , ON  - MDA 80 column
+                    SW6 - Not Used
+      1488        - MC1488 Quad Line EIA232 Driver
+      1489        - MC1489 Quad Line EIA232 Receiver
+      INS82C50    - 82C50 UART marked as Amstrad 40049 custom chip. Clock input 1.8432MHz
+      CX112       - Jumper to configure 40039 gate array to address either 512k or 640k RAM (sometimes marked LK5)
+      6845R       - UMC UM6845R CRT Controller. Clock input on pin 21 unknown (comes from the 40104 custom chip)
+      40104       - VDU/LCD custom gate array LCD controller
+      40039       - Bus controller custom gate array marked as Amstrad 40039 custom chip. Clock input 24.000MHz. This chip generates the 8MHz for the CPU.
+      T4750       - DMA/Programmable Interrupt Controller/Programmable Timer custom chip
+      40112       - Keyboard controller (likely i8049/i8051) marked as Amstrad 40012 custom chip. Clock input 6.000MHz
+      LCD-CONN    - Multi pin connector for LCD screen
+      KEYB1       - 5 pin connector for keyboard caps lock, scroll lock and num lock keys, plus VCC and GND
+      KEYB2       - Multi pin connector for keyboard matrix
+      KEYB3       - Multi pin connector for keyboard matrix
+      CX901/902   - Connectors joining to optional modem PCB
+      LED         - Connector for power-on LEDs
+      CONT        - Connector for LCD screen contrast adjustment
+      LA4140      - Sanyo LA4140 0.5W audio power amplifier IC
+      SPEAKER     - Connector for PC speaker
+      VOLUME      - Connector for audio volume knob
+      LC3664      - Sanyo LC3664 8kx8-bit Static RAM
+      40109.IC159 - 8kx8-bit character ROM. Compatible with 2764 EPROM
+                    Font selection is set with LK6 & LK7
+      CY903       - Multi pin connector for connection to memory/power PCB
+      8087        - Socket for i8087-2 Numeric Data Processor (math coprocessor). Clock input 8.000MHz
+      V30         - NEC V30 CPU (Sony CXQ70116P-8). Clock input 8.000MHz
+      LK1/LK2/LK3 - Jumpers to set language selection (off = open, on = short)
+                    LK1  LK2  LK3
+                    OFF  OFF  OFF  English
+                    OFF  OFF  ON   German
+                    OFF  ON   OFF  French
+                    OFF  ON   ON   Spanish
+                    ON   OFF  OFF  Danish
+                    ON   OFF  ON   Swedish
+                    ON   ON   OFF  Italian
+                    ON   ON   ON   Diagnostic Mode
+      LK6/LK7     - Jumpers to set font selection in ROM (off = open, on = short)
+                    LK6  LK7
+                    OFF  OFF Normal    : Codepage 437
+                    OFF  ON  Norwegian : Codepage 865
+                    ON   OFF Portugese : Codepage 860
+                    ON   ON  Greek     : Codepage unknown but will be 869 or 851 or 737
+
+
+MEMORY / POWER PCB
+------------------
+
+MC0052D
+Z70851
+|----------------------------------------------------------------|
+|                         NE556   KBSW  BATSW            POWER   |
+|                            41256  41256    X    41256  41256   |
+|                                                                |
+|                            41256  41256    X    41256  41256   |
+|                                                                |
+|FD   UM8272A                41256  41256    X    41256  41256   |
+|                                                                |
+|            16MHz           41256  41256    X    41256  41256   |
+|    SED9420                                                     |
+|                                            LK4         41256Y  |
+|---------------|              |-------|                         |
+                |              |40040  |     40108.IC129   Y     |
+                |              |       |                         |
+                |              |       |     40107.IC132 41256Y  |
+                |   32.768kHz  |-------|                         |
+                | MC146818                                 Y     |
+                |     FDDLED          CX903                      |
+                |------------------------------------------------|
+Notes:
+      FD          - 34 pin floppy drive cable
+      FDDLED      - Connector for floppy drive activity LED for drives A: and B:
+      POWER       - Connector for mains power input
+      SED9420     - EPSON SED9420 data separator for FDD. Clock input 16.000MHz
+      UM8272A     - UMC UM8272A floppy drive controller (pin compatible with uPD765)
+      41256       - Samsung KM41256AP-15 256kx1-bit DRAM
+      41256Y      - Samsung KM41256AP-15 256kx1-bit DRAM used as parity RAM
+      X           - Unpopulated location for 64kx4-bit DRAM (additional 128k expansion to give 640kb main RAM for PPC512)
+      Y           - Unpopulated location for 256kx1-bit DRAM (additional parity RAM to support the additional 128k RAM)
+      LK4         - Jumper to set physical main RAM present on the PCB to either 512k or 640k
+      40108.IC129 - BIOS ROM. Compatible with 2764 EPROM
+      40107.IC132 - BIOS ROM. Compatible with 2764 EPROM
+      CX903       - Multi pin connector for connection to CPU PCB. The connector is located on the solder side of this PCB.
+      40040       - Memory controller gate array marked as Amstrad 40040 custom chip
+      NE556       - NE556 Dual Timer
+      MC146818    - Motorola MC146818 Real Time Clock
+      KBSW        - Connector for keyboard open/close detect switch
+      BATSW       - Connector for battery/mains power detect switch
+
 ***************************************************************************/
 
 #include "emu.h"
@@ -31,12 +190,18 @@ More information can be found at http://www.seasip.info/AmstradXT/1640tech/index
 #include "cpu/i86/i86.h"
 
 #include "machine/mc146818.h"
-#include "includes/genpc.h"
+#include "machine/genpc.h"
 #include "bus/isa/isa.h"
 #include "bus/isa/isa_cards.h"
+#include "bus/pc_joy/pc_joy.h"
+#include "bus/rs232/rs232.h"
 
 #include "machine/pckeybrd.h"
 #include "machine/pc_lpt.h"
+#include "machine/ram.h"
+
+
+namespace {
 
 class amstrad_pc_state : public driver_device
 {
@@ -44,87 +209,113 @@ public:
 	amstrad_pc_state(const machine_config &mconfig, device_type type, const char *tag)
 		: driver_device(mconfig, type, tag),
 		m_maincpu(*this, "maincpu"),
+		m_ram(*this, RAM_TAG),
 		m_mb(*this, "mb"),
 		m_keyboard(*this, "pc_keyboard"),
 		m_lpt1(*this, "lpt_1"),
-		m_lpt2(*this, "lpt_2")
-			{ m_mouse.x =0; m_mouse.y=0;}
+		m_lpt2(*this, "lpt_2"),
+		m_mouse{ 0, 0 }
+	{
+	}
 
+	void pc200(machine_config &config);
+	void pc2086(machine_config &config);
+	void ppc640(machine_config &config);
+	void ppc512(machine_config &config);
+
+protected:
+	virtual void machine_start() override;
+
+private:
 	required_device<cpu_device> m_maincpu;
+	required_device<ram_device> m_ram;
 	required_device<pc_noppi_mb_device> m_mb;
 	required_device<pc_keyboard_device> m_keyboard;
 	required_device<pc_lpt_device> m_lpt1;
 	required_device<pc_lpt_device> m_lpt2;
 
-	DECLARE_READ8_MEMBER( pc1640_port60_r );
-	DECLARE_WRITE8_MEMBER( pc1640_port60_w );
+	uint8_t pc1640_port60_r(offs_t offset);
+	void pc1640_port60_w(offs_t offset, uint8_t data);
 
-	DECLARE_READ8_MEMBER( pc1640_mouse_x_r );
-	DECLARE_READ8_MEMBER( pc1640_mouse_y_r );
-	DECLARE_WRITE8_MEMBER( pc1640_mouse_x_w );
-	DECLARE_WRITE8_MEMBER( pc1640_mouse_y_w );
+	uint8_t pc1640_mouse_x_r();
+	uint8_t pc1640_mouse_y_r();
+	void pc1640_mouse_x_w(uint8_t data);
+	void pc1640_mouse_y_w(uint8_t data);
 
-	DECLARE_READ8_MEMBER( pc200_port378_r );
-	DECLARE_READ8_MEMBER( pc200_port278_r );
-	DECLARE_READ8_MEMBER( pc1640_port378_r );
-	DECLARE_READ8_MEMBER( pc1640_port3d0_r );
-	DECLARE_READ8_MEMBER( pc1640_port4278_r );
-	DECLARE_READ8_MEMBER( pc1640_port278_r );
-
-	DECLARE_DRIVER_INIT(pc1640);
+	uint8_t pc200_port378_r(offs_t offset);
+	uint8_t pc200_port278_r(offs_t offset);
+	[[maybe_unused]] uint8_t pc1640_port378_r(offs_t offset);
+	[[maybe_unused]] uint8_t pc1640_port3d0_r(offs_t offset);
+	[[maybe_unused]] uint8_t pc1640_port4278_r(offs_t offset);
+	[[maybe_unused]] uint8_t pc1640_port278_r(offs_t offset);
 
 	struct {
-		UINT8 x,y; //byte clipping needed
+		uint8_t x,y; //byte clipping needed
 	} m_mouse;
 
 	// 64 system status register?
-	UINT8 m_port60;
-	UINT8 m_port61;
-	UINT8 m_port62;
-	UINT8 m_port65;
+	uint8_t m_port60;
+	uint8_t m_port61;
+	uint8_t m_port62;
+	uint8_t m_port65;
 
-	int m_dipstate;
+	uint8_t m_dipstate;
+	static void cfg_com(device_t *device);
+	static void cfg_fdc(device_t *device);
+
+	void pc200_io(address_map &map);
+	void pc2086_map(address_map &map);
+	void ppc512_io(address_map &map);
+	void ppc640_map(address_map &map);
 };
 
-static ADDRESS_MAP_START( ppc512_map, AS_PROGRAM, 16, amstrad_pc_state )
-	AM_RANGE(0x00000, 0x7ffff) AM_RAMBANK("bank10")
-	AM_RANGE(0x80000, 0xbffff) AM_NOP
-	AM_RANGE(0xc0000, 0xc7fff) AM_ROM
-	AM_RANGE(0xc8000, 0xcffff) AM_ROM
-	AM_RANGE(0xd0000, 0xeffff) AM_NOP
-	AM_RANGE(0xf0000, 0xfffff) AM_ROM
-ADDRESS_MAP_END
+void amstrad_pc_state::ppc640_map(address_map &map)
+{
+	map(0xf0000, 0xfffff).rom().region("bios", 0);
+}
 
-static ADDRESS_MAP_START( ppc640_map, AS_PROGRAM, 16, amstrad_pc_state )
-	AM_RANGE(0x00000, 0x9ffff) AM_RAMBANK("bank10")
-	AM_RANGE(0xa0000, 0xbffff) AM_NOP
-	AM_RANGE(0xc0000, 0xc7fff) AM_ROM
-	AM_RANGE(0xc8000, 0xcffff) AM_ROM
-	AM_RANGE(0xd0000, 0xeffff) AM_NOP
-	AM_RANGE(0xf0000, 0xfffff) AM_ROM
-ADDRESS_MAP_END
+void amstrad_pc_state::pc2086_map(address_map &map)
+{
+	map(0xc0000, 0xc9fff).rom().region("bios", 0);
+	map(0xf0000, 0xfffff).rom().region("bios", 0x10000);
+}
 
-static ADDRESS_MAP_START(ppc512_io, AS_IO, 16, amstrad_pc_state )
-	AM_RANGE(0x0060, 0x0065) AM_READWRITE8(pc1640_port60_r, pc1640_port60_w, 0xffff)
-	AM_RANGE(0x0070, 0x0071) AM_DEVREADWRITE8("rtc", mc146818_device, read, write, 0xffff)
-	AM_RANGE(0x0078, 0x0079) AM_READWRITE8(pc1640_mouse_x_r, pc1640_mouse_x_w, 0xffff)
-	AM_RANGE(0x007a, 0x007b) AM_READWRITE8(pc1640_mouse_y_r, pc1640_mouse_y_w, 0xffff)
-	AM_RANGE(0x0200, 0x0207) AM_DEVREADWRITE8("pc_joy", pc_joy_device, joy_port_r, joy_port_w, 0xffff)
-	AM_RANGE(0x0278, 0x027b) AM_READ8(pc200_port278_r, 0xffff) AM_DEVWRITE8("lpt_2", pc_lpt_device, write, 0x00ff)
-	AM_RANGE(0x0378, 0x037b) AM_READ8(pc200_port378_r, 0xffff) AM_DEVWRITE8("lpt_1", pc_lpt_device, write, 0x00ff)
-	AM_RANGE(0x03bc, 0x03bf) AM_DEVREADWRITE8("lpt_0", pc_lpt_device, read, write, 0x00ff)
-ADDRESS_MAP_END
+void amstrad_pc_state::pc200_io(address_map &map)
+{
+	map(0x0000, 0x00ff).m(m_mb, FUNC(pc_noppi_mb_device::map));
+	map(0x0060, 0x0065).rw(FUNC(amstrad_pc_state::pc1640_port60_r), FUNC(amstrad_pc_state::pc1640_port60_w));
+	map(0x0078, 0x0079).rw(FUNC(amstrad_pc_state::pc1640_mouse_x_r), FUNC(amstrad_pc_state::pc1640_mouse_x_w));
+	map(0x007a, 0x007b).rw(FUNC(amstrad_pc_state::pc1640_mouse_y_r), FUNC(amstrad_pc_state::pc1640_mouse_y_w));
+	map(0x0200, 0x0207).rw("pc_joy", FUNC(pc_joy_device::joy_port_r), FUNC(pc_joy_device::joy_port_w));
+	map(0x0278, 0x027b).r(FUNC(amstrad_pc_state::pc200_port278_r));
+	map(0x0278, 0x027b).w(m_lpt2, FUNC(pc_lpt_device::write)).umask16(0x00ff);
+	map(0x0378, 0x037b).r(FUNC(amstrad_pc_state::pc200_port378_r));
+	map(0x0378, 0x037b).w(m_lpt1, FUNC(pc_lpt_device::write)).umask16(0x00ff);
+	map(0x03bc, 0x03bf).rw("lpt_0", FUNC(pc_lpt_device::read), FUNC(pc_lpt_device::write)).umask16(0x00ff);
+}
 
-static ADDRESS_MAP_START(pc200_io, AS_IO, 16, amstrad_pc_state )
-	AM_RANGE(0x0060, 0x0065) AM_READWRITE8(pc1640_port60_r, pc1640_port60_w, 0xffff)
-	AM_RANGE(0x0078, 0x0079) AM_READWRITE8(pc1640_mouse_x_r, pc1640_mouse_x_w, 0xffff)
-	AM_RANGE(0x007a, 0x007b) AM_READWRITE8(pc1640_mouse_y_r, pc1640_mouse_y_w, 0xffff)
-	AM_RANGE(0x0200, 0x0207) AM_DEVREADWRITE8("pc_joy", pc_joy_device, joy_port_r, joy_port_w, 0xffff)
-	AM_RANGE(0x0278, 0x027b) AM_READ8(pc200_port278_r, 0xffff) AM_DEVWRITE8("lpt_2", pc_lpt_device, write, 0x00ff)
-	AM_RANGE(0x0378, 0x037b) AM_READ8(pc200_port378_r, 0xffff) AM_DEVWRITE8("lpt_1", pc_lpt_device, write, 0x00ff)
-	AM_RANGE(0x03bc, 0x03bf) AM_DEVREADWRITE8("lpt_0", pc_lpt_device, read, write, 0x00ff)
-ADDRESS_MAP_END
+void amstrad_pc_state::ppc512_io(address_map &map)
+{
+	pc200_io(map);
+	map(0x0070, 0x0071).rw("rtc", FUNC(mc146818_device::read), FUNC(mc146818_device::write));
+}
 
+void amstrad_pc_state::machine_start()
+{
+	m_port60 = 0;
+	m_port61 = 0;
+	m_port62 = 0;
+	m_port65 = 0;
+	m_dipstate = 0;
+
+	save_item(NAME(m_port60));
+	save_item(NAME(m_port61));
+	save_item(NAME(m_port62));
+	save_item(NAME(m_port65));
+	save_item(NAME(m_dipstate));
+	save_item(NAME(m_mouse.x));
+	save_item(NAME(m_mouse.y));
+}
 
 /* pc20 (v2)
    fc078
@@ -250,15 +441,7 @@ port 03de write/read
    7d 01 01 mouse button right
 */
 
-DRIVER_INIT_MEMBER(amstrad_pc_state,pc1640)
-{
-	address_space &io_space = m_maincpu->space( AS_IO );
-
-	io_space.install_read_handler(0x278, 0x27b, read8_delegate(FUNC(amstrad_pc_state::pc1640_port278_r),this), 0xffff);
-	io_space.install_read_handler(0x4278, 0x427b, read8_delegate(FUNC(amstrad_pc_state::pc1640_port4278_r),this), 0xffff);
-}
-
-WRITE8_MEMBER( amstrad_pc_state::pc1640_port60_w )
+void amstrad_pc_state::pc1640_port60_w(offs_t offset, uint8_t data)
 {
 	switch (offset) {
 	case 1:
@@ -289,7 +472,7 @@ WRITE8_MEMBER( amstrad_pc_state::pc1640_port60_w )
 }
 
 
-READ8_MEMBER( amstrad_pc_state::pc1640_port60_r )
+uint8_t amstrad_pc_state::pc1640_port60_r(offs_t offset)
 {
 	int data=0;
 	switch (offset) {
@@ -297,7 +480,7 @@ READ8_MEMBER( amstrad_pc_state::pc1640_port60_r )
 		if (m_port61&0x80)
 			data=m_port60;
 		else
-			data = m_keyboard->read(space, 0);
+			data = m_keyboard->read();
 		break;
 
 	case 1:
@@ -306,16 +489,16 @@ READ8_MEMBER( amstrad_pc_state::pc1640_port60_r )
 
 	case 2:
 		data = m_port62;
-		if (m_mb->m_pit_out2)
+		if (m_mb->pit_out2())
 			data |= 0x20;
 		break;
 	}
 	return data;
 }
 
-READ8_MEMBER( amstrad_pc_state::pc200_port378_r )
+uint8_t amstrad_pc_state::pc200_port378_r(offs_t offset)
 {
-	UINT8 data = m_lpt1->read(space, offset);
+	uint8_t data = m_lpt1->read(offset);
 
 	if (offset == 1)
 		data = (data & ~7) | (ioport("DSW0")->read() & 7);
@@ -325,9 +508,9 @@ READ8_MEMBER( amstrad_pc_state::pc200_port378_r )
 	return data;
 }
 
-READ8_MEMBER( amstrad_pc_state::pc200_port278_r )
+uint8_t amstrad_pc_state::pc200_port278_r(offs_t offset)
 {
-	UINT8 data = m_lpt2->read(space, offset);
+	uint8_t data = m_lpt2->read(offset);
 
 	if (offset == 1)
 		data = (data & ~7) | (ioport("DSW0")->read() & 7);
@@ -338,9 +521,9 @@ READ8_MEMBER( amstrad_pc_state::pc200_port278_r )
 }
 
 
-READ8_MEMBER( amstrad_pc_state::pc1640_port378_r )
+uint8_t amstrad_pc_state::pc1640_port378_r(offs_t offset)
 {
-	UINT8 data = m_lpt1->read(space, offset);
+	uint8_t data = m_lpt1->read(offset);
 
 	if (offset == 1)
 		data=(data & ~7) | (ioport("DSW0")->read() & 7);
@@ -363,47 +546,47 @@ READ8_MEMBER( amstrad_pc_state::pc1640_port378_r )
 	return data;
 }
 
-READ8_MEMBER( amstrad_pc_state::pc1640_port3d0_r )
+uint8_t amstrad_pc_state::pc1640_port3d0_r(offs_t offset)
 {
 	if (offset==0xa) m_dipstate=0;
-	return space.read_byte(0x3d0+offset);
+	return m_maincpu->space(AS_PROGRAM).read_byte(0x3d0+offset);
 }
 
-READ8_MEMBER( amstrad_pc_state::pc1640_port4278_r )
+uint8_t amstrad_pc_state::pc1640_port4278_r(offs_t offset)
 {
 	if (offset==2) m_dipstate=1;
 	// read parallelport
 	return 0;
 }
 
-READ8_MEMBER( amstrad_pc_state::pc1640_port278_r )
+uint8_t amstrad_pc_state::pc1640_port278_r(offs_t offset)
 {
 	if ((offset==2)||(offset==0)) m_dipstate=2;
 	// read parallelport
 	return 0;
 }
 
-READ8_MEMBER( amstrad_pc_state::pc1640_mouse_x_r )
+uint8_t amstrad_pc_state::pc1640_mouse_x_r()
 {
 	return m_mouse.x - ioport("pc_mouse_x")->read();
 }
 
-READ8_MEMBER( amstrad_pc_state::pc1640_mouse_y_r )
+uint8_t amstrad_pc_state::pc1640_mouse_y_r()
 {
 	return m_mouse.y - ioport("pc_mouse_y")->read();
 }
 
-WRITE8_MEMBER( amstrad_pc_state::pc1640_mouse_x_w )
+void amstrad_pc_state::pc1640_mouse_x_w(uint8_t data)
 {
 	m_mouse.x = data + ioport("pc_mouse_x")->read();
 }
 
-WRITE8_MEMBER( amstrad_pc_state::pc1640_mouse_y_w )
+void amstrad_pc_state::pc1640_mouse_y_w(uint8_t data)
 {
 	m_mouse.y = data + ioport("pc_mouse_y")->read();
 }
 
-static INPUT_PORTS_START( pc200 )
+static INPUT_PORTS_START( pc200 ) // TODO: PPC512/PPC640 DSW differ, see readme at the top of the file
 	PORT_START("DSW0") /* IN1 */
 	PORT_DIPNAME( 0x07, 0x07, "Name/Language")
 	PORT_DIPSETTING(    0x00, "English/less checks" )
@@ -464,8 +647,6 @@ Since pc200 is anyway NOT_WORKING, I comment out this one */
 	PORT_DIPSETTING(    0x04, DEF_STR( Yes ) )
 	PORT_BIT( 0x02, 0x02,   IPT_UNUSED ) /* no turbo switch */
 	PORT_BIT( 0x01, 0x01,   IPT_UNUSED )
-
-	PORT_INCLUDE( at_keyboard )     /* IN4 - IN11 */
 INPUT_PORTS_END
 
 // static const gfx_layout pc200_charlayout =
@@ -485,67 +666,87 @@ INPUT_PORTS_END
 	// GFXDECODE_ENTRY( "gfx1", 0x0000, pc200_charlayout, 3, 1 )
 // GFXDECODE_END
 
-// has it's own mouse
-static MACHINE_CONFIG_FRAGMENT( cfg_com )
-	MCFG_DEVICE_MODIFY("serport0")
-	MCFG_SLOT_DEFAULT_OPTION(nullptr)
-MACHINE_CONFIG_END
+void amstrad_pc_state::cfg_com(device_t *device)
+{
+	/* has its own mouse */
+	device->subdevice<rs232_port_device>("serport0")->set_default_option(nullptr);
+}
 
-static MACHINE_CONFIG_START( pc200, amstrad_pc_state )
+void amstrad_pc_state::cfg_fdc(device_t *device)
+{
+	/* all machines have an internal 3.5" drive */
+	auto fdc0 = dynamic_cast<device_slot_interface *>(device->subdevice("fdc:0"));
+	fdc0->set_default_option("35dd");
+	fdc0->set_fixed(true);
+
+	auto fdc1 = dynamic_cast<device_slot_interface *>(device->subdevice("fdc:1"));
+	fdc1->set_default_option("35dd");
+}
+
+void amstrad_pc_state::pc200(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", I8086, 8000000)
-	MCFG_CPU_PROGRAM_MAP(ppc640_map)
-	MCFG_CPU_IO_MAP(pc200_io)
-	MCFG_CPU_IRQ_ACKNOWLEDGE_DEVICE("mb:pic8259", pic8259_device, inta_cb)
+	I8086(config, m_maincpu, 8000000);
+	m_maincpu->set_addrmap(AS_PROGRAM, &amstrad_pc_state::ppc640_map);
+	m_maincpu->set_addrmap(AS_IO, &amstrad_pc_state::pc200_io);
+	m_maincpu->set_irq_acknowledge_callback("mb:pic8259", FUNC(pic8259_device::inta_cb));
 
-	MCFG_PCNOPPI_MOTHERBOARD_ADD("mb", "maincpu")
+	PCNOPPI_MOTHERBOARD(config, m_mb, 0).set_cputag(m_maincpu);
+	m_mb->int_callback().set_inputline(m_maincpu, 0);
+	m_mb->nmi_callback().set_inputline(m_maincpu, INPUT_LINE_NMI);
 
-	MCFG_ISA8_SLOT_ADD("mb:isa", "aga", pc_isa8_cards, "aga_pc200", true)
-	MCFG_ISA8_SLOT_ADD("mb:isa", "fdc", pc_isa8_cards, "fdc_xt", true)
-	MCFG_ISA8_SLOT_ADD("mb:isa", "com", pc_isa8_cards, "com", true)
-	MCFG_SLOT_OPTION_MACHINE_CONFIG("com", cfg_com)
+	// FIXME: determine ISA bus clock
+	ISA8_SLOT(config, "aga", 0, "mb:isa", pc_isa8_cards, "aga_pc200", true);
+	ISA8_SLOT(config, "fdc", 0, "mb:isa", pc_isa8_cards, "fdc_xt", true).set_option_machine_config("fdc_xt", cfg_fdc);
+	ISA8_SLOT(config, "com", 0, "mb:isa", pc_isa8_cards, "com", true).set_option_machine_config("com", cfg_com);
 
-	MCFG_ISA8_SLOT_ADD("mb:isa", "isa1", pc_isa8_cards, nullptr, false)
-	MCFG_ISA8_SLOT_ADD("mb:isa", "isa2", pc_isa8_cards, nullptr, false)
+	ISA8_SLOT(config, "isa1", 0, "mb:isa", pc_isa8_cards, nullptr, false);
+	ISA8_SLOT(config, "isa2", 0, "mb:isa", pc_isa8_cards, nullptr, false);
 
 	/* printer */
-	MCFG_DEVICE_ADD("lpt_0", PC_LPT, 0)
-	MCFG_PC_LPT_IRQ_HANDLER(DEVWRITELINE("mb:pic8259", pic8259_device, ir7_w))
+	pc_lpt_device &lpt0(PC_LPT(config, "lpt_0"));
+	lpt0.irq_handler().set("mb:pic8259", FUNC(pic8259_device::ir7_w));
 
-	MCFG_DEVICE_ADD("lpt_1", PC_LPT, 0)
-	MCFG_PC_LPT_IRQ_HANDLER(DEVWRITELINE("mb:pic8259", pic8259_device, ir7_w))
+	PC_LPT(config, m_lpt1);
+	m_lpt1->irq_handler().set("mb:pic8259", FUNC(pic8259_device::ir7_w));
 
-	MCFG_DEVICE_ADD("lpt_2", PC_LPT, 0)
-	MCFG_PC_LPT_IRQ_HANDLER(DEVWRITELINE("mb:pic8259", pic8259_device, ir5_w))
+	PC_LPT(config, m_lpt2);
+	m_lpt2->irq_handler().set("mb:pic8259", FUNC(pic8259_device::ir5_w));
 
-	MCFG_PC_JOY_ADD("pc_joy")
+	PC_JOY(config, "pc_joy");
 
-	MCFG_PC_KEYB_ADD("pc_keyboard", DEVWRITELINE("mb:pic8259", pic8259_device, ir1_w))
+	PC_KEYB(config, m_keyboard);
+	m_keyboard->keypress().set("mb:pic8259", FUNC(pic8259_device::ir1_w));
 
 	/* internal ram */
-	MCFG_RAM_ADD(RAM_TAG)
-	MCFG_RAM_DEFAULT_SIZE("640K")
-MACHINE_CONFIG_END
+	RAM(config, m_ram).set_default_size("640K").set_extra_options("512K");
+}
 
+void amstrad_pc_state::pc2086(machine_config &config)
+{
+	pc200(config);
+	m_maincpu->set_addrmap(AS_PROGRAM, &amstrad_pc_state::pc2086_map);
+}
 
-static MACHINE_CONFIG_DERIVED( ppc512, pc200 )
-	MCFG_DEVICE_REMOVE("maincpu")
+void amstrad_pc_state::ppc640(machine_config &config)
+{
+	pc200(config);
+	V30(config.replace(), m_maincpu, 8000000);
+	m_maincpu->set_addrmap(AS_PROGRAM, &amstrad_pc_state::ppc640_map);
+	m_maincpu->set_addrmap(AS_IO, &amstrad_pc_state::ppc512_io);
+	m_maincpu->set_irq_acknowledge_callback("mb:pic8259", FUNC(pic8259_device::inta_cb));
 
-	MCFG_CPU_ADD("maincpu", V30, 8000000)
-	MCFG_CPU_PROGRAM_MAP(ppc512_map)
-	MCFG_CPU_IO_MAP(ppc512_io)
-	MCFG_CPU_IRQ_ACKNOWLEDGE_DEVICE("mb:pic8259", pic8259_device, inta_cb)
+	config.device_remove("isa1");
+	config.device_remove("isa2");
 
-	MCFG_DEVICE_REMOVE("isa1")
-	MCFG_DEVICE_REMOVE("isa2")
+	MC146818(config, "rtc", 32.768_kHz_XTAL);
+}
 
-	MCFG_MC146818_ADD( "rtc", XTAL_32_768kHz )
-MACHINE_CONFIG_END
-
-static MACHINE_CONFIG_DERIVED( ppc640, ppc512 )
-	MCFG_CPU_MODIFY("maincpu")
-	MCFG_CPU_PROGRAM_MAP(ppc640_map)
-MACHINE_CONFIG_END
+void amstrad_pc_state::ppc512(machine_config &config)
+{
+	ppc640(config);
+	m_ram->set_default_size("512K").set_extra_options("640K");
+}
 
 /*
 Sinclair PC200 ROMs (from a v1.2 PC200):
@@ -564,18 +765,18 @@ Sinclair PC200 ROMs (from a v1.2 PC200):
             V1.2:5EA8       V1.2:A058
 */
 ROM_START( pc200 )
-//  ROM_REGION(0x100000,"maincpu", 0)
-	ROM_REGION16_LE(0x100000,"maincpu", 0)
+//  ROM_REGION(0x100000,"bios", 0)
+	ROM_REGION16_LE(0x10000,"bios", 0)
 	// special bios at 0xe0000 !?
 	ROM_SYSTEM_BIOS(0, "v15", "v1.5")
-	ROMX_LOAD("40185-2.ic129", 0xfc001, 0x2000, CRC(41302eb8) SHA1(8b4b2afea543b96b45d6a30365281decc15f2932), ROM_SKIP(1) | ROM_BIOS(1)) // v2
-	ROMX_LOAD("40184-2.ic132", 0xfc000, 0x2000, CRC(71b84616) SHA1(4135102a491b25fc659d70b957e07649f3eacf24), ROM_SKIP(1) | ROM_BIOS(1)) // v2
+	ROMX_LOAD("40185-2.ic129", 0xc001, 0x2000, CRC(41302eb8) SHA1(8b4b2afea543b96b45d6a30365281decc15f2932), ROM_SKIP(1) | ROM_BIOS(0)) // v2
+	ROMX_LOAD("40184-2.ic132", 0xc000, 0x2000, CRC(71b84616) SHA1(4135102a491b25fc659d70b957e07649f3eacf24), ROM_SKIP(1) | ROM_BIOS(0)) // v2
 	ROM_SYSTEM_BIOS(1, "v13", "v1.3")
-	ROMX_LOAD("40185v13.ic129", 0xfc001, 0x2000, CRC(f082f08e) SHA1(b332db419033588a7380bfecdf46104974347341), ROM_SKIP(1) | ROM_BIOS(2))
-	ROMX_LOAD("40184v13.ic132", 0xfc000, 0x2000, CRC(5daf6068) SHA1(93a2ccfb0e29c8f2c98f06c64bb0ea0b3acafb13), ROM_SKIP(1) | ROM_BIOS(2))
+	ROMX_LOAD("40185v13.ic129", 0xc001, 0x2000, CRC(f082f08e) SHA1(b332db419033588a7380bfecdf46104974347341), ROM_SKIP(1) | ROM_BIOS(1))
+	ROMX_LOAD("40184v13.ic132", 0xc000, 0x2000, CRC(5daf6068) SHA1(93a2ccfb0e29c8f2c98f06c64bb0ea0b3acafb13), ROM_SKIP(1) | ROM_BIOS(1))
 	ROM_SYSTEM_BIOS(2, "v12", "v1.2")
-	ROMX_LOAD("40185.ic129", 0xfc001, 0x2000, CRC(c2b4eeac) SHA1(f11015fadf0c16d86ce2c5047be3e6a4782044f7), ROM_SKIP(1) | ROM_BIOS(3))
-	ROMX_LOAD("40184.ic132", 0xfc000, 0x2000, CRC(b22704a6) SHA1(dadd573db6cd34f339f2f0ae55b07537924c024a), ROM_SKIP(1) | ROM_BIOS(3))
+	ROMX_LOAD("40185.ic129", 0xc001, 0x2000, CRC(c2b4eeac) SHA1(f11015fadf0c16d86ce2c5047be3e6a4782044f7), ROM_SKIP(1) | ROM_BIOS(2))
+	ROMX_LOAD("40184.ic132", 0xc000, 0x2000, CRC(b22704a6) SHA1(dadd573db6cd34f339f2f0ae55b07537924c024a), ROM_SKIP(1) | ROM_BIOS(2))
 	// also mapped to f0000, f4000, f8000
 	ROM_REGION( 0x800, "keyboard", 0 )
 	ROM_LOAD( "40112.ic801", 0x000, 0x800, CRC(842a954c) SHA1(93ca6badf20e0215025fe109959eddead8c52f38) )
@@ -583,25 +784,25 @@ ROM_END
 
 
 ROM_START( pc20 )
-//  ROM_REGION(0x100000,"maincpu", 0)
-	ROM_REGION16_LE(0x100000,"maincpu", 0)
+//  ROM_REGION(0x100000,"bios", 0)
+	ROM_REGION16_LE(0x10000,"bios", 0)
 
 	// special bios at 0xe0000 !?
 	// This is probably referring to a check for the Amstrad RP5-2 diagnostic
 	// card, which can be plugged into an Amstrad XT for troubleshooting purposes.
 	// - John Elliott
-	ROM_LOAD16_BYTE("pc20v2.0", 0xfc001, 0x2000, CRC(41302eb8) SHA1(8b4b2afea543b96b45d6a30365281decc15f2932)) // v2
-	ROM_LOAD16_BYTE("pc20v2.1", 0xfc000, 0x2000, CRC(71b84616) SHA1(4135102a491b25fc659d70b957e07649f3eacf24)) // v2
+	ROM_LOAD16_BYTE("pc20v2.0", 0xc001, 0x2000, CRC(41302eb8) SHA1(8b4b2afea543b96b45d6a30365281decc15f2932)) // v2
+	ROM_LOAD16_BYTE("pc20v2.1", 0xc000, 0x2000, CRC(71b84616) SHA1(4135102a491b25fc659d70b957e07649f3eacf24)) // v2
 	// also mapped to f0000, f4000, f8000
 ROM_END
 
 
 ROM_START( ppc512 )
-//  ROM_REGION(0x100000,"maincpu", 0)
-	ROM_REGION16_LE(0x100000,"maincpu", 0)
+//  ROM_REGION(0x100000,"bios", 0)
+	ROM_REGION16_LE(0x10000,"bios", 0)
 	// special bios at 0xe0000 !?
-	ROM_LOAD16_BYTE("40107.v1", 0xfc000, 0x2000, CRC(4e37e769) SHA1(88be3d3375ec3b0a7041dbcea225b197e50d4bfe)) // v1.9
-	ROM_LOAD16_BYTE("40108.v1", 0xfc001, 0x2000, CRC(4f0302d9) SHA1(e4d69ca98c3b98f3705a2902b16746360043f039)) // v1.9
+	ROM_LOAD16_BYTE("40107_v1.ic132", 0xc000, 0x2000, CRC(4e37e769) SHA1(88be3d3375ec3b0a7041dbcea225b197e50d4bfe)) // v1.9
+	ROM_LOAD16_BYTE("40108_v1.ic129", 0xc001, 0x2000, CRC(4f0302d9) SHA1(e4d69ca98c3b98f3705a2902b16746360043f039)) // v1.9
 	// also mapped to f0000, f4000, f8000
 	ROM_REGION( 0x800, "keyboard", 0 ) // PPC512 / PPC640 / PC200 102-key keyboard
 	ROM_LOAD( "40112.ic801", 0x000, 0x800, CRC(842a954c) SHA1(93ca6badf20e0215025fe109959eddead8c52f38) )
@@ -609,11 +810,11 @@ ROM_END
 
 
 ROM_START( ppc640 )
-//  ROM_REGION(0x100000,"maincpu", 0)
-	ROM_REGION16_LE(0x100000,"maincpu", 0)
+//  ROM_REGION(0x100000,"bios", 0)
+	ROM_REGION16_LE(0x10000,"bios", 0)
 	// special bios at 0xe0000 !?
-	ROM_LOAD16_BYTE("40107.v2", 0xfc000, 0x2000, CRC(0785b63e) SHA1(4dbde6b9e9500298bb6241a8daefd85927f1ad28)) // v2.1
-	ROM_LOAD16_BYTE("40108.v2", 0xfc001, 0x2000, CRC(5351cf8c) SHA1(b4dbf11b39378ab4afd2107d3fe54a99fffdedeb)) // v2.1
+	ROM_LOAD16_BYTE("40107.v2", 0xc000, 0x2000, CRC(0785b63e) SHA1(4dbde6b9e9500298bb6241a8daefd85927f1ad28)) // v2.1
+	ROM_LOAD16_BYTE("40108.v2", 0xc001, 0x2000, CRC(5351cf8c) SHA1(b4dbf11b39378ab4afd2107d3fe54a99fffdedeb)) // v2.1
 	// also mapped to f0000, f4000, f8000
 	ROM_REGION(0x2000,"subcpu", 0)
 	ROM_LOAD("40135.ic192", 0x00000, 0x2000, CRC(75d99199) SHA1(a76d39fda3d5140e1fb9ce70fcddbdfb8f891dc6))
@@ -624,10 +825,10 @@ ROM_END
 
 
 ROM_START( pc2086 )
-	ROM_REGION16_LE( 0x100000, "maincpu", 0 )
-	ROM_LOAD(        "40186.ic171", 0xc0000, 0x8000, CRC(959f00ba) SHA1(5df1efe4203cd076292a7713bd7ebd1196dca577) )
-	ROM_LOAD16_BYTE( "40179.ic129", 0xfc000, 0x2000, CRC(003605e4) SHA1(b882e97ee81b9ba0e7d969c63da3f2052f23b4b9) )
-	ROM_LOAD16_BYTE( "40180.ic132", 0xfc001, 0x2000, CRC(28ee5e58) SHA1(93e045609466fcec74e2bb72578bb7405281cf7b) )
+	ROM_REGION16_LE( 0x20000, "bios", 0 )
+	ROM_LOAD(        "40186.ic171", 0x00000, 0x8000, CRC(959f00ba) SHA1(5df1efe4203cd076292a7713bd7ebd1196dca577) )
+	ROM_LOAD16_BYTE( "40179.ic129", 0x1c000, 0x2000, CRC(003605e4) SHA1(b882e97ee81b9ba0e7d969c63da3f2052f23b4b9) )
+	ROM_LOAD16_BYTE( "40180.ic132", 0x1c001, 0x2000, CRC(28ee5e58) SHA1(93e045609466fcec74e2bb72578bb7405281cf7b) )
 
 	ROM_REGION( 0x800, "keyboard", 0 ) // PC2086 / PC3086 102-key keyboard
 	ROM_LOAD( "40178.ic801", 0x000, 0x800, CRC(f72f1c2e) SHA1(34897e78b3d10f96b36d81778e97c4a9a1b8618b) )
@@ -635,14 +836,28 @@ ROM_END
 
 
 ROM_START( pc3086 )
-	ROM_REGION16_LE( 0x100000, "maincpu", 0 )
-	ROM_LOAD( "c000.bin", 0xc0000, 0x8000, CRC(5a6c38e9) SHA1(382d2028e0dc5515a68843829563ce29018edb08) )
-	ROM_LOAD( "c800.bin", 0xc8000, 0x2000, CRC(3329c6d5) SHA1(982e852278185d69acde47a4f3942bc09ed76777) )
-	ROM_LOAD( "fc00.bin", 0xfc000, 0x4000, CRC(b5630753) SHA1(98c344831cc4dc59ebb39bbb1961964a8d39fe20) )
+	ROM_REGION16_LE( 0x20000, "bios", 0 )
+	ROM_LOAD( "c000.bin", 0x00000, 0x8000, CRC(5a6c38e9) SHA1(382d2028e0dc5515a68843829563ce29018edb08) )
+	ROM_LOAD( "c800.bin", 0x08000, 0x2000, CRC(3329c6d5) SHA1(982e852278185d69acde47a4f3942bc09ed76777) )
+	ROM_LOAD( "fc00.bin", 0x1c000, 0x4000, CRC(b5630753) SHA1(98c344831cc4dc59ebb39bbb1961964a8d39fe20) )
 
 	ROM_REGION( 0x800, "keyboard", 0 ) // PC2086 / PC3086 102-key keyboard
 	ROM_LOAD( "40178.ic801", 0x000, 0x800, CRC(f72f1c2e) SHA1(34897e78b3d10f96b36d81778e97c4a9a1b8618b) )
 ROM_END
+
+
+ROM_START( pc5086 ) // dies with error message 010
+	ROM_REGION16_LE( 0x20000, "bios", 0 )
+	ROM_LOAD( "c000.bin", 0x00000, 0x08000, CRC(5a8c640d) SHA1(7e5731f0febbad8228f758c6deceb550356c3b13) )
+	ROM_LOAD( "c800.bin", 0x08000, 0x02000, CRC(217ac584) SHA1(088aeb4bb389086c127274ddd3cde3048173cc8a) )
+	ROM_LOAD( "sys_rom.bin", 0x10000, 0x10000, CRC(d69b0d48) SHA1(3184d2a8107927631414bdcc4863e22b5a282def) )
+
+	ROM_REGION( 0x800, "keyboard", 0 ) // PC2086 / PC3086 102-key keyboard
+	ROM_LOAD( "40178.ic801", 0x000, 0x800, CRC(f72f1c2e) SHA1(34897e78b3d10f96b36d81778e97c4a9a1b8618b) )
+ROM_END
+
+} // Anonymous namespace
+
 
 /***************************************************************************
 
@@ -650,10 +865,11 @@ ROM_END
 
 ***************************************************************************/
 
-/*     YEAR     NAME        PARENT      COMPAT      MACHINE     INPUT       INIT        COMPANY     FULLNAME */
-COMP(  1987,    ppc512,     ibm5150,    0,  ppc512,     pc200, driver_device,    0,  "Amstrad plc",  "Amstrad PPC512", MACHINE_NOT_WORKING)
-COMP(  1987,    ppc640,     ibm5150,    0,  ppc640,     pc200, driver_device,    0,  "Amstrad plc",  "Amstrad PPC640", MACHINE_NOT_WORKING)
-COMP(  1988,    pc20,       ibm5150,    0,  pc200,      pc200, driver_device,    0,  "Amstrad plc",  "Amstrad PC20" , MACHINE_NOT_WORKING)
-COMP(  1988,    pc200,      ibm5150,    0,  pc200,      pc200, driver_device,    0,  "Sinclair Research Ltd",  "PC200 Professional Series", MACHINE_NOT_WORKING)
-COMP(  1988,    pc2086,     ibm5150,    0,  pc200,      pc200, driver_device,    0,  "Amstrad plc",  "Amstrad PC2086", MACHINE_NOT_WORKING )
-COMP(  1990,    pc3086,     ibm5150,    0,  pc200,      pc200, driver_device,    0,  "Amstrad plc",  "Amstrad PC3086", MACHINE_NOT_WORKING )
+/*    YEAR  NAME    PARENT   COMPAT  MACHINE  INPUT  CLASS             INIT        COMPANY         FULLNAME */
+COMP( 1987, ppc512, ibm5150, 0,      ppc512,  pc200, amstrad_pc_state, empty_init, "Amstrad plc",  "Amstrad PPC512", MACHINE_NOT_WORKING)
+COMP( 1987, ppc640, ibm5150, 0,      ppc640,  pc200, amstrad_pc_state, empty_init, "Amstrad plc",  "Amstrad PPC640", MACHINE_NOT_WORKING)
+COMP( 1988, pc20,   ibm5150, 0,      pc200,   pc200, amstrad_pc_state, empty_init, "Amstrad plc",  "Amstrad PC20" , MACHINE_NOT_WORKING)
+COMP( 1988, pc200,  ibm5150, 0,      pc200,   pc200, amstrad_pc_state, empty_init, "Sinclair Research Ltd",  "PC200 Professional Series", MACHINE_NOT_WORKING)
+COMP( 1988, pc2086, ibm5150, 0,      pc2086,  pc200, amstrad_pc_state, empty_init, "Amstrad plc",  "Amstrad PC2086", MACHINE_NOT_WORKING )
+COMP( 1990, pc3086, ibm5150, 0,      pc2086,  pc200, amstrad_pc_state, empty_init, "Amstrad plc",  "Amstrad PC3086", MACHINE_NOT_WORKING )
+COMP( 199?, pc5086, ibm5150, 0,      pc2086,  pc200, amstrad_pc_state, empty_init, "Amstrad plc",  "Amstrad PC5086", MACHINE_NOT_WORKING )

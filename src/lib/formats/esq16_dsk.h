@@ -9,9 +9,10 @@
     Disk is PC MFM, 80 tracks, double-sided, with 10 sectors per track
 
 *********************************************************************/
+#ifndef MAME_FORMATS_ESQ16_DSK_H
+#define MAME_FORMATS_ESQ16_DSK_H
 
-#ifndef ESQ16_DSK_H_
-#define ESQ16_DSK_H_
+#pragma once
 
 #include "flopimg.h"
 
@@ -20,9 +21,9 @@ class esqimg_format : public floppy_image_format_t
 public:
 	esqimg_format();
 
-	virtual int identify(io_generic *io, UINT32 form_factor) override;
-	virtual bool load(io_generic *io, UINT32 form_factor, floppy_image *image) override;
-	virtual bool save(io_generic *io, floppy_image *image) override;
+	virtual int identify(io_generic *io, uint32_t form_factor, const std::vector<uint32_t> &variants) override;
+	virtual bool load(io_generic *io, uint32_t form_factor, const std::vector<uint32_t> &variants, floppy_image *image) override;
+	virtual bool save(io_generic *io, const std::vector<uint32_t> &variants, floppy_image *image) override;
 
 	virtual const char *name() const override;
 	virtual const char *description() const override;
@@ -32,9 +33,9 @@ public:
 	static const desc_e esq_10_desc[];
 
 private:
-	void find_size(io_generic *io, UINT8 &track_count, UINT8 &head_count, UINT8 &sector_count);
+	void find_size(io_generic *io, uint8_t &track_count, uint8_t &head_count, uint8_t &sector_count);
 };
 
 extern const floppy_format_type FLOPPY_ESQIMG_FORMAT;
 
-#endif /* ESQ16_DSK_H_ */
+#endif // MAME_FORMATS_ESQ16_DSK_H

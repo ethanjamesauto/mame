@@ -1,78 +1,40 @@
 // license:BSD-3-Clause
-// copyright-holders:Wilbert Pol
+// copyright-holders:Peter Trauner, Wilbert Pol, hap
 /***************************************************************************
-
-    i8244.h
 
     Intel 8244 (NTSC)/8245 (PAL) Graphics and sound chip
 
 ***************************************************************************/
 
+#ifndef MAME_VIDEO_I8244_H
+#define MAME_VIDEO_I8244_H
+
 #pragma once
 
-#ifndef __I8244_H__
-#define __I8244_H__
-
-#include "emu.h"
+#include "emupal.h"
 
 
-/***************************************************************************
-    DEVICE CONFIGURATION MACROS
-***************************************************************************/
+// pinout reference
 
-#define MCFG_I8244_ADD(_tag, _clock, _screen_tag, _irq_cb, _postprocess_cb) \
-	MCFG_DEVICE_ADD(_tag, I8244, _clock) \
-	MCFG_VIDEO_SET_SCREEN(_screen_tag) \
-	MCFG_I8244_IRQ_CB(_irq_cb) \
-	MCFG_I8244_POSTPROCESS_CB(_postprocess_cb)
-#define MCFG_I8244_IRQ_CB(_devcb) \
-	devcb = &i8244_device::set_irq_cb(*device, DEVCB_##_devcb);
-#define MCFG_I8244_POSTPROCESS_CB(_devcb) \
-	devcb = &i8244_device::set_postprocess_cb(*device, DEVCB_##_devcb);
-#define MCFG_I8245_ADD(_tag, _clock, _screen_tag, _irq_cb, _postprocess_cb) \
-	MCFG_DEVICE_ADD(_tag, I8245, _clock) \
-	MCFG_VIDEO_SET_SCREEN(_screen_tag) \
-	MCFG_I8244_IRQ_CB(_irq_cb) \
-	MCFG_I8244_POSTPROCESS_CB(_postprocess_cb )
+/*
+            ___   ___
+    CLK  1 |*  \_/   | 28 Vcc
+  _INTR  2 |         | 27 SND
+    STB  3 |         | 26 ALE
+     BG  4 |         | 25 D0
+    CSY  5 |         | 24 D1
+    M/S  6 |         | 23 D2
+    HBL  7 |  P8244  | 22 D3
+    VBL  8 |  P8245  | 21 D4
+     CX  9 |         | 20 B
+      L 10 |         | 19 G
+    _CS 11 |         | 18 R
+    _WR 12 |         | 17 D5
+    _RD 13 |         | 16 D6
+    Vss 14 |_________| 15 D7
 
-/***************************************************************************
-    TYPE DEFINITIONS
-***************************************************************************/
+*/
 
-union vdc_t {
-	UINT8 reg[0x100];
-	struct {
-		struct {
-			UINT8 y,x,color,res;
-		} sprites[4];
-		struct {
-			UINT8 y,x,ptr,color;
-		} foreground[12];
-		struct {
-			struct {
-				UINT8 y,x,ptr,color;
-			} single[4];
-		} quad[4];
-		UINT8 shape[4][8];
-		UINT8 control;
-		UINT8 status;
-		UINT8 collision;
-		UINT8 color;
-		UINT8 y;
-		UINT8 x;
-		UINT8 res;
-		UINT8 shift1;
-		UINT8 shift2;
-		UINT8 shift3;
-		UINT8 sound;
-		UINT8 res2[5+0x10];
-		UINT8 hgrid[2][0x10];
-		UINT8 vgrid[0x10];
-	} s;
-};
-
-
-// ======================> i8244_device
 
 class i8244_device :  public device_t
 					, public device_sound_interface
@@ -80,74 +42,133 @@ class i8244_device :  public device_t
 {
 public:
 	// construction/destruction
-	i8244_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
-	i8244_device(const machine_config &mconfig, device_type type, const char *name, const char *tag, device_t *owner, UINT32 clock, int lines, const char *shortname, const char *source);
+	i8244_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
 
-	// static configuration helpers
-	static void set_screen_tag(device_t &device, const char *screen_tag) { downcast<i8244_device &>(device).m_screen_tag = screen_tag; }
-	template<class _Object> static devcb_base &set_irq_cb(device_t &device, _Object object) { return downcast<i8244_device &>(device).m_irq_func.set_callback(object); }
-	template<class _Object> static devcb_base &set_postprocess_cb(device_t &device, _Object object) { return downcast<i8244_device &>(device).m_postprocess_func.set_callback(object); }
+	// configuration helpers
+	auto irq_cb() { return m_irq_func.bind(); }
+	i8244_device &set_screen_size(int width, int height, int cropx = 0, int cropy = 0);
 
-	DECLARE_READ8_MEMBER(read);
-	DECLARE_WRITE8_MEMBER(write);
-	DECLARE_READ_LINE_MEMBER(vblank);
-	DECLARE_READ_LINE_MEMBER(hblank);
-	DECLARE_PALETTE_INIT(i8244);
+	u8 read(offs_t offset);
+	void write(offs_t offset, u8 data);
+	void write_cx(int x, bool cx); // CX pin on current scanline
 
-	UINT32 screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
+	int vblank();
+	int hblank();
+	void i8244_palette(palette_device &palette) const;
 
-	inline bitmap_ind16 *get_bitmap() { return &m_tmp_bitmap; }
-
-	// Global constants
-	static const int START_ACTIVE_SCAN = 42;
-	static const int BORDER_SIZE       = 10;
-	static const int END_ACTIVE_SCAN   = 42 + 10 + 320 + 10;
-	static const int START_Y           = 1;
-	static const int SCREEN_HEIGHT     = 243;
-	static const int LINE_CLOCKS       = 455;
-	static const int LINES             = 262;
+	u32 screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
 
 protected:
+	union vdc_t {
+		u8 reg[0x100];
+		struct {
+			// 0x00
+			struct {
+				u8 y,x,color,unused;
+			} sprites[4];
+
+			// 0x10
+			struct {
+				u8 y,x,ptr,color;
+			} foreground[12];
+
+			// 0x40
+			struct {
+				struct {
+					u8 y,x,ptr,color;
+				} single[4];
+			} quad[4];
+
+			// 0x80
+			u8 shape[4][8];
+
+			// 0xa0
+			u8 control;
+			u8 status;
+			u8 collision;
+			u8 color;
+			u8 y;
+			u8 x;
+			u8 unused;
+			u8 shift1;
+			u8 shift2;
+			u8 shift3;
+			u8 sound;
+			u8 unused2[5+0x10];
+
+			// 0xc0
+			u8 hgrid[2][0x10];
+			u8 vgrid[0x10];
+			u8 unused3[0x10];
+		} s;
+	};
+
+	i8244_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, u32 clock);
+
 	// device-level overrides
+	virtual void device_config_complete() override;
 	virtual void device_start() override;
-	virtual void device_reset() override;
 	virtual void device_timer(emu_timer &timer, device_timer_id id, int param, void *ptr) override;
+	virtual const tiny_rom_entry *device_rom_region() const override;
 
 	// device_sound_interface overrides
-	virtual void sound_stream_update(sound_stream &stream, stream_sample_t **inputs, stream_sample_t **outputs, int samples) override;
+	virtual void sound_stream_update(sound_stream &stream, std::vector<read_stream_view> const &inputs, std::vector<write_stream_view> &outputs) override;
 
-	void render_scanline(int vpos);
+	virtual void set_default_params();
+	inline bool is_ntsc() { return m_vtotal == 263; }
+
 	int get_y_beam();
 	int get_x_beam();
-	offs_t fix_register_mirrors( offs_t offset );
+	offs_t fix_register_mirrors(offs_t offset);
 
-	// Local constants
-	static const UINT8 VDC_CONTROL_REG_STROBE_XY = 0x02;
+	void draw_grid(int scanline, bitmap_ind16 &bitmap, const rectangle &cliprect);
+	void draw_major(int scanline, bitmap_ind16 &bitmap, const rectangle &cliprect);
+	void draw_minor(int scanline, bitmap_ind16 &bitmap, const rectangle &cliprect);
+	void char_pixel(u8 index, int x, int y, u8 pixel, u16 color, bitmap_ind16 &bitmap, const rectangle &cliprect);
 
 	/* timers */
-	static const device_timer_id TIMER_LINE = 0;
-	static const device_timer_id TIMER_HBLANK = 1;
+	static constexpr device_timer_id TIMER_VBLANK_START = 0;
+	static constexpr device_timer_id TIMER_HBLANK_START = 1;
 
 	// callbacks
 	devcb_write_line m_irq_func;
-	devcb_write16 m_postprocess_func;
 
-	bitmap_ind16 m_tmp_bitmap;
-	emu_timer *m_line_timer;
+	required_region_ptr<u8> m_charset;
+
 	emu_timer *m_hblank_timer;
+	emu_timer *m_vblank_timer;
 	sound_stream *m_stream;
 
-	int m_start_vpos;
-	int m_start_vblank;
-	int m_screen_lines;
+	void sound_update();
+
+	int m_htotal;
+	int m_vtotal;
+	int m_width;
+	int m_height;
+	int m_cropx;
+	int m_cropy;
+
+	int m_vblank_start;
+	int m_vblank_end;
+	int m_hblank_start;
+	int m_hblank_end;
+	int m_bgate_start;
 
 	vdc_t m_vdc;
-	UINT16 m_sh_count;
-	UINT8 m_x_beam_pos;
-	UINT8 m_y_beam_pos;
-	UINT8 m_control_status;
-	UINT8 m_collision_status;
-	int m_iff;
+	u8 m_collision_map[0x200];
+	u8 m_priority_map[0x200];
+
+	u8 m_x_beam_pos = 0;
+	u8 m_y_beam_pos = 0;
+	u8 m_control_status = 0;
+	u8 m_collision_status = 0;
+
+	bool m_sh_written = false;
+	bool m_sh_pending = false;
+	u8 m_sh_prescaler = 0;
+	u8 m_sh_count = 0;
+	int m_sh_output = 0;
+	u8 m_sh_duty = 0;
 };
 
 
@@ -155,15 +176,15 @@ class i8245_device :  public i8244_device
 {
 public:
 	// construction/destruction
-	i8245_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	i8245_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
 
-	static const int LINES = 312;
+protected:
+	virtual void set_default_params() override;
 };
 
 
 // device type definition
-extern const device_type I8244;
-extern const device_type I8245;
+DECLARE_DEVICE_TYPE(I8244, i8244_device)
+DECLARE_DEVICE_TYPE(I8245, i8245_device)
 
-
-#endif  /* __I8244_H__ */
+#endif // MAME_VIDEO_I8244_H

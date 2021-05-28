@@ -30,6 +30,7 @@
 
 */
 
+#include "emu.h"
 #include "vw64.h"
 
 
@@ -39,10 +40,10 @@
 //**************************************************************************
 
 #define UNSCRAMBLE_ADDRESS(_offset) \
-	BITSWAP16(_offset,15,14,13,12,6,2,8,10,11,9,7,5,4,3,1,0)
+	bitswap<16>(_offset,15,14,13,12,6,2,8,10,11,9,7,5,4,3,1,0)
 
 #define UNSCRAMBLE_DATA(_data) \
-	BITSWAP8(_data,7,6,0,5,1,4,2,3)
+	bitswap<8>(_data,7,6,0,5,1,4,2,3)
 
 
 // 74LS122 tW=0.45*R*C = 1.1844s
@@ -54,7 +55,7 @@
 //  DEVICE DEFINITIONS
 //**************************************************************************
 
-const device_type C64_VW64 = &device_creator<c64_vizawrite_cartridge_device>;
+DEFINE_DEVICE_TYPE(C64_VW64, c64_vizawrite_cartridge_device, "c64_vizawrite", "VizaWrite 64")
 
 
 
@@ -66,8 +67,8 @@ const device_type C64_VW64 = &device_creator<c64_vizawrite_cartridge_device>;
 //  c64_vizawrite_cartridge_device - constructor
 //-------------------------------------------------
 
-c64_vizawrite_cartridge_device::c64_vizawrite_cartridge_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock) :
-	device_t(mconfig, C64_VW64, "VizaWrite 64", tag, owner, clock, "c64_vizawrite", __FILE__),
+c64_vizawrite_cartridge_device::c64_vizawrite_cartridge_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock) :
+	device_t(mconfig, C64_VW64, tag, owner, clock),
 	device_c64_expansion_card_interface(mconfig, *this), m_game_timer(nullptr)
 {
 }
@@ -110,7 +111,7 @@ void c64_vizawrite_cartridge_device::device_timer(emu_timer &timer, device_timer
 //  c64_cd_r - cartridge data read
 //-------------------------------------------------
 
-UINT8 c64_vizawrite_cartridge_device::c64_cd_r(address_space &space, offs_t offset, UINT8 data, int sphi2, int ba, int roml, int romh, int io1, int io2)
+uint8_t c64_vizawrite_cartridge_device::c64_cd_r(offs_t offset, uint8_t data, int sphi2, int ba, int roml, int romh, int io1, int io2)
 {
 	if (!roml)
 	{

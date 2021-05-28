@@ -12,42 +12,14 @@
 
 ******************************************************************************/
 
+#ifndef MAME_CPU_H6280_H6280_H
+#define MAME_CPU_H6280_H6280_H
+
 #pragma once
 
-#ifndef __H6280_H__
-#define __H6280_H__
+#include "sound/c6280.h"
 
-#include "emu.h"
-
-#define LAZY_FLAGS  0
-
-/***************************************************************************
-    REGISTER ENUMERATION
-***************************************************************************/
-
-enum
-{
-	H6280_PC = 1,
-	H6280_S,
-	H6280_P,
-	H6280_A,
-	H6280_X,
-	H6280_Y,
-	H6280_IRQ_MASK,
-	H6280_TIMER_STATE,
-	H6280_NMI_STATE,
-	H6280_IRQ1_STATE,
-	H6280_IRQ2_STATE,
-	H6280_IRQT_STATE,
-	H6280_M1,
-	H6280_M2,
-	H6280_M3,
-	H6280_M4,
-	H6280_M5,
-	H6280_M6,
-	H6280_M7,
-	H6280_M8
-};
+#define H6280_LAZY_FLAGS  0
 
 //**************************************************************************
 //  TYPE DEFINITIONS
@@ -56,61 +28,87 @@ enum
 // ======================> h6280_device
 
 // Used by core CPU interface
-class h6280_device : public cpu_device
+class h6280_device : public cpu_device, public device_mixer_interface
 {
 public:
 	// construction/destruction
-	h6280_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	h6280_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
 	// public interfaces
 	void set_irq_line(int irqline, int state);
 
-	DECLARE_READ8_MEMBER( irq_status_r );
-	DECLARE_WRITE8_MEMBER( irq_status_w );
+	// configuration
+	auto port_in_cb() { return m_port_in_cb.bind(); } // K0-7 at Pinout
+	auto port_out_cb() { return m_port_out_cb.bind(); } // O0-7 at Pinout
 
-	DECLARE_READ8_MEMBER( timer_r );
-	DECLARE_WRITE8_MEMBER( timer_w );
+	// hack to fix music speed in some Data East games (core bug, external strapping, DE 45 customization or ???)
+	void set_timer_scale(int scale) { m_timer_scale = scale; }
 
 	/* functions for use by the PSG and joypad port only! */
-	UINT8 io_get_buffer();
-	void io_set_buffer(UINT8);
+	uint8_t io_get_buffer();
+	void io_set_buffer(uint8_t);
 
 protected:
+	// register enumeration
+	enum
+	{
+		H6280_PC = 1,
+		H6280_S,
+		H6280_P,
+		H6280_A,
+		H6280_X,
+		H6280_Y,
+		H6280_IRQ_MASK,
+		H6280_TIMER_STATE,
+		H6280_NMI_STATE,
+		H6280_IRQ1_STATE,
+		H6280_IRQ2_STATE,
+		H6280_IRQT_STATE,
+		H6280_MPR0,
+		H6280_MPR1,
+		H6280_MPR2,
+		H6280_MPR3,
+		H6280_MPR4,
+		H6280_MPR5,
+		H6280_MPR6,
+		H6280_MPR7
+	};
+
 	// device-level overrides
+	virtual void device_add_mconfig(machine_config &config) override;
 	virtual void device_start() override;
 	virtual void device_reset() override;
 	virtual void device_stop() override;
 
 	// device_execute_interface overrides
-	virtual UINT32 execute_min_cycles() const override;
-	virtual UINT32 execute_max_cycles() const override;
-	virtual UINT32 execute_input_lines() const override;
+	virtual uint32_t execute_min_cycles() const noexcept override;
+	virtual uint32_t execute_max_cycles() const noexcept override;
+	virtual uint32_t execute_input_lines() const noexcept override;
+	virtual bool execute_input_edge_triggered(int inputnum) const noexcept override;
 	virtual void execute_run() override;
 	virtual void execute_set_input(int inputnum, int state) override;
 
 	// device_memory_interface overrides
-	virtual const address_space_config *memory_space_config(address_spacenum spacenum = AS_0) const override { return (spacenum == AS_PROGRAM) ? &m_program_config : ( (spacenum == AS_IO) ? &m_io_config : nullptr ); }
-	virtual bool memory_translate(address_spacenum spacenum, int intention, offs_t &address) override;
+	virtual space_config_vector memory_space_config() const override;
+	virtual bool memory_translate(int spacenum, int intention, offs_t &address) override;
 
 	// device_disasm_interface overrides
-	virtual UINT32 disasm_min_opcode_bytes() const override;
-	virtual UINT32 disasm_max_opcode_bytes() const override;
-	virtual offs_t disasm_disassemble(char *buffer, offs_t pc, const UINT8 *oprom, const UINT8 *opram, UINT32 options) override;
+	virtual std::unique_ptr<util::disasm_interface> create_disassembler() override;
 
 	// device_state_interface overrides
-	virtual void state_string_export(const device_state_entry &entry, std::string &str) override;
+	virtual void state_string_export(const device_state_entry &entry, std::string &str) const override;
 
 	// opcode accessors
-	UINT8 program_read8(offs_t addr);
-	void program_write8(offs_t addr, UINT8 data);
-	UINT8 program_read8z(offs_t addr);
-	void program_write8z(offs_t addr, UINT8 data);
-	UINT16 program_read16(offs_t addr);
-	UINT16 program_read16z(offs_t addr);
-	void push(UINT8 value);
-	void pull(UINT8 &value);
-	UINT8 read_opcode();
-	UINT8 read_opcode_arg();
+	uint8_t program_read8(offs_t addr);
+	void program_write8(offs_t addr, uint8_t data);
+	uint8_t program_read8z(offs_t addr);
+	void program_write8z(offs_t addr, uint8_t data);
+	uint16_t program_read16(offs_t addr);
+	uint16_t program_read16z(offs_t addr);
+	void push(uint8_t value);
+	void pull(uint8_t &value);
+	uint8_t read_opcode();
+	uint8_t read_opcode_arg();
 
 #undef PROTOTYPES
 #define PROTOTYPES(prefix) \
@@ -181,14 +179,14 @@ protected:
 
 	PROTOTYPES(op)
 
-	UINT32 translated(UINT16 addr);
+	uint32_t translated(uint16_t addr);
 	void h6280_cycles(int cyc);
-	void set_nz(UINT8 n);
+	void set_nz(uint8_t n);
 	void clear_t();
-	void do_interrupt(UINT16 vector);
+	void do_interrupt(uint16_t vector);
 	void check_and_take_irq_lines();
 	void check_irq_lines();
-	void check_vdc_vce_penalty(UINT16 addr);
+	void check_vdc_vce_penalty(uint16_t addr);
 	void bra(bool cond);
 	void ea_zpg();
 	void ea_tflg();
@@ -202,40 +200,40 @@ protected:
 	void ea_idy();
 	void ea_ind();
 	void ea_iax();
-	UINT8 rd_imm();
-	UINT8 rd_zpg();
-	UINT8 rd_zpx();
-	UINT8 rd_zpy();
-	UINT8 rd_abs();
-	UINT8 rd_abx();
-	UINT8 rd_aby();
-	UINT8 rd_zpi();
-	UINT8 rd_idx();
-	UINT8 rd_idy();
-	UINT8 rd_tfl();
-	void wr_zpg(UINT8 tmp);
-	void wr_zpx(UINT8 tmp);
-	void wr_zpy(UINT8 tmp);
-	void wr_abs(UINT8 tmp);
-	void wr_abx(UINT8 tmp);
-	void wr_aby(UINT8 tmp);
-	void wr_zpi(UINT8 tmp);
-	void wr_idx(UINT8 tmp);
-	void wr_idy(UINT8 tmp);
-	void wb_ea(UINT8 tmp);
-	void wb_eaz(UINT8 tmp);
-	void compose_p(UINT8 set, UINT8 clr);
-	void tadc(UINT8 tmp);
-	void adc(UINT8 tmp);
-	void tand(UINT8 tmp);
-	void and_a(UINT8 tmp);
-	UINT8 asl(UINT8 tmp);
-	void bbr(int bit, UINT8 tmp);
-	void bbs(int bit, UINT8 tmp);
+	uint8_t rd_imm();
+	uint8_t rd_zpg();
+	uint8_t rd_zpx();
+	uint8_t rd_zpy();
+	uint8_t rd_abs();
+	uint8_t rd_abx();
+	uint8_t rd_aby();
+	uint8_t rd_zpi();
+	uint8_t rd_idx();
+	uint8_t rd_idy();
+	uint8_t rd_tfl();
+	void wr_zpg(uint8_t tmp);
+	void wr_zpx(uint8_t tmp);
+	void wr_zpy(uint8_t tmp);
+	void wr_abs(uint8_t tmp);
+	void wr_abx(uint8_t tmp);
+	void wr_aby(uint8_t tmp);
+	void wr_zpi(uint8_t tmp);
+	void wr_idx(uint8_t tmp);
+	void wr_idy(uint8_t tmp);
+	void wb_ea(uint8_t tmp);
+	void wb_eaz(uint8_t tmp);
+	void compose_p(uint8_t set, uint8_t clr);
+	void tadc(uint8_t tmp);
+	void adc(uint8_t tmp);
+	void tand(uint8_t tmp);
+	void and_a(uint8_t tmp);
+	uint8_t asl(uint8_t tmp);
+	void bbr(int bit, uint8_t tmp);
+	void bbs(int bit, uint8_t tmp);
 	void bcc();
 	void bcs();
 	void beq();
-	void bit(UINT8 tmp);
+	void bit(uint8_t tmp);
 	void bmi();
 	void bne();
 	void bpl();
@@ -250,26 +248,26 @@ protected:
 	void clv();
 	void clx();
 	void cly();
-	void cmp(UINT8 tmp);
-	void cpx(UINT8 tmp);
-	void cpy(UINT8 tmp);
-	UINT8 dec(UINT8 tmp);
+	void cmp(uint8_t tmp);
+	void cpx(uint8_t tmp);
+	void cpy(uint8_t tmp);
+	uint8_t dec(uint8_t tmp);
 	void dex();
 	void dey();
-	void teor(UINT8 tmp);
-	void eor(UINT8 tmp);
-	UINT8 inc(UINT8 tmp);
+	void teor(uint8_t tmp);
+	void eor(uint8_t tmp);
+	uint8_t inc(uint8_t tmp);
 	void inx();
 	void iny();
 	void jmp();
 	void jsr();
-	void lda(UINT8 tmp);
-	void ldx(UINT8 tmp);
-	void ldy(UINT8 tmp);
-	UINT8 lsr(UINT8 tmp);
+	void lda(uint8_t tmp);
+	void ldx(uint8_t tmp);
+	void ldy(uint8_t tmp);
+	uint8_t lsr(uint8_t tmp);
 	void nop();
-	void tora(UINT8 tmp);
-	void ora(UINT8 tmp);
+	void tora(uint8_t tmp);
+	void ora(uint8_t tmp);
 	void pha();
 	void php();
 	void phx();
@@ -278,41 +276,41 @@ protected:
 	void plp();
 	void plx();
 	void ply();
-	UINT8 rmb(int bit, UINT8 tmp);
-	UINT8 rol(UINT8 tmp);
-	UINT8 ror(UINT8 tmp);
+	uint8_t rmb(int bit, uint8_t tmp);
+	uint8_t rol(uint8_t tmp);
+	uint8_t ror(uint8_t tmp);
 	void rti();
 	void rts();
 	void sax();
 	void say();
-	void tsbc(UINT8 tmp);
-	void sbc(UINT8 tmp);
+	void tsbc(uint8_t tmp);
+	void sbc(uint8_t tmp);
 	void sec();
 	void sed();
 	void sei();
 	void set();
-	UINT8 smb(int bit, UINT8 tmp);
-	void st0(UINT8 tmp);
-	void st1(UINT8 tmp);
-	void st2(UINT8 tmp);
-	UINT8 sta();
-	UINT8 stx();
-	UINT8 sty();
-	UINT8 stz();
+	uint8_t smb(int bit, uint8_t tmp);
+	void st0(uint8_t tmp);
+	void st1(uint8_t tmp);
+	void st2(uint8_t tmp);
+	uint8_t sta();
+	uint8_t stx();
+	uint8_t sty();
+	uint8_t stz();
 	void sxy();
 	void tai();
-	void tam(UINT8 tmp);
+	void tam(uint8_t tmp);
 	void tax();
 	void tay();
 	void tdd();
 	void tia();
 	void tii();
 	void tin();
-	void tma(UINT8 tmp);
-	UINT8 trb(UINT8 tmp);
-	UINT8 tsb(UINT8 tmp);
+	void tma(uint8_t tmp);
+	uint8_t trb(uint8_t tmp);
+	uint8_t tsb(uint8_t tmp);
 	void tsx();
-	void tst(UINT8 imm, UINT8 tmp);
+	void tst(uint8_t imm, uint8_t tmp);
 	void txa();
 	void txs();
 	void tya();
@@ -338,32 +336,53 @@ protected:
 	PAIR  m_sp;             /* stack pointer (always 100 - 1FF) */
 	PAIR  m_zp;             /* zero page address */
 	PAIR  m_ea;             /* effective address */
-	UINT8 m_a;              /* Accumulator */
-	UINT8 m_x;              /* X index register */
-	UINT8 m_y;              /* Y index register */
-	UINT8 m_p;              /* Processor status */
-	UINT8 m_mmr[8];         /* Hu6280 memory mapper registers */
-	UINT8 m_irq_mask;       /* interrupt enable/disable */
-	UINT8 m_timer_status;   /* timer status */
-	UINT8 m_timer_ack;      /* timer acknowledge */
-	UINT8 m_clocks_per_cycle; /* 4 = low speed mode, 1 = high speed mode */
-	INT32 m_timer_value;    /* timer interrupt */
-	INT32 m_timer_load;     /* reload value */
-	UINT8 m_nmi_state;
-	UINT8 m_irq_state[3];
-	UINT8 m_irq_pending;
-#if LAZY_FLAGS
-	INT32 m_nz;         /* last value (lazy N and Z flag) */
+	uint8_t m_a;              /* Accumulator */
+	uint8_t m_x;              /* X index register */
+	uint8_t m_y;              /* Y index register */
+	uint8_t m_p;              /* Processor status */
+	uint8_t m_mmr[8];         /* Hu6280 memory mapper registers */
+	uint8_t m_irq_mask;       /* interrupt enable/disable */
+	uint8_t m_timer_status;   /* timer status */
+	uint8_t m_timer_ack;      /* timer acknowledge */
+	uint8_t m_clocks_per_cycle; /* 4 = low speed mode, 1 = high speed mode */
+	int32_t m_timer_value;    /* timer interrupt */
+	int32_t m_timer_load;     /* reload value */
+	uint8_t m_nmi_state;
+	uint8_t m_irq_state[3];
+	uint8_t m_irq_pending;
+#if H6280_LAZY_FLAGS
+	int32_t m_nz;         /* last value (lazy N and Z flag) */
 #endif
-	UINT8 m_io_buffer;  /* last value written to the PSG, timer, and interrupt pages */
+	uint8_t m_io_buffer;  /* last value written to the PSG, timer, and interrupt pages */
+
+	// internal registers
+	void internal_map(address_map &map);
+	uint8_t irq_status_r(offs_t offset);
+	void irq_status_w(offs_t offset, uint8_t data);
+
+	uint8_t timer_r();
+	void timer_w(offs_t offset, uint8_t data);
+
+	uint8_t port_r();
+	void port_w(uint8_t data);
+
+	uint8_t io_buffer_r();
+	void psg_w(offs_t offset, uint8_t data);
+
+	devcb_read8 m_port_in_cb;
+	devcb_write8 m_port_out_cb;
+
+	required_device<c6280_device> m_psg;
 
 	// other internal states
 	int m_icount;
 
+	uint8_t m_timer_scale;
+
 	// address spaces
-	address_space *m_program;
-	address_space *m_io;
-	direct_read_data *m_direct;
+	memory_access<21, 0, 0, ENDIANNESS_LITTLE>::cache m_cache;
+	memory_access<21, 0, 0, ENDIANNESS_LITTLE>::specific m_program;
+	memory_access< 2, 0, 0, ENDIANNESS_LITTLE>::specific m_io;
 
 	typedef void (h6280_device::*ophandler)();
 
@@ -372,6 +391,6 @@ protected:
 	static const ophandler s_opcodetable[256];
 };
 
-extern const device_type H6280;
+DECLARE_DEVICE_TYPE(H6280, h6280_device)
 
-#endif /* __H6280_H__ */
+#endif // MAME_CPU_H6280_H6280_H

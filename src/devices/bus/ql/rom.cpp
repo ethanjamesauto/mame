@@ -6,6 +6,7 @@
 
 **********************************************************************/
 
+#include "emu.h"
 #include "rom.h"
 
 
@@ -14,7 +15,7 @@
 //  DEVICE DEFINITIONS
 //**************************************************************************
 
-const device_type QL_ROM_CARTRIDGE_SLOT = &device_creator<ql_rom_cartridge_slot_t>;
+DEFINE_DEVICE_TYPE(QL_ROM_CARTRIDGE_SLOT, ql_rom_cartridge_slot_device, "ql_rom_cartridge_slot", "QL ROM cartridge slot")
 
 
 
@@ -27,11 +28,10 @@ const device_type QL_ROM_CARTRIDGE_SLOT = &device_creator<ql_rom_cartridge_slot_
 //-------------------------------------------------
 
 device_ql_rom_cartridge_card_interface::device_ql_rom_cartridge_card_interface(const machine_config &mconfig, device_t &device) :
-	device_slot_card_interface(mconfig, device),
-	m_rom(*this, "rom"),
+	device_interface(device, "qlrom"),
+	m_slot(dynamic_cast<ql_rom_cartridge_slot_device *>(device.owner())),
 	m_romoeh(0)
 {
-	m_slot = dynamic_cast<ql_rom_cartridge_slot_t *>(device.owner());
 }
 
 
@@ -44,18 +44,24 @@ device_ql_rom_cartridge_card_interface::~device_ql_rom_cartridge_card_interface(
 }
 
 
+void device_ql_rom_cartridge_card_interface::interface_post_start()
+{
+	device().save_item(NAME(m_romoeh));
+}
+
+
 
 //**************************************************************************
 //  LIVE DEVICE
 //**************************************************************************
 
 //-------------------------------------------------
-//  ql_rom_cartridge_slot_t - constructor
+//  ql_rom_cartridge_slot_device - constructor
 //-------------------------------------------------
 
-ql_rom_cartridge_slot_t::ql_rom_cartridge_slot_t(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock) :
-	device_t(mconfig, QL_ROM_CARTRIDGE_SLOT, "QL ROM cartridge slot", tag, owner, clock, "ql_rom_cartridge_slot", __FILE__),
-	device_slot_interface(mconfig, *this),
+ql_rom_cartridge_slot_device::ql_rom_cartridge_slot_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock) :
+	device_t(mconfig, QL_ROM_CARTRIDGE_SLOT, tag, owner, clock),
+	device_single_card_slot_interface<device_ql_rom_cartridge_card_interface>(mconfig, *this),
 	device_image_interface(mconfig, *this), m_card(nullptr)
 {
 }
@@ -64,10 +70,13 @@ ql_rom_cartridge_slot_t::ql_rom_cartridge_slot_t(const machine_config &mconfig, 
 //-------------------------------------------------
 //  device_start - device-specific startup
 //-------------------------------------------------
-
-void ql_rom_cartridge_slot_t::device_start()
+void ql_rom_cartridge_slot_device::device_resolve_objects()
 {
-	m_card = dynamic_cast<device_ql_rom_cartridge_card_interface *>(get_card_device());
+	m_card = get_card_device();
+}
+
+void ql_rom_cartridge_slot_device::device_start()
+{
 }
 
 
@@ -75,18 +84,13 @@ void ql_rom_cartridge_slot_t::device_start()
 //  call_load -
 //-------------------------------------------------
 
-bool ql_rom_cartridge_slot_t::call_load()
+image_init_result ql_rom_cartridge_slot_device::call_load()
 {
 	if (m_card)
 	{
-		size_t size = 0;
-
-		if (software_entry() == nullptr)
+		if (!loaded_through_softlist())
 		{
-			size = length();
-
-			m_card->m_rom.allocate(size);
-			fread(m_card->m_rom, size);
+			fread(m_card->m_rom, length());
 		}
 		else
 		{
@@ -94,19 +98,7 @@ bool ql_rom_cartridge_slot_t::call_load()
 		}
 	}
 
-	return IMAGE_INIT_PASS;
-}
-
-
-//-------------------------------------------------
-//  call_softlist_load -
-//-------------------------------------------------
-
-bool ql_rom_cartridge_slot_t::call_softlist_load(software_list_device &swlist, const char *swname, const rom_entry *start_entry)
-{
-	load_software_part_region(*this, swlist, swname, start_entry);
-
-	return true;
+	return image_init_result::PASS;
 }
 
 
@@ -114,9 +106,9 @@ bool ql_rom_cartridge_slot_t::call_softlist_load(software_list_device &swlist, c
 //  get_default_card_software -
 //-------------------------------------------------
 
-void ql_rom_cartridge_slot_t::get_default_card_software(std::string &result)
+std::string ql_rom_cartridge_slot_device::get_default_card_software(get_default_card_software_hook &hook) const
 {
-	software_get_default_slot(result, "standard");
+	return software_get_default_slot("standard");
 }
 
 
@@ -128,9 +120,10 @@ void ql_rom_cartridge_slot_t::get_default_card_software(std::string &result)
 #include "miracle_hd.h"
 #include "std.h"
 
-SLOT_INTERFACE_START( ql_rom_cartridge_cards )
-	SLOT_INTERFACE("mhd", MIRACLE_HARD_DISK)
+void ql_rom_cartridge_cards(device_slot_interface &device)
+{
+	device.option_add("mhd", MIRACLE_HARD_DISK);
 
 	// the following need ROMs from the software list
-	SLOT_INTERFACE_INTERNAL("standard", QL_STANDARD_ROM_CARTRIDGE)
-SLOT_INTERFACE_END
+	device.option_add_internal("standard", QL_STANDARD_ROM_CARTRIDGE);
+}

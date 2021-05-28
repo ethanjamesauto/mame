@@ -7,9 +7,10 @@
     CPC DSK disk images
 
 *********************************************************************/
+#ifndef MAME_FORMATS_DSK_DSK_H
+#define MAME_FORMATS_DSK_DSK_H
 
-#ifndef CPCDSK_DSK_H
-#define CPCDSK_DSK_H
+#pragma once
 
 #include "flopimg.h"
 
@@ -18,8 +19,8 @@ class dsk_format : public floppy_image_format_t
 public:
 	dsk_format();
 
-	virtual int identify(io_generic *io, UINT32 form_factor) override;
-	virtual bool load(io_generic *io, UINT32 form_factor, floppy_image *image) override;
+	virtual int identify(io_generic *io, uint32_t form_factor, const std::vector<uint32_t> &variants) override;
+	virtual bool load(io_generic *io, uint32_t form_factor, const std::vector<uint32_t> &variants, floppy_image *image) override;
 
 	virtual const char *name() const override;
 	virtual const char *description() const override;
@@ -29,4 +30,4 @@ public:
 
 extern const floppy_format_type FLOPPY_DSK_FORMAT;
 
-#endif /* CPCDSK_DSK_H */
+#endif // MAME_FORMATS_DSK_DSK_H

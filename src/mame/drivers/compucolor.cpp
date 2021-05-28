@@ -12,58 +12,47 @@
 
     TODO:
 
-    - floppy
     - interlaced video
+    - blinking
     - add-on ROM
     - add-on RAM
     - add-on unit
 
 */
 
+#include "emu.h"
+#include "bus/rs232/rs232.h"
+#include "cpu/i8085/i8085.h"
+#include "bus/compucolor/floppy.h"
+#include "machine/ram.h"
+#include "machine/ripple_counter.h"
+#include "machine/tms5501.h"
+#include "video/tms9927.h"
+#include "emupal.h"
+#include "screen.h"
+#include "softlist.h"
+
 #define I8080_TAG   "ua2"
 #define TMS5501_TAG "ud2"
 #define CRT5027_TAG "uf9"
 #define RS232_TAG   "rs232"
 
-#include "bus/rs232/rs232.h"
-#include "cpu/i8085/i8085.h"
-#include "bus/compucolor/floppy.h"
-#include "machine/ram.h"
-#include "machine/tms5501.h"
-#include "video/tms9927.h"
-#include "softlist.h"
-
 class compucolor2_state : public driver_device
 {
 public:
-	compucolor2_state(const machine_config &mconfig, device_type type, const char *tag)
-		: driver_device(mconfig, type, tag),
-			m_maincpu(*this, I8080_TAG),
-			m_mioc(*this, TMS5501_TAG),
-			m_vtac(*this, CRT5027_TAG),
-			m_palette(*this, "palette"),
-			m_rs232(*this, RS232_TAG),
-			m_floppy0(*this, "cd0"),
-			m_floppy1(*this, "cd1"),
-			m_char_rom(*this, "chargen"),
-			m_video_ram(*this, "videoram"),
-			m_y0(*this, "Y0"),
-			m_y1(*this, "Y1"),
-			m_y2(*this, "Y2"),
-			m_y3(*this, "Y3"),
-			m_y4(*this, "Y4"),
-			m_y5(*this, "Y5"),
-			m_y6(*this, "Y6"),
-			m_y7(*this, "Y7"),
-			m_y8(*this, "Y8"),
-			m_y9(*this, "Y9"),
-			m_y10(*this, "Y10"),
-			m_y11(*this, "Y11"),
-			m_y12(*this, "Y12"),
-			m_y13(*this, "Y13"),
-			m_y14(*this, "Y14"),
-			m_y15(*this, "Y15"),
-			m_y128(*this, "Y128")
+	compucolor2_state(const machine_config &mconfig, device_type type, const char *tag) :
+		driver_device(mconfig, type, tag),
+		m_maincpu(*this, I8080_TAG),
+		m_mioc(*this, TMS5501_TAG),
+		m_vtac(*this, CRT5027_TAG),
+		m_palette(*this, "palette"),
+		m_rs232(*this, RS232_TAG),
+		m_floppy0(*this, "cd0"),
+		m_floppy1(*this, "cd1"),
+		m_char_rom(*this, "chargen"),
+		m_video_ram(*this, "videoram"),
+		m_y(*this, "Y%u", 0),
+		m_y128(*this, "Y128")
 	{ }
 
 	required_device<cpu_device> m_maincpu;
@@ -74,50 +63,40 @@ public:
 	required_device<compucolor_floppy_port_device> m_floppy0;
 	required_device<compucolor_floppy_port_device> m_floppy1;
 	required_memory_region m_char_rom;
-	required_shared_ptr<UINT8> m_video_ram;
-	required_ioport m_y0;
-	required_ioport m_y1;
-	required_ioport m_y2;
-	required_ioport m_y3;
-	required_ioport m_y4;
-	required_ioport m_y5;
-	required_ioport m_y6;
-	required_ioport m_y7;
-	required_ioport m_y8;
-	required_ioport m_y9;
-	required_ioport m_y10;
-	required_ioport m_y11;
-	required_ioport m_y12;
-	required_ioport m_y13;
-	required_ioport m_y14;
-	required_ioport m_y15;
+	required_shared_ptr<uint8_t> m_video_ram;
+	required_ioport_array<16> m_y;
 	required_ioport m_y128;
 
 	virtual void machine_start() override;
 	virtual void machine_reset() override;
 
-	UINT32 screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect);
+	uint32_t screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect);
 
-	DECLARE_READ8_MEMBER( xi_r );
-	DECLARE_WRITE8_MEMBER( xo_w );
+	uint8_t xi_r();
+	void xo_w(uint8_t data);
 	DECLARE_WRITE_LINE_MEMBER( xmt_w );
 
 	IRQ_CALLBACK_MEMBER( int_ack );
 
-	UINT8 m_xo;
+	uint8_t m_xo;
+	void compucolor2(machine_config &config);
+	void compucolor2_io(address_map &map);
+	void compucolor2_mem(address_map &map);
 };
 
-static ADDRESS_MAP_START( compucolor2_mem, AS_PROGRAM, 8, compucolor2_state )
-	AM_RANGE(0x0000, 0x3fff) AM_ROM AM_REGION(I8080_TAG, 0)
-	AM_RANGE(0x6000, 0x6fff) AM_MIRROR(0x1000) AM_RAM AM_SHARE("videoram")
-	AM_RANGE(0x8000, 0xffff) AM_RAM
-ADDRESS_MAP_END
+void compucolor2_state::compucolor2_mem(address_map &map)
+{
+	map(0x0000, 0x3fff).rom().region(I8080_TAG, 0);
+	map(0x6000, 0x6fff).mirror(0x1000).ram().share("videoram");
+	map(0x8000, 0xffff).ram();
+}
 
-static ADDRESS_MAP_START( compucolor2_io, AS_IO, 8, compucolor2_state )
-	AM_RANGE(0x00, 0x0f) AM_MIRROR(0x10) AM_DEVICE(TMS5501_TAG, tms5501_device, io_map)
-	AM_RANGE(0x60, 0x6f) AM_MIRROR(0x10) AM_DEVREADWRITE(CRT5027_TAG, crt5027_device, read, write)
-	AM_RANGE(0x80, 0x9f) AM_MIRROR(0x60) AM_ROM AM_REGION("ua1", 0)
-ADDRESS_MAP_END
+void compucolor2_state::compucolor2_io(address_map &map)
+{
+	map(0x00, 0x0f).mirror(0x10).m(m_mioc, FUNC(tms5501_device::io_map));
+	map(0x60, 0x6f).mirror(0x10).rw(m_vtac, FUNC(crt5027_device::read), FUNC(crt5027_device::write));
+	map(0x80, 0x9f).mirror(0x60).rom().region("ua1", 0);
+}
 
 static INPUT_PORTS_START( compucolor2 )
 	PORT_START("Y0")
@@ -147,7 +126,7 @@ static INPUT_PORTS_START( compucolor2 )
 	PORT_BIT( 0x08, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_NAME("F13 POINT X")
 	PORT_BIT( 0x10, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_NAME("RETURN ENTER") PORT_CODE(KEYCODE_ENTER) PORT_CHAR('\r')
 	PORT_BIT( 0x20, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_NAME("FG ON")
-	PORT_BIT( 0x40, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_NAME("Keypad =") PORT_CODE(KEYCODE_ENTER_PAD)
+	PORT_BIT( 0x40, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_ENTER_PAD) PORT_CHAR(UCHAR_MAMEKEY(EQUALS_PAD))
 	PORT_BIT( 0x80, IP_ACTIVE_LOW, IPT_UNUSED )
 
 	PORT_START("Y3")
@@ -167,7 +146,7 @@ static INPUT_PORTS_START( compucolor2 )
 	PORT_BIT( 0x08, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_NAME("F11 POINT INC")
 	PORT_BIT( 0x10, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_NAME("ERASE LINE")
 	PORT_BIT( 0x20, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_ESC) PORT_CHAR(UCHAR_MAMEKEY(ESC))
-	PORT_BIT( 0x40, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_NAME("Keypad +") PORT_CODE(KEYCODE_PLUS_PAD)
+	PORT_BIT( 0x40, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_PLUS_PAD) PORT_CHAR(UCHAR_MAMEKEY(PLUS_PAD))
 	PORT_BIT( 0x80, IP_ACTIVE_LOW, IPT_UNUSED )
 
 	PORT_START("Y5")
@@ -177,7 +156,7 @@ static INPUT_PORTS_START( compucolor2 )
 	PORT_BIT( 0x08, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_NAME("F10 X BAR XO")
 	PORT_BIT( 0x10, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_NAME(UTF8_DOWN) PORT_CODE(KEYCODE_DOWN) PORT_CHAR(UCHAR_MAMEKEY(DOWN))
 	PORT_BIT( 0x20, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_NAME(UTF8_LEFT) PORT_CODE(KEYCODE_LEFT) PORT_CODE(KEYCODE_BACKSPACE) PORT_CHAR(UCHAR_MAMEKEY(LEFT))
-	PORT_BIT( 0x40, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_NAME("Keypad X") PORT_CODE(KEYCODE_ASTERISK)
+	PORT_BIT( 0x40, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_NAME("Keypad " UTF8_MULTIPLY) PORT_CODE(KEYCODE_ASTERISK) PORT_CHAR(UCHAR_MAMEKEY(ASTERISK))
 	PORT_BIT( 0x80, IP_ACTIVE_LOW, IPT_UNUSED )
 
 	PORT_START("Y6")
@@ -289,7 +268,7 @@ static INPUT_PORTS_START( compucolor2 )
 	PORT_BIT( 0x80, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_NAME("CAPS LOCK") PORT_CODE(KEYCODE_CAPSLOCK) PORT_CHAR(UCHAR_MAMEKEY(CAPSLOCK))
 INPUT_PORTS_END
 
-UINT32 compucolor2_state::screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
+uint32_t compucolor2_state::screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
 {
 	for (int y = 0; y < 32*8; y++)
 	{
@@ -297,20 +276,20 @@ UINT32 compucolor2_state::screen_update(screen_device &screen, bitmap_rgb32 &bit
 
 		for (int sx = 0; sx < 64; sx++)
 		{
-			UINT8 code = m_video_ram[offset++];
-			UINT8 attr = m_video_ram[offset++];
+			uint8_t code = m_video_ram[offset++];
+			uint8_t attr = m_video_ram[offset++];
 
 			offs_t char_offs = ((code & 0x7f) << 3) | (y & 0x07);
 			if (BIT(code, 7)) char_offs = ((code & 0x7f) << 3) | ((y >> 1) & 0x07);
 
-			UINT8 data = m_char_rom->base()[char_offs];
+			uint8_t data = m_char_rom->base()[char_offs];
 
-			rgb_t fg = m_palette->pen_color(attr & 0x07);
-			rgb_t bg = m_palette->pen_color((attr >> 3) & 0x07);
+			rgb_t const fg = m_palette->pen_color(attr & 0x07);
+			rgb_t const bg = m_palette->pen_color((attr >> 3) & 0x07);
 
 			for (int x = 0; x < 6; x++)
 			{
-				bitmap.pix32(y, (sx * 6) + x) = BIT(data, 7) ? fg : bg;
+				bitmap.pix(y, (sx * 6) + x) = BIT(data, 7) ? fg : bg;
 
 				data <<= 1;
 			}
@@ -320,32 +299,14 @@ UINT32 compucolor2_state::screen_update(screen_device &screen, bitmap_rgb32 &bit
 	return 0;
 }
 
-READ8_MEMBER( compucolor2_state::xi_r )
+uint8_t compucolor2_state::xi_r()
 {
-	UINT8 data = 0xff;
+	uint8_t data = 0xff;
 
 	switch ((m_xo >> 4) & 0x03)
 	{
 	case 0:
-		switch (m_xo & 0x0f)
-		{
-		case 0: data &= m_y0->read(); break;
-		case 1: data &= m_y1->read(); break;
-		case 2: data &= m_y2->read(); break;
-		case 3: data &= m_y3->read(); break;
-		case 4: data &= m_y4->read(); break;
-		case 5: data &= m_y5->read(); break;
-		case 6: data &= m_y6->read(); break;
-		case 7: data &= m_y7->read(); break;
-		case 8: data &= m_y8->read(); break;
-		case 9: data &= m_y9->read(); break;
-		case 10: data &= m_y10->read(); break;
-		case 11: data &= m_y11->read(); break;
-		case 12: data &= m_y12->read(); break;
-		case 13: data &= m_y13->read(); break;
-		case 14: data &= m_y14->read(); break;
-		case 15: data &= m_y15->read(); break;
-		}
+		data &= m_y[m_xo & 0x0f]->read();
 
 		if (BIT(m_xo, 7))
 		{
@@ -360,7 +321,7 @@ READ8_MEMBER( compucolor2_state::xi_r )
 	return data;
 }
 
-WRITE8_MEMBER( compucolor2_state::xo_w )
+void compucolor2_state::xo_w(uint8_t data)
 {
 	/*
 
@@ -434,59 +395,59 @@ void compucolor2_state::machine_reset()
 	m_rs232->write_dtr(1);
 }
 
-static MACHINE_CONFIG_START( compucolor2, compucolor2_state )
+void compucolor2_state::compucolor2(machine_config &config)
+{
 	// basic machine hardware
-	MCFG_CPU_ADD(I8080_TAG, I8080, XTAL_17_9712MHz/9)
-	MCFG_CPU_PROGRAM_MAP(compucolor2_mem)
-	MCFG_CPU_IO_MAP(compucolor2_io)
-	MCFG_CPU_IRQ_ACKNOWLEDGE_DRIVER(compucolor2_state,int_ack)
+	I8080(config, m_maincpu, XTAL(17'971'200)/9);
+	m_maincpu->set_addrmap(AS_PROGRAM, &compucolor2_state::compucolor2_mem);
+	m_maincpu->set_addrmap(AS_IO, &compucolor2_state::compucolor2_io);
+	m_maincpu->set_irq_acknowledge_callback(FUNC(compucolor2_state::int_ack));
 
 	// video hardware
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_REFRESH_RATE(60)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(250))
-	MCFG_SCREEN_UPDATE_DRIVER(compucolor2_state, screen_update)
-	MCFG_SCREEN_SIZE(64*6, 32*8)
-	MCFG_SCREEN_VISIBLE_AREA(0, 64*6-1, 0, 32*8-1)
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_RASTER));
+	screen.set_raw(XTAL(17'971'200)/2, 93*6, 0, 64*6, 268, 0, 256);
+	screen.set_screen_update(FUNC(compucolor2_state::screen_update));
 
-	MCFG_PALETTE_ADD_3BIT_RGB("palette")
+	PALETTE(config, m_palette, palette_device::RGB_3BIT);
 
-	MCFG_DEVICE_ADD(CRT5027_TAG, CRT5027, XTAL_17_9712MHz/2)
-	MCFG_TMS9927_CHAR_WIDTH(6)
-	MCFG_TMS9927_VSYN_CALLBACK(DEVWRITELINE(TMS5501_TAG, tms5501_device, sens_w))
-	MCFG_VIDEO_SET_SCREEN("screen")
+	CRT5027(config, m_vtac, XTAL(17'971'200)/2/6);
+	m_vtac->set_char_width(6);
+	m_vtac->vsyn_callback().set("blink", FUNC(ripple_counter_device::clock_w));
+	m_vtac->set_screen("screen");
+
+	ripple_counter_device &blink(RIPPLE_COUNTER(config, "blink")); // 74LS393 at UG10
+	blink.set_stages(8);
+	blink.count_out_cb().set(m_mioc, FUNC(tms5501_device::sens_w)).bit(4);
 
 	// devices
-	MCFG_DEVICE_ADD(TMS5501_TAG, TMS5501, XTAL_17_9712MHz/9)
-	MCFG_TMS5501_IRQ_CALLBACK(INPUTLINE(I8080_TAG, I8085_INTR_LINE))
-	MCFG_TMS5501_XMT_CALLBACK(WRITELINE(compucolor2_state, xmt_w))
-	MCFG_TMS5501_XI_CALLBACK(READ8(compucolor2_state, xi_r))
-	MCFG_TMS5501_XO_CALLBACK(WRITE8(compucolor2_state, xo_w))
+	TMS5501(config, m_mioc, XTAL(17'971'200)/9);
+	m_mioc->int_callback().set_inputline(I8080_TAG, I8085_INTR_LINE);
+	m_mioc->xmt_callback().set(FUNC(compucolor2_state::xmt_w));
+	m_mioc->xi_callback().set(FUNC(compucolor2_state::xi_r));
+	m_mioc->xo_callback().set(FUNC(compucolor2_state::xo_w));
 
-	MCFG_RS232_PORT_ADD(RS232_TAG, default_rs232_devices, nullptr)
-	MCFG_RS232_RXD_HANDLER(DEVWRITELINE(TMS5501_TAG, tms5501_device, rcv_w))
+	RS232_PORT(config, m_rs232, default_rs232_devices, nullptr);
+	m_rs232->rxd_handler().set(m_mioc, FUNC(tms5501_device::rcv_w));
 
-	MCFG_COMPUCOLOR_FLOPPY_PORT_ADD("cd0", compucolor_floppy_port_devices, "floppy")
-	MCFG_RS232_RXD_HANDLER(DEVWRITELINE(TMS5501_TAG, tms5501_device, rcv_w))
+	COMPUCOLOR_FLOPPY_PORT(config, m_floppy0, compucolor_floppy_port_devices, "floppy");
+	m_floppy0->rxd_handler().set(m_mioc, FUNC(tms5501_device::rcv_w));
 
-	MCFG_COMPUCOLOR_FLOPPY_PORT_ADD("cd1", compucolor_floppy_port_devices, nullptr)
-	MCFG_RS232_RXD_HANDLER(DEVWRITELINE(TMS5501_TAG, tms5501_device, rcv_w))
+	COMPUCOLOR_FLOPPY_PORT(config, m_floppy1, compucolor_floppy_port_devices, nullptr);
+	m_floppy1->rxd_handler().set(m_mioc, FUNC(tms5501_device::rcv_w));
 
 	// internal ram
-	MCFG_RAM_ADD(RAM_TAG)
-	MCFG_RAM_DEFAULT_SIZE("32K")
-	MCFG_RAM_EXTRA_OPTIONS("8K,16K")
+	RAM(config, RAM_TAG).set_default_size("32K").set_extra_options("8K,16K");
 
 	// software list
-	MCFG_SOFTWARE_LIST_ADD("flop_list", "compclr2_flop")
-MACHINE_CONFIG_END
+	SOFTWARE_LIST(config, "flop_list").set_original("compclr2_flop");
+}
 
 ROM_START( compclr2 )
 	ROM_REGION( 0x4000, I8080_TAG, 0 )
 	ROM_SYSTEM_BIOS( 0, "678", "v6.78" )
-	ROMX_LOAD( "v678.rom", 0x0000, 0x4000, BAD_DUMP CRC(5e559469) SHA1(fe308774aae1294c852fe24017e58d892d880cd3), ROM_BIOS(1) )
+	ROMX_LOAD( "v678.rom", 0x0000, 0x4000, BAD_DUMP CRC(5e559469) SHA1(fe308774aae1294c852fe24017e58d892d880cd3), ROM_BIOS(0) )
 	ROM_SYSTEM_BIOS( 1, "879", "v8.79" )
-	ROMX_LOAD( "v879.rom", 0x0000, 0x4000, BAD_DUMP CRC(4de8e652) SHA1(e5c55da3ac893b8a5a99c8795af3ca72b1645f3f), ROM_BIOS(2) )
+	ROMX_LOAD( "v879.rom", 0x0000, 0x4000, BAD_DUMP CRC(4de8e652) SHA1(e5c55da3ac893b8a5a99c8795af3ca72b1645f3f), ROM_BIOS(1) )
 
 	ROM_REGION( 0x800, "chargen", 0 )
 	ROM_LOAD( "chargen.uf6", 0x000, 0x400, BAD_DUMP CRC(7eef135a) SHA1(be488ef32f54c6e5f551fb84ab12b881aef72dd9) )
@@ -504,4 +465,4 @@ ROM_START( compclr2 )
 	ROM_LOAD( "82s129.ug5", 0x00, 0x20, NO_DUMP ) // Color PROM
 ROM_END
 
-COMP( 1977, compclr2,    0,      0,      compucolor2,        compucolor2, driver_device, 0,      "Intelligent Systems Corporation",  "Compucolor II",  MACHINE_NOT_WORKING | MACHINE_NO_SOUND_HW )
+COMP( 1977, compclr2, 0, 0, compucolor2, compucolor2, compucolor2_state, empty_init, "Intelligent Systems Corporation", "Compucolor II", MACHINE_NOT_WORKING | MACHINE_NO_SOUND_HW )

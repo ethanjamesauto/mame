@@ -5,12 +5,14 @@
  * includes/tx0.h
  *
  ****************************************************************************/
+#ifndef MAME_INCLUDES_TX0_H
+#define MAME_INCLUDES_TX0_H
 
-#ifndef TX0_H_
-#define TX0_H_
+#pragma once
 
 #include "video/crt.h"
-#include "cpu/pdp1/tx0.h"
+#include "cpu/tx0/tx0.h"
+#include "emupal.h"
 
 enum state_t
 {
@@ -132,21 +134,32 @@ struct magtape_t
 class tx0_state : public driver_device
 {
 public:
-	tx0_state(const machine_config &mconfig, device_type type, const char *tag)
-		: driver_device(mconfig, type, tag),
+	tx0_state(const machine_config &mconfig, device_type type, const char *tag) :
+		driver_device(mconfig, type, tag),
 		m_maincpu(*this, "maincpu"),
 		m_gfxdecode(*this, "gfxdecode"),
 		m_palette(*this, "palette"),
 		m_crt(*this, "crt"),
 		m_csw(*this, "CSW"),
-		m_twr(*this, "TWR")
+		m_twr(*this, "TWR.%u", 0)
 	{ }
 
+	void tx0_64kw(machine_config &config);
+	void tx0_8kw(machine_config &config);
+
+	void init_tx0();
+
+	required_device<tx0_device> m_maincpu;
 	tx0_tape_reader_t m_tape_reader;
 	tape_puncher_t m_tape_puncher;
 	tx0_typewriter_t m_typewriter;
 	emu_timer *m_dis_timer;
 	magtape_t m_magtape;
+
+	void schedule_select();
+	void schedule_unselect();
+
+protected:
 	int m_old_typewriter_keys[4];
 	int m_old_control_keys;
 	int m_old_tsr_keys;
@@ -156,21 +169,19 @@ public:
 	bitmap_ind16 m_typewriter_bitmap;
 	int m_pos;
 	int m_case_shift;
-	DECLARE_DRIVER_INIT(tx0);
 	virtual void machine_start() override;
 	virtual void machine_reset() override;
 	virtual void video_start() override;
-	DECLARE_PALETTE_INIT(tx0);
-	UINT32 screen_update_tx0(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
-	void screen_eof_tx0(screen_device &screen, bool state);
+	void tx0_palette(palette_device &palette) const;
+	uint32_t screen_update_tx0(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
+	DECLARE_WRITE_LINE_MEMBER(screen_vblank_tx0);
 	INTERRUPT_GEN_MEMBER(tx0_interrupt);
 	TIMER_CALLBACK_MEMBER(reader_callback);
 	TIMER_CALLBACK_MEMBER(puncher_callback);
 	TIMER_CALLBACK_MEMBER(prt_callback);
 	TIMER_CALLBACK_MEMBER(dis_callback);
 	void tx0_machine_stop();
-	required_device<tx0_device> m_maincpu;
-	inline void tx0_plot_pixel(bitmap_ind16 &bitmap, int x, int y, UINT32 color);
+	inline void tx0_plot_pixel(bitmap_ind16 &bitmap, int x, int y, uint32_t color);
 	void tx0_plot(int x, int y);
 	void tx0_draw_led(bitmap_ind16 &bitmap, int x, int y, int state);
 	void tx0_draw_multipleled(bitmap_ind16 &bitmap, int x, int y, int value, int nb_bits);
@@ -179,17 +190,15 @@ public:
 	void tx0_draw_char(bitmap_ind16 &bitmap, char character, int x, int y, int color);
 	void tx0_draw_string(bitmap_ind16 &bitmap, const char *buf, int x, int y, int color);
 	void tx0_draw_vline(bitmap_ind16 &bitmap, int x, int y, int height, int color);
-	void tx0_draw_hline(bitmap_ind16 &bitmap, int x, int y, int width, int color);
 	void tx0_draw_panel_backdrop(bitmap_ind16 &bitmap);
 	void tx0_draw_panel(bitmap_ind16 &bitmap);
 	void tx0_typewriter_linefeed();
 	void tx0_typewriter_drawchar(int character);
-	int tape_read(UINT8 *reply);
-	void tape_write(UINT8 data);
+	int tape_read(uint8_t *reply);
+	void tape_write(uint8_t data);
 	void begin_tape_read(int binary);
-	void typewriter_out(UINT8 data);
-	void schedule_select();
-	void schedule_unselect();
+	void typewriter_out(uint8_t data);
+
 	void tx0_keyboard();
 	DECLARE_WRITE_LINE_MEMBER(tx0_io_cpy);
 	DECLARE_WRITE_LINE_MEMBER(tx0_io_r1l);
@@ -202,7 +211,9 @@ public:
 	DECLARE_WRITE_LINE_MEMBER(tx0_io_reset_callback);
 	void magtape_callback();
 
-private:
+	void tx0_64kw_map(address_map &map);
+	void tx0_8kw_map(address_map &map);
+
 	required_device<gfxdecode_device> m_gfxdecode;
 	required_device<palette_device> m_palette;
 	required_device<crt_device> m_crt;
@@ -326,4 +337,4 @@ enum
 };
 
 
-#endif /* TX0_H_ */
+#endif // MAME_INCLUDES_TX0_H

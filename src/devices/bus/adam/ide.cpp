@@ -16,6 +16,7 @@
 
 */
 
+#include "emu.h"
 #include "ide.h"
 #include "bus/centronics/ctronics.h"
 
@@ -34,7 +35,7 @@
 //  DEVICE DEFINITIONS
 //**************************************************************************
 
-const device_type ADAM_IDE = &device_creator<powermate_ide_device>;
+DEFINE_DEVICE_TYPE(ADAM_IDE, powermate_ide_device, "adam_ide", "Powermate HP IDE")
 
 
 //-------------------------------------------------
@@ -51,31 +52,23 @@ ROM_END
 //  rom_region - device-specific ROM region
 //-------------------------------------------------
 
-const rom_entry *powermate_ide_device::device_rom_region() const
+const tiny_rom_entry *powermate_ide_device::device_rom_region() const
 {
 	return ROM_NAME( adam_ata );
 }
 
 
 //-------------------------------------------------
-//  MACHINE_CONFIG_FRAGMENT( adam_ata )
-//-------------------------------------------------
-static MACHINE_CONFIG_FRAGMENT( adam_ata )
-	MCFG_ATA_INTERFACE_ADD(ATA_TAG, ata_devices, "hdd", nullptr, false)
-	MCFG_CENTRONICS_ADD(CENTRONICS_TAG, centronics_devices, "printer")
-
-	MCFG_CENTRONICS_OUTPUT_LATCH_ADD("cent_data_out", CENTRONICS_TAG)
-MACHINE_CONFIG_END
-
-
-//-------------------------------------------------
-//  machine_config_additions - device-specific
-//  machine configurations
+//  device_add_mconfig - add device configuration
 //-------------------------------------------------
 
-machine_config_constructor powermate_ide_device::device_mconfig_additions() const
+void powermate_ide_device::device_add_mconfig(machine_config &config)
 {
-	return MACHINE_CONFIG_NAME( adam_ata );
+	ATA_INTERFACE(config, m_ata).options(ata_devices, "hdd", nullptr, false);
+	centronics_device &centronics(CENTRONICS(config, CENTRONICS_TAG, centronics_devices, "printer"));
+
+	OUTPUT_LATCH(config, m_cent_data_out);
+	centronics.set_output_latch(*m_cent_data_out);
 }
 
 
@@ -88,8 +81,8 @@ machine_config_constructor powermate_ide_device::device_mconfig_additions() cons
 //  powermate_ide_device - constructor
 //-------------------------------------------------
 
-powermate_ide_device::powermate_ide_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: device_t(mconfig, ADAM_IDE, "Powermate HP IDE", tag, owner, clock, "adam_ide", __FILE__),
+powermate_ide_device::powermate_ide_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: device_t(mconfig, ADAM_IDE, tag, owner, clock),
 		device_adam_expansion_slot_card_interface(mconfig, *this),
 		m_ata(*this, ATA_TAG),
 		m_cent_data_out(*this, "cent_data_out"), m_ata_data(0)
@@ -110,7 +103,7 @@ void powermate_ide_device::device_start()
 //  adam_bd_r - buffered data read
 //-------------------------------------------------
 
-UINT8 powermate_ide_device::adam_bd_r(address_space &space, offs_t offset, UINT8 data, int bmreq, int biorq, int aux_rom_cs, int cas1, int cas2)
+uint8_t powermate_ide_device::adam_bd_r(offs_t offset, uint8_t data, int bmreq, int biorq, int aux_rom_cs, int cas1, int cas2)
 {
 	if (!biorq)
 	{
@@ -123,7 +116,7 @@ UINT8 powermate_ide_device::adam_bd_r(address_space &space, offs_t offset, UINT8
 		case 0x05:
 		case 0x06:
 		case 0x07:
-			data = m_ata->read_cs0(space, offset & 0x07, 0xff);
+			data = m_ata->cs0_r(offset & 0x07, 0xff);
 			break;
 
 		case 0x40: // Printer status
@@ -144,7 +137,7 @@ UINT8 powermate_ide_device::adam_bd_r(address_space &space, offs_t offset, UINT8
 			break;
 
 		case 0x58:
-			m_ata_data = m_ata->read_cs0(space, 0, 0xffff);
+			m_ata_data = m_ata->cs0_r(0);
 
 			data = m_ata_data & 0xff;
 			break;
@@ -154,7 +147,7 @@ UINT8 powermate_ide_device::adam_bd_r(address_space &space, offs_t offset, UINT8
 			break;
 
 		case 0x5a:
-			data = m_ata->read_cs1(space, 6, 0xff);
+			data = m_ata->cs1_r(6, 0xff);
 			break;
 
 		case 0x5b: // Digital Input Register
@@ -171,7 +164,7 @@ UINT8 powermate_ide_device::adam_bd_r(address_space &space, offs_t offset, UINT8
 //  adam_bd_w - buffered data write
 //-------------------------------------------------
 
-void powermate_ide_device::adam_bd_w(address_space &space, offs_t offset, UINT8 data, int bmreq, int biorq, int aux_rom_cs, int cas1, int cas2)
+void powermate_ide_device::adam_bd_w(offs_t offset, uint8_t data, int bmreq, int biorq, int aux_rom_cs, int cas1, int cas2)
 {
 	if (!biorq)
 	{
@@ -183,11 +176,11 @@ void powermate_ide_device::adam_bd_w(address_space &space, offs_t offset, UINT8 
 		case 0x05:
 		case 0x06:
 		case 0x07:
-			m_ata->write_cs0(space, offset & 0x07, data, 0xff);
+			m_ata->cs0_w(offset & 0x07, data, 0xff);
 			break;
 
 		case 0x40:
-			m_cent_data_out->write(space, 0, data);
+			m_cent_data_out->write(data);
 			break;
 
 		case 0x42: // Bank Number
@@ -195,7 +188,7 @@ void powermate_ide_device::adam_bd_w(address_space &space, offs_t offset, UINT8 
 
 		case 0x58:
 			m_ata_data |= data;
-			m_ata->write_cs0(space, 0, m_ata_data, 0xffff);
+			m_ata->cs0_w(0, m_ata_data);
 			break;
 
 		case 0x59:

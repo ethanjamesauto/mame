@@ -16,14 +16,17 @@
 ****************************************************************************/
 
 #include "emu.h"
+#include "bus/nscsi/hd.h"
 #include "cpu/i386/i386.h"
 #include "cpu/tms32031/tms32031.h"
 #include "machine/53c7xx.h"
 #include "machine/mc146818.h"
-#include "machine/nscsi_hd.h"
-#include "sound/dac.h"
 #include "machine/nvram.h"
-
+#include "machine/timer.h"
+#include "sound/dac.h"
+#include "emupal.h"
+#include "screen.h"
+#include "speaker.h"
 
 /*************************************
  *
@@ -31,8 +34,8 @@
  *
  *************************************/
 
-#define SOUND_CLOCK             XTAL_12_288MHz
-#define PLL_CLOCK               XTAL_14_31818MHz
+#define SOUND_CLOCK             XTAL(12'288'000)
+#define PLL_CLOCK               XTAL(14'318'181)
 #define NVRAM_SIZE              0x8000
 
 #define USE_SPEEDUP_HACK        1
@@ -48,18 +51,22 @@ class rastersp_state : public driver_device
 {
 public:
 	rastersp_state(const machine_config &mconfig, device_type type, const char *tag)
-		: driver_device(mconfig, type, tag),
-			m_maincpu(*this, "maincpu"),
-			m_dsp(*this, "dsp"),
-			m_dram(*this, "dram"),
-			m_dac_l(*this, "dac_l"),
-			m_dac_r(*this, "dac_r"),
-			m_tms_timer1(*this, "tms_timer1"),
-			m_tms_tx_timer(*this, "tms_tx_timer"),
-			m_palette(*this, "palette"),
-			m_nvram(*this, "nvram")
-	{}
+		: driver_device(mconfig, type, tag)
+		, m_maincpu(*this, "maincpu")
+		, m_dsp(*this, "dsp")
+		, m_dram(*this, "dram")
+		, m_ldac(*this, "ldac")
+		, m_rdac(*this, "rdac")
+		, m_palette(*this, "palette")
+		, m_nvram(*this, "nvram")
+		, m_tms_timer1(nullptr)
+		, m_tms_tx_timer(nullptr)
+	{
+	}
 
+	void rastersp(machine_config &config);
+
+private:
 	#define VIDEO_ADDR_MASK     0x3fffffff
 
 	enum tms_regs
@@ -96,52 +103,57 @@ public:
 		IRQ_SCSI    = 7
 	};
 
-	required_device<cpu_device>     m_maincpu;
-	required_device<cpu_device>     m_dsp;
-	required_shared_ptr<UINT32>     m_dram;
-	required_device<dac_device>     m_dac_l;
-	required_device<dac_device>     m_dac_r;
-	required_device<timer_device>   m_tms_timer1;
-	required_device<timer_device>   m_tms_tx_timer;
-	required_device<palette_device> m_palette;
-	required_device<nvram_device>   m_nvram;
+	required_device<i486_device>     m_maincpu;
+	required_device<tms3203x_device> m_dsp;
+	required_shared_ptr<uint32_t>    m_dram;
+	required_device<dac_16bit_r2r_twos_complement_device> m_ldac;
+	required_device<dac_16bit_r2r_twos_complement_device> m_rdac;
+	required_device<palette_device>  m_palette;
+	required_device<nvram_device>    m_nvram;
 
-	DECLARE_WRITE32_MEMBER(cyrix_cache_w);
-	DECLARE_READ8_MEMBER(nvram_r);
-	DECLARE_WRITE8_MEMBER(nvram_w);
-	DECLARE_WRITE32_MEMBER(port1_w);
-	DECLARE_WRITE32_MEMBER(port2_w);
-	DECLARE_WRITE32_MEMBER(port3_w);
-	DECLARE_WRITE32_MEMBER(dpylist_w);
-	DECLARE_READ32_MEMBER(tms32031_control_r);
-	DECLARE_WRITE32_MEMBER(tms32031_control_w);
-	DECLARE_WRITE32_MEMBER(dsp_unk_w);
-	DECLARE_WRITE32_MEMBER(dsp_ctrl_w);
-	DECLARE_WRITE32_MEMBER(dsp_486_int_w);
-	DECLARE_READ32_MEMBER(dsp_speedup_r);
-	DECLARE_WRITE32_MEMBER(dsp_speedup_w);
-	DECLARE_READ32_MEMBER(ncr53c700_read);
-	DECLARE_WRITE32_MEMBER(ncr53c700_write);
+	emu_timer *m_tms_timer1;
+	emu_timer *m_tms_tx_timer;
+
+	void cyrix_cache_w(uint32_t data);
+	uint8_t nvram_r(offs_t offset);
+	void nvram_w(offs_t offset, uint8_t data);
+	void port1_w(uint32_t data);
+	void port2_w(uint32_t data);
+	void port3_w(uint32_t data);
+	void dpylist_w(uint32_t data);
+	uint32_t tms32031_control_r(offs_t offset);
+	void tms32031_control_w(offs_t offset, uint32_t data);
+	void dsp_unk_w(uint32_t data);
+	void dsp_ctrl_w(uint32_t data);
+	void dsp_486_int_w(uint32_t data);
+	uint32_t dsp_speedup_r();
+	void dsp_speedup_w(uint32_t data);
+	uint32_t ncr53c700_read(offs_t offset, uint32_t mem_mask = ~0);
+	void ncr53c700_write(offs_t offset, uint32_t data, uint32_t mem_mask = ~0);
 	DECLARE_WRITE_LINE_MEMBER(scsi_irq);
 
-	TIMER_DEVICE_CALLBACK_MEMBER(tms_timer1);
-	TIMER_DEVICE_CALLBACK_MEMBER(tms_tx_timer);
-	INTERRUPT_GEN_MEMBER(vblank_irq);
+	TIMER_CALLBACK_MEMBER(tms_timer1);
+	TIMER_CALLBACK_MEMBER(tms_tx_timer);
+	DECLARE_WRITE_LINE_MEMBER(vblank_irq);
 
-	std::unique_ptr<UINT8[]>   m_nvram8;
-	UINT8   m_io_reg;
-	UINT8   m_irq_status;
-	UINT32  m_dpyaddr;
-	std::unique_ptr<UINT16[]> m_paletteram;
-	UINT32  m_speedup_count;
-	UINT32  m_tms_io_regs[0x80];
+	std::unique_ptr<uint8_t[]>   m_nvram8;
+	uint8_t   m_irq_status;
+	uint32_t  m_dpyaddr;
+	std::unique_ptr<uint16_t[]> m_paletteram;
+	uint32_t  m_speedup_count;
+	uint32_t  m_tms_io_regs[0x80];
 	bitmap_ind16 m_update_bitmap;
 
-	UINT32  screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
-	void    update_irq(UINT32 which, UINT32 state);
-	void    upload_palette(UINT32 word1, UINT32 word2);
+	uint32_t screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
+	void update_irq(uint32_t which, uint32_t state);
+	void upload_palette(uint32_t word1, uint32_t word2);
 	IRQ_CALLBACK_MEMBER(irq_callback);
-protected:
+	nscsi_connector &add_rastersp_scsi_slot(machine_config &config, const char *tag, const char *default_slot);
+	static void ncr53c700_config(device_t *device);
+	void cpu_map(address_map &map);
+	void dsp_map(address_map &map);
+	void io_map(address_map &map);
+
 	// driver_device overrides
 	virtual void machine_reset() override;
 	virtual void machine_start() override;
@@ -158,17 +170,23 @@ protected:
 
 void rastersp_state::machine_start()
 {
-	m_nvram8 = std::make_unique<UINT8[]>(NVRAM_SIZE);
+	m_nvram8 = std::make_unique<uint8_t[]>(NVRAM_SIZE);
 	m_nvram->set_base(m_nvram8.get(),NVRAM_SIZE);
-	m_paletteram = std::make_unique<UINT16[]>(0x8000);
+	m_paletteram = std::make_unique<uint16_t[]>(0x8000);
 
 	membank("bank1")->set_base(m_dram);
 	membank("bank2")->set_base(&m_dram[0x10000/4]);
 	membank("bank3")->set_base(&m_dram[0x300000/4]);
 
+	if (!m_tms_timer1)
+		m_tms_timer1 = machine().scheduler().timer_alloc(timer_expired_delegate(FUNC(rastersp_state::tms_timer1), this));
+
+	if (!m_tms_tx_timer)
+		m_tms_tx_timer = machine().scheduler().timer_alloc(timer_expired_delegate(FUNC(rastersp_state::tms_tx_timer), this));
+
 #if USE_SPEEDUP_HACK
-	m_dsp->space(AS_PROGRAM).install_read_handler(0x809923, 0x809923, read32_delegate(FUNC(rastersp_state::dsp_speedup_r), this));
-	m_dsp->space(AS_PROGRAM).install_write_handler(0x809923, 0x809923, write32_delegate(FUNC(rastersp_state::dsp_speedup_w), this));
+	m_dsp->space(AS_PROGRAM).install_read_handler(0x809923, 0x809923, read32smo_delegate(*this, FUNC(rastersp_state::dsp_speedup_r)));
+	m_dsp->space(AS_PROGRAM).install_write_handler(0x809923, 0x809923, write32smo_delegate(*this, FUNC(rastersp_state::dsp_speedup_w)));
 #endif
 }
 
@@ -187,6 +205,9 @@ void rastersp_state::machine_reset()
 
 	// Reset DSP internal registers
 	m_tms_io_regs[SPORT_GLOBAL_CTL] = 0;
+
+	m_tms_timer1->adjust(attotime::never);
+	m_tms_tx_timer->adjust(attotime::never);
 }
 
 
@@ -203,7 +224,7 @@ void rastersp_state::video_start()
 }
 
 
-WRITE32_MEMBER( rastersp_state::dpylist_w )
+void rastersp_state::dpylist_w(uint32_t data)
 {
 	m_dpyaddr = data;
 
@@ -215,18 +236,18 @@ WRITE32_MEMBER( rastersp_state::dpylist_w )
 		return;
 	}
 
-	UINT32 dpladdr = (m_dpyaddr & ~0xff) >> 6;
+	uint32_t dpladdr = (m_dpyaddr & ~0xff) >> 6;
 
 	if ((m_dpyaddr & 0xff) != 0xb2 && (m_dpyaddr & 0xff) != 0xf2)
 		logerror("Unusual display list data: %x\n", m_dpyaddr);
 
 	int y = 0;
 	int x = 0;
-	UINT16 *bmpptr = &m_update_bitmap.pix16(0, 0);
+	uint16_t *bmpptr = &m_update_bitmap.pix(0, 0);
 
 	while (y < 240)
 	{
-		UINT32 word1 = m_dram[dpladdr/4];
+		uint32_t word1 = m_dram[dpladdr/4];
 
 		if (word1 & 0x80000000)
 		{
@@ -235,7 +256,7 @@ WRITE32_MEMBER( rastersp_state::dpylist_w )
 		}
 		else
 		{
-			UINT32 word2 = m_dram[(dpladdr + 4)/4];
+			uint32_t word2 = m_dram[(dpladdr + 4)/4];
 
 			dpladdr += 8;
 
@@ -244,16 +265,16 @@ WRITE32_MEMBER( rastersp_state::dpylist_w )
 				if ((word2 & 0xfe000000) != 0x94000000)
 					logerror("Unusual display list entry: %x %x\n", word1, word2);
 
-				UINT32 srcaddr = word1 >> 8;
-				UINT32 pixels = (word2 >> 16) & 0x1ff;
-				UINT32 palbase = (word2 >> 4) & 0xf00;
+				uint32_t srcaddr = word1 >> 8;
+				uint32_t pixels = (word2 >> 16) & 0x1ff;
+				uint32_t palbase = (word2 >> 4) & 0xf00;
 
-				UINT16* palptr = &m_paletteram[palbase];
-				UINT8* srcptr = reinterpret_cast<UINT8*>(&m_dram[0]);
+				uint16_t* palptr = &m_paletteram[palbase];
+				uint8_t* srcptr = reinterpret_cast<uint8_t*>(&m_dram[0]);
 
-				UINT32 acc = srcaddr << 8;
+				uint32_t acc = srcaddr << 8;
 
-				INT32 incr = word2 & 0xfff;
+				int32_t incr = word2 & 0xfff;
 
 				// Sign extend for our convenience
 				incr |= ~((incr & 0x800) - 1) & ~0xff;
@@ -290,20 +311,20 @@ WRITE32_MEMBER( rastersp_state::dpylist_w )
 }
 
 
-void rastersp_state::upload_palette(UINT32 word1, UINT32 word2)
+void rastersp_state::upload_palette(uint32_t word1, uint32_t word2)
 {
 	if (word1 & 3)
 		fatalerror("Unalligned palette address! (%x, %x)\n", word1, word2);
 
-	UINT32 addr = word1 >> 8;
-	UINT32 entries = (word2 >> 16) & 0x1ff;
-	UINT32 index = ((word2 >> 12) & 0x1f) * 256;
+	uint32_t addr = word1 >> 8;
+	uint32_t entries = (word2 >> 16) & 0x1ff;
+	uint32_t index = ((word2 >> 12) & 0x1f) * 256;
 
 	// The third byte of each entry in RAM appears to contain an index
 	// but appears to be discared when written to palette RAM
 	while (entries--)
 	{
-		UINT32 data = m_dram[addr / 4];
+		uint32_t data = m_dram[addr / 4];
 		m_paletteram[index++] = data & 0xffff;
 		addr += 4;
 	}
@@ -349,7 +370,7 @@ Unknown: (D4000100) - Present at start of a list
 
 *******************************************************************************/
 
-UINT32 rastersp_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t rastersp_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	copybitmap(bitmap, m_update_bitmap, 0, 0, 0, 0, cliprect);
 	return 0;
@@ -365,7 +386,7 @@ UINT32 rastersp_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap
 
 IRQ_CALLBACK_MEMBER(rastersp_state::irq_callback)
 {
-	UINT8 vector = 0;
+	uint8_t vector = 0;
 
 	if (m_irq_status & (1 << IRQ_SCSI))
 	{
@@ -390,9 +411,9 @@ IRQ_CALLBACK_MEMBER(rastersp_state::irq_callback)
 }
 
 
-void rastersp_state::update_irq(UINT32 which, UINT32 state)
+void rastersp_state::update_irq(uint32_t which, uint32_t state)
 {
-	UINT32 mask = 1 << which;
+	uint32_t mask = 1 << which;
 
 	if (state)
 		m_irq_status |= mask;
@@ -409,9 +430,10 @@ WRITE_LINE_MEMBER( rastersp_state::scsi_irq )
 }
 
 
-INTERRUPT_GEN_MEMBER( rastersp_state::vblank_irq )
+WRITE_LINE_MEMBER( rastersp_state::vblank_irq )
 {
-	update_irq(IRQ_VBLANK, ASSERT_LINE);
+	if (state)
+		update_irq(IRQ_VBLANK, ASSERT_LINE);
 }
 
 
@@ -422,7 +444,7 @@ INTERRUPT_GEN_MEMBER( rastersp_state::vblank_irq )
  *
  *************************************/
 
-WRITE32_MEMBER( rastersp_state::port1_w )
+void rastersp_state::port1_w(uint32_t data)
 {
 	// x... .... - LED?
 	// ..x. .... - DSP IRQ2 line
@@ -436,14 +458,14 @@ WRITE32_MEMBER( rastersp_state::port1_w )
 }
 
 
-WRITE32_MEMBER( rastersp_state::port2_w )
+void rastersp_state::port2_w(uint32_t data)
 {
 	// .x.. .... - X9313WP /INC
 	// ..x. .... - X9313WP U/#D
 }
 
 
-WRITE32_MEMBER( rastersp_state:: port3_w )
+void rastersp_state:: port3_w(uint32_t data)
 {
 	// xxxx xxxx - 8 LED cluster?
 }
@@ -456,7 +478,7 @@ WRITE32_MEMBER( rastersp_state:: port3_w )
  *
  *************************************/
 
-WRITE8_MEMBER( rastersp_state::nvram_w )
+void rastersp_state::nvram_w(offs_t offset, uint8_t data)
 {
 	offset *= 4;
 
@@ -467,13 +489,13 @@ WRITE8_MEMBER( rastersp_state::nvram_w )
 
 	offset &= ~0x2000;
 
-	UINT32 addr = ((offset & 0x00f0000) >> 5) | ((offset & 0x1fff) / 4);
+	uint32_t addr = ((offset & 0x00f0000) >> 5) | ((offset & 0x1fff) / 4);
 
 	m_nvram8[addr] = data & 0xff;
 }
 
 
-READ8_MEMBER( rastersp_state::nvram_r )
+uint8_t rastersp_state::nvram_r(offs_t offset)
 {
 	offset *= 4;
 
@@ -484,13 +506,13 @@ READ8_MEMBER( rastersp_state::nvram_r )
 
 	offset &= ~0x2000;
 
-	UINT32 addr = ((offset & 0x00f0000) >> 5) | ((offset & 0x1fff) / 4);
+	uint32_t addr = ((offset & 0x00f0000) >> 5) | ((offset & 0x1fff) / 4);
 
 	return m_nvram8[addr];
 }
 
 
-WRITE32_MEMBER( rastersp_state::cyrix_cache_w )
+void rastersp_state::cyrix_cache_w(uint32_t data)
 {
 	// TODO?
 }
@@ -503,18 +525,15 @@ WRITE32_MEMBER( rastersp_state::cyrix_cache_w )
  *
  *************************************/
 
-TIMER_DEVICE_CALLBACK_MEMBER( rastersp_state::tms_tx_timer )
+TIMER_CALLBACK_MEMBER(rastersp_state::tms_tx_timer)
 {
 	// Is the transmit shifter full?
 	if (m_tms_io_regs[SPORT_GLOBAL_CTL] & (1 << 3))
 	{
-		UINT32 data = m_tms_io_regs[SPORT_DATA_TX];
+		uint32_t data = m_tms_io_regs[SPORT_DATA_TX];
 
-		INT16 ldata = data & 0xffff;
-		INT16 rdata = data >> 16;
-
-		m_dac_l->write_signed16(0x8000 + ldata);
-		m_dac_r->write_signed16(0x8000 + rdata);
+		m_ldac->write(data & 0xffff);
+		m_rdac->write(data >> 16);
 	}
 
 	// Set XSREMPTY
@@ -532,20 +551,20 @@ TIMER_DEVICE_CALLBACK_MEMBER( rastersp_state::tms_tx_timer )
 }
 
 
-TIMER_DEVICE_CALLBACK_MEMBER( rastersp_state::tms_timer1 )
+TIMER_CALLBACK_MEMBER(rastersp_state::tms_timer1)
 {
 }
 
 
-READ32_MEMBER( rastersp_state::tms32031_control_r )
+uint32_t rastersp_state::tms32031_control_r(offs_t offset)
 {
-	UINT32 val = m_tms_io_regs[offset];
+	uint32_t val = m_tms_io_regs[offset];
 
 	switch (offset)
 	{
 		case TIMER1_COUNTER:
 		{
-			attotime elapsed = m_tms_timer1->time_elapsed();
+			attotime elapsed = m_tms_timer1->elapsed();
 			val = m_tms_io_regs[TIMER1_PERIOD] - (elapsed.as_ticks(m_dsp->clock() / 2 / 2));
 
 			break;
@@ -560,9 +579,9 @@ READ32_MEMBER( rastersp_state::tms32031_control_r )
 }
 
 
-WRITE32_MEMBER( rastersp_state::tms32031_control_w )
+void rastersp_state::tms32031_control_w(offs_t offset, uint32_t data)
 {
-	UINT32 old = m_tms_io_regs[offset];
+	uint32_t old = m_tms_io_regs[offset];
 
 	m_tms_io_regs[offset] = data;
 
@@ -621,19 +640,19 @@ WRITE32_MEMBER( rastersp_state::tms32031_control_w )
 }
 
 
-WRITE32_MEMBER( rastersp_state::dsp_unk_w )
+void rastersp_state::dsp_unk_w(uint32_t data)
 {
 	// TODO: Looks like a debug port?
 }
 
 
-WRITE32_MEMBER( rastersp_state::dsp_486_int_w )
+void rastersp_state::dsp_486_int_w(uint32_t data)
 {
 	update_irq(IRQ_DSP, ASSERT_LINE);
 }
 
 
-WRITE32_MEMBER( rastersp_state::dsp_ctrl_w )
+void rastersp_state::dsp_ctrl_w(uint32_t data)
 {
 	// x... .... LED?
 	// .xx. .... 486 reset control?
@@ -642,21 +661,21 @@ WRITE32_MEMBER( rastersp_state::dsp_ctrl_w )
 }
 
 
-WRITE32_MEMBER( rastersp_state::dsp_speedup_w )
+void rastersp_state::dsp_speedup_w(uint32_t data)
 {
 	// 809e90  48fd, 48d5
-	if (space.device().safe_pc() == 0x809c23)
+	if (m_dsp->pc() == 0x809c23)
 	{
-		INT32 cycles_left = space.device().execute().cycles_remaining();
+		int32_t cycles_left = m_dsp->cycles_remaining();
 		data += cycles_left / 6;
-		space.device().execute().spin();
+		m_dsp->spin();
 	}
 
 	m_speedup_count = data;
 }
 
 
-READ32_MEMBER( rastersp_state::dsp_speedup_r )
+uint32_t rastersp_state::dsp_speedup_r()
 {
 	return m_speedup_count;
 }
@@ -668,40 +687,43 @@ READ32_MEMBER( rastersp_state::dsp_speedup_r )
  *
  *************************************/
 
-static ADDRESS_MAP_START( cpu_map, AS_PROGRAM, 32, rastersp_state )
-	AM_RANGE(0x00000000, 0x003fffff) AM_RAM AM_SHARE("dram")
-	AM_RANGE(0x01000000, 0x010bffff) AM_NOP // External ROM
-	AM_RANGE(0x010c0000, 0x010cffff) AM_ROM AM_REGION("bios", 0)
-	AM_RANGE(0x02200800, 0x02200803) AM_WRITENOP // ?
-	AM_RANGE(0x02208000, 0x02208fff) AM_DEVREADWRITE("scsibus:7:ncr53c700", ncr53c7xx_device, read, write)
-	AM_RANGE(0x0220e000, 0x0220e003) AM_WRITE(dpylist_w)
-	AM_RANGE(0x02200000, 0x022fffff) AM_READWRITE8(nvram_r, nvram_w, 0x000000ff)
-	AM_RANGE(0xfff00000, 0xffffffff) AM_RAMBANK("bank3")
-ADDRESS_MAP_END
+void rastersp_state::cpu_map(address_map &map)
+{
+	map(0x00000000, 0x003fffff).ram().share("dram");
+	map(0x01000000, 0x010bffff).noprw(); // External ROM
+	map(0x010c0000, 0x010cffff).rom().region("bios", 0);
+	map(0x02200000, 0x022fffff).rw(FUNC(rastersp_state::nvram_r), FUNC(rastersp_state::nvram_w)).umask32(0x000000ff);
+	map(0x02200800, 0x02200803).nopw(); // ?
+	map(0x02208000, 0x02208fff).rw("scsibus:7:ncr53c700", FUNC(ncr53c7xx_device::read), FUNC(ncr53c7xx_device::write));
+	map(0x0220e000, 0x0220e003).w(FUNC(rastersp_state::dpylist_w));
+	map(0xfff00000, 0xffffffff).bankrw("bank3");
+}
 
-static ADDRESS_MAP_START( io_map, AS_IO, 32, rastersp_state )
-	AM_RANGE(0x0020, 0x0023) AM_WRITE(cyrix_cache_w)
-	AM_RANGE(0x1000, 0x1003) AM_READ_PORT("P1") AM_WRITE(port1_w)
-	AM_RANGE(0x1004, 0x1007) AM_READ_PORT("P2") AM_WRITE(port2_w)
-	AM_RANGE(0x1008, 0x100b) AM_READ_PORT("COMMON") AM_WRITE(port3_w)
-	AM_RANGE(0x100c, 0x100f) AM_READ_PORT("DSW2")
-	AM_RANGE(0x1010, 0x1013) AM_READ_PORT("DSW1")
-	AM_RANGE(0x1014, 0x1017) AM_READ_PORT("EXTRA")
-	AM_RANGE(0x4000, 0x4007) AM_DEVREADWRITE8("rtc", mc146818_device, read, write, 0x000000ff)
-	AM_RANGE(0x6008, 0x600b) AM_READNOP AM_WRITENOP // RS232
-ADDRESS_MAP_END
+void rastersp_state::io_map(address_map &map)
+{
+	map(0x0020, 0x0023).w(FUNC(rastersp_state::cyrix_cache_w));
+	map(0x1000, 0x1003).portr("P1").w(FUNC(rastersp_state::port1_w));
+	map(0x1004, 0x1007).portr("P2").w(FUNC(rastersp_state::port2_w));
+	map(0x1008, 0x100b).portr("COMMON").w(FUNC(rastersp_state::port3_w));
+	map(0x100c, 0x100f).portr("DSW2");
+	map(0x1010, 0x1013).portr("DSW1");
+	map(0x1014, 0x1017).portr("EXTRA");
+	map(0x4000, 0x4007).rw("rtc", FUNC(mc146818_device::read), FUNC(mc146818_device::write)).umask32(0x000000ff);
+	map(0x6008, 0x600b).nopr().nopw(); // RS232
+}
 
 
-static ADDRESS_MAP_START( dsp_map, AS_PROGRAM, 32, rastersp_state )
-	AM_RANGE(0x000000, 0x0fffff) AM_RAMBANK("bank1")
-	AM_RANGE(0x400000, 0x40ffff) AM_ROM AM_REGION("dspboot", 0)
-	AM_RANGE(0x808000, 0x80807f) AM_READWRITE(tms32031_control_r, tms32031_control_w)
-	AM_RANGE(0x880402, 0x880402) AM_WRITE(dsp_unk_w)
-	AM_RANGE(0x883c00, 0x883c00) AM_WRITE(dsp_486_int_w)
-	AM_RANGE(0xc00000, 0xc03fff) AM_RAMBANK("bank2")
-	AM_RANGE(0xc80000, 0xc80000) AM_WRITE(dsp_ctrl_w)
-	AM_RANGE(0xfc0000, 0xffffff) AM_RAMBANK("bank3")
-ADDRESS_MAP_END
+void rastersp_state::dsp_map(address_map &map)
+{
+	map(0x000000, 0x0fffff).bankrw("bank1");
+	map(0x400000, 0x40ffff).rom().region("dspboot", 0);
+	map(0x808000, 0x80807f).rw(FUNC(rastersp_state::tms32031_control_r), FUNC(rastersp_state::tms32031_control_w));
+	map(0x880402, 0x880402).w(FUNC(rastersp_state::dsp_unk_w));
+	map(0x883c00, 0x883c00).w(FUNC(rastersp_state::dsp_486_int_w));
+	map(0xc00000, 0xc03fff).bankrw("bank2");
+	map(0xc80000, 0xc80000).w(FUNC(rastersp_state::dsp_ctrl_w));
+	map(0xfc0000, 0xffffff).bankrw("bank3");
+}
 
 
 
@@ -819,28 +841,25 @@ INPUT_PORTS_END
  *
  *************************************/
 
-READ32_MEMBER(rastersp_state::ncr53c700_read)
+uint32_t rastersp_state::ncr53c700_read(offs_t offset, uint32_t mem_mask)
 {
 	return m_maincpu->space(AS_PROGRAM).read_dword(offset, mem_mask);
 }
 
-WRITE32_MEMBER(rastersp_state::ncr53c700_write)
+void rastersp_state::ncr53c700_write(offs_t offset, uint32_t data, uint32_t mem_mask)
 {
 	m_maincpu->space(AS_PROGRAM).write_dword(offset, data, mem_mask);
 }
 
-static MACHINE_CONFIG_FRAGMENT( ncr53c700 )
-	MCFG_DEVICE_CLOCK(66000000)
-	MCFG_NCR53C7XX_IRQ_HANDLER(DEVWRITELINE(":", rastersp_state, scsi_irq))
-	MCFG_NCR53C7XX_HOST_READ(DEVREAD32(":", rastersp_state, ncr53c700_read))
-	MCFG_NCR53C7XX_HOST_WRITE(DEVWRITE32(":", rastersp_state, ncr53c700_write))
-MACHINE_CONFIG_END
-
-static SLOT_INTERFACE_START( rastersp_scsi_devices )
-	SLOT_INTERFACE("harddisk", NSCSI_HARDDISK)
-	SLOT_INTERFACE_INTERNAL("ncr53c700", NCR53C7XX)
-SLOT_INTERFACE_END
-
+void rastersp_state::ncr53c700_config(device_t *device)
+{
+	auto *state = device->subdevice<rastersp_state>(":");
+	ncr53c7xx_device &scsictrl = downcast<ncr53c7xx_device &>(*device);
+	scsictrl.set_clock(66000000);
+	scsictrl.irq_handler().set(*state, FUNC(rastersp_state::scsi_irq));
+	scsictrl.host_read().set(*state, FUNC(rastersp_state::ncr53c700_read));
+	scsictrl.host_write().set(*state, FUNC(rastersp_state::ncr53c700_write));
+}
 
 /*************************************
  *
@@ -848,47 +867,57 @@ SLOT_INTERFACE_END
  *
  *************************************/
 
-static MACHINE_CONFIG_START( rastersp, rastersp_state )
-	MCFG_CPU_ADD("maincpu", I486, 33330000)
-	MCFG_CPU_PROGRAM_MAP(cpu_map)
-	MCFG_CPU_IO_MAP(io_map)
-	MCFG_CPU_VBLANK_INT_DRIVER("screen", rastersp_state, vblank_irq)
-	MCFG_CPU_IRQ_ACKNOWLEDGE_DRIVER(rastersp_state,irq_callback)
+void rastersp_state::rastersp(machine_config &config)
+{
+	I486(config, m_maincpu, 33330000);
+	m_maincpu->set_addrmap(AS_PROGRAM, &rastersp_state::cpu_map);
+	m_maincpu->set_addrmap(AS_IO, &rastersp_state::io_map);
+	m_maincpu->set_irq_acknowledge_callback(FUNC(rastersp_state::irq_callback));
 
-	MCFG_CPU_ADD("dsp", TMS32031, 33330000)
-	MCFG_CPU_PROGRAM_MAP(dsp_map)
-	MCFG_TMS3203X_MCBL(true)    // Boot-loader mode
+	TMS32031(config, m_dsp, 33330000);
+	m_dsp->set_addrmap(AS_PROGRAM, &rastersp_state::dsp_map);
+	m_dsp->set_mcbl_mode(true); // Boot-loader mode
 
-	/* Devices */
-	MCFG_TIMER_DRIVER_ADD("tms_timer1", rastersp_state, tms_timer1)
-	MCFG_TIMER_DRIVER_ADD("tms_tx_timer", rastersp_state, tms_tx_timer)
-	MCFG_MC146818_ADD( "rtc", XTAL_32_768kHz )
-	MCFG_NVRAM_ADD_0FILL("nvram")
+	MC146818(config, "rtc", 32.768_kHz_XTAL);
 
-	MCFG_NSCSI_BUS_ADD("scsibus")
-	MCFG_NSCSI_ADD("scsibus:0", rastersp_scsi_devices, "harddisk", true)
-	MCFG_NSCSI_ADD("scsibus:7", rastersp_scsi_devices, "ncr53c700", true)
-	MCFG_DEVICE_CARD_MACHINE_CONFIG("ncr53c700", ncr53c700)
+	NVRAM(config, "nvram", nvram_device::DEFAULT_ALL_0);
+
+	NSCSI_BUS(config, "scsibus", 0);
+
+	nscsi_connector &connector0(NSCSI_CONNECTOR(config, "scsibus:0", 0));
+	connector0.option_add("harddisk", NSCSI_HARDDISK);
+	connector0.option_add_internal("ncr53c700", NCR53C7XX);
+	connector0.set_default_option("harddisk");
+	connector0.set_fixed(true);
+
+	nscsi_connector &connector7(NSCSI_CONNECTOR(config, "scsibus:7", 0));
+	connector7.option_add("harddisk", NSCSI_HARDDISK);
+	connector7.option_add_internal("ncr53c700", NCR53C7XX);
+	connector7.set_default_option("ncr53c700");
+	connector7.set_fixed(true);
+	connector7.set_option_machine_config("ncr53c700", ncr53c700_config);
 
 	/* Video */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_SIZE(320, 240)
-	MCFG_SCREEN_VISIBLE_AREA(0, 320-1, 0, 240-1)
-	MCFG_SCREEN_UPDATE_DRIVER(rastersp_state, screen_update)
-	MCFG_SCREEN_REFRESH_RATE(50)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(2500)) /* not accurate */
-	MCFG_SCREEN_PALETTE("palette")
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_RASTER));
+	screen.set_size(320, 240);
+	screen.set_visarea(0, 320-1, 0, 240-1);
+	screen.set_screen_update(FUNC(rastersp_state::screen_update));
+	screen.set_refresh_hz(50);
+	screen.set_vblank_time(ATTOSECONDS_IN_USEC(2500)); /* not accurate */
+	screen.set_palette(m_palette);
+	screen.screen_vblank().set(FUNC(rastersp_state::vblank_irq));
 
-	MCFG_PALETTE_ADD_RRRRRGGGGGGBBBBB("palette")
+	PALETTE(config, m_palette, palette_device::RGB_565);
 
 	/* Sound */
-	MCFG_SPEAKER_STANDARD_STEREO("lspeaker", "rspeaker")
+	SPEAKER(config, "lspeaker").front_left();
+	SPEAKER(config, "rspeaker").front_right();
 
-	MCFG_DAC_ADD("dac_l")
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "lspeaker", 1.0)
-	MCFG_DAC_ADD("dac_r")
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "rspeaker", 1.0)
-MACHINE_CONFIG_END
+	DAC_16BIT_R2R_TWOS_COMPLEMENT(config, m_ldac, 0);
+	DAC_16BIT_R2R_TWOS_COMPLEMENT(config, m_rdac, 0);
+	m_ldac->add_route(ALL_OUTPUTS, "lspeaker", 0.5); // unknown DAC
+	m_rdac->add_route(ALL_OUTPUTS, "rspeaker", 0.5); // unknown DAC
+}
 
 
 
@@ -899,10 +928,10 @@ MACHINE_CONFIG_END
  *************************************/
 
 ROM_START( rotr )
-	ROM_REGION(0x100000, "bios", 0)
+	ROM_REGION32_LE(0x100000, "bios", 0)
 	ROM_LOAD( "rasterspeed2.1_bootrom4.u10", 0x00000, 0x10000, CRC(6da142d1) SHA1(e2dbd479034677726fc26fd1ba85c4458d89286c) )
 
-	ROM_REGION(0x1000000, "dspboot", 0)
+	ROM_REGION32_LE(0x1000000, "dspboot", 0)
 	ROM_LOAD32_BYTE( "rasterspeed2.1_bootrom4.u10", 0x00000, 0x10000, CRC(6da142d1) SHA1(e2dbd479034677726fc26fd1ba85c4458d89286c) )
 
 	ROM_REGION(0x8000, "proms", 0) /* Xilinx FPGA PROMs */
@@ -916,6 +945,24 @@ ROM_START( rotr )
 	DISK_IMAGE( "rotr", 0, SHA1(d67d7feb52d8c7ba1d2a190a40d97e84871f2d80) )
 ROM_END
 
+
+ROM_START( rotra )
+	ROM_REGION32_LE(0x100000, "bios", 0)
+	ROM_LOAD( "rasterspeed2.1_bootrom4.u10", 0x00000, 0x10000, CRC(6da142d1) SHA1(e2dbd479034677726fc26fd1ba85c4458d89286c) )
+
+	ROM_REGION32_LE(0x1000000, "dspboot", 0)
+	ROM_LOAD32_BYTE( "rasterspeed2.1_bootrom4.u10", 0x00000, 0x10000, CRC(6da142d1) SHA1(e2dbd479034677726fc26fd1ba85c4458d89286c) )
+
+	ROM_REGION(0x8000, "proms", 0) /* Xilinx FPGA PROMs */
+	ROM_LOAD( "17128dpc.u72", 0x0000, 0x4000, CRC(5ddf6ee3) SHA1(f3d15b649b5641374a9e14877cea84ba9c57ef3c) )
+	ROM_LOAD( "17128dpc.u73", 0x2000, 0x4000, CRC(9e274cea) SHA1(e974cad4e4b965bf2c9df7d3d0b4eec64629eeb0) )
+
+	ROM_REGION(0x8000, "nvram", 0) /* Default NVRAM */
+	ROM_LOAD( "rotr.nv", 0x0000, 0x8000, CRC(62543517) SHA1(a4bf3431cdab956839bb155c4a8c140d30e5c7ec) )
+
+	DISK_REGION( "scsibus:0:harddisk:image" )
+	DISK_IMAGE( "rotra", 0, SHA1(570d402e5e9bba123edf7dfa9db7a0e6bdb23823) )
+ROM_END
 
 /*
   Football Crazy runs on the (c)1997 "RASTERSPEED 2.1 31-599-001 ISS 4" PCB, which seems to be a more modern production version.
@@ -933,10 +980,10 @@ ROM_END
 // the rom also exists in some odd hex format like this
 // ROM_LOAD( "95751937.hex", 0x0000, 0x025f91, CRC(8f412e97) SHA1(a5ff924fbc327114e59d75de644ed0d5cd7fa6b3) )
 ROM_START( fbcrazy )
-	ROM_REGION(0x100000, "bios", 0)
+	ROM_REGION32_LE(0x100000, "bios", 0)
 	ROM_LOAD( "95751937.bin", 0x0000, 0x010000, CRC(4a99ee11) SHA1(335398ebc64bbfe86e2652ac080a5943dd413928) )
 
-	ROM_REGION(0x1000000, "dspboot", 0)
+	ROM_REGION32_LE(0x1000000, "dspboot", 0)
 	ROM_LOAD32_BYTE( "95751937.bin", 0x0000, 0x010000, CRC(4a99ee11) SHA1(335398ebc64bbfe86e2652ac080a5943dd413928) )
 
 	ROM_REGION(0x8000, "proms", ROMREGION_ERASEFF )
@@ -954,5 +1001,6 @@ ROM_END
  *
  *************************************/
 
-GAME( 1994, rotr, 0, rastersp, rotr, driver_device, 0, ROT0, "BFM/Mirage", "Rise of the Robots (prototype)", 0 )
-GAME( 1997, fbcrazy, 0, rastersp, rotr, driver_device, 0, ROT0, "BFM", "Football Crazy (Video Quiz)", MACHINE_NOT_WORKING )
+GAME( 1994, rotr,    0,    rastersp, rotr, rastersp_state, empty_init, ROT0, "BFM/Mirage", "Rise of the Robots (prototype)",        0 )
+GAME( 1994, rotra,   rotr, rastersp, rotr, rastersp_state, empty_init, ROT0, "BFM/Mirage", "Rise of the Robots (prototype, older)", 0 )
+GAME( 1997, fbcrazy, 0,    rastersp, rotr, rastersp_state, empty_init, ROT0, "BFM",        "Football Crazy (Video Quiz)",           MACHINE_NOT_WORKING )

@@ -7,9 +7,10 @@
     D88 disk images
 
 *********************************************************************/
+#ifndef MAME_FORMATS_D88_DSK_H
+#define MAME_FORMATS_D88_DSK_H
 
-#ifndef D88_DSK_H
-#define D88_DSK_H
+#pragma once
 
 #include "flopimg.h"
 
@@ -19,9 +20,9 @@ class d88_format : public floppy_image_format_t
 public:
 	d88_format();
 
-	virtual int identify(io_generic *io, UINT32 form_factor) override;
-	virtual bool load(io_generic *io, UINT32 form_factor, floppy_image *image) override;
-	virtual bool save(io_generic *io, floppy_image *image) override;
+	virtual int identify(io_generic *io, uint32_t form_factor, const std::vector<uint32_t> &variants) override;
+	virtual bool load(io_generic *io, uint32_t form_factor, const std::vector<uint32_t> &variants, floppy_image *image) override;
+	virtual bool save(io_generic *io, const std::vector<uint32_t> &variants, floppy_image *image) override;
 
 	virtual const char *name() const override;
 	virtual const char *description() const override;
@@ -31,4 +32,4 @@ public:
 
 extern const floppy_format_type FLOPPY_D88_FORMAT;
 
-#endif /* D88_DSK_H */
+#endif // MAME_FORMATS_D88_DSK_H

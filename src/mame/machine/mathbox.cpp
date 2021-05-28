@@ -37,20 +37,10 @@
 //  mathbox_device - constructor
 //-------------------------------------------------
 
-const device_type MATHBOX = &device_creator<mathbox_device>;
+DEFINE_DEVICE_TYPE(MATHBOX, mathbox_device, "mathbox", "Atari MATHBOX")
 
-mathbox_device::mathbox_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: device_t(mconfig, MATHBOX, "Atari MATHBOX", tag, owner, clock, "mathbox", __FILE__)
-{
-}
-
-//-------------------------------------------------
-//  device_config_complete - perform any
-//  operations now that the configuration is
-//  complete
-//-------------------------------------------------
-
-void mathbox_device::device_config_complete()
+mathbox_device::mathbox_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: device_t(mconfig, MATHBOX, tag, owner, clock)
 {
 }
 
@@ -72,14 +62,14 @@ void mathbox_device::device_start()
 void mathbox_device::device_reset()
 {
 	m_result = 0;
-	memset(m_reg, 0, sizeof(INT16)*16);
+	memset(m_reg, 0, sizeof(int16_t)*16);
 }
 
 
-WRITE8_MEMBER( mathbox_device::go_w )
+void mathbox_device::go_w(offs_t offset, uint8_t data)
 {
-	INT32 mb_temp;  /* temp 32-bit multiply results */
-	INT16 mb_q;     /* temp used in division */
+	int32_t mb_temp;  /* temp 32-bit multiply results */
+	int16_t mb_q;     /* temp used in division */
 	int msb;
 
 	LOG(("math box command %02x data %02x  ", offset, data));
@@ -122,17 +112,17 @@ WRITE8_MEMBER( mathbox_device::go_w )
 
 		REG5 = (REG5 & 0x00ff) | (data << 8);
 
-		REGf = (INT16)0xffff;
+		REGf = (int16_t)0xffff;
 		REG4 -= REG2;
 		REG5 -= REG3;
 
 	step_048:
 
-		mb_temp = ((INT32) REG0) * ((INT32) REG4);
+		mb_temp = ((int32_t) REG0) * ((int32_t) REG4);
 		REGc = mb_temp >> 16;
 		REGe = mb_temp & 0xffff;
 
-		mb_temp = ((INT32) -REG1) * ((INT32) REG5);
+		mb_temp = ((int32_t) -REG1) * ((int32_t) REG5);
 		REG7 = mb_temp >> 16;
 		mb_q = mb_temp & 0xffff;
 
@@ -153,14 +143,15 @@ WRITE8_MEMBER( mathbox_device::go_w )
 		REG7 += REG2;
 
 		/* fall into command 12 */
+		[[fallthrough]];
 
 	case 0x12:
 
-		mb_temp = ((INT32) REG1) * ((INT32) REG4);
+		mb_temp = ((int32_t) REG1) * ((int32_t) REG4);
 		REGc = mb_temp >> 16;
 		REG9 = mb_temp & 0xffff;
 
-		mb_temp = ((INT32) REG0) * ((INT32) REG5);
+		mb_temp = ((int32_t) REG0) * ((int32_t) REG5);
 		REG8 = mb_temp >> 16;
 		mb_q = mb_temp & 0xffff;
 
@@ -184,6 +175,7 @@ WRITE8_MEMBER( mathbox_device::go_w )
 		REG9 &= 0xff00;
 
 		/* fall into command 13 */
+		[[fallthrough]];
 
 	case 0x13:
 		LOG(("\nR7: %04x  R8: %04x  R9: %04x\n", REG7, REG8, REG9));
@@ -274,6 +266,7 @@ WRITE8_MEMBER( mathbox_device::go_w )
 			REG3 = -REG3;
 
 		/* fall into command 1e */
+		[[fallthrough]];
 
 	case 0x1e:
 		/* result = max (REG2, REG3) + 3/8 * min (REG2, REG3) */
@@ -296,17 +289,17 @@ WRITE8_MEMBER( mathbox_device::go_w )
 	LOG(("  result %04x\n", m_result & 0xffff));
 }
 
-READ8_MEMBER( mathbox_device::status_r )
+uint8_t mathbox_device::status_r()
 {
 	return 0x00; /* always done! */
 }
 
-READ8_MEMBER( mathbox_device::lo_r )
+uint8_t mathbox_device::lo_r()
 {
 	return m_result & 0xff;
 }
 
-READ8_MEMBER( mathbox_device::hi_r )
+uint8_t mathbox_device::hi_r()
 {
 	return (m_result >> 8) & 0xff;
 }

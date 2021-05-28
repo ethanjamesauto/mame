@@ -10,14 +10,18 @@
 
 #define VERBOSE 1
 
+#include "emu.h"
+#include "debug/debugbuf.h"
 #include "includes/apollo.h"
-#include "cpu/m68000/m68kcpu.h"
+#include "cpu/m68000/m68000.h"
+
+#if 0
 
 //------------------------------------------------------
 //         TRAP 0
 //------------------------------------------------------
 
-static const char* trap0[] = {
+static char const *const trap0[] = {
 /* 0x00 */nullptr, nullptr,
 /* 0x01 */"FIM_$GET_FIM_ADDR", "",
 /* 0x02 */nullptr, nullptr,
@@ -62,7 +66,7 @@ static const char* trap0[] = {
 //         TRAP1
 //------------------------------------------------------
 
-static const char* trap1[] = {
+static char const *const trap1[] = {
 /* 0x00 */nullptr, nullptr,
 /* 0x01 */nullptr, nullptr,
 /* 0x02 */"FIM_$INSTALL", "x",
@@ -138,7 +142,7 @@ static const char* trap1[] = {
 //         TRAP2
 //------------------------------------------------------
 
-static const char* trap2[] = {
+static char const *const trap2[] = {
 /* 0x00 */nullptr, nullptr,
 /* 0x01 */nullptr, nullptr,
 /* 0x02 */"FILE_$DELETE", "x,x",
@@ -290,7 +294,7 @@ static const char* trap2[] = {
 //         TRAP3
 //------------------------------------------------------
 
-static const char* trap3[] = {
+static char const *const trap3[] = {
 /* 0x00 */"PBU2_$DMA_STOP", "x,x,x",
 /* 0x01 */nullptr, nullptr,
 /* 0x02 */"FILE_$CREATE", "x,x,x",
@@ -470,7 +474,7 @@ static const char* trap3[] = {
 //         TRAP4
 //------------------------------------------------------
 
-static const char* trap4[] = {
+static char const *const trap4[] = {
 /* 0x00 */nullptr, nullptr,
 /* 0x01 */"MST_$SET_GUARD", "u,x,x,x",
 /* 0x02 */"MST_$UNMAP_GLOBAL", "u,x,x,x",
@@ -617,7 +621,7 @@ static const char* trap4[] = {
 //         TRAP5
 //------------------------------------------------------
 
-static const char* trap5[] = {
+static char const *const trap5[] = {
 /* 0x00 */nullptr, nullptr,
 /* 0x01 */"MST_$MAP_AREA", "x,x,x,u,x",
 /* 0x02 */nullptr, nullptr,
@@ -728,7 +732,7 @@ static const char* trap5[] = {
 //         TRAP7
 //------------------------------------------------------
 
-static const char* trap7[] = {
+static char const *const trap7[] = {
 /* 0x00 */"FILE_$LOCK", "u,x,x,x,x,x,x",
 /* 0x01 */"VFMT_$WRITE", "s,x,x,x,x,x,x",
 /* 0x02 */"MST_$MAP_AREA_AT", "x,x,x,x,x,x,x",
@@ -795,7 +799,7 @@ static const char* trap7[] = {
 //         TRAP8
 //------------------------------------------------------
 
-static const char* trap8[] = {
+static char const *const trap8[] = {
 /* 0x00 - 0x07 */"MST_$MAP", "u,x,x,x,x,x,x",
 /* 0x01 - 0x08 */"MST_$MAP_AT", "x,u,x,x,x,x,x,x",
 /* 0x02 - 0x07 */"MST_$MAP_GLOBAL", "u,x,x,x,x,x,x",
@@ -863,9 +867,9 @@ static const char* trap8[] = {
 
 // get parameter string for parameter type and value at addr
 
-static const char *get_param(m68000_base_device *m68k, UINT32 addr, char type)
+static const char *get_param(m68000_base_device *m68k, uint32_t addr, char type)
 {
-	UINT32 value = ~0;
+	uint32_t value = ~0;
 
 	// FIXME:
 	static char sb[256];
@@ -873,7 +877,7 @@ static const char *get_param(m68000_base_device *m68k, UINT32 addr, char type)
 	int i;
 	char ch;
 	int maxlen = sizeof(sb) - 2;
-	UINT32 value1;
+	uint32_t value1;
 
 	sb[0] = 0;
 
@@ -936,8 +940,8 @@ static const char *get_param(m68000_base_device *m68k, UINT32 addr, char type)
 static const char* get_svc_call(m68000_base_device *m68k, int trap_no,
 		int trap_code,  char *sb)
 {
-	UINT32 sp = REG_A(m68k)[7];
-	UINT32 pa;
+	uint32_t sp = REG_A(m68k)[7];
+	uint32_t pa;
 	const char * name = nullptr;
 	const char * param = nullptr;
 
@@ -1033,35 +1037,21 @@ static const char* get_svc_call(m68000_base_device *m68k, int trap_no,
 	return sb;
 }
 
-static const char * disassemble(m68000_base_device *m68k, offs_t pc, char* sb)
+// WTF?
+static const std::string &disassemble(m68000_base_device *m68k, offs_t pc, std::string& sb)
 {
-	UINT8 oprom[10];
-	UINT8 opram[10];
-	UINT32 options = 0;
+	debug_disasm_buffer buffer(*m68k);
 
 	// remember bus error state
-	UINT32 tmp_buserror_occurred = m68k->mmu_tmp_buserror_occurred;
-	UINT32 tmp_buserror_address = m68k->mmu_tmp_buserror_address;
+	uint32_t tmp_buserror_occurred = m68k->mmu_tmp_buserror_occurred;
+	uint32_t tmp_buserror_address = m68k->mmu_tmp_buserror_address;
 
 	m68k->mmu_tmp_buserror_occurred = 0;
 	m68k->mmu_tmp_rw = 1;
 
-	int i;
-	for (i = 0; i < sizeof(oprom); i++)
-	{
-		oprom[i] = opram[i] = m68k->read8(pc + i);
-		if (m68k->mmu_tmp_buserror_occurred)
-		{
-			sprintf(sb, "- (apollo_disassemble failed at %08x)", pc + i);
-
-			// restore previous bus error state
-			m68k->mmu_tmp_buserror_occurred = tmp_buserror_occurred;
-			m68k->mmu_tmp_buserror_address = tmp_buserror_address;
-
-			return sb;
-		}
-	}
-	m68k->disassemble(sb, pc, oprom, opram, options);
+	offs_t next_pc, size;
+	u32 info;
+	buffer.disassemble(pc, sb, next_pc, size, info);
 
 	// restore previous bus error state
 	m68k->mmu_tmp_buserror_occurred = tmp_buserror_occurred;
@@ -1070,13 +1060,13 @@ static const char * disassemble(m68000_base_device *m68k, offs_t pc, char* sb)
 	return sb;
 }
 
-static const UINT16 *get_data(m68000_base_device *m68k, offs_t addr)
+static const uint16_t *get_data(m68000_base_device *m68k, offs_t addr)
 {
-	static UINT16 data[4];
+	static uint16_t data[4];
 
 	// remember bus error state
-	UINT32 tmp_buserror_occurred = m68k->mmu_tmp_buserror_occurred;
-	UINT32 tmp_buserror_address = m68k->mmu_tmp_buserror_address;
+	uint32_t tmp_buserror_occurred = m68k->mmu_tmp_buserror_occurred;
+	uint32_t tmp_buserror_address = m68k->mmu_tmp_buserror_address;
 
 	m68k->mmu_tmp_buserror_occurred = 0;
 	m68k->mmu_tmp_rw = 1;
@@ -1103,16 +1093,16 @@ int apollo_debug_instruction_hook(m68000_base_device *device, offs_t curpc)
 {
 	// trap data remembered for next rte
 	static struct {
-		UINT32 pc;
-		UINT32 sp;
-		UINT16 trap_no;
-		UINT16 trap_code;
+		uint32_t pc;
+		uint32_t sp;
+		uint16_t trap_no;
+		uint16_t trap_code;
 	} trap = { 0, 0, 0, 0 };
 
 	if (apollo_config( APOLLO_CONF_TRAP_TRACE | APOLLO_CONF_FPU_TRACE))
 	{
-		UINT32 ppc_save;
-		UINT16 ir;
+		uint32_t ppc_save;
+		uint16_t ir;
 		m68000_base_device *m68k = device;
 		m68k->mmu_tmp_buserror_occurred = 0;
 
@@ -1130,8 +1120,8 @@ int apollo_debug_instruction_hook(m68000_base_device *device, offs_t curpc)
 		}
 		else if ((ir & 0xff00) == 0xf200 && (apollo_config( APOLLO_CONF_FPU_TRACE)))
 		{
-			char sb[256];
-			DLOG(("%s sp=%08x FPU: %x %s", apollo_cpu_context(device->machine().firstcpu),
+			std::string sb;
+			DLOG(("%s sp=%08x FPU: %x %s", apollo_cpu_context(m68k),
 					REG_A(m68k)[7], ir, disassemble(m68k, REG_PC(m68k), sb)));
 		}
 		else if (!m68k->pmmu_enabled)
@@ -1140,10 +1130,10 @@ int apollo_debug_instruction_hook(m68000_base_device *device, offs_t curpc)
 		}
 		else if (ir == 0x4e73) // RTE
 		{
-			const UINT16 *data = get_data(m68k, REG_A(m68k)[7]);
+			const uint16_t *data = get_data(m68k, REG_A(m68k)[7]);
 			if ( REG_USP(m68k) == 0 && (data[0] & 0x2000) == 0) {
 				DLOG(("%s sp=%08x RTE: sr=%04x pc=%04x%04x v=%04x usp=%08x",
-					apollo_cpu_context(device->machine().firstcpu),
+					apollo_cpu_context(m68k),
 					REG_A(m68k)[7], data[0], data[1], data[2], data[3], REG_USP(m68k)));
 			}
 		}
@@ -1157,7 +1147,7 @@ int apollo_debug_instruction_hook(m68000_base_device *device, offs_t curpc)
 
 			char sb[1000];
 			DLOG(("%s sp=%08x Domain/OS SVC: trap %x 0x%02x: %s",
-					apollo_cpu_context(device->machine().firstcpu), trap.sp,
+					apollo_cpu_context(m68k), trap.sp,
 					trap.trap_no, trap.trap_code,
 					get_svc_call(m68k, trap.trap_no, trap.trap_code, sb)));
 
@@ -1167,7 +1157,7 @@ int apollo_debug_instruction_hook(m68000_base_device *device, offs_t curpc)
 			// rte
 			char sb[1000];
 			DLOG(("%s sp=%08x Domain/OS SVC:              %s D0=0x%x",
-					apollo_cpu_context(device->machine().firstcpu), trap.sp,
+					apollo_cpu_context(m68k), trap.sp,
 					get_svc_call(m68k, trap.trap_no, trap.trap_code, sb), REG_D(m68k)[0]));
 
 			trap.pc = 0;
@@ -1180,3 +1170,4 @@ int apollo_debug_instruction_hook(m68000_base_device *device, offs_t curpc)
 	}
 	return 0;
 }
+#endif

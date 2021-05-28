@@ -1,68 +1,57 @@
-// license:GPL-2.0+
+// license:BSD-3-Clause
 // copyright-holders:Couriersud
-/*
- * nld_ms_direct1.h
- *
- */
 
 #ifndef NLD_MS_DIRECT2_H_
 #define NLD_MS_DIRECT2_H_
 
-#include "solver/nld_ms_direct.h"
-#include "solver/nld_solver.h"
+///
+/// \file nld_ms_direct2.h
+///
 
-NETLIB_NAMESPACE_DEVICES_START()
+#include "nld_matrix_solver_ext.h"
+#include "nld_ms_direct.h"
+#include "nld_solver.h"
 
-class matrix_solver_direct2_t: public matrix_solver_direct_t<2,2>
+namespace netlist
 {
-public:
-
-	matrix_solver_direct2_t(const solver_parameters_t *params)
-		: matrix_solver_direct_t<2, 2>(params, 2)
-		{}
-	ATTR_HOT inline int vsolve_non_dynamic(const bool newton_raphson);
-protected:
-	ATTR_HOT virtual nl_double vsolve() override;
-private:
-};
-
-// ----------------------------------------------------------------------------------------
-// matrix_solver - Direct2
-// ----------------------------------------------------------------------------------------
-
-ATTR_HOT nl_double matrix_solver_direct2_t::vsolve()
+namespace solver
 {
-	solve_base<matrix_solver_direct2_t>(this);
-	return this->compute_next_timestep();
-}
 
-ATTR_HOT inline int matrix_solver_direct2_t::vsolve_non_dynamic(ATTR_UNUSED const bool newton_raphson)
-{
-	build_LE_A();
-	build_LE_RHS(m_RHS);
+	// ----------------------------------------------------------------------------------------
+	// matrix_solver - Direct2
+	// ----------------------------------------------------------------------------------------
 
-	const nl_double a = A(0,0);
-	const nl_double b = A(0,1);
-	const nl_double c = A(1,0);
-	const nl_double d = A(1,1);
-
-	nl_double new_val[2];
-	new_val[1] = (a * m_RHS[1] - c * m_RHS[0]) / (a * d - b * c);
-	new_val[0] = (m_RHS[0] - b * new_val[1]) / a;
-
-	if (is_dynamic())
+	template <typename FT>
+	class matrix_solver_direct2_t: public matrix_solver_direct_t<FT, 2>
 	{
-		nl_double err = this->delta(new_val);
-		store(new_val);
-		if (err > m_params.m_accuracy )
-			return 2;
-		else
-			return 1;
-	}
-	store(new_val);
-	return 1;
-}
+	public:
 
-NETLIB_NAMESPACE_DEVICES_END()
+		using float_type = FT;
 
-#endif /* NLD_MS_DIRECT2_H_ */
+		matrix_solver_direct2_t(devices::nld_solver &main_solver, const pstring &name,
+			const matrix_solver_t::net_list_t &nets,
+			const solver::solver_parameters_t *params)
+		: matrix_solver_direct_t<FT, 2>(main_solver, name, nets, params, 2)
+		{}
+		void vsolve_non_dynamic() override
+		{
+			this->clear_square_mat(this->m_A);
+			this->fill_matrix_and_rhs();
+
+			const float_type a = this->m_A[0][0];
+			const float_type b = this->m_A[0][1];
+			const float_type c = this->m_A[1][0];
+			const float_type d = this->m_A[1][1];
+
+			const float_type v1 = (a * this->m_RHS[1] - c * this->m_RHS[0]) / (a * d - b * c);
+			const float_type v0 = (this->m_RHS[0] - b * v1) / a;
+			this->m_new_V[0] = v0;
+			this->m_new_V[1] = v1;
+		}
+
+	};
+
+} // namespace solver
+} // namespace netlist
+
+#endif // NLD_MS_DIRECT2_H_

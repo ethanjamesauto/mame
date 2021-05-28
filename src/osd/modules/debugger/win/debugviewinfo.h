@@ -5,15 +5,15 @@
 //  debugviewinfo.h - Win32 debug window handling
 //
 //============================================================
+#ifndef MAME_DEBUGGER_WIN_DEBUGVIEWINFO_H
+#define MAME_DEBUGGER_WIN_DEBUGVIEWINFO_H
 
-#ifndef __DEBUG_WIN_DEBUG_VIEW_INFO_H__
-#define __DEBUG_WIN_DEBUG_VIEW_INFO_H__
+#pragma once
 
 #include "debugwin.h"
 
 #include "debugbaseinfo.h"
 
-#include "emu.h"
 #include "debug/debugvw.h"
 
 
@@ -27,15 +27,15 @@ public:
 
 	bool owns_window(HWND wnd) const { return m_wnd == wnd; }
 
-	UINT32 prefwidth() const;
-	UINT32 maxwidth();
+	uint32_t prefwidth() const;
+	uint32_t maxwidth();
 	void get_bounds(RECT &bounds) const;
 	void set_bounds(RECT const &newbounds);
 
 	void send_vscroll(int delta);
 	void send_pageup();
 	void send_pagedown();
-	void set_focus() { SetFocus(m_wnd); }
+	void set_focus() const { SetFocus(m_wnd); }
 
 	debug_view_type type() const { return m_view->type(); }
 	debug_view_xy total_size() const { return m_view->total_size(); }
@@ -52,12 +52,23 @@ public:
 	HWND create_source_combobox(HWND parent, LONG_PTR userdata);
 
 protected:
+	enum
+	{
+		ID_CONTEXT_COPY_VISIBLE = 1,
+		ID_CONTEXT_PASTE
+	};
+
 	template <typename T> T *view() const { return downcast<T *>(m_view); }
+
+	virtual void add_items_to_context_menu(HMENU menu);
+	virtual void update_context_menu(HMENU menu);
+	virtual void handle_context_menu(unsigned command);
 
 private:
 	void draw_contents(HDC windc);
 	void update();
-	UINT32 process_scroll(WORD type, HWND wnd);
+	uint32_t process_scroll(WORD type, HWND wnd);
+	bool process_context_menu(int x, int y);
 	LRESULT view_proc(UINT message, WPARAM wparam, LPARAM lparam);
 
 	static void static_update(debug_view &view, void *osdprivate);
@@ -70,6 +81,7 @@ private:
 	HWND            m_wnd;
 	HWND            m_hscroll;
 	HWND            m_vscroll;
+	HMENU           m_contextmenu;
 
 	static bool     s_window_class_registered;
 };

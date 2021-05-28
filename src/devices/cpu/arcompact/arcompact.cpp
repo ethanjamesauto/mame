@@ -21,47 +21,53 @@
 #include "emu.h"
 #include "debugger.h"
 #include "arcompact.h"
-#include "arcompact_common.h"
+#include "arcompactdasm.h"
 
 
-const device_type ARCA5 = &device_creator<arcompact_device>;
+DEFINE_DEVICE_TYPE(ARCA5, arcompact_device, "arc_a5", "Argonaut ARCtangent A5")
 
 
-READ32_MEMBER( arcompact_device::arcompact_auxreg002_LPSTART_r) { return m_LP_START&0xfffffffe; }
-WRITE32_MEMBER(arcompact_device::arcompact_auxreg002_LPSTART_w) { m_LP_START = data&0xfffffffe; }
-READ32_MEMBER( arcompact_device::arcompact_auxreg003_LPEND_r) { return m_LP_END&0xfffffffe; }
-WRITE32_MEMBER(arcompact_device::arcompact_auxreg003_LPEND_w) { m_LP_END = data&0xfffffffe; }
+uint32_t arcompact_device::arcompact_auxreg002_LPSTART_r() { return m_LP_START&0xfffffffe; }
+void arcompact_device::arcompact_auxreg002_LPSTART_w(uint32_t data) { m_LP_START = data&0xfffffffe; }
+uint32_t arcompact_device::arcompact_auxreg003_LPEND_r() { return m_LP_END&0xfffffffe; }
+void arcompact_device::arcompact_auxreg003_LPEND_w(uint32_t data) { m_LP_END = data&0xfffffffe; }
 
-READ32_MEMBER( arcompact_device::arcompact_auxreg00a_STATUS32_r) { return 0xffffdead; /*m_status32;*/ }
+uint32_t arcompact_device::arcompact_auxreg00a_STATUS32_r() { return 0xffffdead; /*m_status32;*/ }
 
-READ32_MEMBER( arcompact_device::arcompact_auxreg025_INTVECTORBASE_r) { return m_INTVECTORBASE&0xfffffc00; }
-WRITE32_MEMBER(arcompact_device::arcompact_auxreg025_INTVECTORBASE_w) { m_INTVECTORBASE = data&0xfffffc00; }
-
-
+uint32_t arcompact_device::arcompact_auxreg025_INTVECTORBASE_r() { return m_INTVECTORBASE&0xfffffc00; }
+void arcompact_device::arcompact_auxreg025_INTVECTORBASE_w(uint32_t data) { m_INTVECTORBASE = data&0xfffffc00; }
 
 
-static ADDRESS_MAP_START( arcompact_auxreg_map, AS_IO, 32, arcompact_device )
-	AM_RANGE(0x000000008, 0x00000000b) AM_READWRITE(arcompact_auxreg002_LPSTART_r, arcompact_auxreg002_LPSTART_w)
-	AM_RANGE(0x00000000c, 0x00000000f) AM_READWRITE(arcompact_auxreg003_LPEND_r, arcompact_auxreg003_LPEND_w)
-	AM_RANGE(0x000000028, 0x00000002b) AM_READ(arcompact_auxreg00a_STATUS32_r) // r/o
-	AM_RANGE(0x000000094, 0x000000097) AM_READWRITE(arcompact_auxreg025_INTVECTORBASE_r, arcompact_auxreg025_INTVECTORBASE_w)
-ADDRESS_MAP_END
 
-//#define AUX_SPACE_ADDRESS_WIDTH 34  // IO space is 32 bits of dwords, so 34-bits
-#define AUX_SPACE_ADDRESS_WIDTH 64 // but the MAME core requires us to use power of 2 values for >32
 
-arcompact_device::arcompact_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: cpu_device(mconfig, ARCA5, "ARCtangent-A5", tag, owner, clock, "arca5", __FILE__)
+void arcompact_device::arcompact_auxreg_map(address_map &map)
+{
+	map(0x000000002, 0x000000002).rw(FUNC(arcompact_device::arcompact_auxreg002_LPSTART_r), FUNC(arcompact_device::arcompact_auxreg002_LPSTART_w));
+	map(0x000000003, 0x000000003).rw(FUNC(arcompact_device::arcompact_auxreg003_LPEND_r), FUNC(arcompact_device::arcompact_auxreg003_LPEND_w));
+	map(0x000000009, 0x000000009).r(FUNC(arcompact_device::arcompact_auxreg00a_STATUS32_r)); // r/o
+	map(0x000000025, 0x000000025).rw(FUNC(arcompact_device::arcompact_auxreg025_INTVECTORBASE_r), FUNC(arcompact_device::arcompact_auxreg025_INTVECTORBASE_w));
+}
+
+#define AUX_SPACE_ADDRESS_WIDTH 32  // IO space is 32 bits of dwords
+
+arcompact_device::arcompact_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: cpu_device(mconfig, ARCA5, tag, owner, clock)
 	, m_program_config("program", ENDIANNESS_LITTLE, 32, 32, 0) // some docs describe these as 'middle endian'?!
-	, m_io_config( "io", ENDIANNESS_LITTLE, 32, AUX_SPACE_ADDRESS_WIDTH, 0, ADDRESS_MAP_NAME( arcompact_auxreg_map ) )
+	, m_io_config( "io", ENDIANNESS_LITTLE, 32, AUX_SPACE_ADDRESS_WIDTH, -2, address_map_constructor(FUNC(arcompact_device::arcompact_auxreg_map), this))
 {
 }
 
-
-offs_t arcompact_device::disasm_disassemble(char *buffer, offs_t pc, const UINT8 *oprom, const UINT8 *opram, UINT32 options)
+device_memory_interface::space_config_vector arcompact_device::memory_space_config() const
 {
-	extern CPU_DISASSEMBLE( arcompact );
-	return CPU_DISASSEMBLE_NAME(arcompact)(this, buffer, pc, oprom, opram, options);
+	return space_config_vector {
+		std::make_pair(AS_PROGRAM, &m_program_config),
+		std::make_pair(AS_IO,      &m_io_config)
+	};
+}
+
+std::unique_ptr<util::disasm_interface> arcompact_device::create_disassembler()
+{
+	return std::make_unique<arcompact_disassembler>();
 }
 
 
@@ -69,7 +75,7 @@ offs_t arcompact_device::disasm_disassemble(char *buffer, offs_t pc, const UINT8
 
 /*****************************************************************************/
 
-void arcompact_device::unimplemented_opcode(UINT16 op)
+void arcompact_device::unimplemented_opcode(uint16_t op)
 {
 	fatalerror("ARCOMPACT: unknown opcode %04x at %04x\n", op, m_pc << 2);
 }
@@ -88,22 +94,28 @@ void arcompact_device::device_start()
 	m_program = &space(AS_PROGRAM);
 	m_io = &space(AS_IO);
 
-	state_add( 0,  "PC", m_debugger_temp).callimport().callexport().formatstr("%08X");
+	state_add( ARCOMPACT_PC, "PC", m_debugger_temp).callimport().callexport().formatstr("%08X");
 
-	state_add( 0x10,  "STATUS32", m_debugger_temp).callimport().callexport().formatstr("%08X");
-	state_add( 0x11,  "LP_START", m_debugger_temp).callimport().callexport().formatstr("%08X");
-	state_add( 0x12,  "LP_END", m_debugger_temp).callimport().callexport().formatstr("%08X");
+	state_add( ARCOMPACT_STATUS32, "STATUS32", m_debugger_temp).callimport().callexport().formatstr("%08X");
+	state_add( ARCOMPACT_LP_START, "LP_START", m_debugger_temp).callimport().callexport().formatstr("%08X");
+	state_add( ARCOMPACT_LP_END, "LP_END", m_debugger_temp).callimport().callexport().formatstr("%08X");
 
-	state_add(STATE_GENPC, "GENPC", m_debugger_temp).callexport().noshow();
+	state_add(STATE_GENPCBASE, "CURPC", m_debugger_temp).callimport().callexport().noshow();
 
 	for (int i = 0x100; i < 0x140; i++)
 	{
-		state_add(i, regnames[i-0x100], m_debugger_temp).callimport().callexport().formatstr("%08X");
+		state_add(i, arcompact_disassembler::regnames[i-0x100], m_debugger_temp).callimport().callexport().formatstr("%08X");
 	}
 
 
-	m_icountptr = &m_icount;
+	set_icountptr(m_icount);
 }
+
+
+//-------------------------------------------------
+//  state_export - export state from the device,
+//  to a known location where it can be read
+//-------------------------------------------------
 
 void arcompact_device::state_export(const device_state_entry &entry)
 {
@@ -111,22 +123,19 @@ void arcompact_device::state_export(const device_state_entry &entry)
 
 	switch (index)
 	{
-		case 0:
+		case ARCOMPACT_PC:
+		case STATE_GENPCBASE:
 			m_debugger_temp = m_pc;
 			break;
 
-		case 0x10:
+		case ARCOMPACT_STATUS32:
 			m_debugger_temp = m_status32;
 			break;
-		case 0x11:
+		case ARCOMPACT_LP_START:
 			m_debugger_temp = m_LP_START;
 			break;
-		case 0x12:
+		case ARCOMPACT_LP_END:
 			m_debugger_temp = m_LP_END;
-			break;
-
-		case STATE_GENPC:
-			m_debugger_temp = m_pc;
 			break;
 
 		default:
@@ -139,23 +148,30 @@ void arcompact_device::state_export(const device_state_entry &entry)
 	}
 }
 
+
+//-------------------------------------------------
+//  state_import - import state into the device,
+//  after it has been set
+//-------------------------------------------------
+
 void arcompact_device::state_import(const device_state_entry &entry)
 {
 	int index = entry.index();
 
 	switch (index)
 	{
-		case 0:
+		case ARCOMPACT_PC:
+		case STATE_GENPCBASE:
 			m_pc = (m_debugger_temp & 0xfffffffe);
 			break;
 
-		case 0x10:
+		case ARCOMPACT_STATUS32:
 			m_status32 = m_debugger_temp;
 			break;
-		case 0x11:
+		case ARCOMPACT_LP_START:
 			m_LP_START = m_debugger_temp;
 			break;
-		case 0x12:
+		case ARCOMPACT_LP_END:
 			m_LP_END = m_debugger_temp;
 			break;
 

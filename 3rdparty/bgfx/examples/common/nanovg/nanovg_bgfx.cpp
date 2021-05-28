@@ -1,6 +1,6 @@
 /*
- * Copyright 2011-2015 Branimir Karadzic. All rights reserved.
- * License: http://www.opensource.org/licenses/BSD-2-Clause
+ * Copyright 2011-2019 Branimir Karadzic. All rights reserved.
+ * License: https://github.com/bkaradzic/bgfx#license-bsd-2-clause
  */
 
 //
@@ -23,23 +23,32 @@
 #define NVG_ANTIALIAS 1
 
 #include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
 #include <math.h>
 #include "nanovg.h"
 
 #include <bgfx/bgfx.h>
+#include <bgfx/embedded_shader.h>
 
 #include <bx/bx.h>
+#include <bx/allocator.h>
+#include <bx/uint32_t.h>
 
 BX_PRAGMA_DIAGNOSTIC_IGNORED_MSVC(4244); // warning C4244: '=' : conversion from '' to '', possible loss of data
 
-namespace
-{
 #include "vs_nanovg_fill.bin.h"
 #include "fs_nanovg_fill.bin.h"
 
-	static bgfx::VertexDecl s_nvgDecl;
+static const bgfx::EmbeddedShader s_embeddedShaders[] =
+{
+	BGFX_EMBEDDED_SHADER(vs_nanovg_fill),
+	BGFX_EMBEDDED_SHADER(fs_nanovg_fill),
+
+	BGFX_EMBEDDED_SHADER_END()
+};
+
+namespace
+{
+	static bgfx::VertexLayout s_nvgLayout;
 
 	enum GLNVGshaderType
 	{
@@ -62,6 +71,14 @@ namespace
 		int flags;
 	};
 
+	struct GLNVGblend
+	{
+		uint64_t srcRGB;
+		uint64_t dstRGB;
+		uint64_t srcAlpha;
+		uint64_t dstAlpha;
+	};
+
 	enum GLNVGcallType
 	{
 		GLNVG_FILL,
@@ -79,6 +96,7 @@ namespace
 		int vertexOffset;
 		int vertexCount;
 		int uniformOffset;
+		GLNVGblend blendFunc;
 	};
 
 	struct GLNVGpath
@@ -113,6 +131,8 @@ namespace
 
 	struct GLNVGcontext
 	{
+		bx::AllocatorI* allocator;
+
 		bgfx::ProgramHandle prog;
 		bgfx::UniformHandle u_scissorMat;
 		bgfx::UniformHandle u_paintMat;
@@ -128,13 +148,13 @@ namespace
 
 		uint64_t state;
 		bgfx::TextureHandle th;
+		bgfx::TextureHandle texMissing;
 
 		bgfx::TransientVertexBuffer tvb;
-		uint8_t viewid;
+		bgfx::ViewId viewId;
 
 		struct GLNVGtexture* textures;
 		float view[2];
-		float surface[2];
 		int ntextures;
 		int ctextures;
 		int textureId;
@@ -164,7 +184,7 @@ namespace
 
 		for (i = 0; i < gl->ntextures; i++)
 		{
-			if (gl->textures[i].id.idx == bgfx::invalidHandle)
+			if (gl->textures[i].id.idx == bgfx::kInvalidHandle)
 			{
 				tex = &gl->textures[i];
 				break;
@@ -177,8 +197,8 @@ namespace
 			{
 				int old = gl->ctextures;
 				gl->ctextures = (gl->ctextures == 0) ? 2 : gl->ctextures*2;
-				gl->textures = (struct GLNVGtexture*)realloc(gl->textures, sizeof(struct GLNVGtexture)*gl->ctextures);
-				memset(&gl->textures[old], 0xff, (gl->ctextures-old)*sizeof(struct GLNVGtexture) );
+				gl->textures = (struct GLNVGtexture*)BX_REALLOC(gl->allocator, gl->textures, sizeof(struct GLNVGtexture)*gl->ctextures);
+				bx::memSet(&gl->textures[old], 0xff, (gl->ctextures-old)*sizeof(struct GLNVGtexture) );
 
 				if (gl->textures == NULL)
 				{
@@ -188,7 +208,7 @@ namespace
 			tex = &gl->textures[gl->ntextures++];
 		}
 
-		memset(tex, 0, sizeof(*tex) );
+		bx::memSet(tex, 0, sizeof(*tex) );
 
 		return tex;
 	}
@@ -216,10 +236,10 @@ namespace
 				if (bgfx::isValid(gl->textures[ii].id)
 				&& (gl->textures[ii].flags & NVG_IMAGE_NODELETE) == 0)
 				{
-					bgfx::destroyTexture(gl->textures[ii].id);
+					bgfx::destroy(gl->textures[ii].id);
 				}
-				memset(&gl->textures[ii], 0, sizeof(gl->textures[ii]) );
-				gl->textures[ii].id.idx = bgfx::invalidHandle;
+				bx::memSet(&gl->textures[ii], 0, sizeof(gl->textures[ii]) );
+				gl->textures[ii].id.idx = bgfx::kInvalidHandle;
 				return 1;
 			}
 		}
@@ -231,38 +251,17 @@ namespace
 	{
 		struct GLNVGcontext* gl = (struct GLNVGcontext*)_userPtr;
 
-		const bgfx::Memory* vs_nanovg_fill;
-		const bgfx::Memory* fs_nanovg_fill;
-
-		switch (bgfx::getRendererType() )
-		{
-		case bgfx::RendererType::Direct3D9:
-			vs_nanovg_fill = bgfx::makeRef(vs_nanovg_fill_dx9, sizeof(vs_nanovg_fill_dx9) );
-			fs_nanovg_fill = bgfx::makeRef(fs_nanovg_fill_dx9, sizeof(fs_nanovg_fill_dx9) );
-			break;
-
-		case bgfx::RendererType::Direct3D11:
-		case bgfx::RendererType::Direct3D12:
-			vs_nanovg_fill = bgfx::makeRef(vs_nanovg_fill_dx11, sizeof(vs_nanovg_fill_dx11) );
-			fs_nanovg_fill = bgfx::makeRef(fs_nanovg_fill_dx11, sizeof(fs_nanovg_fill_dx11) );
-			break;
-
-		case bgfx::RendererType::Metal:
-			vs_nanovg_fill = bgfx::makeRef(vs_nanovg_fill_mtl, sizeof(vs_nanovg_fill_mtl) );
-			fs_nanovg_fill = bgfx::makeRef(fs_nanovg_fill_mtl, sizeof(fs_nanovg_fill_mtl) );
-			break;
-
-		default:
-			vs_nanovg_fill = bgfx::makeRef(vs_nanovg_fill_glsl, sizeof(vs_nanovg_fill_glsl) );
-			fs_nanovg_fill = bgfx::makeRef(fs_nanovg_fill_glsl, sizeof(fs_nanovg_fill_glsl) );
-			break;
-		}
-
+		bgfx::RendererType::Enum type = bgfx::getRendererType();
 		gl->prog = bgfx::createProgram(
-						  bgfx::createShader(vs_nanovg_fill)
-						, bgfx::createShader(fs_nanovg_fill)
+						  bgfx::createEmbeddedShader(s_embeddedShaders, type, "vs_nanovg_fill")
+						, bgfx::createEmbeddedShader(s_embeddedShaders, type, "fs_nanovg_fill")
 						, true
 						);
+
+		const bgfx::Memory* mem = bgfx::alloc(4*4*4);
+		uint32_t* bgra8 = (uint32_t*)mem->data;
+		bx::memSet(bgra8, 0, 4*4*4);
+		gl->texMissing = bgfx::createTexture2D(4, 4, false, 1, bgfx::TextureFormat::BGRA8, 0, mem);
 
 		gl->u_scissorMat      = bgfx::createUniform("u_scissorMat",      bgfx::UniformType::Mat3);
 		gl->u_paintMat        = bgfx::createUniform("u_paintMat",        bgfx::UniformType::Mat3);
@@ -272,7 +271,7 @@ namespace
 		gl->u_scissorExtScale = bgfx::createUniform("u_scissorExtScale", bgfx::UniformType::Vec4);
 		gl->u_extentRadius    = bgfx::createUniform("u_extentRadius",    bgfx::UniformType::Vec4);
 		gl->u_params          = bgfx::createUniform("u_params",          bgfx::UniformType::Vec4);
-		gl->s_tex             = bgfx::createUniform("s_tex",             bgfx::UniformType::Int1);
+		gl->s_tex             = bgfx::createUniform("s_tex",             bgfx::UniformType::Sampler);
 
 		if (bgfx::getRendererType() == bgfx::RendererType::Direct3D9)
 		{
@@ -280,10 +279,10 @@ namespace
 		}
 		else
 		{
-			gl->u_halfTexel.idx = bgfx::invalidHandle;
+			gl->u_halfTexel.idx = bgfx::kInvalidHandle;
 		}
 
-		s_nvgDecl
+		s_nvgLayout
 			.begin()
 			.add(bgfx::Attrib::Position,  2, bgfx::AttribType::Float)
 			.add(bgfx::Attrib::TexCoord0, 2, bgfx::AttribType::Float)
@@ -295,7 +294,14 @@ namespace
 		return 1;
 	}
 
-	static int nvgRenderCreateTexture(void* _userPtr, int _type, int _width, int _height, int _flags, const unsigned char* _rgba)
+	static int nvgRenderCreateTexture(
+		  void* _userPtr
+		, int _type
+		, int _width
+		, int _height
+		, int _flags
+		, const unsigned char* _rgba
+		)
 	{
 		struct GLNVGcontext* gl = (struct GLNVGcontext*)_userPtr;
 		struct GLNVGtexture* tex = glnvg__allocTexture(gl);
@@ -319,15 +325,30 @@ namespace
 			mem = bgfx::copy(_rgba, tex->height * pitch);
 		}
 
-		tex->id = bgfx::createTexture2D(tex->width
+		tex->id = bgfx::createTexture2D(
+						  tex->width
 						, tex->height
+						, false
 						, 1
 						, NVG_TEXTURE_RGBA == _type ? bgfx::TextureFormat::RGBA8 : bgfx::TextureFormat::R8
-						, BGFX_TEXTURE_NONE
-						, mem
+						, BGFX_SAMPLER_NONE
 						);
 
-		return tex->id.idx;
+		if (NULL != mem)
+		{
+			bgfx::updateTexture2D(
+				  tex->id
+				, 0
+				, 0
+				, 0
+				, 0
+				, tex->width
+				, tex->height
+				, mem
+				);
+		}
+
+		return bgfx::isValid(tex->id) ? tex->id.idx : 0;
 	}
 
 	static int nvgRenderDeleteTexture(void* _userPtr, int image)
@@ -348,10 +369,24 @@ namespace
 		uint32_t bytesPerPixel = NVG_TEXTURE_RGBA == tex->type ? 4 : 1;
 		uint32_t pitch = tex->width * bytesPerPixel;
 
-		bgfx::updateTexture2D(tex->id, 0, x, y, w, h
-				, bgfx::makeRef(data + y*pitch + x*bytesPerPixel, h*pitch)
-				, pitch
-				);
+		const bgfx::Memory* mem = bgfx::alloc(w * h * bytesPerPixel);
+		bx::gather(mem->data,                            // dst
+		           data + y * pitch + x * bytesPerPixel, // src
+		           pitch,                                // srcStride
+		           w * bytesPerPixel,                    // stride
+		           h);                                   // num
+
+		bgfx::updateTexture2D(
+			  tex->id
+			, 0
+			, 0
+			, x
+			, y
+			, w
+			, h
+			, mem
+			, UINT16_MAX
+			);
 
 		return 1;
 	}
@@ -361,7 +396,8 @@ namespace
 		struct GLNVGcontext* gl = (struct GLNVGcontext*)_userPtr;
 		struct GLNVGtexture* tex = glnvg__findTexture(gl, image);
 
-		if (!bgfx::isValid(tex->id) )
+		if (NULL == tex
+		|| !bgfx::isValid(tex->id) )
 		{
 			return 0;
 		}
@@ -372,62 +408,50 @@ namespace
 		return 1;
 	}
 
-	static void glnvg__xformIdentity(float* t)
-	{
-		t[0] = 1.0f; t[1] = 0.0f;
-		t[2] = 0.0f; t[3] = 1.0f;
-		t[4] = 0.0f; t[5] = 0.0f;
-	}
-
-	static void glnvg__xformInverse(float* inv, float* t)
-	{
-		double invdet, det = (double)t[0] * t[3] - (double)t[2] * t[1];
-		if (det > -1e-6 && det < 1e-6) {
-			glnvg__xformIdentity(t);
-			return;
-		}
-		invdet = 1.0 / det;
-		inv[0] = (float)(t[3] * invdet);
-		inv[2] = (float)(-t[2] * invdet);
-		inv[4] = (float)( ((double)t[2] * t[5] - (double)t[3] * t[4]) * invdet);
-		inv[1] = (float)(-t[1] * invdet);
-		inv[3] = (float)(t[0] * invdet);
-		inv[5] = (float)( ((double)t[1] * t[4] - (double)t[0] * t[5]) * invdet);
-	}
-
 	static void glnvg__xformToMat3x4(float* m3, float* t)
 	{
-		m3[0] = t[0];
-		m3[1] = t[1];
-		m3[2] = 0.0f;
-		m3[3] = 0.0f;
-		m3[4] = t[2];
-		m3[5] = t[3];
-		m3[6] = 0.0f;
-		m3[7] = 0.0f;
-		m3[8] = t[4];
-		m3[9] = t[5];
+		m3[ 0] = t[0];
+		m3[ 1] = t[1];
+		m3[ 2] = 0.0f;
+		m3[ 3] = 0.0f;
+		m3[ 4] = t[2];
+		m3[ 5] = t[3];
+		m3[ 6] = 0.0f;
+		m3[ 7] = 0.0f;
+		m3[ 8] = t[4];
+		m3[ 9] = t[5];
 		m3[10] = 1.0f;
 		m3[11] = 0.0f;
 	}
 
-	static int glnvg__convertPaint(struct GLNVGcontext* gl, struct GLNVGfragUniforms* frag, struct NVGpaint* paint,
-								   struct NVGscissor* scissor, float width, float fringe)
+	static NVGcolor glnvg__premulColor(NVGcolor c)
+	{
+		c.r *= c.a;
+		c.g *= c.a;
+		c.b *= c.a;
+		return c;
+	}
+
+	static int glnvg__convertPaint(
+		  struct GLNVGcontext* gl
+		, struct GLNVGfragUniforms* frag
+		, struct NVGpaint* paint
+		, struct NVGscissor* scissor
+		, float width
+		, float fringe
+		)
 	{
 		struct GLNVGtexture* tex = NULL;
 		float invxform[6] = {};
 
-		memset(frag, 0, sizeof(*frag) );
+		bx::memSet(frag, 0, sizeof(*frag) );
 
-		frag->innerCol = paint->innerColor;
-		frag->outerCol = paint->outerColor;
+		frag->innerCol = glnvg__premulColor(paint->innerColor);
+		frag->outerCol = glnvg__premulColor(paint->outerColor);
 
-		glnvg__xformInverse(invxform, paint->xform);
-		glnvg__xformToMat3x4(frag->paintMat, invxform);
-
-		if (scissor->extent[0] < 0.5f || scissor->extent[1] < 0.5f)
+		if (scissor->extent[0] < -0.5f || scissor->extent[1] < -0.5f)
 		{
-			memset(frag->scissorMat, 0, sizeof(frag->scissorMat) );
+			bx::memSet(frag->scissorMat, 0, sizeof(frag->scissorMat) );
 			frag->scissorExt[0] = 1.0f;
 			frag->scissorExt[1] = 1.0f;
 			frag->scissorScale[0] = 1.0f;
@@ -435,18 +459,17 @@ namespace
 		}
 		else
 		{
-			glnvg__xformInverse(invxform, scissor->xform);
+			nvgTransformInverse(invxform, scissor->xform);
 			glnvg__xformToMat3x4(frag->scissorMat, invxform);
 			frag->scissorExt[0] = scissor->extent[0];
 			frag->scissorExt[1] = scissor->extent[1];
 			frag->scissorScale[0] = sqrtf(scissor->xform[0]*scissor->xform[0] + scissor->xform[2]*scissor->xform[2]) / fringe;
 			frag->scissorScale[1] = sqrtf(scissor->xform[1]*scissor->xform[1] + scissor->xform[3]*scissor->xform[3]) / fringe;
 		}
-		memcpy(frag->extent, paint->extent, sizeof(frag->extent) );
+		bx::memCopy(frag->extent, paint->extent, sizeof(frag->extent) );
 		frag->strokeMult = (width*0.5f + fringe*0.5f) / fringe;
 
-		bgfx::TextureHandle invalid = BGFX_INVALID_HANDLE;
-		gl->th = invalid;
+		gl->th = gl->texMissing;
 		if (paint->image != 0)
 		{
 			tex = glnvg__findTexture(gl, paint->image);
@@ -454,32 +477,44 @@ namespace
 			{
 				return 0;
 			}
+			nvgTransformInverse(invxform, paint->xform);
 			frag->type = NSVG_SHADER_FILLIMG;
-			frag->texType = tex->type == NVG_TEXTURE_RGBA ? 0.0f : 1.0f;
+
+			if (tex->type == NVG_TEXTURE_RGBA)
+			{
+				frag->texType = (tex->flags & NVG_IMAGE_PREMULTIPLIED) ? 0.0f : 1.0f;
+			}
+			else
+			{
+				frag->texType = 2.0f;
+			}
 			gl->th = tex->id;
 		}
 		else
 		{
 			frag->type = NSVG_SHADER_FILLGRAD;
-			frag->radius = paint->radius;
+			frag->radius  = paint->radius;
 			frag->feather = paint->feather;
+			nvgTransformInverse(invxform, paint->xform);
 		}
+
+		glnvg__xformToMat3x4(frag->paintMat, invxform);
 
 		return 1;
 	}
 
 	static void glnvg__mat3(float* dst, float* src)
 	{
-		dst[0] = src[0];
-		dst[1] = src[1];
-		dst[2] = src[2];
+		dst[0] = src[ 0];
+		dst[1] = src[ 1];
+		dst[2] = src[ 2];
 
-		dst[3] = src[4];
-		dst[4] = src[5];
-		dst[5] = src[6];
+		dst[3] = src[ 4];
+		dst[4] = src[ 5];
+		dst[5] = src[ 6];
 
-		dst[6] = src[8];
-		dst[7] = src[9];
+		dst[6] = src[ 8];
+		dst[7] = src[ 9];
 		dst[8] = src[10];
 	}
 
@@ -503,7 +538,7 @@ namespace
 		bgfx::setUniform(gl->u_extentRadius,    &frag->extent[0]);
 		bgfx::setUniform(gl->u_params,          &frag->feather);
 
-		bgfx::TextureHandle handle = BGFX_INVALID_HANDLE;
+		bgfx::TextureHandle handle = gl->texMissing;
 
 		if (image != 0)
 		{
@@ -523,14 +558,12 @@ namespace
 		gl->th = handle;
 	}
 
-	static void nvgRenderViewport(void* _userPtr, int width, int height, int surfaceWidth, int surfaceHeight)
+	static void nvgRenderViewport(void* _userPtr, float width, float height, float devicePixelRatio)
 	{
 		struct GLNVGcontext* gl = (struct GLNVGcontext*)_userPtr;
-		gl->view[0] = (float)width;
-		gl->view[1] = (float)height;
-		gl->surface[0] = (float)surfaceWidth;
-		gl->surface[1] = (float)surfaceHeight;
-		bgfx::setViewRect(gl->viewid, 0, 0, width, height);
+		gl->view[0] = width;
+		gl->view[1] = height;
+		bgfx::setViewRect(gl->viewId, 0, 0, width * devicePixelRatio, height * devicePixelRatio);
 	}
 
 	static void fan(uint32_t _start, uint32_t _count)
@@ -575,10 +608,10 @@ namespace
 					| BGFX_STENCIL_OP_FAIL_Z_KEEP
 					| BGFX_STENCIL_OP_PASS_Z_DECR
 					);
-				bgfx::setVertexBuffer(&gl->tvb);
+				bgfx::setVertexBuffer(0, &gl->tvb);
 				bgfx::setTexture(0, gl->s_tex, gl->th);
 				fan(paths[i].fillOffset, paths[i].fillCount);
-				bgfx::submit(gl->viewid, gl->prog);
+				bgfx::submit(gl->viewId, gl->prog);
 			}
 		}
 
@@ -600,15 +633,15 @@ namespace
 					| BGFX_STENCIL_OP_FAIL_Z_KEEP
 					| BGFX_STENCIL_OP_PASS_Z_KEEP
 					);
-				bgfx::setVertexBuffer(&gl->tvb, paths[i].strokeOffset, paths[i].strokeCount);
+				bgfx::setVertexBuffer(0, &gl->tvb, paths[i].strokeOffset, paths[i].strokeCount);
 				bgfx::setTexture(0, gl->s_tex, gl->th);
-				bgfx::submit(gl->viewid, gl->prog);
+				bgfx::submit(gl->viewId, gl->prog);
 			}
 		}
 
 		// Draw fill
 		bgfx::setState(gl->state);
-		bgfx::setVertexBuffer(&gl->tvb, call->vertexOffset, call->vertexCount);
+		bgfx::setVertexBuffer(0, &gl->tvb, call->vertexOffset, call->vertexCount);
 		bgfx::setTexture(0, gl->s_tex, gl->th);
 		bgfx::setStencil(0
 				| BGFX_STENCIL_TEST_NOTEQUAL
@@ -617,7 +650,7 @@ namespace
 				| BGFX_STENCIL_OP_FAIL_Z_ZERO
 				| BGFX_STENCIL_OP_PASS_Z_ZERO
 				);
-		bgfx::submit(gl->viewid, gl->prog);
+		bgfx::submit(gl->viewId, gl->prog);
 	}
 
 	static void glnvg__convexFill(struct GLNVGcontext* gl, struct GLNVGcall* call)
@@ -631,10 +664,10 @@ namespace
 		{
 			if (paths[i].fillCount == 0) continue;
 			bgfx::setState(gl->state);
-			bgfx::setVertexBuffer(&gl->tvb);
+			bgfx::setVertexBuffer(0, &gl->tvb);
 			bgfx::setTexture(0, gl->s_tex, gl->th);
 			fan(paths[i].fillOffset, paths[i].fillCount);
-			bgfx::submit(gl->viewid, gl->prog);
+			bgfx::submit(gl->viewId, gl->prog);
 		}
 
 		if (gl->edgeAntiAlias)
@@ -645,9 +678,9 @@ namespace
 				bgfx::setState(gl->state
 					| BGFX_STATE_PT_TRISTRIP
 					);
-				bgfx::setVertexBuffer(&gl->tvb, paths[i].strokeOffset, paths[i].strokeCount);
+				bgfx::setVertexBuffer(0, &gl->tvb, paths[i].strokeOffset, paths[i].strokeCount);
 				bgfx::setTexture(0, gl->s_tex, gl->th);
-				bgfx::submit(gl->viewid, gl->prog);
+				bgfx::submit(gl->viewId, gl->prog);
 			}
 		}
 	}
@@ -665,9 +698,9 @@ namespace
 			bgfx::setState(gl->state
 				| BGFX_STATE_PT_TRISTRIP
 				);
-			bgfx::setVertexBuffer(&gl->tvb, paths[i].strokeOffset, paths[i].strokeCount);
+			bgfx::setVertexBuffer(0, &gl->tvb, paths[i].strokeOffset, paths[i].strokeCount);
 			bgfx::setTexture(0, gl->s_tex, gl->th);
-			bgfx::submit(gl->viewid, gl->prog);
+			bgfx::submit(gl->viewId, gl->prog);
 		}
 	}
 
@@ -678,10 +711,49 @@ namespace
 			nvgRenderSetUniforms(gl, call->uniformOffset, call->image);
 
 			bgfx::setState(gl->state);
-			bgfx::setVertexBuffer(&gl->tvb, call->vertexOffset, call->vertexCount);
+			bgfx::setVertexBuffer(0, &gl->tvb, call->vertexOffset, call->vertexCount);
 			bgfx::setTexture(0, gl->s_tex, gl->th);
-			bgfx::submit(gl->viewid, gl->prog);
+			bgfx::submit(gl->viewId, gl->prog);
 		}
+	}
+
+	static const uint64_t s_blend[] =
+	{
+		BGFX_STATE_BLEND_ZERO,
+		BGFX_STATE_BLEND_ONE,
+		BGFX_STATE_BLEND_SRC_COLOR,
+		BGFX_STATE_BLEND_INV_SRC_COLOR,
+		BGFX_STATE_BLEND_DST_COLOR,
+		BGFX_STATE_BLEND_INV_DST_COLOR,
+		BGFX_STATE_BLEND_SRC_ALPHA,
+		BGFX_STATE_BLEND_INV_SRC_ALPHA,
+		BGFX_STATE_BLEND_DST_ALPHA,
+		BGFX_STATE_BLEND_INV_DST_ALPHA,
+		BGFX_STATE_BLEND_SRC_ALPHA_SAT,
+	};
+
+	static uint64_t glnvg_convertBlendFuncFactor(int factor)
+	{
+		const uint32_t numtz = bx::uint32_cnttz(factor);
+		const uint32_t idx   = bx::uint32_min(numtz, BX_COUNTOF(s_blend)-1);
+		return s_blend[idx];
+	}
+
+	static GLNVGblend glnvg__blendCompositeOperation(NVGcompositeOperationState op)
+	{
+		GLNVGblend blend;
+		blend.srcRGB = glnvg_convertBlendFuncFactor(op.srcRGB);
+		blend.dstRGB = glnvg_convertBlendFuncFactor(op.dstRGB);
+		blend.srcAlpha = glnvg_convertBlendFuncFactor(op.srcAlpha);
+		blend.dstAlpha = glnvg_convertBlendFuncFactor(op.dstAlpha);
+		if (blend.srcRGB == BGFX_STATE_NONE || blend.dstRGB == BGFX_STATE_NONE || blend.srcAlpha == BGFX_STATE_NONE || blend.dstAlpha == BGFX_STATE_NONE)
+		{
+			blend.srcRGB = BGFX_STATE_BLEND_ONE;
+			blend.dstRGB = BGFX_STATE_BLEND_INV_SRC_ALPHA;
+			blend.srcAlpha = BGFX_STATE_BLEND_ONE;
+			blend.dstAlpha = BGFX_STATE_BLEND_INV_SRC_ALPHA;
+		}
+		return blend;
 	}
 
 	static void nvgRenderFlush(void* _userPtr)
@@ -690,42 +762,28 @@ namespace
 
 		if (gl->ncalls > 0)
 		{
-			bgfx::allocTransientVertexBuffer(&gl->tvb, gl->nverts, s_nvgDecl);
+			bgfx::allocTransientVertexBuffer(&gl->tvb, gl->nverts, s_nvgLayout);
 
 			int allocated = gl->tvb.size/gl->tvb.stride;
 
-			if (allocated < gl->nverts) {
+			if (allocated < gl->nverts)
+			{
 				gl->nverts = allocated;
 				BX_WARN(true, "Vertex number truncated due to transient vertex buffer overflow");
 			}
 
+			bx::memCopy(gl->tvb.data, gl->verts, gl->nverts * sizeof(struct NVGvertex) );
 
-			memcpy(gl->tvb.data, gl->verts, gl->nverts * sizeof(struct NVGvertex) );
-
-			gl->state = 0
-				| BGFX_STATE_RGB_WRITE
-				| BGFX_STATE_ALPHA_WRITE
-				;
-
-// 			if (alphaBlend == NVG_PREMULTIPLIED_ALPHA)
-// 			{
-// 				gl->state |= BGFX_STATE_BLEND_FUNC_SEPARATE(
-// 								  BGFX_STATE_BLEND_SRC_ALPHA, BGFX_STATE_BLEND_INV_SRC_ALPHA
-// 								, BGFX_STATE_BLEND_ONE,       BGFX_STATE_BLEND_INV_SRC_ALPHA
-// 								);
-// 			}
-// 			else
-			{
-				gl->state |= BGFX_STATE_BLEND_FUNC(
-								BGFX_STATE_BLEND_SRC_ALPHA, BGFX_STATE_BLEND_INV_SRC_ALPHA
-								);
-			}
-
-			bgfx::setUniform(gl->u_viewSize, gl->surface);
+			bgfx::setUniform(gl->u_viewSize, gl->view);
 
 			for (uint32_t ii = 0, num = gl->ncalls; ii < num; ++ii)
 			{
 				struct GLNVGcall* call = &gl->calls[ii];
+				const GLNVGblend* blend = &call->blendFunc;
+				gl->state = BGFX_STATE_BLEND_FUNC_SEPARATE(blend->srcRGB, blend->dstRGB, blend->srcAlpha, blend->dstAlpha)
+					| BGFX_STATE_WRITE_RGB
+					| BGFX_STATE_WRITE_A
+					;
 				switch (call->type)
 				{
 				case GLNVG_FILL:
@@ -773,10 +831,10 @@ namespace
 		if (gl->ncalls+1 > gl->ccalls)
 		{
 			gl->ccalls = gl->ccalls == 0 ? 32 : gl->ccalls * 2;
-			gl->calls = (struct GLNVGcall*)realloc(gl->calls, sizeof(struct GLNVGcall) * gl->ccalls);
+			gl->calls = (struct GLNVGcall*)BX_REALLOC(gl->allocator, gl->calls, sizeof(struct GLNVGcall) * gl->ccalls);
 		}
 		ret = &gl->calls[gl->ncalls++];
-		memset(ret, 0, sizeof(struct GLNVGcall) );
+		bx::memSet(ret, 0, sizeof(struct GLNVGcall) );
 		return ret;
 	}
 
@@ -786,7 +844,7 @@ namespace
 		if (gl->npaths + n > gl->cpaths) {
 			GLNVGpath* paths;
 			int cpaths = glnvg__maxi(gl->npaths + n, 128) + gl->cpaths / 2; // 1.5x Overallocate
-			paths = (GLNVGpath*)realloc(gl->paths, sizeof(GLNVGpath) * cpaths);
+			paths = (GLNVGpath*)BX_REALLOC(gl->allocator, gl->paths, sizeof(GLNVGpath) * cpaths);
 			if (paths == NULL) return -1;
 			gl->paths = paths;
 			gl->cpaths = cpaths;
@@ -803,7 +861,7 @@ namespace
 		{
 			NVGvertex* verts;
 			int cverts = glnvg__maxi(gl->nverts + n, 4096) + gl->cverts/2; // 1.5x Overallocate
-			verts = (NVGvertex*)realloc(gl->verts, sizeof(NVGvertex) * cverts);
+			verts = (NVGvertex*)BX_REALLOC(gl->allocator, gl->verts, sizeof(NVGvertex) * cverts);
 			if (verts == NULL) return -1;
 			gl->verts = verts;
 			gl->cverts = cverts;
@@ -819,7 +877,7 @@ namespace
 		if (gl->nuniforms+n > gl->cuniforms)
 		{
 			gl->cuniforms = gl->cuniforms == 0 ? glnvg__maxi(n, 32) : gl->cuniforms * 2;
-			gl->uniforms = (unsigned char*)realloc(gl->uniforms, gl->cuniforms * structSize);
+			gl->uniforms = (unsigned char*)BX_REALLOC(gl->allocator, gl->uniforms, gl->cuniforms * structSize);
 		}
 		ret = gl->nuniforms * structSize;
 		gl->nuniforms += n;
@@ -834,8 +892,16 @@ namespace
 		vtx->v = v;
 	}
 
-	static void nvgRenderFill(void* _userPtr, struct NVGpaint* paint, struct NVGscissor* scissor, float fringe,
-								  const float* bounds, const struct NVGpath* paths, int npaths)
+	static void nvgRenderFill(
+		  void* _userPtr
+		, NVGpaint* paint
+		, NVGcompositeOperationState compositeOperation
+		, NVGscissor* scissor
+		, float fringe
+		, const float* bounds
+		, const NVGpath* paths
+		, int npaths
+		)
 	{
 		struct GLNVGcontext* gl = (struct GLNVGcontext*)_userPtr;
 
@@ -848,6 +914,7 @@ namespace
 		call->pathOffset = glnvg__allocPaths(gl, npaths);
 		call->pathCount = npaths;
 		call->image = paint->image;
+		call->blendFunc = glnvg__blendCompositeOperation(compositeOperation);
 
 		if (npaths == 1 && paths[0].convex)
 		{
@@ -862,12 +929,12 @@ namespace
 		{
 			struct GLNVGpath* copy = &gl->paths[call->pathOffset + i];
 			const struct NVGpath* path = &paths[i];
-			memset(copy, 0, sizeof(struct GLNVGpath) );
+			bx::memSet(copy, 0, sizeof(struct GLNVGpath) );
 			if (path->nfill > 0)
 			{
 				copy->fillOffset = offset;
 				copy->fillCount = path->nfill;
-				memcpy(&gl->verts[offset], path->fill, sizeof(struct NVGvertex) * path->nfill);
+				bx::memCopy(&gl->verts[offset], path->fill, sizeof(struct NVGvertex) * path->nfill);
 				offset += path->nfill;
 			}
 
@@ -875,7 +942,7 @@ namespace
 			{
 				copy->strokeOffset = offset;
 				copy->strokeCount = path->nstroke;
-				memcpy(&gl->verts[offset], path->stroke, sizeof(struct NVGvertex) * path->nstroke);
+				bx::memCopy(&gl->verts[offset], path->stroke, sizeof(struct NVGvertex) * path->nstroke);
 				offset += path->nstroke;
 			}
 		}
@@ -898,7 +965,7 @@ namespace
 			call->uniformOffset = glnvg__allocFragUniforms(gl, 2);
 			// Simple shader for stencil
 			frag = nvg__fragUniformPtr(gl, call->uniformOffset);
-			memset(frag, 0, sizeof(*frag) );
+			bx::memSet(frag, 0, sizeof(*frag) );
 			frag->type = NSVG_SHADER_SIMPLE;
 			// Fill shader
 			glnvg__convertPaint(gl, nvg__fragUniformPtr(gl, call->uniformOffset + gl->fragSize), paint, scissor, fringe, fringe);
@@ -911,8 +978,16 @@ namespace
 		}
 	}
 
-	static void nvgRenderStroke(void* _userPtr, struct NVGpaint* paint, struct NVGscissor* scissor, float fringe,
-									float strokeWidth, const struct NVGpath* paths, int npaths)
+	static void nvgRenderStroke(
+		  void* _userPtr
+		, struct NVGpaint* paint
+		, NVGcompositeOperationState compositeOperation
+		, struct NVGscissor* scissor
+		, float fringe
+		, float strokeWidth
+		, const struct NVGpath* paths
+		, int npaths
+		)
 	{
 		struct GLNVGcontext* gl = (struct GLNVGcontext*)_userPtr;
 
@@ -923,6 +998,7 @@ namespace
 		call->pathOffset = glnvg__allocPaths(gl, npaths);
 		call->pathCount = npaths;
 		call->image = paint->image;
+		call->blendFunc = glnvg__blendCompositeOperation(compositeOperation);
 
 		// Allocate vertices for all the paths.
 		maxverts = glnvg__maxVertCount(paths, npaths);
@@ -932,12 +1008,12 @@ namespace
 		{
 			struct GLNVGpath* copy = &gl->paths[call->pathOffset + i];
 			const struct NVGpath* path = &paths[i];
-			memset(copy, 0, sizeof(struct GLNVGpath) );
+			bx::memSet(copy, 0, sizeof(struct GLNVGpath) );
 			if (path->nstroke)
 			{
 				copy->strokeOffset = offset;
 				copy->strokeCount = path->nstroke;
-				memcpy(&gl->verts[offset], path->stroke, sizeof(struct NVGvertex) * path->nstroke);
+				bx::memCopy(&gl->verts[offset], path->stroke, sizeof(struct NVGvertex) * path->nstroke);
 				offset += path->nstroke;
 			}
 		}
@@ -947,7 +1023,7 @@ namespace
 		glnvg__convertPaint(gl, nvg__fragUniformPtr(gl, call->uniformOffset), paint, scissor, strokeWidth, fringe);
 	}
 
-	static void nvgRenderTriangles(void* _userPtr, struct NVGpaint* paint, struct NVGscissor* scissor,
+	static void nvgRenderTriangles(void* _userPtr, struct NVGpaint* paint, NVGcompositeOperationState compositeOperation, struct NVGscissor* scissor,
 									   const struct NVGvertex* verts, int nverts)
 	{
 		struct GLNVGcontext* gl = (struct GLNVGcontext*)_userPtr;
@@ -956,11 +1032,12 @@ namespace
 
 		call->type = GLNVG_TRIANGLES;
 		call->image = paint->image;
+		call->blendFunc = glnvg__blendCompositeOperation(compositeOperation);
 
 		// Allocate vertices for all the paths.
 		call->vertexOffset = glnvg__allocVerts(gl, nverts);
 		call->vertexCount = nverts;
-		memcpy(&gl->verts[call->vertexOffset], verts, sizeof(struct NVGvertex) * nverts);
+		bx::memCopy(&gl->verts[call->vertexOffset], verts, sizeof(struct NVGvertex) * nverts);
 
 		// Fill shader
 		call->uniformOffset = glnvg__allocFragUniforms(gl, 1);
@@ -978,21 +1055,22 @@ namespace
 			return;
 		}
 
-		bgfx::destroyProgram(gl->prog);
+		bgfx::destroy(gl->prog);
+		bgfx::destroy(gl->texMissing);
 
-		bgfx::destroyUniform(gl->u_scissorMat);
-		bgfx::destroyUniform(gl->u_paintMat);
-		bgfx::destroyUniform(gl->u_innerCol);
-		bgfx::destroyUniform(gl->u_outerCol);
-		bgfx::destroyUniform(gl->u_viewSize);
-		bgfx::destroyUniform(gl->u_scissorExtScale);
-		bgfx::destroyUniform(gl->u_extentRadius);
-		bgfx::destroyUniform(gl->u_params);
-		bgfx::destroyUniform(gl->s_tex);
+		bgfx::destroy(gl->u_scissorMat);
+		bgfx::destroy(gl->u_paintMat);
+		bgfx::destroy(gl->u_innerCol);
+		bgfx::destroy(gl->u_outerCol);
+		bgfx::destroy(gl->u_viewSize);
+		bgfx::destroy(gl->u_scissorExtScale);
+		bgfx::destroy(gl->u_extentRadius);
+		bgfx::destroy(gl->u_params);
+		bgfx::destroy(gl->s_tex);
 
 		if (bgfx::isValid(gl->u_halfTexel) )
 		{
-			bgfx::destroyUniform(gl->u_halfTexel);
+			bgfx::destroy(gl->u_halfTexel);
 		}
 
 		for (uint32_t ii = 0, num = gl->ntextures; ii < num; ++ii)
@@ -1000,26 +1078,39 @@ namespace
 			if (bgfx::isValid(gl->textures[ii].id)
 			&& (gl->textures[ii].flags & NVG_IMAGE_NODELETE) == 0)
 			{
-				bgfx::destroyTexture(gl->textures[ii].id);
+				bgfx::destroy(gl->textures[ii].id);
 			}
 		}
 
-		free(gl->textures);
-
-		free(gl);
+		BX_FREE(gl->allocator, gl->uniforms);
+		BX_FREE(gl->allocator, gl->verts);
+		BX_FREE(gl->allocator, gl->paths);
+		BX_FREE(gl->allocator, gl->calls);
+		BX_FREE(gl->allocator, gl->textures);
+		BX_FREE(gl->allocator, gl);
 	}
 
 } // namespace
 
-NVGcontext* nvgCreate(int edgeaa, unsigned char viewid)
+NVGcontext* nvgCreate(int32_t _edgeaa, bgfx::ViewId _viewId, bx::AllocatorI* _allocator)
 {
+	if (NULL == _allocator)
+	{
+		static bx::DefaultAllocator allocator;
+		_allocator = &allocator;
+	}
+
 	struct NVGparams params;
 	struct NVGcontext* ctx = NULL;
-	struct GLNVGcontext* gl = (struct GLNVGcontext*)malloc(sizeof(struct GLNVGcontext) );
-	if (gl == NULL) goto error;
-	memset(gl, 0, sizeof(struct GLNVGcontext) );
+	struct GLNVGcontext* gl = (struct GLNVGcontext*)BX_ALLOC(_allocator, sizeof(struct GLNVGcontext) );
+	if (gl == NULL)
+	{
+		goto error;
+	}
 
-	memset(&params, 0, sizeof(params) );
+	bx::memSet(gl, 0, sizeof(struct GLNVGcontext) );
+
+	bx::memSet(&params, 0, sizeof(params) );
 	params.renderCreate         = nvgRenderCreate;
 	params.renderCreateTexture  = nvgRenderCreateTexture;
 	params.renderDeleteTexture  = nvgRenderDeleteTexture;
@@ -1031,11 +1122,12 @@ NVGcontext* nvgCreate(int edgeaa, unsigned char viewid)
 	params.renderStroke         = nvgRenderStroke;
 	params.renderTriangles      = nvgRenderTriangles;
 	params.renderDelete         = nvgRenderDelete;
-	params.userPtr = gl;
-	params.edgeAntiAlias = edgeaa;
+	params.userPtr              = gl;
+	params.edgeAntiAlias        = _edgeaa;
 
-	gl->edgeAntiAlias = edgeaa;
-	gl->viewid = uint8_t(viewid);
+	gl->allocator     = _allocator;
+	gl->edgeAntiAlias = _edgeaa;
+	gl->viewId        = _viewId;
 
 	ctx = nvgCreateInternal(&params);
 	if (ctx == NULL) goto error;
@@ -1052,14 +1144,128 @@ error:
 	return NULL;
 }
 
-void nvgViewId(struct NVGcontext* ctx, unsigned char viewid)
-{
-	struct NVGparams* params = nvgInternalParams(ctx);
-	struct GLNVGcontext* gl = (struct GLNVGcontext*)params->userPtr;
-	gl->viewid = uint8_t(viewid);
+NVGcontext* nvgCreate(int32_t _edgeaa, bgfx::ViewId _viewId) {
+	return nvgCreate(_edgeaa, _viewId, NULL);
 }
 
-void nvgDelete(struct NVGcontext* ctx)
+void nvgDelete(NVGcontext* _ctx)
 {
-	nvgDeleteInternal(ctx);
+	nvgDeleteInternal(_ctx);
+}
+
+void nvgSetViewId(NVGcontext* _ctx, bgfx::ViewId _viewId)
+{
+	struct NVGparams* params = nvgInternalParams(_ctx);
+	struct GLNVGcontext* gl = (struct GLNVGcontext*)params->userPtr;
+	gl->viewId = _viewId;
+}
+
+uint16_t nvgGetViewId(struct NVGcontext* _ctx)
+{
+	struct NVGparams* params = nvgInternalParams(_ctx);
+	struct GLNVGcontext* gl = (struct GLNVGcontext*)params->userPtr;
+	return gl->viewId;
+}
+
+bgfx::TextureHandle nvglImageHandle(NVGcontext* _ctx, int32_t _image)
+{
+	GLNVGcontext* gl = (GLNVGcontext*)nvgInternalParams(_ctx)->userPtr;
+	GLNVGtexture* tex = glnvg__findTexture(gl, _image);
+	return tex->id;
+}
+
+NVGLUframebuffer* nvgluCreateFramebuffer(NVGcontext* ctx, int32_t width, int32_t height, int32_t imageFlags, bgfx::ViewId viewId)
+{
+	NVGLUframebuffer* framebuffer = nvgluCreateFramebuffer(ctx, width, height, imageFlags);
+
+	if (framebuffer != NULL)
+	{
+		nvgluSetViewFramebuffer(viewId, framebuffer);
+	}
+
+	return framebuffer;
+}
+
+NVGLUframebuffer* nvgluCreateFramebuffer(NVGcontext* _ctx, int32_t _width, int32_t _height, int32_t _imageFlags)
+{
+	BX_UNUSED(_imageFlags);
+	bgfx::TextureHandle textures[] =
+	{
+		bgfx::createTexture2D(_width, _height, false, 1, bgfx::TextureFormat::RGBA8, BGFX_TEXTURE_RT),
+		bgfx::createTexture2D(_width, _height, false, 1, bgfx::TextureFormat::D24S8, BGFX_TEXTURE_RT | BGFX_TEXTURE_RT_WRITE_ONLY)
+	};
+	bgfx::FrameBufferHandle fbh = bgfx::createFrameBuffer(
+		  BX_COUNTOF(textures)
+		, textures
+		, true
+		);
+
+	if (!bgfx::isValid(fbh) )
+	{
+		return NULL;
+	}
+
+	struct NVGparams* params = nvgInternalParams(_ctx);
+	struct GLNVGcontext* gl = (struct GLNVGcontext*)params->userPtr;
+	struct GLNVGtexture* tex = glnvg__allocTexture(gl);
+
+	if (NULL == tex)
+	{
+		bgfx::destroy(fbh);
+		return NULL;
+	}
+
+	tex->width  = _width;
+	tex->height = _height;
+	tex->type   = NVG_TEXTURE_RGBA;
+	tex->flags  = _imageFlags | NVG_IMAGE_PREMULTIPLIED;
+	tex->id     = bgfx::getTexture(fbh);
+
+	NVGLUframebuffer* framebuffer = BX_NEW(gl->allocator, NVGLUframebuffer);
+	framebuffer->ctx    = _ctx;
+	framebuffer->image  = tex->id.idx;
+	framebuffer->handle = fbh;
+
+	return framebuffer;
+}
+
+void nvgluBindFramebuffer(NVGLUframebuffer* _framebuffer)
+{
+	static NVGcontext* s_prevCtx = NULL;
+	static bgfx::ViewId s_prevViewId;
+	if (_framebuffer != NULL)
+	{
+		s_prevCtx    = _framebuffer->ctx;
+		s_prevViewId = nvgGetViewId(_framebuffer->ctx);
+		nvgSetViewId(_framebuffer->ctx, _framebuffer->viewId);
+	}
+	else if (s_prevCtx != NULL)
+	{
+		nvgSetViewId(s_prevCtx, s_prevViewId);
+	}
+}
+
+void nvgluDeleteFramebuffer(NVGLUframebuffer* _framebuffer)
+{
+	if (_framebuffer == NULL)
+	{
+		return;
+	}
+
+	if (bgfx::isValid(_framebuffer->handle))
+	{
+		bgfx::destroy(_framebuffer->handle);
+	}
+
+	struct NVGparams* params = nvgInternalParams(_framebuffer->ctx);
+	struct GLNVGcontext* gl = (struct GLNVGcontext*)params->userPtr;
+	glnvg__deleteTexture(gl, _framebuffer->image);
+	BX_DELETE(gl->allocator, _framebuffer);
+}
+
+void nvgluSetViewFramebuffer(bgfx::ViewId _viewId, NVGLUframebuffer* _framebuffer)
+{
+	_framebuffer->viewId = _viewId;
+	bgfx::setViewFrameBuffer(_viewId, _framebuffer->handle);
+	bgfx::setViewMode(_viewId, bgfx::ViewMode::Sequential);
 }

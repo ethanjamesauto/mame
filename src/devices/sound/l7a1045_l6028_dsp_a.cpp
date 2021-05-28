@@ -9,7 +9,7 @@
     SNK Hyper NeoGeo 64 (arcade platform)
     AKAI MPC3000 (synth)
 
-    both are driven by a V53, the MPC3000 isn't dumped.
+    both are driven by a V53.
 
     appears to write a register number and channel/voice using
     l7a1045_sound_select_w (offset 0)
@@ -89,7 +89,7 @@
 
 
 // device type definition
-const device_type L7A1045 = &device_creator<l7a1045_sound_device>;
+DEFINE_DEVICE_TYPE(L7A1045, l7a1045_sound_device, "l7a1045", "L7A1045 L6028 DSP-A")
 
 
 //**************************************************************************
@@ -100,13 +100,12 @@ const device_type L7A1045 = &device_creator<l7a1045_sound_device>;
 //  l7a1045_sound_device - constructor
 //-------------------------------------------------
 
-l7a1045_sound_device::l7a1045_sound_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: device_t(mconfig, L7A1045, "L7A1045 L6028 DSP-A", tag, owner, clock, "l7a1045_custom", __FILE__),
+l7a1045_sound_device::l7a1045_sound_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: device_t(mconfig, L7A1045, tag, owner, clock),
 		device_sound_interface(mconfig, *this),
 		m_stream(nullptr),
 		m_key(0),
-		m_rom(nullptr),
-		m_rom_size(0)
+		m_rom(*this, DEVICE_SELF)
 {
 }
 
@@ -117,11 +116,23 @@ l7a1045_sound_device::l7a1045_sound_device(const machine_config &mconfig, const 
 
 void l7a1045_sound_device::device_start()
 {
-	/* Allocate the stream */
+	// assumes it can make an address mask with m_rom.length() - 1
+	assert(!(m_rom.length() & (m_rom.length() - 1)));
+
+	// Allocate the stream
 	m_stream = stream_alloc(0, 2, 66150); //clock() / 384);
 
-	m_rom = m_region->base();
-	m_rom_size = m_region->bytes();
+	save_item(STRUCT_MEMBER(m_voice, start));
+	save_item(STRUCT_MEMBER(m_voice, end));
+	save_item(STRUCT_MEMBER(m_voice, mode));
+	save_item(STRUCT_MEMBER(m_voice, pos));
+	save_item(STRUCT_MEMBER(m_voice, frac));
+	save_item(STRUCT_MEMBER(m_voice, l_volume));
+	save_item(STRUCT_MEMBER(m_voice, r_volume));
+	save_item(NAME(m_key));
+	save_item(NAME(m_audiochannel));
+	save_item(NAME(m_audioregister));
+	save_item(STRUCT_MEMBER(m_audiodat, dat));
 }
 
 
@@ -129,11 +140,11 @@ void l7a1045_sound_device::device_start()
 //  sound_stream_update - handle a stream update
 //-------------------------------------------------
 
-void l7a1045_sound_device::sound_stream_update(sound_stream &stream, stream_sample_t **inputs, stream_sample_t **outputs, int samples)
+void l7a1045_sound_device::sound_stream_update(sound_stream &stream, std::vector<read_stream_view> const &inputs, std::vector<write_stream_view> &outputs)
 {
 	/* Clear the buffers */
-	memset(outputs[0], 0, samples*sizeof(*outputs[0]));
-	memset(outputs[1], 0, samples*sizeof(*outputs[1]));
+	outputs[0].fill(0);
+	outputs[1].fill(0);
 
 	for (int i = 0; i < 32; i++)
 	{
@@ -141,17 +152,17 @@ void l7a1045_sound_device::sound_stream_update(sound_stream &stream, stream_samp
 		{
 			l7a1045_voice *vptr = &m_voice[i];
 
-			UINT32 start = vptr->start;
-			UINT32 end = vptr->end;
-			UINT32 step  = 0x400;
+			uint32_t start = vptr->start;
+			uint32_t end = vptr->end;
+			uint32_t step  = 0x400;
 
-			UINT32 pos = vptr->pos;
-			UINT32 frac = vptr->frac;
+			uint32_t pos = vptr->pos;
+			uint32_t frac = vptr->frac;
 
-			for (int j = 0; j < samples; j++)
+			for (int j = 0; j < outputs[0].samples(); j++)
 			{
-				INT32 sample;
-				UINT8 data;
+				int32_t sample;
+				uint8_t data;
 
 				pos += (frac >> 12);
 				frac &= 0xfff;
@@ -171,12 +182,12 @@ void l7a1045_sound_device::sound_stream_update(sound_stream &stream, stream_samp
 				}
 
 
-				data = m_rom[(start + pos) & (m_rom_size-1)];
-				sample = ((INT8)(data & 0xfc)) << (3 - (data & 3));
+				data = m_rom[(start + pos) & (m_rom.length() - 1)];
+				sample = int8_t(data & 0xfc) << (3 - (data & 3));
 				frac += step;
 
-				outputs[0][j] += ((sample * vptr->l_volume) >> 9);
-				outputs[1][j] += ((sample * vptr->r_volume) >> 9);
+				outputs[0].add_int(j, sample * vptr->l_volume, 32768 * 512);
+				outputs[1].add_int(j, sample * vptr->r_volume, 32768 * 512);
 			}
 
 			vptr->pos = pos;
@@ -186,33 +197,37 @@ void l7a1045_sound_device::sound_stream_update(sound_stream &stream, stream_samp
 }
 
 // TODO: needs proper memory map
-WRITE16_MEMBER( l7a1045_sound_device::l7a1045_sound_w )
+void l7a1045_sound_device::l7a1045_sound_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	m_stream->update(); // TODO
 
+	//logerror("%s: %x to %x (mask %04x)\n", tag(), data, offset, mem_mask);
+
 	if(offset == 0)
-		sound_select_w(space, offset, data, mem_mask);
+		sound_select_w(offset, data, mem_mask);
 	else if(offset == 8/2)
-		sound_status_w(space, offset, data, mem_mask);
+		sound_status_w(data);
 	else
-		sound_data_w(space,offset - 1,data,mem_mask);
+		sound_data_w(offset - 1,data);
 }
 
 
-READ16_MEMBER( l7a1045_sound_device::l7a1045_sound_r )
+uint16_t l7a1045_sound_device::l7a1045_sound_r(offs_t offset, uint16_t mem_mask)
 {
 	m_stream->update();
+
+	//logerror("%s: read at %x (mask %04x)\n", tag(), offset, mem_mask);
 
 	if(offset == 0)
 		printf("sound_select_r?\n");
 	else
-		return sound_data_r(space,offset -1,mem_mask);
+		return sound_data_r(offset -1);
 
 	return 0xffff;
 }
 
 
-WRITE16_MEMBER(l7a1045_sound_device::sound_select_w)
+void l7a1045_sound_device::sound_select_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	// I'm guessing these addresses are the sound chip / DSP?
 
@@ -222,20 +237,20 @@ WRITE16_MEMBER(l7a1045_sound_device::sound_select_w)
 	if (ACCESSING_BITS_0_7)
 	{
 		m_audiochannel = data;
-		if (m_audiochannel & 0xe0) printf("%08x: l7a1045_sound_select_w unknown channel %01x\n", space.device().safe_pc(), m_audiochannel & 0xff);
+		if (m_audiochannel & 0xe0) logerror("%s l7a1045_sound_select_w unknown channel %01x\n", machine().describe_context(), m_audiochannel & 0xff);
 		m_audiochannel &= 0x1f;
 	}
 
 	if (ACCESSING_BITS_8_15)
 	{
 		m_audioregister = (data >> 8);
-		if (m_audioregister >0x0a) printf("%08x: l7a1045_sound_select_w unknown register %01x\n", space.device().safe_pc(), m_audioregister & 0xff);
+		if (m_audioregister >0x0a) logerror("%s l7a1045_sound_select_w unknown register %01x\n", machine().describe_context(), m_audioregister & 0xff);
 		m_audioregister &= 0x0f;
 	}
 
 }
 
-WRITE16_MEMBER(l7a1045_sound_device::sound_data_w)
+void l7a1045_sound_device::sound_data_w(offs_t offset, uint16_t data)
 {
 	l7a1045_voice *vptr = &m_voice[m_audiochannel];
 
@@ -243,6 +258,8 @@ WRITE16_MEMBER(l7a1045_sound_device::sound_data_w)
 	//  printf("%04x %04x (%04x %04x)\n",offset,data,m_audioregister,m_audiochannel);
 
 	m_audiodat[m_audioregister][m_audiochannel].dat[offset] = data;
+
+	//logerror("%s: %x to ch %d reg %d\n", tag(), data, m_audiochannel, m_audioregister);
 
 	switch (m_audioregister)
 	{
@@ -252,8 +269,15 @@ WRITE16_MEMBER(l7a1045_sound_device::sound_data_w)
 			vptr->start |= (m_audiodat[m_audioregister][m_audiochannel].dat[1] & 0xffff) << (4);
 			vptr->start |= (m_audiodat[m_audioregister][m_audiochannel].dat[0] & 0xf000) >> (12);
 
-			vptr->start &= m_rom_size - 1;
+			//logerror("%s: channel %d start = %08x\n", tag(), m_audiochannel, vptr->start);
 
+			vptr->start &= m_rom.length() - 1;
+
+			// if voice isn't active, clear the pos on start writes (required for DMA tests on MPC3000)
+			if (!(m_key & (1 << m_audiochannel)))
+			{
+				vptr->pos = 0;
+			}
 			break;
 		case 0x01:
 			// relative to start
@@ -267,8 +291,7 @@ WRITE16_MEMBER(l7a1045_sound_device::sound_data_w)
 				vptr->end += vptr->start;
 				vptr->mode = false;
 				// hopefully it'll never happen? Maybe assert here?
-				vptr->end &= m_rom_size - 1;
-
+				vptr->end &= m_rom.length() - 1;
 			}
 			else // absolute
 			{
@@ -277,9 +300,9 @@ WRITE16_MEMBER(l7a1045_sound_device::sound_data_w)
 				vptr->end |= (m_audiodat[m_audioregister][m_audiochannel].dat[0] & 0xf000) >> (12);
 				vptr->mode = true;
 
-				vptr->end &= m_rom_size - 1;
+				vptr->end &= m_rom.length() - 1;
 			}
-
+			//logerror("%s: channel %d end = %08x\n", tag(), m_audiochannel, vptr->start);
 			break;
 
 		case 0x07:
@@ -296,18 +319,18 @@ WRITE16_MEMBER(l7a1045_sound_device::sound_data_w)
 }
 
 
-READ16_MEMBER(l7a1045_sound_device::sound_data_r)
+uint16_t l7a1045_sound_device::sound_data_r(offs_t offset)
 {
 	//printf("%04x (%04x %04x)\n",offset,m_audioregister,m_audiochannel);
-	//debugger_break(machine());
+	//machine().debug_break();
 	l7a1045_voice *vptr = &m_voice[m_audiochannel];
 
 	switch(m_audioregister)
 	{
 		case 0x00:
 		{
-			UINT32 current_addr;
-			UINT16 res;
+			uint32_t current_addr;
+			uint16_t res;
 
 			current_addr = vptr->start + vptr->pos;
 			if(offset == 0)
@@ -324,13 +347,13 @@ READ16_MEMBER(l7a1045_sound_device::sound_data_r)
 	return 0;
 }
 
-WRITE16_MEMBER(l7a1045_sound_device::sound_status_w)
+void l7a1045_sound_device::sound_status_w(uint16_t data)
 {
 	if(data & 0x100) // keyin
 	{
 		l7a1045_voice *vptr = &m_voice[m_audiochannel];
 
-		#if 0
+#if 0
 		if(vptr->start != 0)
 		{
 		printf("%08x START\n",vptr->start);
@@ -339,10 +362,29 @@ WRITE16_MEMBER(l7a1045_sound_device::sound_status_w)
 		for(int i=0;i<0x10;i++)
 			printf("%02x (%02x) = %04x%04x%04x\n",m_audiochannel,i,m_audiodat[i][m_audiochannel].dat[2],m_audiodat[i][m_audiochannel].dat[1],m_audiodat[i][m_audiochannel].dat[0]);
 		}
-		#endif
+#endif
 
 		vptr->frac = 0;
 		vptr->pos = 0;
 		m_key |= 1 << m_audiochannel;
 	}
+}
+
+WRITE_LINE_MEMBER(l7a1045_sound_device::dma_hreq_cb)
+{
+//  m_maincpu->hack_w(1);
+}
+
+uint8_t l7a1045_sound_device::dma_r_cb(offs_t offset)
+{
+//    logerror("dma_ior3_cb: offset %x\n", offset);
+
+	m_voice[0].pos++;
+	return 0;
+}
+
+void l7a1045_sound_device::dma_w_cb(offs_t offset, uint8_t data)
+{
+	m_voice[0].pos++;
+//    logerror("dma_iow3_cb: offset %x\n", offset);
 }

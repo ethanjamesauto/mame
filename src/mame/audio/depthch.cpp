@@ -25,18 +25,10 @@ static const char *const depthch_sample_names[] =
 	"longex",
 	"shortex",
 	"spray",
+	"bonus",
 	"sonar",
 	nullptr
 };
-
-
-MACHINE_CONFIG_FRAGMENT( depthch_audio )
-
-	MCFG_SOUND_ADD("samples", SAMPLES, 0)
-	MCFG_SAMPLES_CHANNELS(4)
-	MCFG_SAMPLES_NAMES(depthch_sample_names)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.5)
-MACHINE_CONFIG_END
 
 
 /* sample IDs - must match sample file name table above */
@@ -45,23 +37,22 @@ enum
 	SND_LONGEXPL = 0,
 	SND_SHRTEXPL,
 	SND_SPRAY,
+	SND_BONUS,
 	SND_SONAR
 };
 
 
-WRITE8_MEMBER( vicdual_state::depthch_audio_w )
+void vicdual_state::depthch_audio_w(uint8_t data)
 {
-	static int port1State = 0;
 	int bitsChanged;
 	int bitsGoneHigh;
 	int bitsGoneLow;
 
-
-	bitsChanged  = port1State ^ data;
+	bitsChanged  = m_port1State ^ data;
 	bitsGoneHigh = bitsChanged & data;
 	bitsGoneLow  = bitsChanged & ~data;
 
-	port1State = data;
+	m_port1State = data;
 
 	if ( bitsGoneHigh & OUT_PORT_1_LONGEXPL )
 	{
@@ -85,5 +76,18 @@ WRITE8_MEMBER( vicdual_state::depthch_audio_w )
 	if ( bitsGoneLow & OUT_PORT_1_SONAR )
 	{
 		STOP( m_samples, SND_SONAR );
+
+		// bonus sound on same line as sonar
+		PLAY( m_samples, SND_BONUS, 0 );
 	}
+}
+
+
+void vicdual_state::depthch_audio(machine_config &config)
+{
+	/* samples */
+	SAMPLES(config, m_samples);
+	m_samples->set_channels(5);
+	m_samples->set_samples_names(depthch_sample_names);
+	m_samples->add_route(ALL_OUTPUTS, "mono", 0.5);
 }

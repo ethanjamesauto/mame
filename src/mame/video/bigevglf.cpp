@@ -1,8 +1,8 @@
-// license:???
+// license:GPL-2.0+
 // copyright-holders:Jarek Burczynski, Tomasz Slanina
 /***************************************************************************
 
-  video.c
+  bigevglf.cpp
 
   Functions to emulate the video hardware of the machine.
 
@@ -11,16 +11,14 @@
 #include "includes/bigevglf.h"
 
 
-WRITE8_MEMBER(bigevglf_state::bigevglf_palette_w)
+void bigevglf_state::bigevglf_palette_w(offs_t offset, uint8_t data)
 {
-	int color;
-
 	m_paletteram[offset] = data;
-	color = m_paletteram[offset & 0x3ff] | (m_paletteram[0x400 + (offset & 0x3ff)] << 8);
+	int color = m_paletteram[offset & 0x3ff] | (m_paletteram[0x400 + (offset & 0x3ff)] << 8);
 	m_palette->set_pen_color(offset & 0x3ff, pal4bit(color >> 4), pal4bit(color >> 0), pal4bit(color >> 8));
 }
 
-WRITE8_MEMBER(bigevglf_state::bigevglf_gfxcontrol_w)
+void bigevglf_state::bigevglf_gfxcontrol_w(uint8_t data)
 {
 /* bits used: 0,1,2,3
  0 and 2 select plane,
@@ -30,22 +28,21 @@ WRITE8_MEMBER(bigevglf_state::bigevglf_gfxcontrol_w)
 	m_plane_visible = ((data & 8) >> 2) | ((data & 2) >> 1);
 }
 
-WRITE8_MEMBER(bigevglf_state::bigevglf_vidram_addr_w)
+void bigevglf_state::bigevglf_vidram_addr_w(uint8_t data)
 {
 	m_vidram_bank = (data & 0xff) * 0x100;
 }
 
-WRITE8_MEMBER(bigevglf_state::bigevglf_vidram_w)
+void bigevglf_state::bigevglf_vidram_w(offs_t offset, uint8_t data)
 {
-	UINT32 x, y, o;
-	o = m_vidram_bank + offset;
+	uint32_t o = m_vidram_bank + offset;
 	m_vidram[o + 0x10000 * m_plane_selected] = data;
-	y = o >>8;
-	x = (o & 255);
-	m_tmp_bitmap[m_plane_selected].pix16(y, x) = data;
+	uint32_t y = o >>8;
+	uint32_t x = (o & 255);
+	m_tmp_bitmap[m_plane_selected].pix(y, x) = data;
 }
 
-READ8_MEMBER(bigevglf_state::bigevglf_vidram_r)
+uint8_t bigevglf_state::bigevglf_vidram_r(offs_t offset)
 {
 	return m_vidram[0x10000 * m_plane_selected + m_vidram_bank + offset];
 }
@@ -61,9 +58,9 @@ void bigevglf_state::video_start()
 	save_item(NAME(m_tmp_bitmap[2]));
 	save_item(NAME(m_tmp_bitmap[3]));
 
-	m_vidram = std::make_unique<UINT8[]>(0x100 * 0x100 * 4);
+	m_vidram = std::make_unique<uint8_t[]>(0x100 * 0x100 * 4);
 
-	save_pointer(NAME(m_vidram.get()), 0x100 * 0x100 * 4);
+	save_pointer(NAME(m_vidram), 0x100 * 0x100 * 4);
 }
 
 void bigevglf_state::draw_sprites( bitmap_ind16 &bitmap, const rectangle &cliprect )
@@ -84,7 +81,7 @@ void bigevglf_state::draw_sprites( bitmap_ind16 &bitmap, const rectangle &clipre
 	}
 }
 
-UINT32 bigevglf_state::screen_update_bigevglf(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t bigevglf_state::screen_update_bigevglf(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	copybitmap(bitmap, m_tmp_bitmap[m_plane_visible], 0, 0, 0, 0, cliprect);
 	draw_sprites(bitmap, cliprect);

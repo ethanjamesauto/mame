@@ -17,7 +17,7 @@
 void segaybd_state::video_start()
 {
 	// initialize the rotation layer
-	m_segaic16vid->rotate_init(0, SEGAIC16_ROTATE_YBOARD, 0x000);
+	m_segaic16vid->rotate_init(0, segaic16_video_device::ROTATE_YBOARD, 0x000);
 	m_ysprites->set_rotate_ptr(m_segaic16vid->m_rotate);
 }
 
@@ -27,7 +27,7 @@ void segaybd_state::video_start()
 //  VIDEO UPDATE
 //**************************************************************************
 
-UINT32 segaybd_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t segaybd_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	// if no drawing is happening, fill with black and get out
 	if (!m_segaic16vid->m_display_enable)
@@ -51,23 +51,21 @@ UINT32 segaybd_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap,
 	for (const sparse_dirty_rect *rect = m_bsprites->first_dirty_rect(cliprect); rect != nullptr; rect = rect->next())
 		for (int y = rect->min_y; y <= rect->max_y; y++)
 		{
-			UINT16 *dest = &bitmap.pix(y);
-			UINT16 *src = &sprites.pix(y);
-			UINT8 *pri = &screen.priority().pix(y);
-
-			
+			uint16_t *dest = &bitmap.pix(y);
+			uint16_t *src = &sprites.pix(y);
+			uint8_t *pri = &screen.priority().pix(y);
 
 			for (int x = rect->min_x; x <= rect->max_x; x++)
 			{
 				// only process written pixels
-				UINT16 pix = src[x];
+				uint16_t pix = src[x];
 				if (pix != 0xffff)
 				{
 					// the 16b priority bits are stored like this
 					// int colpri  = ((data[4] & 0xff) << 4) | (((data[1] >> 9) & 0xf) << 12);
 					// so  PPPPppppppppcccc (P = priority p = palette c = colour data)
 					// for Y board the (((data[1] >> 9) & 0xf) << 12) bit is the part we care about
-					
+
 					// the format of the screen.priority() buffer (populated in rotate_draw) is
 
 					//   ccc-----  Sprite color
@@ -81,7 +79,7 @@ UINT32 segaybd_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap,
 					{
 						// if the color is set to maximum, shadow pixels underneath us
 						if ((pix & 0xf) == 0xe)
-							dest[x] += (m_paletteram[dest[x]] & 0x8000) ? m_palette_entries*2 : m_palette_entries;
+							dest[x] += m_palette_entries;
 
 						// otherwise, just add in sprite palette base
 						else

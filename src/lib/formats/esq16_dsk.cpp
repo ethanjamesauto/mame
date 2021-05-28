@@ -10,7 +10,7 @@
 
 *********************************************************************/
 
-#include <assert.h>
+#include <cassert>
 
 #include "flopimg.h"
 #include "formats/esq16_dsk.h"
@@ -71,14 +71,14 @@ bool esqimg_format::supports_save() const
 	return true;
 }
 
-void esqimg_format::find_size(io_generic *io, UINT8 &track_count, UINT8 &head_count, UINT8 &sector_count)
+void esqimg_format::find_size(io_generic *io, uint8_t &track_count, uint8_t &head_count, uint8_t &sector_count)
 {
-	UINT64 size = io_generic_size(io);
+	uint64_t size = io_generic_size(io);
 	track_count = 80;
 	head_count = 2;
 	sector_count = 10;
 
-	UINT32 expected_size = 512 * track_count*head_count*sector_count;
+	uint32_t expected_size = 512 * track_count*head_count*sector_count;
 	if (size == expected_size)
 	{
 		return;
@@ -87,9 +87,9 @@ void esqimg_format::find_size(io_generic *io, UINT8 &track_count, UINT8 &head_co
 	track_count = head_count = sector_count = 0;
 }
 
-int esqimg_format::identify(io_generic *io, UINT32 form_factor)
+int esqimg_format::identify(io_generic *io, uint32_t form_factor, const std::vector<uint32_t> &variants)
 {
-	UINT8 track_count, head_count, sector_count;
+	uint8_t track_count, head_count, sector_count;
 	find_size(io, track_count, head_count, sector_count);
 
 	if(track_count)
@@ -97,12 +97,12 @@ int esqimg_format::identify(io_generic *io, UINT32 form_factor)
 	return 0;
 }
 
-bool esqimg_format::load(io_generic *io, UINT32 form_factor, floppy_image *image)
+bool esqimg_format::load(io_generic *io, uint32_t form_factor, const std::vector<uint32_t> &variants, floppy_image *image)
 {
-	UINT8 track_count, head_count, sector_count;
+	uint8_t track_count, head_count, sector_count;
 	find_size(io, track_count, head_count, sector_count);
 
-	UINT8 sectdata[10*512];
+	uint8_t sectdata[10*512];
 	desc_s sectors[10];
 	for(int i=0; i<sector_count; i++) {
 		sectors[i].data = sectdata + 512*i;
@@ -123,7 +123,7 @@ bool esqimg_format::load(io_generic *io, UINT32 form_factor, floppy_image *image
 	return true;
 }
 
-bool esqimg_format::save(io_generic *io, floppy_image *image)
+bool esqimg_format::save(io_generic *io, const std::vector<uint32_t> &variants, floppy_image *image)
 {
 	int track_count, head_count, sector_count;
 	get_geometry_mfm_pc(image, 2000, track_count, head_count, sector_count);
@@ -138,7 +138,7 @@ bool esqimg_format::save(io_generic *io, floppy_image *image)
 	if(sector_count != 10)
 		sector_count = 10;
 
-	UINT8 sectdata[11*512];
+	uint8_t sectdata[11*512];
 	int track_size = sector_count*512;
 
 	for(int track=0; track < track_count; track++) {

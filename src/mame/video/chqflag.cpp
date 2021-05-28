@@ -10,6 +10,7 @@
 
 #include "emu.h"
 #include "includes/chqflag.h"
+#include "screen.h"
 
 
 /***************************************************************************
@@ -55,13 +56,13 @@ K051316_CB_MEMBER(chqflag_state::zoom_callback_2)
 
 ***************************************************************************/
 
-UINT32 chqflag_state::screen_update_chqflag(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t chqflag_state::screen_update_chqflag(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	screen.priority().fill(0, cliprect);
 
-	m_k051316_2->zoom_draw(screen, bitmap, cliprect, TILEMAP_DRAW_LAYER1, 0);
-	m_k051316_2->zoom_draw(screen, bitmap, cliprect, TILEMAP_DRAW_LAYER0, 1);
+	m_k051316[1]->zoom_draw(screen, bitmap, cliprect, TILEMAP_DRAW_LAYER1, 0);
+	m_k051316[1]->zoom_draw(screen, bitmap, cliprect, TILEMAP_DRAW_LAYER0, 1);
 	m_k051960->k051960_sprites_draw(bitmap, cliprect, screen.priority(), -1, -1);
-	m_k051316_1->zoom_draw(screen, bitmap, cliprect, 0, 0);
+	m_k051316[0]->zoom_draw(screen, bitmap, cliprect, 0, 0);
 	return 0;
 }

@@ -12,19 +12,13 @@
 
 #include "emu.h"
 #include "nubus_m2hires.h"
+#include "screen.h"
 
 #define M2HIRES_SCREEN_NAME "m2hires_screen"
 #define M2HIRES_ROM_REGION  "m2hires_rom"
 
 #define VRAM_SIZE   (0x80000)   // 512k max
 
-MACHINE_CONFIG_FRAGMENT( m2hires )
-	MCFG_SCREEN_ADD( M2HIRES_SCREEN_NAME, RASTER)
-	MCFG_SCREEN_UPDATE_DEVICE(DEVICE_SELF, nubus_m2hires_device, screen_update)
-	MCFG_SCREEN_RAW_PARAMS(25175000, 800, 0, 640, 525, 0, 480)
-	MCFG_SCREEN_SIZE(1024,768)
-	MCFG_SCREEN_VISIBLE_AREA(0, 640-1, 0, 480-1)
-MACHINE_CONFIG_END
 
 ROM_START( m2hires )
 	ROM_REGION(0x2000, M2HIRES_ROM_REGION, 0)
@@ -35,24 +29,27 @@ ROM_END
 //  GLOBAL VARIABLES
 //**************************************************************************
 
-const device_type NUBUS_M2HIRES = &device_creator<nubus_m2hires_device>;
+DEFINE_DEVICE_TYPE(NUBUS_M2HIRES, nubus_m2hires_device, "nb_m2hr", "Macintosh II Hi-Resolution video card")
 
 
 //-------------------------------------------------
-//  machine_config_additions - device-specific
-//  machine configurations
+//  device_add_mconfig - add device configuration
 //-------------------------------------------------
 
-machine_config_constructor nubus_m2hires_device::device_mconfig_additions() const
+void nubus_m2hires_device::device_add_mconfig(machine_config &config)
 {
-	return MACHINE_CONFIG_NAME( m2hires );
+	screen_device &screen(SCREEN(config, M2HIRES_SCREEN_NAME, SCREEN_TYPE_RASTER));
+	screen.set_screen_update(FUNC(nubus_m2hires_device::screen_update));
+	screen.set_raw(25175000, 800, 0, 640, 525, 0, 480);
+	screen.set_size(1024, 768);
+	screen.set_visarea(0, 640-1, 0, 480-1);
 }
 
 //-------------------------------------------------
 //  rom_region - device-specific ROM region
 //-------------------------------------------------
 
-const rom_entry *nubus_m2hires_device::device_rom_region() const
+const tiny_rom_entry *nubus_m2hires_device::device_rom_region() const
 {
 	return ROM_NAME( m2hires );
 }
@@ -65,22 +62,18 @@ const rom_entry *nubus_m2hires_device::device_rom_region() const
 //  nubus_m2hires_device - constructor
 //-------------------------------------------------
 
-nubus_m2hires_device::nubus_m2hires_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock) :
-		device_t(mconfig, NUBUS_M2HIRES, "Macintosh II Hi-Resolution video card", tag, owner, clock, "nb_m2hr", __FILE__),
-		device_video_interface(mconfig, *this),
-		device_nubus_card_interface(mconfig, *this), m_vram32(nullptr), m_mode(0), m_vbl_disable(0), m_toggle(0), m_count(0), m_clutoffs(0), m_timer(nullptr)
+nubus_m2hires_device::nubus_m2hires_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock) :
+	nubus_m2hires_device(mconfig, NUBUS_M2HIRES, tag, owner, clock)
 {
-	m_assembled_tag = std::string(tag).append(":").append(M2HIRES_SCREEN_NAME);
-	m_screen_tag = m_assembled_tag.c_str();
 }
 
-nubus_m2hires_device::nubus_m2hires_device(const machine_config &mconfig, device_type type, const char *name, const char *tag, device_t *owner, UINT32 clock, const char *shortname, const char *source) :
-		device_t(mconfig, type, name, tag, owner, clock, shortname, source),
-		device_video_interface(mconfig, *this),
-		device_nubus_card_interface(mconfig, *this), m_vram32(nullptr), m_mode(0), m_vbl_disable(0), m_toggle(0), m_count(0), m_clutoffs(0), m_timer(nullptr)
+nubus_m2hires_device::nubus_m2hires_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock) :
+	device_t(mconfig, type, tag, owner, clock),
+	device_video_interface(mconfig, *this),
+	device_nubus_card_interface(mconfig, *this),
+	m_vram32(nullptr), m_mode(0), m_vbl_disable(0), m_toggle(0), m_count(0), m_clutoffs(0), m_timer(nullptr)
 {
-	m_assembled_tag = std::string(tag).append(":").append(M2HIRES_SCREEN_NAME);
-	m_screen_tag = m_assembled_tag.c_str();
+	set_screen(*this, M2HIRES_SCREEN_NAME);
 }
 
 //-------------------------------------------------
@@ -89,25 +82,23 @@ nubus_m2hires_device::nubus_m2hires_device(const machine_config &mconfig, device
 
 void nubus_m2hires_device::device_start()
 {
-	UINT32 slotspace;
+	uint32_t slotspace;
 
-	// set_nubus_device makes m_slot valid
-	set_nubus_device();
 	install_declaration_rom(this, M2HIRES_ROM_REGION, true);
 
 	slotspace = get_slotspace();
 
-//  printf("[m2hires %p] slotspace = %x\n", this, slotspace);
+//  logerror("[m2hires %p] slotspace = %x\n", this, slotspace);
 
 	m_vram.resize(VRAM_SIZE);
-	m_vram32 = (UINT32 *)&m_vram[0];
+	m_vram32 = (uint32_t *)&m_vram[0];
 
-	m_nubus->install_device(slotspace, slotspace+VRAM_SIZE-1, read32_delegate(FUNC(nubus_m2hires_device::vram_r), this), write32_delegate(FUNC(nubus_m2hires_device::vram_w), this));
-	m_nubus->install_device(slotspace+0x900000, slotspace+VRAM_SIZE-1+0x900000, read32_delegate(FUNC(nubus_m2hires_device::vram_r), this), write32_delegate(FUNC(nubus_m2hires_device::vram_w), this));
-	m_nubus->install_device(slotspace+0x80000, slotspace+0xeffff, read32_delegate(FUNC(nubus_m2hires_device::m2hires_r), this), write32_delegate(FUNC(nubus_m2hires_device::m2hires_w), this));
+	nubus().install_device(slotspace, slotspace+VRAM_SIZE-1, read32s_delegate(*this, FUNC(nubus_m2hires_device::vram_r)), write32s_delegate(*this, FUNC(nubus_m2hires_device::vram_w)));
+	nubus().install_device(slotspace+0x900000, slotspace+VRAM_SIZE-1+0x900000, read32s_delegate(*this, FUNC(nubus_m2hires_device::vram_r)), write32s_delegate(*this, FUNC(nubus_m2hires_device::vram_w)));
+	nubus().install_device(slotspace+0x80000, slotspace+0xeffff, read32s_delegate(*this, FUNC(nubus_m2hires_device::m2hires_r)), write32s_delegate(*this, FUNC(nubus_m2hires_device::m2hires_w)));
 
 	m_timer = timer_alloc(0, nullptr);
-	m_timer->adjust(m_screen->time_until_pos(479, 0), 0);
+	m_timer->adjust(screen().time_until_pos(479, 0), 0);
 }
 
 //-------------------------------------------------
@@ -135,7 +126,7 @@ void nubus_m2hires_device::device_timer(emu_timer &timer, device_timer_id tid, i
 		raise_slot_irq();
 	}
 
-	m_timer->adjust(m_screen->time_until_pos(479, 0), 0);
+	m_timer->adjust(screen().time_until_pos(479, 0), 0);
 }
 
 /***************************************************************************
@@ -144,43 +135,39 @@ void nubus_m2hires_device::device_timer(emu_timer &timer, device_timer_id tid, i
 
 ***************************************************************************/
 
-UINT32 nubus_m2hires_device::screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
+uint32_t nubus_m2hires_device::screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
 {
-	UINT32 *scanline;
-	int x, y;
-	UINT8 pixels, *vram;
-
-	vram = &m_vram[0x20];
+	uint8_t const *const vram = &m_vram[0x20];
 
 	switch (m_mode)
 	{
 		case 0: // 1 bpp?
-			for (y = 0; y < 480; y++)
+			for (int y = 0; y < 480; y++)
 			{
-				scanline = &bitmap.pix32(y);
-				for (x = 0; x < 640/8; x++)
+				uint32_t *scanline = &bitmap.pix(y);
+				for (int x = 0; x < 640/8; x++)
 				{
-					pixels = vram[(y * 128) + (BYTE4_XOR_BE(x))];
+					uint8_t const pixels = vram[(y * 128) + (BYTE4_XOR_BE(x))];
 
-					*scanline++ = m_palette[((pixels>>7)&0x1)];
-					*scanline++ = m_palette[((pixels>>6)&0x1)];
-					*scanline++ = m_palette[((pixels>>5)&0x1)];
-					*scanline++ = m_palette[((pixels>>4)&0x1)];
-					*scanline++ = m_palette[((pixels>>3)&0x1)];
-					*scanline++ = m_palette[((pixels>>2)&0x1)];
-					*scanline++ = m_palette[((pixels>>1)&0x1)];
-					*scanline++ = m_palette[(pixels&1)];
+					*scanline++ = m_palette[BIT(pixels, 7)];
+					*scanline++ = m_palette[BIT(pixels, 6)];
+					*scanline++ = m_palette[BIT(pixels, 5)];
+					*scanline++ = m_palette[BIT(pixels, 4)];
+					*scanline++ = m_palette[BIT(pixels, 3)];
+					*scanline++ = m_palette[BIT(pixels, 2)];
+					*scanline++ = m_palette[BIT(pixels, 1)];
+					*scanline++ = m_palette[BIT(pixels, 0)];
 				}
 			}
 			break;
 
 		case 1: // 2 bpp
-			for (y = 0; y < 480; y++)
+			for (int y = 0; y < 480; y++)
 			{
-				scanline = &bitmap.pix32(y);
-				for (x = 0; x < 640/4; x++)
+				uint32_t *scanline = &bitmap.pix(y);
+				for (int x = 0; x < 640/4; x++)
 				{
-					pixels = vram[(y * 256) + (BYTE4_XOR_BE(x))];
+					uint8_t const pixels = vram[(y * 256) + (BYTE4_XOR_BE(x))];
 
 					*scanline++ = m_palette[((pixels>>6)&3)];
 					*scanline++ = m_palette[((pixels>>4)&3)];
@@ -191,13 +178,13 @@ UINT32 nubus_m2hires_device::screen_update(screen_device &screen, bitmap_rgb32 &
 			break;
 
 		case 2: // 4 bpp
-			for (y = 0; y < 480; y++)
+			for (int y = 0; y < 480; y++)
 			{
-				scanline = &bitmap.pix32(y);
+				uint32_t *scanline = &bitmap.pix(y);
 
-				for (x = 0; x < 640/2; x++)
+				for (int x = 0; x < 640/2; x++)
 				{
-					pixels = vram[(y * 512) + (BYTE4_XOR_BE(x))];
+					uint8_t const pixels = vram[(y * 512) + (BYTE4_XOR_BE(x))];
 
 					*scanline++ = m_palette[((pixels&0xf0)>>4)];
 					*scanline++ = m_palette[(pixels&0xf)];
@@ -206,13 +193,13 @@ UINT32 nubus_m2hires_device::screen_update(screen_device &screen, bitmap_rgb32 &
 			break;
 
 		case 3: // 8 bpp
-			for (y = 0; y < 480; y++)
+			for (int y = 0; y < 480; y++)
 			{
-				scanline = &bitmap.pix32(y);
+				uint32_t *scanline = &bitmap.pix(y);
 
-				for (x = 0; x < 640; x++)
+				for (int x = 0; x < 640; x++)
 				{
-					pixels = vram[(y * 1024) + (BYTE4_XOR_BE(x))];
+					uint8_t const pixels = vram[(y * 1024) + (BYTE4_XOR_BE(x))];
 					*scanline++ = m_palette[pixels];
 				}
 			}
@@ -224,7 +211,7 @@ UINT32 nubus_m2hires_device::screen_update(screen_device &screen, bitmap_rgb32 &
 	return 0;
 }
 
-WRITE32_MEMBER( nubus_m2hires_device::m2hires_w )
+void nubus_m2hires_device::m2hires_w(offs_t offset, uint32_t data, uint32_t mem_mask)
 {
 	data ^= 0xffffffff;
 
@@ -252,7 +239,7 @@ WRITE32_MEMBER( nubus_m2hires_device::m2hires_w )
 			break;
 
 		case 0x5038:    // DAC control
-//          printf("%08x to DAC control (PC=%x)\n", data, space.device().safe_pc());
+//          logerror("%08x to DAC control %s\n", data, machine().describe_context());
 			m_clutoffs = (data>>24)&0xff;
 			break;
 
@@ -261,7 +248,7 @@ WRITE32_MEMBER( nubus_m2hires_device::m2hires_w )
 
 			if (m_count == 3)
 			{
-//              printf("RAMDAC: color %d = %02x %02x %02x (PC=%x)\n", m_clutoffs, m_colors[0], m_colors[1], m_colors[2], space.device().safe_pc() );
+//              logerror("RAMDAC: color %d = %02x %02x %02x %s\n", m_clutoffs, m_colors[0], m_colors[1], m_colors[2], machine().describe_context() );
 				m_palette[m_clutoffs] = rgb_t(m_colors[0], m_colors[1], m_colors[2]);
 				m_clutoffs++;
 				if (m_clutoffs > 255)
@@ -282,12 +269,12 @@ WRITE32_MEMBER( nubus_m2hires_device::m2hires_w )
 			break;
 
 		default:
-//          printf("m2hires_w: %08x @ %x, mask %08x (PC=%x)\n", data, offset, mem_mask, space.device().safe_pc());
+//          logerror("m2hires_w: %08x @ %x, mask %08x %s\n", data, offset, mem_mask, machine().describe_context());
 			break;
 	}
 }
 
-READ32_MEMBER( nubus_m2hires_device::m2hires_r )
+uint32_t nubus_m2hires_device::m2hires_r(offs_t offset, uint32_t mem_mask)
 {
 	if (offset == 0x10010/4)
 	{
@@ -296,19 +283,19 @@ READ32_MEMBER( nubus_m2hires_device::m2hires_r )
 	}
 /*  else
     {
-        printf("m2hires_r: @ %x, mask %08x (PC=%x)\n", offset, mem_mask, space.device().safe_pc());
+        logerror("m2hires_r: @ %x, mask %08x %s\n", offset, mem_mask, machine().describe_context());
     }*/
 
 	return 0;
 }
 
-WRITE32_MEMBER( nubus_m2hires_device::vram_w )
+void nubus_m2hires_device::vram_w(offs_t offset, uint32_t data, uint32_t mem_mask)
 {
 	data ^= 0xffffffff;
 	COMBINE_DATA(&m_vram32[offset]);
 }
 
-READ32_MEMBER( nubus_m2hires_device::vram_r )
+uint32_t nubus_m2hires_device::vram_r(offs_t offset, uint32_t mem_mask)
 {
 	return m_vram32[offset] ^ 0xffffffff;
 }

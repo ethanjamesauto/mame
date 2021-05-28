@@ -2,7 +2,7 @@
 // copyright-holders:Juergen Buchmueller
 /*****************************************************************************
  *
- *   z80.c
+ *   z80.cpp
  *   Portable Z80 emulator V3.9
  *
  *   TODO:
@@ -10,14 +10,16 @@
  *    - If LD A,I or LD A,R is interrupted, P/V flag gets reset, even if IFF2
  *      was set before this instruction (implemented, but not enabled: we need
  *      document Z80 types first, see below)
+ *    - WAIT only stalls between instructions now, it should stall immediately.
  *    - Ideally, the tiny differences between Z80 types should be supported,
  *      currently known differences:
  *       - LD A,I/R P/V flag reset glitch is fixed on CMOS Z80
  *       - OUT (C),0 outputs 0 on NMOS Z80, $FF on CMOS Z80
  *       - SCF/CCF X/Y flags is ((flags | A) & 0x28) on SGS/SHARP/ZiLOG NMOS Z80,
  *         (flags & A & 0x28) on NEC NMOS Z80, other models unknown.
- *         However, people from the Speccy scene mention that SCF/CCF X/Y results
- *         are inconsistant and may be influenced by I and R registers.
+ *         However, recent findings say that SCF/CCF X/Y results depend on whether
+ *         or not the previous instruction touched the flag register. And the exact
+ *         behaviour on NEC Z80 is still unknown.
  *      This Z80 emulator assumes a ZiLOG NMOS model.
  *
  *   Changes in 3.9:
@@ -75,7 +77,7 @@
  *   Changes in 2.6:
  *    - BUSY_LOOP_HACKS needed to call change_pc() earlier, before
  *      checking the opcodes at the new address, because otherwise they
- *      might access the old (wrong or even NULL) banked memory region.
+ *      might access the old (wrong or even nullptr) banked memory region.
  *      Thanks to Sean Young for finding this nasty bug.
  *   Changes in 2.5:
  *    - Burning cycles always adjusts the ICount by a multiple of 4.
@@ -95,7 +97,7 @@
  *      now also adjust the r register depending on the skipped opcodes.
  *   Changes in 2.2:
  *    - Fixed bugs in CPL, SCF and CCF instructions flag handling.
- *    - Changed variable ea and arg16() function to UINT32; this
+ *    - Changed variable ea and arg16() function to uint32_t; this
  *      produces slightly more efficient code.
  *    - The DD/FD XY CB opcodes where XY is 40-7F and Y is not 6/E
  *      are changed to calls to the X6/XE opcodes to reduce object size.
@@ -109,7 +111,7 @@
 #include "emu.h"
 #include "debugger.h"
 #include "z80.h"
-#include "z80daisy.h"
+#include "z80dasm.h"
 
 #define VERBOSE             0
 
@@ -123,7 +125,7 @@
 
 /****************************************************************************/
 /* The Z80 registers. halt is set to 1 when the CPU is halted, the refresh  */
-/* register is calculated as follows: refresh=(r&127)|(r2&128)    */
+/* register is calculated as follows: refresh=(r&127)|(r2&128)              */
 /****************************************************************************/
 
 #define CF      0x01
@@ -183,16 +185,16 @@
 
 
 static bool tables_initialised = false;
-static UINT8 SZ[256];       /* zero and sign flags */
-static UINT8 SZ_BIT[256];   /* zero, sign and parity/overflow (=zero) flags for BIT opcode */
-static UINT8 SZP[256];      /* zero, sign and parity flags */
-static UINT8 SZHV_inc[256]; /* zero, sign, half carry and overflow flags INC r8 */
-static UINT8 SZHV_dec[256]; /* zero, sign, half carry and overflow flags DEC r8 */
+static uint8_t SZ[256];       /* zero and sign flags */
+static uint8_t SZ_BIT[256];   /* zero, sign and parity/overflow (=zero) flags for BIT opcode */
+static uint8_t SZP[256];      /* zero, sign and parity flags */
+static uint8_t SZHV_inc[256]; /* zero, sign, half carry and overflow flags INC r8 */
+static uint8_t SZHV_dec[256]; /* zero, sign, half carry and overflow flags DEC r8 */
 
-static UINT8 SZHVC_add[2*256*256];
-static UINT8 SZHVC_sub[2*256*256];
+static uint8_t SZHVC_add[2*256*256];
+static uint8_t SZHVC_sub[2*256*256];
 
-static const UINT8 cc_op[0x100] = {
+static const uint8_t cc_op[0x100] = {
 	4,10, 7, 6, 4, 4, 7, 4, 4,11, 7, 6, 4, 4, 7, 4,
 	8,10, 7, 6, 4, 4, 7, 4,12,11, 7, 6, 4, 4, 7, 4,
 	7,10,16, 6, 4, 4, 7, 4, 7,11,16, 6, 4, 4, 7, 4,
@@ -208,10 +210,10 @@ static const UINT8 cc_op[0x100] = {
 	5,10,10,10,10,11, 7,11, 5,10,10, 0,10,17, 7,11, /* cb -> cc_cb */
 	5,10,10,11,10,11, 7,11, 5, 4,10,11,10, 0, 7,11, /* dd -> cc_xy */
 	5,10,10,19,10,11, 7,11, 5, 4,10, 4,10, 0, 7,11, /* ed -> cc_ed */
-	5,10,10, 4,10,11, 7,11, 5, 6,10, 4,10, 0, 7,11      /* fd -> cc_xy */
+	5,10,10, 4,10,11, 7,11, 5, 6,10, 4,10, 0, 7,11  /* fd -> cc_xy */
 };
 
-static const UINT8 cc_cb[0x100] = {
+static const uint8_t cc_cb[0x100] = {
 	8, 8, 8, 8, 8, 8,15, 8, 8, 8, 8, 8, 8, 8,15, 8,
 	8, 8, 8, 8, 8, 8,15, 8, 8, 8, 8, 8, 8, 8,15, 8,
 	8, 8, 8, 8, 8, 8,15, 8, 8, 8, 8, 8, 8, 8,15, 8,
@@ -230,19 +232,19 @@ static const UINT8 cc_cb[0x100] = {
 	8, 8, 8, 8, 8, 8,15, 8, 8, 8, 8, 8, 8, 8,15, 8
 };
 
-static const UINT8 cc_ed[0x100] = {
+static const uint8_t cc_ed[0x100] = {
 	8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
 	8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
 	8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
 	8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
-12,12,15,20, 8,14, 8, 9,12,12,15,20, 8,14, 8, 9,
-12,12,15,20, 8,14, 8, 9,12,12,15,20, 8,14, 8, 9,
-12,12,15,20, 8,14, 8,18,12,12,15,20, 8,14, 8,18,
-12,12,15,20, 8,14, 8, 8,12,12,15,20, 8,14, 8, 8,
+	12,12,15,20,8,14, 8, 9,12,12,15,20, 8,14, 8, 9,
+	12,12,15,20,8,14, 8, 9,12,12,15,20, 8,14, 8, 9,
+	12,12,15,20,8,14, 8,18,12,12,15,20, 8,14, 8,18,
+	12,12,15,20,8,14, 8, 8,12,12,15,20, 8,14, 8, 8,
 	8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
 	8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
-16,16,16,16, 8, 8, 8, 8,16,16,16,16, 8, 8, 8, 8,
-16,16,16,16, 8, 8, 8, 8,16,16,16,16, 8, 8, 8, 8,
+	16,16,16,16,8, 8, 8, 8,16,16,16,16, 8, 8, 8, 8,
+	16,16,16,16,8, 8, 8, 8,16,16,16,16, 8, 8, 8, 8,
 	8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
 	8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
 	8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
@@ -250,7 +252,7 @@ static const UINT8 cc_ed[0x100] = {
 };
 
 /* ix/iy: with the exception of (i+offset) opcodes, t-states are main_opcode_table + 4 */
-static const UINT8 cc_xy[0x100] = {
+static const uint8_t cc_xy[0x100] = {
 	4+4,10+4, 7+4, 6+4, 4+4, 4+4, 7+4, 4+4, 4+4,11+4, 7+4, 6+4, 4+4, 4+4, 7+4, 4+4,
 	8+4,10+4, 7+4, 6+4, 4+4, 4+4, 7+4, 4+4,12+4,11+4, 7+4, 6+4, 4+4, 4+4, 7+4, 4+4,
 	7+4,10+4,16+4, 6+4, 4+4, 4+4, 7+4, 4+4, 7+4,11+4,16+4, 6+4, 4+4, 4+4, 7+4, 4+4,
@@ -258,7 +260,7 @@ static const UINT8 cc_xy[0x100] = {
 	4+4, 4+4, 4+4, 4+4, 4+4, 4+4,19  , 4+4, 4+4, 4+4, 4+4, 4+4, 4+4, 4+4,19  , 4+4,
 	4+4, 4+4, 4+4, 4+4, 4+4, 4+4,19  , 4+4, 4+4, 4+4, 4+4, 4+4, 4+4, 4+4,19  , 4+4,
 	4+4, 4+4, 4+4, 4+4, 4+4, 4+4,19  , 4+4, 4+4, 4+4, 4+4, 4+4, 4+4, 4+4,19  , 4+4,
-19  ,19  ,19  ,19  ,19  ,19  , 4+4,19  , 4+4, 4+4, 4+4, 4+4, 4+4, 4+4,19  , 4+4,
+	19 ,19  ,19  ,19  ,19  ,19  , 4+4,19  , 4+4, 4+4, 4+4, 4+4, 4+4, 4+4,19  , 4+4,
 	4+4, 4+4, 4+4, 4+4, 4+4, 4+4,19  , 4+4, 4+4, 4+4, 4+4, 4+4, 4+4, 4+4,19  , 4+4,
 	4+4, 4+4, 4+4, 4+4, 4+4, 4+4,19  , 4+4, 4+4, 4+4, 4+4, 4+4, 4+4, 4+4,19  , 4+4,
 	4+4, 4+4, 4+4, 4+4, 4+4, 4+4,19  , 4+4, 4+4, 4+4, 4+4, 4+4, 4+4, 4+4,19  , 4+4,
@@ -266,30 +268,30 @@ static const UINT8 cc_xy[0x100] = {
 	5+4,10+4,10+4,10+4,10+4,11+4, 7+4,11+4, 5+4,10+4,10+4, 0  ,10+4,17+4, 7+4,11+4, /* cb -> cc_xycb */
 	5+4,10+4,10+4,11+4,10+4,11+4, 7+4,11+4, 5+4, 4+4,10+4,11+4,10+4, 4  , 7+4,11+4, /* dd -> cc_xy again */
 	5+4,10+4,10+4,19+4,10+4,11+4, 7+4,11+4, 5+4, 4+4,10+4, 4+4,10+4, 4  , 7+4,11+4, /* ed -> cc_ed */
-	5+4,10+4,10+4, 4+4,10+4,11+4, 7+4,11+4, 5+4, 6+4,10+4, 4+4,10+4, 4  , 7+4,11+4      /* fd -> cc_xy again */
+	5+4,10+4,10+4, 4+4,10+4,11+4, 7+4,11+4, 5+4, 6+4,10+4, 4+4,10+4, 4  , 7+4,11+4  /* fd -> cc_xy again */
 };
 
-static const UINT8 cc_xycb[0x100] = {
-23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,
-23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,
-23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,
-23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,
-20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,
-20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,
-20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,
-20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,
-23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,
-23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,
-23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,
-23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,
-23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,
-23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,
-23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,
-23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23
+static const uint8_t cc_xycb[0x100] = {
+	23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,
+	23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,
+	23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,
+	23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,
+	20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,
+	20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,
+	20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,
+	20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,
+	23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,
+	23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,
+	23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,
+	23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,
+	23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,
+	23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,
+	23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,
+	23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23
 };
 
 /* extra cycles if jr/jp/call taken and 'interrupt latency' on rst 0-7 */
-static const UINT8 cc_ex[0x100] = {
+static const uint8_t cc_ex[0x100] = {
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 	5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /* DJNZ */
 	5, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, /* JR NZ/JR Z */
@@ -394,54 +396,57 @@ static const UINT8 cc_ex[0x100] = {
 } while (0)
 
 /***************************************************************
- * Enter halt state; write 1 to fake port on first execution
+ * Enter halt state; write 1 to callback on first execution
  ***************************************************************/
 inline void z80_device::halt()
 {
-	PC--;
-	m_halt = 1;
+	if (!m_halt)
+	{
+		m_halt = 1;
+		m_halt_cb(1);
+	}
 }
 
 /***************************************************************
- * Leave halt state; write 0 to fake port
+ * Leave halt state; write 0 to callback
  ***************************************************************/
 inline void z80_device::leave_halt()
 {
-	if( m_halt )
+	if (m_halt)
 	{
 		m_halt = 0;
-		PC++;
+		m_halt_cb(0);
 	}
 }
 
 /***************************************************************
  * Input a byte from given I/O port
  ***************************************************************/
-inline UINT8 z80_device::in(UINT16 port)
+inline uint8_t z80_device::in(uint16_t port)
 {
-	return m_io->read_byte(port);
+	return m_io.read_byte(port);
 }
 
 /***************************************************************
  * Output a byte to given I/O port
  ***************************************************************/
-inline void z80_device::out(UINT16 port, UINT8 value)
+inline void z80_device::out(uint16_t port, uint8_t value)
 {
-	m_io->write_byte(port, value);
+	m_io.write_byte(port, value);
 }
 
 /***************************************************************
  * Read a byte from given memory location
  ***************************************************************/
-inline UINT8 z80_device::rm(UINT16 addr)
+uint8_t z80_device::rm(uint16_t addr)
 {
-	return m_program->read_byte(addr);
+	return m_data.read_byte(addr);
 }
 
 /***************************************************************
  * Read a word from given memory location
  ***************************************************************/
-inline void z80_device::rm16(UINT16 addr, PAIR &r)
+inline void z80_device::rm16(uint16_t addr, PAIR &r)
 {
 	r.b.l = rm(addr);
 	r.b.h = rm((addr+1));
@@ -450,15 +455,15 @@ inline void z80_device::rm16(UINT16 addr, PAIR &r)
 /***************************************************************
  * Write a byte to given memory location
  ***************************************************************/
-inline void z80_device::wm(UINT16 addr, UINT8 value)
+void z80_device::wm(uint16_t addr, uint8_t value)
 {
-	m_program->write_byte(addr, value);
+	m_data.write_byte(addr, value);
 }
 
 /***************************************************************
  * Write a word to given memory location
  ***************************************************************/
-inline void z80_device::wm16(UINT16 addr, PAIR &r)
+inline void z80_device::wm16(uint16_t addr, PAIR &r)
 {
 	wm(addr, r.b.l);
 	wm((addr+1), r.b.h);
@@ -469,13 +474,13 @@ inline void z80_device::wm16(UINT16 addr, PAIR &r)
  * reading opcodes. In case of system with memory mapped I/O,
  * this function can be used to greatly speed up emulation
  ***************************************************************/
-inline UINT8 z80_device::rop()
+uint8_t z80_device::rop()
 {
 	unsigned pc = PCD;
 	PC++;
-	UINT8 res = m_decrypted_opcodes_direct->read_byte(pc);
+	uint8_t res = m_opcodes.read_byte(pc);
 	m_icount -= 2;
-	m_refresh_cb((m_i << 8) | (m_r2 & 0x80) | ((m_r-1) & 0x7f));
+	m_refresh_cb((m_i << 8) | (m_r2 & 0x80) | ((m_r-1) & 0x7f), 0x00, 0xff);
 	m_icount += 2;
 	return res;
 }
@@ -486,18 +491,18 @@ inline UINT8 z80_device::rop()
  * support systems that use different encoding mechanisms for
  * opcodes and opcode arguments
  ***************************************************************/
-inline UINT8 z80_device::arg()
+uint8_t z80_device::arg()
 {
 	unsigned pc = PCD;
 	PC++;
-	return m_direct->read_byte(pc);
+	return m_args.read_byte(pc);
 }
 
-inline UINT16 z80_device::arg16()
+uint16_t z80_device::arg16()
 {
 	unsigned pc = PCD;
 	PC += 2;
-	return m_direct->read_byte(pc) | (m_direct->read_byte((pc+1)&0xffff) << 8);
+	return m_args.read_word(pc);
 }
 
 /***************************************************************
@@ -506,13 +511,13 @@ inline UINT16 z80_device::arg16()
  ***************************************************************/
 inline void z80_device::eax()
 {
-	m_ea = (UINT32)(UINT16)(IX + (INT8)arg());
+	m_ea = (uint32_t)(uint16_t)(IX + (int8_t)arg());
 	WZ = m_ea;
 }
 
 inline void z80_device::eay()
 {
-	m_ea = (UINT32)(UINT16)(IY + (INT8)arg());
+	m_ea = (uint32_t)(uint16_t)(IY + (int8_t)arg());
 	WZ = m_ea;
 }
 
@@ -564,15 +569,15 @@ inline void z80_device::jp_cond(bool cond)
  ***************************************************************/
 inline void z80_device::jr()
 {
-	INT8 a = (INT8)arg();    /* arg() also increments PC */
-	PC += a;             /* so don't do PC += arg() */
+	int8_t a = (int8_t)arg(); /* arg() also increments PC */
+	PC += a;                  /* so don't do PC += arg() */
 	WZ = PC;
 }
 
 /***************************************************************
  * JR_COND
  ***************************************************************/
-inline void z80_device::jr_cond(bool cond, UINT8 opcode)
+inline void z80_device::jr_cond(bool cond, uint8_t opcode)
 {
 	if (cond)
 	{
@@ -597,7 +602,7 @@ inline void z80_device::call()
 /***************************************************************
  * CALL_COND
  ***************************************************************/
-inline void z80_device::call_cond(bool cond, UINT8 opcode)
+inline void z80_device::call_cond(bool cond, uint8_t opcode)
 {
 	if (cond)
 	{
@@ -609,14 +614,14 @@ inline void z80_device::call_cond(bool cond, UINT8 opcode)
 	}
 	else
 	{
-		WZ = arg16();  /* implicit call PC+=2;   */
+		WZ = arg16(); /* implicit call PC+=2; */
 	}
 }
 
 /***************************************************************
  * RET_COND
  ***************************************************************/
-inline void z80_device::ret_cond(bool cond, UINT8 opcode)
+inline void z80_device::ret_cond(bool cond, uint8_t opcode)
 {
 	if (cond)
 	{
@@ -631,8 +636,8 @@ inline void z80_device::ret_cond(bool cond, UINT8 opcode)
  ***************************************************************/
 inline void z80_device::retn()
 {
-	LOG(("Z80 '%s' RETN m_iff1:%d m_iff2:%d\n",
-		tag(), m_iff1, m_iff2));
+	LOG(("Z80 RETN m_iff1:%d m_iff2:%d\n",
+		m_iff1, m_iff2));
 	pop(m_pc);
 	WZ = PC;
 	m_iff1 = m_iff2;
@@ -646,7 +651,7 @@ inline void z80_device::reti()
 	pop(m_pc);
 	WZ = PC;
 	m_iff1 = m_iff2;
-	m_daisy.call_reti_device();
+	daisy_call_reti_device();
 }
 
 /***************************************************************
@@ -655,7 +660,7 @@ inline void z80_device::reti()
 inline void z80_device::ld_r_a()
 {
 	m_r = A;
-	m_r2 = A & 0x80;            /* keep bit 7 of r */
+	m_r2 = A & 0x80; /* keep bit 7 of r */
 }
 
 /***************************************************************
@@ -665,7 +670,7 @@ inline void z80_device::ld_a_r()
 {
 	A = (m_r & 0x7f) | m_r2;
 	F = (F & CF) | SZ[A] | (m_iff2 << 2);
-	m_after_ldair = TRUE;
+	m_after_ldair = true;
 }
 
 /***************************************************************
@@ -683,13 +688,13 @@ inline void z80_device::ld_a_i()
 {
 	A = m_i;
 	F = (F & CF) | SZ[A] | (m_iff2 << 2);
-	m_after_ldair = TRUE;
+	m_after_ldair = true;
 }
 
 /***************************************************************
  * RST
  ***************************************************************/
-inline void z80_device::rst(UINT16 addr)
+inline void z80_device::rst(uint16_t addr)
 {
 	push(m_pc);
 	PCD = addr;
@@ -699,19 +704,19 @@ inline void z80_device::rst(UINT16 addr)
 /***************************************************************
  * INC  r8
  ***************************************************************/
-inline UINT8 z80_device::inc(UINT8 value)
+inline uint8_t z80_device::inc(uint8_t value)
 {
-	UINT8 res = value + 1;
+	uint8_t res = value + 1;
 	F = (F & CF) | SZHV_inc[res];
-	return (UINT8)res;
+	return (uint8_t)res;
 }
 
 /***************************************************************
  * DEC  r8
  ***************************************************************/
-inline UINT8 z80_device::dec(UINT8 value)
+inline uint8_t z80_device::dec(uint8_t value)
 {
-	UINT8 res = value - 1;
+	uint8_t res = value - 1;
 	F = (F & CF) | SZHV_dec[res];
 	return res;
 }
@@ -740,8 +745,8 @@ inline void z80_device::rrca()
  ***************************************************************/
 inline void z80_device::rla()
 {
-	UINT8 res = (A << 1) | (F & CF);
-	UINT8 c = (A & 0x80) ? CF : 0;
+	uint8_t res = (A << 1) | (F & CF);
+	uint8_t c = (A & 0x80) ? CF : 0;
 	F = (F & (SF | ZF | PF)) | c | (res & (YF | XF));
 	A = res;
 }
@@ -751,8 +756,8 @@ inline void z80_device::rla()
  ***************************************************************/
 inline void z80_device::rra()
 {
-	UINT8 res = (A >> 1) | (F << 7);
-	UINT8 c = (A & 0x01) ? CF : 0;
+	uint8_t res = (A >> 1) | (F << 7);
+	uint8_t c = (A & 0x01) ? CF : 0;
 	F = (F & (SF | ZF | PF)) | c | (res & (YF | XF));
 	A = res;
 }
@@ -762,7 +767,7 @@ inline void z80_device::rra()
  ***************************************************************/
 inline void z80_device::rrd()
 {
-	UINT8 n = rm(HL);
+	uint8_t n = rm(HL);
 	WZ = HL+1;
 	wm(HL, (n >> 4) | (A << 4));
 	A = (A & 0xf0) | (n & 0x0f);
@@ -774,7 +779,7 @@ inline void z80_device::rrd()
  ***************************************************************/
 inline void z80_device::rld()
 {
-	UINT8 n = rm(HL);
+	uint8_t n = rm(HL);
 	WZ = HL+1;
 	wm(HL, (n << 4) | (A & 0x0f));
 	A = (A & 0xf0) | (n >> 4);
@@ -784,10 +789,10 @@ inline void z80_device::rld()
 /***************************************************************
  * ADD  A,n
  ***************************************************************/
-inline void z80_device::add_a(UINT8 value)
+inline void z80_device::add_a(uint8_t value)
 {
-	UINT32 ah = AFD & 0xff00;
-	UINT32 res = (UINT8)((ah >> 8) + value);
+	uint32_t ah = AFD & 0xff00;
+	uint32_t res = (uint8_t)((ah >> 8) + value);
 	F = SZHVC_add[ah | res];
 	A = res;
 }
@@ -795,10 +800,10 @@ inline void z80_device::add_a(UINT8 value)
 /***************************************************************
  * ADC  A,n
  ***************************************************************/
-inline void z80_device::adc_a(UINT8 value)
+inline void z80_device::adc_a(uint8_t value)
 {
-	UINT32 ah = AFD & 0xff00, c = AFD & 1;
-	UINT32 res = (UINT8)((ah >> 8) + value + c);
+	uint32_t ah = AFD & 0xff00, c = AFD & 1;
+	uint32_t res = (uint8_t)((ah >> 8) + value + c);
 	F = SZHVC_add[(c << 16) | ah | res];
 	A = res;
 }
@@ -806,10 +811,10 @@ inline void z80_device::adc_a(UINT8 value)
 /***************************************************************
  * SUB  n
  ***************************************************************/
-inline void z80_device::sub(UINT8 value)
+inline void z80_device::sub(uint8_t value)
 {
-	UINT32 ah = AFD & 0xff00;
-	UINT32 res = (UINT8)((ah >> 8) - value);
+	uint32_t ah = AFD & 0xff00;
+	uint32_t res = (uint8_t)((ah >> 8) - value);
 	F = SZHVC_sub[ah | res];
 	A = res;
 }
@@ -817,10 +822,10 @@ inline void z80_device::sub(UINT8 value)
 /***************************************************************
  * SBC  A,n
  ***************************************************************/
-inline void z80_device::sbc_a(UINT8 value)
+inline void z80_device::sbc_a(uint8_t value)
 {
-	UINT32 ah = AFD & 0xff00, c = AFD & 1;
-	UINT32 res = (UINT8)((ah >> 8) - value - c);
+	uint32_t ah = AFD & 0xff00, c = AFD & 1;
+	uint32_t res = (uint8_t)((ah >> 8) - value - c);
 	F = SZHVC_sub[(c<<16) | ah | res];
 	A = res;
 }
@@ -830,7 +835,7 @@ inline void z80_device::sbc_a(UINT8 value)
  ***************************************************************/
 inline void z80_device::neg()
 {
-	UINT8 value = A;
+	uint8_t value = A;
 	A = 0;
 	sub(value);
 }
@@ -840,7 +845,7 @@ inline void z80_device::neg()
  ***************************************************************/
 inline void z80_device::daa()
 {
-	UINT8 a = A;
+	uint8_t a = A;
 	if (F & NF) {
 		if ((F&HF) | ((A&0xf)>9)) a-=6;
 		if ((F&CF) | (A>0x99)) a-=0x60;
@@ -857,7 +862,7 @@ inline void z80_device::daa()
 /***************************************************************
  * AND  n
  ***************************************************************/
-inline void z80_device::and_a(UINT8 value)
+inline void z80_device::and_a(uint8_t value)
 {
 	A &= value;
 	F = SZP[A] | HF;
@@ -866,7 +871,7 @@ inline void z80_device::and_a(UINT8 value)
 /***************************************************************
  * OR   n
  ***************************************************************/
-inline void z80_device::or_a(UINT8 value)
+inline void z80_device::or_a(uint8_t value)
 {
 	A |= value;
 	F = SZP[A];
@@ -875,7 +880,7 @@ inline void z80_device::or_a(UINT8 value)
 /***************************************************************
  * XOR  n
  ***************************************************************/
-inline void z80_device::xor_a(UINT8 value)
+inline void z80_device::xor_a(uint8_t value)
 {
 	A ^= value;
 	F = SZP[A];
@@ -884,11 +889,11 @@ inline void z80_device::xor_a(UINT8 value)
 /***************************************************************
  * CP   n
  ***************************************************************/
-inline void z80_device::cp(UINT8 value)
+inline void z80_device::cp(uint8_t value)
 {
 	unsigned val = value;
-	UINT32 ah = AFD & 0xff00;
-	UINT32 res = (UINT8)((ah >> 8) - val);
+	uint32_t ah = AFD & 0xff00;
+	uint32_t res = (uint8_t)((ah >> 8) - val);
 	F = (SZHVC_sub[ah | res] & ~(YF | XF)) |
 		(val & (YF | XF));
 }
@@ -939,12 +944,12 @@ inline void z80_device::ex_sp(PAIR &r)
  ***************************************************************/
 inline void z80_device::add16(PAIR &dr, PAIR &sr)
 {
-	UINT32 res = dr.d + sr.d;
+	uint32_t res = dr.d + sr.d;
 	WZ = dr.d + 1;
 	F = (F & (SF | ZF | VF)) |
 		(((dr.d ^ res ^ sr.d) >> 8) & HF) |
 		((res >> 16) & CF) | ((res >> 8) & (YF | XF));
-	dr.w.l = (UINT16)res;
+	dr.w.l = (uint16_t)res;
 }
 
 /***************************************************************
@@ -952,14 +957,14 @@ inline void z80_device::add16(PAIR &dr, PAIR &sr)
  ***************************************************************/
 inline void z80_device::adc_hl(PAIR &r)
 {
-	UINT32 res = HLD + r.d + (F & CF);
+	uint32_t res = HLD + r.d + (F & CF);
 	WZ = HL + 1;
 	F = (((HLD ^ res ^ r.d) >> 8) & HF) |
 		((res >> 16) & CF) |
 		((res >> 8) & (SF | YF | XF)) |
 		((res & 0xffff) ? 0 : ZF) |
 		(((r.d ^ HLD ^ 0x8000) & (r.d ^ res) & 0x8000) >> 13);
-	HL = (UINT16)res;
+	HL = (uint16_t)res;
 }
 
 /***************************************************************
@@ -967,20 +972,20 @@ inline void z80_device::adc_hl(PAIR &r)
  ***************************************************************/
 inline void z80_device::sbc_hl(PAIR &r)
 {
-	UINT32 res = HLD - r.d - (F & CF);
+	uint32_t res = HLD - r.d - (F & CF);
 	WZ = HL + 1;
 	F = (((HLD ^ res ^ r.d) >> 8) & HF) | NF |
 		((res >> 16) & CF) |
 		((res >> 8) & (SF | YF | XF)) |
 		((res & 0xffff) ? 0 : ZF) |
 		(((r.d ^ HLD) & (HLD ^ res) &0x8000) >> 13);
-	HL = (UINT16)res;
+	HL = (uint16_t)res;
 }
 
 /***************************************************************
  * RLC  r8
  ***************************************************************/
-inline UINT8 z80_device::rlc(UINT8 value)
+inline uint8_t z80_device::rlc(uint8_t value)
 {
 	unsigned res = value;
 	unsigned c = (res & 0x80) ? CF : 0;
@@ -992,7 +997,7 @@ inline UINT8 z80_device::rlc(UINT8 value)
 /***************************************************************
  * RRC  r8
  ***************************************************************/
-inline UINT8 z80_device::rrc(UINT8 value)
+inline uint8_t z80_device::rrc(uint8_t value)
 {
 	unsigned res = value;
 	unsigned c = (res & 0x01) ? CF : 0;
@@ -1004,7 +1009,7 @@ inline UINT8 z80_device::rrc(UINT8 value)
 /***************************************************************
  * RL   r8
  ***************************************************************/
-inline UINT8 z80_device::rl(UINT8 value)
+inline uint8_t z80_device::rl(uint8_t value)
 {
 	unsigned res = value;
 	unsigned c = (res & 0x80) ? CF : 0;
@@ -1016,7 +1021,7 @@ inline UINT8 z80_device::rl(UINT8 value)
 /***************************************************************
  * RR   r8
  ***************************************************************/
-inline UINT8 z80_device::rr(UINT8 value)
+inline uint8_t z80_device::rr(uint8_t value)
 {
 	unsigned res = value;
 	unsigned c = (res & 0x01) ? CF : 0;
@@ -1028,7 +1033,7 @@ inline UINT8 z80_device::rr(UINT8 value)
 /***************************************************************
  * SLA  r8
  ***************************************************************/
-inline UINT8 z80_device::sla(UINT8 value)
+inline uint8_t z80_device::sla(uint8_t value)
 {
 	unsigned res = value;
 	unsigned c = (res & 0x80) ? CF : 0;
@@ -1040,7 +1045,7 @@ inline UINT8 z80_device::sla(UINT8 value)
 /***************************************************************
  * SRA  r8
  ***************************************************************/
-inline UINT8 z80_device::sra(UINT8 value)
+inline uint8_t z80_device::sra(uint8_t value)
 {
 	unsigned res = value;
 	unsigned c = (res & 0x01) ? CF : 0;
@@ -1052,7 +1057,7 @@ inline UINT8 z80_device::sra(UINT8 value)
 /***************************************************************
  * SLL  r8
  ***************************************************************/
-inline UINT8 z80_device::sll(UINT8 value)
+inline uint8_t z80_device::sll(uint8_t value)
 {
 	unsigned res = value;
 	unsigned c = (res & 0x80) ? CF : 0;
@@ -1064,7 +1069,7 @@ inline UINT8 z80_device::sll(UINT8 value)
 /***************************************************************
  * SRL  r8
  ***************************************************************/
-inline UINT8 z80_device::srl(UINT8 value)
+inline uint8_t z80_device::srl(uint8_t value)
 {
 	unsigned res = value;
 	unsigned c = (res & 0x01) ? CF : 0;
@@ -1076,7 +1081,7 @@ inline UINT8 z80_device::srl(UINT8 value)
 /***************************************************************
  * BIT  bit,r8
  ***************************************************************/
-inline void z80_device::bit(int bit, UINT8 value)
+inline void z80_device::bit(int bit, uint8_t value)
 {
 	F = (F & CF) | HF | (SZ_BIT[value & (1<<bit)] & ~(YF|XF)) | (value & (YF|XF));
 }
@@ -1084,7 +1089,7 @@ inline void z80_device::bit(int bit, UINT8 value)
 /***************************************************************
  * BIT  bit,(HL)
  ***************************************************************/
-inline void z80_device::bit_hl(int bit, UINT8 value)
+inline void z80_device::bit_hl(int bit, uint8_t value)
 {
 	F = (F & CF) | HF | (SZ_BIT[value & (1<<bit)] & ~(YF|XF)) | (WZ_H & (YF|XF));
 }
@@ -1092,7 +1097,7 @@ inline void z80_device::bit_hl(int bit, UINT8 value)
 /***************************************************************
  * BIT  bit,(IX/Y+o)
  ***************************************************************/
-inline void z80_device::bit_xy(int bit, UINT8 value)
+inline void z80_device::bit_xy(int bit, uint8_t value)
 {
 	F = (F & CF) | HF | (SZ_BIT[value & (1<<bit)] & ~(YF|XF)) | ((m_ea>>8) & (YF|XF));
 }
@@ -1100,7 +1105,7 @@ inline void z80_device::bit_xy(int bit, UINT8 value)
 /***************************************************************
  * RES  bit,r8
  ***************************************************************/
-inline UINT8 z80_device::res(int bit, UINT8 value)
+inline uint8_t z80_device::res(int bit, uint8_t value)
 {
 	return value & ~(1<<bit);
 }
@@ -1108,7 +1113,7 @@ inline UINT8 z80_device::res(int bit, UINT8 value)
 /***************************************************************
  * SET  bit,r8
  ***************************************************************/
-inline UINT8 z80_device::set(int bit, UINT8 value)
+inline uint8_t z80_device::set(int bit, uint8_t value)
 {
 	return value | (1<<bit);
 }
@@ -1118,7 +1123,7 @@ inline UINT8 z80_device::set(int bit, UINT8 value)
  ***************************************************************/
 inline void z80_device::ldi()
 {
-	UINT8 io = rm(HL);
+	uint8_t io = rm(HL);
 	wm(DE, io);
 	F &= SF | ZF | CF;
 	if ((A + io) & 0x02) F |= YF; /* bit 1 -> flag 5 */
@@ -1132,8 +1137,8 @@ inline void z80_device::ldi()
  ***************************************************************/
 inline void z80_device::cpi()
 {
-	UINT8 val = rm(HL);
-	UINT8 res = A - val;
+	uint8_t val = rm(HL);
+	uint8_t res = A - val;
 	WZ++;
 	HL++; BC--;
 	F = (F & CF) | (SZ[res]&~(YF|XF)) | ((A^val^res)&HF) | NF;
@@ -1149,7 +1154,7 @@ inline void z80_device::cpi()
 inline void z80_device::ini()
 {
 	unsigned t;
-	UINT8 io = in(BC);
+	uint8_t io = in(BC);
 	WZ = BC + 1;
 	B--;
 	wm(HL, io);
@@ -1158,7 +1163,7 @@ inline void z80_device::ini()
 	t = (unsigned)((C + 1) & 0xff) + (unsigned)io;
 	if (io & SF) F |= NF;
 	if (t & 0x100) F |= HF | CF;
-	F |= SZP[(UINT8)(t & 0x07) ^ B] & PF;
+	F |= SZP[(uint8_t)(t & 0x07) ^ B] & PF;
 }
 
 /***************************************************************
@@ -1167,7 +1172,7 @@ inline void z80_device::ini()
 inline void z80_device::outi()
 {
 	unsigned t;
-	UINT8 io = rm(HL);
+	uint8_t io = rm(HL);
 	B--;
 	WZ = BC + 1;
 	out(BC, io);
@@ -1176,7 +1181,7 @@ inline void z80_device::outi()
 	t = (unsigned)L + (unsigned)io;
 	if (io & SF) F |= NF;
 	if (t & 0x100) F |= HF | CF;
-	F |= SZP[(UINT8)(t & 0x07) ^ B] & PF;
+	F |= SZP[(uint8_t)(t & 0x07) ^ B] & PF;
 }
 
 /***************************************************************
@@ -1184,7 +1189,7 @@ inline void z80_device::outi()
  ***************************************************************/
 inline void z80_device::ldd()
 {
-	UINT8 io = rm(HL);
+	uint8_t io = rm(HL);
 	wm(DE, io);
 	F &= SF | ZF | CF;
 	if ((A + io) & 0x02) F |= YF; /* bit 1 -> flag 5 */
@@ -1198,8 +1203,8 @@ inline void z80_device::ldd()
  ***************************************************************/
 inline void z80_device::cpd()
 {
-	UINT8 val = rm(HL);
-	UINT8 res = A - val;
+	uint8_t val = rm(HL);
+	uint8_t res = A - val;
 	WZ--;
 	HL--; BC--;
 	F = (F & CF) | (SZ[res]&~(YF|XF)) | ((A^val^res)&HF) | NF;
@@ -1215,7 +1220,7 @@ inline void z80_device::cpd()
 inline void z80_device::ind()
 {
 	unsigned t;
-	UINT8 io = in(BC);
+	uint8_t io = in(BC);
 	WZ = BC - 1;
 	B--;
 	wm(HL, io);
@@ -1224,7 +1229,7 @@ inline void z80_device::ind()
 	t = ((unsigned)(C - 1) & 0xff) + (unsigned)io;
 	if (io & SF) F |= NF;
 	if (t & 0x100) F |= HF | CF;
-	F |= SZP[(UINT8)(t & 0x07) ^ B] & PF;
+	F |= SZP[(uint8_t)(t & 0x07) ^ B] & PF;
 }
 
 /***************************************************************
@@ -1233,7 +1238,7 @@ inline void z80_device::ind()
 inline void z80_device::outd()
 {
 	unsigned t;
-	UINT8 io = rm(HL);
+	uint8_t io = rm(HL);
 	B--;
 	WZ = BC - 1;
 	out(BC, io);
@@ -1242,7 +1247,7 @@ inline void z80_device::outd()
 	t = (unsigned)L + (unsigned)io;
 	if (io & SF) F |= NF;
 	if (t & 0x100) F |= HF | CF;
-	F |= SZP[(UINT8)(t & 0x07) ^ B] & PF;
+	F |= SZP[(uint8_t)(t & 0x07) ^ B] & PF;
 }
 
 /***************************************************************
@@ -1359,7 +1364,7 @@ inline void z80_device::otdr()
 inline void z80_device::ei()
 {
 	m_iff1 = m_iff2 = 1;
-	m_after_ei = TRUE;
+	m_after_ei = true;
 }
 
 /**********************************************************
@@ -1948,8 +1953,8 @@ OP(xycb,fe) { wm(m_ea, set(7, rm(m_ea)));        } /* SET  7,(XY+o)    */
 OP(xycb,ff) { A = set(7, rm(m_ea)); wm(m_ea, A); } /* SET  7,A=(XY+o)  */
 
 OP(illegal,1) {
-	logerror("Z80 '%s' ill. opcode $%02x $%02x\n",
-			tag(), m_decrypted_opcodes_direct->read_byte((PCD-1)&0xffff), m_decrypted_opcodes_direct->read_byte(PCD));
+	logerror("Z80 ill. opcode $%02x $%02x ($%04x)\n",
+			m_opcodes.read_byte((PCD-1)&0xffff), m_opcodes.read_byte(PCD), PCD-1);
 }
 
 /**********************************************************
@@ -2536,8 +2541,8 @@ OP(fd,ff) { illegal_1(); op_ff();                            } /* DB   FD       
 
 OP(illegal,2)
 {
-	logerror("Z80 '%s' ill. opcode $ed $%02x\n",
-			tag(), m_decrypted_opcodes_direct->read_byte((PCD-1)&0xffff));
+	logerror("Z80 ill. opcode $ed $%02x\n",
+			m_opcodes.read_byte((PCD-1)&0xffff));
 }
 
 /**********************************************************
@@ -2669,7 +2674,7 @@ OP(ed,6d) { reti();                                          } /* RETI          
 OP(ed,6e) { m_im = 0;                                        } /* IM   0           */
 OP(ed,6f) { rld();                                           } /* RLD  (HL)        */
 
-OP(ed,70) { UINT8 res = in(BC); F = (F & CF) | SZP[res];     } /* IN   0,(C)       */
+OP(ed,70) { uint8_t res = in(BC); F = (F & CF) | SZP[res];     } /* IN   0,(C)       */
 OP(ed,71) { out(BC, 0);                                      } /* OUT  (C),0       */
 OP(ed,72) { sbc_hl(m_sp);                                    } /* SBC  HL,SP       */
 OP(ed,73) { m_ea = arg16(); wm16(m_ea, m_sp); WZ = m_ea + 1; } /* LD   (w),SP      */
@@ -2837,7 +2842,7 @@ OP(ed,ff) { illegal_2();                                     } /* DB   ED       
  **********************************************************/
 OP(op,00) {                                                                       } /* NOP              */
 OP(op,01) { BC = arg16();                                                         } /* LD   BC,w        */
-OP(op,02) { wm(BC,A); WZ_L = (BC + 1) & 0xFF;  WZ_H = A;                          } /* LD (BC),A */
+OP(op,02) { wm(BC,A); WZ_L = (BC + 1) & 0xFF;  WZ_H = A;                          } /* LD (BC),A        */
 OP(op,03) { BC++;                                                                 } /* INC  BC          */
 OP(op,04) { B = inc(B);                                                           } /* INC  B           */
 OP(op,05) { B = dec(B);                                                           } /* DEC  B           */
@@ -2855,7 +2860,7 @@ OP(op,0f) { rrca();                                                             
 
 OP(op,10) { B--; jr_cond(B, 0x10);                                                } /* DJNZ o           */
 OP(op,11) { DE = arg16();                                                         } /* LD   DE,w        */
-OP(op,12) { wm(DE,A); WZ_L = (DE + 1) & 0xFF;  WZ_H = A;                          } /* LD (DE),A */
+OP(op,12) { wm(DE,A); WZ_L = (DE + 1) & 0xFF;  WZ_H = A;                          } /* LD (DE),A        */
 OP(op,13) { DE++;                                                                 } /* INC  DE          */
 OP(op,14) { D = inc(D);                                                           } /* INC  D           */
 OP(op,15) { D = dec(D);                                                           } /* DEC  D           */
@@ -2905,7 +2910,7 @@ OP(op,3b) { SP--;                                                               
 OP(op,3c) { A = inc(A);                                                           } /* INC  A           */
 OP(op,3d) { A = dec(A);                                                           } /* DEC  A           */
 OP(op,3e) { A = arg();                                                            } /* LD   A,n         */
-OP(op,3f) { F = ((F&(SF|ZF|YF|XF|PF|CF))|((F&CF)<<4)|(A&(YF|XF)))^CF;             } /* CCF        */
+OP(op,3f) { F = ((F&(SF|ZF|YF|XF|PF|CF))|((F&CF)<<4)|(A&(YF|XF)))^CF;             } /* CCF              */
 
 OP(op,40) {                                                                       } /* LD   B,B         */
 OP(op,41) { B = C;                                                                } /* LD   B,C         */
@@ -2967,7 +2972,7 @@ OP(op,72) { wm(HL, D);                                                          
 OP(op,73) { wm(HL, E);                                                            } /* LD   (HL),E      */
 OP(op,74) { wm(HL, H);                                                            } /* LD   (HL),H      */
 OP(op,75) { wm(HL, L);                                                            } /* LD   (HL),L      */
-OP(op,76) { halt();                                                               } /* halt             */
+OP(op,76) { halt();                                                               } /* HALT             */
 OP(op,77) { wm(HL, A);                                                            } /* LD   (HL),A      */
 
 OP(op,78) { A = B;                                                                } /* LD   A,B         */
@@ -3081,7 +3086,7 @@ OP(op,d7) { rst(0x10);                                                          
 OP(op,d8) { ret_cond(F & CF, 0xd8);                                               } /* RET  C           */
 OP(op,d9) { exx();                                                                } /* EXX              */
 OP(op,da) { jp_cond(F & CF);                                                      } /* JP   C,a         */
-OP(op,db) { unsigned n = arg() | (A << 8); A = in(n); WZ = n + 1;                 } /* IN   A,(n)  */
+OP(op,db) { unsigned n = arg() | (A << 8); A = in(n); WZ = n + 1;                 } /* IN   A,(n)       */
 OP(op,dc) { call_cond(F & CF, 0xdc);                                              } /* CALL C,a         */
 OP(op,dd) { m_r++; EXEC(dd,rop());                                                } /* **** DD xx       */
 OP(op,de) { sbc_a(arg());                                                         } /* SBC  A,n         */
@@ -3124,39 +3129,50 @@ OP(op,fe) { cp(arg());                                                          
 OP(op,ff) { rst(0x38);                                                            } /* RST  7           */
 
 
-void z80_device::take_interrupt()
+void z80_device::take_nmi()
 {
-	int irq_vector;
-
-	/* there isn't a valid previous program counter */
-	PRVPC = -1;
-
 	/* Check if processor was halted */
 	leave_halt();
 
-	/* Clear both interrupt flip flops */
+#if HAS_LDAIR_QUIRK
+	/* reset parity flag after LD A,I or LD A,R */
+	if (m_after_ldair) F &= ~PF;
+#endif
+
+	m_iff1 = 0;
+	push(m_pc);
+	PCD = 0x0066;
+	WZ=PCD;
+	m_icount -= 11;
+	m_nmi_pending = false;
+}
+
+void z80_device::take_interrupt()
+{
+	// check if processor was halted
+	leave_halt();
+
+	// clear both interrupt flip flops
 	m_iff1 = m_iff2 = 0;
 
-	/* Daisy chain mode? If so, call the requesting device */
-	if (m_daisy.present())
-		irq_vector = m_daisy.call_ack_device();
-
-	/* else call back the cpu interface to retrieve the vector */
-	else
-		irq_vector = m_irq_callback(*this, 0);
-
-	/* Say hi */
+	// say hi
 	m_irqack_cb(true);
 
-	LOG(("Z80 '%s' single int. irq_vector $%02x\n", tag(), irq_vector));
+	// fetch the IRQ vector
+	device_z80daisy_interface *intf = daisy_get_irq_device();
+	int irq_vector = (intf != nullptr) ? intf->z80daisy_irq_ack() : standard_irq_callback_member(*this, 0);
+	LOG(("Z80 single int. irq_vector $%02x\n", irq_vector));
 
 	/* Interrupt mode 2. Call [i:databyte] */
 	if( m_im == 2 )
 	{
+		// Zilog's datasheet claims that "the least-significant bit must be a zero."
+		// However, experiments have confirmed that IM 2 vectors do not have to be
+		// even, and all 8 bits will be used; even $FF is handled normally.
 		irq_vector = (irq_vector & 0xff) | (m_i << 8);
 		push(m_pc);
 		rm16(irq_vector, m_pc);
-		LOG(("Z80 '%s' IM2 [$%04x] = $%04x\n", tag(), irq_vector, PCD));
+		LOG(("Z80 IM2 [$%04x] = $%04x\n", irq_vector, PCD));
 		/* CALL opcode timing + 'interrupt latency' cycles */
 		m_icount -= m_cc_op[0xcd] + m_cc_ex[0xff];
 	}
@@ -3175,7 +3191,7 @@ void z80_device::take_interrupt()
 		/* Interrupt mode 0. We check for CALL and JP instructions, */
 		/* if neither of these were found we assume a 1 byte opcode */
 		/* was placed on the databus                                */
-		LOG(("Z80 '%s' IM0 $%04x\n", tag(), irq_vector));
+		LOG(("Z80 IM0 $%04x\n", irq_vector));
 
 		/* check for nop */
 		if (irq_vector != 0x00)
@@ -3206,13 +3222,15 @@ void z80_device::take_interrupt()
 		m_icount -= m_cc_ex[0xff];
 	}
 	WZ=PCD;
+
+#if HAS_LDAIR_QUIRK
+	/* reset parity flag after LD A,I or LD A,R */
+	if (m_after_ldair) F &= ~PF;
+#endif
 }
 
 void nsc800_device::take_interrupt_nsc800()
 {
-	/* there isn't a valid previous program counter */
-	PRVPC = -1;
-
 	/* Check if processor was halted */
 	leave_halt();
 
@@ -3239,6 +3257,11 @@ void nsc800_device::take_interrupt_nsc800()
 	m_icount -= m_cc_op[0xff] + cc_ex[0xff];
 
 	WZ=PCD;
+
+#if HAS_LDAIR_QUIRK
+	/* reset parity flag after LD A,I or LD A,R */
+	if (m_after_ldair) F &= ~PF;
+#endif
 }
 
 /****************************************************************************
@@ -3248,10 +3271,10 @@ void z80_device::device_start()
 {
 	if( !tables_initialised )
 	{
-		UINT8 *padd = &SZHVC_add[  0*256];
-		UINT8 *padc = &SZHVC_add[256*256];
-		UINT8 *psub = &SZHVC_sub[  0*256];
-		UINT8 *psbc = &SZHVC_sub[256*256];
+		uint8_t *padd = &SZHVC_add[  0*256];
+		uint8_t *padc = &SZHVC_add[256*256];
+		uint8_t *psub = &SZHVC_sub[  0*256];
+		uint8_t *psbc = &SZHVC_sub[256*256];
 		for (int oldval = 0; oldval < 256; oldval++)
 		{
 			for (int newval = 0; newval < 256; newval++)
@@ -3381,23 +3404,17 @@ void z80_device::device_start()
 	m_after_ldair = 0;
 	m_ea = 0;
 
-	m_program = &space(AS_PROGRAM);
-	m_decrypted_opcodes = has_space(AS_DECRYPTED_OPCODES) ? &space(AS_DECRYPTED_OPCODES) : m_program;
-	m_direct = &m_program->direct();
-	m_decrypted_opcodes_direct = &m_decrypted_opcodes->direct();
-	m_io = &space(AS_IO);
-
-	if (static_config() != nullptr)
-		m_daisy.init(this, (const z80_daisy_config *)static_config());
-	m_irq_callback = device_irq_acknowledge_delegate(FUNC(z80_device::standard_irq_callback_member), this);
+	space(AS_PROGRAM).cache(m_args);
+	space(has_space(AS_OPCODES) ? AS_OPCODES : AS_PROGRAM).cache(m_opcodes);
+	space(AS_PROGRAM).specific(m_data);
+	space(AS_IO).specific(m_io);
 
 	IX = IY = 0xffff; /* IX and IY are FFFF after a reset! */
-	F = ZF;            /* Zero flag is set */
+	F = ZF;           /* Zero flag is set */
 
 	/* set up the state table */
-	state_add(Z80_PC,          "PC",        m_pc.w.l);
-	state_add(STATE_GENPC,     "GENPC",     m_pc.w.l).noshow();
-	state_add(STATE_GENPCBASE, "GENPCBASE", m_prvpc.w.l).noshow();
+	state_add(STATE_GENPC,     "PC",        m_pc.w.l).callimport();
+	state_add(STATE_GENPCBASE, "CURPC",     m_prvpc.w.l).callimport().noshow();
 	state_add(Z80_SP,          "SP",        SP);
 	state_add(STATE_GENSP,     "GENSP",     SP).noshow();
 	state_add(STATE_GENFLAGS,  "GENFLAGS",  F).noshow().formatstr("%8s");
@@ -3427,7 +3444,7 @@ void z80_device::device_start()
 	state_add(Z80_HALT,        "HALT",      m_halt).mask(0x1);
 
 	// set our instruction counter
-	m_icountptr = &m_icount;
+	set_icountptr(m_icount);
 
 	/* setup cycle tables */
 	m_cc_op = cc_op;
@@ -3439,6 +3456,7 @@ void z80_device::device_start()
 
 	m_irqack_cb.resolve_safe();
 	m_refresh_cb.resolve_safe();
+	m_halt_cb.resolve_safe();
 }
 
 void nsc800_device::device_start()
@@ -3452,17 +3470,17 @@ void nsc800_device::device_start()
  ****************************************************************************/
 void z80_device::device_reset()
 {
+	leave_halt();
+
 	PC = 0x0000;
 	m_i = 0;
 	m_r = 0;
 	m_r2 = 0;
-	m_nmi_pending = FALSE;
-	m_after_ei = FALSE;
-	m_after_ldair = FALSE;
+	m_nmi_pending = false;
+	m_after_ei = false;
+	m_after_ldair = false;
 	m_iff1 = 0;
 	m_iff2 = 0;
-
-	m_daisy.reset();
 
 	WZ=PCD;
 }
@@ -3474,90 +3492,48 @@ void nsc800_device::device_reset()
 }
 
 /****************************************************************************
- * Execute 'cycles' T-states. Return number of T-states really executed
+ * Execute 'cycles' T-states.
  ****************************************************************************/
+
 void z80_device::execute_run()
 {
-	/* check for NMIs on the way in; they can only be set externally */
-	/* via timers, and can't be dynamically enabled, so it is safe */
-	/* to just check here */
-	if (m_nmi_pending)
-	{
-		LOG(("Z80 '%s' take NMI\n", tag()));
-		PRVPC = -1;            /* there isn't a valid previous program counter */
-		leave_halt();            /* Check if processor was halted */
-
-#if HAS_LDAIR_QUIRK
-		/* reset parity flag after LD A,I or LD A,R */
-		if (m_after_ldair) F &= ~PF;
-#endif
-		m_after_ldair = FALSE;
-
-		m_iff1 = 0;
-		push(m_pc);
-		PCD = 0x0066;
-		WZ=PCD;
-		m_icount -= 11;
-		m_nmi_pending = FALSE;
-	}
-
 	do
 	{
-		/* check for IRQs before each instruction */
-		if (m_irq_state != CLEAR_LINE && m_iff1 && !m_after_ei)
+		if (m_wait_state)
 		{
-#if HAS_LDAIR_QUIRK
-			/* reset parity flag after LD A,I or LD A,R */
-			if (m_after_ldair) F &= ~PF;
-#endif
-			take_interrupt();
+			// stalled
+			m_icount = 0;
+			return;
 		}
-		m_after_ei = FALSE;
-		m_after_ldair = FALSE;
+
+		// check for interrupts before each instruction
+		check_interrupts();
+
+		m_after_ei = false;
+		m_after_ldair = false;
 
 		PRVPC = PCD;
-		debugger_instruction_hook(this, PCD);
+		debugger_instruction_hook(PCD);
+
 		m_r++;
-		EXEC(op,rop());
+		uint8_t opcode = rop();
+
+		// when in HALT state, the fetched opcode is not dispatched (aka a NOP)
+		if (m_halt)
+		{
+			PC--;
+			opcode = 0;
+		}
+		EXEC(op,opcode);
 	} while (m_icount > 0);
 }
 
-void nsc800_device::execute_run()
+void z80_device::check_interrupts()
 {
-	/* check for NMIs on the way in; they can only be set externally */
-	/* via timers, and can't be dynamically enabled, so it is safe */
-	/* to just check here */
 	if (m_nmi_pending)
-	{
-		LOG(("Z80 '%s' take NMI\n", tag()));
-		PRVPC = -1;            /* there isn't a valid previous program counter */
-		leave_halt();            /* Check if processor was halted */
-
-		m_iff1 = 0;
-		push(m_pc);
-		PCD = 0x0066;
-		WZ=PCD;
-		m_icount -= 11;
-		m_nmi_pending = FALSE;
-	}
-
-	do
-	{
-		/* check for NSC800 IRQs line RSTA, RSTB, RSTC */
-		if ((m_nsc800_irq_state[NSC800_RSTA] != CLEAR_LINE || m_nsc800_irq_state[NSC800_RSTB] != CLEAR_LINE || m_nsc800_irq_state[NSC800_RSTC] != CLEAR_LINE) && m_iff1 && !m_after_ei)
-			take_interrupt_nsc800();
-
-		/* check for IRQs before each instruction */
-		if (m_irq_state != CLEAR_LINE && m_iff1 && !m_after_ei)
-			take_interrupt();
-
-		m_after_ei = FALSE;
-
-		PRVPC = PCD;
-		debugger_instruction_hook(this, PCD);
-		m_r++;
-		EXEC(op,rop());
-	} while (m_icount > 0);
+		take_nmi();
+	else if (m_irq_state != CLEAR_LINE && m_iff1 && !m_after_ei)
+		take_interrupt();
 }
 
 void z80_device::execute_set_input(int inputnum, int state)
@@ -3571,15 +3547,15 @@ void z80_device::execute_set_input(int inputnum, int state)
 	case INPUT_LINE_NMI:
 		/* mark an NMI pending on the rising edge */
 		if (m_nmi_state == CLEAR_LINE && state != CLEAR_LINE)
-			m_nmi_pending = TRUE;
+			m_nmi_pending = true;
 		m_nmi_state = state;
 		break;
 
 	case INPUT_LINE_IRQ0:
 		/* update the IRQ state via the daisy chain */
 		m_irq_state = state;
-		if (m_daisy.present())
-			m_irq_state = ( m_daisy.update_irq_state() == ASSERT_LINE ) ? ASSERT_LINE : m_irq_state;
+		if (daisy_chain_present())
+			m_irq_state = (daisy_update_irq_state() == ASSERT_LINE ) ? ASSERT_LINE : m_irq_state;
 
 		/* the main execute loop will take the interrupt */
 		break;
@@ -3587,24 +3563,26 @@ void z80_device::execute_set_input(int inputnum, int state)
 	case Z80_INPUT_LINE_WAIT:
 		m_wait_state = state;
 		break;
+
+	default:
+		break;
 	}
+}
+
+void nsc800_device::check_interrupts()
+{
+	if (m_nmi_pending)
+		take_nmi();
+	else if ((m_nsc800_irq_state[NSC800_RSTA] != CLEAR_LINE || m_nsc800_irq_state[NSC800_RSTB] != CLEAR_LINE || m_nsc800_irq_state[NSC800_RSTC] != CLEAR_LINE) && m_iff1 && !m_after_ei)
+		take_interrupt_nsc800();
+	else if (m_irq_state != CLEAR_LINE && m_iff1 && !m_after_ei)
+		take_interrupt();
 }
 
 void nsc800_device::execute_set_input(int inputnum, int state)
 {
 	switch (inputnum)
 	{
-	case Z80_INPUT_LINE_BUSRQ:
-		m_busrq_state = state;
-		break;
-
-	case INPUT_LINE_NMI:
-		/* mark an NMI pending on the rising edge */
-		if (m_nmi_state == CLEAR_LINE && state != CLEAR_LINE)
-			m_nmi_pending = TRUE;
-		m_nmi_state = state;
-		break;
-
 	case NSC800_RSTA:
 		m_nsc800_irq_state[NSC800_RSTA] = state;
 		break;
@@ -3617,17 +3595,8 @@ void nsc800_device::execute_set_input(int inputnum, int state)
 		m_nsc800_irq_state[NSC800_RSTC] = state;
 		break;
 
-	case INPUT_LINE_IRQ0:
-		/* update the IRQ state via the daisy chain */
-		m_irq_state = state;
-		if (m_daisy.present())
-			m_irq_state = m_daisy.update_irq_state();
-
-		/* the main execute loop will take the interrupt */
-		break;
-
-	case Z80_INPUT_LINE_WAIT:
-		m_wait_state = state;
+	default:
+		z80_device::execute_set_input(inputnum, state);
 		break;
 	}
 }
@@ -3642,6 +3611,14 @@ void z80_device::state_import( const device_state_entry &entry )
 {
 	switch (entry.index())
 	{
+		case STATE_GENPC:
+			m_prvpc = m_pc;
+			break;
+
+		case STATE_GENPCBASE:
+			m_pc = m_prvpc;
+			break;
+
 		case Z80_R:
 			m_r = m_rtemp & 0x7f;
 			m_r2 = m_rtemp & 0x80;
@@ -3666,12 +3643,12 @@ void z80_device::state_export( const device_state_entry &entry )
 	}
 }
 
-void z80_device::state_string_export(const device_state_entry &entry, std::string &str)
+void z80_device::state_string_export(const device_state_entry &entry, std::string &str) const
 {
 	switch (entry.index())
 	{
 		case STATE_GENFLAGS:
-			strprintf(str, "%c%c%c%c%c%c%c%c",
+			str = string_format("%c%c%c%c%c%c%c%c",
 				F & 0x80 ? 'S':'.',
 				F & 0x40 ? 'Z':'.',
 				F & 0x20 ? 'Y':'.',
@@ -3685,14 +3662,13 @@ void z80_device::state_string_export(const device_state_entry &entry, std::strin
 }
 
 //-------------------------------------------------
-//  disasm_disassemble - call the disassembly
+//  disassemble - call the disassembly
 //  helper function
 //-------------------------------------------------
 
-offs_t z80_device::disasm_disassemble( char *buffer, offs_t pc, const UINT8 *oprom, const UINT8 *opram, UINT32 options )
+std::unique_ptr<util::disasm_interface> z80_device::create_disassembler()
 {
-	extern CPU_DISASSEMBLE( z80 );
-	return CPU_DISASSEMBLE_NAME(z80)(this, buffer, pc, oprom, opram, options);
+	return std::make_unique<z80_disassembler>();
 }
 
 
@@ -3700,7 +3676,7 @@ offs_t z80_device::disasm_disassemble( char *buffer, offs_t pc, const UINT8 *opr
  * Generic set_info
  **************************************************************************/
 
-void z80_device::z80_set_cycle_tables(const UINT8 *op, const UINT8 *cb, const UINT8 *ed, const UINT8 *xy, const UINT8 *xycb, const UINT8 *ex)
+void z80_device::z80_set_cycle_tables(const uint8_t *op, const uint8_t *cb, const uint8_t *ed, const uint8_t *xy, const uint8_t *xycb, const uint8_t *ex)
 {
 	m_cc_op = (op != nullptr) ? op : cc_op;
 	m_cc_cb = (cb != nullptr) ? cb : cc_cb;
@@ -3711,49 +3687,43 @@ void z80_device::z80_set_cycle_tables(const UINT8 *op, const UINT8 *cb, const UI
 }
 
 
-z80_device::z80_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock) :
-	cpu_device(mconfig, Z80, "Z80", tag, owner, clock, "z80", __FILE__),
+z80_device::z80_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock) :
+	z80_device(mconfig, Z80, tag, owner, clock)
+{
+}
+
+z80_device::z80_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock) :
+	cpu_device(mconfig, type, tag, owner, clock),
+	z80_daisy_chain_interface(mconfig, *this),
 	m_program_config("program", ENDIANNESS_LITTLE, 8, 16, 0),
-	m_decrypted_opcodes_config("decrypted_opcodes", ENDIANNESS_LITTLE, 8, 16, 0),
+	m_opcodes_config("opcodes", ENDIANNESS_LITTLE, 8, 16, 0),
 	m_io_config("io", ENDIANNESS_LITTLE, 8, 16, 0),
 	m_irqack_cb(*this),
-	m_refresh_cb(*this)
+	m_refresh_cb(*this),
+	m_halt_cb(*this)
 {
 }
 
-z80_device::z80_device(const machine_config &mconfig, device_type type, const char *name, const char *tag, device_t *owner, UINT32 clock, const char *shortname, const char *source) :
-	cpu_device(mconfig, type, name, tag, owner, clock, shortname, source),
-	m_program_config("program", ENDIANNESS_LITTLE, 8, 16, 0),
-	m_decrypted_opcodes_config("decrypted_opcodes", ENDIANNESS_LITTLE, 8, 16, 0),
-	m_io_config("io", ENDIANNESS_LITTLE, 8, 16, 0),
-	m_irqack_cb(*this),
-	m_refresh_cb(*this)
+device_memory_interface::space_config_vector z80_device::memory_space_config() const
+{
+	if(has_configured_map(AS_OPCODES))
+		return space_config_vector {
+			std::make_pair(AS_PROGRAM, &m_program_config),
+			std::make_pair(AS_OPCODES, &m_opcodes_config),
+			std::make_pair(AS_IO,      &m_io_config)
+		};
+	else
+		return space_config_vector {
+			std::make_pair(AS_PROGRAM, &m_program_config),
+			std::make_pair(AS_IO,      &m_io_config)
+		};
+}
+
+DEFINE_DEVICE_TYPE(Z80, z80_device, "z80", "Zilog Z80")
+
+nsc800_device::nsc800_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: z80_device(mconfig, NSC800, tag, owner, clock)
 {
 }
 
-const address_space_config *z80_device::memory_space_config(address_spacenum spacenum) const
-{
-	switch(spacenum)
-	{
-	case AS_PROGRAM:           return &m_program_config;
-	case AS_IO:                return &m_io_config;
-	case AS_DECRYPTED_OPCODES: return has_configured_map(AS_DECRYPTED_OPCODES) ? &m_decrypted_opcodes_config : nullptr;
-	default:                   return nullptr;
-	}
-}
-
-const device_type Z80 = &device_creator<z80_device>;
-
-nsc800_device::nsc800_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: z80_device(mconfig, NSC800, "NSC800", tag, owner, clock, "nsc800", __FILE__)
-{
-}
-
-const device_type NSC800 = &device_creator<nsc800_device>;
-
-
-
-WRITE_LINE_MEMBER( z80_device::irq_line )
-{
-	set_input_line( INPUT_LINE_IRQ0, state );
-}
+DEFINE_DEVICE_TYPE(NSC800, nsc800_device, "nsc800", "National Semiconductor NSC800")

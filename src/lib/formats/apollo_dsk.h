@@ -7,17 +7,19 @@
     apollo format
 
 *********************************************************************/
+#ifndef MAME_FORMATS_APOLLO_DSK_H
+#define MAME_FORMATS_APOLLO_DSK_H
 
-#ifndef APOLLO_DSK_H_
-#define APOLLO_DSK_H_
+#pragma once
 
 #include "upd765_dsk.h"
 
-class apollo_format : public upd765_format {
+class apollo_format : public upd765_format
+{
 public:
 	apollo_format();
 
-	virtual int identify(io_generic *io, UINT32 form_factor) override;
+	virtual int identify(io_generic *io, uint32_t form_factor, const std::vector<uint32_t> &variants) override;
 	virtual const char *name() const override;
 	virtual const char *description() const override;
 	virtual const char *extensions() const override;
@@ -28,4 +30,4 @@ private:
 
 extern const floppy_format_type FLOPPY_APOLLO_FORMAT;
 
-#endif
+#endif // MAME_FORMATS_APOLLO_DSK_H

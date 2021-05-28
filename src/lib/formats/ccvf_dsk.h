@@ -7,17 +7,20 @@
     Compucolor Virtual Floppy Disk Image format
 
 *********************************************************************/
+#ifndef MAME_FORMATS_CCVF_DSK_H
+#define MAME_FORMATS_CCVF_DSK_H
 
-#ifndef CCVF_DSK_H_
-#define CCVF_DSK_H_
+#pragma once
 
 #include "flopimg.h"
 
-class ccvf_format : public floppy_image_format_t {
+class ccvf_format : public floppy_image_format_t
+{
 public:
-	struct format {
-		UINT32 form_factor;      // See floppy_image for possible values
-		UINT32 variant;          // See floppy_image for possible values
+	struct format
+	{
+		uint32_t form_factor;    // See floppy_image for possible values
+		uint32_t variant;        // See floppy_image for possible values
 
 		int cell_size;           // See floppy_image_format_t for details
 		int sector_count;
@@ -36,8 +39,8 @@ public:
 	virtual const char *description() const override;
 	virtual const char *extensions() const override;
 
-	virtual int identify(io_generic *io, UINT32 form_factor) override;
-	virtual bool load(io_generic *io, UINT32 form_factor, floppy_image *image) override;
+	virtual int identify(io_generic *io, uint32_t form_factor, const std::vector<uint32_t> &variants) override;
+	virtual bool load(io_generic *io, uint32_t form_factor, const std::vector<uint32_t> &variants, floppy_image *image) override;
 	virtual bool supports_save() const override;
 
 protected:
@@ -50,6 +53,4 @@ protected:
 
 extern const floppy_format_type FLOPPY_CCVF_FORMAT;
 
-
-
-#endif
+#endif // MAME_FORMATS_CCVF_DSK_H

@@ -12,11 +12,9 @@ Atari Fire Truck + Super Bug + Monte Carlo video emulation
 static const rectangle playfield_window(0x02a, 0x115, 0x000, 0x0ff);
 
 
-PALETTE_INIT_MEMBER(firetrk_state, firetrk)
+void firetrk_state::firetrk_palette(palette_device &palette)
 {
-	int i;
-
-	static const UINT8 colortable_source[] =
+	static constexpr uint8_t colortable_source[] =
 	{
 		0, 0, 1, 0,
 		2, 0, 3, 0,
@@ -26,19 +24,19 @@ PALETTE_INIT_MEMBER(firetrk_state, firetrk)
 		2, 0, 0, 3,
 		3, 0, 0, 3
 	};
-	static const rgb_t palette_source[] =
+	static constexpr rgb_t palette_source[] =
 	{
-		rgb_t::black,
+		rgb_t::black(),
 		rgb_t(0x5b, 0x5b, 0x5b),
 		rgb_t(0xa4, 0xa4, 0xa4),
-		rgb_t::white
+		rgb_t::white()
 	};
 
 	m_color1_mask = m_color2_mask = 0;
 
-	for (i = 0; i < ARRAY_LENGTH(colortable_source); i++)
+	for (int i = 0; i < std::size(colortable_source); i++)
 	{
-		UINT8 color = colortable_source[i];
+		uint8_t color = colortable_source[i];
 
 		if (color == 1)
 			m_color1_mask |= 1 << i;
@@ -50,18 +48,17 @@ PALETTE_INIT_MEMBER(firetrk_state, firetrk)
 }
 
 
-void firetrk_state::prom_to_palette(int number, UINT8 val)
+void firetrk_state::prom_to_palette(int number, uint8_t val)
 {
 	m_palette->set_pen_color(number, rgb_t(pal1bit(val >> 2), pal1bit(val >> 1), pal1bit(val >> 0)));
 }
 
 
-PALETTE_INIT_MEMBER(firetrk_state,montecar)
+void firetrk_state::montecar_palette(palette_device &palette)
 {
-	const UINT8 *color_prom = memregion("proms")->base();
-	int i;
+	const uint8_t *color_prom = memregion("proms")->base();
 
-	static const UINT8 colortable_source[] =
+	static constexpr uint8_t colortable_source[] =
 	{
 		0x00, 0x00, 0x00, 0x01,
 		0x00, 0x02, 0x00, 0x03,
@@ -96,9 +93,9 @@ PALETTE_INIT_MEMBER(firetrk_state,montecar)
 
 	m_color1_mask = m_color2_mask = 0;
 
-	for (i = 0; i < ARRAY_LENGTH(colortable_source); i++)
+	for (int i = 0; i < std::size(colortable_source); i++)
 	{
-		UINT8 color = colortable_source[i];
+		uint8_t color = colortable_source[i];
 
 		if (color == 1)
 			m_color1_mask |= 1 << i;
@@ -108,8 +105,8 @@ PALETTE_INIT_MEMBER(firetrk_state,montecar)
 		prom_to_palette(i, color_prom[0x100 + colortable_source[i]]);
 	}
 
-	palette.set_pen_color(ARRAY_LENGTH(colortable_source) + 0, rgb_t::black);
-	palette.set_pen_color(ARRAY_LENGTH(colortable_source) + 1, rgb_t::white);
+	palette.set_pen_color(std::size(colortable_source) + 0, rgb_t::black());
+	palette.set_pen_color(std::size(colortable_source) + 1, rgb_t::white());
 }
 
 
@@ -124,7 +121,7 @@ TILE_GET_INFO_MEMBER(firetrk_state::firetrk_get_tile_info1)
 	if (m_flash)
 		color = color | 0x04;
 
-	SET_TILE_INFO_MEMBER(1, code, color, 0);
+	tileinfo.set(1, code, color, 0);
 }
 
 
@@ -139,7 +136,7 @@ TILE_GET_INFO_MEMBER(firetrk_state::superbug_get_tile_info1)
 	if (m_flash)
 		color = color | 0x04;
 
-	SET_TILE_INFO_MEMBER(1, code, color, 0);
+	tileinfo.set(1, code, color, 0);
 }
 
 
@@ -151,13 +148,13 @@ TILE_GET_INFO_MEMBER(firetrk_state::montecar_get_tile_info1)
 	if (m_flash)
 		color = color | 0x04;
 
-	SET_TILE_INFO_MEMBER(1, code, color, 0);
+	tileinfo.set(1, code, color, 0);
 }
 
 
 TILE_GET_INFO_MEMBER(firetrk_state::firetrk_get_tile_info2)
 {
-	UINT8 code = m_playfield_ram[tile_index] & 0x3f;
+	uint8_t code = m_playfield_ram[tile_index] & 0x3f;
 	int color = 0;
 
 	/* palette 1 for crash and palette 2 for skid */
@@ -167,13 +164,13 @@ TILE_GET_INFO_MEMBER(firetrk_state::firetrk_get_tile_info2)
 	if ((code & 0x3c) == 0x0c)
 		color = 2;   /* palette 0, 2 */
 
-	SET_TILE_INFO_MEMBER(2, code, color, 0);
+	tileinfo.set(2, code, color, 0);
 }
 
 
 TILE_GET_INFO_MEMBER(firetrk_state::superbug_get_tile_info2)
 {
-	UINT8 code = m_playfield_ram[tile_index] & 0x3f;
+	uint8_t code = m_playfield_ram[tile_index] & 0x3f;
 	int color = 0;
 
 	/* palette 1 for crash and palette 2 for skid */
@@ -183,13 +180,13 @@ TILE_GET_INFO_MEMBER(firetrk_state::superbug_get_tile_info2)
 	if ((code & 0x38) == 0x00)
 		color = 2;   /* palette 0, 2 */
 
-	SET_TILE_INFO_MEMBER(2, code, color, 0);
+	tileinfo.set(2, code, color, 0);
 }
 
 
 TILE_GET_INFO_MEMBER(firetrk_state::montecar_get_tile_info2)
 {
-	UINT8 code = m_playfield_ram[tile_index];
+	uint8_t code = m_playfield_ram[tile_index];
 	int color = 0;
 
 	/* palette 1 for crash and palette 2 for skid */
@@ -205,7 +202,7 @@ TILE_GET_INFO_MEMBER(firetrk_state::montecar_get_tile_info2)
 	if ((code & 0x30) == 0x30)
 		color = 0;   /* palette 0, 0 */
 
-	SET_TILE_INFO_MEMBER(2, code & 0x3f, color, 0);
+	tileinfo.set(2, code & 0x3f, color, 0);
 }
 
 
@@ -214,8 +211,8 @@ void firetrk_state::video_start()
 	m_screen->register_screen_bitmap(m_helper1);
 	m_screen->register_screen_bitmap(m_helper2);
 
-	m_tilemap1 = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(firetrk_state::firetrk_get_tile_info1),this), TILEMAP_SCAN_ROWS, 16, 16, 16, 16);
-	m_tilemap2 = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(firetrk_state::firetrk_get_tile_info2),this), TILEMAP_SCAN_ROWS, 16, 16, 16, 16);
+	m_tilemap1 = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(firetrk_state::firetrk_get_tile_info1)), TILEMAP_SCAN_ROWS, 16, 16, 16, 16);
+	m_tilemap2 = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(firetrk_state::firetrk_get_tile_info2)), TILEMAP_SCAN_ROWS, 16, 16, 16, 16);
 }
 
 
@@ -224,8 +221,8 @@ VIDEO_START_MEMBER(firetrk_state,superbug)
 	m_screen->register_screen_bitmap(m_helper1);
 	m_screen->register_screen_bitmap(m_helper2);
 
-	m_tilemap1 = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(firetrk_state::superbug_get_tile_info1),this), TILEMAP_SCAN_ROWS, 16, 16, 16, 16);
-	m_tilemap2 = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(firetrk_state::superbug_get_tile_info2),this), TILEMAP_SCAN_ROWS, 16, 16, 16, 16);
+	m_tilemap1 = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(firetrk_state::superbug_get_tile_info1)), TILEMAP_SCAN_ROWS, 16, 16, 16, 16);
+	m_tilemap2 = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(firetrk_state::superbug_get_tile_info2)), TILEMAP_SCAN_ROWS, 16, 16, 16, 16);
 }
 
 
@@ -234,8 +231,8 @@ VIDEO_START_MEMBER(firetrk_state,montecar)
 	m_screen->register_screen_bitmap(m_helper1);
 	m_screen->register_screen_bitmap(m_helper2);
 
-	m_tilemap1 = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(firetrk_state::montecar_get_tile_info1),this), TILEMAP_SCAN_ROWS, 16, 16, 16, 16);
-	m_tilemap2 = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(firetrk_state::montecar_get_tile_info2),this), TILEMAP_SCAN_ROWS, 16, 16, 16, 16);
+	m_tilemap1 = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(firetrk_state::montecar_get_tile_info1)), TILEMAP_SCAN_ROWS, 16, 16, 16, 16);
+	m_tilemap2 = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(firetrk_state::montecar_get_tile_info2)), TILEMAP_SCAN_ROWS, 16, 16, 16, 16);
 }
 
 
@@ -309,7 +306,7 @@ void firetrk_state::montecar_draw_car(bitmap_ind16 &bitmap, const rectangle &cli
 }
 
 
-void firetrk_state::draw_text(bitmap_ind16 &bitmap, const rectangle &cliprect, UINT8 *alpha_ram,
+void firetrk_state::draw_text(bitmap_ind16 &bitmap, const rectangle &cliprect, uint8_t *alpha_ram,
 						int x, int count, int height)
 {
 	int i;
@@ -321,13 +318,11 @@ void firetrk_state::draw_text(bitmap_ind16 &bitmap, const rectangle &cliprect, U
 
 void firetrk_state::check_collision(int which)
 {
-	int y, x;
-
-	for (y = playfield_window.min_y; y <= playfield_window.max_y; y++)
-		for (x = playfield_window.min_x; x <= playfield_window.max_x; x++)
+	for (int y = playfield_window.top(); y <= playfield_window.bottom(); y++)
+		for (int x = playfield_window.left(); x <= playfield_window.right(); x++)
 		{
-			pen_t a = m_helper1.pix16(y, x);
-			pen_t b = m_helper2.pix16(y, x);
+			pen_t const a = m_helper1.pix(y, x);
+			pen_t const b = m_helper2.pix(y, x);
 
 			if (b != 0xff && (m_color1_mask >> a) & 1)
 				m_crash[which] = 1;
@@ -338,7 +333,7 @@ void firetrk_state::check_collision(int which)
 }
 
 
-UINT32 firetrk_state::screen_update_firetrk(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t firetrk_state::screen_update_firetrk(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	machine().tilemap().mark_all_dirty();
 	m_tilemap1->set_scrollx(0, *m_scroll_x - 37);
@@ -353,26 +348,26 @@ UINT32 firetrk_state::screen_update_firetrk(screen_device &screen, bitmap_ind16 
 	draw_text(bitmap, cliprect, m_alpha_num_ram + 0x00, 296, 0x10, 0x10);
 	draw_text(bitmap, cliprect, m_alpha_num_ram + 0x10,   8, 0x10, 0x10);
 
-	if (cliprect.max_y == screen.visible_area().max_y)
+	if (cliprect.bottom() == screen.visible_area().bottom())
 	{
 		m_tilemap2->draw(screen, m_helper1, playfield_window, 0, 0);
 
 		m_helper2.fill(0xff, playfield_window);
-		firetrk_draw_car(m_helper2, playfield_window, 0, FALSE);
+		firetrk_draw_car(m_helper2, playfield_window, 0, false);
 		check_collision(0);
 
 		m_helper2.fill(0xff, playfield_window);
-		firetrk_draw_car(m_helper2, playfield_window, 1, FALSE);
+		firetrk_draw_car(m_helper2, playfield_window, 1, false);
 		check_collision(1);
 
-		*m_blink = FALSE;
+		*m_blink = false;
 	}
 
 	return 0;
 }
 
 
-UINT32 firetrk_state::screen_update_superbug(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t firetrk_state::screen_update_superbug(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	machine().tilemap().mark_all_dirty();
 	m_tilemap1->set_scrollx(0, *m_scroll_x - 37);
@@ -386,22 +381,22 @@ UINT32 firetrk_state::screen_update_superbug(screen_device &screen, bitmap_ind16
 	draw_text(bitmap, cliprect, m_alpha_num_ram + 0x00, 296, 0x10, 0x10);
 	draw_text(bitmap, cliprect, m_alpha_num_ram + 0x10,   8, 0x10, 0x10);
 
-	if (cliprect.max_y == screen.visible_area().max_y)
+	if (cliprect.bottom() == screen.visible_area().bottom())
 	{
 		m_tilemap2->draw(screen, m_helper1, playfield_window, 0, 0);
 
 		m_helper2.fill(0xff, playfield_window);
-		superbug_draw_car(m_helper2, playfield_window, FALSE);
+		superbug_draw_car(m_helper2, playfield_window, false);
 		check_collision(0);
 
-		*m_blink = FALSE;
+		*m_blink = false;
 	}
 
 	return 0;
 }
 
 
-UINT32 firetrk_state::screen_update_montecar(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t firetrk_state::screen_update_montecar(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	machine().tilemap().mark_all_dirty();
 	m_tilemap1->set_scrollx(0, *m_scroll_x - 37);
@@ -411,21 +406,21 @@ UINT32 firetrk_state::screen_update_montecar(screen_device &screen, bitmap_ind16
 
 	bitmap.fill(0x2c, cliprect);
 	m_tilemap1->draw(screen, bitmap, playfield_window, 0, 0);
-	montecar_draw_car(bitmap, playfield_window, 0, FALSE);
-	montecar_draw_car(bitmap, playfield_window, 1, FALSE);
+	montecar_draw_car(bitmap, playfield_window, 0, false);
+	montecar_draw_car(bitmap, playfield_window, 1, false);
 	draw_text(bitmap, cliprect, m_alpha_num_ram + 0x00, 24, 0x20, 0x08);
 	draw_text(bitmap, cliprect, m_alpha_num_ram + 0x20, 16, 0x20, 0x08);
 
-	if (cliprect.max_y == screen.visible_area().max_y)
+	if (cliprect.bottom() == screen.visible_area().bottom())
 	{
 		m_tilemap2->draw(screen, m_helper1, playfield_window, 0, 0);
 
 		m_helper2.fill(0xff, playfield_window);
-		montecar_draw_car(m_helper2, playfield_window, 0, TRUE);
+		montecar_draw_car(m_helper2, playfield_window, 0, true);
 		check_collision(0);
 
 		m_helper2.fill(0xff, playfield_window);
-		montecar_draw_car(m_helper2, playfield_window, 1, TRUE);
+		montecar_draw_car(m_helper2, playfield_window, 1, true);
 		check_collision(1);
 	}
 

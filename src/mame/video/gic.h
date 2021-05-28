@@ -11,21 +11,11 @@
 
 ***************************************************************************/
 
+#ifndef MAME_VIDEO_GIC_H
+#define MAME_VIDEO_GIC_H
+
 #pragma once
 
-#ifndef __GIC_H__
-#define __GIC_H__
-
-#include "emu.h"
-
-
-/***************************************************************************
-    DEVICE CONFIGURATION MACROS
-***************************************************************************/
-
-#define MCFG_GIC_ADD(_tag, _clock, _screen_tag) \
-	MCFG_DEVICE_ADD(_tag, GIC, _clock) \
-	MCFG_VIDEO_SET_SCREEN(_screen_tag)
 
 /***************************************************************************
     TYPE DEFINITIONS
@@ -54,50 +44,46 @@ class gic_device :  public device_t
 {
 public:
 	// construction/destruction
-	gic_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
-	gic_device(const machine_config &mconfig, device_type type, const char *name, const char *tag, device_t *owner, UINT32 clock, int lines, const char *shortname, const char *source);
+	gic_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
-	// static configuration helpers
-	static void set_screen_tag(device_t &device, const char *screen_tag) { downcast<gic_device &>(device).m_screen_tag = screen_tag; }
+	// configuration helpers
+	auto ram_callback() { return m_ram.bind(); }
 
-	DECLARE_PALETTE_INIT(gic);
-
-	UINT32 screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
+	uint32_t screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
 
 	inline bitmap_ind16 *get_bitmap() { return &m_bitmap; }
 
-	//plgDavid please change this to a MESS friendly handshake
-	void set_shared_memory(const UINT8*m){ m_ram = m;};
-
-	// Global constants (non mesured figures)
-	static const int START_ACTIVE_SCAN = 10;
-	static const int BORDER_SIZE       = GIC_CHAR_W*3;
-	static const int END_ACTIVE_SCAN   = 10 + GIC_CHAR_W*2 + 150 + GIC_CHAR_W*2;
-	static const int START_Y           = 1;
-	static const int SCREEN_HEIGHT     = GIC_CHAR_H*(GIC_LEFT_H+2);
-	static const int LINE_CLOCKS       = 455;
-	static const int LINES             = 262;
+	// Global constants (non measured figures)
+	static constexpr int START_ACTIVE_SCAN = 10;
+	static constexpr int BORDER_SIZE       = GIC_CHAR_W*3;
+	static constexpr int END_ACTIVE_SCAN   = 10 + GIC_CHAR_W*2 + 150 + GIC_CHAR_W*2;
+	static constexpr int START_Y           = 1;
+	static constexpr int SCREEN_HEIGHT     = GIC_CHAR_H*(GIC_LEFT_H+2);
+	static constexpr int LINE_CLOCKS       = 455;
+	static constexpr int LINES             = 262;
 
 protected:
+	gic_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock);
+
 	// device-level overrides
 	virtual void device_start() override;
 	virtual void device_reset() override;
 	virtual void device_timer(emu_timer &timer, device_timer_id id, int param, void *ptr) override;
 
 	// optional information overrides
-	virtual const rom_entry *device_rom_region() const override;
+	virtual const tiny_rom_entry *device_rom_region() const override;
 
 	// device_sound_interface overrides
-	virtual void sound_stream_update(sound_stream &stream, stream_sample_t **inputs, stream_sample_t **outputs, int samples) override;
+	virtual void sound_stream_update(sound_stream &stream, std::vector<read_stream_view> const &inputs, std::vector<write_stream_view> &outputs) override;
 
 	/* timers */
 	static const device_timer_id TIMER_VBLANK = 0;
 
-	void draw_char_left (int x, int y, UINT8 code, bitmap_ind16 &bitmap);
-	void draw_char_right(int x, int y, UINT8 code, bitmap_ind16 &bitmap,int bg_col);
+	void draw_char_left (int x, int y, uint8_t code, bitmap_ind16 &bitmap);
+	void draw_char_right(int x, int y, uint8_t code, bitmap_ind16 &bitmap,int bg_col);
 
 	bitmap_ind16 m_bitmap;
-	UINT8 *      m_cgrom;          // internal chargen ROM
+	required_region_ptr<uint8_t> m_cgrom;          // internal chargen ROM
 
 	emu_timer    *m_vblank_timer;
 	sound_stream *m_stream;
@@ -105,10 +91,10 @@ protected:
 	int m_audiocnt;
 	int m_audioval;
 	int m_audioreset;
-	const UINT8* m_ram;
+	devcb_read8 m_ram;
 };
 
 // device type definition
-extern const device_type GIC;
+DECLARE_DEVICE_TYPE(GIC, gic_device)
 
-#endif  /* __GIC_H__ */
+#endif  // MAME_VIDEO_GIC_H

@@ -39,7 +39,9 @@ http://www.stefan-uhlmann.de/cbm/MVM/index.html
 
 */
 
+#include "emu.h"
 #include "magic_voice.h"
+#include "speaker.h"
 
 
 
@@ -49,7 +51,7 @@ http://www.stefan-uhlmann.de/cbm/MVM/index.html
 
 #define T6721A_TAG      "u5"
 #define MOS6525_TAG     "u2"
-#define CMOS40105_TAG   "u1"
+#define CD40105_TAG     "u1"
 
 #define A12 BIT(offset, 12)
 #define A13 BIT(offset, 13)
@@ -64,7 +66,7 @@ http://www.stefan-uhlmann.de/cbm/MVM/index.html
 //  DEVICE DEFINITIONS
 //**************************************************************************
 
-const device_type C64_MAGIC_VOICE = &device_creator<c64_magic_voice_cartridge_device>;
+DEFINE_DEVICE_TYPE(C64_MAGIC_VOICE, c64_magic_voice_cartridge_device, "c64_magic_voice", "C64 Magic Voice cartridge")
 
 
 //-------------------------------------------------
@@ -76,7 +78,7 @@ WRITE_LINE_MEMBER( c64_magic_voice_cartridge_device::tpi_irq_w )
 	m_slot->nmi_w(state);
 }
 
-READ8_MEMBER( c64_magic_voice_cartridge_device::tpi_pa_r )
+uint8_t c64_magic_voice_cartridge_device::tpi_pa_r()
 {
 	/*
 
@@ -93,16 +95,16 @@ READ8_MEMBER( c64_magic_voice_cartridge_device::tpi_pa_r )
 
 	*/
 
-	UINT8 data = 0;
+	uint8_t data = 0;
 
-	data |= m_exp->game_r(get_offset(m_ca), 1, 1, 1, 0) << 5;
+	data |= m_exp->game_r(get_offset(m_ca), 1, 1, 1, 0, 0) << 5;
 	data |= m_vslsi->eos_r() << 6;
 	data |= m_fifo->dir_r() << 7;
 
 	return data;
 }
 
-WRITE8_MEMBER( c64_magic_voice_cartridge_device::tpi_pa_w )
+void c64_magic_voice_cartridge_device::tpi_pa_w(uint8_t data)
 {
 	/*
 
@@ -123,7 +125,7 @@ WRITE8_MEMBER( c64_magic_voice_cartridge_device::tpi_pa_w )
 	m_fifo->si_w(BIT(data, 4));
 }
 
-READ8_MEMBER( c64_magic_voice_cartridge_device::tpi_pb_r )
+uint8_t c64_magic_voice_cartridge_device::tpi_pb_r()
 {
 	/*
 
@@ -140,14 +142,14 @@ READ8_MEMBER( c64_magic_voice_cartridge_device::tpi_pb_r )
 
 	*/
 
-	UINT8 data = 0;
+	uint8_t data = 0;
 
-	data |= m_exp->exrom_r(get_offset(m_ca), 1, 1, 1, 0) << 7;
+	data |= m_exp->exrom_r(get_offset(m_ca), 1, 1, 1, 0, 0) << 7;
 
 	return data;
 }
 
-WRITE8_MEMBER( c64_magic_voice_cartridge_device::tpi_pb_w )
+void c64_magic_voice_cartridge_device::tpi_pb_w(uint8_t data)
 {
 	/*
 
@@ -166,7 +168,7 @@ WRITE8_MEMBER( c64_magic_voice_cartridge_device::tpi_pb_w )
 
 	if (!BIT(m_tpi_pb, 4) && BIT(data, 4))
 	{
-		m_vslsi->write(space, 0, data & 0x0f);
+		m_vslsi->write(data & 0x0f);
 	}
 
 	m_tpi_pb = data;
@@ -214,40 +216,33 @@ WRITE_LINE_MEMBER( c64_magic_voice_cartridge_device::apd_w )
 
 
 //-------------------------------------------------
-//  MACHINE_CONFIG_FRAGMENT( c64_magic_voice )
+//  device_add_mconfig - add device configuration
 //-------------------------------------------------
 
-static MACHINE_CONFIG_FRAGMENT( c64_magic_voice )
-	MCFG_DEVICE_ADD(MOS6525_TAG, TPI6525, 0)
-	MCFG_TPI6525_OUT_IRQ_CB(WRITELINE(c64_magic_voice_cartridge_device, tpi_irq_w))
-	MCFG_TPI6525_IN_PA_CB(READ8(c64_magic_voice_cartridge_device, tpi_pa_r))
-	MCFG_TPI6525_OUT_PA_CB(WRITE8(c64_magic_voice_cartridge_device, tpi_pa_w))
-	MCFG_TPI6525_IN_PB_CB(READ8(c64_magic_voice_cartridge_device, tpi_pb_r))
-	MCFG_TPI6525_OUT_PB_CB(WRITE8(c64_magic_voice_cartridge_device, tpi_pb_w))
-	MCFG_TPI6525_OUT_CA_CB(WRITELINE(c64_magic_voice_cartridge_device, tpi_ca_w))
-	MCFG_TPI6525_OUT_CA_CB(WRITELINE(c64_magic_voice_cartridge_device, tpi_cb_w))
-	MCFG_40105_ADD(CMOS40105_TAG, DEVWRITELINE(MOS6525_TAG, tpi6525_device, i3_w), NULL)
-
-	MCFG_SPEAKER_STANDARD_MONO("mono")
-	MCFG_SOUND_ADD(T6721A_TAG, T6721A, XTAL_640kHz)
-	MCFG_T6721A_EOS_HANDLER(DEVWRITELINE(MOS6525_TAG, tpi6525_device, i2_w))
-	MCFG_T6721A_PHI2_HANDLER(DEVWRITELINE(DEVICE_SELF, c64_magic_voice_cartridge_device, phi2_w))
-	MCFG_T6721A_DTRD_HANDLER(DEVWRITELINE(DEVICE_SELF, c64_magic_voice_cartridge_device, dtrd_w))
-	MCFG_T6721A_APD_HANDLER(DEVWRITELINE(DEVICE_SELF, c64_magic_voice_cartridge_device, apd_w))
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.25)
-
-	MCFG_C64_PASSTHRU_EXPANSION_SLOT_ADD()
-MACHINE_CONFIG_END
-
-
-//-------------------------------------------------
-//  machine_config_additions - device-specific
-//  machine configurations
-//-------------------------------------------------
-
-machine_config_constructor c64_magic_voice_cartridge_device::device_mconfig_additions() const
+void c64_magic_voice_cartridge_device::device_add_mconfig(machine_config &config)
 {
-	return MACHINE_CONFIG_NAME( c64_magic_voice );
+	TPI6525(config, m_tpi, 0);
+	m_tpi->out_irq_cb().set(FUNC(c64_magic_voice_cartridge_device::tpi_irq_w));
+	m_tpi->in_pa_cb().set(FUNC(c64_magic_voice_cartridge_device::tpi_pa_r));
+	m_tpi->out_pa_cb().set(FUNC(c64_magic_voice_cartridge_device::tpi_pa_w));
+	m_tpi->in_pb_cb().set(FUNC(c64_magic_voice_cartridge_device::tpi_pb_r));
+	m_tpi->out_pb_cb().set(FUNC(c64_magic_voice_cartridge_device::tpi_pb_w));
+	m_tpi->out_ca_cb().set(FUNC(c64_magic_voice_cartridge_device::tpi_ca_w));
+	m_tpi->out_cb_cb().set(FUNC(c64_magic_voice_cartridge_device::tpi_cb_w));
+
+	CD40105(config, m_fifo, 0);
+	m_fifo->in_ready_cb().set(m_tpi, FUNC(tpi6525_device::i3_w));
+
+	SPEAKER(config, "mono").front_center();
+	T6721A(config, m_vslsi, XTAL(640'000));
+	m_vslsi->eos_handler().set(m_tpi, FUNC(tpi6525_device::i2_w));
+	m_vslsi->phi2_handler().set(FUNC(c64_magic_voice_cartridge_device::phi2_w));
+	m_vslsi->dtrd_handler().set(FUNC(c64_magic_voice_cartridge_device::dtrd_w));
+	m_vslsi->apd_handler().set(FUNC(c64_magic_voice_cartridge_device::apd_w));
+	m_vslsi->add_route(ALL_OUTPUTS, "mono", 0.25);
+
+	C64_EXPANSION_SLOT(config, m_exp, DERIVED_CLOCK(1, 1), c64_expansion_cards, nullptr);
+	m_exp->set_passthrough();
 }
 
 
@@ -260,13 +255,14 @@ machine_config_constructor c64_magic_voice_cartridge_device::device_mconfig_addi
 //  c64_magic_voice_cartridge_device - constructor
 //-------------------------------------------------
 
-c64_magic_voice_cartridge_device::c64_magic_voice_cartridge_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock) :
-	device_t(mconfig, C64_MAGIC_VOICE, "C64 Magic Voice cartridge", tag, owner, clock, "c64_magic_voice", __FILE__),
+c64_magic_voice_cartridge_device::c64_magic_voice_cartridge_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock) :
+	device_t(mconfig, C64_MAGIC_VOICE, tag, owner, clock),
 	device_c64_expansion_card_interface(mconfig, *this),
 	m_vslsi(*this, T6721A_TAG),
 	m_tpi(*this, MOS6525_TAG),
-	m_fifo(*this, CMOS40105_TAG),
-	m_exp(*this, C64_EXPANSION_SLOT_TAG), m_ca(0),
+	m_fifo(*this, CD40105_TAG),
+	m_exp(*this, "exp"),
+	m_ca(0),
 	m_tpi_pb(0x60),
 	m_tpi_pc6(1),
 	m_pd(0)
@@ -307,12 +303,12 @@ void c64_magic_voice_cartridge_device::device_reset()
 //  c64_cd_r - cartridge data read
 //-------------------------------------------------
 
-UINT8 c64_magic_voice_cartridge_device::c64_cd_r(address_space &space, offs_t offset, UINT8 data, int sphi2, int ba, int roml, int romh, int io1, int io2)
+uint8_t c64_magic_voice_cartridge_device::c64_cd_r(offs_t offset, uint8_t data, int sphi2, int ba, int roml, int romh, int io1, int io2)
 {
 	if (!io2 && sphi2)
 	{
 		m_ca = offset;
-		data = m_tpi->read(space, offset & 0x07);
+		data = m_tpi->read(offset & 0x07);
 	}
 
 	if (PB6 && A13 && A15)
@@ -323,7 +319,7 @@ UINT8 c64_magic_voice_cartridge_device::c64_cd_r(address_space &space, offs_t of
 	int roml2 = !(!roml || (roml && !PB5 && A12 && A13 && !A14 && A15));
 	int romh2 = !((!romh && !PB6) || (!PB5 && A12 && A13 && !A14 && !A15));
 
-	data = m_exp->cd_r(space, get_offset(offset), data, sphi2, ba, roml2, romh2, io1, 1);
+	data = m_exp->cd_r(get_offset(offset), data, sphi2, ba, roml2, romh2, io1, 1);
 
 	return data;
 }
@@ -333,17 +329,17 @@ UINT8 c64_magic_voice_cartridge_device::c64_cd_r(address_space &space, offs_t of
 //  c64_cd_w - cartridge data write
 //-------------------------------------------------
 
-void c64_magic_voice_cartridge_device::c64_cd_w(address_space &space, offs_t offset, UINT8 data, int sphi2, int ba, int roml, int romh, int io1, int io2)
+void c64_magic_voice_cartridge_device::c64_cd_w(offs_t offset, uint8_t data, int sphi2, int ba, int roml, int romh, int io1, int io2)
 {
 	if (!io2 && sphi2)
 	{
-		m_tpi->write(space, offset & 0x07, data);
+		m_tpi->write(offset & 0x07, data);
 	}
 
 	int roml2 = !(!roml || (roml && !PB5 && A12 && A13 && !A14 && A15));
 	int romh2 = !((!romh && !PB6) || (!PB5 && A12 && A13 && !A14 && !A15));
 
-	m_exp->cd_w(space, get_offset(offset), data, sphi2, ba, roml2, romh2, io1, 1);
+	m_exp->cd_w(get_offset(offset), data, sphi2, ba, roml2, romh2, io1, 1);
 }
 
 

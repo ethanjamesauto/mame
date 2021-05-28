@@ -32,18 +32,23 @@ TODO:
 
 
 #include "emu.h"
-#include "cpu/z80/z80.h"
-#include "video/mc6847.h"
-#include "machine/i8251.h"
-#include "machine/clock.h"
-#include "sound/ay8910.h"
-#include "imagedev/cassette.h"
-#include "sound/wave.h"
-#include "formats/fc100_cas.h"
-#include "machine/buffer.h"
+
 #include "bus/centronics/ctronics.h"
-#include "bus/generic/slot.h"
 #include "bus/generic/carts.h"
+#include "bus/generic/slot.h"
+#include "cpu/z80/z80.h"
+#include "imagedev/cassette.h"
+#include "machine/buffer.h"
+#include "machine/clock.h"
+#include "machine/i8251.h"
+#include "machine/timer.h"
+#include "sound/ay8910.h"
+#include "video/mc6847.h"
+
+#include "emupal.h"
+#include "speaker.h"
+
+#include "formats/fc100_cas.h"
 
 
 class fc100_state : public driver_device
@@ -54,55 +59,59 @@ public:
 		, m_maincpu(*this, "maincpu")
 		, m_vdg(*this, "vdg")
 		, m_p_videoram(*this, "videoram")
+		, m_p_chargen(*this, "chargen")
 		, m_cass(*this, "cassette")
 		, m_cart(*this, "cartslot")
 		, m_uart(*this, "uart")
 		, m_centronics(*this, "centronics")
-		, m_keyboard(*this, "KEY")
+		, m_keyboard(*this, "KEY.%u", 0)
 	{ }
 
-	DECLARE_READ8_MEMBER(mc6847_videoram_r);
-	DECLARE_READ8_MEMBER(port00_r);
-	DECLARE_WRITE8_MEMBER(port31_w);
-	DECLARE_WRITE8_MEMBER(port33_w);
-	DECLARE_WRITE8_MEMBER(port43_w);
-	DECLARE_WRITE8_MEMBER(port60_w);
-	DECLARE_WRITE8_MEMBER(port70_w);
-	DECLARE_WRITE_LINE_MEMBER(txdata_callback);
-	DECLARE_WRITE_LINE_MEMBER(uart_clock_w);
-	DECLARE_DRIVER_INIT(fc100);
-	TIMER_DEVICE_CALLBACK_MEMBER(timer_c);
-	TIMER_DEVICE_CALLBACK_MEMBER(timer_p);
-	TIMER_DEVICE_CALLBACK_MEMBER(timer_k);
+	void fc100(machine_config &config);
 
-	UINT8 *m_p_chargen;
+	void init_fc100();
+
+private:
+	uint8_t mc6847_videoram_r(offs_t offset);
+	uint8_t port00_r(offs_t offset);
+	void port31_w(uint8_t data);
+	void port33_w(uint8_t data);
+	void port43_w(uint8_t data);
+	void port60_w(offs_t offset, uint8_t data);
+	void port70_w(offs_t offset, uint8_t data);
+	TIMER_DEVICE_CALLBACK_MEMBER(kansas_w);
+	TIMER_DEVICE_CALLBACK_MEMBER(kansas_r);
+	TIMER_DEVICE_CALLBACK_MEMBER(timer_k);
 
 	MC6847_GET_CHARROM_MEMBER(get_char_rom)
 	{
 		return m_p_chargen[(ch * 16 + line) & 0xfff];
 	}
-private:
+	void io_map(address_map &map);
+	void mem_map(address_map &map);
+
 	virtual void machine_start() override;
 	virtual void machine_reset() override;
 
 	// graphics signals
-	UINT8 m_ag;
-	UINT8 m_gm2;
-	UINT8 m_gm1;
-	UINT8 m_gm0;
-	UINT8 m_as;
-	UINT8 m_css;
-	UINT8 m_intext;
-	UINT8 m_inv;
-	UINT8 m_cass_data[4];
-	bool m_cass_state;
+	uint8_t m_ag;
+	uint8_t m_gm2;
+	uint8_t m_gm1;
+	uint8_t m_gm0;
+	uint8_t m_as;
+	uint8_t m_css;
+	uint8_t m_intext;
+	uint8_t m_inv;
+	uint8_t m_cass_data[4];
+	bool m_cassbit;
 	bool m_cassold;
-	UINT8 m_key_pressed;
+	uint8_t m_key_pressed;
 	bool m_banksw_unlocked;
 
 	required_device<cpu_device> m_maincpu;
 	required_device<mc6847_base_device> m_vdg;
-	required_shared_ptr<UINT8> m_p_videoram;
+	required_shared_ptr<uint8_t> m_p_videoram;
+	required_region_ptr<u8> m_p_chargen;
 	required_device<cassette_image_device> m_cass;
 	required_device<generic_slot_device> m_cart;
 	required_device<i8251_device> m_uart;
@@ -111,34 +120,36 @@ private:
 };
 
 
-static ADDRESS_MAP_START( fc100_mem, AS_PROGRAM, 8, fc100_state )
-	ADDRESS_MAP_UNMAP_HIGH
-	AM_RANGE( 0x0000, 0x5fff ) AM_ROM AM_REGION("roms", 0)
-	//AM_RANGE(0x6000, 0x6fff)      // mapped by the cartslot
-	AM_RANGE( 0x7800, 0x7fff ) AM_READ_BANK("bankr") AM_WRITE_BANK("bankw") // Banked RAM/ROM
-	AM_RANGE( 0x8000, 0xbfff ) AM_RAM // expansion ram pack - if omitted you get a 'Pages?' prompt at boot
-	AM_RANGE( 0xc000, 0xffff ) AM_RAM AM_SHARE("videoram")
-ADDRESS_MAP_END
+void fc100_state::mem_map(address_map &map)
+{
+	map.unmap_value_high();
+	map(0x0000, 0x5fff).rom().region("roms", 0);
+	//map(0x6000, 0x6fff)      // mapped by the cartslot
+	map(0x7800, 0x7fff).bankr("bankr").bankw("bankw"); // Banked RAM/ROM
+	map(0x8000, 0xbfff).ram(); // expansion ram pack - if omitted you get a 'Pages?' prompt at boot
+	map(0xc000, 0xffff).ram().share("videoram");
+}
 
-static ADDRESS_MAP_START( fc100_io, AS_IO, 8, fc100_state )
-	ADDRESS_MAP_UNMAP_HIGH
-	ADDRESS_MAP_GLOBAL_MASK(0xff)
-	AM_RANGE(0x00, 0x0F) AM_READ(port00_r)
-	// AM_RANGE(0x10, 0x10) AM_WRITE(port10_w)  // vdg, unknown effects
-	AM_RANGE(0x21, 0x21) AM_DEVWRITE("psg", ay8910_device, data_w)
-	AM_RANGE(0x22, 0x22) AM_DEVREAD("psg", ay8910_device, data_r)
-	AM_RANGE(0x23, 0x23) AM_DEVWRITE("psg", ay8910_device, address_w)
-	AM_RANGE(0x31, 0x31) AM_WRITE(port31_w)
-	AM_RANGE(0x33, 0x33) AM_WRITE(port33_w)
-	AM_RANGE(0x40, 0x40) AM_DEVWRITE("cent_data_out", output_latch_device, write)
-	AM_RANGE(0x42, 0x42) AM_WRITENOP // bit 0 could be printer select
-	AM_RANGE(0x43, 0x43) AM_WRITE(port43_w)
-	AM_RANGE(0x44, 0x44) AM_DEVREAD("cent_status_in", input_buffer_device, read)
-	AM_RANGE(0x60, 0x61) AM_WRITE(port60_w)
-	AM_RANGE(0x70, 0x71) AM_WRITE(port70_w)
-	AM_RANGE(0xb0, 0xb0) AM_DEVREADWRITE("uart", i8251_device, data_r, data_w)
-	AM_RANGE(0xb8, 0xb8) AM_DEVREADWRITE("uart", i8251_device, status_r, control_w)
-ADDRESS_MAP_END
+void fc100_state::io_map(address_map &map)
+{
+	map.unmap_value_high();
+	map.global_mask(0xff);
+	map(0x00, 0x0F).r(FUNC(fc100_state::port00_r));
+	// map(0x10, 0x10).w(FUNC(fc100_state::port10_w));  // vdg, unknown effects
+	map(0x21, 0x21).w("psg", FUNC(ay8910_device::data_w));
+	map(0x22, 0x22).r("psg", FUNC(ay8910_device::data_r));
+	map(0x23, 0x23).w("psg", FUNC(ay8910_device::address_w));
+	map(0x31, 0x31).w(FUNC(fc100_state::port31_w));
+	map(0x33, 0x33).w(FUNC(fc100_state::port33_w));
+	map(0x40, 0x40).w("cent_data_out", FUNC(output_latch_device::write));
+	map(0x42, 0x42).nopw(); // bit 0 could be printer select
+	map(0x43, 0x43).w(FUNC(fc100_state::port43_w));
+	map(0x44, 0x44).r("cent_status_in", FUNC(input_buffer_device::read));
+	map(0x60, 0x61).w(FUNC(fc100_state::port60_w));
+	map(0x70, 0x71).w(FUNC(fc100_state::port70_w));
+	map(0xb0, 0xb0).rw(m_uart, FUNC(i8251_device::data_r), FUNC(i8251_device::data_w));
+	map(0xb8, 0xb8).rw(m_uart, FUNC(i8251_device::status_r), FUNC(i8251_device::control_w));
+}
 
 static INPUT_PORTS_START( fc100 )
 	PORT_START("KEY.0")
@@ -148,8 +159,8 @@ static INPUT_PORTS_START( fc100 )
 	PORT_BIT(0x10, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_CAPSLOCK) PORT_TOGGLE PORT_NAME("Caps")
 	PORT_BIT(0x08, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_OPENBRACE) PORT_NAME("[") PORT_CHAR('[') PORT_CHAR('{')
 	PORT_BIT(0x04, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_CLOSEBRACE) PORT_NAME("]") PORT_CHAR(']') PORT_CHAR('}')
-	PORT_BIT(0x02, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_P) PORT_NAME("P") PORT_CHAR('P') PORT_CHAR('p')
-	PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_O) PORT_NAME("O") PORT_CHAR('O') PORT_CHAR('o')
+	PORT_BIT(0x02, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_P) PORT_NAME("P") PORT_CHAR('p') PORT_CHAR('P')
+	PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_O) PORT_NAME("O") PORT_CHAR('o') PORT_CHAR('O')
 
 	PORT_START("KEY.1")
 	PORT_BIT(0xF0, IP_ACTIVE_LOW, IPT_UNUSED)
@@ -160,10 +171,10 @@ static INPUT_PORTS_START( fc100 )
 
 	PORT_START("KEY.2")
 	PORT_BIT(0xF0, IP_ACTIVE_LOW, IPT_UNUSED)
-	PORT_BIT(0x08, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_LEFT) PORT_NAME("Left")
-	PORT_BIT(0x04, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_DOWN) PORT_NAME("Down")
-	PORT_BIT(0x02, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_RIGHT) PORT_NAME("Right")
-	PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_UP) PORT_NAME("Up")
+	PORT_BIT(0x08, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_LEFT) PORT_NAME("Left") PORT_CHAR(UCHAR_MAMEKEY(LEFT))
+	PORT_BIT(0x04, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_DOWN) PORT_NAME("Down") PORT_CHAR(UCHAR_MAMEKEY(DOWN))
+	PORT_BIT(0x02, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_RIGHT) PORT_NAME("Right") PORT_CHAR(UCHAR_MAMEKEY(RIGHT))
+	PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_UP) PORT_NAME("Up") PORT_CHAR(UCHAR_MAMEKEY(UP))
 
 	PORT_START("KEY.3")
 	PORT_BIT(0xF0, IP_ACTIVE_LOW, IPT_UNUSED)
@@ -188,17 +199,17 @@ static INPUT_PORTS_START( fc100 )
 
 	PORT_START("KEY.6")
 	PORT_BIT(0xF0, IP_ACTIVE_LOW, IPT_UNUSED)
-	PORT_BIT(0x08, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_F5) PORT_NAME("F5")
+	PORT_BIT(0x08, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_F5) PORT_NAME("F5") PORT_CHAR(UCHAR_MAMEKEY(F5)) PORT_CHAR(UCHAR_MAMEKEY(F10))
 	PORT_BIT(0x04, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_SPACE) PORT_NAME("Space") PORT_CHAR(32)
 	PORT_BIT(0x02, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_PGDN) PORT_NAME("Run")
 	PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_0) PORT_NAME("0") PORT_CHAR('0') PORT_CHAR(')')
 
 	PORT_START("KEY.7")
 	PORT_BIT(0xF0, IP_ACTIVE_LOW, IPT_UNUSED)
-	PORT_BIT(0x08, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_F1) PORT_NAME("F1")
-	PORT_BIT(0x04, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_F2) PORT_NAME("F2")
-	PORT_BIT(0x02, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_F3) PORT_NAME("F3")
-	PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_F4) PORT_NAME("F4")
+	PORT_BIT(0x08, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_F1) PORT_NAME("F1") PORT_CHAR(UCHAR_MAMEKEY(F1)) PORT_CHAR(UCHAR_MAMEKEY(F6))
+	PORT_BIT(0x04, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_F2) PORT_NAME("F2") PORT_CHAR(UCHAR_MAMEKEY(F2)) PORT_CHAR(UCHAR_MAMEKEY(F7))
+	PORT_BIT(0x02, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_F3) PORT_NAME("F3") PORT_CHAR(UCHAR_MAMEKEY(F3)) PORT_CHAR(UCHAR_MAMEKEY(F8))
+	PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_F4) PORT_NAME("F4") PORT_CHAR(UCHAR_MAMEKEY(F4)) PORT_CHAR(UCHAR_MAMEKEY(F9))
 
 	PORT_START("KEY.8")
 	PORT_BIT(0xF0, IP_ACTIVE_LOW, IPT_UNUSED)
@@ -216,45 +227,45 @@ static INPUT_PORTS_START( fc100 )
 
 	PORT_START("KEY.10")
 	PORT_BIT(0xF0, IP_ACTIVE_LOW, IPT_UNUSED)
-	PORT_BIT(0x08, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_B) PORT_NAME("B") PORT_CHAR('B') PORT_CHAR('b')
-	PORT_BIT(0x04, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_N) PORT_NAME("N") PORT_CHAR('N') PORT_CHAR('n')
-	PORT_BIT(0x02, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_M) PORT_NAME("M") PORT_CHAR('M') PORT_CHAR('m')
-	PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_L) PORT_NAME("L") PORT_CHAR('L') PORT_CHAR('l')
+	PORT_BIT(0x08, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_B) PORT_NAME("B") PORT_CHAR('b') PORT_CHAR('B')
+	PORT_BIT(0x04, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_N) PORT_NAME("N") PORT_CHAR('n') PORT_CHAR('N')
+	PORT_BIT(0x02, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_M) PORT_NAME("M") PORT_CHAR('m') PORT_CHAR('M')
+	PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_L) PORT_NAME("L") PORT_CHAR('l') PORT_CHAR('L')
 
 	PORT_START("KEY.11")
 	PORT_BIT(0xF0, IP_ACTIVE_LOW, IPT_UNUSED)
-	PORT_BIT(0x08, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_Z) PORT_NAME("Z") PORT_CHAR('Z') PORT_CHAR('z')
-	PORT_BIT(0x04, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_X) PORT_NAME("X") PORT_CHAR('X') PORT_CHAR('x')
-	PORT_BIT(0x02, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_C) PORT_NAME("C") PORT_CHAR('C') PORT_CHAR('c')
-	PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_V) PORT_NAME("V") PORT_CHAR('V') PORT_CHAR('v')
+	PORT_BIT(0x08, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_Z) PORT_NAME("Z") PORT_CHAR('z') PORT_CHAR('Z')
+	PORT_BIT(0x04, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_X) PORT_NAME("X") PORT_CHAR('x') PORT_CHAR('X')
+	PORT_BIT(0x02, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_C) PORT_NAME("C") PORT_CHAR('c') PORT_CHAR('C')
+	PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_V) PORT_NAME("V") PORT_CHAR('v') PORT_CHAR('V')
 
 	PORT_START("KEY.12")
 	PORT_BIT(0xF0, IP_ACTIVE_LOW, IPT_UNUSED)
-	PORT_BIT(0x08, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_G) PORT_NAME("G") PORT_CHAR('G') PORT_CHAR('g')
-	PORT_BIT(0x04, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_H) PORT_NAME("H") PORT_CHAR('H') PORT_CHAR('h')
-	PORT_BIT(0x02, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_J) PORT_NAME("J") PORT_CHAR('J') PORT_CHAR('j')
-	PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_K) PORT_NAME("K") PORT_CHAR('K') PORT_CHAR('k')
+	PORT_BIT(0x08, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_G) PORT_NAME("G") PORT_CHAR('g') PORT_CHAR('G')
+	PORT_BIT(0x04, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_H) PORT_NAME("H") PORT_CHAR('h') PORT_CHAR('H')
+	PORT_BIT(0x02, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_J) PORT_NAME("J") PORT_CHAR('j') PORT_CHAR('J')
+	PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_K) PORT_NAME("K") PORT_CHAR('k') PORT_CHAR('K')
 
 	PORT_START("KEY.13")
 	PORT_BIT(0xF0, IP_ACTIVE_LOW, IPT_UNUSED)
-	PORT_BIT(0x08, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_A) PORT_NAME("A") PORT_CHAR('A') PORT_CHAR('a')
-	PORT_BIT(0x04, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_S) PORT_NAME("S") PORT_CHAR('S') PORT_CHAR('s')
-	PORT_BIT(0x02, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_D) PORT_NAME("D") PORT_CHAR('D') PORT_CHAR('d')
-	PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_F) PORT_NAME("F") PORT_CHAR('F') PORT_CHAR('f')
+	PORT_BIT(0x08, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_A) PORT_NAME("A") PORT_CHAR('a') PORT_CHAR('A')
+	PORT_BIT(0x04, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_S) PORT_NAME("S") PORT_CHAR('s') PORT_CHAR('S')
+	PORT_BIT(0x02, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_D) PORT_NAME("D") PORT_CHAR('d') PORT_CHAR('D')
+	PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_F) PORT_NAME("F") PORT_CHAR('f') PORT_CHAR('F')
 
 	PORT_START("KEY.14")
 	PORT_BIT(0xF0, IP_ACTIVE_LOW, IPT_UNUSED)
-	PORT_BIT(0x08, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_T) PORT_NAME("T") PORT_CHAR('T') PORT_CHAR('t')
-	PORT_BIT(0x04, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_Y) PORT_NAME("Y") PORT_CHAR('Y') PORT_CHAR('y')
-	PORT_BIT(0x02, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_U) PORT_NAME("U") PORT_CHAR('U') PORT_CHAR('u')
-	PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_I) PORT_NAME("I") PORT_CHAR('I') PORT_CHAR('i')
+	PORT_BIT(0x08, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_T) PORT_NAME("T") PORT_CHAR('t') PORT_CHAR('T')
+	PORT_BIT(0x04, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_Y) PORT_NAME("Y") PORT_CHAR('y') PORT_CHAR('Y')
+	PORT_BIT(0x02, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_U) PORT_NAME("U") PORT_CHAR('u') PORT_CHAR('U')
+	PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_I) PORT_NAME("I") PORT_CHAR('i') PORT_CHAR('I')
 
 	PORT_START("KEY.15")
 	PORT_BIT(0xF0, IP_ACTIVE_LOW, IPT_UNUSED)
-	PORT_BIT(0x08, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_Q) PORT_NAME("Q") PORT_CHAR('Q') PORT_CHAR('q')
-	PORT_BIT(0x04, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_W) PORT_NAME("W") PORT_CHAR('W') PORT_CHAR('w')
-	PORT_BIT(0x02, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_E) PORT_NAME("E") PORT_CHAR('E') PORT_CHAR('e')
-	PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_R) PORT_NAME("R") PORT_CHAR('R') PORT_CHAR('r')
+	PORT_BIT(0x08, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_Q) PORT_NAME("Q") PORT_CHAR('q') PORT_CHAR('Q')
+	PORT_BIT(0x04, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_W) PORT_NAME("W") PORT_CHAR('w') PORT_CHAR('W')
+	PORT_BIT(0x02, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_E) PORT_NAME("E") PORT_CHAR('e') PORT_CHAR('E')
+	PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_R) PORT_NAME("R") PORT_CHAR('r') PORT_CHAR('R')
 
 	PORT_START("JOY0")
 	PORT_BIT( 0x01, IP_ACTIVE_LOW, IPT_JOYSTICK_UP ) PORT_8WAY PORT_PLAYER(1)
@@ -277,7 +288,7 @@ static INPUT_PORTS_START( fc100 )
 	PORT_BIT( 0x80, IP_ACTIVE_LOW, IPT_UNUSED )
 INPUT_PORTS_END
 
-READ8_MEMBER( fc100_state::port00_r )
+uint8_t fc100_state::port00_r(offs_t offset)
 {
 	return m_keyboard[offset]->read();
 }
@@ -290,7 +301,7 @@ READ8_MEMBER( fc100_state::port00_r )
 TIMER_DEVICE_CALLBACK_MEMBER( fc100_state::timer_k)
 {
 	/* scan the keyboard */
-	UINT8 i;
+	uint8_t i;
 
 	for (i = 0; i < 16; i++)
 	{
@@ -320,7 +331,7 @@ TIMER_DEVICE_CALLBACK_MEMBER( fc100_state::timer_k)
 
 //********************* AUDIO **********************************
 #if 0
-WRITE8_MEMBER( fc100_state::ay_port_a_w )
+void fc100_state::ay_port_a_w(uint8_t data)
 {
 	m_ag = BIT(data, 4);
 	m_gm2 = BIT(data, 6);
@@ -339,7 +350,7 @@ WRITE8_MEMBER( fc100_state::ay_port_a_w )
 
 //******************** VIDEO **********************************
 
-READ8_MEMBER( fc100_state::mc6847_videoram_r )
+uint8_t fc100_state::mc6847_videoram_r(offs_t offset)
 {
 	if (offset == ~0) return 0xff;
 
@@ -359,8 +370,8 @@ READ8_MEMBER( fc100_state::mc6847_videoram_r )
 	}
 
 	// Standard text
-	UINT8 data = m_p_videoram[offset];
-	UINT8 attr = m_p_videoram[offset+0x200];
+	uint8_t data = m_p_videoram[offset];
+	uint8_t attr = m_p_videoram[offset+0x200];
 
 	// unknown bits 1,2,4,7
 	m_vdg->inv_w( BIT( attr, 0 ));
@@ -384,13 +395,13 @@ static const gfx_layout u53_charlayout =
 	8*16                    /* every char takes 16 bytes */
 };
 
-static GFXDECODE_START( fc100 )
+static GFXDECODE_START( gfx_fc100 )
 	GFXDECODE_ENTRY( "chargen", 0x0000, u53_charlayout, 0, 1 )
 GFXDECODE_END
 
 //********************** CENTRONICS PRINTER ***********************************
 
-WRITE8_MEMBER( fc100_state::port43_w )
+void fc100_state::port43_w(uint8_t data)
 {
 	m_centronics->write_strobe(BIT(data, 2));
 	m_centronics->write_init(BIT(data, 3));
@@ -398,50 +409,39 @@ WRITE8_MEMBER( fc100_state::port43_w )
 
 //********************** UART/CASSETTE ***********************************
 
-WRITE8_MEMBER( fc100_state::port31_w )
+void fc100_state::port31_w(uint8_t data)
 {
 	if (data == 8)
 		m_cass->change_state(CASSETTE_MOTOR_ENABLED, CASSETTE_MASK_MOTOR);
 }
 
-WRITE8_MEMBER( fc100_state::port33_w )
+void fc100_state::port33_w(uint8_t data)
 {
 	if (data == 0)
 		m_cass->change_state(CASSETTE_MOTOR_DISABLED, CASSETTE_MASK_MOTOR);
 }
 
-WRITE_LINE_MEMBER( fc100_state::txdata_callback )
-{
-	m_cass_state = state;
-}
-
-WRITE_LINE_MEMBER( fc100_state::uart_clock_w )
-{
-	m_uart->write_txc(state);
-	m_uart->write_rxc(state);
-}
-
-TIMER_DEVICE_CALLBACK_MEMBER( fc100_state::timer_c )
+TIMER_DEVICE_CALLBACK_MEMBER( fc100_state::kansas_w )
 {
 	m_cass_data[3]++;
 
-	if (m_cass_state != m_cassold)
+	if (m_cassbit != m_cassold)
 	{
 		m_cass_data[3] = 0;
-		m_cassold = m_cass_state;
+		m_cassold = m_cassbit;
 	}
 
-	if (m_cass_state)
+	if (m_cassbit)
 		m_cass->output(BIT(m_cass_data[3], 0) ? -1.0 : +1.0); // 2400Hz
 	else
 		m_cass->output(BIT(m_cass_data[3], 1) ? -1.0 : +1.0); // 1200Hz
 }
 
-TIMER_DEVICE_CALLBACK_MEMBER( fc100_state::timer_p)
+TIMER_DEVICE_CALLBACK_MEMBER( fc100_state::kansas_r)
 {
 	/* cassette - turn 1200/2400Hz to a bit */
 	m_cass_data[1]++;
-	UINT8 cass_ws = (m_cass->input() > +0.03) ? 1 : 0;
+	uint8_t cass_ws = (m_cass->input() > +0.03) ? 1 : 0;
 
 	if (cass_ws != m_cass_data[0])
 	{
@@ -455,17 +455,8 @@ TIMER_DEVICE_CALLBACK_MEMBER( fc100_state::timer_p)
 
 void fc100_state::machine_start()
 {
-	m_ag = 0;
-	m_gm2 = 0;
-	m_gm1 = 0;
-	m_gm0 = 0;
-	m_as = 0;
-	m_css = 0;
-	m_intext = 0;
-	m_inv = 0;
-
 	if (m_cart->exists())
-		m_maincpu->space(AS_PROGRAM).install_read_handler(0x6000, 0x6fff, read8_delegate(FUNC(generic_slot_device::read_rom),(generic_slot_device*)m_cart));
+		m_maincpu->space(AS_PROGRAM).install_read_handler(0x6000, 0x6fff, read8sm_delegate(*m_cart, FUNC(generic_slot_device::read_rom)));
 
 	save_item(NAME(m_ag));
 	save_item(NAME(m_gm2));
@@ -475,89 +466,109 @@ void fc100_state::machine_start()
 	save_item(NAME(m_css));
 	save_item(NAME(m_intext));
 	save_item(NAME(m_inv));
+	save_item(NAME(m_cass_data));
+	save_item(NAME(m_cassbit));
+	save_item(NAME(m_cassold));
+	save_item(NAME(m_key_pressed));
+	save_item(NAME(m_banksw_unlocked));
 }
 
 void fc100_state::machine_reset()
 {
-	m_p_chargen = memregion("chargen")->base();
+	m_ag = 0;
+	m_gm2 = 0;
+	m_gm1 = 0;
+	m_gm0 = 0;
+	m_as = 0;
+	m_css = 0;
+	m_intext = 0;
+	m_inv = 0;
+
 	m_cass_data[0] = m_cass_data[1] = m_cass_data[2] = m_cass_data[3] = 0;
-	m_cass_state = 0;
+	m_cassbit = 0;
 	m_cassold = 0;
 	m_key_pressed = 0;
 	membank("bankr")->set_entry(0);
 	membank("bankw")->set_entry(0);
+	m_uart->write_cts(0);
 }
 
-WRITE8_MEMBER( fc100_state::port60_w )
+void fc100_state::port60_w(offs_t offset, uint8_t data)
 {
 	if (m_banksw_unlocked)
 		membank("bankr")->set_entry(offset);
 }
 
-WRITE8_MEMBER( fc100_state::port70_w )
+void fc100_state::port70_w(offs_t offset, uint8_t data)
 {
 	m_banksw_unlocked = (bool)offset;
 }
 
-DRIVER_INIT_MEMBER( fc100_state, fc100 )
+void fc100_state::init_fc100()
 {
-	UINT8 *ram = memregion("ram")->base();
-	UINT8 *cgen = memregion("chargen")->base()+0x800;
+	uint8_t *ram = memregion("ram")->base();
+	uint8_t *cgen = memregion("chargen")->base()+0x800;
 
 	membank("bankr")->configure_entry(0, &cgen[0]);
 	membank("bankw")->configure_entry(0, &ram[0]);
 	membank("bankr")->configure_entry(1, &ram[0]);
 }
 
-static MACHINE_CONFIG_START( fc100, fc100_state )
+void fc100_state::fc100(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu",Z80, XTAL_7_15909MHz/2)
-	MCFG_CPU_PROGRAM_MAP(fc100_mem)
-	MCFG_CPU_IO_MAP(fc100_io)
+	Z80(config, m_maincpu, XTAL(7'159'090)/2);
+	m_maincpu->set_addrmap(AS_PROGRAM, &fc100_state::mem_map);
+	m_maincpu->set_addrmap(AS_IO, &fc100_state::io_map);
 
 	/* video hardware */
-	MCFG_DEVICE_ADD("vdg", M5C6847P1, XTAL_7_15909MHz/3)  // Clock not verified
-	MCFG_MC6847_INPUT_CALLBACK(READ8(fc100_state, mc6847_videoram_r))
-	MCFG_MC6847_CHARROM_CALLBACK(fc100_state, get_char_rom)
-	MCFG_MC6847_FIXED_MODE(MC6847_MODE_INTEXT)
+	M5C6847P1(config, m_vdg, XTAL(7'159'090)/3);  // Clock not verified
+	m_vdg->set_screen("screen");
+	m_vdg->input_callback().set(FUNC(fc100_state::mc6847_videoram_r));
+	m_vdg->set_get_char_rom(FUNC(fc100_state::get_char_rom));
+	m_vdg->set_get_fixed_mode(m5c6847p1_device::MODE_INTEXT);
 	// other lines not connected
 
-	MCFG_SCREEN_MC6847_NTSC_ADD("screen", "vdg")
-	MCFG_GFXDECODE_ADD("gfxdecode", "f4palette", fc100)
-	MCFG_PALETTE_ADD_MONOCHROME_AMBER("f4palette")
+	SCREEN(config, "screen", SCREEN_TYPE_RASTER);
+	GFXDECODE(config, "gfxdecode", "f4palette", gfx_fc100);
+	PALETTE(config, "f4palette", palette_device::MONOCHROME);
 
 	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_MONO("mono")
-	MCFG_SOUND_WAVE_ADD(WAVE_TAG, "cassette")
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.25)
-	MCFG_SOUND_ADD("psg", AY8910, XTAL_7_15909MHz/3/2)  /* AY-3-8910 - clock not verified */
-	MCFG_AY8910_PORT_A_READ_CB(IOPORT("JOY0"))
-	MCFG_AY8910_PORT_B_READ_CB(IOPORT("JOY1"))
-	//MCFG_AY8910_PORT_A_WRITE_CB(WRITE8(fc100_state, ay_port_a_w))
-	//MCFG_AY8910_PORT_B_WRITE_CB(WRITE8(fc100_state, ay_port_b_w))
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 1.50)
+	SPEAKER(config, "mono").front_center();
+	ay8910_device &psg(AY8910(config, "psg", XTAL(7'159'090)/3/2));  /* AY-3-8910 - clock not verified */
+	psg.port_a_read_callback().set_ioport("JOY0");
+	psg.port_b_read_callback().set_ioport("JOY1");
+	//psg.port_a_write_callback().set(FUNC(fc100_state::ay_port_a_w));
+	//psg.port_b_write_callback().set(FUNC(fc100_state::ay_port_b_w));
+	psg.add_route(ALL_OUTPUTS, "mono", 1.50);
 
 	/* Devices */
-	MCFG_CASSETTE_ADD("cassette")
-	MCFG_CASSETTE_FORMATS(fc100_cassette_formats)
-	MCFG_CASSETTE_DEFAULT_STATE(CASSETTE_PLAY | CASSETTE_MOTOR_DISABLED | CASSETTE_SPEAKER_ENABLED)
+	CASSETTE(config, m_cass);
+	m_cass->set_formats(fc100_cassette_formats);
+	m_cass->set_default_state(CASSETTE_PLAY | CASSETTE_MOTOR_DISABLED | CASSETTE_SPEAKER_ENABLED);
+	m_cass->add_route(ALL_OUTPUTS, "mono", 0.05);
 
-	MCFG_DEVICE_ADD("uart", I8251, 0)
-	MCFG_I8251_TXD_HANDLER(WRITELINE(fc100_state, txdata_callback))
-	MCFG_DEVICE_ADD("uart_clock", CLOCK, XTAL_4_9152MHz/16/16) // gives 19200
-	MCFG_CLOCK_SIGNAL_HANDLER(WRITELINE(fc100_state, uart_clock_w))
-	MCFG_TIMER_DRIVER_ADD_PERIODIC("timer_c", fc100_state, timer_c, attotime::from_hz(4800)) // cass write
-	MCFG_TIMER_DRIVER_ADD_PERIODIC("timer_p", fc100_state, timer_p, attotime::from_hz(40000)) // cass read
-	MCFG_TIMER_DRIVER_ADD_PERIODIC("timer_k", fc100_state, timer_k, attotime::from_hz(300)) // keyb scan
+	I8251(config, m_uart, 0);
+	m_uart->txd_handler().set([this] (bool state) { m_cassbit = state; });
+	clock_device &uart_clock(CLOCK(config, "uart_clock", XTAL(4'915'200)/16/16)); // gives 19200
+	uart_clock.signal_handler().set(m_uart, FUNC(i8251_device::write_txc));
+	uart_clock.signal_handler().append(m_uart, FUNC(i8251_device::write_rxc));
 
-	MCFG_GENERIC_CARTSLOT_ADD("cartslot", generic_plain_slot, "fc100_cart")
+	TIMER(config, "kansas_w").configure_periodic(FUNC(fc100_state::kansas_w), attotime::from_hz(4800)); // cass write
+	TIMER(config, "kansas_r").configure_periodic(FUNC(fc100_state::kansas_r), attotime::from_hz(40000)); // cass read
+	TIMER(config, "timer_k").configure_periodic(FUNC(fc100_state::timer_k), attotime::from_hz(300)); // keyb scan
 
-	MCFG_CENTRONICS_ADD("centronics", centronics_devices, "printer")
-	MCFG_CENTRONICS_ACK_HANDLER(DEVWRITELINE("cent_status_in", input_buffer_device, write_bit4))
-	MCFG_CENTRONICS_BUSY_HANDLER(DEVWRITELINE("cent_status_in", input_buffer_device, write_bit5))
-	MCFG_CENTRONICS_OUTPUT_LATCH_ADD("cent_data_out", "centronics")
-	MCFG_DEVICE_ADD("cent_status_in", INPUT_BUFFER, 0)
-MACHINE_CONFIG_END
+	GENERIC_CARTSLOT(config, m_cart, generic_plain_slot, "fc100_cart");
+
+	CENTRONICS(config, m_centronics, centronics_devices, "printer");
+	m_centronics->ack_handler().set("cent_status_in", FUNC(input_buffer_device::write_bit4));
+	m_centronics->busy_handler().set("cent_status_in", FUNC(input_buffer_device::write_bit5));
+
+	output_latch_device &cent_data_out(OUTPUT_LATCH(config, "cent_data_out"));
+	m_centronics->set_output_latch(cent_data_out);
+
+	INPUT_BUFFER(config, "cent_status_in");
+}
 
 /* ROM definition */
 ROM_START( fc100 )
@@ -574,5 +585,5 @@ ROM_END
 
 /* Driver */
 
-/*    YEAR  NAME    PARENT  COMPAT   MACHINE  INPUT   CLASS          INIT    COMPANY    FULLNAME  FLAGS */
-CONS( 1982, fc100,  0,      0,       fc100,   fc100,  fc100_state, fc100,   "Goldstar", "FC-100", MACHINE_NOT_WORKING )
+//    YEAR  NAME   PARENT  COMPAT  MACHINE  INPUT  CLASS        INIT        COMPANY     FULLNAME  FLAGS
+CONS( 1982, fc100, 0,      0,      fc100,   fc100, fc100_state, init_fc100, "Goldstar", "FC-100", MACHINE_NOT_WORKING | MACHINE_SUPPORTS_SAVE )

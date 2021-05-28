@@ -7,8 +7,6 @@
 ****************************************************************************/
 
 #include "emu.h"
-#include "machine/atarigen.h"
-#include "video/atarimo.h"
 #include "includes/rampart.h"
 
 /*************************************
@@ -51,7 +49,7 @@ const atari_motion_objects_config rampart_state::s_mob_config =
 	0                   /* resulting value to indicate "special" */
 };
 
-VIDEO_START_MEMBER(rampart_state,rampart)
+void rampart_state::video_start()
 {
 	/* set the intial scroll offset */
 	m_mob->set_xscroll(-12);
@@ -65,7 +63,7 @@ VIDEO_START_MEMBER(rampart_state,rampart)
  *
  *************************************/
 
-UINT32 rampart_state::screen_update_rampart(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t rampart_state::screen_update_rampart(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	// start drawing
 	m_mob->draw_async(cliprect);
@@ -76,11 +74,11 @@ UINT32 rampart_state::screen_update_rampart(screen_device &screen, bitmap_ind16 
 	// draw and merge the MO
 	bitmap_ind16 &mobitmap = m_mob->bitmap();
 	for (const sparse_dirty_rect *rect = m_mob->first_dirty_rect(cliprect); rect != nullptr; rect = rect->next())
-		for (int y = rect->min_y; y <= rect->max_y; y++)
+		for (int y = rect->top(); y <= rect->bottom(); y++)
 		{
-			UINT16 *mo = &mobitmap.pix16(y);
-			UINT16 *pf = &bitmap.pix16(y);
-			for (int x = rect->min_x; x <= rect->max_x; x++)
+			uint16_t const *const mo = &mobitmap.pix(y);
+			uint16_t *const pf = &bitmap.pix(y);
+			for (int x = rect->left(); x <= rect->right(); x++)
 				if (mo[x] != 0xffff)
 				{
 					/* the PCB supports more complex priorities, but the PAL is not stuffed, so we get the default */
@@ -101,15 +99,15 @@ UINT32 rampart_state::screen_update_rampart(screen_device &screen, bitmap_ind16 
 void rampart_state::rampart_bitmap_render(bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	/* update any dirty scanlines */
-	for (int y = cliprect.min_y; y <= cliprect.max_y; y++)
+	for (int y = cliprect.top(); y <= cliprect.bottom(); y++)
 	{
-		const UINT16 *src = &m_bitmap[256 * y];
-		UINT16 *dst = &bitmap.pix16(y);
+		uint16_t const *const src = &m_bitmap[256 * y];
+		uint16_t *const dst = &bitmap.pix(y);
 
 		/* regenerate the line */
-		for (int x = cliprect.min_x & ~1; x <= cliprect.max_x; x += 2)
+		for (int x = cliprect.left() & ~1; x <= cliprect.right(); x += 2)
 		{
-			int bits = src[(x - 8) / 2];
+			int const bits = src[(x - 8) / 2];
 			dst[x + 0] = bits >> 8;
 			dst[x + 1] = bits & 0xff;
 		}

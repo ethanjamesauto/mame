@@ -1,10 +1,11 @@
 #!/usr/bin/python
-
+# license:BSD-3-Clause
+# copyright-holders:Olivier Galibert
 from __future__ import print_function
 
 USAGE = """
 Usage:
-%s h8.lst <type> h8.inc (type = o/h/s20/s26)
+%s h8.lst <mode> <type> h8.inc (mode = s/d, type = o/h/s20/s26)
 """
 import sys
 
@@ -20,14 +21,23 @@ def name_to_type(name):
     sys.stderr.write("Unknown chip type name %s\n" % name)
     sys.exit(1)
 
-def type_to_device(dtype):
-    if dtype == 0:
-        return "h8_device"
-    if dtype == 1:
-        return "h8h_device"
-    if dtype == 2:
-        return "h8s2000_device"
-    return "h8s2600_device"
+def type_to_device(dtype, mode):
+    if mode == 's':
+        if dtype == 0:
+            return "h8_device"
+        if dtype == 1:
+            return "h8h_device"
+        if dtype == 2:
+            return "h8s2000_device"
+        return "h8s2600_device"
+    else:
+        if dtype == 0:
+            return "h8_disassembler"
+        if dtype == 1:
+            return "h8h_disassembler"
+        if dtype == 2:
+            return "h8s2000_disassembler"
+        return "h8s2600_disassembler"
 
 def hexsplit(str):
     res = []
@@ -56,7 +66,7 @@ def save_full_one(f, t, name, source):
             print(line, file=f)
             substate += 1
         elif has_eat(line):
-            print("\tif(icount) icount = bcount; inst_substate = %d; return;" % substate, file=f)
+            print("\tif(icount) { icount = bcount; } inst_substate = %d; return;" % substate, file=f)
             substate += 1
         else:
             print(line, file=f)
@@ -72,11 +82,12 @@ def save_partial_one(f, t, name, source):
     for line in source:
         if has_memory(line):
             print("\tif(icount <= bcount) { inst_substate = %d; return; }" % substate, file=f)
+            print("\t[[fallthrough]];", file=f)
             print("case %d:;" % substate, file=f)
             print(line, file=f)
             substate += 1
         elif has_eat(line):
-            print("\tif(icount) icount = bcount; inst_substate = %d; return;" % substate, file=f)
+            print("\tif(icount) { icount = bcount; } inst_substate = %d; return;" % substate, file=f)
             print("case %d:;" % substate, file=f)
             substate += 1
         else:
@@ -181,9 +192,9 @@ class Opcode:
         size = len(self.val) + 2*self.skip + 2*self.extra_words
         
         if self.name == "jsr" or self.name == "bsr":
-            flags = "%d | DASMFLAG_STEP_OVER" % size
+            flags = "%d | STEP_OVER" % size
         elif self.name == "rts" or self.name == "rte":
-            flags = "%d | DASMFLAG_STEP_OUT" % size
+            flags = "%d | STEP_OUT" % size
         else:
             flags = "%d" % size
         
@@ -444,28 +455,31 @@ class OpcodeList:
         print("}", file=f)
 
 def main(argv):
-    if len(argv) != 4:
+    if len(argv) != 5:
         print(USAGE % argv[0])
         return 1
 
-    dtype = name_to_type(argv[2])
-    dname = type_to_device(dtype)
+    mode  = argv[2]
+    dtype = name_to_type(argv[3])
+    dname = type_to_device(dtype, mode)
     opcodes = OpcodeList(argv[1], dtype)
     
     try:
-        f = open(argv[3], "w")
+        f = open(argv[4], "w")
     except Exception:
         err = sys.exc_info()[1]
-        sys.stderr.write("cannot write file %s [%s]\n" % (argv[3], err))
+        sys.stderr.write("cannot write file %s [%s]\n" % (argv[4], err))
         sys.exit(1)
 
-    opcodes.build_dispatch()
-    opcodes.save_dasm(f, dname)
-    opcodes.save_opcodes(f, dname)
-    if dtype == 0:
-        opcodes.save_dispatch(f, dname)
-    opcodes.save_exec(f, dname, dtype, "full")
-    opcodes.save_exec(f, dname, dtype, "partial")
+    if mode == 's':
+        opcodes.build_dispatch()
+        opcodes.save_opcodes(f, dname)
+        if dtype == 0:
+            opcodes.save_dispatch(f, dname)
+        opcodes.save_exec(f, dname, dtype, "full")
+        opcodes.save_exec(f, dname, dtype, "partial")
+    else:
+        opcodes.save_dasm(f, dname)
     f.close()
 
 # ======================================================================

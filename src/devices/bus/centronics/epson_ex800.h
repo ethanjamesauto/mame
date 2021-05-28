@@ -1,4 +1,4 @@
-// license:GPL-2.0+
+// license:BSD-3-Clause
 // copyright-holders:Dirk Best
 /**********************************************************************
 
@@ -6,12 +6,11 @@
 
 **********************************************************************/
 
+#ifndef MAME_BUS_CENTRONICS_EPSON_EX800_H
+#define MAME_BUS_CENTRONICS_EPSON_EX800_H
+
 #pragma once
 
-#ifndef __EPSON_EX800__
-#define __EPSON_EX800__
-
-#include "emu.h"
 #include "ctronics.h"
 #include "cpu/upd7810/upd7810.h"
 #include "sound/beep.h"
@@ -22,35 +21,13 @@
 //  TYPE DEFINITIONS
 //**************************************************************************
 
-// ======================> epson_ex800_t
+// ======================> epson_ex800_device
 
-class epson_ex800_t :  public device_t,
-						public device_centronics_peripheral_interface
+class epson_ex800_device :  public device_t, public device_centronics_peripheral_interface
 {
 public:
 	// construction/destruction
-	epson_ex800_t(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
-	epson_ex800_t(const machine_config &mconfig, device_type type, const char *name, const char *tag, device_t *owner, UINT32 clock, const char *shortname, const char *source);
-
-	// optional information overrides
-	virtual const rom_entry *device_rom_region() const override;
-	virtual machine_config_constructor device_mconfig_additions() const override;
-	virtual ioport_constructor device_input_ports() const override;
-
-	DECLARE_READ8_MEMBER(porta_r);
-	DECLARE_READ8_MEMBER(portb_r);
-	DECLARE_READ8_MEMBER(portc_r);
-	DECLARE_WRITE8_MEMBER(porta_w);
-	DECLARE_WRITE8_MEMBER(portb_w);
-	DECLARE_WRITE8_MEMBER(portc_w);
-	DECLARE_READ8_MEMBER(devsel_r);
-	DECLARE_WRITE8_MEMBER(devsel_w);
-	DECLARE_READ8_MEMBER(gate5a_r);
-	DECLARE_WRITE8_MEMBER(gate5a_w);
-	DECLARE_READ8_MEMBER(iosel_r);
-	DECLARE_WRITE8_MEMBER(iosel_w);
-	DECLARE_READ8_MEMBER(gate7a_r);
-	DECLARE_WRITE8_MEMBER(gate7a_w);
+	epson_ex800_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
 	DECLARE_INPUT_CHANGED_MEMBER(online_switch);
 
@@ -59,7 +36,29 @@ protected:
 	virtual void device_start() override;
 	virtual void device_reset() override;
 
+	// optional information overrides
+	virtual const tiny_rom_entry *device_rom_region() const override;
+	virtual void device_add_mconfig(machine_config &config) override;
+	virtual ioport_constructor device_input_ports() const override;
+
 private:
+	uint8_t porta_r();
+	uint8_t portb_r();
+	uint8_t portc_r();
+	void porta_w(uint8_t data);
+	void portb_w(uint8_t data);
+	void portc_w(uint8_t data);
+	uint8_t devsel_r(offs_t offset);
+	void devsel_w(offs_t offset, uint8_t data);
+	uint8_t gate5a_r(offs_t offset);
+	void gate5a_w(offs_t offset, uint8_t data);
+	uint8_t iosel_r(offs_t offset);
+	void iosel_w(offs_t offset, uint8_t data);
+	uint8_t gate7a_r(offs_t offset);
+	void gate7a_w(offs_t offset, uint8_t data);
+
+	void ex800_mem(address_map &map);
+
 	required_device<cpu_device> m_maincpu;
 	required_device<beep_device> m_beeper;
 
@@ -69,8 +68,8 @@ private:
 
 
 // device type definition
-extern const device_type EPSON_EX800;
+DECLARE_DEVICE_TYPE(EPSON_EX800, epson_ex800_device)
 
 
 
-#endif
+#endif // MAME_BUS_CENTRONICS_EPSON_EX800_H

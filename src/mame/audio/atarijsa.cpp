@@ -2,7 +2,7 @@
 // copyright-holders:Aaron Giles
 /***************************************************************************
 
-    atarijsa.c
+    atarijsa.cpp
 
     Functions to emulate the Atari "JSA" audio boards
 
@@ -77,17 +77,17 @@ ALL: the LPF (low pass filter) bit which selectively places a lowpass filter in 
 #include "audio/atarijsa.h"
 
 
-#define JSA_MASTER_CLOCK            XTAL_3_579545MHz
+#define JSA_MASTER_CLOCK            XTAL(3'579'545)
 
 
 //**************************************************************************
 //  GLOBAL VARIABLES
 //**************************************************************************
 
-extern const device_type ATARI_JSA_I = &device_creator<atari_jsa_i_device>;
-extern const device_type ATARI_JSA_II = &device_creator<atari_jsa_ii_device>;
-extern const device_type ATARI_JSA_III = &device_creator<atari_jsa_iii_device>;
-extern const device_type ATARI_JSA_IIIS = &device_creator<atari_jsa_iiis_device>;
+DEFINE_DEVICE_TYPE(ATARI_JSA_I,    atari_jsa_i_device,    "atjsa1",  "Atari JSA I Sound Board")
+DEFINE_DEVICE_TYPE(ATARI_JSA_II,   atari_jsa_ii_device,   "atjsa2",  "Atari JSA II Sound Board")
+DEFINE_DEVICE_TYPE(ATARI_JSA_III,  atari_jsa_iii_device,  "atjsa3",  "Atari JSA III Sound Board")
+DEFINE_DEVICE_TYPE(ATARI_JSA_IIIS, atari_jsa_iiis_device, "atjsa3s", "Atari JSA IIIs Sound Board")
 
 
 
@@ -95,144 +95,71 @@ extern const device_type ATARI_JSA_IIIS = &device_creator<atari_jsa_iiis_device>
 //  MEMORY MAPS
 //**************************************************************************
 
-static ADDRESS_MAP_START( atarijsa1_map, AS_PROGRAM, 8, atari_jsa_i_device )
-	AM_RANGE(0x0000, 0x1fff) AM_RAM
-	AM_RANGE(0x2000, 0x2001) AM_DEVREADWRITE("ym2151", ym2151_device, read, write)
-	AM_RANGE(0x2800, 0x2800) AM_MIRROR(0x01f9)                                                                      // N/C
-	AM_RANGE(0x2802, 0x2802) AM_MIRROR(0x01f9) AM_DEVREAD("soundcomm", atari_sound_comm_device, sound_command_r)    // /RDP
-	AM_RANGE(0x2804, 0x2804) AM_MIRROR(0x01f9) AM_READ(rdio_r)                                                      // /RDIO
-	AM_RANGE(0x2806, 0x2806) AM_MIRROR(0x01f9) AM_DEVREADWRITE("soundcomm", atari_sound_comm_device, sound_irq_ack_r, sound_irq_ack_w)  // R/W=/IRQACK
-	AM_RANGE(0x2a00, 0x2a00) AM_MIRROR(0x01f9) AM_WRITE(tms5220_voice)                                              // /VOICE
-	AM_RANGE(0x2a02, 0x2a02) AM_MIRROR(0x01f9) AM_DEVWRITE("soundcomm", atari_sound_comm_device, sound_response_w)  // /WRP
-	AM_RANGE(0x2a04, 0x2a04) AM_MIRROR(0x01f9) AM_WRITE(wrio_w)                                                     // /WRIO
-	AM_RANGE(0x2a06, 0x2a06) AM_MIRROR(0x01f9) AM_WRITE(mix_w)                                                      // /MIX
-	AM_RANGE(0x2c00, 0x2c0f) AM_MIRROR(0x03f0) AM_READWRITE(pokey_r, pokey_w)
-	AM_RANGE(0x3000, 0x3fff) AM_ROMBANK("cpubank")
-	AM_RANGE(0x4000, 0xffff) AM_ROM
-ADDRESS_MAP_END
+void atari_jsa_i_device::atarijsa1_map(address_map &map)
+{
+	map(0x0000, 0x1fff).ram();
+	map(0x2000, 0x2001).rw(m_ym2151, FUNC(ym2151_device::read), FUNC(ym2151_device::write));
+	map(0x2800, 0x2800).mirror(0x01f9);                                                                      // N/C
+	map(0x2802, 0x2802).mirror(0x01f9).r(m_soundcomm, FUNC(atari_sound_comm_device::sound_command_r));    // /RDP
+	map(0x2804, 0x2804).mirror(0x01f9).r(FUNC(atari_jsa_i_device::rdio_r));                                                      // /RDIO
+	map(0x2806, 0x2806).mirror(0x01f9).rw(FUNC(atari_jsa_i_device::sound_irq_ack_r), FUNC(atari_jsa_i_device::sound_irq_ack_w));  // R/W=/IRQACK
+	map(0x2a00, 0x2a00).mirror(0x01f9).w(FUNC(atari_jsa_i_device::tms5220_voice));                                              // /VOICE
+	map(0x2a02, 0x2a02).mirror(0x01f9).w(m_soundcomm, FUNC(atari_sound_comm_device::sound_response_w));  // /WRP
+	map(0x2a04, 0x2a04).mirror(0x01f9).w(FUNC(atari_jsa_i_device::wrio_w));                                                     // /WRIO
+	map(0x2a06, 0x2a06).mirror(0x01f9).w(FUNC(atari_jsa_i_device::mix_w));                                                      // /MIX
+	map(0x2c00, 0x2c0f).mirror(0x03f0).rw(FUNC(atari_jsa_i_device::pokey_r), FUNC(atari_jsa_i_device::pokey_w));
+	map(0x3000, 0x3fff).bankr("cpubank");
+	map(0x4000, 0xffff).rom();
+}
 
 
-static ADDRESS_MAP_START( atarijsa2_map, AS_PROGRAM, 8, atari_jsa_ii_device )
-	AM_RANGE(0x0000, 0x1fff) AM_RAM
-	AM_RANGE(0x2000, 0x2001) AM_DEVREADWRITE("ym2151", ym2151_device, read, write)
-	AM_RANGE(0x2800, 0x2800) AM_MIRROR(0x01f9) AM_READ(oki_r)                                                       // /RDV
-	AM_RANGE(0x2802, 0x2802) AM_MIRROR(0x01f9) AM_DEVREAD("soundcomm", atari_sound_comm_device, sound_command_r)    // /RDP
-	AM_RANGE(0x2804, 0x2804) AM_MIRROR(0x01f9) AM_READ(rdio_r)                                                      // /RDIO
-	AM_RANGE(0x2806, 0x2806) AM_MIRROR(0x01f9) AM_DEVREADWRITE("soundcomm", atari_sound_comm_device, sound_irq_ack_r, sound_irq_ack_w)  // R/W=/IRQACK
-	AM_RANGE(0x2a00, 0x2a00) AM_MIRROR(0x01f9) AM_WRITE(oki_w)                                                      // /WRV
-	AM_RANGE(0x2a02, 0x2a02) AM_MIRROR(0x01f9) AM_DEVWRITE("soundcomm", atari_sound_comm_device, sound_response_w)  // /WRP
-	AM_RANGE(0x2a04, 0x2a04) AM_MIRROR(0x01f9) AM_WRITE(wrio_w)                                                     // /WRIO
-	AM_RANGE(0x2a06, 0x2a06) AM_MIRROR(0x01f9) AM_WRITE(mix_w)                                                      // /MIX
-	AM_RANGE(0x3000, 0x3fff) AM_ROMBANK("cpubank")
-	AM_RANGE(0x4000, 0xffff) AM_ROM
-ADDRESS_MAP_END
+void atari_jsa_ii_device::atarijsa2_map(address_map &map)
+{
+	map(0x0000, 0x1fff).ram();
+	map(0x2000, 0x2001).rw(m_ym2151, FUNC(ym2151_device::read), FUNC(ym2151_device::write));
+	map(0x2800, 0x2800).mirror(0x01f9).r(FUNC(atari_jsa_ii_device::oki_r));                                                       // /RDV
+	map(0x2802, 0x2802).mirror(0x01f9).r(m_soundcomm, FUNC(atari_sound_comm_device::sound_command_r));    // /RDP
+	map(0x2804, 0x2804).mirror(0x01f9).r(FUNC(atari_jsa_ii_device::rdio_r));                                                      // /RDIO
+	map(0x2806, 0x2806).mirror(0x01f9).rw(FUNC(atari_jsa_ii_device::sound_irq_ack_r), FUNC(atari_jsa_ii_device::sound_irq_ack_w));  // R/W=/IRQACK
+	map(0x2a00, 0x2a00).mirror(0x01f9).w(FUNC(atari_jsa_ii_device::oki_w));                                                      // /WRV
+	map(0x2a02, 0x2a02).mirror(0x01f9).w(m_soundcomm, FUNC(atari_sound_comm_device::sound_response_w));  // /WRP
+	map(0x2a04, 0x2a04).mirror(0x01f9).w(FUNC(atari_jsa_ii_device::wrio_w));                                                     // /WRIO
+	map(0x2a06, 0x2a06).mirror(0x01f9).w(FUNC(atari_jsa_ii_device::mix_w));                                                      // /MIX
+	map(0x3000, 0x3fff).bankr("cpubank");
+	map(0x4000, 0xffff).rom();
+}
 
 
 // full map verified from schematics and Batman GALs
-static ADDRESS_MAP_START( atarijsa3_map, AS_PROGRAM, 8, atari_jsa_iii_device )
-	AM_RANGE(0x0000, 0x1fff) AM_RAM
-	AM_RANGE(0x2000, 0x2001) AM_MIRROR(0x07fe) AM_DEVREADWRITE("ym2151", ym2151_device, read, write)
-	AM_RANGE(0x2800, 0x2801) AM_MIRROR(0x05f8) AM_READWRITE(oki_r, overall_volume_w)                                // /RDV
-	AM_RANGE(0x2802, 0x2802) AM_MIRROR(0x05f9) AM_DEVREAD("soundcomm", atari_sound_comm_device, sound_command_r)    // /RDP
-	AM_RANGE(0x2804, 0x2804) AM_MIRROR(0x05f9) AM_READ(rdio_r)                                                      // /RDIO
-	AM_RANGE(0x2806, 0x2806) AM_MIRROR(0x05f9) AM_DEVREADWRITE("soundcomm", atari_sound_comm_device, sound_irq_ack_r, sound_irq_ack_w)  // R/W=/IRQACK
-	AM_RANGE(0x2a00, 0x2a01) AM_MIRROR(0x05f8) AM_WRITE(oki_w)                                                      // /WRV
-	AM_RANGE(0x2a02, 0x2a02) AM_MIRROR(0x05f9) AM_DEVWRITE("soundcomm", atari_sound_comm_device, sound_response_w)  // /WRP
-	AM_RANGE(0x2a04, 0x2a04) AM_MIRROR(0x05f9) AM_WRITE(wrio_w)                                                     // /WRIO
-	AM_RANGE(0x2a06, 0x2a06) AM_MIRROR(0x05f9) AM_WRITE(mix_w)                                                      // /MIX
-	AM_RANGE(0x3000, 0x3fff) AM_ROMBANK("cpubank")
-	AM_RANGE(0x4000, 0xffff) AM_ROM
-ADDRESS_MAP_END
+void atari_jsa_iii_device::atarijsa3_map(address_map &map)
+{
+	map(0x0000, 0x1fff).ram();
+	map(0x2000, 0x2001).mirror(0x07fe).rw(m_ym2151, FUNC(ym2151_device::read), FUNC(ym2151_device::write));
+	map(0x2800, 0x2801).mirror(0x05f8).rw(FUNC(atari_jsa_iii_device::oki_r), FUNC(atari_jsa_iii_device::overall_volume_w));                                // /RDV
+	map(0x2802, 0x2802).mirror(0x05f9).r(m_soundcomm, FUNC(atari_sound_comm_device::sound_command_r));    // /RDP
+	map(0x2804, 0x2804).mirror(0x05f9).r(FUNC(atari_jsa_iii_device::rdio_r));                                                      // /RDIO
+	map(0x2806, 0x2806).mirror(0x05f9).rw(FUNC(atari_jsa_iii_device::sound_irq_ack_r), FUNC(atari_jsa_iii_device::sound_irq_ack_w));  // R/W=/IRQACK
+	map(0x2a00, 0x2a01).mirror(0x05f8).w(FUNC(atari_jsa_iii_device::oki_w));                                                      // /WRV
+	map(0x2a02, 0x2a02).mirror(0x05f9).w(m_soundcomm, FUNC(atari_sound_comm_device::sound_response_w));  // /WRP
+	map(0x2a04, 0x2a04).mirror(0x05f9).w(FUNC(atari_jsa_iii_device::wrio_w));                                                     // /WRIO
+	map(0x2a06, 0x2a06).mirror(0x05f9).w(FUNC(atari_jsa_iii_device::mix_w));                                                      // /MIX
+	map(0x3000, 0x3fff).bankr("cpubank");
+	map(0x4000, 0xffff).rom();
+}
 
 
-static ADDRESS_MAP_START( jsa3_oki1_map, AS_0, 8, atari_jsa_iii_device )
-	AM_RANGE(0x00000, 0x1ffff) AM_ROMBANK("oki1lo")
-	AM_RANGE(0x20000, 0x3ffff) AM_ROMBANK("oki1hi")
-ADDRESS_MAP_END
+void atari_jsa_iii_device::jsa3_oki1_map(address_map &map)
+{
+	map(0x00000, 0x1ffff).bankr("oki1lo");
+	map(0x20000, 0x3ffff).bankr("oki1hi");
+}
 
 
-static ADDRESS_MAP_START( jsa3_oki2_map, AS_0, 8, atari_jsa_iiis_device )
-	AM_RANGE(0x00000, 0x1ffff) AM_ROMBANK("oki2lo")
-	AM_RANGE(0x20000, 0x3ffff) AM_ROMBANK("oki2hi")
-ADDRESS_MAP_END
-
-
-
-//**************************************************************************
-//  MACHINE FRAGMENTS
-//**************************************************************************
-
-// Fully populated JSA-I, not used by anyone
-MACHINE_CONFIG_FRAGMENT( jsa_i_config )
-
-	// basic machine hardware
-	MCFG_CPU_ADD("cpu", M6502, JSA_MASTER_CLOCK/2)
-	MCFG_CPU_PROGRAM_MAP(atarijsa1_map)
-	MCFG_DEVICE_PERIODIC_INT_DEVICE("soundcomm", atari_sound_comm_device, sound_irq_gen, (double)JSA_MASTER_CLOCK/4/16/16/14)
-
-	// sound hardware
-	MCFG_ATARI_SOUND_COMM_ADD("soundcomm", "cpu", WRITELINE(atari_jsa_base_device, main_int_write_line))
-
-	MCFG_YM2151_ADD("ym2151", JSA_MASTER_CLOCK)
-	MCFG_YM2151_IRQ_HANDLER(DEVWRITELINE("soundcomm", atari_sound_comm_device, ym2151_irq_gen))
-	MCFG_YM2151_PORT_WRITE_HANDLER(WRITE8(atari_jsa_base_device, ym2151_port_w))
-	MCFG_MIXER_ROUTE(0, DEVICE_SELF_OWNER, 0.60, 0)
-	MCFG_MIXER_ROUTE(1, DEVICE_SELF_OWNER, 0.60, 1)
-
-	MCFG_SOUND_ADD("pokey", POKEY, JSA_MASTER_CLOCK/2)
-	MCFG_MIXER_ROUTE(ALL_OUTPUTS, DEVICE_SELF_OWNER, 0.40, 0)
-	MCFG_MIXER_ROUTE(ALL_OUTPUTS, DEVICE_SELF_OWNER, 0.40, 1)
-
-	MCFG_SOUND_ADD("tms", TMS5220C, JSA_MASTER_CLOCK*2/11) // potentially JSA_MASTER_CLOCK/9 as well
-	MCFG_MIXER_ROUTE(ALL_OUTPUTS, DEVICE_SELF_OWNER, 1.0, 0)
-	MCFG_MIXER_ROUTE(ALL_OUTPUTS, DEVICE_SELF_OWNER, 1.0, 1)
-MACHINE_CONFIG_END
-
-
-// Fully populated JSA-II
-MACHINE_CONFIG_FRAGMENT( jsa_ii_config )
-
-	// basic machine hardware
-	MCFG_CPU_ADD("cpu", M6502, JSA_MASTER_CLOCK/2)
-	MCFG_CPU_PROGRAM_MAP(atarijsa2_map)
-	MCFG_DEVICE_PERIODIC_INT_DEVICE("soundcomm", atari_sound_comm_device, sound_irq_gen, (double)JSA_MASTER_CLOCK/4/16/16/14)
-
-	// sound hardware
-	MCFG_ATARI_SOUND_COMM_ADD("soundcomm", "cpu", WRITELINE(atari_jsa_base_device, main_int_write_line))
-
-	MCFG_YM2151_ADD("ym2151", JSA_MASTER_CLOCK)
-	MCFG_YM2151_IRQ_HANDLER(DEVWRITELINE("soundcomm", atari_sound_comm_device, ym2151_irq_gen))
-	MCFG_YM2151_PORT_WRITE_HANDLER(WRITE8(atari_jsa_base_device, ym2151_port_w))
-	MCFG_MIXER_ROUTE(ALL_OUTPUTS, DEVICE_SELF_OWNER, 0.60, 0)
-
-	MCFG_OKIM6295_ADD("oki1", JSA_MASTER_CLOCK/3, OKIM6295_PIN7_HIGH)
-	MCFG_MIXER_ROUTE(ALL_OUTPUTS, DEVICE_SELF_OWNER, 0.75, 0)
-MACHINE_CONFIG_END
-
-
-// Fully populated JSA-III
-MACHINE_CONFIG_DERIVED( jsa_iii_config, jsa_ii_config )
-
-	// basic machine hardware
-	MCFG_CPU_MODIFY("cpu")
-	MCFG_CPU_PROGRAM_MAP(atarijsa3_map)
-
-	MCFG_DEVICE_MODIFY("oki1")
-	MCFG_DEVICE_ADDRESS_MAP(AS_0, jsa3_oki1_map)
-MACHINE_CONFIG_END
-
-
-// Fully populated JSA_IIIs
-MACHINE_CONFIG_DERIVED( jsa_iiis_config, jsa_iii_config )
-
-	MCFG_DEVICE_MODIFY("ym2151")
-	MCFG_MIXER_ROUTE(1, DEVICE_SELF_OWNER, 0.60, 1)
-
-	MCFG_OKIM6295_ADD("oki2", JSA_MASTER_CLOCK/3, OKIM6295_PIN7_HIGH)
-	MCFG_MIXER_ROUTE(ALL_OUTPUTS, DEVICE_SELF_OWNER, 0.75, 1)
-	MCFG_DEVICE_ADDRESS_MAP(AS_0, jsa3_oki2_map)
-MACHINE_CONFIG_END
-
+void atari_jsa_iiis_device::jsa3_oki2_map(address_map &map)
+{
+	map(0x00000, 0x1ffff).bankr("oki2lo");
+	map(0x20000, 0x3ffff).bankr("oki2hi");
+}
 
 
 //**************************************************************************
@@ -246,9 +173,17 @@ INPUT_PORTS_START( jsa_i_ioports )
 	PORT_BIT( 0x04, IP_ACTIVE_HIGH, IPT_COIN3 )
 	PORT_BIT( 0x08, IP_ACTIVE_HIGH, IPT_UNUSED )
 	PORT_BIT( 0x10, IP_ACTIVE_HIGH, IPT_UNUSED )    // speech chip ready
-	PORT_BIT( 0x20, IP_ACTIVE_HIGH, IPT_SPECIAL ) PORT_READ_LINE_DEVICE_MEMBER("soundcomm", atari_sound_comm_device, sound_to_main_ready) // output buffer full
-	PORT_BIT( 0x40, IP_ACTIVE_LOW, IPT_SPECIAL ) PORT_READ_LINE_DEVICE_MEMBER("soundcomm", atari_sound_comm_device, main_to_sound_ready) // input buffer full
-	PORT_BIT( 0x80, IP_ACTIVE_HIGH, IPT_SPECIAL ) PORT_READ_LINE_DEVICE_MEMBER(DEVICE_SELF, atari_jsa_base_device, main_test_read_line) // self test
+	PORT_BIT( 0x20, IP_ACTIVE_HIGH, IPT_CUSTOM ) PORT_READ_LINE_DEVICE_MEMBER("soundcomm", atari_sound_comm_device, sound_to_main_ready) // output buffer full
+	PORT_BIT( 0x40, IP_ACTIVE_LOW, IPT_CUSTOM ) PORT_READ_LINE_DEVICE_MEMBER("soundcomm", atari_sound_comm_device, main_to_sound_ready) // input buffer full
+	PORT_BIT( 0x80, IP_ACTIVE_HIGH, IPT_CUSTOM ) PORT_READ_LINE_DEVICE_MEMBER(DEVICE_SELF, atari_jsa_base_device, main_test_read_line) // self test
+INPUT_PORTS_END
+
+INPUT_PORTS_START( jsa_i_ioports_inverted_coins )
+	PORT_INCLUDE( jsa_i_ioports )
+
+	PORT_MODIFY("JSAI")
+	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_COIN2 )
+	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_COIN1 )
 INPUT_PORTS_END
 
 INPUT_PORTS_START( jsa_ii_ioports )
@@ -258,9 +193,9 @@ INPUT_PORTS_START( jsa_ii_ioports )
 	PORT_BIT( 0x04, IP_ACTIVE_HIGH, IPT_COIN3 )
 	PORT_BIT( 0x08, IP_ACTIVE_HIGH, IPT_UNUSED )
 	PORT_BIT( 0x10, IP_ACTIVE_HIGH, IPT_UNUSED )
-	PORT_BIT( 0x20, IP_ACTIVE_HIGH, IPT_SPECIAL ) PORT_READ_LINE_DEVICE_MEMBER("soundcomm", atari_sound_comm_device, sound_to_main_ready) // output buffer full
-	PORT_BIT( 0x40, IP_ACTIVE_LOW, IPT_SPECIAL ) PORT_READ_LINE_DEVICE_MEMBER("soundcomm", atari_sound_comm_device, main_to_sound_ready) // input buffer full
-	PORT_BIT( 0x80, IP_ACTIVE_HIGH, IPT_SPECIAL ) PORT_READ_LINE_DEVICE_MEMBER(DEVICE_SELF, atari_jsa_base_device, main_test_read_line) // self test
+	PORT_BIT( 0x20, IP_ACTIVE_HIGH, IPT_CUSTOM ) PORT_READ_LINE_DEVICE_MEMBER("soundcomm", atari_sound_comm_device, sound_to_main_ready) // output buffer full
+	PORT_BIT( 0x40, IP_ACTIVE_LOW, IPT_CUSTOM ) PORT_READ_LINE_DEVICE_MEMBER("soundcomm", atari_sound_comm_device, main_to_sound_ready) // input buffer full
+	PORT_BIT( 0x80, IP_ACTIVE_HIGH, IPT_CUSTOM ) PORT_READ_LINE_DEVICE_MEMBER(DEVICE_SELF, atari_jsa_base_device, main_test_read_line) // self test
 INPUT_PORTS_END
 
 INPUT_PORTS_START( jsa_iii_ioports )
@@ -269,10 +204,10 @@ INPUT_PORTS_START( jsa_iii_ioports )
 	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_COIN1 )
 	PORT_BIT( 0x04, IP_ACTIVE_HIGH, IPT_TILT )
 	PORT_BIT( 0x08, IP_ACTIVE_HIGH, IPT_SERVICE )
-	PORT_BIT( 0x10, IP_ACTIVE_HIGH, IPT_SPECIAL ) PORT_READ_LINE_DEVICE_MEMBER(DEVICE_SELF, atari_jsa_base_device, main_test_read_line) // self test
-	PORT_BIT( 0x20, IP_ACTIVE_HIGH, IPT_SPECIAL ) PORT_READ_LINE_DEVICE_MEMBER("soundcomm", atari_sound_comm_device, sound_to_main_ready) // output buffer full
-	PORT_BIT( 0x40, IP_ACTIVE_LOW, IPT_SPECIAL ) PORT_READ_LINE_DEVICE_MEMBER("soundcomm", atari_sound_comm_device, main_to_sound_ready) // input buffer full
-	PORT_BIT( 0x80, IP_ACTIVE_HIGH, IPT_SPECIAL ) PORT_READ_LINE_DEVICE_MEMBER(DEVICE_SELF, atari_jsa_base_device, main_test_read_line) // self test
+	PORT_BIT( 0x10, IP_ACTIVE_HIGH, IPT_CUSTOM ) PORT_READ_LINE_DEVICE_MEMBER(DEVICE_SELF, atari_jsa_base_device, main_test_read_line) // self test
+	PORT_BIT( 0x20, IP_ACTIVE_HIGH, IPT_CUSTOM ) PORT_READ_LINE_DEVICE_MEMBER("soundcomm", atari_sound_comm_device, sound_to_main_ready) // output buffer full
+	PORT_BIT( 0x40, IP_ACTIVE_LOW, IPT_CUSTOM ) PORT_READ_LINE_DEVICE_MEMBER("soundcomm", atari_sound_comm_device, main_to_sound_ready) // input buffer full
+	PORT_BIT( 0x80, IP_ACTIVE_HIGH, IPT_CUSTOM ) PORT_READ_LINE_DEVICE_MEMBER(DEVICE_SELF, atari_jsa_base_device, main_test_read_line) // self test
 INPUT_PORTS_END
 
 
@@ -285,15 +220,18 @@ INPUT_PORTS_END
 //  atari_jsa_base_device - constructor
 //-------------------------------------------------
 
-atari_jsa_base_device::atari_jsa_base_device(const machine_config &mconfig, device_type devtype, const char *name, const char *tag, device_t *owner, UINT32 clock, const char *shortname, int channels)
-	: device_t(mconfig, devtype, name, tag, owner, clock, shortname, __FILE__),
+atari_jsa_base_device::atari_jsa_base_device(const machine_config &mconfig, device_type devtype, const char *tag, device_t *owner, uint32_t clock, int channels)
+	: device_t(mconfig, devtype, tag, owner, clock),
 		device_mixer_interface(mconfig, *this, channels),
 		m_soundcomm(*this, "soundcomm"),
 		m_jsacpu(*this, "cpu"),
 		m_ym2151(*this, "ym2151"),
+		m_cpu_region(*this, "cpu"),
 		m_cpu_bank(*this, "cpubank"),
 		m_test_read_cb(*this),
 		m_main_int_cb(*this),
+		m_timed_int(false),
+		m_ym2151_int(false),
 		m_ym2151_volume(1.0),
 		m_ym2151_ct1(0),
 		m_ym2151_ct2(0)
@@ -308,13 +246,15 @@ atari_jsa_base_device::atari_jsa_base_device(const machine_config &mconfig, devi
 void atari_jsa_base_device::device_start()
 {
 	// configure CPU bank
-	m_cpu_bank->configure_entries(0, 4, m_jsacpu->region()->base() + 0x10000, 0x1000);
+	m_cpu_bank->configure_entries(0, 4, m_cpu_region->base(), 0x1000);
 
 	// resolve devices
 	m_test_read_cb.resolve_safe(0);
 	m_main_int_cb.resolve_safe();
 
 	// save states
+	save_item(NAME(m_timed_int));
+	save_item(NAME(m_ym2151_int));
 	save_item(NAME(m_ym2151_volume));
 	save_item(NAME(m_ym2151_ct1));
 	save_item(NAME(m_ym2151_ct2));
@@ -341,9 +281,9 @@ void atari_jsa_base_device::device_reset()
 //  main_command_w: Handle command writes
 //-------------------------------------------------
 
-WRITE8_MEMBER( atari_jsa_base_device::main_command_w )
+void atari_jsa_base_device::main_command_w(uint8_t data)
 {
-	m_soundcomm->main_command_w(space, offset, data);
+	m_soundcomm->main_command_w(data);
 }
 
 
@@ -351,9 +291,9 @@ WRITE8_MEMBER( atari_jsa_base_device::main_command_w )
 //  main_response_r: Handle response reads
 //-------------------------------------------------
 
-READ8_MEMBER( atari_jsa_base_device::main_response_r )
+uint8_t atari_jsa_base_device::main_response_r()
 {
-	return m_soundcomm->main_response_r(space, offset);
+	return m_soundcomm->main_response_r();
 }
 
 
@@ -361,9 +301,9 @@ READ8_MEMBER( atari_jsa_base_device::main_response_r )
 //  sound_reset_w: Reset the sound board
 //-------------------------------------------------
 
-WRITE16_MEMBER( atari_jsa_base_device::sound_reset_w )
+void atari_jsa_base_device::sound_reset_w(uint16_t data)
 {
-	m_soundcomm->sound_reset_w(space, offset, data);
+	m_soundcomm->sound_reset_w();
 }
 
 
@@ -372,7 +312,7 @@ WRITE16_MEMBER( atari_jsa_base_device::sound_reset_w )
 //  output port
 //-------------------------------------------------
 
-WRITE8_MEMBER( atari_jsa_base_device::ym2151_port_w )
+void atari_jsa_base_device::ym2151_port_w(uint8_t data)
 {
 	m_ym2151_ct1 = (data >> 0) & 1;
 	m_ym2151_ct2 = (data >> 1) & 1;
@@ -396,9 +336,73 @@ READ_LINE_MEMBER(atari_jsa_base_device::main_test_read_line)
 //  from the comm device to the owning callback
 //-------------------------------------------------
 
-WRITE_LINE_MEMBER( atari_jsa_base_device::main_int_write_line )
+WRITE_LINE_MEMBER(atari_jsa_base_device::main_int_write_line)
 {
 	m_main_int_cb(state);
+}
+
+
+//-------------------------------------------------
+//  sound_irq_gen: Generates an IRQ signal to the
+//  6502 sound processor.
+//-------------------------------------------------
+
+INTERRUPT_GEN_MEMBER(atari_jsa_base_device::sound_irq_gen)
+{
+	m_timed_int = 1;
+	update_sound_irq();
+}
+
+
+//-------------------------------------------------
+//  sound_irq_ack_r: Resets the IRQ signal to the
+//  6502 sound processor. Both reads and writes
+//  can be used.
+//-------------------------------------------------
+
+u8 atari_jsa_base_device::sound_irq_ack_r()
+{
+	if (!machine().side_effects_disabled())
+	{
+		m_timed_int = 0;
+		update_sound_irq();
+	}
+	return 0;
+}
+
+void atari_jsa_base_device::sound_irq_ack_w(u8 data)
+{
+	m_timed_int = 0;
+	update_sound_irq();
+}
+
+
+//-------------------------------------------------
+//  ym2151_irq_gen: Sets the state of the
+//  YM2151's IRQ line.
+//-------------------------------------------------
+
+WRITE_LINE_MEMBER(atari_jsa_base_device::ym2151_irq_gen)
+{
+	m_ym2151_int = state;
+	update_sound_irq();
+}
+
+
+//-------------------------------------------------
+//  update_sound_irq: Called whenever the IRQ state
+//  changes. An interrupt is generated if either
+//  sound_irq_gen() was called, or if the YM2151
+//  generated an interrupt via the
+//  ym2151_irq_gen() callback.
+//-------------------------------------------------
+
+void atari_jsa_base_device::update_sound_irq()
+{
+	if (m_timed_int || m_ym2151_int)
+		m_jsacpu->set_input_line(m6502_device::IRQ_LINE, ASSERT_LINE);
+	else
+		m_jsacpu->set_input_line(m6502_device::IRQ_LINE, CLEAR_LINE);
 }
 
 
@@ -411,10 +415,12 @@ WRITE_LINE_MEMBER( atari_jsa_base_device::main_int_write_line )
 //  atari_jsa_oki_base_device: Constructor
 //-------------------------------------------------
 
-atari_jsa_oki_base_device::atari_jsa_oki_base_device(const machine_config &mconfig, device_type devtype, const char *name, const char *tag, device_t *owner, UINT32 clock, const char *shortname, int channels)
-	: atari_jsa_base_device(mconfig, devtype, name, tag, owner, clock, shortname, channels),
+atari_jsa_oki_base_device::atari_jsa_oki_base_device(const machine_config &mconfig, device_type devtype, const char *tag, device_t *owner, uint32_t clock, int channels)
+	: atari_jsa_base_device(mconfig, devtype, tag, owner, clock, channels),
 		m_oki1(*this, "oki1"),
 		m_oki2(*this, "oki2"),
+		m_oki1_region(*this, "oki1"),
+		m_oki2_region(*this, "oki2"),
 		m_oki1_banklo(*this, "oki1lo"),
 		m_oki1_bankhi(*this, "oki1hi"),
 		m_oki2_banklo(*this, "oki2lo"),
@@ -430,15 +436,15 @@ atari_jsa_oki_base_device::atari_jsa_oki_base_device(const machine_config &mconf
 //  on the JSA II, III, and IIIs boards
 //-------------------------------------------------
 
-READ8_MEMBER( atari_jsa_oki_base_device::oki_r )
+uint8_t atari_jsa_oki_base_device::oki_r(offs_t offset)
 {
 	// JSA IIIs selects the 2nd OKI via the low bit, so select it
 	if (m_oki2 != nullptr && offset == 1)
-		return m_oki2->read(space, offset);
+		return m_oki2->read();
 
 	// OKI may not be populated at all
 	else if (m_oki1 != nullptr)
-		return m_oki1->read(space, offset);
+		return m_oki1->read();
 
 	// if not present, return all 0xff
 	return 0xff;
@@ -450,15 +456,15 @@ READ8_MEMBER( atari_jsa_oki_base_device::oki_r )
 //  on the JSA II, III, and IIIs boards
 //-------------------------------------------------
 
-WRITE8_MEMBER( atari_jsa_oki_base_device::oki_w )
+void atari_jsa_oki_base_device::oki_w(offs_t offset, uint8_t data)
 {
 	// JSA IIIs selects the 2nd OKI via the low bit, so select it
 	if (m_oki2 != nullptr && offset == 1)
-		m_oki2->write(space, offset, data);
+		m_oki2->write(data);
 
 	// OKI may not be populated at all
 	else if (m_oki1 != nullptr)
-		m_oki1->write(space, offset, data);
+		m_oki1->write(data);
 }
 
 
@@ -467,7 +473,7 @@ WRITE8_MEMBER( atari_jsa_oki_base_device::oki_w )
 //  I/O port on JSA II, III, and IIIs boards
 //-------------------------------------------------
 
-WRITE8_MEMBER( atari_jsa_oki_base_device::wrio_w )
+void atari_jsa_oki_base_device::wrio_w(uint8_t data)
 {
 	//
 	//  0xc0 = bank address
@@ -483,8 +489,8 @@ WRITE8_MEMBER( atari_jsa_oki_base_device::wrio_w )
 	m_cpu_bank->set_entry((data >> 6) & 3);
 
 	// coin counters
-	coin_counter_w(space.machine(), 1, (data >> 5) & 1);
-	coin_counter_w(space.machine(), 0, (data >> 4) & 1);
+	machine().bookkeeping().coin_counter_w(1, (data >> 5) & 1);
+	machine().bookkeeping().coin_counter_w(0, (data >> 4) & 1);
 
 	// update the OKI frequency
 	if (m_oki1 != nullptr)
@@ -507,8 +513,7 @@ WRITE8_MEMBER( atari_jsa_oki_base_device::wrio_w )
 		m_oki1_banklo->set_entry((m_oki1_banklo->entry() & 2) | ((data >> 1) & 1));
 
 	// reset the YM2151 if needed
-	if ((data & 1) == 0)
-		m_ym2151->reset();
+	m_ym2151->reset_w(BIT(data, 0));
 }
 
 
@@ -517,7 +522,7 @@ WRITE8_MEMBER( atari_jsa_oki_base_device::wrio_w )
 //  register on JSA II, III, and IIIs boards
 //-------------------------------------------------
 
-WRITE8_MEMBER( atari_jsa_oki_base_device::mix_w )
+void atari_jsa_oki_base_device::mix_w(uint8_t data)
 {
 	//
 	//  0xc0 = right OKI6295 bank bits 0-1 (JSA IIIs only)
@@ -530,6 +535,8 @@ WRITE8_MEMBER( atari_jsa_oki_base_device::mix_w )
 	// update the right OKI bank (JSA IIIs only)
 	if (m_oki2_banklo != nullptr)
 		m_oki2_banklo->set_entry((data >> 6) & 3);
+
+	// TODO: emulate the low pass filter!
 
 	// update the (left) OKI bank (JSA III/IIIs only)
 	if (m_oki1_banklo != nullptr)
@@ -547,7 +554,7 @@ WRITE8_MEMBER( atari_jsa_oki_base_device::mix_w )
 //  total sound volume on JSA III/IIIs boards
 //-------------------------------------------------
 
-WRITE8_MEMBER( atari_jsa_oki_base_device::overall_volume_w )
+void atari_jsa_oki_base_device::overall_volume_w(uint8_t data)
 {
 	m_overall_volume = data / 127.0;
 	update_all_volumes();
@@ -568,19 +575,19 @@ void atari_jsa_oki_base_device::device_start()
 	save_item(NAME(m_overall_volume));
 
 	// configure JSA III ADPCM banking
-	if (m_oki1_banklo != nullptr && m_oki1_bankhi != nullptr && m_oki1->region()->bytes() >= 0x80000)
+	if (m_oki1_banklo.found() && m_oki1_bankhi.found() && m_oki1_region->bytes() >= 0x80000)
 	{
-		m_oki1_banklo->configure_entries(0, 2, m_oki1->region()->base() + 0x00000, 0x00000);
-		m_oki1_banklo->configure_entries(2, 2, m_oki1->region()->base() + 0x20000, 0x20000);
-		m_oki1_bankhi->set_base(m_oki1->region()->base() + 0x60000);
+		m_oki1_banklo->configure_entries(0, 2, m_oki1_region->base() + 0x00000, 0x00000);
+		m_oki1_banklo->configure_entries(2, 2, m_oki1_region->base() + 0x20000, 0x20000);
+		m_oki1_bankhi->set_base(m_oki1_region->base() + 0x60000);
 	}
 
 	// configure JSA IIIs ADPCM banking
-	if (m_oki2_banklo != nullptr && m_oki2_bankhi != nullptr && m_oki2->region()->bytes() >= 0x80000)
+	if (m_oki2_banklo.found() && m_oki2_bankhi.found() && m_oki2_region->bytes() >= 0x80000)
 	{
-		m_oki2_banklo->configure_entries(0, 2, m_oki2->region()->base() + 0x00000, 0x00000);
-		m_oki2_banklo->configure_entries(2, 2, m_oki2->region()->base() + 0x20000, 0x20000);
-		m_oki2_bankhi->set_base(m_oki1->region()->base() + 0x60000);
+		m_oki2_banklo->configure_entries(0, 2, m_oki2_region->base() + 0x00000, 0x00000);
+		m_oki2_banklo->configure_entries(2, 2, m_oki2_region->base() + 0x20000, 0x20000);
+		m_oki2_bankhi->set_base(m_oki2_region->base() + 0x60000);
 	}
 }
 
@@ -608,9 +615,9 @@ void atari_jsa_oki_base_device::device_reset()
 
 void atari_jsa_oki_base_device::update_all_volumes()
 {
-	if (m_oki1 != nullptr)
+	if (m_oki1.found())
 		m_oki1->set_output_gain(ALL_OUTPUTS, m_overall_volume * m_oki6295_volume * m_ym2151_ct1);
-	if (m_oki2 != nullptr)
+	if (m_oki2.found())
 		m_oki2->set_output_gain(ALL_OUTPUTS, m_overall_volume * m_oki6295_volume * m_ym2151_ct1);
 	m_ym2151->set_output_gain(ALL_OUTPUTS, m_overall_volume * m_ym2151_volume);
 }
@@ -625,13 +632,14 @@ void atari_jsa_oki_base_device::update_all_volumes()
 //  atari_jsa_i_device: Constructor
 //-------------------------------------------------
 
-atari_jsa_i_device::atari_jsa_i_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: atari_jsa_base_device(mconfig, ATARI_JSA_I, "Atari JSA I Sound Board", tag, owner, clock, "atjsa1", 2),
+atari_jsa_i_device::atari_jsa_i_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: atari_jsa_base_device(mconfig, ATARI_JSA_I, tag, owner, clock, 2),
 		m_pokey(*this, "pokey"),
 		m_tms5220(*this, "tms"),
 		m_jsai(*this, "JSAI"),
 		m_pokey_volume(1.0),
-		m_tms5220_volume(1.0)
+		m_tms5220_volume(1.0),
+		m_inverted_coins(false)
 {
 }
 
@@ -641,7 +649,7 @@ atari_jsa_i_device::atari_jsa_i_device(const machine_config &mconfig, const char
 //  port on a JSA I board
 //-------------------------------------------------
 
-READ8_MEMBER( atari_jsa_i_device::rdio_r )
+uint8_t atari_jsa_i_device::rdio_r()
 {
 	//
 	//  0x80 = self test
@@ -654,7 +662,7 @@ READ8_MEMBER( atari_jsa_i_device::rdio_r )
 	//  0x01 = coin 1
 	//
 
-	UINT8 result = m_jsai->read();
+	uint8_t result = m_jsai->read();
 	if (!m_test_read_cb())
 		result ^= 0x80;
 	if (m_tms5220 != nullptr && m_tms5220->readyq_r() == 0)
@@ -671,7 +679,7 @@ READ8_MEMBER( atari_jsa_i_device::rdio_r )
 //  port on a JSA I board
 //-------------------------------------------------
 
-WRITE8_MEMBER( atari_jsa_i_device::wrio_w )
+void atari_jsa_i_device::wrio_w(uint8_t data)
 {
 	//
 	//  0xc0 = bank address
@@ -687,21 +695,20 @@ WRITE8_MEMBER( atari_jsa_i_device::wrio_w )
 	m_cpu_bank->set_entry((data >> 6) & 3);
 
 	// coin counters
-	coin_counter_w(machine(), 1, (data >> 5) & 1);
-	coin_counter_w(machine(), 0, (data >> 4) & 1);
+	machine().bookkeeping().coin_counter_w(1, (data >> 5) & 1);
+	machine().bookkeeping().coin_counter_w(0, (data >> 4) & 1);
 
 	// handle TMS5220 I/O
 	if (m_tms5220 != nullptr)
 	{
 		int count = 5 | ((data >> 2) & 2);
-		m_tms5220->set_frequency(JSA_MASTER_CLOCK*2 / (16 - count));
+		m_tms5220->set_unscaled_clock(JSA_MASTER_CLOCK*2 / (16 - count));
 		m_tms5220->wsq_w((data >> 1) & 1);
 		m_tms5220->rsq_w((data >> 2) & 1);
 	}
 
 	// reset the YM2151 if needed
-	if ((data & 1) == 0)
-		m_ym2151->reset();
+	m_ym2151->reset_w(BIT(data, 0));
 }
 
 
@@ -710,7 +717,7 @@ WRITE8_MEMBER( atari_jsa_i_device::wrio_w )
 //  on a JSA I board
 //-------------------------------------------------
 
-WRITE8_MEMBER( atari_jsa_i_device::mix_w )
+void atari_jsa_i_device::mix_w(uint8_t data)
 {
 	//
 	//  0xc0 = TMS5220 volume (0-3)
@@ -731,10 +738,10 @@ WRITE8_MEMBER( atari_jsa_i_device::mix_w )
 //  voice data register
 //-------------------------------------------------
 
-WRITE8_MEMBER( atari_jsa_i_device::tms5220_voice )
+void atari_jsa_i_device::tms5220_voice(uint8_t data)
 {
 	if (m_tms5220 != nullptr)
-		m_tms5220->data_w(space, 0, data);
+		m_tms5220->data_w(data);
 }
 
 
@@ -743,10 +750,10 @@ WRITE8_MEMBER( atari_jsa_i_device::tms5220_voice )
 //  present
 //-------------------------------------------------
 
-READ8_MEMBER( atari_jsa_i_device::pokey_r )
+uint8_t atari_jsa_i_device::pokey_r(offs_t offset)
 {
 	if (m_pokey != nullptr)
-		return m_pokey->read(space, offset);
+		return m_pokey->read(offset);
 	return 0xff;
 }
 
@@ -756,21 +763,42 @@ READ8_MEMBER( atari_jsa_i_device::pokey_r )
 //  present
 //-------------------------------------------------
 
-WRITE8_MEMBER( atari_jsa_i_device::pokey_w )
+void atari_jsa_i_device::pokey_w(offs_t offset, uint8_t data)
 {
 	if (m_pokey != nullptr)
-		m_pokey->write(space, offset, data);
+		m_pokey->write(offset, data);
 }
 
 
 //-------------------------------------------------
-//  device_mconfig_additions - return a pointer to
-//  the device's machine fragment
+//  device_add_mconfig - add device configuration
 //-------------------------------------------------
 
-machine_config_constructor atari_jsa_i_device::device_mconfig_additions() const
+// Fully populated JSA-I, not used by anyone
+void atari_jsa_i_device::device_add_mconfig(machine_config &config)
 {
-	return MACHINE_CONFIG_NAME( jsa_i_config );
+	// basic machine hardware
+	M6502(config, m_jsacpu, JSA_MASTER_CLOCK/2);
+	m_jsacpu->set_addrmap(AS_PROGRAM, &atari_jsa_i_device::atarijsa1_map);
+	m_jsacpu->set_periodic_int(FUNC(atari_jsa_i_device::sound_irq_gen), attotime::from_hz(JSA_MASTER_CLOCK/4/16/16/14));
+
+	// sound hardware
+	ATARI_SOUND_COMM(config, m_soundcomm, m_jsacpu)
+		.int_callback().set(FUNC(atari_jsa_base_device::main_int_write_line));
+
+	YM2151(config, m_ym2151, JSA_MASTER_CLOCK);
+	m_ym2151->irq_handler().set(FUNC(atari_jsa_i_device::ym2151_irq_gen));
+	m_ym2151->port_write_handler().set(FUNC(atari_jsa_base_device::ym2151_port_w));
+	m_ym2151->add_route(0, *this, 0.60, AUTO_ALLOC_INPUT, 0);
+	m_ym2151->add_route(1, *this, 0.60, AUTO_ALLOC_INPUT, 1);
+
+	POKEY(config, m_pokey, JSA_MASTER_CLOCK/2);
+	m_pokey->add_route(ALL_OUTPUTS, *this, 0.40, AUTO_ALLOC_INPUT, 0);
+	m_pokey->add_route(ALL_OUTPUTS, *this, 0.40, AUTO_ALLOC_INPUT, 1);
+
+	TMS5220C(config, m_tms5220, JSA_MASTER_CLOCK*2/11); // potentially JSA_MASTER_CLOCK/9 as well
+	m_tms5220->add_route(ALL_OUTPUTS, *this, 1.0, AUTO_ALLOC_INPUT, 0);
+	m_tms5220->add_route(ALL_OUTPUTS, *this, 1.0, AUTO_ALLOC_INPUT, 1);
 }
 
 
@@ -781,7 +809,7 @@ machine_config_constructor atari_jsa_i_device::device_mconfig_additions() const
 
 ioport_constructor atari_jsa_i_device::device_input_ports() const
 {
-	return INPUT_PORTS_NAME( jsa_i_ioports );
+	return m_inverted_coins ? INPUT_PORTS_NAME( jsa_i_ioports_inverted_coins ) : INPUT_PORTS_NAME( jsa_i_ioports );
 }
 
 
@@ -840,8 +868,8 @@ void atari_jsa_i_device::update_all_volumes()
 //  atari_jsa_ii_device: Constructor
 //-------------------------------------------------
 
-atari_jsa_ii_device::atari_jsa_ii_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: atari_jsa_oki_base_device(mconfig, ATARI_JSA_II, "Atari JSA II Sound Board", tag, owner, clock, "atjsa2", 1)
+atari_jsa_ii_device::atari_jsa_ii_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: atari_jsa_oki_base_device(mconfig, ATARI_JSA_II, tag, owner, clock, 1)
 	, m_jsaii(*this, "JSAII")
 {
 }
@@ -852,7 +880,7 @@ atari_jsa_ii_device::atari_jsa_ii_device(const machine_config &mconfig, const ch
 //  port on a JSA II board
 //-------------------------------------------------
 
-READ8_MEMBER( atari_jsa_ii_device::rdio_r )
+uint8_t atari_jsa_ii_device::rdio_r()
 {
 	//
 	//  0x80 = self test
@@ -865,7 +893,7 @@ READ8_MEMBER( atari_jsa_ii_device::rdio_r )
 	//  0x01 = coin 1
 	//
 
-	UINT8 result = m_jsaii->read();
+	uint8_t result = m_jsaii->read();
 	if (!m_test_read_cb())
 		result ^= 0x80;
 
@@ -874,13 +902,28 @@ READ8_MEMBER( atari_jsa_ii_device::rdio_r )
 
 
 //-------------------------------------------------
-//  device_mconfig_additions - return a pointer to
-//  the device's machine fragment
+//  device_add_mconfig - add device configuration
 //-------------------------------------------------
 
-machine_config_constructor atari_jsa_ii_device::device_mconfig_additions() const
+// Fully populated JSA-II
+void atari_jsa_ii_device::device_add_mconfig(machine_config &config)
 {
-	return MACHINE_CONFIG_NAME( jsa_ii_config );
+	// basic machine hardware
+	M6502(config, m_jsacpu, JSA_MASTER_CLOCK/2);
+	m_jsacpu->set_addrmap(AS_PROGRAM, &atari_jsa_ii_device::atarijsa2_map);
+	m_jsacpu->set_periodic_int(FUNC(atari_jsa_ii_device::sound_irq_gen), attotime::from_hz(JSA_MASTER_CLOCK/4/16/16/14));
+
+	// sound hardware
+	ATARI_SOUND_COMM(config, m_soundcomm, m_jsacpu)
+		.int_callback().set(FUNC(atari_jsa_base_device::main_int_write_line));
+
+	YM2151(config, m_ym2151, JSA_MASTER_CLOCK);
+	m_ym2151->irq_handler().set(FUNC(atari_jsa_ii_device::ym2151_irq_gen));
+	m_ym2151->port_write_handler().set(FUNC(atari_jsa_base_device::ym2151_port_w));
+	m_ym2151->add_route(ALL_OUTPUTS, *this, 0.60, AUTO_ALLOC_INPUT, 0);
+
+	OKIM6295(config, m_oki1, JSA_MASTER_CLOCK/3, okim6295_device::PIN7_HIGH);
+	m_oki1->add_route(ALL_OUTPUTS, *this, 0.75, AUTO_ALLOC_INPUT, 0);
 }
 
 
@@ -904,14 +947,13 @@ ioport_constructor atari_jsa_ii_device::device_input_ports() const
 //  atari_jsa_iii_device: Constructor
 //-------------------------------------------------
 
-atari_jsa_iii_device::atari_jsa_iii_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: atari_jsa_oki_base_device(mconfig, ATARI_JSA_III, "Atari JSA III Sound Board", tag, owner, clock, "atjsa3", 1)
-	, m_jsaiii(*this, "JSAIII")
+atari_jsa_iii_device::atari_jsa_iii_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: atari_jsa_iii_device(mconfig, ATARI_JSA_III, tag, owner, clock, 1)
 {
 }
 
-atari_jsa_iii_device::atari_jsa_iii_device(const machine_config &mconfig, device_type devtype, const char *name, const char *tag, device_t *owner, UINT32 clock, const char *shortname, int channels)
-	: atari_jsa_oki_base_device(mconfig, devtype, name, tag, owner, clock, shortname, channels)
+atari_jsa_iii_device::atari_jsa_iii_device(const machine_config &mconfig, device_type devtype, const char *tag, device_t *owner, uint32_t clock, int channels)
+	: atari_jsa_oki_base_device(mconfig, devtype, tag, owner, clock, channels)
 	, m_jsaiii(*this, "JSAIII")
 {
 }
@@ -922,7 +964,7 @@ atari_jsa_iii_device::atari_jsa_iii_device(const machine_config &mconfig, device
 //  port on a JSA III/IIIs board
 //-------------------------------------------------
 
-READ8_MEMBER( atari_jsa_iii_device::rdio_r )
+uint8_t atari_jsa_iii_device::rdio_r()
 {
 	//
 	//  0x80 = self test (active high)
@@ -935,7 +977,7 @@ READ8_MEMBER( atari_jsa_iii_device::rdio_r )
 	//  0x01 = coin R (active high)
 	//
 
-	UINT8 result = m_jsaiii->read();
+	uint8_t result = m_jsaiii->read();
 	if (!m_test_read_cb())
 		result ^= 0x90;
 	return result;
@@ -943,13 +985,29 @@ READ8_MEMBER( atari_jsa_iii_device::rdio_r )
 
 
 //-------------------------------------------------
-//  device_mconfig_additions - return a pointer to
-//  the device's machine fragment
+//  device_add_mconfig - add device configuration
 //-------------------------------------------------
 
-machine_config_constructor atari_jsa_iii_device::device_mconfig_additions() const
+	// Fully populated JSA-III
+void atari_jsa_iii_device::device_add_mconfig(machine_config &config)
 {
-	return MACHINE_CONFIG_NAME( jsa_iii_config );
+	// basic machine hardware
+	M6502(config, m_jsacpu, JSA_MASTER_CLOCK/2);
+	m_jsacpu->set_addrmap(AS_PROGRAM, &atari_jsa_iii_device::atarijsa3_map);
+	m_jsacpu->set_periodic_int(FUNC(atari_jsa_iii_device::sound_irq_gen), attotime::from_hz(JSA_MASTER_CLOCK/4/16/16/14));
+
+	// sound hardware
+	ATARI_SOUND_COMM(config, m_soundcomm, m_jsacpu)
+		.int_callback().set(FUNC(atari_jsa_base_device::main_int_write_line));
+
+	YM2151(config, m_ym2151, JSA_MASTER_CLOCK);
+	m_ym2151->irq_handler().set(FUNC(atari_jsa_iii_device::ym2151_irq_gen));
+	m_ym2151->port_write_handler().set(FUNC(atari_jsa_base_device::ym2151_port_w));
+	m_ym2151->add_route(ALL_OUTPUTS, *this, 0.60, AUTO_ALLOC_INPUT, 0);
+
+	OKIM6295(config, m_oki1, JSA_MASTER_CLOCK/3, okim6295_device::PIN7_HIGH);
+	m_oki1->set_addrmap(0, &atari_jsa_iii_device::jsa3_oki1_map);
+	m_oki1->add_route(ALL_OUTPUTS, *this, 0.75, AUTO_ALLOC_INPUT, 0);
 }
 
 
@@ -973,18 +1031,26 @@ ioport_constructor atari_jsa_iii_device::device_input_ports() const
 //  atari_jsa_iiis_device: Constructor
 //-------------------------------------------------
 
-atari_jsa_iiis_device::atari_jsa_iiis_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: atari_jsa_iii_device(mconfig, ATARI_JSA_IIIS, "Atari JSA IIIs Sound Board", tag, owner, clock, "atjsa3s", 2)
+atari_jsa_iiis_device::atari_jsa_iiis_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: atari_jsa_iii_device(mconfig, ATARI_JSA_IIIS, tag, owner, clock, 2)
 {
 }
 
 
 //-------------------------------------------------
-//  device_mconfig_additions - return a pointer to
-//  the device's machine fragment
+//  device_add_mconfig - add device configuration
 //-------------------------------------------------
 
-machine_config_constructor atari_jsa_iiis_device::device_mconfig_additions() const
+// Fully populated JSA_IIIs
+void atari_jsa_iiis_device::device_add_mconfig(machine_config &config)
 {
-	return MACHINE_CONFIG_NAME( jsa_iiis_config );
+	atari_jsa_iii_device::device_add_mconfig(config);
+
+	m_ym2151->reset_routes();
+	m_ym2151->add_route(0, *this, 0.60, AUTO_ALLOC_INPUT, 0);
+	m_ym2151->add_route(1, *this, 0.60, AUTO_ALLOC_INPUT, 1);
+
+	OKIM6295(config, m_oki2, JSA_MASTER_CLOCK/3, okim6295_device::PIN7_HIGH);
+	m_oki2->add_route(ALL_OUTPUTS, *this, 0.75, AUTO_ALLOC_INPUT, 1);
+	m_oki2->set_addrmap(0, &atari_jsa_iiis_device::jsa3_oki2_map);
 }

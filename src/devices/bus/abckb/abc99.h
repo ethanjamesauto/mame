@@ -6,15 +6,15 @@
 
 *********************************************************************/
 
+#ifndef MAME_BUS_ABCKB_ABC99_H
+#define MAME_BUS_ABCKB_ABC99_H
+
 #pragma once
 
-#ifndef __ABC99__
-#define __ABC99__
-
-#include "emu.h"
-#include "cpu/mcs48/mcs48.h"
 #include "abckb.h"
-#include "sound/speaker.h"
+
+#include "cpu/mcs48/mcs48.h"
+#include "sound/spkrdev.h"
 
 
 
@@ -29,32 +29,23 @@ class abc99_device :  public device_t,
 {
 public:
 	// construction/destruction
-	abc99_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
-
-	// optional information overrides
-	virtual const rom_entry *device_rom_region() const override;
-	virtual machine_config_constructor device_mconfig_additions() const override;
-	virtual ioport_constructor device_input_ports() const override;
-
-	// abc_keyboard_interface overrides
-	virtual void txd_w(int state) override;
+	abc99_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
 	DECLARE_INPUT_CHANGED_MEMBER( keyboard_reset );
-
-	DECLARE_WRITE8_MEMBER( z2_led_w );
-	DECLARE_WRITE8_MEMBER( z2_p1_w );
-	DECLARE_READ8_MEMBER( z2_p2_r );
-	DECLARE_READ8_MEMBER( z2_t0_r );
-	DECLARE_READ8_MEMBER( z2_t1_r );
-	DECLARE_READ8_MEMBER( z5_p1_r );
-	DECLARE_WRITE8_MEMBER( z5_p2_w );
-	DECLARE_READ8_MEMBER( z5_t1_r );
 
 protected:
 	// device-level overrides
 	virtual void device_start() override;
 	virtual void device_reset() override;
 	virtual void device_timer(emu_timer &timer, device_timer_id id, int param, void *ptr) override;
+
+	// optional information overrides
+	virtual const tiny_rom_entry *device_rom_region() const override;
+	virtual void device_add_mconfig(machine_config &config) override;
+	virtual ioport_constructor device_input_ports() const override;
+
+	// abc_keyboard_interface overrides
+	virtual void txd_w(int state) override;
 
 private:
 	enum
@@ -84,14 +75,29 @@ private:
 	inline void key_down(int state);
 	inline void scan_mouse();
 
+	void z2_p1_w(uint8_t data);
+	uint8_t z2_p2_r();
+	DECLARE_READ_LINE_MEMBER( z2_t0_r );
+	DECLARE_READ_LINE_MEMBER( z2_t1_r );
+
+	void z2_led_w(uint8_t data);
+	uint8_t z5_p1_r();
+	void z5_p2_w(uint8_t data);
+	uint8_t z5_t1_r();
+
+	void abc99_z2_io(address_map &map);
+	void abc99_z2_mem(address_map &map);
+	void abc99_z5_mem(address_map &map);
+
 	emu_timer *m_serial_timer;
 	emu_timer *m_mouse_timer;
 
-	required_device<cpu_device> m_maincpu;
-	required_device<cpu_device> m_mousecpu;
+	required_device<i8035_device> m_maincpu;
+	required_device<i8035_device> m_mousecpu;
 	required_device<speaker_sound_device> m_speaker;
 	required_ioport m_z14;
 	required_ioport m_mouseb;
+	output_finder<11> m_leds;
 
 	int m_si;
 	int m_si_en;
@@ -107,8 +113,7 @@ private:
 
 
 // device type definition
-extern const device_type ABC99;
+DECLARE_DEVICE_TYPE(ABC99, abc99_device)
 
 
-
-#endif
+#endif // MAME_BUS_ABCKB_ABC99_H

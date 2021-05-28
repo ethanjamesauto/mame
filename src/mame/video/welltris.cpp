@@ -2,6 +2,7 @@
 // copyright-holders:David Haywood
 #include "emu.h"
 #include "includes/welltris.h"
+#include "screen.h"
 
 
 
@@ -17,7 +18,7 @@ void welltris_state::setbank(int num, int bank)
 
 /* Not really enough evidence here */
 
-WRITE16_MEMBER(welltris_state::palette_bank_w)
+void welltris_state::palette_bank_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	if (ACCESSING_BITS_0_7)
 	{
@@ -34,7 +35,7 @@ WRITE16_MEMBER(welltris_state::palette_bank_w)
 	}
 }
 
-WRITE16_MEMBER(welltris_state::gfxbank_w)
+void welltris_state::gfxbank_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	if (ACCESSING_BITS_0_7)
 	{
@@ -43,7 +44,7 @@ WRITE16_MEMBER(welltris_state::gfxbank_w)
 	}
 }
 
-WRITE16_MEMBER(welltris_state::scrollreg_w)
+void welltris_state::scrollreg_w(offs_t offset, uint16_t data)
 {
 	switch (offset) {
 		case 0: m_scrollx = data - 14; break;
@@ -53,16 +54,16 @@ WRITE16_MEMBER(welltris_state::scrollreg_w)
 
 TILE_GET_INFO_MEMBER(welltris_state::get_tile_info)
 {
-	UINT16 code = m_charvideoram[tile_index];
+	uint16_t code = m_charvideoram[tile_index];
 	int bank = (code & 0x1000) >> 12;
 
-	SET_TILE_INFO_MEMBER(0,
+	tileinfo.set(0,
 			(code & 0x0fff) + (m_gfxbank[bank] << 12),
 			((code & 0xe000) >> 13) + (8 * m_charpalettebank),
 			0);
 }
 
-WRITE16_MEMBER(welltris_state::charvideoram_w)
+void welltris_state::charvideoram_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	COMBINE_DATA(&m_charvideoram[offset]);
 	m_char_tilemap->mark_tile_dirty(offset);
@@ -70,7 +71,7 @@ WRITE16_MEMBER(welltris_state::charvideoram_w)
 
 void welltris_state::video_start()
 {
-	m_char_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(welltris_state::get_tile_info),this), TILEMAP_SCAN_ROWS,  8, 8, 64, 32);
+	m_char_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(welltris_state::get_tile_info)), TILEMAP_SCAN_ROWS, 8, 8, 64, 32);
 
 	m_char_tilemap->set_transparent_pen(15);
 
@@ -84,20 +85,17 @@ void welltris_state::video_start()
 
 void welltris_state::draw_background(bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
-	int x, y;
-	int pixdata;
+	for (int y = 0; y < 256; y++) {
+		for (int x = 0; x < 512 / 2; x++) {
+			int pixdata = m_pixelram[(x & 0xff) + (y & 0xff) * 256];
 
-	for (y = 0; y < 256; y++) {
-		for (x = 0; x < 512 / 2; x++) {
-			pixdata = m_pixelram[(x & 0xff) + (y & 0xff) * 256];
-
-			bitmap.pix16(y, (x * 2) + 0) = (pixdata >> 8) + (0x100 * m_pixelpalettebank) + 0x400;
-			bitmap.pix16(y, (x * 2) + 1) = (pixdata & 0xff) + (0x100 * m_pixelpalettebank) + 0x400;
+			bitmap.pix(y, (x * 2) + 0) = (pixdata >> 8) + (0x100 * m_pixelpalettebank) + 0x400;
+			bitmap.pix(y, (x * 2) + 1) = (pixdata & 0xff) + (0x100 * m_pixelpalettebank) + 0x400;
 		}
 	}
 }
 
-UINT32 welltris_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t welltris_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	m_char_tilemap->set_scrollx(0, m_scrollx);
 	m_char_tilemap->set_scrolly(0, m_scrolly);

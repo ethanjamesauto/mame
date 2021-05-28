@@ -8,8 +8,10 @@
 
 #include "sound/dac.h"
 #include "sound/samples.h"
+#include "emupal.h"
+#include "screen.h"
 
-#define EXIDY_MASTER_CLOCK              (XTAL_11_289MHz)
+#define EXIDY_MASTER_CLOCK              (XTAL(11'289'000))
 #define EXIDY_CPU_CLOCK                 (EXIDY_MASTER_CLOCK / 16)
 #define EXIDY_PIXEL_CLOCK               (EXIDY_MASTER_CLOCK / 2)
 #define EXIDY_HTOTAL                    (0x150)
@@ -50,58 +52,72 @@ public:
 		m_color_latch(*this, "color_latch"),
 		m_characterram(*this, "characterram") { }
 
+	void base(machine_config &config);
+	void mtrap(machine_config &config);
+	void venture(machine_config &config);
+	void fax(machine_config &config);
+	void teetert(machine_config &config);
+	void sidetrac(machine_config &config);
+	void spectar(machine_config &config);
+	void spectar_audio(machine_config &config);
+	void rallys(machine_config &config);
+	void pepper2(machine_config &config);
+	void targ(machine_config &config);
+	void targ_audio(machine_config &config);
 
+	void init_fax();
+	void init_sidetrac();
+	void init_pepper2();
+	void init_targ();
+	void init_rallys();
+	void init_mtrap();
+	void init_teetert();
+	void init_venture();
+	void init_spectar();
+	void init_phantoma();
+
+	DECLARE_CUSTOM_INPUT_MEMBER(teetert_input_r);
+
+private:
 	required_device<cpu_device> m_maincpu;
-	optional_device<dac_device> m_dac;
+	optional_device<dac_bit_interface> m_dac;
 	optional_device<samples_device> m_samples;
 	required_device<gfxdecode_device> m_gfxdecode;
 	required_device<screen_device> m_screen;
 	required_device<palette_device> m_palette;
 
-	required_shared_ptr<UINT8> m_videoram;
-	required_shared_ptr<UINT8> m_sprite1_xpos;
-	required_shared_ptr<UINT8> m_sprite1_ypos;
-	required_shared_ptr<UINT8> m_sprite2_xpos;
-	required_shared_ptr<UINT8> m_sprite2_ypos;
-	required_shared_ptr<UINT8> m_spriteno;
-	required_shared_ptr<UINT8> m_sprite_enable;
-	required_shared_ptr<UINT8> m_color_latch;
-	required_shared_ptr<UINT8> m_characterram;
+	required_shared_ptr<uint8_t> m_videoram;
+	required_shared_ptr<uint8_t> m_sprite1_xpos;
+	required_shared_ptr<uint8_t> m_sprite1_ypos;
+	required_shared_ptr<uint8_t> m_sprite2_xpos;
+	required_shared_ptr<uint8_t> m_sprite2_ypos;
+	required_shared_ptr<uint8_t> m_spriteno;
+	required_shared_ptr<uint8_t> m_sprite_enable;
+	required_shared_ptr<uint8_t> m_color_latch;
+	optional_shared_ptr<uint8_t> m_characterram;
 
-	UINT8 m_last_dial;
-	UINT8 m_collision_mask;
-	UINT8 m_collision_invert;
+	uint8_t m_last_dial;
+	uint8_t m_collision_mask;
+	uint8_t m_collision_invert;
 	int m_is_2bpp;
-	UINT8 m_int_condition;
+	uint8_t m_int_condition;
 	bitmap_ind16 m_background_bitmap;
 	bitmap_ind16 m_motion_object_1_vid;
 	bitmap_ind16 m_motion_object_2_vid;
 	bitmap_ind16 m_motion_object_2_clip;
 
-	DECLARE_WRITE8_MEMBER(fax_bank_select_w);
-	DECLARE_READ8_MEMBER(exidy_interrupt_r);
-
-	DECLARE_CUSTOM_INPUT_MEMBER(teetert_input_r);
-
-	DECLARE_DRIVER_INIT(fax);
-	DECLARE_DRIVER_INIT(sidetrac);
-	DECLARE_DRIVER_INIT(pepper2);
-	DECLARE_DRIVER_INIT(targ);
-	DECLARE_DRIVER_INIT(rallys);
-	DECLARE_DRIVER_INIT(mtrap);
-	DECLARE_DRIVER_INIT(teetert);
-	DECLARE_DRIVER_INIT(venture);
-	DECLARE_DRIVER_INIT(spectar);
-	DECLARE_DRIVER_INIT(phantoma);
+	void fax_bank_select_w(uint8_t data);
+	uint8_t exidy_interrupt_r();
+	void mtrap_ocl_w(uint8_t data);
 
 	virtual void video_start() override;
 	DECLARE_MACHINE_START(teetert);
 
-	UINT32 screen_update_exidy(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
+	uint32_t screen_update_exidy(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
 
 	INTERRUPT_GEN_MEMBER(exidy_vblank_interrupt);
 
-	void exidy_video_config(UINT8 _collision_mask, UINT8 _collision_invert, int _is_2bpp);
+	void exidy_video_config(uint8_t _collision_mask, uint8_t _collision_invert, int _is_2bpp);
 	inline void latch_condition(int collision);
 	inline void set_1_color(int index, int which);
 	void set_colors();
@@ -112,22 +128,29 @@ public:
 
 	/* Targ and Spectar samples */
 	int m_max_freq;
-	UINT8 m_port_1_last;
-	UINT8 m_port_2_last;
-	UINT8 m_tone_freq;
-	UINT8 m_tone_active;
-	UINT8 m_tone_pointer;
-	DECLARE_WRITE8_MEMBER(targ_audio_1_w);
-	DECLARE_WRITE8_MEMBER(targ_audio_2_w);
-	DECLARE_WRITE8_MEMBER(spectar_audio_2_w);
-	void adjust_sample(UINT8 freq);
+	uint8_t m_port_1_last;
+	uint8_t m_port_2_last;
+	uint8_t m_tone_freq;
+	uint8_t m_tone_active;
+	uint8_t m_tone_pointer;
+	void targ_audio_1_w(uint8_t data);
+	void targ_audio_2_w(uint8_t data);
+	void spectar_audio_2_w(uint8_t data);
+	void adjust_sample(uint8_t freq);
 	void common_audio_start(int freq);
 	SAMPLES_START_CB_MEMBER(spectar_audio_start);
 	SAMPLES_START_CB_MEMBER(targ_audio_start);
 
+	void exidy_map(address_map &map);
+	void fax_map(address_map &map);
+	void mtrap_map(address_map &map);
+	void pepper2_map(address_map &map);
+	void rallys_map(address_map &map);
+	void sidetrac_map(address_map &map);
+	void spectar_map(address_map &map);
+	void targ_map(address_map &map);
+	void venture_map(address_map &map);
+
 protected:
 	virtual void device_timer(emu_timer &timer, device_timer_id id, int param, void *ptr) override;
 };
-
-MACHINE_CONFIG_EXTERN( spectar_audio );
-MACHINE_CONFIG_EXTERN( targ_audio );

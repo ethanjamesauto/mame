@@ -123,178 +123,151 @@ BG0 palette intensity ( $C47F, $C4FF )
   Callbacks for the tilemap code
 ***************************************************************************/
 
-TILE_GET_INFO_MEMBER(argus_state::argus_get_tx_tile_info)
+template<int Gfx>
+TILE_GET_INFO_MEMBER(argus_common_state::get_tx_tile_info)
 {
-	UINT8 hi, lo;
-
 	tile_index <<= 1;
 
-	lo = m_txram[tile_index];
-	hi = m_txram[tile_index + 1];
+	u8 lo = m_txram[tile_index];
+	u8 hi = m_txram[tile_index + 1];
 
-	SET_TILE_INFO_MEMBER(3,
+	tileinfo.set(Gfx,
 			((hi & 0xc0) << 2) | lo,
 			hi & 0x0f,
 			TILE_FLIPYX((hi & 0x30) >> 4));
 }
 
-TILE_GET_INFO_MEMBER(argus_state::argus_get_bg0_tile_info)
+TILE_GET_INFO_MEMBER(argus_state::get_bg0_tile_info)
 {
-	UINT8 hi, lo;
+	// logical width is 65536(4096*16) but we load only 1024 pixel each
+	// for reduce RAM usage
+	tile_index = (((m_vrom_offset << 9) + tile_index) & 0x1ffff) << 1;
+	int vrom_offset = (tile_index >> 3);
+	tile_index = (m_vrom[0][vrom_offset & ~1] << 4) | ((m_vrom[0][vrom_offset | 1] & 0x7) << 12) | (tile_index & 0xf);
 
-	tile_index <<= 1;
+	u8 lo = m_vrom[1][tile_index];
+	u8 hi = m_vrom[1][tile_index | 1];
 
-	lo = m_dummy_bg0ram[tile_index];
-	hi = m_dummy_bg0ram[tile_index + 1];
-
-	SET_TILE_INFO_MEMBER(1,
+	tileinfo.set(1,
 			((hi & 0xc0) << 2) | lo,
 			hi & 0x0f,
 			TILE_FLIPYX((hi & 0x30) >> 4));
 }
 
-TILE_GET_INFO_MEMBER(argus_state::argus_get_bg1_tile_info)
+TILE_GET_INFO_MEMBER(argus_state::get_bg1_tile_info)
 {
-	UINT8 hi, lo;
-
 	tile_index <<= 1;
 
-	lo = m_bg1ram[tile_index];
-	hi = m_bg1ram[tile_index + 1];
+	u8 lo = m_bg1ram[tile_index];
+	u8 hi = m_bg1ram[tile_index + 1];
 
-	SET_TILE_INFO_MEMBER(2,
+	tileinfo.set(2,
 			lo,
 			hi & 0x0f,
 			TILE_FLIPYX((hi & 0x30) >> 4));
 }
 
-TILE_GET_INFO_MEMBER(argus_state::valtric_get_tx_tile_info)
+TILE_GET_INFO_MEMBER(valtric_state::get_bg_tile_info)
 {
-	UINT8 hi, lo;
-
 	tile_index <<= 1;
 
-	lo = m_txram[tile_index];
-	hi = m_txram[tile_index + 1];
+	u8 lo = m_bg1ram[tile_index];
+	u8 hi = m_bg1ram[tile_index + 1];
 
-	SET_TILE_INFO_MEMBER(2,
-			((hi & 0xc0) << 2) | lo,
-			hi & 0x0f,
-			TILE_FLIPYX((hi & 0x30) >> 4));
-}
-
-TILE_GET_INFO_MEMBER(argus_state::valtric_get_bg_tile_info)
-{
-	UINT8 hi, lo;
-
-	tile_index <<= 1;
-
-	lo = m_bg1ram[tile_index];
-	hi = m_bg1ram[tile_index + 1];
-
-	SET_TILE_INFO_MEMBER(1,
+	tileinfo.set(1,
 			((hi & 0xc0) << 2) | ((hi & 0x20) << 5) | lo,
 			hi & 0x0f,
 			0);
 }
 
-TILE_GET_INFO_MEMBER(argus_state::butasan_get_tx_tile_info)
+TILE_GET_INFO_MEMBER(butasan_state::get_tx_tile_info)
 {
-	UINT8 hi, lo;
-
-	tile_index ^= 0x3e0;
 	tile_index <<= 1;
 
-	lo = m_butasan_txram[tile_index];
-	hi = m_butasan_txram[tile_index + 1];
+	u8 lo = m_butasan_txram[tile_index];
+	u8 hi = m_butasan_txram[tile_index + 1];
 
-	SET_TILE_INFO_MEMBER(3,
+	tileinfo.set(3,
 			((hi & 0xc0) << 2) | lo,
 			hi & 0x0f,
 			TILE_FLIPYX((hi & 0x30) >> 4));
 }
 
-TILE_GET_INFO_MEMBER(argus_state::butasan_get_bg0_tile_info)
+TILE_GET_INFO_MEMBER(butasan_state::get_bg0_tile_info)
 {
-	UINT8 hi, lo;
-	int attrib;
+	tile_index <<= 1;
 
-	attrib = (tile_index & 0x00f) | ((tile_index & 0x3e0) >> 1) | ((tile_index & 0x010) << 5);
-	attrib ^= 0x0f0;
-	attrib <<= 1;
+	u8 lo = m_butasan_bg0ram[tile_index];
+	u8 hi = m_butasan_bg0ram[tile_index + 1];
 
-	lo = m_butasan_bg0ram[attrib];
-	hi = m_butasan_bg0ram[attrib + 1];
-
-	SET_TILE_INFO_MEMBER(1,
+	tileinfo.set(1,
 			((hi & 0xc0) << 2) | lo,
 			hi & 0x0f,
 			TILE_FLIPYX((hi & 0x30) >> 4));
 }
 
-TILE_GET_INFO_MEMBER(argus_state::butasan_get_bg1_tile_info)
+TILE_GET_INFO_MEMBER(butasan_state::get_bg1_tile_info)
 {
-	int attrib, tile;
+	int const tile = m_butasan_bg1ram[tile_index] | ((m_butasan_bg1_status & 2) << 7);
 
-	attrib = (tile_index & 0x00f) | ((tile_index & 0x3e0) >> 1) | ((tile_index & 0x010) << 5);
-	attrib ^= 0x0f0;
-
-	tile = m_butasan_bg1ram[attrib] | ((m_butasan_bg1_status & 2) << 7);
-
-	SET_TILE_INFO_MEMBER(2,
+	tileinfo.set(2,
 			tile,
 			(tile & 0x80) >> 7,
 			0);
 }
 
+TILEMAP_MAPPER_MEMBER(butasan_state::bg_scan)
+{
+	/* logical (col,row) -> memory offset */
+	return (col & 0x0f) | ((row ^ 0x0f) << 4) | ((col & 0x10) << 5);
+}
+
+TILEMAP_MAPPER_MEMBER(butasan_state::tx_scan)
+{
+	/* logical (col,row) -> memory offset */
+	return (col & 0x1f) | ((row ^ 0x1f) << 5);
+}
 
 /***************************************************************************
   Initialize and destroy video hardware emulation
 ***************************************************************************/
 
-void argus_state::reset_common()
+void argus_common_state::reset_common()
 {
 	m_bg_status = 0x01;
 	m_flipscreen = 0;
 	m_palette_intensity = 0;
 }
 
-VIDEO_START_MEMBER(argus_state,argus)
+void argus_state::video_start()
 {
 	/*                           info                     offset             w   h  col  row */
-	m_bg0_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(argus_state::argus_get_bg0_tile_info),this), TILEMAP_SCAN_COLS, 16, 16, 32, 32);
-	m_bg1_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(argus_state::argus_get_bg1_tile_info),this), TILEMAP_SCAN_COLS, 16, 16, 32, 32);
-	m_tx_tilemap  = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(argus_state::argus_get_tx_tile_info),this),  TILEMAP_SCAN_COLS,  8,  8, 32, 32);
+//  m_bg_tilemap[0] = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(argus_state::get_bg0_tile_info)),   TILEMAP_SCAN_COLS, 16, 16, 4096,    32); // full 65536 width tilemap
+	m_bg_tilemap[0] = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(argus_state::get_bg0_tile_info)),   TILEMAP_SCAN_COLS, 16, 16, 1024/16, 32);
+	m_bg_tilemap[1] = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(argus_state::get_bg1_tile_info)),   TILEMAP_SCAN_COLS, 16, 16, 32,      32);
+	m_tx_tilemap    = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(argus_state::get_tx_tile_info<3>)), TILEMAP_SCAN_COLS,  8,  8, 32,      32);
 
-	m_bg1_tilemap->set_transparent_pen(15);
+	m_bg_tilemap[1]->set_transparent_pen(15);
 	m_tx_tilemap->set_transparent_pen(15);
-
-	/* dummy RAM for back ground */
-	m_dummy_bg0ram = std::make_unique<UINT8[]>(0x800);
 
 	save_item(NAME(m_bg_status));
 	save_item(NAME(m_flipscreen));
 	save_item(NAME(m_palette_intensity));
-	save_pointer(NAME(m_dummy_bg0ram.get()), 0x800);
-	save_item(NAME(m_lowbitscroll));
-	save_item(NAME(m_prvscrollx));
 }
 
-VIDEO_RESET_MEMBER(argus_state,argus)
+void argus_state::video_reset()
 {
-	m_lowbitscroll = 0;
-	m_prvscrollx = 0;
-	m_bg0_scrollx[0] = 0;
-	m_bg0_scrollx[1] = 0;
-	memset(m_dummy_bg0ram.get(), 0, 0x800);
+	m_bg_scrollx[0][0] = 0;
+	m_bg_scrollx[0][1] = 0;
 	reset_common();
 }
 
-VIDEO_START_MEMBER(argus_state,valtric)
+void valtric_state::video_start()
 {
 	/*                           info                      offset             w   h  col  row */
-	m_bg1_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(argus_state::valtric_get_bg_tile_info),this), TILEMAP_SCAN_COLS, 16, 16, 32, 32);
-	m_tx_tilemap  = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(argus_state::valtric_get_tx_tile_info),this), TILEMAP_SCAN_COLS,  8,  8, 32, 32);
+	m_bg_tilemap[0] = nullptr;
+	m_bg_tilemap[1] = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(valtric_state::get_bg_tile_info)),    TILEMAP_SCAN_COLS, 16, 16, 32, 32);
+	m_tx_tilemap    = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(valtric_state::get_tx_tile_info<2>)), TILEMAP_SCAN_COLS,  8,  8, 32, 32);
 
 	m_tx_tilemap->set_transparent_pen(15);
 
@@ -308,24 +281,24 @@ VIDEO_START_MEMBER(argus_state,valtric)
 	save_item(NAME(m_mosaic));
 }
 
-VIDEO_RESET_MEMBER(argus_state,valtric)
+void valtric_state::video_reset()
 {
 	m_valtric_mosaic = 0x0f;
 	reset_common();
 }
 
-VIDEO_START_MEMBER(argus_state,butasan)
+void butasan_state::video_start()
 {
 	/*                           info                       offset             w   h  col  row */
-	m_bg0_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(argus_state::butasan_get_bg0_tile_info),this), TILEMAP_SCAN_ROWS, 16, 16, 32, 32);
-	m_bg1_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(argus_state::butasan_get_bg1_tile_info),this), TILEMAP_SCAN_ROWS, 16, 16, 32, 32);
-	m_tx_tilemap  = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(argus_state::butasan_get_tx_tile_info),this),  TILEMAP_SCAN_ROWS,  8,  8, 32, 32);
+	m_bg_tilemap[0] = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(butasan_state::get_bg0_tile_info)), tilemap_mapper_delegate(*this, FUNC(butasan_state::bg_scan)), 16, 16, 32, 32);
+	m_bg_tilemap[1] = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(butasan_state::get_bg1_tile_info)), tilemap_mapper_delegate(*this, FUNC(butasan_state::bg_scan)), 16, 16, 32, 32);
+	m_tx_tilemap    = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(butasan_state::get_tx_tile_info)),  tilemap_mapper_delegate(*this, FUNC(butasan_state::tx_scan)),  8,  8, 32, 32);
 
-	m_bg1_tilemap->set_transparent_pen(15);
+	m_bg_tilemap[1]->set_transparent_pen(15);
 	m_tx_tilemap->set_transparent_pen(15);
 
-	m_butasan_pagedram[0] = std::make_unique<UINT8[]>(0x1000);
-	m_butasan_pagedram[1] = std::make_unique<UINT8[]>(0x1000);
+	m_butasan_pagedram[0] = std::make_unique<u8[]>(0x1000);
+	m_butasan_pagedram[1] = std::make_unique<u8[]>(0x1000);
 
 	m_butasan_bg0ram     = &m_butasan_pagedram[0][0x000];
 	m_butasan_bg0backram = &m_butasan_pagedram[0][0x800];
@@ -335,14 +308,14 @@ VIDEO_START_MEMBER(argus_state,butasan)
 	save_item(NAME(m_bg_status));
 	save_item(NAME(m_flipscreen));
 	save_item(NAME(m_palette_intensity));
-	save_pointer(NAME(m_butasan_pagedram[0].get()), 0x1000);
-	save_pointer(NAME(m_butasan_pagedram[1].get()), 0x1000);
+	save_pointer(NAME(m_butasan_pagedram[0]), 0x1000);
+	save_pointer(NAME(m_butasan_pagedram[1]), 0x1000);
 	save_item(NAME(m_butasan_page_latch));
 	save_item(NAME(m_butasan_bg1_status));
 	save_item(NAME(m_butasan_unknown));
 }
 
-VIDEO_RESET_MEMBER(argus_state,butasan)
+void butasan_state::video_reset()
 {
 	m_butasan_page_latch = 0;
 	m_butasan_bg1_status = 0x01;
@@ -356,42 +329,16 @@ VIDEO_RESET_MEMBER(argus_state,butasan)
   Functions for handler of MAP roms in Argus and palette color
 ***************************************************************************/
 
-/* Write bg0 pattern data to dummy bg0 ram */
-void argus_state::argus_write_dummy_rams(int dramoffs, int vromoffs)
+void argus_common_state::change_palette(int color, int lo_offs, int hi_offs)
 {
-	int i;
-	int voffs;
-	int offs;
-
-	UINT8 *VROM1 = memregion("user1")->base();       /* "ag_15.bin" */
-	UINT8 *VROM2 = memregion("user2")->base();       /* "ag_16.bin" */
-
-	/* offset in pattern data */
-	offs = VROM1[vromoffs] | (VROM1[vromoffs + 1] << 8);
-	offs &= 0x7ff;
-
-	voffs = offs * 16;
-	for (i = 0; i < 8; i++)
-	{
-		m_dummy_bg0ram[dramoffs]     = VROM2[voffs];
-		m_dummy_bg0ram[dramoffs + 1] = VROM2[voffs + 1];
-		m_bg0_tilemap->mark_tile_dirty(dramoffs >> 1);
-		dramoffs += 2;
-		voffs += 2;
-	}
+	u8 lo = m_paletteram[lo_offs];
+	u8 hi = m_paletteram[hi_offs];
+	m_palette->set_pen_color(color, rgb_t(hi & 0x0f, pal4bit(lo >> 4), pal4bit(lo), pal4bit(hi >> 4)));
 }
 
-void argus_state::change_palette(int color, int lo_offs, int hi_offs)
+void argus_common_state::change_bg_palette(int color, int lo_offs, int hi_offs)
 {
-	UINT8 lo = m_paletteram[lo_offs];
-	UINT8 hi = m_paletteram[hi_offs];
-	m_blend->set(color, hi & 0x0f);
-	m_palette->set_pen_color(color, pal4bit(lo >> 4), pal4bit(lo), pal4bit(hi >> 4));
-}
-
-void argus_state::change_bg_palette(int color, int lo_offs, int hi_offs)
-{
-	UINT8 r,g,b,lo,hi,ir,ig,ib,ix;
+	u8 r,g,b,lo,hi,ir,ig,ib,ix;
 	rgb_t rgb,irgb;
 
 	/* red,green,blue intensities */
@@ -413,7 +360,7 @@ void argus_state::change_bg_palette(int color, int lo_offs, int hi_offs)
 	/* Grey background enable */
 	if (m_bg_status & 2)
 	{
-		UINT8 val = (r + g + b) / 3;
+		u8 val = (r + g + b) / 3;
 		rgb = rgb_t(val,val,val);
 	}
 	else
@@ -431,24 +378,24 @@ void argus_state::change_bg_palette(int color, int lo_offs, int hi_offs)
   Memory handler
 ***************************************************************************/
 
-WRITE8_MEMBER(argus_state::valtric_mosaic_w)
+void valtric_state::mosaic_w(u8 data)
 {
 	m_valtric_mosaic = data;
 }
 
-WRITE8_MEMBER(argus_state::txram_w)
+void argus_common_state::txram_w(offs_t offset, u8 data)
 {
 	m_txram[offset] = data;
 	m_tx_tilemap->mark_tile_dirty(offset >> 1);
 }
 
-WRITE8_MEMBER(argus_state::bg1ram_w)
+void argus_common_state::bg1ram_w(offs_t offset, u8 data)
 {
 	m_bg1ram[offset] = data;
-	m_bg1_tilemap->mark_tile_dirty(offset >> 1);
+	m_bg_tilemap[1]->mark_tile_dirty(offset >> 1);
 }
 
-WRITE8_MEMBER(argus_state::argus_bg_status_w)
+void argus_state::bg_status_w(u8 data)
 {
 	if (m_bg_status != data)
 	{
@@ -467,7 +414,7 @@ WRITE8_MEMBER(argus_state::argus_bg_status_w)
 	}
 }
 
-WRITE8_MEMBER(argus_state::valtric_bg_status_w)
+void valtric_state::bg_status_w(u8 data)
 {
 	if (m_bg_status != data)
 	{
@@ -486,28 +433,28 @@ WRITE8_MEMBER(argus_state::valtric_bg_status_w)
 	}
 }
 
-WRITE8_MEMBER(argus_state::butasan_bg0_status_w)
+void butasan_state::bg0_status_w(u8 data)
 {
 	m_bg_status = data;
 }
 
-WRITE8_MEMBER(argus_state::butasan_bg1_status_w)
+void butasan_state::bg1_status_w(u8 data)
 {
 	if (m_butasan_bg1_status != data)
 	{
 		m_butasan_bg1_status = data;
 
 		/* Bank changed */
-		m_bg1_tilemap->mark_all_dirty();
+		m_bg_tilemap[1]->mark_all_dirty();
 	}
 }
 
-WRITE8_MEMBER(argus_state::flipscreen_w)
+void argus_common_state::flipscreen_w(u8 data)
 {
 	m_flipscreen = data & 0x80;
 }
 
-WRITE8_MEMBER(argus_state::argus_paletteram_w)
+void argus_state::paletteram_w(offs_t offset, u8 data)
 {
 	int offs;
 
@@ -553,7 +500,7 @@ WRITE8_MEMBER(argus_state::argus_paletteram_w)
 	}
 }
 
-WRITE8_MEMBER(argus_state::valtric_paletteram_w)
+void valtric_state::paletteram_w(offs_t offset, u8 data)
 {
 	m_paletteram[offset] = data;
 
@@ -581,7 +528,7 @@ WRITE8_MEMBER(argus_state::valtric_paletteram_w)
 	}
 }
 
-WRITE8_MEMBER(argus_state::butasan_paletteram_w)
+void butasan_state::paletteram_w(offs_t offset, u8 data)
 {
 	m_paletteram[offset] = data;
 
@@ -614,24 +561,18 @@ WRITE8_MEMBER(argus_state::butasan_paletteram_w)
 		change_palette(((offset & 0x1f) >> 1) + 0xf0, offset & ~1, offset | 1);
 }
 
-WRITE8_MEMBER(argus_state::butasan_bg1ram_w)
+void butasan_state::bg1ram_w(offs_t offset, u8 data)
 {
-	int idx;
-
 	m_butasan_bg1ram[offset] = data;
-
-	idx = (offset & 0x00f) | ((offset & 0x200) >> 5) | ((offset & 0x1f0) << 1);
-	idx ^= 0x0f0;
-
-	m_bg1_tilemap->mark_tile_dirty(idx);
+	m_bg_tilemap[1]->mark_tile_dirty(offset);
 }
 
-WRITE8_MEMBER(argus_state::butasan_pageselect_w)
+void butasan_state::pageselect_w(u8 data)
 {
 	m_butasan_page_latch = data & 1;
 }
 
-READ8_MEMBER(argus_state::butasan_pagedram_r)
+u8 butasan_state::pagedram_r(offs_t offset)
 {
 	if (offset <= 0x07ff)
 		return m_butasan_pagedram[m_butasan_page_latch][offset];
@@ -639,33 +580,28 @@ READ8_MEMBER(argus_state::butasan_pagedram_r)
 		return m_butasan_pagedram[0][offset];
 }
 
-WRITE8_MEMBER(argus_state::butasan_pagedram_w)
+void butasan_state::pagedram_w(offs_t offset, u8 data)
 {
 	m_butasan_pagedram[m_butasan_page_latch][offset] = data;
 
 	if (!m_butasan_page_latch)
 	{
 		if (offset <= 0x07ff)
-		{
-			int idx;
-			idx = ((offset & 0x01e) >> 1) | ((offset & 0x400) >> 6) | (offset & 0x3e0);
-			idx ^= 0x1e0;
-			m_bg0_tilemap->mark_tile_dirty(idx);
-		}
+			m_bg_tilemap[0]->mark_tile_dirty(offset >> 1);
 	}
 	else
 	{
 		if (offset <= 0x07ff)
-			m_tx_tilemap->mark_tile_dirty((offset ^ 0x7c0) >> 1);
+			m_tx_tilemap->mark_tile_dirty(offset >> 1);
 	}
 }
 
-WRITE8_MEMBER(argus_state::valtric_unknown_w)
+void valtric_state::unknown_w(u8 data)
 {
 	m_valtric_unknown = data;
 }
 
-WRITE8_MEMBER(argus_state::butasan_unknown_w)
+void butasan_state::unknown_w(u8 data)
 {
 	m_butasan_unknown = data;
 }
@@ -675,132 +611,62 @@ WRITE8_MEMBER(argus_state::butasan_unknown_w)
   Screen refresh
 ***************************************************************************/
 
-#define bg0_scrollx (m_bg0_scrollx[0] | (m_bg0_scrollx[1] << 8))
-#define bg0_scrolly (m_bg0_scrolly[0] | (m_bg0_scrolly[1] << 8))
-#define bg1_scrollx (m_bg1_scrollx[0] | (m_bg1_scrollx[1] << 8))
-#define bg1_scrolly (m_bg1_scrolly[0] | (m_bg1_scrolly[1] << 8))
+#define bg_scrollx(layer) (m_bg_scrollx[layer][0] | (m_bg_scrollx[layer][1] << 8))
+#define bg_scrolly(layer) (m_bg_scrolly[layer][0] | (m_bg_scrolly[layer][1] << 8))
 
-void argus_state::bg_setting()
+void argus_common_state::bg_setting()
 {
 	machine().tilemap().set_flip_all(m_flipscreen ? TILEMAP_FLIPY|TILEMAP_FLIPX : 0);
 
 	if (!m_flipscreen)
 	{
-		if (m_bg0_tilemap != nullptr)
+		if (m_bg_tilemap[0] != nullptr)
 		{
-			m_bg0_tilemap->set_scrollx(0, bg0_scrollx & 0x1ff);
-			m_bg0_tilemap->set_scrolly(0, bg0_scrolly & 0x1ff);
+			if ((m_vrom[0] != nullptr) && (m_vrom[1] != nullptr))
+			{
+				if (m_vrom_offset != m_bg_scrollx[0][1])
+				{
+					m_vrom_offset = m_bg_scrollx[0][1];
+					m_bg_tilemap[0]->mark_all_dirty();
+				}
+				m_bg_tilemap[0]->set_scrollx(0, m_bg_scrollx[0][0]);
+				m_bg_tilemap[0]->set_scrolly(0, bg_scrolly(0));
+			}
+			else
+			{
+				m_bg_tilemap[0]->set_scrollx(0, bg_scrollx(0));
+				m_bg_tilemap[0]->set_scrolly(0, bg_scrolly(0));
+			}
 		}
-		m_bg1_tilemap->set_scrollx(0, bg1_scrollx & 0x1ff);
-		m_bg1_tilemap->set_scrolly(0, bg1_scrolly & 0x1ff);
+		m_bg_tilemap[1]->set_scrollx(0, bg_scrollx(1) & 0x1ff);
+		m_bg_tilemap[1]->set_scrolly(0, bg_scrolly(1) & 0x1ff);
 	}
 	else
 	{
-		if (m_bg0_tilemap != nullptr)
+		if (m_bg_tilemap[0] != nullptr)
 		{
-			m_bg0_tilemap->set_scrollx(0, (bg0_scrollx + 256) & 0x1ff);
-			m_bg0_tilemap->set_scrolly(0, (bg0_scrolly + 256) & 0x1ff);
+			if ((m_vrom[0] != nullptr) && (m_vrom[1] != nullptr))
+			{
+				if (m_vrom_offset != ((m_bg_scrollx[0][1] + 1) & 0xff))
+				{
+					m_vrom_offset = ((m_bg_scrollx[0][1] + 1) & 0xff);
+					m_bg_tilemap[0]->mark_all_dirty();
+				}
+				m_bg_tilemap[0]->set_scrollx(0, m_bg_scrollx[0][0]);
+				m_bg_tilemap[0]->set_scrolly(0, (bg_scrolly(0) + 256));
+			}
+			else
+			{
+				m_bg_tilemap[0]->set_scrollx(0, (bg_scrollx(0) + 256));
+				m_bg_tilemap[0]->set_scrolly(0, (bg_scrolly(0) + 256));
+			}
 		}
-		m_bg1_tilemap->set_scrollx(0, (bg1_scrollx + 256) & 0x1ff);
-		m_bg1_tilemap->set_scrolly(0, (bg1_scrolly + 256) & 0x1ff);
+		m_bg_tilemap[1]->set_scrollx(0, (bg_scrollx(1) + 256) & 0x1ff);
+		m_bg_tilemap[1]->set_scrolly(0, (bg_scrolly(1) + 256) & 0x1ff);
 	}
 }
 
-void argus_state::argus_bg0_scroll_handle()
-{
-	int delta;
-	int dcolumn;
-
-	/* Deficit between previous and current scroll value */
-	delta = bg0_scrollx - m_prvscrollx;
-	m_prvscrollx = bg0_scrollx;
-
-	if (delta == 0)
-		return;
-
-	if (delta > 0)
-	{
-		m_lowbitscroll += delta % 16;
-		dcolumn = delta / 16;
-
-		if (m_lowbitscroll >= 16)
-		{
-			dcolumn++;
-			m_lowbitscroll -= 16;
-		}
-
-		if (dcolumn != 0)
-		{
-			int i, j;
-			int col, woffs, roffs;
-
-			col = ((bg0_scrollx / 16) + 16) % 32;
-			woffs = 32 * 2 * col;
-			roffs = (((bg0_scrollx / 16) + 16) * 8) % 0x8000;
-
-			if (dcolumn >= 18)
-				dcolumn = 18;
-
-			for (i = 0; i < dcolumn; i++)
-			{
-				for (j = 0; j < 4; j++)
-				{
-					argus_write_dummy_rams(woffs, roffs);
-					woffs += 16;
-					roffs += 2;
-				}
-				woffs -= 128;
-				roffs -= 16;
-				if (woffs < 0)
-					woffs += 0x800;
-				if (roffs < 0)
-					roffs += 0x8000;
-			}
-		}
-	}
-	else
-	{
-		m_lowbitscroll += (delta % 16);
-		dcolumn = -(delta / 16);
-
-		if (m_lowbitscroll <= 0)
-		{
-			dcolumn++;
-			m_lowbitscroll += 16;
-		}
-
-		if (dcolumn != 0)
-		{
-			int i, j;
-			int col, woffs, roffs;
-
-			col = ((bg0_scrollx / 16) + 31) % 32;
-			woffs = 32 * 2 * col;
-			roffs = ((bg0_scrollx / 16) - 1) * 8;
-			if (roffs < 0)
-				roffs += 0x08000;
-
-			if (dcolumn >= 18)
-				dcolumn = 18;
-
-			for (i = 0; i < dcolumn; i++)
-			{
-				for (j = 0; j < 4; j++)
-				{
-					argus_write_dummy_rams(woffs, roffs);
-					woffs += 16;
-					roffs += 2;
-				}
-				if (woffs >= 0x800)
-					woffs -= 0x800;
-				if (roffs >= 0x8000)
-					roffs -= 0x8000;
-			}
-		}
-	}
-}
-
-void argus_state::argus_draw_sprites(bitmap_rgb32 &bitmap, const rectangle &cliprect, int priority)
+void argus_state::draw_sprites(bitmap_rgb32 &bitmap, const rectangle &cliprect, int priority)
 {
 	/* Draw the sprites */
 	for (int offs = 0; offs < m_spriteram.bytes(); offs += 16)
@@ -827,19 +693,20 @@ void argus_state::argus_draw_sprites(bitmap_rgb32 &bitmap, const rectangle &clip
 			}
 
 			if (priority != pri)
-				m_blend->drawgfx(m_palette,
-							bitmap,cliprect,m_gfxdecode->gfx(0),
-							tile,
-							color,
-							flipx, flipy,
-							sx, sy,
-							15);
+				m_blend->drawgfx(
+						*m_palette,
+						bitmap,cliprect,m_gfxdecode->gfx(0),
+						tile,
+						color,
+						flipx, flipy,
+						sx, sy,
+						15);
 		}
 	}
 }
 
 #if 1
-void argus_state::valtric_draw_mosaic(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
+void valtric_state::draw_mosaic(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
 {
 	if (m_valtric_mosaic!=0x80)
 	{
@@ -849,84 +716,72 @@ void argus_state::valtric_draw_mosaic(screen_device &screen, bitmap_rgb32 &bitma
 	}
 
 	if (m_mosaic==0)
-		m_bg1_tilemap->draw(screen, bitmap, cliprect, 0, 0);
+		m_bg_tilemap[1]->draw(screen, bitmap, cliprect, 0, 0);
 	else
 	{
-		m_bg1_tilemap->draw(screen, m_mosaicbitmap, cliprect, 0, 0);
-		{
-			int step=m_mosaic;
-			UINT32 *dest;
-			int x,y,xx,yy,c=0;
-			int width = screen.width();
-			int height = screen.height();
+		m_bg_tilemap[1]->draw(screen, m_mosaicbitmap, cliprect, 0, 0);
+		int step=m_mosaic;
+		int c=0;
+		int width = screen.width();
+		int height = screen.height();
 
-			if (m_mosaic<0)step*=-1;
+		if (m_mosaic<0)step*=-1;
 
-			for (y=0;y<width+step;y+=step)
-				for (x=0;x<height+step;x+=step)
-				{
-					if (y < height && x < width)
-						c=m_mosaicbitmap.pix32(y, x);
+		for (int y=0;y<width+step;y+=step)
+			for (int x=0;x<height+step;x+=step)
+			{
+				if (y < height && x < width)
+					c=m_mosaicbitmap.pix(y, x);
 
-					if (m_mosaic<0)
-						if (y+step-1<height && x+step-1< width)
-							c = m_mosaicbitmap.pix32(y+step-1, x+step-1);
+				if (m_mosaic<0)
+					if (y+step-1<height && x+step-1< width)
+						c = m_mosaicbitmap.pix(y+step-1, x+step-1);
 
-					for (yy=0;yy<step;yy++)
-						for (xx=0;xx<step;xx++)
-						{
-							if (xx+x < width && yy+y<height)
-							{
-								dest=&bitmap.pix32(y+yy, x+xx);
-								*dest=c;
-							}
-						}
-				}
-		}
+				for (int yy=0;yy<step;yy++)
+					for (int xx=0;xx<step;xx++)
+					{
+						if (xx+x < width && yy+y<height)
+							bitmap.pix(y+yy, x+xx) = c;
+					}
+			}
 	}
 }
 #else
-void argus_state::valtric_draw_mosaic(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
+void valtric_state::draw_mosaic(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
 {
 	int step = 0x10 - (m_valtric_mosaic & 0x0f);
 
 	if (step == 1)
-		m_bg1_tilemap->draw(screen, bitmap, cliprect, 0, 0);
+		m_bg_tilemap[1]->draw(screen, bitmap, cliprect, 0, 0);
 	else
 	{
-		m_bg1_tilemap->draw(screen, m_mosaicbitmap, cliprect, 0, 0);
-		{
-			UINT32 *dest;
-			int x,y,xx,yy,c=0;
-			int width = screen.width();
-			int height = screen.height();
+		m_bg_tilemap[1]->draw(screen, m_mosaicbitmap, cliprect, 0, 0);
+		int c=0;
+		int width = screen.width();
+		int height = screen.height();
 
-			for (y = 0; y < width+step; y += step)
-				for (x = 0; x < height+step; x += step)
-				{
-					if (y < height && x < width)
-						c = m_mosaicbitmap.pix32(y, x);
+		for (int y = 0; y < width+step; y += step)
+			for (int x = 0; x < height+step; x += step)
+			{
+				if (y < height && x < width)
+					c = m_mosaicbitmap.pix(y, x);
 
-					if (m_valtric_mosaic & 0x80)
-						if (y+step-1 < height && x+step-1 < width)
-							c = m_mosaicbitmap.pix32(y+step-1, x+step-1);
+				if (m_valtric_mosaic & 0x80)
+					if (y+step-1 < height && x+step-1 < width)
+						c = m_mosaicbitmap.pix(y+step-1, x+step-1);
 
-					for (yy = 0; yy < step; yy++)
-						for (xx = 0; xx < step; xx++)
-						{
-							if (xx+x < width && yy+y < height)
-							{
-								dest = &bitmap.pix32(y+yy, x+xx);
-								*dest = c;
-							}
-						}
-				}
-		}
+				for (int yy = 0; yy < step; yy++)
+					for (int xx = 0; xx < step; xx++)
+					{
+						if (xx+x < width && yy+y < height)
+							bitmap.pix(y+yy, x+xx) = c;
+					}
+			}
 	}
 }
 #endif
 
-void argus_state::valtric_draw_sprites(bitmap_rgb32 &bitmap, const rectangle &cliprect)
+void valtric_state::draw_sprites(bitmap_rgb32 &bitmap, const rectangle &cliprect)
 {
 	/* Draw the sprites */
 	for (int offs = 0; offs < m_spriteram.bytes(); offs += 16)
@@ -951,7 +806,7 @@ void argus_state::valtric_draw_sprites(bitmap_rgb32 &bitmap, const rectangle &cl
 				flipy = !flipy;
 			}
 
-			m_blend->drawgfx(m_palette,
+			m_blend->drawgfx(*m_palette,
 						bitmap,cliprect,m_gfxdecode->gfx(0),
 						tile,
 						color,
@@ -962,7 +817,7 @@ void argus_state::valtric_draw_sprites(bitmap_rgb32 &bitmap, const rectangle &cl
 	}
 }
 
-void argus_state::butasan_draw_sprites(bitmap_rgb32 &bitmap, const rectangle &cliprect)
+void butasan_state::draw_sprites(bitmap_rgb32 &bitmap, const rectangle &cliprect)
 {
 	/* Draw the sprites */
 	for (int offs = 0; offs < m_spriteram.bytes(); offs += 16)
@@ -999,7 +854,7 @@ void argus_state::butasan_draw_sprites(bitmap_rgb32 &bitmap, const rectangle &cl
 
 			if ((offs >= 0x100 && offs <= 0x2ff) || (offs >= 0x400 && offs <= 0x57f))
 			{
-				m_blend->drawgfx(m_palette,
+				m_blend->drawgfx(*m_palette,
 							bitmap,cliprect,m_gfxdecode->gfx(0),
 							tile,
 							color,
@@ -1013,7 +868,7 @@ void argus_state::butasan_draw_sprites(bitmap_rgb32 &bitmap, const rectangle &cl
 				{
 					td = (fx) ? (1 - i) : i;
 
-					m_blend->drawgfx(m_palette,
+					m_blend->drawgfx(*m_palette,
 								bitmap,cliprect,m_gfxdecode->gfx(0),
 								tile + td,
 								color,
@@ -1033,7 +888,7 @@ void argus_state::butasan_draw_sprites(bitmap_rgb32 &bitmap, const rectangle &cl
 						else
 							td = (fx) ? (i * 2) + 1 - j : i * 2 + j;
 
-						m_blend->drawgfx(m_palette,
+						m_blend->drawgfx(*m_palette,
 									bitmap,cliprect,m_gfxdecode->gfx(0),
 									tile + td,
 									color,
@@ -1054,7 +909,7 @@ void argus_state::butasan_draw_sprites(bitmap_rgb32 &bitmap, const rectangle &cl
 						else
 							td = (fx) ? (i * 4) + 3 - j : i * 4 + j;
 
-						m_blend->drawgfx(m_palette,
+						m_blend->drawgfx(*m_palette,
 									bitmap,cliprect,m_gfxdecode->gfx(0),
 									tile + td,
 									color,
@@ -1069,14 +924,14 @@ void argus_state::butasan_draw_sprites(bitmap_rgb32 &bitmap, const rectangle &cl
 }
 
 
-void argus_state::butasan_log_vram()
+void butasan_state::log_vram()
 {
 #ifdef MAME_DEBUG
 	int offs;
 
 	if (machine().input().code_pressed(KEYCODE_M))
 	{
-		UINT8 *spriteram = m_spriteram;
+		u8 *spriteram = &m_spriteram[0];
 		int i;
 		logerror("\nSprite RAM\n");
 		logerror("---------------------------------------\n");
@@ -1122,47 +977,44 @@ void argus_state::butasan_log_vram()
 #endif
 }
 
-UINT32 argus_state::screen_update_argus(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
+u32 argus_state::screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
 {
 	bg_setting();
 
-	/* scroll BG0 and render tile at proper position */
-	argus_bg0_scroll_handle();
-
-	m_bg0_tilemap->draw(screen, bitmap, cliprect, 0, 0);
-	argus_draw_sprites(bitmap, cliprect, 0);
-	if (m_bg_status & 1)    /* Backgound enable */
-		m_bg1_tilemap->draw(screen, bitmap, cliprect, 0, 0);
-	argus_draw_sprites(bitmap, cliprect, 1);
+	m_bg_tilemap[0]->draw(screen, bitmap, cliprect, 0, 0);
+	draw_sprites(bitmap, cliprect, 0);
+	if (m_bg_status & 1)    /* Background enable */
+		m_bg_tilemap[1]->draw(screen, bitmap, cliprect, 0, 0);
+	draw_sprites(bitmap, cliprect, 1);
 	m_tx_tilemap->draw(screen, bitmap, cliprect, 0, 0);
 	return 0;
 }
 
-UINT32 argus_state::screen_update_valtric(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
+u32 valtric_state::screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
 {
 	bg_setting();
 
-	if (m_bg_status & 1)    /* Backgound enable */
-		valtric_draw_mosaic(screen, bitmap, cliprect);
+	if (m_bg_status & 1)    /* Background enable */
+		draw_mosaic(screen, bitmap, cliprect);
 	else
 		bitmap.fill(m_palette->black_pen(), cliprect);
-	valtric_draw_sprites(bitmap, cliprect);
+	draw_sprites(bitmap, cliprect);
 	m_tx_tilemap->draw(screen, bitmap, cliprect, 0, 0);
 	return 0;
 }
 
-UINT32 argus_state::screen_update_butasan(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
+u32 butasan_state::screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
 {
 	bg_setting();
 
-	if (m_bg_status & 1)    /* Backgound enable */
-		m_bg0_tilemap->draw(screen, bitmap, cliprect, 0, 0);
+	if (m_bg_status & 1)    /* Background enable */
+		m_bg_tilemap[0]->draw(screen, bitmap, cliprect, 0, 0);
 	else
 		bitmap.fill(m_palette->black_pen(), cliprect);
-	if (m_butasan_bg1_status & 1) m_bg1_tilemap->draw(screen, bitmap, cliprect, 0, 0);
-	butasan_draw_sprites(bitmap, cliprect);
+	if (m_butasan_bg1_status & 1) m_bg_tilemap[1]->draw(screen, bitmap, cliprect, 0, 0);
+	draw_sprites(bitmap, cliprect);
 	m_tx_tilemap->draw(screen, bitmap, cliprect, 0, 0);
 
-	butasan_log_vram();
+	log_vram();
 	return 0;
 }

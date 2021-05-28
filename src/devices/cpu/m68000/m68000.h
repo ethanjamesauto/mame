@@ -1,51 +1,51 @@
 // license:BSD-3-Clause
 // copyright-holders:Karl Stenerud
+#ifndef MAME_CPU_M68000_M68000_H
+#define MAME_CPU_M68000_M68000_H
+
 #pragma once
 
-#ifndef __M68000_H__
-#define __M68000_H__
-
-
-
-
+// SoftFloat 2 lacks an include guard
+#ifndef softfloat_h
+#define softfloat_h 1
 #include "softfloat/milieu.h"
 #include "softfloat/softfloat.h"
+#endif
+
+extern flag floatx80_is_nan(floatx80 a);
 
 
 /* MMU constants */
-#define MMU_ATC_ENTRIES (22)    // 68851 has 64, 030 has 22
+constexpr int MMU_ATC_ENTRIES = (22);    // 68851 has 64, 030 has 22
 
 /* instruction cache constants */
-#define M68K_IC_SIZE 128
-
-
-
-
-#define m68ki_check_address_error(m68k, ADDR, WRITE_MODE, FC) \
-	if((ADDR)&1) \
-	{ \
-		m68k->aerr_address = ADDR; \
-		m68k->aerr_write_mode = WRITE_MODE; \
-		m68k->aerr_fc = FC; \
-		throw 10; \
-	}
-
-
+constexpr int M68K_IC_SIZE = 128;
 
 /* There are 7 levels of interrupt to the 68K.
  * A transition from < 7 to 7 will cause a non-maskable interrupt (NMI).
+ *
+ * If disable_interrupt_mixer() has been called, the 3 interrupt lines
+ * are modeled instead, as numbers 0-2.
  */
-#define M68K_IRQ_NONE 0
-#define M68K_IRQ_1    1
-#define M68K_IRQ_2    2
-#define M68K_IRQ_3    3
-#define M68K_IRQ_4    4
-#define M68K_IRQ_5    5
-#define M68K_IRQ_6    6
-#define M68K_IRQ_7    7
+constexpr int M68K_IRQ_NONE = 0;
+constexpr int M68K_IRQ_1    = 1;
+constexpr int M68K_IRQ_2    = 2;
+constexpr int M68K_IRQ_3    = 3;
+constexpr int M68K_IRQ_4    = 4;
+constexpr int M68K_IRQ_5    = 5;
+constexpr int M68K_IRQ_6    = 6;
+constexpr int M68K_IRQ_7    = 7;
+
+constexpr int M68K_IRQ_IPL0 = 0;
+constexpr int M68K_IRQ_IPL1 = 1;
+constexpr int M68K_IRQ_IPL2 = 2;
+
+constexpr int M68K_SZ_LONG = 0;
+constexpr int M68K_SZ_BYTE = 1;
+constexpr int M68K_SZ_WORD = 2;
 
 // special input lines
-#define M68K_LINE_BUSERROR 16
+constexpr int M68K_LINE_BUSERROR = 16;
 
 /* CPU types for use in m68k_set_cpu_type() */
 enum
@@ -77,83 +77,68 @@ enum
 };
 
 /* HMMU enable types for use with m68k_set_hmmu_enable() */
-#define M68K_HMMU_DISABLE   0   /* no translation */
-#define M68K_HMMU_ENABLE_II 1   /* Mac II style fixed translation */
-#define M68K_HMMU_ENABLE_LC 2   /* Mac LC style fixed translation */
-
-/* Special interrupt acknowledge values.
- * Use these as special returns from the interrupt acknowledge callback
- * (specified later in this header).
- */
-
-/* Causes an interrupt autovector (0x18 + interrupt level) to be taken.
- * This happens in a real 68K if VPA or AVEC is asserted during an interrupt
- * acknowledge cycle instead of DTACK.
- */
-#define M68K_INT_ACK_AUTOVECTOR    0xffffffff
-
-/* Causes the spurious interrupt vector (0x18) to be taken
- * This happens in a real 68K if BERR is asserted during the interrupt
- * acknowledge cycle (i.e. no devices responded to the acknowledge).
- */
-#define M68K_INT_ACK_SPURIOUS      0xfffffffe
+constexpr int M68K_HMMU_DISABLE   = 0;   /* no translation */
+constexpr int M68K_HMMU_ENABLE_II = 1;   /* Mac II style fixed translation */
+constexpr int M68K_HMMU_ENABLE_LC = 2;   /* Mac LC style fixed translation */
 
 enum
 {
 	/* NOTE: M68K_SP fetches the current SP, be it USP, ISP, or MSP */
-	M68K_PC, M68K_SP, M68K_ISP, M68K_USP, M68K_MSP, M68K_SR, M68K_VBR,
-	M68K_SFC, M68K_DFC, M68K_CACR, M68K_CAAR, M68K_PREF_ADDR, M68K_PREF_DATA,
+	M68K_PC = STATE_GENPC, M68K_SP = 1, M68K_ISP, M68K_USP, M68K_MSP, M68K_SR, M68K_VBR,
+	M68K_SFC, M68K_DFC, M68K_CACR, M68K_CAAR, M68K_IR, M68K_PREF_ADDR, M68K_PREF_DATA,
 	M68K_D0, M68K_D1, M68K_D2, M68K_D3, M68K_D4, M68K_D5, M68K_D6, M68K_D7,
 	M68K_A0, M68K_A1, M68K_A2, M68K_A3, M68K_A4, M68K_A5, M68K_A6, M68K_A7,
 	M68K_FP0, M68K_FP1, M68K_FP2, M68K_FP3, M68K_FP4, M68K_FP5, M68K_FP6, M68K_FP7,
-	M68K_FPSR, M68K_FPCR,
-
-	M68K_GENPC = STATE_GENPC,
-	M68K_GENSP = STATE_GENSP,
-	M68K_GENPCBASE = STATE_GENPCBASE
+	M68K_FPSR, M68K_FPCR, M68K_CRP_LIMIT, M68K_CRP_APTR, M68K_SRP_LIMIT, M68K_SRP_APTR,
+	M68K_MMU_TC, M68K_TT0, M68K_TT1, M68K_MMU_SR, M68K_ITT0, M68K_ITT1,
+	M68K_DTT0, M68K_DTT1, M68K_URP_APTR
 };
-
-unsigned int m68k_disassemble_raw(char* str_buff, unsigned int pc, const unsigned char* opdata, const unsigned char* argdata, unsigned int cpu_type);
-
-class m68000_base_device;
-
-
-extern const device_type M68K;
 
 class m68000_base_device : public cpu_device
 {
 public:
+	enum {
+		AS_CPU_SPACE = 4
+	};
 
 	// construction/destruction
-	m68000_base_device(const machine_config &mconfig, const char *name, const char *tag, device_t *owner, UINT32 clock,
-						const device_type type, UINT32 prg_data_width, UINT32 prg_address_bits, const char *shortname, const char *source);
+	m68000_base_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
 
-	m68000_base_device(const machine_config &mconfig, const char *name, const char *tag, device_t *owner, UINT32 clock,
-						const device_type type, UINT32 prg_data_width, UINT32 prg_address_bits, address_map_constructor internal_map, const char *shortname, const char *source);
+	static constexpr u8 autovector(int level) { return 0x18 + level; }
+	void autovectors_map(address_map &map);
 
-	m68000_base_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+protected:
+	static constexpr int NUM_CPU_TYPES = 8;
 
-	DECLARE_WRITE_LINE_MEMBER( write_irq1 );
-	DECLARE_WRITE_LINE_MEMBER( write_irq2 );
-	DECLARE_WRITE_LINE_MEMBER( write_irq3 );
-	DECLARE_WRITE_LINE_MEMBER( write_irq4 );
-	DECLARE_WRITE_LINE_MEMBER( write_irq5 );
-	DECLARE_WRITE_LINE_MEMBER( write_irq6 );
-	DECLARE_WRITE_LINE_MEMBER( write_irq7 );
+	typedef void (m68000_base_device::*opcode_handler_ptr)();
+	static u16 m68ki_instruction_state_table[NUM_CPU_TYPES][0x10000]; /* opcode handler state numbers */
+	static unsigned char m68ki_cycles[NUM_CPU_TYPES][0x10000]; /* Cycles used by CPU type */
+
+	/* This is used to generate the opcode handler state table */
+	struct opcode_handler_struct
+	{
+		unsigned int  match;                 /* what to match after masking */
+		unsigned int  mask;                  /* mask on opcode */
+		unsigned char cycles[NUM_CPU_TYPES]; /* cycles each cpu type takes */
+	};
+
+	static const opcode_handler_ptr m68k_handler_table[];
+	static const opcode_handler_struct m68k_opcode_table[];
+	static const u16 m68k_state_illegal;
+
+	static void m68ki_set_one(unsigned short opcode, u16 state, const opcode_handler_struct &s);
+	static void m68ki_build_opcode_table(void);
 
 	void clear_all(void);
 
-	virtual UINT32 disasm_min_opcode_bytes() const override { return 2; };
-	virtual UINT32 disasm_max_opcode_bytes() const override { return 10; };
-	virtual offs_t disasm_disassemble(char *buffer, offs_t pc, const UINT8 *oprom, const UINT8 *opram, UINT32 options) override;
-
-
-
+	// device_disasm_interface overrides
+	virtual std::unique_ptr<util::disasm_interface> create_disassembler() override;
 
 	// device_execute_interface overrides
-	virtual UINT32 execute_min_cycles() const override { return 4; };
-	virtual UINT32 execute_max_cycles() const override { return 158; };
-	virtual UINT32 execute_input_lines() const override { return 8; }; // number of input lines
+	virtual u32 execute_min_cycles() const noexcept override { return 4; };
+	virtual u32 execute_max_cycles() const noexcept override { return 158; };
+	virtual u32 execute_input_lines() const noexcept override { return m_interrupt_mixer ? 8 : 3; }; // number of input lines
+	virtual bool execute_input_edge_triggered(int inputnum) const noexcept override { return m_interrupt_mixer ? inputnum == M68K_IRQ_7 : false; }
 	virtual void execute_run() override;
 	virtual void execute_set_input(int inputnum, int state) override;
 
@@ -161,211 +146,189 @@ public:
 	virtual void device_start() override;
 	virtual void device_reset() override;
 	virtual void device_stop() override;
+	virtual void device_pre_save() override;
+	virtual void device_post_load() override;
 
 	// device_memory_interface overrides
-	virtual const address_space_config *memory_space_config(address_spacenum spacenum = AS_0) const override;
+	virtual space_config_vector memory_space_config() const override;
 
 	// address spaces
 	const address_space_config m_program_config, m_oprogram_config;
+	address_space_config m_cpu_space_config;
 
 	void define_state(void);
 
-	void set_reset_callback(write_line_delegate callback);
-	void set_cmpild_callback(write32_delegate callback);
-	void set_rte_callback(write_line_delegate callback);
-	void set_tas_write_callback(write8_delegate callback);
-	UINT16 get_fc();
-	void set_hmmu_enable(int enable);
-	void set_instruction_hook(read32_delegate ihook);
-	void set_buserror_details(UINT32 fault_addr, UINT8 rw, UINT8 fc);
-
 public:
+	template <typename... T> void set_reset_callback(T &&... args) { m_reset_instr_callback.set(std::forward<T>(args)...); }
+	template <typename... T> void set_cmpild_callback(T &&... args) { m_cmpild_instr_callback.set(std::forward<T>(args)...); }
+	template <typename... T> void set_rte_callback(T &&... args) { m_rte_instr_callback.set(std::forward<T>(args)...); }
+	template <typename... T> void set_tas_write_callback(T &&... args) { m_tas_write_callback.set(std::forward<T>(args)...); }
+	u16 get_fc();
+	void set_hmmu_enable(int enable);
+	int get_pmmu_enable() const {return m_pmmu_enabled;};
+	void set_fpu_enable(int enable);
+	void set_buserror_details(u32 fault_addr, u8 rw, u8 fc);
+	void disable_interrupt_mixer() { m_interrupt_mixer = false; }
+	void set_cpu_space(int space_id) { m_cpu_space_id = space_id; }
 
+protected:
+	m68000_base_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock,
+						const device_type type, u32 prg_data_width, u32 prg_address_bits);
 
-	UINT32 cpu_type;     /* CPU Type: 68000, 68008, 68010, 68EC020, 68020, 68EC030, 68030, 68EC040, or 68040 */
-//  UINT32 dasm_type;    /* disassembly type */
-	UINT32 dar[16];      /* Data and Address Registers */
-	UINT32 ppc;        /* Previous program counter */
-	UINT32 pc;           /* Program Counter */
-	UINT32 sp[7];        /* User, Interrupt, and Master Stack Pointers */
-	UINT32 vbr;          /* Vector Base Register (m68010+) */
-	UINT32 sfc;          /* Source Function Code Register (m68010+) */
-	UINT32 dfc;          /* Destination Function Code Register (m68010+) */
-	UINT32 cacr;         /* Cache Control Register (m68020, unemulated) */
-	UINT32 caar;         /* Cache Address Register (m68020, unemulated) */
-	UINT32 ir;           /* Instruction Register */
-	floatx80 fpr[8];     /* FPU Data Register (m68030/040) */
-	UINT32 fpiar;        /* FPU Instruction Address Register (m68040) */
-	UINT32 fpsr;         /* FPU Status Register (m68040) */
-	UINT32 fpcr;         /* FPU Control Register (m68040) */
-	UINT32 t1_flag;      /* Trace 1 */
-	UINT32 t0_flag;      /* Trace 0 */
-	UINT32 s_flag;       /* Supervisor */
-	UINT32 m_flag;       /* Master/Interrupt state */
-	UINT32 x_flag;       /* Extend */
-	UINT32 n_flag;       /* Negative */
-	UINT32 not_z_flag;   /* Zero, inverted for speedups */
-	UINT32 v_flag;       /* Overflow */
-	UINT32 c_flag;       /* Carry */
-	UINT32 int_mask;     /* I0-I2 */
-	UINT32 int_level;    /* State of interrupt pins IPL0-IPL2 -- ASG: changed from ints_pending */
-	UINT32 stopped;      /* Stopped state */
-	UINT32 pref_addr;    /* Last prefetch address */
-	UINT32 pref_data;    /* Data in the prefetch queue */
-	UINT32 sr_mask;      /* Implemented status register bits */
-	UINT32 instr_mode;   /* Stores whether we are in instruction mode or group 0/1 exception mode */
-	UINT32 run_mode;     /* Stores whether we are processing a reset, bus error, address error, or something else */
-	int    has_pmmu;     /* Indicates if a PMMU available (yes on 030, 040, no on EC030) */
-	int    has_hmmu;     /* Indicates if an Apple HMMU is available in place of the 68851 (020 only) */
-	int    pmmu_enabled; /* Indicates if the PMMU is enabled */
-	int    hmmu_enabled; /* Indicates if the HMMU is enabled */
-	int    has_fpu;      /* Indicates if a FPU is available (yes on 030, 040, may be on 020) */
-	int    fpu_just_reset; /* Indicates the FPU was just reset */
+	m68000_base_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock,
+						const device_type type, u32 prg_data_width, u32 prg_address_bits, address_map_constructor internal_map);
+
+	int    m_has_fpu;      /* Indicates if a FPU is available (yes on 030, 040, may be on 020) */
+
+	bool   m_interrupt_mixer; /* Indicates whether to put a virtual 8->3 priority mixer on the input lines (default true) */
+	int    m_cpu_space_id;    /* CPU space address space id (default AS_CPU_SPACE) */
+
+	u32 m_cpu_type;     /* CPU Type: 68000, 68008, 68010, 68EC020, 68020, 68EC030, 68030, 68EC040, or 68040 */
+//
+	u32 m_dar[16];      /* Data and Address Registers */
+	u32 m_ppc;        /* Previous program counter */
+	u32 m_pc;           /* Program Counter */
+	u32 m_sp[7];        /* User, Interrupt, and Master Stack Pointers */
+	u32 m_vbr;          /* Vector Base Register (m68010+) */
+	u32 m_sfc;          /* Source Function Code Register (m68010+) */
+	u32 m_dfc;          /* Destination Function Code Register (m68010+) */
+	u32 m_cacr;         /* Cache Control Register (m68020, unemulated) */
+	u32 m_caar;         /* Cache Address Register (m68020, unemulated) */
+	u32 m_ir;           /* Instruction Register */
+	floatx80 m_fpr[8];     /* FPU Data Register (m68030/040) */
+	u32 m_fpiar;        /* FPU Instruction Address Register (m68040) */
+	u32 m_fpsr;         /* FPU Status Register (m68040) */
+	u32 m_fpcr;         /* FPU Control Register (m68040) */
+	u32 m_t1_flag;      /* Trace 1 */
+	u32 m_t0_flag;      /* Trace 0 */
+	u32 m_s_flag;       /* Supervisor */
+	u32 m_m_flag;       /* Master/Interrupt state */
+	u32 m_x_flag;       /* Extend */
+	u32 m_n_flag;       /* Negative */
+	u32 m_not_z_flag;   /* Zero, inverted for speedups */
+	u32 m_v_flag;       /* Overflow */
+	u32 m_c_flag;       /* Carry */
+	u32 m_int_mask;     /* I0-I2 */
+	u32 m_int_level;    /* State of interrupt pins IPL0-IPL2 -- ASG: changed from ints_pending */
+	u32 m_stopped;      /* Stopped state */
+	u32 m_pref_addr;    /* Last prefetch address */
+	u32 m_pref_data;    /* Data in the prefetch queue */
+	u32 m_sr_mask;      /* Implemented status register bits */
+	u32 m_instr_mode;   /* Stores whether we are in instruction mode or group 0/1 exception mode */
+	u32 m_run_mode;     /* Stores whether we are processing a reset, bus error, address error, or something else */
+	int    m_has_pmmu;     /* Indicates if a PMMU available (yes on 030, 040, no on EC030) */
+	int    m_has_hmmu;     /* Indicates if an Apple HMMU is available in place of the 68851 (020 only) */
+	int    m_pmmu_enabled; /* Indicates if the PMMU is enabled */
+	int    m_hmmu_enabled; /* Indicates if the HMMU is enabled */
+	int    m_fpu_just_reset; /* Indicates the FPU was just reset */
 
 	/* Clocks required for instructions / exceptions */
-	UINT32 cyc_bcc_notake_b;
-	UINT32 cyc_bcc_notake_w;
-	UINT32 cyc_dbcc_f_noexp;
-	UINT32 cyc_dbcc_f_exp;
-	UINT32 cyc_scc_r_true;
-	UINT32 cyc_movem_w;
-	UINT32 cyc_movem_l;
-	UINT32 cyc_shift;
-	UINT32 cyc_reset;
+	u32 m_cyc_bcc_notake_b;
+	u32 m_cyc_bcc_notake_w;
+	u32 m_cyc_dbcc_f_noexp;
+	u32 m_cyc_dbcc_f_exp;
+	u32 m_cyc_scc_r_true;
+	u32 m_cyc_movem_w;
+	u32 m_cyc_movem_l;
+	u32 m_cyc_shift;
+	u32 m_cyc_reset;
 
-	int  initial_cycles;
-	int  remaining_cycles;                     /* Number of clocks remaining */
-	int  reset_cycles;
-	UINT32 tracing;
+	int  m_initial_cycles;
+	int  m_icount;                     /* Number of clocks remaining */
+	int  m_reset_cycles;
+	u32 m_tracing;
 
 	int m_address_error;
 
-	UINT32    aerr_address;
-	UINT32    aerr_write_mode;
-	UINT32    aerr_fc;
+	u32    m_aerr_address;
+	u32    m_aerr_write_mode;
+	u32    m_aerr_fc;
 
 	/* Virtual IRQ lines state */
-	UINT32 virq_state;
-	UINT32 nmi_pending;
+	u32 m_virq_state;
+	u32 m_nmi_pending;
 
-	void (**jump_table)(m68000_base_device *m68k);
-	const UINT8* cyc_instruction;
-	const UINT8* cyc_exception;
+	const u16 *m_state_table;
+	const u8* m_cyc_instruction;
+	const u8* m_cyc_exception;
 
 	/* Callbacks to host */
-	device_irq_acknowledge_delegate int_ack_callback;   /* Interrupt Acknowledge */
-	write32_delegate bkpt_ack_callback;                 /* Breakpoint Acknowledge */
-	write_line_delegate reset_instr_callback;           /* Called when a RESET instruction is encountered */
-	write32_delegate cmpild_instr_callback;             /* Called when a CMPI.L #v, Dn instruction is encountered */
-	write_line_delegate rte_instr_callback;             /* Called when a RTE instruction is encountered */
-	write8_delegate tas_write_callback;                 /* Called instead of normal write8 by the TAS instruction,
-                                                            allowing writeback to be disabled globally or selectively
-                                                            or other side effects to be implemented */
+	write_line_delegate m_reset_instr_callback;           /* Called when a RESET instruction is encountered */
+	write32sm_delegate m_cmpild_instr_callback;           /* Called when a CMPI.L #v, Dn instruction is encountered */
+	write_line_delegate m_rte_instr_callback;             /* Called when a RTE instruction is encountered */
+	write8sm_delegate m_tas_write_callback;               /* Called instead of normal write8 by the TAS instruction,
+	                                                        allowing writeback to be disabled globally or selectively
+	                                                        or other side effects to be implemented */
 
-	address_space *program, *oprogram;
+	address_space *m_program, *m_oprogram, *m_cpu_space;
+
+	memory_access<24, 0, 0, ENDIANNESS_BIG>::cache m_oprogram8;
+	memory_access<24, 1, 0, ENDIANNESS_BIG>::cache m_oprogram16;
+	memory_access<32, 2, 0, ENDIANNESS_BIG>::cache m_oprogram32;
+	memory_access<24, 0, 0, ENDIANNESS_BIG>::specific m_program8;
+	memory_access<24, 1, 0, ENDIANNESS_BIG>::specific m_program16;
+	memory_access<32, 2, 0, ENDIANNESS_BIG>::specific m_program32;
 
 	/* Redirect memory calls */
 
-	typedef delegate<UINT8 (offs_t)> m68k_read8_delegate;
-	typedef delegate<UINT16 (offs_t)> m68k_readimm16_delegate;
-	typedef delegate<UINT16 (offs_t)> m68k_read16_delegate;
-	typedef delegate<UINT32 (offs_t)> m68k_read32_delegate;
-	typedef delegate<void (offs_t, UINT8)> m68k_write8_delegate;
-	typedef delegate<void (offs_t, UINT16)> m68k_write16_delegate;
-	typedef delegate<void (offs_t, UINT32)> m68k_write32_delegate;
+	void init8(address_space &space, address_space &ospace);
+	void init16(address_space &space, address_space &ospace);
+	void init32(address_space &space, address_space &ospace);
+	void init32mmu(address_space &space, address_space &ospace);
+	void init32hmmu(address_space &space, address_space &ospace);
 
-//  class m68k_memory_interface
-//  {
-	public:
-		void init8(address_space &space, address_space &ospace);
-		void init16(address_space &space, address_space &ospace);
-		void init32(address_space &space, address_space &ospace);
-		void init32mmu(address_space &space, address_space &ospace);
-		void init32hmmu(address_space &space, address_space &ospace);
-
-		offs_t  opcode_xor;                     // Address Calculation
-		m68k_readimm16_delegate readimm16;      // Immediate read 16 bit
-		m68k_read8_delegate read8;
-		m68k_read16_delegate read16;
-		m68k_read32_delegate read32;
-		m68k_write8_delegate write8;
-		m68k_write16_delegate write16;
-		m68k_write32_delegate write32;
-
-	private:
-		UINT16 m68008_read_immediate_16(offs_t address);
-		UINT16 read_immediate_16(offs_t address);
-		UINT16 simple_read_immediate_16(offs_t address);
-
-		void m68000_write_byte(offs_t address, UINT8 data);
-
-		UINT8 read_byte_32_mmu(offs_t address);
-		void write_byte_32_mmu(offs_t address, UINT8 data);
-		UINT16 read_immediate_16_mmu(offs_t address);
-		UINT16 readword_d32_mmu(offs_t address);
-		void writeword_d32_mmu(offs_t address, UINT16 data);
-		UINT32 readlong_d32_mmu(offs_t address);
-		void writelong_d32_mmu(offs_t address, UINT32 data);
-
-		UINT8 read_byte_32_hmmu(offs_t address);
-		void write_byte_32_hmmu(offs_t address, UINT8 data);
-		UINT16 read_immediate_16_hmmu(offs_t address);
-		UINT16 readword_d32_hmmu(offs_t address);
-		void writeword_d32_hmmu(offs_t address, UINT16 data);
-		UINT32 readlong_d32_hmmu(offs_t address);
-		void writelong_d32_hmmu(offs_t address, UINT32 data);
-
-//      m68000_base_device *m_cpustate;
-//  };
-
-	public:
-//  m68k_memory_interface memory;
+	std::function<u16 (offs_t)> m_readimm16;      // Immediate read 16 bit
+	std::function<u8  (offs_t)> m_read8;
+	std::function<u16 (offs_t)> m_read16;
+	std::function<u32 (offs_t)> m_read32;
+	std::function<void (offs_t, u8 )> m_write8;
+	std::function<void (offs_t, u16)> m_write16;
+	std::function<void (offs_t, u32)> m_write32;
 
 	address_space *m_space, *m_ospace;
-	direct_read_data *m_direct, *m_odirect;
 
-	UINT32      iotemp;
+	u32      m_iotemp;
 
 	/* save state data */
-	UINT16 save_sr;
-	UINT8 save_stopped;
-	UINT8 save_halted;
+	u16 m_save_sr;
+	u8 m_save_stopped;
+	u8 m_save_halted;
 
 	/* PMMU registers */
-	UINT32 mmu_crp_aptr, mmu_crp_limit;
-	UINT32 mmu_srp_aptr, mmu_srp_limit;
-	UINT32 mmu_urp_aptr;    /* 040 only */
-	UINT32 mmu_tc;
-	UINT16 mmu_sr;
-	UINT32 mmu_sr_040;
-	UINT32 mmu_atc_tag[MMU_ATC_ENTRIES], mmu_atc_data[MMU_ATC_ENTRIES];
-	UINT32 mmu_atc_rr;
-	UINT32 mmu_tt0, mmu_tt1;
-	UINT32 mmu_itt0, mmu_itt1, mmu_dtt0, mmu_dtt1;
-	UINT32 mmu_acr0, mmu_acr1, mmu_acr2, mmu_acr3;
-	UINT32 mmu_last_page_entry, mmu_last_page_entry_addr;
+	u32 m_mmu_crp_aptr, m_mmu_crp_limit;
+	u32 m_mmu_srp_aptr, m_mmu_srp_limit;
+	u32 m_mmu_urp_aptr;    /* 040 only */
+	u32 m_mmu_tc;
+	u16 m_mmu_sr;
+	u32 m_mmu_sr_040;
+	u32 m_mmu_atc_tag[MMU_ATC_ENTRIES], m_mmu_atc_data[MMU_ATC_ENTRIES];
+	u32 m_mmu_atc_rr;
+	u32 m_mmu_tt0, m_mmu_tt1;
+	u32 m_mmu_itt0, m_mmu_itt1, m_mmu_dtt0, m_mmu_dtt1;
+	u32 m_mmu_acr0, m_mmu_acr1, m_mmu_acr2, m_mmu_acr3;
+	u32 m_mmu_last_page_entry, m_mmu_last_page_entry_addr;
 
-	UINT16 mmu_tmp_sr;      /* temporary hack: status code for ptest and to handle write protection */
-	UINT16 mmu_tmp_fc;      /* temporary hack: function code for the mmu (moves) */
-	UINT16 mmu_tmp_rw;      /* temporary hack: read/write (1/0) for the mmu */
-	UINT32 mmu_tmp_buserror_address;   /* temporary hack: (first) bus error address */
-	UINT16 mmu_tmp_buserror_occurred;  /* temporary hack: flag that bus error has occurred from mmu */
-	UINT16 mmu_tmp_buserror_fc;   /* temporary hack: (first) bus error fc */
-	UINT16 mmu_tmp_buserror_rw;   /* temporary hack: (first) bus error rw */
+	u16 m_mmu_tmp_sr;      /* temporary hack: status code for ptest and to handle write protection */
+	u16 m_mmu_tmp_fc;      /* temporary hack: function code for the mmu (moves) */
+	u16 m_mmu_tmp_rw;      /* temporary hack: read/write (1/0) for the mmu */
+	u8 m_mmu_tmp_sz;       /* temporary hack: size for mmu */
 
-	UINT32 ic_address[M68K_IC_SIZE];   /* instruction cache address data */
-	UINT32 ic_data[M68K_IC_SIZE];      /* instruction cache content data */
-	bool   ic_valid[M68K_IC_SIZE];     /* instruction cache valid flags */
+	u32 m_mmu_tmp_buserror_address;   /* temporary hack: (first) bus error address */
+	u16 m_mmu_tmp_buserror_occurred;  /* temporary hack: flag that bus error has occurred from mmu */
+	u16 m_mmu_tmp_buserror_fc;   /* temporary hack: (first) bus error fc */
+	u16 m_mmu_tmp_buserror_rw;   /* temporary hack: (first) bus error rw */
+	u16 m_mmu_tmp_buserror_sz;   /* temporary hack: (first) bus error size` */
+
+	bool m_mmu_tablewalk;             /* set when MMU walks page tables */
+	u32 m_mmu_last_logical_addr;
+	u32 m_ic_address[M68K_IC_SIZE];   /* instruction cache address data */
+	u32 m_ic_data[M68K_IC_SIZE];      /* instruction cache content data */
+	bool   m_ic_valid[M68K_IC_SIZE];     /* instruction cache valid flags */
 
 
 
 	/* 68307 / 68340 internal address map */
-	address_space *internal;
-
-
-
-	/* external instruction hook (does not depend on debug mode) */
-	read32_delegate instruction_hook;
+	address_space *m_internal;
 
 
 
@@ -387,19 +350,91 @@ public:
 	void init_cpu_scc68070(void);
 	void init_cpu_coldfire(void);
 
+	void default_autovectors_map(address_map &map);
 
-	void m68ki_exception_interrupt(m68000_base_device *m68k, UINT32 int_level);
+	void m68ki_exception_interrupt(u32 int_level);
 
-	void reset_cpu(void);
-	inline void cpu_execute(void);
+	inline void m68ki_check_address_error(u32 ADDR, u32 WRITE_MODE, u32 FC)
+	{
+		if((ADDR)&1)
+		{
+			m_aerr_address = ADDR;
+			m_aerr_write_mode = WRITE_MODE;
+			m_aerr_fc = FC;
+			throw 10;
+		}
+	}
 
 	// device_state_interface overrides
 	virtual void state_import(const device_state_entry &entry) override;
 	virtual void state_export(const device_state_entry &entry) override;
-	virtual void state_string_export(const device_state_entry &entry, std::string &str) override;
+	virtual void state_string_export(const device_state_entry &entry, std::string &str) const override;
 
 	// device_memory_interface overrides
-	virtual bool memory_translate(address_spacenum space, int intention, offs_t &address) override;
+	virtual bool memory_translate(int space, int intention, offs_t &address) override;
+
+#include "m68kcpu.h"
+#include "m68kops.h"
+#include "m68kmmu.h"
+
+	virtual void m68k_reset_peripherals() { }
+
+	static double fx80_to_double(floatx80 fx)
+	{
+		u64 d;
+		double *foo;
+
+		foo = (double *)&d;
+
+		d = floatx80_to_float64(fx);
+
+		return *foo;
+	}
+
+	static floatx80 double_to_fx80(double in)
+	{
+		u64 *d;
+
+		d = (u64 *)&in;
+
+		return float64_to_floatx80(*d);
+	}
+
+	// defined in m68kfpu.cpp
+	static const u32 pkmask2[18];
+	static const u32 pkmask3[18];
+	inline floatx80 load_extended_float80(u32 ea);
+	inline void store_extended_float80(u32 ea, floatx80 fpr);
+	inline floatx80 load_pack_float80(u32 ea);
+	inline void store_pack_float80(u32 ea, int k, floatx80 fpr);
+	inline void SET_CONDITION_CODES(floatx80 reg);
+	inline int TEST_CONDITION(int condition);
+	u8 READ_EA_8(int ea);
+	u16 READ_EA_16(int ea);
+	u32 READ_EA_32(int ea);
+	u64 READ_EA_64(int ea);
+	floatx80 READ_EA_FPE(int mode, int reg, uint32 di_mode_ea);
+	floatx80 READ_EA_PACK(int ea);
+	void WRITE_EA_8(int ea, u8 data);
+	void WRITE_EA_16(int ea, u16 data);
+	void WRITE_EA_32(int ea, u32 data);
+	void WRITE_EA_64(int ea, u64 data);
+	void WRITE_EA_FPE(int mode, int reg, floatx80 fpr, uint32 di_mode_ea);
+	void WRITE_EA_PACK(int ea, int k, floatx80 fpr);
+	void fpgen_rm_reg(u16 w2);
+	void fmove_reg_mem(u16 w2);
+	void fmove_fpcr(u16 w2);
+	void fmovem(u16 w2);
+	void fscc();
+	void fbcc16();
+	void fbcc32();
+	void m68040_fpu_op0();
+	int perform_fsave(u32 addr, int inc);
+	void do_frestore_null();
+	void m68040_do_fsave(u32 addr, int reg, int inc);
+	void m68040_do_frestore(u32 addr, int reg);
+	void m68040_fpu_op1();
+	void m68881_ftrap();
 };
 
 
@@ -408,44 +443,22 @@ class m68000_device : public m68000_base_device
 {
 public:
 	// construction/destruction
-	m68000_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
-	m68000_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock, const char *shortname, const char *source);
-
-	m68000_device(const machine_config &mconfig, const char *name, const char *tag, device_t *owner, UINT32 clock,
-						const device_type type, UINT32 prg_data_width, UINT32 prg_address_bits, address_map_constructor internal_map, const char *shortname, const char *source);
+	m68000_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
 
 
+	virtual std::unique_ptr<util::disasm_interface> create_disassembler() override;
 
-	virtual UINT32 disasm_min_opcode_bytes() const override { return 2; };
-	virtual UINT32 disasm_max_opcode_bytes() const override { return 10; };
-	virtual offs_t disasm_disassemble(char *buffer, offs_t pc, const UINT8 *oprom, const UINT8 *opram, UINT32 options) override;
-
-	virtual UINT32 execute_min_cycles() const override { return 4; };
-	virtual UINT32 execute_max_cycles() const override { return 158; };
-
-	virtual UINT32 execute_default_irq_vector() const override { return -1; };
+	virtual u32 execute_min_cycles() const noexcept override { return 4; };
+	virtual u32 execute_max_cycles() const noexcept override { return 158; };
 
 	// device-level overrides
 	virtual void device_start() override;
-};
 
-class m68301_device : public m68000_base_device
-{
-public:
-	// construction/destruction
-	m68301_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+protected:
+	m68000_device(const machine_config &mconfig, const device_type type, const char *tag, device_t *owner, u32 clock);
 
-	virtual UINT32 disasm_min_opcode_bytes() const override { return 2; };
-	virtual UINT32 disasm_max_opcode_bytes() const override { return 10; };
-	virtual offs_t disasm_disassemble(char *buffer, offs_t pc, const UINT8 *oprom, const UINT8 *opram, UINT32 options) override;
-
-	virtual UINT32 execute_min_cycles() const override { return 4; };
-	virtual UINT32 execute_max_cycles() const override { return 158; };
-
-	virtual UINT32 execute_default_irq_vector() const override { return -1; };
-
-	// device-level overrides
-	virtual void device_start() override;
+	m68000_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock,
+						const device_type type, u32 prg_data_width, u32 prg_address_bits, address_map_constructor internal_map);
 };
 
 
@@ -455,35 +468,27 @@ class m68008_device : public m68000_base_device
 {
 public:
 	// construction/destruction
-	m68008_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	m68008_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
 
-	virtual UINT32 disasm_min_opcode_bytes() const override { return 2; };
-	virtual UINT32 disasm_max_opcode_bytes() const override { return 10; };
-	virtual offs_t disasm_disassemble(char *buffer, offs_t pc, const UINT8 *oprom, const UINT8 *opram, UINT32 options) override;
+	virtual std::unique_ptr<util::disasm_interface> create_disassembler() override;
 
-	virtual UINT32 execute_min_cycles() const override { return 4; };
-	virtual UINT32 execute_max_cycles() const override { return 158; };
-
-	virtual UINT32 execute_default_irq_vector() const override { return -1; };
+	virtual u32 execute_min_cycles() const noexcept override { return 4; };
+	virtual u32 execute_max_cycles() const noexcept override { return 158; };
 
 	// device-level overrides
 	virtual void device_start() override;
 };
 
-class m68008plcc_device : public m68000_base_device
+class m68008fn_device : public m68000_base_device
 {
 public:
 	// construction/destruction
-	m68008plcc_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	m68008fn_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
 
-	virtual UINT32 disasm_min_opcode_bytes() const override { return 2; };
-	virtual UINT32 disasm_max_opcode_bytes() const override { return 10; };
-	virtual offs_t disasm_disassemble(char *buffer, offs_t pc, const UINT8 *oprom, const UINT8 *opram, UINT32 options) override;
+	virtual std::unique_ptr<util::disasm_interface> create_disassembler() override;
 
-	virtual UINT32 execute_min_cycles() const override { return 4; };
-	virtual UINT32 execute_max_cycles() const override { return 158; };
-
-	virtual UINT32 execute_default_irq_vector() const override { return -1; };
+	virtual u32 execute_min_cycles() const noexcept override { return 4; };
+	virtual u32 execute_max_cycles() const noexcept override { return 158; };
 
 	// device-level overrides
 	virtual void device_start() override;
@@ -493,16 +498,12 @@ class m68010_device : public m68000_base_device
 {
 public:
 	// construction/destruction
-	m68010_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	m68010_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
 
-	virtual UINT32 disasm_min_opcode_bytes() const override { return 2; };
-	virtual UINT32 disasm_max_opcode_bytes() const override { return 10; };
-	virtual offs_t disasm_disassemble(char *buffer, offs_t pc, const UINT8 *oprom, const UINT8 *opram, UINT32 options) override;
+	virtual std::unique_ptr<util::disasm_interface> create_disassembler() override;
 
-	virtual UINT32 execute_min_cycles() const override { return 4; };
-	virtual UINT32 execute_max_cycles() const override { return 158; };
-
-	virtual UINT32 execute_default_irq_vector() const override { return -1; };
+	virtual u32 execute_min_cycles() const noexcept override { return 4; };
+	virtual u32 execute_max_cycles() const noexcept override { return 158; };
 
 	// device-level overrides
 	virtual void device_start() override;
@@ -512,16 +513,12 @@ class m68ec020_device : public m68000_base_device
 {
 public:
 	// construction/destruction
-	m68ec020_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	m68ec020_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
 
-	virtual UINT32 disasm_min_opcode_bytes() const override { return 2; };
-	virtual UINT32 disasm_max_opcode_bytes() const override { return 20; };
-	virtual offs_t disasm_disassemble(char *buffer, offs_t pc, const UINT8 *oprom, const UINT8 *opram, UINT32 options) override;
+	virtual std::unique_ptr<util::disasm_interface> create_disassembler() override;
 
-	virtual UINT32 execute_min_cycles() const override { return 2; };
-	virtual UINT32 execute_max_cycles() const override { return 158; };
-
-	virtual UINT32 execute_default_irq_vector() const override { return -1; };
+	virtual u32 execute_min_cycles() const noexcept override { return 2; };
+	virtual u32 execute_max_cycles() const noexcept override { return 158; };
 
 	// device-level overrides
 	virtual void device_start() override;
@@ -531,16 +528,12 @@ class m68020_device : public m68000_base_device
 {
 public:
 	// construction/destruction
-	m68020_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	m68020_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
 
-	virtual UINT32 disasm_min_opcode_bytes() const override { return 2; };
-	virtual UINT32 disasm_max_opcode_bytes() const override { return 20; };
-	virtual offs_t disasm_disassemble(char *buffer, offs_t pc, const UINT8 *oprom, const UINT8 *opram, UINT32 options) override;
+	virtual std::unique_ptr<util::disasm_interface> create_disassembler() override;
 
-	virtual UINT32 execute_min_cycles() const override { return 2; };
-	virtual UINT32 execute_max_cycles() const override { return 158; };
-
-	virtual UINT32 execute_default_irq_vector() const override { return -1; };
+	virtual u32 execute_min_cycles() const noexcept override { return 2; };
+	virtual u32 execute_max_cycles() const noexcept override { return 158; };
 
 	// device-level overrides
 	virtual void device_start() override;
@@ -550,16 +543,12 @@ class m68020fpu_device : public m68000_base_device
 {
 public:
 	// construction/destruction
-	m68020fpu_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	m68020fpu_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
 
-	virtual UINT32 disasm_min_opcode_bytes() const override { return 2; };
-	virtual UINT32 disasm_max_opcode_bytes() const override { return 20; };
-	virtual offs_t disasm_disassemble(char *buffer, offs_t pc, const UINT8 *oprom, const UINT8 *opram, UINT32 options) override;
+	virtual std::unique_ptr<util::disasm_interface> create_disassembler() override;
 
-	virtual UINT32 execute_min_cycles() const override { return 2; };
-	virtual UINT32 execute_max_cycles() const override { return 158; };
-
-	virtual UINT32 execute_default_irq_vector() const override { return -1; };
+	virtual u32 execute_min_cycles() const noexcept override { return 2; };
+	virtual u32 execute_max_cycles() const noexcept override { return 158; };
 
 	// device-level overrides
 	virtual void device_start() override;
@@ -569,16 +558,12 @@ class m68020pmmu_device : public m68000_base_device
 {
 public:
 	// construction/destruction
-	m68020pmmu_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	m68020pmmu_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
 
-	virtual UINT32 disasm_min_opcode_bytes() const override { return 2; };
-	virtual UINT32 disasm_max_opcode_bytes() const override { return 20; };
-	virtual offs_t disasm_disassemble(char *buffer, offs_t pc, const UINT8 *oprom, const UINT8 *opram, UINT32 options) override;
+	virtual std::unique_ptr<util::disasm_interface> create_disassembler() override;
 
-	virtual UINT32 execute_min_cycles() const override { return 2; };
-	virtual UINT32 execute_max_cycles() const override { return 158; };
-
-	virtual UINT32 execute_default_irq_vector() const override { return -1; };
+	virtual u32 execute_min_cycles() const noexcept override { return 2; };
+	virtual u32 execute_max_cycles() const noexcept override { return 158; };
 
 	// device-level overrides
 	virtual void device_start() override;
@@ -588,18 +573,14 @@ class m68020hmmu_device : public m68000_base_device
 {
 public:
 	// construction/destruction
-	m68020hmmu_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	m68020hmmu_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
 
-	virtual UINT32 disasm_min_opcode_bytes() const override { return 2; };
-	virtual UINT32 disasm_max_opcode_bytes() const override { return 20; };
-	virtual offs_t disasm_disassemble(char *buffer, offs_t pc, const UINT8 *oprom, const UINT8 *opram, UINT32 options) override;
+	virtual std::unique_ptr<util::disasm_interface> create_disassembler() override;
 
-	virtual UINT32 execute_min_cycles() const override { return 2; };
-	virtual UINT32 execute_max_cycles() const override { return 158; };
+	virtual u32 execute_min_cycles() const noexcept override { return 2; };
+	virtual u32 execute_max_cycles() const noexcept override { return 158; };
 
-	virtual UINT32 execute_default_irq_vector() const override { return -1; };
-
-	virtual bool memory_translate(address_spacenum space, int intention, offs_t &address) override;
+	virtual bool memory_translate(int space, int intention, offs_t &address) override;
 
 	// device-level overrides
 	virtual void device_start() override;
@@ -609,16 +590,12 @@ class m68ec030_device : public m68000_base_device
 {
 public:
 	// construction/destruction
-	m68ec030_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	m68ec030_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
 
-	virtual UINT32 disasm_min_opcode_bytes() const override { return 2; };
-	virtual UINT32 disasm_max_opcode_bytes() const override { return 20; };
-	virtual offs_t disasm_disassemble(char *buffer, offs_t pc, const UINT8 *oprom, const UINT8 *opram, UINT32 options) override;
+	virtual std::unique_ptr<util::disasm_interface> create_disassembler() override;
 
-	virtual UINT32 execute_min_cycles() const override { return 2; };
-	virtual UINT32 execute_max_cycles() const override { return 158; };
-
-	virtual UINT32 execute_default_irq_vector() const override { return -1; };
+	virtual u32 execute_min_cycles() const noexcept override { return 2; };
+	virtual u32 execute_max_cycles() const noexcept override { return 158; };
 
 	// device-level overrides
 	virtual void device_start() override;
@@ -628,16 +605,12 @@ class m68030_device : public m68000_base_device
 {
 public:
 	// construction/destruction
-	m68030_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	m68030_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
 
-	virtual UINT32 disasm_min_opcode_bytes() const override { return 2; };
-	virtual UINT32 disasm_max_opcode_bytes() const override { return 20; };
-	virtual offs_t disasm_disassemble(char *buffer, offs_t pc, const UINT8 *oprom, const UINT8 *opram, UINT32 options) override;
+	virtual std::unique_ptr<util::disasm_interface> create_disassembler() override;
 
-	virtual UINT32 execute_min_cycles() const override { return 2; };
-	virtual UINT32 execute_max_cycles() const override { return 158; };
-
-	virtual UINT32 execute_default_irq_vector() const override { return -1; };
+	virtual u32 execute_min_cycles() const noexcept override { return 2; };
+	virtual u32 execute_max_cycles() const noexcept override { return 158; };
 
 	// device-level overrides
 	virtual void device_start() override;
@@ -647,16 +620,12 @@ class m68ec040_device : public m68000_base_device
 {
 public:
 	// construction/destruction
-	m68ec040_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	m68ec040_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
 
-	virtual UINT32 disasm_min_opcode_bytes() const override { return 2; };
-	virtual UINT32 disasm_max_opcode_bytes() const override { return 20; };
-	virtual offs_t disasm_disassemble(char *buffer, offs_t pc, const UINT8 *oprom, const UINT8 *opram, UINT32 options) override;
+	virtual std::unique_ptr<util::disasm_interface> create_disassembler() override;
 
-	virtual UINT32 execute_min_cycles() const override { return 2; };
-	virtual UINT32 execute_max_cycles() const override { return 158; };
-
-	virtual UINT32 execute_default_irq_vector() const override { return -1; };
+	virtual u32 execute_min_cycles() const noexcept override { return 2; };
+	virtual u32 execute_max_cycles() const noexcept override { return 158; };
 
 	// device-level overrides
 	virtual void device_start() override;
@@ -666,16 +635,12 @@ class m68lc040_device : public m68000_base_device
 {
 public:
 	// construction/destruction
-	m68lc040_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	m68lc040_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
 
-	virtual UINT32 disasm_min_opcode_bytes() const override { return 2; };
-	virtual UINT32 disasm_max_opcode_bytes() const override { return 20; };
-	virtual offs_t disasm_disassemble(char *buffer, offs_t pc, const UINT8 *oprom, const UINT8 *opram, UINT32 options) override;
+	virtual std::unique_ptr<util::disasm_interface> create_disassembler() override;
 
-	virtual UINT32 execute_min_cycles() const override { return 2; };
-	virtual UINT32 execute_max_cycles() const override { return 158; };
-
-	virtual UINT32 execute_default_irq_vector() const override { return -1; };
+	virtual u32 execute_min_cycles() const noexcept override { return 2; };
+	virtual u32 execute_max_cycles() const noexcept override { return 158; };
 
 	// device-level overrides
 	virtual void device_start() override;
@@ -685,38 +650,30 @@ class m68040_device : public m68000_base_device
 {
 public:
 	// construction/destruction
-	m68040_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	m68040_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
 
-	virtual UINT32 disasm_min_opcode_bytes() const override { return 2; };
-	virtual UINT32 disasm_max_opcode_bytes() const override { return 20; };
-	virtual offs_t disasm_disassemble(char *buffer, offs_t pc, const UINT8 *oprom, const UINT8 *opram, UINT32 options) override;
+	virtual std::unique_ptr<util::disasm_interface> create_disassembler() override;
 
-	virtual UINT32 execute_min_cycles() const override { return 2; };
-	virtual UINT32 execute_max_cycles() const override { return 158; };
-
-	virtual UINT32 execute_default_irq_vector() const override { return -1; };
+	virtual u32 execute_min_cycles() const noexcept override { return 2; };
+	virtual u32 execute_max_cycles() const noexcept override { return 158; };
 
 	// device-level overrides
 	virtual void device_start() override;
 };
 
-class scc68070_device : public m68000_base_device
+class scc68070_base_device : public m68000_base_device
 {
-public:
-	// construction/destruction
-	scc68070_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+protected:
+	virtual std::unique_ptr<util::disasm_interface> create_disassembler() override;
 
-	virtual UINT32 disasm_min_opcode_bytes() const override { return 2; };
-	virtual UINT32 disasm_max_opcode_bytes() const override { return 10; };
-	virtual offs_t disasm_disassemble(char *buffer, offs_t pc, const UINT8 *oprom, const UINT8 *opram, UINT32 options) override;
-
-	virtual UINT32 execute_min_cycles() const override { return 4; };
-	virtual UINT32 execute_max_cycles() const override { return 158; };
-
-	virtual UINT32 execute_default_irq_vector() const override { return -1; };
+	virtual u32 execute_min_cycles() const noexcept override { return 4; };
+	virtual u32 execute_max_cycles() const noexcept override { return 158; };
 
 	// device-level overrides
 	virtual void device_start() override;
+
+	scc68070_base_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock,
+						const device_type type, address_map_constructor internal_map);
 };
 
 
@@ -726,22 +683,19 @@ class fscpu32_device : public m68000_base_device
 {
 public:
 	// construction/destruction
-	fscpu32_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	fscpu32_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
 
-	fscpu32_device(const machine_config &mconfig, const char *name, const char *tag, device_t *owner, UINT32 clock,
-						const device_type type, UINT32 prg_data_width, UINT32 prg_address_bits, address_map_constructor internal_map, const char *shortname, const char *source);
+	virtual std::unique_ptr<util::disasm_interface> create_disassembler() override;
 
-	virtual UINT32 disasm_min_opcode_bytes() const override { return 2; };
-	virtual UINT32 disasm_max_opcode_bytes() const override { return 20; };
-	virtual offs_t disasm_disassemble(char *buffer, offs_t pc, const UINT8 *oprom, const UINT8 *opram, UINT32 options) override;
-
-	virtual UINT32 execute_min_cycles() const override { return 2; };
-	virtual UINT32 execute_max_cycles() const override { return 158; };
-
-	virtual UINT32 execute_default_irq_vector() const override { return -1; };
+	virtual u32 execute_min_cycles() const noexcept override { return 2; };
+	virtual u32 execute_max_cycles() const noexcept override { return 158; };
 
 	// device-level overrides
 	virtual void device_start() override;
+
+protected:
+	fscpu32_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock,
+						const device_type type, u32 prg_data_width, u32 prg_address_bits, address_map_constructor internal_map);
 };
 
 
@@ -750,16 +704,12 @@ class mcf5206e_device : public m68000_base_device
 {
 public:
 	// construction/destruction
-	mcf5206e_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	mcf5206e_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
 
-	virtual UINT32 disasm_min_opcode_bytes() const override { return 2; };
-	virtual UINT32 disasm_max_opcode_bytes() const override { return 20; };
-	virtual offs_t disasm_disassemble(char *buffer, offs_t pc, const UINT8 *oprom, const UINT8 *opram, UINT32 options) override;
+	virtual std::unique_ptr<util::disasm_interface> create_disassembler() override;
 
-	virtual UINT32 execute_min_cycles() const override { return 2; };
-	virtual UINT32 execute_max_cycles() const override { return 158; };
-
-	virtual UINT32 execute_default_irq_vector() const override { return -1; };
+	virtual u32 execute_min_cycles() const noexcept override { return 2; };
+	virtual u32 execute_max_cycles() const noexcept override { return 158; };
 
 
 	// device-level overrides
@@ -767,24 +717,22 @@ public:
 };
 
 
-extern const device_type M68000;
-extern const device_type M68301;
-extern const device_type M68008;
-extern const device_type M68008PLCC;
-extern const device_type M68010;
-extern const device_type M68EC020;
-extern const device_type M68020;
-extern const device_type M68020FPU;
-extern const device_type M68020PMMU;
-extern const device_type M68020HMMU;
-extern const device_type M68EC030;
-extern const device_type M68030;
-extern const device_type M68EC040;
-extern const device_type M68LC040;
-extern const device_type M68040;
-extern const device_type SCC68070;
-extern const device_type FSCPU32;
-extern const device_type MCF5206E;
+DECLARE_DEVICE_TYPE(M68000, m68000_device)
+DECLARE_DEVICE_TYPE(M68008, m68008_device)
+DECLARE_DEVICE_TYPE(M68008FN, m68008fn_device)
+DECLARE_DEVICE_TYPE(M68010, m68010_device)
+DECLARE_DEVICE_TYPE(M68EC020, m68ec020_device)
+DECLARE_DEVICE_TYPE(M68020, m68020_device)
+DECLARE_DEVICE_TYPE(M68020FPU, m68020fpu_device)
+DECLARE_DEVICE_TYPE(M68020PMMU, m68020pmmu_device)
+DECLARE_DEVICE_TYPE(M68020HMMU, m68020hmmu_device)
+DECLARE_DEVICE_TYPE(M68EC030, m68ec030_device)
+DECLARE_DEVICE_TYPE(M68030, m68030_device)
+DECLARE_DEVICE_TYPE(M68EC040, m68ec040_device)
+DECLARE_DEVICE_TYPE(M68LC040, m68lc040_device)
+DECLARE_DEVICE_TYPE(M68040, m68040_device)
+DECLARE_DEVICE_TYPE(FSCPU32, fscpu32_device)
+DECLARE_DEVICE_TYPE(MCF5206E, mcf5206e_device)
 
 
-#endif /* __M68000_H__ */
+#endif // MAME_CPU_M68000_M68000_H

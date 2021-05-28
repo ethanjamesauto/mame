@@ -6,9 +6,9 @@
 
 #define BASE  0xb000
 
-READ8_MEMBER(btime_state::mmonkey_protection_r)
+uint8_t btime_state::mmonkey_protection_r(offs_t offset)
 {
-	UINT8 *RAM = memregion("maincpu")->base();
+	uint8_t *RAM = memregion("maincpu")->base();
 	int ret = 0;
 
 	if (offset == 0x0000)
@@ -18,14 +18,14 @@ READ8_MEMBER(btime_state::mmonkey_protection_r)
 	else if (offset >= 0x0d00 && offset <= 0x0d02)
 		ret = RAM[BASE + offset];  /* addition result */
 	else
-		logerror("Unknown protection read.  PC=%04X  Offset=%04X\n", space.device().safe_pc(), offset);
+		logerror("Unknown protection read.  PC=%04X  Offset=%04X\n", m_maincpu->pc(), offset);
 
 	return ret;
 }
 
-WRITE8_MEMBER(btime_state::mmonkey_protection_w)
+void btime_state::mmonkey_protection_w(offs_t offset, uint8_t data)
 {
-	UINT8 *RAM = memregion("maincpu")->base();
+	uint8_t *RAM = memregion("maincpu")->base();
 
 	if (offset == 0)
 	{
@@ -73,7 +73,7 @@ WRITE8_MEMBER(btime_state::mmonkey_protection_w)
 				break;
 
 			default:
-				logerror("Unemulated protection command=%02X.  PC=%04X\n", m_protection_command, space.device().safe_pc());
+				logerror("Unemulated protection command=%02X.  PC=%04X\n", m_protection_command, m_maincpu->pc());
 				break;
 			}
 
@@ -89,5 +89,5 @@ WRITE8_MEMBER(btime_state::mmonkey_protection_w)
 	else if (offset >= 0x0d00 && offset <= 0x0d05)
 		RAM[BASE + offset] = data;   /* source table */
 	else
-		logerror("Unknown protection write=%02X.  PC=%04X  Offset=%04X\n", data, space.device().safe_pc(), offset);
+		logerror("Unknown protection write=%02X.  PC=%04X  Offset=%04X\n", data, m_maincpu->pc(), offset);
 }

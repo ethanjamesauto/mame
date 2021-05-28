@@ -17,6 +17,9 @@ TODO:
 #include "911_chr.h"
 #include "911_key.h"
 
+#include "speaker.h"
+
+
 #define MAX_VDT 1
 
 static const gfx_layout fontlayout_7bit =
@@ -41,84 +44,79 @@ static const gfx_layout fontlayout_8bit =
 	10*8            /* every char takes 10 consecutive bytes */
 };
 
-static GFXDECODE_START( vdt911 )
+static GFXDECODE_START( gfx_vdt911 )
 	// Caution: Array must use same order as vdt911_model_t
 	// US
-	GFXDECODE_ENTRY( vdt911_chr_region, vdt911_US_chr_offset, fontlayout_7bit, 0, 4 )
+	GFXDECODE_ENTRY( vdt911_chr_region, vdt911_device::US_chr_offset, fontlayout_7bit, 0, 4 )
 
 	// UK
-	GFXDECODE_ENTRY( vdt911_chr_region, vdt911_UK_chr_offset, fontlayout_7bit, 0, 4 )
+	GFXDECODE_ENTRY( vdt911_chr_region, vdt911_device::UK_chr_offset, fontlayout_7bit, 0, 4 )
 
 	// French (without accented characters)
-	GFXDECODE_ENTRY( vdt911_chr_region, vdt911_US_chr_offset, fontlayout_7bit, 0, 4 )
+	GFXDECODE_ENTRY( vdt911_chr_region, vdt911_device::US_chr_offset, fontlayout_7bit, 0, 4 )
 
 	// German
-	GFXDECODE_ENTRY( vdt911_chr_region, vdt911_german_chr_offset, fontlayout_7bit, 0, 4 )
+	GFXDECODE_ENTRY( vdt911_chr_region, vdt911_device::german_chr_offset, fontlayout_7bit, 0, 4 )
 
 	// Swedish
-	GFXDECODE_ENTRY( vdt911_chr_region, vdt911_swedish_chr_offset, fontlayout_7bit, 0, 4 )
+	GFXDECODE_ENTRY( vdt911_chr_region, vdt911_device::swedish_chr_offset, fontlayout_7bit, 0, 4 )
 
 	// Norwegian
-	GFXDECODE_ENTRY( vdt911_chr_region, vdt911_norwegian_chr_offset, fontlayout_7bit, 0, 4 )
+	GFXDECODE_ENTRY( vdt911_chr_region, vdt911_device::norwegian_chr_offset, fontlayout_7bit, 0, 4 )
 
 	// Japanese
-	GFXDECODE_ENTRY( vdt911_chr_region, vdt911_japanese_chr_offset, fontlayout_8bit, 0, 4 )
+	GFXDECODE_ENTRY( vdt911_chr_region, vdt911_device::japanese_chr_offset, fontlayout_8bit, 0, 4 )
 
 	// Arabic
-	// GFXDECODE_ENTRY( vdt911_chr_region, vdt911_arabic_chr_offset, fontlayout_8bit, 0, 4 )
+	// GFXDECODE_ENTRY( vdt911_chr_region, vdt911_device::arabic_chr_offset, fontlayout_8bit, 0, 4 )
 
 	// FrenchWP (contains accented characters)
-	GFXDECODE_ENTRY( vdt911_chr_region, vdt911_frenchWP_chr_offset, fontlayout_7bit, 0, 4 )
+	GFXDECODE_ENTRY( vdt911_chr_region, vdt911_device::frenchWP_chr_offset, fontlayout_7bit, 0, 4 )
 GFXDECODE_END
 
-static const unsigned char vdt911_colors[] =
+static constexpr rgb_t vdt911_colors[] =
 {
-	0x00,0x00,0x00, /* black */
-	0xC0,0xC0,0xC0, /* low intensity */
-	0xFF,0xFF,0xFF  /* high intensity */
+	{ 0x00, 0x00, 0x00 }, // black
+	{ 0xc0, 0xc0, 0xc0 }, // low intensity
+	{ 0xff, 0xff, 0xff }  // high intensity
 };
 
-static const unsigned short vdt911_palette[] =
+static const unsigned short vdt911_pens[] =
 {
-	0, 2,   /* high intensity */
-	0, 1,   /* low intensity */
-	2, 0,   /* high intensity, reverse */
-	2, 1    /* low intensity, reverse */
+	0, 2,   // high intensity
+	0, 1,   // low intensity
+	2, 0,   // high intensity, reverse
+	2, 1    // low intensity, reverse
 };
 
 /*
     Macros for model features
 */
 /* TRUE for Japanese and Arabic terminals, which use 8-bit charcodes and keyboard shift modes */
-#define USES_8BIT_CHARCODES() ((m_model == vdt911_model_Japanese) /*|| (m_model == vdt911_model_Arabic)*/)
+#define USES_8BIT_CHARCODES() ((m_model == model::Japanese) /*|| (m_model == model::Arabic)*/)
 /* TRUE for keyboards which have this extra key (on the left of TAB/SKIP)
     (Most localized keyboards have it) */
-#define HAS_EXTRA_KEY_67() (! ((m_model == vdt911_model_US) || (m_model == vdt911_model_UK) || (m_model == vdt911_model_French)))
+#define HAS_EXTRA_KEY_67() (! ((m_model == model::US) || (m_model == model::UK) || (m_model == model::French)))
 /* TRUE for keyboards which have this extra key (on the right of space),
     AND do not use it as a modifier */
-#define HAS_EXTRA_KEY_91() ((m_model == vdt911_model_German) || (m_model == vdt911_model_Swedish) || (m_model == vdt911_model_Norwegian))
+#define HAS_EXTRA_KEY_91() ((m_model == model::German) || (m_model == model::Swedish) || (m_model == model::Norwegian))
 
 /*
     Initialize vdt911 palette
 */
-PALETTE_INIT_MEMBER(vdt911_device, vdt911)
+void vdt911_device::vdt911_palette(palette_device &palette) const
 {
-	UINT8 i, r, g, b;
+	for (int i = 0; i < std::size(vdt911_colors); i++)
+		palette.set_indirect_color(i, vdt911_colors[i]);
 
-	for ( i = 0; i < 3; i++ )
-	{
-		r = vdt911_colors[i*3]; g = vdt911_colors[i*3+1]; b = vdt911_colors[i*3+2];
-		palette.set_indirect_color(i, rgb_t(r, g, b));
-	}
-
-	for(i=0;i<8;i++)
-		palette.set_pen_indirect(i, vdt911_palette[i]);
+	for (int i = 0; i < std::size(vdt911_pens); i++)
+		palette.set_pen_indirect(i, vdt911_pens[i]);
 }
 
 /*
     Copy a character bitmap array to another location in memory
 */
-static void copy_character_matrix_array(const UINT8 char_array[128][10], UINT8 *dest)
+static void copy_character_matrix_array(const uint8_t char_array[128][10], uint8_t *dest)
 {
 	int i, j;
 
@@ -130,7 +128,7 @@ static void copy_character_matrix_array(const UINT8 char_array[128][10], UINT8 *
 /*
     Patch a character bitmap array according to an array of char_override_t
 */
-static void apply_char_overrides(int nb_char_overrides, const char_override_t char_overrides[], UINT8 *dest)
+static void apply_char_overrides(int nb_char_overrides, const char_override_t char_overrides[], uint8_t *dest)
 {
 	int i, j;
 
@@ -141,25 +139,16 @@ static void apply_char_overrides(int nb_char_overrides, const char_override_t ch
 	}
 }
 
-const device_type VDT911 = &device_creator<vdt911_device>;
+DEFINE_DEVICE_TYPE(VDT911, vdt911_device, "vdt911", "911 VDT")
 
-vdt911_device::vdt911_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: device_t(mconfig, VDT911, "911 VDT", tag, owner, clock, "vdt911", __FILE__),
-		m_beeper(*this, "beeper"),
-		m_gfxdecode(*this, "gfxdecode"),
-		m_palette(*this, "palette"),
-		m_keyint_line(*this),
-		m_lineint_line(*this)
-{
-}
-
-//-------------------------------------------------
-//  device_config_complete - perform any
-//  operations now that the configuration is
-//  complete
-//-------------------------------------------------
-
-void vdt911_device::device_config_complete()
+vdt911_device::vdt911_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: device_t(mconfig, VDT911, tag, owner, clock)
+	, device_gfx_interface(mconfig, *this, gfx_vdt911, "palette")
+	, m_beeper(*this, "beeper")
+	, m_screen(*this, "screen")
+	, m_keys(*this, "KEY%u", 0U)
+	, m_keyint_line(*this)
+	, m_lineint_line(*this)
 {
 }
 
@@ -188,61 +177,59 @@ void vdt911_device::device_start()
 	/* set up cursor blink clock.  2Hz frequency -> .25s half-period. */
 	/*m_blink_clock =*/
 
-	// m_beeper->set_frequency(2000);
-
 	m_blink_timer = timer_alloc(BLINK_TIMER);
 	m_beep_timer = timer_alloc(BEEP_TIMER);
 	m_line_timer = timer_alloc(LINE_TIMER);
 
 	m_blink_timer->adjust(attotime::from_msec(0), 0, attotime::from_msec(250));
 
-	UINT8 *base;
-	UINT8 *chr = machine().root_device().memregion(vdt911_chr_region)->base();
+	uint8_t *base;
+	uint8_t *chr = machine().root_device().memregion(vdt911_chr_region)->base();
 
 	/* set up US character definitions */
-	base = chr+vdt911_US_chr_offset;
+	base = chr+US_chr_offset;
 	copy_character_matrix_array(char_defs+char_defs_US_base, base);
 
 	/* set up UK character definitions */
-	base = chr+vdt911_UK_chr_offset;
+	base = chr+UK_chr_offset;
 	copy_character_matrix_array(char_defs+char_defs_US_base, base);
 	apply_char_overrides(sizeof(UK_overrides)/sizeof(char_override_t), UK_overrides, base);
 
 	/* French character set is identical to US character set */
 
 	/* set up German character definitions */
-	base = chr+vdt911_german_chr_offset;
+	base = chr+german_chr_offset;
 	copy_character_matrix_array(char_defs+char_defs_US_base, base);
 	apply_char_overrides(sizeof(german_overrides)/sizeof(char_override_t), german_overrides, base);
 
 	/* set up Swedish/Finnish character definitions */
-	base = chr+vdt911_swedish_chr_offset;
+	base = chr+swedish_chr_offset;
 	copy_character_matrix_array(char_defs+char_defs_US_base, base);
 	apply_char_overrides(sizeof(swedish_overrides)/sizeof(char_override_t), swedish_overrides, base);
 
 	/* set up Norwegian/Danish character definitions */
-	base = chr+vdt911_norwegian_chr_offset;
+	base = chr+norwegian_chr_offset;
 	copy_character_matrix_array(char_defs+char_defs_US_base, base);
 	apply_char_overrides(sizeof(norwegian_overrides)/sizeof(char_override_t), norwegian_overrides, base);
 
 	/* set up French word processing character definitions */
-	base = chr+vdt911_frenchWP_chr_offset;
+	base = chr+frenchWP_chr_offset;
 	copy_character_matrix_array(char_defs+char_defs_US_base, base);
 	apply_char_overrides(sizeof(frenchWP_overrides)/sizeof(char_override_t), frenchWP_overrides, base);
 
 	/* set up Katakana Japanese character definitions */
-	base = chr+vdt911_japanese_chr_offset;
+	base = chr+japanese_chr_offset;
 	copy_character_matrix_array(char_defs+char_defs_US_base, base);
 	apply_char_overrides(sizeof(japanese_overrides)/sizeof(char_override_t), japanese_overrides, base);
-	base = chr+vdt911_japanese_chr_offset+128*vdt911_single_char_len;
+	base = chr+japanese_chr_offset+128*single_char_len;
 	copy_character_matrix_array(char_defs+char_defs_katakana_base, base);
 
 #if 0
 	/* set up Arabic character definitions */
-	base = chr+vdt911_arabic_chr_offset;
+	base = chr+arabic_chr_offset;
 	copy_character_matrix_array(char_defs+char_defs_US_base, base);
 	apply_char_overrides(sizeof(arabic_overrides)/sizeof(char_override_t), arabic_overrides, base);
-	base = chr+vdt911_arabic_chr_offset+128*vdt911_single_char_len;
+	base = chr+arabic_chr_offset+128*single_char_len;
 	copy_character_matrix_array(char_defs+char_defs_arabic_base, base);
 #endif
 }
@@ -250,15 +237,19 @@ void vdt911_device::device_start()
 
 void vdt911_device::device_reset()
 {
-	m_model = (vdt911_model_t)ioport("LOCALE")->read();
-	m_screen_size = (vdt911_screen_size_t)ioport("SCREEN")->read();
+	m_model = model(ioport("LOCALE")->read());
+	m_screen_size = screen_size(ioport("SCREEN")->read());
 
-	if (m_screen_size == char_960)
+	if (m_screen_size == screen_size::char_960)
 		m_cursor_address_mask = 0x3ff;   /* 1kb of RAM */
 	else
 		m_cursor_address_mask = 0x7ff;   /* 2 kb of RAM */
 
-	m_line_timer->adjust(attotime::from_msec(0), 0, attotime::from_hz(get_refresh_rate()));
+	// European models have 50 Hz
+	int lines = (m_model == model::US) || (m_model == model::Japanese) ? 262 : 314;
+	attotime refresh = attotime::from_hz(11.004_MHz_XTAL / 700 / lines);
+	m_screen->configure(700, lines, m_screen->visible_area(), refresh.as_attoseconds());
+	m_line_timer->adjust(attotime::from_msec(0), 0, refresh);
 }
 
 /*
@@ -285,15 +276,15 @@ void vdt911_device::device_timer(emu_timer &timer, device_timer_id id, int param
 /*
     CRU interface read
 */
-READ8_MEMBER( vdt911_device::cru_r )
+uint8_t vdt911_device::cru_r(offs_t offset)
 {
 	int reply=0;
 
-	offset &= 0x1;
+	offset &= 0xf;
 
 	if (!m_word_select)
 	{   /* select word 0 */
-		switch (offset)
+		switch (offset >> 3)
 		{
 		case 0:
 			reply = m_display_RAM[m_cursor_address];
@@ -308,7 +299,7 @@ READ8_MEMBER( vdt911_device::cru_r )
 	}
 	else
 	{   /* select word 1 */
-		switch (offset)
+		switch (offset >> 3)
 		{
 		case 0:
 			reply = m_cursor_address & 0xff;
@@ -330,13 +321,13 @@ READ8_MEMBER( vdt911_device::cru_r )
 		}
 	}
 
-	return reply;
+	return BIT(reply, offset & 3);
 }
 
 /*
     CRU interface write
 */
-WRITE8_MEMBER( vdt911_device::cru_w )
+void vdt911_device::cru_w(offs_t offset, uint8_t data)
 {
 	offset &= 0xf;
 
@@ -469,8 +460,8 @@ WRITE8_MEMBER( vdt911_device::cru_w )
 */
 void vdt911_device::refresh(bitmap_ind16 &bitmap, const rectangle &cliprect, int x, int y)
 {
-	gfx_element *gfx = m_gfxdecode->gfx(m_model);
-	int height = (m_screen_size == char_960) ? 12 : /*25*/24;
+	gfx_element *gfx = this->gfx(unsigned(m_model));
+	int height = (m_screen_size == screen_size::char_960) ? 12 : 24;
 
 	int use_8bit_charcodes = USES_8BIT_CHARCODES();
 	int address = 0;
@@ -554,17 +545,15 @@ void vdt911_device::check_keyboard()
 	static unsigned char repeat_timer;
 	enum { repeat_delay = 5 /* approx. 1/10s */ };
 
-	UINT16 key_buf[6];
+	uint16_t key_buf[6];
 	int i, j;
 	modifier_state_t modifier_state;
 	int repeat_mode;
 
-	static const char *const keynames[] = { "KEY0", "KEY1", "KEY2", "KEY3", "KEY4", "KEY5" };
-
 	/* read current key state */
 	for (i = 0; i < 6; i++)
 	{
-		key_buf[i] = ioport(keynames[i])->read();
+		key_buf[i] = m_keys[i]->read();
 	}
 
 	/* parse modifier keys */
@@ -580,7 +569,7 @@ void vdt911_device::check_keyboard()
 	}
 	else
 	{   /* we are using a Western keyboard, or a katakana/Arabic keyboard in
-        romaji/Latin mode */
+	    romaji/Latin mode */
 		m_foreign_mode = false;
 
 		if (key_buf[3] & 0x0040)
@@ -661,7 +650,7 @@ void vdt911_device::check_keyboard()
 						m_last_key_pressed = (i << 4) | j;
 						m_last_modifier_state = modifier_state;
 
-						m_keyboard_data = (int)key_translate[m_model][modifier_state][m_last_key_pressed];
+						m_keyboard_data = (int)key_translate[unsigned(m_model)][modifier_state][m_last_key_pressed];
 						m_keyboard_data_ready = 1;
 						if (m_keyboard_interrupt_enable)
 							m_keyint_line(ASSERT_LINE);
@@ -673,13 +662,7 @@ void vdt911_device::check_keyboard()
 	}
 }
 
-int vdt911_device::get_refresh_rate()
-{
-	// European models have 50 Hz
-	return ((m_model == vdt911_model_US) || (m_model == vdt911_model_Japanese))? 60 : 50;
-}
-
-UINT32 vdt911_device::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t vdt911_device::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	refresh(bitmap, cliprect, 0, 0);
 	return 0;
@@ -688,20 +671,20 @@ UINT32 vdt911_device::screen_update(screen_device &screen, bitmap_ind16 &bitmap,
 INPUT_PORTS_START( vdt911 )
 	PORT_START( "LOCALE" )
 	PORT_CONFNAME( 0x0f, 0x00, "Terminal language" )
-		PORT_CONFSETTING( vdt911_model_US, "English US" )
-		PORT_CONFSETTING( vdt911_model_UK, "English UK" )
-		PORT_CONFSETTING( vdt911_model_French, "French" )
-		PORT_CONFSETTING( vdt911_model_German, "German" )
-		PORT_CONFSETTING( vdt911_model_Swedish, "Swedish" )
-		PORT_CONFSETTING( vdt911_model_Norwegian, "Norwegian" )
-		PORT_CONFSETTING( vdt911_model_Japanese, "Japanese" )
-		// PORT_CONFSETTING( vdt911_model_Arabic, "Arabic" )
-		PORT_CONFSETTING( vdt911_model_FrenchWP, "French Word Processing" )
+		PORT_CONFSETTING( ioport_value(vdt911_device::model::US), "English US" )
+		PORT_CONFSETTING( ioport_value(vdt911_device::model::UK), "English UK" )
+		PORT_CONFSETTING( ioport_value(vdt911_device::model::French), "French" )
+		PORT_CONFSETTING( ioport_value(vdt911_device::model::German), "German" )
+		PORT_CONFSETTING( ioport_value(vdt911_device::model::Swedish), "Swedish" )
+		PORT_CONFSETTING( ioport_value(vdt911_device::model::Norwegian), "Norwegian" )
+		PORT_CONFSETTING( ioport_value(vdt911_device::model::Japanese), "Japanese" )
+		// PORT_CONFSETTING( ioport_value(vdt911_device::model::Arabic), "Arabic" )
+		PORT_CONFSETTING( ioport_value(vdt911_device::model::FrenchWP), "French Word Processing" )
 
 	PORT_START( "SCREEN" )
-	PORT_CONFNAME( 0x01, char_960, "Terminal screen size" )
-		PORT_CONFSETTING( char_960, "960 chars (12 lines)")
-		PORT_CONFSETTING( char_1920, "1920 chars (24 lines)")
+	PORT_CONFNAME( 0x01, ioport_value(vdt911_device::screen_size::char_960), "Terminal screen size" )
+		PORT_CONFSETTING( ioport_value(vdt911_device::screen_size::char_960), "960 chars (12 lines)")
+		PORT_CONFSETTING( ioport_value(vdt911_device::screen_size::char_1920), "1920 chars (24 lines)")
 
 	PORT_START("KEY0")  /* keys 1-16 */                                                                 \
 		PORT_BIT(0x0001, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("F1") PORT_CODE(KEYCODE_F1)        \
@@ -807,35 +790,21 @@ INPUT_PORTS_START( vdt911 )
 		PORT_BIT(0x0400, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("(not on US keyboard)") PORT_CODE(KEYCODE_PLUS_PAD)
 INPUT_PORTS_END
 
-static MACHINE_CONFIG_FRAGMENT( vdt911 )
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_REFRESH_RATE(60)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(2500)) /* not accurate */
-	MCFG_SCREEN_UPDATE_DEVICE(DEVICE_SELF, vdt911_device, screen_update)
-
-	MCFG_SCREEN_SIZE(560, 280)
-	MCFG_SCREEN_VISIBLE_AREA(0, 560-1, 0, /*250*/280-1)
-	MCFG_SCREEN_PALETTE("palette")
-
-	MCFG_SPEAKER_STANDARD_MONO("speaker")
-	MCFG_SOUND_ADD("beeper", BEEP, 0)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "speaker", 0.50)
-
-	MCFG_PALETTE_ADD("palette", 8)
-	MCFG_PALETTE_INDIRECT_ENTRIES(3)
-	MCFG_PALETTE_INIT_OWNER(vdt911_device, vdt911)
-
-	MCFG_GFXDECODE_ADD("gfxdecode", "palette", vdt911)
-MACHINE_CONFIG_END
-
 //-------------------------------------------------
-//  machine_config_additions - return a pointer to
-//  the device's machine fragment
+//  device_add_mconfig - add device configuration
 //-------------------------------------------------
 
-machine_config_constructor vdt911_device::device_mconfig_additions() const
+void vdt911_device::device_add_mconfig(machine_config &config)
 {
-	return MACHINE_CONFIG_NAME( vdt911 );
+	SCREEN(config, m_screen, SCREEN_TYPE_RASTER);
+	m_screen->set_raw(11.004_MHz_XTAL, 700, 0, 560, 262, 0, 240);
+	m_screen->set_screen_update(FUNC(vdt911_device::screen_update));
+	m_screen->set_palette("palette");
+
+	SPEAKER(config, "speaker").front_center();
+	BEEP(config, m_beeper, 3250).add_route(ALL_OUTPUTS, "speaker", 0.50);
+
+	PALETTE(config, "palette", FUNC(vdt911_device::vdt911_palette), std::size(vdt911_pens), std::size(vdt911_colors));
 }
 
 ioport_constructor vdt911_device::device_input_ports() const

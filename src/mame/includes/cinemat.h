@@ -5,138 +5,229 @@
     Cinematronics vector hardware
 
 *************************************************************************/
+#ifndef MAME_INCLUDES_CINEMAT_H
+#define MAME_INCLUDES_CINEMAT_H
 
+#pragma once
+
+#include "cpu/ccpu/ccpu.h"
+#include "audio/cinemat.h"
+#include "machine/74259.h"
 #include "sound/ay8910.h"
 #include "sound/samples.h"
 #include "video/vector.h"
+#include "screen.h"
 
 class cinemat_state : public driver_device
 {
 public:
 	cinemat_state(const machine_config &mconfig, device_type type, const char *tag)
-		: driver_device(mconfig, type, tag),
-		m_maincpu(*this, "maincpu"),
-		m_ay1(*this, "ay1"),
-		m_samples(*this, "samples"),
-		m_vector(*this, "vector"),
-		m_screen(*this, "screen"),
-		m_rambase(*this, "rambase") { }
+		: driver_device(mconfig, type, tag)
+		, m_maincpu(*this, "maincpu")
+		, m_ay1(*this, "ay1")
+		, m_outlatch(*this, "outlatch")
+		, m_vector(*this, "vector")
+		, m_screen(*this, "screen")
+		, m_rambase(*this, "rambase")
+		, m_inputs(*this, "INPUTS")
+		, m_switches(*this, "SWITCHES")
+		, m_wheel(*this, "WHEEL")
+		, m_analog_x(*this, "ANALOGX")
+		, m_analog_y(*this, "ANALOGY")
+		, m_led(*this, "led")
+		, m_pressed(*this, "pressed%u", 0U)
+		, m_coin_detected(0)
+		, m_coin_last_reset(0)
+		, m_mux_select(0)
+		, m_gear(0)
+		, m_vector_color(255, 255, 255)
+		, m_lastx(0)
+		, m_lasty(0)
+	{ }
 
 	required_device<ccpu_cpu_device> m_maincpu;
 	optional_device<ay8910_device> m_ay1;
-	optional_device<samples_device> m_samples;
+	required_device<ls259_device> m_outlatch;
 	required_device<vector_device> m_vector;
 	required_device<screen_device> m_screen;
-	optional_shared_ptr<UINT16> m_rambase;
+	optional_shared_ptr<s16> m_rambase;
 
-	typedef void (cinemat_state::*sound_func)(UINT8 sound_val, UINT8 bits_changed);
+	required_ioport m_inputs;
+	required_ioport m_switches;
+	optional_ioport m_wheel;
+	optional_ioport m_analog_x;
+	optional_ioport m_analog_y;
 
-	sound_func m_sound_handler;
-	UINT8 m_sound_control;
-	UINT32 m_current_shift;
-	UINT32 m_last_shift;
-	UINT32 m_last_shift2;
-	UINT32 m_current_pitch;
-	UINT32 m_last_frame;
-	UINT8 m_sound_fifo[16];
-	UINT8 m_sound_fifo_in;
-	UINT8 m_sound_fifo_out;
-	UINT8 m_last_portb_write;
-	float m_target_volume;
-	float m_current_volume;
-	UINT8 m_coin_detected;
-	UINT8 m_coin_last_reset;
-	UINT8 m_mux_select;
-	int m_gear;
-	int m_color_mode;
+	output_finder<> m_led;
+	output_finder<10> m_pressed;
+
+	u8 m_coin_detected;
+	u8 m_coin_last_reset;
+	u8 m_mux_select;
+	u8 m_gear;
 	rgb_t m_vector_color;
-	INT16 m_lastx;
-	INT16 m_lasty;
-	UINT8 m_last_control;
-	int m_qb3_lastx;
-	int m_qb3_lasty;
-	DECLARE_READ8_MEMBER(inputs_r);
-	DECLARE_READ8_MEMBER(switches_r);
-	DECLARE_READ8_MEMBER(coin_input_r);
-	DECLARE_WRITE8_MEMBER(coin_reset_w);
-	DECLARE_WRITE8_MEMBER(mux_select_w);
-	DECLARE_READ8_MEMBER(speedfrk_wheel_r);
-	DECLARE_READ8_MEMBER(speedfrk_gear_r);
-	DECLARE_READ8_MEMBER(sundance_inputs_r);
-	DECLARE_READ8_MEMBER(boxingb_dial_r);
-	DECLARE_READ8_MEMBER(qb3_frame_r);
-	DECLARE_WRITE8_MEMBER(qb3_ram_bank_w);
-	DECLARE_WRITE8_MEMBER(cinemat_vector_control_w);
-	DECLARE_WRITE8_MEMBER(cinemat_sound_control_w);
-	DECLARE_WRITE8_MEMBER(qb3_sound_w);
-	DECLARE_READ8_MEMBER(joystick_read);
+	s16 m_lastx;
+	s16 m_lasty;
+	u8 inputs_r(offs_t offset);
+	u8 switches_r(offs_t offset);
+	u8 coin_input_r();
+	WRITE_LINE_MEMBER(coin_reset_w);
+	WRITE_LINE_MEMBER(mux_select_w);
+	u8 speedfrk_wheel_r(offs_t offset);
+	u8 speedfrk_gear_r(offs_t offset);
+	virtual DECLARE_WRITE_LINE_MEMBER(vector_control_w);
+	u8 joystick_read();
 	DECLARE_INPUT_CHANGED_MEMBER(coin_inserted);
-	DECLARE_DRIVER_INIT(speedfrk);
-	DECLARE_DRIVER_INIT(boxingb);
-	DECLARE_DRIVER_INIT(tailg);
-	DECLARE_DRIVER_INIT(sundance);
-	DECLARE_DRIVER_INIT(qb3);
+	void init_speedfrk();
+	u32 screen_update_cinemat(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect);
+	u32 screen_update_spacewar(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect);
+	void cinemat_vector_callback(s16 sx, s16 sy, s16 ex, s16 ey, u8 shift);
+	void ripoff(machine_config &config);
+	void wotw(machine_config &config);
+	void speedfrk(machine_config &config);
+	void starcas(machine_config &config);
+	void spacewar(machine_config &config);
+	void tailg(machine_config &config);
+	void warrior(machine_config &config);
+	void starhawk(machine_config &config);
+	void barrier(machine_config &config);
+	void armora(machine_config &config);
+
+	template<int Index>
+	DECLARE_WRITE_LINE_MEMBER(speedfrk_gear_change_w)
+	{
+		if (state)
+			m_gear = Index;
+	}
+
+	ioport_value speedfrk_gear_number_r()
+	{
+		return m_gear;
+	}
+
+protected:
 	virtual void machine_start() override;
 	virtual void machine_reset() override;
-	virtual void sound_start() override;
-	virtual void video_start() override;
-	DECLARE_SOUND_RESET(spacewar);
-	DECLARE_SOUND_RESET(barrier);
-	DECLARE_SOUND_RESET(speedfrk);
-	DECLARE_SOUND_RESET(starhawk);
-	DECLARE_SOUND_RESET(sundance);
-	DECLARE_SOUND_RESET(tailg);
-	DECLARE_SOUND_RESET(warrior);
-	DECLARE_SOUND_RESET(armora);
-	DECLARE_SOUND_RESET(ripoff);
-	DECLARE_SOUND_RESET(starcas);
-	DECLARE_SOUND_RESET(solarq);
-	DECLARE_SOUND_RESET(boxingb);
-	DECLARE_SOUND_RESET(wotw);
-	DECLARE_SOUND_RESET(demon);
-	DECLARE_SOUND_RESET(qb3);
-	DECLARE_VIDEO_START(cinemat_16level);
-	DECLARE_VIDEO_START(cinemat_64level);
-	DECLARE_VIDEO_START(cinemat_color);
-	DECLARE_VIDEO_START(cinemat_qb3color);
-	UINT32 screen_update_cinemat(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect);
-	UINT32 screen_update_spacewar(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect);
-	DECLARE_READ8_MEMBER(sound_porta_r);
-	DECLARE_READ8_MEMBER(sound_portb_r);
-	DECLARE_WRITE8_MEMBER(sound_portb_w);
-	DECLARE_WRITE8_MEMBER(sound_output_w);
-	TIMER_CALLBACK_MEMBER(synced_sound_w);
-	void generic_init(sound_func sound_handler);
-	void cinemat_vector_callback(INT16 sx, INT16 sy, INT16 ex, INT16 ey, UINT8 shift);
-	void spacewar_sound_w(UINT8 sound_val, UINT8 bits_changed);
-	void barrier_sound_w(UINT8 sound_val, UINT8 bits_changed);
-	void speedfrk_sound_w(UINT8 sound_val, UINT8 bits_changed);
-	void starhawk_sound_w(UINT8 sound_val, UINT8 bits_changed);
-	void sundance_sound_w(UINT8 sound_val, UINT8 bits_changed);
-	void tailg_sound_w(UINT8 sound_val, UINT8 bits_changed);
-	void warrior_sound_w(UINT8 sound_val, UINT8 bits_changed);
-	void armora_sound_w(UINT8 sound_val, UINT8 bits_changed);
-	void ripoff_sound_w(UINT8 sound_val, UINT8 bits_changed);
-	void starcas_sound_w(UINT8 sound_val, UINT8 bits_changed);
-	void solarq_sound_w(UINT8 sound_val, UINT8 bits_changed);
-	void boxingb_sound_w(UINT8 sound_val, UINT8 bits_changed);
-	void wotw_sound_w(UINT8 sound_val, UINT8 bits_changed);
-	void demon_sound_w(UINT8 sound_val, UINT8 bits_changed);
+
+	DECLARE_WRITE_LINE_MEMBER(speedfrk_start_led_w);
+
+	void cinemat_nojmi_4k(machine_config &config);
+	void cinemat_jmi_4k(machine_config &config);
+	void cinemat_nojmi_8k(machine_config &config);
+	void cinemat_jmi_8k(machine_config &config);
+	void cinemat_jmi_16k(machine_config &config);
+	void cinemat_jmi_32k(machine_config &config);
+
+	void program_map_4k(address_map &map);
+	void program_map_8k(address_map &map);
+	void program_map_16k(address_map &map);
+	void program_map_32k(address_map &map);
+	void data_map(address_map &map);
+	void io_map(address_map &map);
 };
 
-/*----------- defined in audio/cinemat.c -----------*/
-MACHINE_CONFIG_EXTERN( spacewar_sound );
-MACHINE_CONFIG_EXTERN( barrier_sound );
-MACHINE_CONFIG_EXTERN( speedfrk_sound );
-MACHINE_CONFIG_EXTERN( starhawk_sound );
-MACHINE_CONFIG_EXTERN( sundance_sound );
-MACHINE_CONFIG_EXTERN( tailg_sound );
-MACHINE_CONFIG_EXTERN( warrior_sound );
-MACHINE_CONFIG_EXTERN( armora_sound );
-MACHINE_CONFIG_EXTERN( ripoff_sound );
-MACHINE_CONFIG_EXTERN( starcas_sound );
-MACHINE_CONFIG_EXTERN( solarq_sound );
-MACHINE_CONFIG_EXTERN( boxingb_sound );
-MACHINE_CONFIG_EXTERN( wotw_sound );
-MACHINE_CONFIG_EXTERN( demon_sound );
-MACHINE_CONFIG_EXTERN( qb3_sound );
+
+class cinemat_16level_state : public cinemat_state
+{
+public:
+	using cinemat_state::cinemat_state;
+
+	void init_sundance();
+
+	void sundance(machine_config &config);
+
+protected:
+	virtual DECLARE_WRITE_LINE_MEMBER(vector_control_w) override;
+	u8 sundance_inputs_r(offs_t offset);
+};
+
+
+class cinemat_64level_state : public cinemat_state
+{
+public:
+	using cinemat_state::cinemat_state;
+
+	void solarq(machine_config &config);
+
+	void init_solarq();
+
+protected:
+	virtual DECLARE_WRITE_LINE_MEMBER(vector_control_w) override;
+};
+
+
+class cinemat_color_state : public cinemat_state
+{
+public:
+	using cinemat_state::cinemat_state;
+
+	void init_boxingb();
+
+	void boxingb(machine_config &config);
+	void wotwc(machine_config &config);
+
+protected:
+	virtual DECLARE_WRITE_LINE_MEMBER(vector_control_w) override;
+	u8 boxingb_dial_r(offs_t offset);
+};
+
+
+class demon_state : public cinemat_state
+{
+public:
+	using cinemat_state::cinemat_state;
+
+	void demon(machine_config &config);
+
+protected:
+	TIMER_CALLBACK_MEMBER(synced_sound_w);
+	DECLARE_WRITE_LINE_MEMBER(demon_sound4_w);
+	u8 sound_porta_r();
+	u8 sound_portb_r();
+	void sound_portb_w(u8 data);
+	void sound_output_w(u8 data);
+
+	virtual void sound_start() override;
+	virtual void sound_reset() override;
+
+	void demon_sound(machine_config &config);
+
+	void demon_sound_map(address_map &map);
+	void demon_sound_ports(address_map &map);
+
+private:
+	u8 m_sound_fifo[16];
+	u8 m_sound_fifo_in;
+	u8 m_sound_fifo_out;
+	u8 m_last_portb_write;
+};
+
+
+class qb3_state : public demon_state
+{
+public:
+	using demon_state::demon_state;
+
+	void init_qb3();
+
+	void qb3(machine_config &config);
+
+protected:
+	virtual DECLARE_WRITE_LINE_MEMBER(vector_control_w) override;
+	u8 qb3_frame_r();
+	void qb3_ram_bank_w(u8 data);
+	void qb3_sound_fifo_w(u8 data);
+
+	virtual void sound_reset() override;
+
+	void qb3_sound(machine_config &config);
+
+	void data_map_qb3(address_map &map);
+	void io_map_qb3(address_map &map);
+
+private:
+	int m_qb3_lastx;
+	int m_qb3_lasty;
+};
+
+#endif // MAME_INCLUDES_CINEMAT_H

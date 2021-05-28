@@ -12,57 +12,64 @@
 
 #include "emu.h"
 #include "cpu/i86/i86.h"
-#include "video/mc6845.h"
-#include "machine/pic8259.h"
 #include "machine/am9517a.h"
+#include "machine/pic8259.h"
+#include "video/mc6845.h"
+#include "emupal.h"
+#include "screen.h"
 
 
 class paso1600_state : public driver_device
 {
 public:
 	paso1600_state(const machine_config &mconfig, device_type type, const char *tag)
-		: driver_device(mconfig, type, tag),
-		m_maincpu(*this, "maincpu"),
-		m_pic(*this, "pic8259"),
-		m_dma(*this, "8237dma"),
-		m_crtc(*this, "crtc"),
-		m_p_vram(*this, "vram"),
-		m_p_gvram(*this, "gvram"),
-		m_gfxdecode(*this, "gfxdecode"),
-		m_palette(*this, "palette") { }
+		: driver_device(mconfig, type, tag)
+		, m_maincpu(*this, "maincpu")
+		, m_pic(*this, "pic8259")
+		, m_dma(*this, "8237dma")
+		, m_crtc(*this, "crtc")
+		, m_p_vram(*this, "vram")
+		, m_p_gvram(*this, "gvram")
+		, m_p_chargen(*this, "chargen")
+		, m_p_pcg(*this, "pcg")
+		, m_gfxdecode(*this, "gfxdecode")
+		, m_palette(*this, "palette")
+	{
+	}
 
+	void paso1600(machine_config &config);
+
+private:
+	uint8_t paso1600_pcg_r(offs_t offset);
+	void paso1600_pcg_w(offs_t offset, uint8_t data);
+	void paso1600_6845_address_w(uint8_t data);
+	void paso1600_6845_data_w(uint8_t data);
+	uint8_t key_r(offs_t offset);
+	void key_w(offs_t offset, uint8_t data);
+	uint16_t test_hi_r();
+	uint8_t pc_dma_read_byte(offs_t offset);
+	void pc_dma_write_byte(offs_t offset, uint8_t data);
+	uint32_t screen_update_paso1600(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
+
+	void paso1600_io(address_map &map);
+	void paso1600_map(address_map &map);
+
+	uint8_t m_crtc_vreg[0x100], m_crtc_index;
+	struct {
+		uint8_t portb;
+	} m_keyb;
+	virtual void machine_start() override;
+	virtual void machine_reset() override;
 	required_device<cpu_device> m_maincpu;
 	required_device<pic8259_device> m_pic;
 	required_device<am9517a_device> m_dma;
 	required_device<mc6845_device> m_crtc;
-	DECLARE_READ8_MEMBER(paso1600_pcg_r);
-	DECLARE_WRITE8_MEMBER(paso1600_pcg_w);
-	DECLARE_WRITE8_MEMBER(paso1600_6845_address_w);
-	DECLARE_WRITE8_MEMBER(paso1600_6845_data_w);
-	DECLARE_READ8_MEMBER(paso1600_6845_data_r);
-	DECLARE_READ8_MEMBER(paso1600_6845_status_r);
-	DECLARE_READ8_MEMBER(test_r);
-	DECLARE_READ8_MEMBER(key_r);
-	DECLARE_WRITE8_MEMBER(key_w);
-	DECLARE_READ16_MEMBER(test_hi_r);
-	DECLARE_WRITE_LINE_MEMBER(paso1600_set_int_line);
-	UINT8 m_crtc_vreg[0x100],m_crtc_index;
-	UINT8 *m_p_chargen;
-	UINT8 *m_p_pcg;
-	required_shared_ptr<UINT16> m_p_vram;
-	required_shared_ptr<UINT16> m_p_gvram;
+	required_shared_ptr<uint16_t> m_p_vram;
+	required_shared_ptr<uint16_t> m_p_gvram;
+	required_region_ptr<u8> m_p_chargen;
+	required_region_ptr<u8> m_p_pcg;
 	required_device<gfxdecode_device> m_gfxdecode;
 	required_device<palette_device> m_palette;
-	struct{
-		UINT8 portb;
-	}m_keyb;
-	DECLARE_READ8_MEMBER(pc_dma_read_byte);
-	DECLARE_WRITE8_MEMBER(pc_dma_write_byte);
-	virtual void machine_start() override;
-	virtual void machine_reset() override;
-	virtual void video_start() override;
-	UINT32 screen_update_paso1600(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
-	IRQ_CALLBACK_MEMBER(paso1600_irq_callback);
 };
 
 #define mc6845_h_char_total     (m_crtc_vreg[0])
@@ -83,18 +90,9 @@ public:
 #define mc6845_update_addr      (((m_crtc_vreg[0x12]<<8) & 0x3f00) | (m_crtc_vreg[0x13] & 0xff))
 
 
-void paso1600_state::video_start()
+uint32_t paso1600_state::screen_update_paso1600(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
-	m_p_chargen = memregion("chargen")->base();
-	m_p_pcg = memregion("pcg")->base();
-}
-
-UINT32 paso1600_state::screen_update_paso1600(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
-{
-	int x,y;
-	int xi,yi;
-	#if 0
-	UINT32 count;
+#if 0
 	static int test_x;
 
 	if(machine().input().code_pressed(KEYCODE_Z))
@@ -105,49 +103,48 @@ UINT32 paso1600_state::screen_update_paso1600(screen_device &screen, bitmap_ind1
 
 	popmessage("%d",test_x);
 
-	count = 0;
+	uint32_t count = 0;
 
-	for(y=0;y<475;y++)
+	for(int y=0;y<475;y++)
 	{
 		count &= 0xffff;
 
-		for(x=0;x<test_x/16;x++)
+		for(int x=0;x<test_x/16;x++)
 		{
-			for(xi=0;xi<16;xi++)
+			for(int xi=0;xi<16;xi++)
 			{
 				int pen = (m_p_gvram[count] >> xi) & 1;
 
 				if(y < 475 && x*16+xi < 640) /* TODO: safety check */
-					bitmap.pix16(y, x*16+xi) = m_palette->pen(pen);
+					bitmap.pix(y, x*16+xi) = m_palette->pen(pen);
 			}
 
 			count++;
 		}
 	}
-	#endif
+#endif
 
 //  popmessage("%d %d %d",mc6845_h_display,mc6845_v_display,mc6845_tile_height);
 
-	for(y=0;y<mc6845_v_display;y++)
+	for(int y=0;y<mc6845_v_display;y++)
 	{
-		for(x=0;x<mc6845_h_display;x++)
+		for(int x=0;x<mc6845_h_display;x++)
 		{
 			int tile = m_p_vram[x+y*mc6845_h_display] & 0xff;
 			int color = (m_p_vram[x+y*mc6845_h_display] & 0x700) >> 8;
-			int pen;
 
-			for(yi=0;yi<19;yi++)
+			for(int yi=0;yi<19;yi++)
 			{
-				for(xi=0;xi<8;xi++)
+				for(int xi=0;xi<8;xi++)
 				{
-					pen = (m_p_chargen[tile*8+(yi >> 1)] >> (7-xi) & 1) ? color : -1;
+					int pen = (m_p_chargen[tile*8+(yi >> 1)] >> (7-xi) & 1) ? color : -1;
 
 					if(yi & 0x10)
 						pen = -1;
 
 					if(pen != -1)
 						if(y*19 < 475 && x*8+xi < 640) /* TODO: safety check */
-							bitmap.pix16(y*19+yi, x*8+xi) = m_palette->pen(pen);
+							bitmap.pix(y*19+yi, x*8+xi) = m_palette->pen(pen);
 				}
 			}
 		}
@@ -155,15 +152,15 @@ UINT32 paso1600_state::screen_update_paso1600(screen_device &screen, bitmap_ind1
 
 	/* quick and dirty way to do the cursor */
 	if(0)
-	for(yi=0;yi<mc6845_tile_height;yi++)
+	for(int yi=0;yi<mc6845_tile_height;yi++)
 	{
-		for(xi=0;xi<8;xi++)
+		for(int xi=0;xi<8;xi++)
 		{
 			if((mc6845_cursor_y_start & 0x60) != 0x20 && mc6845_h_display)
 			{
-				x = mc6845_cursor_addr % mc6845_h_display;
-				y = mc6845_cursor_addr / mc6845_h_display;
-				bitmap.pix16(y*mc6845_tile_height+yi, x*8+xi) = m_palette->pen(7);
+				int x = mc6845_cursor_addr % mc6845_h_display;
+				int y = mc6845_cursor_addr / mc6845_h_display;
+				bitmap.pix(y*mc6845_tile_height+yi, x*8+xi) = m_palette->pen(7);
 			}
 		}
 	}
@@ -171,40 +168,30 @@ UINT32 paso1600_state::screen_update_paso1600(screen_device &screen, bitmap_ind1
 	return 0;
 }
 
-READ8_MEMBER( paso1600_state::paso1600_pcg_r )
+uint8_t paso1600_state::paso1600_pcg_r(offs_t offset)
 {
 	return m_p_pcg[offset];
 }
 
-WRITE8_MEMBER( paso1600_state::paso1600_pcg_w )
+void paso1600_state::paso1600_pcg_w(offs_t offset, uint8_t data)
 {
 	m_p_pcg[offset] = data;
 	m_gfxdecode->gfx(0)->mark_dirty(offset >> 3);
 }
 
-WRITE8_MEMBER( paso1600_state::paso1600_6845_address_w )
+void paso1600_state::paso1600_6845_address_w(uint8_t data)
 {
 	m_crtc_index = data;
-	m_crtc->address_w(space, offset, data);
+	m_crtc->address_w(data);
 }
 
-WRITE8_MEMBER( paso1600_state::paso1600_6845_data_w )
+void paso1600_state::paso1600_6845_data_w(uint8_t data)
 {
 	m_crtc_vreg[m_crtc_index] = data;
-	m_crtc->register_w(space, offset, data);
+	m_crtc->register_w(data);
 }
 
-READ8_MEMBER( paso1600_state::paso1600_6845_data_r )
-{
-	return m_crtc->register_r(space, offset);
-}
-
-READ8_MEMBER( paso1600_state::paso1600_6845_status_r )
-{
-	return m_crtc->status_r(space, offset);
-}
-
-READ8_MEMBER( paso1600_state::key_r )
+uint8_t paso1600_state::key_r(offs_t offset)
 {
 	switch(offset)
 	{
@@ -216,7 +203,7 @@ READ8_MEMBER( paso1600_state::key_r )
 	return 0xff;
 }
 
-WRITE8_MEMBER( paso1600_state::key_w )
+void paso1600_state::key_w(offs_t offset, uint8_t data)
 {
 	switch(offset)
 	{
@@ -224,33 +211,35 @@ WRITE8_MEMBER( paso1600_state::key_w )
 	}
 }
 
-READ16_MEMBER( paso1600_state::test_hi_r )
+uint16_t  paso1600_state::test_hi_r()
 {
 	return 0xffff;
 }
 
-static ADDRESS_MAP_START(paso1600_map, AS_PROGRAM, 16, paso1600_state)
-	ADDRESS_MAP_UNMAP_HIGH
-	AM_RANGE(0x00000,0x7ffff) AM_RAM
-	AM_RANGE(0xb0000,0xb0fff) AM_RAM AM_SHARE("vram") // tvram
-	AM_RANGE(0xbfff0,0xbffff) AM_READWRITE8(paso1600_pcg_r,paso1600_pcg_w,0xffff)
-	AM_RANGE(0xc0000,0xdffff) AM_RAM AM_SHARE("gvram")// gvram
-	AM_RANGE(0xe0000,0xeffff) AM_ROM AM_REGION("kanji",0)// kanji rom, banked via port 0x93
-	AM_RANGE(0xfe000,0xfffff) AM_ROM AM_REGION("ipl", 0)
-ADDRESS_MAP_END
+void paso1600_state::paso1600_map(address_map &map)
+{
+	map.unmap_value_high();
+	map(0x00000, 0x7ffff).ram();
+	map(0xb0000, 0xb0fff).ram().share("vram"); // tvram
+	map(0xbfff0, 0xbffff).rw(FUNC(paso1600_state::paso1600_pcg_r), FUNC(paso1600_state::paso1600_pcg_w));
+	map(0xc0000, 0xdffff).ram().share("gvram");// gvram
+	map(0xe0000, 0xeffff).rom().region("kanji", 0);// kanji rom, banked via port 0x93
+	map(0xfe000, 0xfffff).rom().region("ipl", 0);
+}
 
-static ADDRESS_MAP_START(paso1600_io, AS_IO, 16, paso1600_state)
-	ADDRESS_MAP_UNMAP_LOW
-	AM_RANGE(0x0000,0x000f) AM_DEVREADWRITE8("8237dma", am9517a_device, read, write, 0xffff)
-	AM_RANGE(0x0010,0x0011) AM_DEVREADWRITE8("pic8259", pic8259_device, read, write, 0xffff) // i8259
-	AM_RANGE(0x001a,0x001b) AM_READ(test_hi_r) // causes RAM error otherwise?
-	AM_RANGE(0x0030,0x0033) AM_READWRITE8(key_r,key_w,0xffff) //UART keyboard?
-	AM_RANGE(0x0048,0x0049) AM_READ(test_hi_r)
-	AM_RANGE(0x0090,0x0091) AM_READWRITE8(paso1600_6845_status_r,paso1600_6845_address_w,0x00ff)
-	AM_RANGE(0x0090,0x0091) AM_READWRITE8(paso1600_6845_data_r,paso1600_6845_data_w,0xff00)
-//  AM_RANGE(0x00d8,0x00df) //fdc, unknown type
+void paso1600_state::paso1600_io(address_map &map)
+{
+	map.unmap_value_low();
+	map(0x0000, 0x000f).rw(m_dma, FUNC(am9517a_device::read), FUNC(am9517a_device::write));
+	map(0x0010, 0x0011).rw(m_pic, FUNC(pic8259_device::read), FUNC(pic8259_device::write)); // i8259
+	map(0x001a, 0x001b).r(FUNC(paso1600_state::test_hi_r)); // causes RAM error otherwise?
+	map(0x0030, 0x0033).rw(FUNC(paso1600_state::key_r), FUNC(paso1600_state::key_w)); //UART keyboard?
+	map(0x0048, 0x0049).r(FUNC(paso1600_state::test_hi_r));
+	map(0x0090, 0x0090).r(m_crtc, FUNC(mc6845_device::status_r)).w(FUNC(paso1600_state::paso1600_6845_address_w));
+	map(0x0091, 0x0091).r(m_crtc, FUNC(mc6845_device::register_r)).w(FUNC(paso1600_state::paso1600_6845_data_w));
+//  map(0x00d8,0x00df) //fdc, unknown type
 // other undefined ports: 18, 1C, 92
-ADDRESS_MAP_END
+}
 
 /* Input ports */
 static INPUT_PORTS_START( paso1600 )
@@ -267,7 +256,7 @@ static const gfx_layout paso1600_charlayout =
 	8*8
 };
 
-static GFXDECODE_START( paso1600 )
+static GFXDECODE_START( gfx_paso1600 )
 	GFXDECODE_ENTRY( "pcg", 0x0000, paso1600_charlayout, 0, 4 )
 	GFXDECODE_ENTRY( "chargen", 0x0000, paso1600_charlayout, 0, 4 )
 GFXDECODE_END
@@ -282,54 +271,59 @@ void paso1600_state::machine_reset()
 {
 }
 
-READ8_MEMBER(paso1600_state::pc_dma_read_byte)
+uint8_t paso1600_state::pc_dma_read_byte(offs_t offset)
 {
 	//offs_t page_offset = (((offs_t) m_dma_offset[0][m_dma_channel]) << 16)
 	//  & 0xFF0000;
 
-	return space.read_byte(offset);
+	address_space &program = m_maincpu->space(AS_PROGRAM);
+
+	return program.read_byte(offset);
 }
 
 
-WRITE8_MEMBER(paso1600_state::pc_dma_write_byte)
+void paso1600_state::pc_dma_write_byte(offs_t offset, uint8_t data)
 {
 	//offs_t page_offset = (((offs_t) m_dma_offset[0][m_dma_channel]) << 16)
 	//  & 0xFF0000;
+	address_space &program = m_maincpu->space(AS_PROGRAM);
 
-	space.write_byte(offset, data);
+	program.write_byte(offset, data);
 }
 
-static MACHINE_CONFIG_START( paso1600, paso1600_state )
+void paso1600_state::paso1600(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", I8086, 16000000/2)
-	MCFG_CPU_PROGRAM_MAP(paso1600_map)
-	MCFG_CPU_IO_MAP(paso1600_io)
-	MCFG_CPU_IRQ_ACKNOWLEDGE_DEVICE("pic8259", pic8259_device, inta_cb)
+	I8086(config, m_maincpu, 16000000/2);
+	m_maincpu->set_addrmap(AS_PROGRAM, &paso1600_state::paso1600_map);
+	m_maincpu->set_addrmap(AS_IO, &paso1600_state::paso1600_io);
+	m_maincpu->set_irq_acknowledge_callback("pic8259", FUNC(pic8259_device::inta_cb));
 
 	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_REFRESH_RATE(50)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(2500)) /* not accurate */
-	MCFG_SCREEN_SIZE(640, 480)
-	MCFG_SCREEN_VISIBLE_AREA(0, 640-1, 0, 480-1)
-	MCFG_SCREEN_UPDATE_DRIVER(paso1600_state, screen_update_paso1600)
-	MCFG_SCREEN_PALETTE("palette")
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_RASTER));
+	screen.set_refresh_hz(50);
+	screen.set_vblank_time(ATTOSECONDS_IN_USEC(2500)); /* not accurate */
+	screen.set_size(640, 480);
+	screen.set_visarea(0, 640-1, 0, 480-1);
+	screen.set_screen_update(FUNC(paso1600_state::screen_update_paso1600));
+	screen.set_palette(m_palette);
 
-	MCFG_GFXDECODE_ADD("gfxdecode", "palette", paso1600)
-	MCFG_PALETTE_ADD("palette", 8)
-//  MCFG_PALETTE_INIT(black_and_white)
+	GFXDECODE(config, m_gfxdecode, m_palette, gfx_paso1600);
+	PALETTE(config, m_palette).set_entries(8);
 
 	/* Devices */
-	MCFG_MC6845_ADD("crtc", H46505, "screen", 16000000/4)    /* unknown clock, hand tuned to get ~60 fps */
-	MCFG_MC6845_SHOW_BORDER_AREA(false)
-	MCFG_MC6845_CHAR_WIDTH(8)
+	mc6845_device &crtc(MC6845(config, "crtc", 16000000/4));    /* unknown variant, unknown clock, hand tuned to get ~60 fps */
+	crtc.set_screen("screen");
+	crtc.set_show_border_area(false);
+	crtc.set_char_width(8);
 
-	MCFG_PIC8259_ADD( "pic8259", INPUTLINE("maincpu", 0), GND, NULL )
+	PIC8259(config, m_pic, 0);
+	m_pic->out_int_callback().set_inputline(m_maincpu, 0);
 
-	MCFG_DEVICE_ADD("8237dma", AM9517A, 16000000/4)
-	MCFG_I8237_IN_MEMR_CB(READ8(paso1600_state, pc_dma_read_byte))
-	MCFG_I8237_OUT_MEMW_CB(WRITE8(paso1600_state, pc_dma_write_byte))
-MACHINE_CONFIG_END
+	AM9517A(config, m_dma, 16000000/4);
+	m_dma->in_memr_callback().set(FUNC(paso1600_state::pc_dma_read_byte));
+	m_dma->out_memw_callback().set(FUNC(paso1600_state::pc_dma_write_byte));
+}
 
 ROM_START( paso1600 )
 	ROM_REGION16_LE(0x2000,"ipl", 0)
@@ -340,11 +334,11 @@ ROM_START( paso1600 )
 	ROM_REGION( 0x800, "chargen", ROMREGION_ERASEFF )
 	ROM_LOAD( "font.rom", 0x0000, 0x0800, BAD_DUMP CRC(a91c45a9) SHA1(a472adf791b9bac3dfa6437662e1a9e94a88b412)) //stolen from pasopia7
 
-	ROM_REGION( 0x20000, "kanji", ROMREGION_ERASEFF )
+	ROM_REGION16_LE( 0x20000, "kanji", ROMREGION_ERASEFF )
 	ROM_LOAD( "kanji.rom", 0x0000, 0x20000, NO_DUMP)
 
 ROM_END
 
 
-/*    YEAR  NAME        PARENT  COMPAT   MACHINE    INPUT      INIT    COMPANY       FULLNAME       FLAGS */
-COMP ( 198?,paso1600,   0,      0,       paso1600,  paso1600, driver_device,  0,     "Toshiba",  "Pasopia 1600" , MACHINE_NOT_WORKING|MACHINE_NO_SOUND)
+//    YEAR  NAME      PARENT  COMPAT  MACHINE   INPUT     CLASS           INIT        COMPANY    FULLNAME        FLAGS
+COMP( 198?, paso1600, 0,      0,      paso1600, paso1600, paso1600_state, empty_init, "Toshiba", "Pasopia 1600", MACHINE_NOT_WORKING | MACHINE_NO_SOUND )

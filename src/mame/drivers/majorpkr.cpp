@@ -1,6 +1,6 @@
 // license:BSD-3-Clause
 // copyright-holders:Roberto Fresca
-// thanks-to:Tomasz Slanina,Rob Ragon
+// thanks-to:Tomasz Slanina, Rob Ragon
 /**********************************************************************************
 
   Major Poker / Major Joker
@@ -18,25 +18,29 @@
 
   1x Z80 @ 6 MHz. (main CPU)
 
-  1x M6295 @ 1.5 MHz. (4 channel mixing ADPCM voice synthesis). Pin7 high.
+  1x OKI M6295 @ 1.5 MHz. (4 channel mixing ADPCM voice synthesis). Pin7 high.
 
-  1x 6845 (CRT Controller) @ 750 kHz.
-          Hs 15625 Hz
-          Vs 52.786 Hz
+  1x Hitachi HD6845 (CRT Controller) @ 750 kHz.
+     Hs 15625 Hz.
+     Vs 52.786 Hz.
 
-  2x MB8464 (Video?)8kx8
+  1x Logic box (like CPU boxes) with 5 PLDs, maybe for protection.
+
+  2x MB8464 (Video?)8Kx8
   1x MB8416 (NVRAM) 2Kx8
-  1x MB8464 (?) 8kx8
+  1x MB8464 (?) 8Kx8
 
-  2x 27C040 (Roms P1 & P2) (GFX ROMs).
+  2x 27C040 (Roms 1 & 2) (GFX ROMs).
   2x 27C010 (Roms 3 & 4) (GFX ROMs).
-  1x 27C020 (Rom 5) (sound)
-  1x 27C512 (Rom 6) (program)
+  1x 27C020 (Rom 5) (4-bit ADPCM samples)
+  1x 27C512 (Rom 6) (main program)
 
   1x Xtal @ 12 MHz.
 
   4x 8 DIP switches banks.
   2x switches (SW1, SW2).
+
+  1x 2x6-pin male connector. (jumper1)
 
   1x 2x10-pin edge connector.
   1x 2x22-pin edge connector.
@@ -445,62 +449,84 @@
 
 **********************************************************************************/
 
-#define MASTER_CLOCK    XTAL_12MHz
-#define CPU_CLOCK       (MASTER_CLOCK / 2)  /* 6 MHz, measured */
-#define OKI_CLOCK       (MASTER_CLOCK / 8)  /* 1.5 MHz, measured */
-#define CRTC_CLOCK      (MASTER_CLOCK / 16) /* 750 kHz, measured */
-
 #include "emu.h"
+
 #include "cpu/z80/z80.h"
-#include "video/mc6845.h"
-#include "sound/okim6295.h"
 #include "machine/bankdev.h"
 #include "machine/nvram.h"
+#include "sound/okim6295.h"
+#include "video/mc6845.h"
+
+#include "emupal.h"
+#include "screen.h"
+#include "speaker.h"
+#include "tilemap.h"
+
 #include "majorpkr.lh"
+
+
+#define MASTER_CLOCK    XTAL(12'000'000)
+#define CPU_CLOCK       (MASTER_CLOCK / 2)   // 6 MHz, measured.
+#define OKI_CLOCK       (MASTER_CLOCK / 8)   // 1.5 MHz, measured.
+#define CRTC_CLOCK      (MASTER_CLOCK / 16)  // 750 kHz, measured.
 
 
 class majorpkr_state : public driver_device
 {
 public:
-	majorpkr_state(const machine_config &mconfig, device_type type, const char *tag)
-		: driver_device(mconfig, type, tag),
+	majorpkr_state(const machine_config &mconfig, device_type type, const char *tag) :
+		driver_device(mconfig, type, tag),
 		m_gfxdecode(*this, "gfxdecode"),
 		m_palette_bank(*this, "palette_bank"),
 		m_vram_bank(*this, "vram_bank"),
 		m_rom_bank(*this, "rom_bank"),
 		m_fg_vram(*this, "fg_vram"),
-		m_bg_vram(*this, "bg_vram") { }
+		m_bg_vram(*this, "bg_vram"),
+		m_lamps(*this, "lamp%u", 0U)
+	{ }
+
+	void majorpkr(machine_config &config);
+
+	void init_majorpkr();
+
+protected:
+	virtual void machine_start() override { m_lamps.resolve(); }
+	virtual void video_start() override;
+
+private:
+	void rom_bank_w(uint8_t data);
+	void palette_bank_w(uint8_t data);
+	void vram_bank_w(uint8_t data);
+	void fg_vram_w(offs_t offset, uint8_t data);
+	void bg_vram_w(offs_t offset, uint8_t data);
+	void vidreg_w(uint8_t data);
+	uint8_t mux_port_r();
+	uint8_t mux_port2_r();
+	void mux_sel_w(uint8_t data);
+	void lamps_a_w(uint8_t data);
+	void lamps_b_w(uint8_t data);
+	void pulses_w(uint8_t data);
+	TILE_GET_INFO_MEMBER(bg_get_tile_info);
+	TILE_GET_INFO_MEMBER(fg_get_tile_info);
+	uint32_t screen_update_majorpkr(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect);
+	void map(address_map &map);
+	void palettebanks(address_map &map);
+	void portmap(address_map &map);
+	void vrambanks(address_map &map);
 
 	required_device<gfxdecode_device> m_gfxdecode;
 	required_device<address_map_bank_device> m_palette_bank;
 	required_device<address_map_bank_device> m_vram_bank;
 
 	required_memory_bank m_rom_bank;
-	required_shared_ptr<UINT8> m_fg_vram;
-	required_shared_ptr<UINT8> m_bg_vram;
+	required_shared_ptr<uint8_t> m_fg_vram;
+	required_shared_ptr<uint8_t> m_bg_vram;
 
 	tilemap_t    *m_bg_tilemap, *m_fg_tilemap;
 
 	int m_mux_data;
 	int m_flip_state;
-
-	DECLARE_WRITE8_MEMBER(rom_bank_w);
-	DECLARE_WRITE8_MEMBER(palette_bank_w);
-	DECLARE_WRITE8_MEMBER(vram_bank_w);
-	DECLARE_WRITE8_MEMBER(fg_vram_w);
-	DECLARE_WRITE8_MEMBER(bg_vram_w);
-	DECLARE_WRITE8_MEMBER(vidreg_w);
-	DECLARE_READ8_MEMBER(mux_port_r);
-	DECLARE_READ8_MEMBER(mux_port2_r);
-	DECLARE_WRITE8_MEMBER(mux_sel_w);
-	DECLARE_WRITE8_MEMBER(lamps_a_w);
-	DECLARE_WRITE8_MEMBER(lamps_b_w);
-	DECLARE_WRITE8_MEMBER(pulses_w);
-	DECLARE_DRIVER_INIT(majorpkr);
-	TILE_GET_INFO_MEMBER(bg_get_tile_info);
-	TILE_GET_INFO_MEMBER(fg_get_tile_info);
-	virtual void video_start() override;
-	UINT32 screen_update_majorpkr(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
+	output_finder<13> m_lamps;
 };
 
 
@@ -512,7 +538,7 @@ TILE_GET_INFO_MEMBER(majorpkr_state::bg_get_tile_info)
 {
 	int code = m_bg_vram[2 * tile_index] + (m_bg_vram[2 * tile_index + 1] << 8);
 
-	SET_TILE_INFO_MEMBER(0,
+	tileinfo.set(0,
 			(code & 0x1fff),
 			code >> 13,
 			0);
@@ -522,7 +548,7 @@ TILE_GET_INFO_MEMBER(majorpkr_state::fg_get_tile_info)
 {
 	int code = m_fg_vram[2 * tile_index] + (m_fg_vram[2 * tile_index + 1] << 8);
 
-	SET_TILE_INFO_MEMBER(1,
+	tileinfo.set(1,
 			(code & 0x07ff),
 			code >> 13,
 			(code & (1 << 12)) ? (TILE_FLIPX|TILE_FLIPY) : 0);
@@ -531,13 +557,13 @@ TILE_GET_INFO_MEMBER(majorpkr_state::fg_get_tile_info)
 
 void majorpkr_state::video_start()
 {
-	m_bg_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(majorpkr_state::bg_get_tile_info),this), TILEMAP_SCAN_ROWS, 16, 8, 36, 28);
-	m_fg_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(majorpkr_state::fg_get_tile_info),this), TILEMAP_SCAN_ROWS, 16, 8, 36, 28);
+	m_bg_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(majorpkr_state::bg_get_tile_info)), TILEMAP_SCAN_ROWS, 16, 8, 36, 28);
+	m_fg_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(majorpkr_state::fg_get_tile_info)), TILEMAP_SCAN_ROWS, 16, 8, 36, 28);
 	m_fg_tilemap->set_transparent_pen(0);
 }
 
 
-UINT32 majorpkr_state::screen_update_majorpkr(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t majorpkr_state::screen_update_majorpkr(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
 {
 	m_bg_tilemap->draw(screen, bitmap, cliprect, 0);
 	m_fg_tilemap->draw(screen, bitmap, cliprect, 0);
@@ -550,40 +576,40 @@ UINT32 majorpkr_state::screen_update_majorpkr(screen_device &screen, bitmap_ind1
 *         R/W Handlers        *
 ******************************/
 
-WRITE8_MEMBER(majorpkr_state::rom_bank_w)
+void majorpkr_state::rom_bank_w(uint8_t data)
 {
 	m_rom_bank->set_entry(data & 0x3);
 	if (data & (0x3 ^ 0xff))
 		logerror("%s: accessing rom bank %02X\n", machine().describe_context(), data);
 }
 
-WRITE8_MEMBER(majorpkr_state::palette_bank_w)
+void majorpkr_state::palette_bank_w(uint8_t data)
 {
 	m_palette_bank->set_bank(data & 0x3);
 	if (data & (0x3 ^ 0xff))
 		logerror("%s: accessing palette bank %02X\n", machine().describe_context(), data);
 }
 
-WRITE8_MEMBER(majorpkr_state::vram_bank_w)
+void majorpkr_state::vram_bank_w(uint8_t data)
 {
 	m_vram_bank->set_bank(data & 0x3);
 	if (data & (0x3 ^ 0xff))
 		logerror("%s: accessing vram bank %02X\n", machine().describe_context(), data);
 }
 
-WRITE8_MEMBER(majorpkr_state::fg_vram_w)
+void majorpkr_state::fg_vram_w(offs_t offset, uint8_t data)
 {
 	m_fg_vram[offset] = data;
 	m_fg_tilemap->mark_tile_dirty(offset >> 1);
 }
 
-WRITE8_MEMBER(majorpkr_state::bg_vram_w)
+void majorpkr_state::bg_vram_w(offs_t offset, uint8_t data)
 {
 	m_bg_vram[offset] = data;
 	m_bg_tilemap->mark_tile_dirty(offset >> 1);
 }
 
-WRITE8_MEMBER(majorpkr_state::vidreg_w)
+void majorpkr_state::vidreg_w(uint8_t data)
 {
 /*  If bit6 is active, the screen is drawn upside down.
     (also 0xfc and 0x11 are written to the CRTC registers 0x0c and 0x0d)
@@ -613,20 +639,20 @@ WRITE8_MEMBER(majorpkr_state::vidreg_w)
 
 /***** Multiplexed Ports *****/
 
-READ8_MEMBER(majorpkr_state::mux_port_r)
+uint8_t majorpkr_state::mux_port_r()
 {
-	switch( (m_mux_data & 0xf0) )       /* 00-10-20-30-0F-1F-2F-3F */
+	switch( (m_mux_data & 0xf0) )       // 00-10-20-30-0F-1F-2F-3F.
 	{
-		case 0x00: return ioport("DSW1")->read();   /* confirmed */
-		case 0x10: return ioport("DSW2")->read();   /* confirmed */
-		case 0x20: return ioport("DSW3")->read();   /* confirmed */
-		case 0x30: return ioport("DSW4")->read();   /* confirmed */
+		case 0x00: return ioport("DSW1")->read();   // confirmed.
+		case 0x10: return ioport("DSW2")->read();   // confirmed.
+		case 0x20: return ioport("DSW3")->read();   // confirmed.
+		case 0x30: return ioport("DSW4")->read();   // confirmed.
 	}
 
 	return 0xff;
 }
 
-READ8_MEMBER(majorpkr_state::mux_port2_r)
+uint8_t majorpkr_state::mux_port2_r()
 {
 	if ((m_mux_data & 0x0f) == 4)
 	{
@@ -638,9 +664,9 @@ READ8_MEMBER(majorpkr_state::mux_port2_r)
 	}
 }
 
-WRITE8_MEMBER(majorpkr_state::mux_sel_w)
+void majorpkr_state::mux_sel_w(uint8_t data)
 {
-	m_mux_data = data;  /* 00-10-20-30-0F-1F-2F-3F */
+	m_mux_data = data;  // 00-10-20-30-0F-1F-2F-3F.
 }
 
 
@@ -648,7 +674,7 @@ WRITE8_MEMBER(majorpkr_state::mux_sel_w)
 *    Lamps and Pulses    *
 *************************/
 
-WRITE8_MEMBER(majorpkr_state::lamps_a_w)
+void majorpkr_state::lamps_a_w(uint8_t data)
 {
 /*  Lamps - Array A.
 
@@ -663,19 +689,19 @@ WRITE8_MEMBER(majorpkr_state::lamps_a_w)
     -x-- ----   Small lamp.
     x--- ----   Unknown.
 */
-	output_set_lamp_value(0, (data) & 1);       /* Lamp 0: Hold 1 */
-	output_set_lamp_value(1, (data >> 1) & 1);  /* Lamp 1: Hold 2 */
-	output_set_lamp_value(2, (data >> 2) & 1);  /* Lamp 2: Hold 3 */
-	output_set_lamp_value(3, (data >> 3) & 1);  /* Lamp 3: Hold 4 */
-	output_set_lamp_value(4, (data >> 4) & 1);  /* Lamp 4: Hold 5 */
-	output_set_lamp_value(5, (data >> 5) & 1);  /* Lamp 5: Big or Small (need identification) */
-	output_set_lamp_value(6, (data >> 6) & 1);  /* Lamp 6: Big or Small (need identification) */
+	m_lamps[0] = BIT(data, 0);       // Lamp 0: Hold 1.
+	m_lamps[1] = BIT(data, 1);  // Lamp 1: Hold 2.
+	m_lamps[2] = BIT(data, 2);  // Lamp 2: Hold 3.
+	m_lamps[3] = BIT(data, 3);  // Lamp 3: Hold 4.
+	m_lamps[4] = BIT(data, 4);  // Lamp 4: Hold 5.
+	m_lamps[5] = BIT(data, 5);  // Lamp 5: Big or Small (need identification).
+	m_lamps[6] = BIT(data, 6);  // Lamp 6: Big or Small (need identification).
 
 	if (data & 0x80)
 		logerror("Lamps A: Write to 13h: %02x\n", data);
 }
 
-WRITE8_MEMBER(majorpkr_state::lamps_b_w)
+void majorpkr_state::lamps_b_w(uint8_t data)
 {
 /*  Lamps - Array B.
 
@@ -689,18 +715,18 @@ WRITE8_MEMBER(majorpkr_state::lamps_b_w)
     --x- ----   Fever lamp.
     xx-- ----   Unknown.
 */
-	output_set_lamp_value(7, (data) & 1);       /* Lamp 7: Bet */
-	output_set_lamp_value(8, (data >> 1) & 1);  /* Lamp 8: Draw */
-	output_set_lamp_value(9, (data >> 2) & 1);  /* Lamp 9: Cancel */
-	output_set_lamp_value(10, (data >> 3) & 1); /* Lamp 10: Take */
-	output_set_lamp_value(11, (data >> 4) & 1); /* Lamp 11: D-UP */
-	output_set_lamp_value(12, (data >> 5) & 1); /* Lamp 12: Fever */
+	m_lamps[7] = BIT(data, 0);        // Lamp 7: Bet.
+	m_lamps[8] = BIT(data, 1);   // Lamp 8: Draw.
+	m_lamps[9] = BIT(data, 2);   // Lamp 9: Cancel.
+	m_lamps[10] = BIT(data, 3);  // Lamp 10: Take.
+	m_lamps[11] = BIT(data, 4);  // Lamp 11: D-UP.
+	m_lamps[12] = BIT(data, 5);  // Lamp 12: Fever.
 
 	if (data & 0xc0)
 		logerror("Lamps B: Write to 14h: %02x\n", data);
 }
 
-WRITE8_MEMBER(majorpkr_state::pulses_w)
+void majorpkr_state::pulses_w(uint8_t data)
 {
 /*  Pulses...
 
@@ -713,10 +739,10 @@ WRITE8_MEMBER(majorpkr_state::pulses_w)
     ---x ----   Watchdog? (constant writes).
     xxx- ----   Unknown.
 */
-	coin_counter_w(machine(), 3, data & 0x01);      /* Credits Out (all) */
-	coin_counter_w(machine(), 2, data & 0x02);      /* Credits 3 */
-	coin_counter_w(machine(), 0, data & 0x04);      /* Credits 1 */
-	coin_counter_w(machine(), 1, data & 0x08);      /* Credits 2 */
+	machine().bookkeeping().coin_counter_w(3, data & 0x01);  // Credits Out (all).
+	machine().bookkeeping().coin_counter_w(2, data & 0x02);  // Credits 3.
+	machine().bookkeeping().coin_counter_w(0, data & 0x04);  // Credits 1.
+	machine().bookkeeping().coin_counter_w(1, data & 0x08);  // Credits 2.
 
 	if (data & 0xe0)
 		logerror("Pulse: Write to 10h: %02x\n", data);
@@ -727,23 +753,26 @@ WRITE8_MEMBER(majorpkr_state::pulses_w)
 * Memory map information *
 *************************/
 
-static ADDRESS_MAP_START( map, AS_PROGRAM, 8, majorpkr_state )
-	AM_RANGE(0x0000, 0xdfff) AM_ROM
-	AM_RANGE(0xe000, 0xe7ff) AM_ROMBANK("rom_bank")
-	AM_RANGE(0xe800, 0xefff) AM_RAM AM_SHARE("nvram")
-	AM_RANGE(0xf000, 0xf7ff) AM_DEVICE("palette_bank", address_map_bank_device, amap8)
-	AM_RANGE(0xf800, 0xffff) AM_DEVICE("vram_bank", address_map_bank_device, amap8)
-ADDRESS_MAP_END
+void majorpkr_state::map(address_map &map)
+{
+	map(0x0000, 0xdfff).rom();
+	map(0xe000, 0xe7ff).bankr("rom_bank");
+	map(0xe800, 0xefff).ram().share("nvram");
+	map(0xf000, 0xf7ff).m(m_palette_bank, FUNC(address_map_bank_device::amap8));
+	map(0xf800, 0xffff).m(m_vram_bank, FUNC(address_map_bank_device::amap8));
+}
 
-static ADDRESS_MAP_START( palettebanks, AS_PROGRAM, 8, majorpkr_state )
-	AM_RANGE(0x0000, 0x1fff) AM_RAM_DEVWRITE("palette", palette_device, write) AM_SHARE("palette")
-ADDRESS_MAP_END
+void majorpkr_state::palettebanks(address_map &map)
+{
+	map(0x0000, 0x1fff).ram().w("palette", FUNC(palette_device::write8)).share("palette");
+}
 
-static ADDRESS_MAP_START( vrambanks, AS_PROGRAM, 8, majorpkr_state )
-	AM_RANGE(0x0000, 0x07ff) AM_RAM_WRITE(fg_vram_w) AM_SHARE("fg_vram")
-	AM_RANGE(0x0800, 0x0fff) AM_RAM_WRITE(bg_vram_w) AM_SHARE("bg_vram")
-	AM_RANGE(0x1000, 0x1fff) AM_RAM // spare vram? cleared during boot along with fg and bg
-ADDRESS_MAP_END
+void majorpkr_state::vrambanks(address_map &map)
+{
+	map(0x0000, 0x07ff).ram().w(FUNC(majorpkr_state::fg_vram_w)).share("fg_vram");
+	map(0x0800, 0x0fff).ram().w(FUNC(majorpkr_state::bg_vram_w)).share("bg_vram");
+	map(0x1000, 0x1fff).ram(); // spare vram? cleared during boot along with fg and bg
+}
 
 /*
   00  W ---> ROM bank.
@@ -766,29 +795,30 @@ ADDRESS_MAP_END
   60  W ---> PSG SN76489/96 initialization routines.
              (Maybe a leftover for different hardware).
 */
-static ADDRESS_MAP_START( portmap, AS_IO, 8, majorpkr_state )
-	ADDRESS_MAP_GLOBAL_MASK(0xff)
-	AM_RANGE(0x00, 0x00) AM_WRITE(rom_bank_w)
-	AM_RANGE(0x01, 0x01) AM_WRITE(palette_bank_w)
-	AM_RANGE(0x02, 0x02) AM_WRITE(vram_bank_w)
+void majorpkr_state::portmap(address_map &map)
+{
+	map.global_mask(0xff);
+	map(0x00, 0x00).w(FUNC(majorpkr_state::rom_bank_w));
+	map(0x01, 0x01).w(FUNC(majorpkr_state::palette_bank_w));
+	map(0x02, 0x02).w(FUNC(majorpkr_state::vram_bank_w));
 
-	AM_RANGE(0x10, 0x10) AM_READ(mux_port2_r)   /* muxed set of controls */
-	AM_RANGE(0x10, 0x10) AM_WRITE(pulses_w)     /* kind of watchdog on bit4... mech counters on bits 0-1-2-3 */
-	AM_RANGE(0x11, 0x11) AM_READ_PORT("IN1")
-	AM_RANGE(0x11, 0x11) AM_WRITE(mux_sel_w)    /* multiplexer selector */
-	AM_RANGE(0x12, 0x12) AM_READ_PORT("IN2")
-	AM_RANGE(0x12, 0x12) AM_WRITE(vidreg_w)     /* video registers: normal or up down screen */
-	AM_RANGE(0x13, 0x13) AM_READ(mux_port_r)    /* all 4 DIP switches banks multiplexed */
-	AM_RANGE(0x13, 0x13) AM_WRITE(lamps_a_w)    /* lamps a out */
-	AM_RANGE(0x14, 0x14) AM_READ_PORT("TEST")   /* "freeze" switch */
-	AM_RANGE(0x14, 0x14) AM_WRITE(lamps_b_w)    /* lamps b out */
+	map(0x10, 0x10).r(FUNC(majorpkr_state::mux_port2_r));   // muxed set of controls.
+	map(0x10, 0x10).w(FUNC(majorpkr_state::pulses_w));     // kind of watchdog on bit4... mech counters on bits 0-1-2-3.
+	map(0x11, 0x11).portr("IN1");
+	map(0x11, 0x11).w(FUNC(majorpkr_state::mux_sel_w));    // multiplexer selector.
+	map(0x12, 0x12).portr("IN2");
+	map(0x12, 0x12).w(FUNC(majorpkr_state::vidreg_w));     // video registers: normal or up down screen.
+	map(0x13, 0x13).r(FUNC(majorpkr_state::mux_port_r));    // all 4 DIP switches banks multiplexed.
+	map(0x13, 0x13).w(FUNC(majorpkr_state::lamps_a_w));    // lamps a out.
+	map(0x14, 0x14).portr("TEST");   // "freeze" switch.
+	map(0x14, 0x14).w(FUNC(majorpkr_state::lamps_b_w));    // lamps b out.
 
-	AM_RANGE(0x30, 0x30) AM_DEVWRITE("crtc", mc6845_device, address_w)
-	AM_RANGE(0x31, 0x31) AM_DEVREADWRITE("crtc", mc6845_device, register_r, register_w)
+	map(0x30, 0x30).w("crtc", FUNC(mc6845_device::address_w));
+	map(0x31, 0x31).rw("crtc", FUNC(mc6845_device::register_r), FUNC(mc6845_device::register_w));
 
-	AM_RANGE(0x50, 0x50) AM_DEVREADWRITE("oki", okim6295_device, read, write)
-	AM_RANGE(0x60, 0x60) AM_WRITENOP    /* leftover from a PSG SN76489/96? */
-ADDRESS_MAP_END
+	map(0x50, 0x50).rw("oki", FUNC(okim6295_device::read), FUNC(okim6295_device::write));
+	map(0x60, 0x60).nopw();    // leftover from a PSG SN76489/96?...
+}
 
 
 /*************************
@@ -811,7 +841,7 @@ static INPUT_PORTS_START( majorpkr )
 	PORT_BIT( 0xfd, IP_ACTIVE_HIGH, IPT_UNKNOWN )
 
 	PORT_START("IN1")
-	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_POKER_BET )
+	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_GAMBLE_BET )
 	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_GAMBLE_DEAL )
 	PORT_BIT( 0x04, IP_ACTIVE_HIGH, IPT_GAMBLE_D_UP )
 	PORT_BIT( 0x08, IP_ACTIVE_HIGH, IPT_GAMBLE_TAKE )
@@ -965,7 +995,7 @@ static const gfx_layout tilelayout =
 * Graphics Decode Information *
 ******************************/
 
-static GFXDECODE_START( majorpkr )
+static GFXDECODE_START( gfx_majorpkr )
 	GFXDECODE_ENTRY( "bg_gfx", 0, tilelayout, 8*256, 8 )
 	GFXDECODE_ENTRY( "fg_gfx", 0, tilelayout, 0, 8 )
 GFXDECODE_END
@@ -975,63 +1005,55 @@ GFXDECODE_END
 *    Machine Drivers     *
 *************************/
 
-static MACHINE_CONFIG_START( majorpkr, majorpkr_state )
+void majorpkr_state::majorpkr(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", Z80, CPU_CLOCK) /* 6 MHz */
-	MCFG_CPU_PROGRAM_MAP(map)
-	MCFG_CPU_IO_MAP(portmap)
-	MCFG_CPU_VBLANK_INT_DRIVER("screen", majorpkr_state,  irq0_line_hold)
+	z80_device &maincpu(Z80(config, "maincpu", CPU_CLOCK));  // 6 MHz.
+	maincpu.set_addrmap(AS_PROGRAM, &majorpkr_state::map);
+	maincpu.set_addrmap(AS_IO, &majorpkr_state::portmap);
+	maincpu.set_vblank_int("screen", FUNC(majorpkr_state::irq0_line_hold));
 
-	MCFG_DEVICE_ADD("palette_bank", ADDRESS_MAP_BANK, 0)
-	MCFG_DEVICE_PROGRAM_MAP(palettebanks)
-	MCFG_ADDRESS_MAP_BANK_ENDIANNESS(ENDIANNESS_LITTLE)
-	MCFG_ADDRESS_MAP_BANK_DATABUS_WIDTH(8)
-	MCFG_ADDRESS_MAP_BANK_ADDRBUS_WIDTH(13)
-	MCFG_ADDRESS_MAP_BANK_STRIDE(0x0800)
+	ADDRESS_MAP_BANK(config, "palette_bank").set_map(&majorpkr_state::palettebanks).set_options(ENDIANNESS_LITTLE, 8, 13, 0x800);
+	ADDRESS_MAP_BANK(config, "vram_bank").set_map(&majorpkr_state::vrambanks).set_options(ENDIANNESS_LITTLE, 8, 13, 0x800);
 
-	MCFG_DEVICE_ADD("vram_bank", ADDRESS_MAP_BANK, 0)
-	MCFG_DEVICE_PROGRAM_MAP(vrambanks)
-	MCFG_ADDRESS_MAP_BANK_ENDIANNESS(ENDIANNESS_LITTLE)
-	MCFG_ADDRESS_MAP_BANK_DATABUS_WIDTH(8)
-	MCFG_ADDRESS_MAP_BANK_ADDRBUS_WIDTH(13)
-	MCFG_ADDRESS_MAP_BANK_STRIDE(0x0800)
-
-	MCFG_NVRAM_ADD_0FILL("nvram")
+	NVRAM(config, "nvram", nvram_device::DEFAULT_ALL_0);
 
 	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_RAW_PARAMS(CRTC_CLOCK*16, (47+1)*16, 0, (36*16)-16, (36+1)*8, 0, (28*8)) /* from CRTC registers */
-	MCFG_SCREEN_UPDATE_DRIVER(majorpkr_state, screen_update_majorpkr)
-	MCFG_SCREEN_PALETTE("palette")
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_RASTER));
+	screen.set_raw(CRTC_CLOCK*16, (47+1)*16, 0, (36*16)-16, (36+1)*8, 0, (28*8));  // from CRTC registers.
+	screen.set_screen_update(FUNC(majorpkr_state::screen_update_majorpkr));
 
-	MCFG_GFXDECODE_ADD("gfxdecode", "palette", majorpkr)
+	GFXDECODE(config, m_gfxdecode, "palette", gfx_majorpkr);
 
-	MCFG_PALETTE_ADD("palette", 0x100 * 16)
-	MCFG_PALETTE_FORMAT(xGGGGGRRRRRBBBBB)
+	PALETTE(config, "palette").set_format(palette_device::xGRB_555, 0x100 * 16);
 
-	MCFG_MC6845_ADD("crtc", MC6845, "screen", CRTC_CLOCK) /* verified */
-	MCFG_MC6845_SHOW_BORDER_AREA(false)
-	MCFG_MC6845_VISAREA_ADJUST(0,-16,0,0)
-	MCFG_MC6845_CHAR_WIDTH(16)
+	mc6845_device &crtc(MC6845(config, "crtc", CRTC_CLOCK));  // verified.
+	crtc.set_screen("screen");
+	crtc.set_show_border_area(false);
+	crtc.set_visarea_adjust(0, -16, 0, 0);
+	crtc.set_char_width(16);
 
 	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_MONO("mono")
-	MCFG_OKIM6295_ADD("oki", OKI_CLOCK, OKIM6295_PIN7_HIGH) /* clock frequency & pin 7 verified */
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 1.0)
-MACHINE_CONFIG_END
+	SPEAKER(config, "mono").front_center();
+	OKIM6295(config, "oki", OKI_CLOCK, okim6295_device::PIN7_HIGH).add_route(ALL_OUTPUTS, "mono", 1.0);  // clock frequency & pin 7 verified.
+}
 
 
 /*************************
 *        Rom Load        *
 *************************/
 
+/*
+  Major Poker.
+  Original PAL System game.
+*/
 ROM_START( majorpkr )
 	ROM_REGION( 0x10000, "maincpu", 0 )
-	ROM_LOAD( "6_27c512_823b.bin", 0x00000, 0x10000, CRC(a3d5475e) SHA1(cb41508b55da8b8c658a2f2ccc6ebda09db29040)  )
+	ROM_LOAD( "6_pp_27c512_823b.bin", 0x00000, 0x10000, CRC(a3d5475e) SHA1(cb41508b55da8b8c658a2f2ccc6ebda09db29040) )
 
 	ROM_REGION( 0x100000, "bg_gfx", 0 )
-	ROM_LOAD( "p1_27c040_7d3b.bin", 0x00000, 0x80000, CRC(67299eff) SHA1(34d3d8baf08dea495b699dd63272b445e2acb42d) )
-	ROM_LOAD( "p2_27c040_6039.bin", 0x80000, 0x80000, CRC(2d68b177) SHA1(01c934e0383991f2208b915cc5015463a8b6a8fd) )
+	ROM_LOAD( "1_27c040_7d3b.bin", 0x00000, 0x80000, CRC(67299eff) SHA1(34d3d8baf08dea495b699dd63272b445e2acb42d) )
+	ROM_LOAD( "2_27c040_6039.bin", 0x80000, 0x80000, CRC(2d68b177) SHA1(01c934e0383991f2208b915cc5015463a8b6a8fd) )
 
 	ROM_REGION( 0x40000, "fg_gfx", 0 )
 	ROM_LOAD( "3_27c010_af18.bin", 0x00000, 0x20000, CRC(54452bb8) SHA1(9d13c17b85dd0185ba64fc6f90425e0c75363960) )
@@ -1039,16 +1061,128 @@ ROM_START( majorpkr )
 
 	ROM_REGION( 0x40000, "oki", 0 )
 	ROM_LOAD( "5_27c020_8630.bin", 0x00000, 0x40000, CRC(4843858e) SHA1(27629829cf7753d7801a6eb42bb77ca2a467bebd) )
+
+	ROM_REGION( 0x1000, "plds1", 0 )  // from protection box.
+	ROM_LOAD( "u1_box_palce16v8h.bin",  0x0000, 0x0117, NO_DUMP )  // need to be extracted from the box and cracked...
+	ROM_LOAD( "u2_box_palce16v8h.bin",  0x0200, 0x0117, NO_DUMP )  // need to be extracted from the box and cracked...
+	ROM_LOAD( "u3_box_palce16v8h.bin",  0x0400, 0x0117, NO_DUMP )  // need to be extracted from the box and cracked...
+	ROM_LOAD( "u4_box_palce16v8h.bin",  0x0600, 0x0117, NO_DUMP )  // need to be extracted from the box and cracked...
+	ROM_LOAD( "u5_box_palce20v8h.bin",  0x0800, 0x0157, NO_DUMP )  // need to be extracted from the box and cracked...
+
+	ROM_REGION( 0x2000, "plds2", 0 )  // from PCB
+	ROM_LOAD( "g1_gal16v8d.bin",  0x0000, 0x0117, CRC(5ec2527a) SHA1(af9832a75efc25578ca79a08fae4bb169d4eb5ec) )
+	ROM_LOAD( "g2_gal16v8d.bin",  0x0200, 0x0117, CRC(f6a04079) SHA1(fd9e7fac2867de9746138e5aa22fdac10c370d65) )  // protected, but cracked...
+	ROM_LOAD( "g3_gal16v8d.bin",  0x0400, 0x0117, CRC(8b36df82) SHA1(b629557a8ebc88edd9e13372906f393f9fbc0669) )
+	ROM_LOAD( "g4_gal16v8d.bin",  0x0600, 0x0117, CRC(8b36df82) SHA1(b629557a8ebc88edd9e13372906f393f9fbc0669) )
+	ROM_LOAD( "g5_gal16v8d.bin",  0x0800, 0x0117, CRC(8b36df82) SHA1(b629557a8ebc88edd9e13372906f393f9fbc0669) )
+	ROM_LOAD( "g6_gal16v8d.bin",  0x0a00, 0x0117, CRC(5ec2527a) SHA1(af9832a75efc25578ca79a08fae4bb169d4eb5ec) )
+	ROM_LOAD( "g7_gal20v8b.bin",  0x0c00, 0x0157, CRC(9f45d431) SHA1(c3c9e6ed25a7cd7536974b906c993f5d7a58e65d) )
+	ROM_LOAD( "g8_gal20v8b.bin",  0x0e00, 0x0157, CRC(9f45d431) SHA1(c3c9e6ed25a7cd7536974b906c993f5d7a58e65d) )
+	ROM_LOAD( "g9_gal16v8d.bin",  0x1000, 0x0117, CRC(5ec2527a) SHA1(af9832a75efc25578ca79a08fae4bb169d4eb5ec) )
+	ROM_LOAD( "g10_gal16v8d.bin", 0x1200, 0x0117, CRC(5bdfd9f3) SHA1(5bca47c1fa4b1a6b7d1041a12f98153fc1b23065) )
 ROM_END
+
+
+/*
+  Major Poker.
+  Micro Manufacturing intro.
+  Program is totally different.
+  Graphics ROMs are identical to the parent set.
+*/
+ROM_START( majorpkra )
+	ROM_REGION( 0x10000, "maincpu", 0 )
+	ROM_LOAD( "27c512__a.rom6", 0x00000, 0x10000, CRC(0213a933) SHA1(0c3238f037bcbe096c85b5c57ac735d707361f87) )
+
+	ROM_REGION( 0x100000, "bg_gfx", 0 )
+	ROM_LOAD( "27c040.rom1", 0x00000, 0x80000, CRC(67299eff) SHA1(34d3d8baf08dea495b699dd63272b445e2acb42d) )
+	ROM_LOAD( "27c040.rom2", 0x80000, 0x80000, CRC(2d68b177) SHA1(01c934e0383991f2208b915cc5015463a8b6a8fd) )
+
+	ROM_REGION( 0x40000, "fg_gfx", 0 )
+	ROM_LOAD( "27c1001.rom3", 0x00000, 0x20000, CRC(54452bb8) SHA1(9d13c17b85dd0185ba64fc6f90425e0c75363960) )
+	ROM_LOAD( "27c1001.rom4", 0x20000, 0x20000, CRC(2e1e0972) SHA1(729dba2ef6ae8a7299c7ceb38835bebb0c42d28e) )
+
+	ROM_REGION( 0x40000, "oki", 0 )
+	ROM_LOAD( "27c2001.rom5", 0x00000, 0x40000, CRC(4843858e) SHA1(27629829cf7753d7801a6eb42bb77ca2a467bebd) )
+ROM_END
+
+/*
+  Major Poker.
+  Micro Manufacturing intro.
+  Graphics ROMs are identical to the parent set.
+
+  Only one byte of difference against set C.
+  Offset 0x38a7 = 0x08 (instead of 0x10).
+*/
+ROM_START( majorpkrb )
+	ROM_REGION( 0x10000, "maincpu", 0 )
+	ROM_LOAD( "27c512__b.rom6", 0x00000, 0x10000, CRC(3ab1e2c2) SHA1(11339fe32bb372f01b0983d2d571440530353b2a) )
+
+	ROM_REGION( 0x100000, "bg_gfx", 0 )
+	ROM_LOAD( "27c040.rom1", 0x00000, 0x80000, CRC(67299eff) SHA1(34d3d8baf08dea495b699dd63272b445e2acb42d) )
+	ROM_LOAD( "27c040.rom2", 0x80000, 0x80000, CRC(2d68b177) SHA1(01c934e0383991f2208b915cc5015463a8b6a8fd) )
+
+	ROM_REGION( 0x40000, "fg_gfx", 0 )
+	ROM_LOAD( "27c1001.rom3", 0x00000, 0x20000, CRC(54452bb8) SHA1(9d13c17b85dd0185ba64fc6f90425e0c75363960) )
+	ROM_LOAD( "27c1001.rom4", 0x20000, 0x20000, CRC(2e1e0972) SHA1(729dba2ef6ae8a7299c7ceb38835bebb0c42d28e) )
+
+	ROM_REGION( 0x40000, "oki", 0 )
+	ROM_LOAD( "27c2001.rom5", 0x00000, 0x40000, CRC(4843858e) SHA1(27629829cf7753d7801a6eb42bb77ca2a467bebd) )
+ROM_END
+
+/*
+  Major Poker.
+  Micro Manufacturing intro.
+  Graphics ROMs are identical to the parent set.
+
+  Only one byte of difference against set B.
+  Offset 0x38a7 = 0x10 (instead of 0x08).
+*/
+ROM_START( majorpkrc )
+	ROM_REGION( 0x10000, "maincpu", 0 )
+	ROM_LOAD( "27c512__c.rom6", 0x00000, 0x10000, CRC(7379026b) SHA1(49e4f935ba3d27c70df351e3e61fb94e00f1536e) )
+
+	ROM_REGION( 0x100000, "bg_gfx", 0 )
+	ROM_LOAD( "27c040.rom1", 0x00000, 0x80000, CRC(67299eff) SHA1(34d3d8baf08dea495b699dd63272b445e2acb42d) )
+	ROM_LOAD( "27c040.rom2", 0x80000, 0x80000, CRC(2d68b177) SHA1(01c934e0383991f2208b915cc5015463a8b6a8fd) )
+
+	ROM_REGION( 0x40000, "fg_gfx", 0 )
+	ROM_LOAD( "27c1001.rom3", 0x00000, 0x20000, CRC(54452bb8) SHA1(9d13c17b85dd0185ba64fc6f90425e0c75363960) )
+	ROM_LOAD( "27c1001.rom4", 0x20000, 0x20000, CRC(2e1e0972) SHA1(729dba2ef6ae8a7299c7ceb38835bebb0c42d28e) )
+
+	ROM_REGION( 0x40000, "oki", 0 )
+	ROM_LOAD( "27c2001.rom5", 0x00000, 0x40000, CRC(4843858e) SHA1(27629829cf7753d7801a6eb42bb77ca2a467bebd) )
+ROM_END
+
+/*
+  Lucky Poker.
+  Looks like a bootleg/hack of Major Joker.
+  Graphics ROMs are identical to the parent set.
+*/
+ROM_START( luckypkr )
+	ROM_REGION( 0x10000, "maincpu", 0 )
+	ROM_LOAD( "27c512__luckypkr.rom6", 0x00000, 0x10000, CRC(e5e6d79d) SHA1(2c4b54d8cc9083cfa1508a73269baff923504778) )
+
+	ROM_REGION( 0x100000, "bg_gfx", 0 )
+	ROM_LOAD( "27c040.rom1", 0x00000, 0x80000, CRC(67299eff) SHA1(34d3d8baf08dea495b699dd63272b445e2acb42d) )
+	ROM_LOAD( "27c040.rom2", 0x80000, 0x80000, CRC(2d68b177) SHA1(01c934e0383991f2208b915cc5015463a8b6a8fd) )
+
+	ROM_REGION( 0x40000, "fg_gfx", 0 )
+	ROM_LOAD( "27c1001.rom3", 0x00000, 0x20000, CRC(54452bb8) SHA1(9d13c17b85dd0185ba64fc6f90425e0c75363960) )
+	ROM_LOAD( "27c1001.rom4", 0x20000, 0x20000, CRC(2e1e0972) SHA1(729dba2ef6ae8a7299c7ceb38835bebb0c42d28e) )
+
+	ROM_REGION( 0x40000, "oki", 0 )
+	ROM_LOAD( "27c2001.rom5", 0x00000, 0x40000, CRC(4843858e) SHA1(27629829cf7753d7801a6eb42bb77ca2a467bebd) )
+ROM_END
+
 
 
 /*************************
 *      Driver Init       *
 *************************/
 
-DRIVER_INIT_MEMBER(majorpkr_state,majorpkr)
+void majorpkr_state::init_majorpkr()
 {
-	UINT8 * ROM = (UINT8 *)memregion("maincpu")->base();
+	uint8_t *ROM = (uint8_t *)memregion("maincpu")->base();
 	m_rom_bank->configure_entries(0, 4, &ROM[0xe000], 0x800);
 }
 
@@ -1057,5 +1191,9 @@ DRIVER_INIT_MEMBER(majorpkr_state,majorpkr)
 *      Game Drivers      *
 *************************/
 
-/*     YEAR  NAME      PARENT  MACHINE   INPUT     INIT      ROT    COMPANY       FULLNAME             FLAGS  LAYOUT */
-GAMEL( 1994, majorpkr, 0,      majorpkr, majorpkr, majorpkr_state, majorpkr, ROT0, "PAL System", "Major Poker (v2.0)", 0,     layout_majorpkr )
+/*     YEAR  NAME       PARENT    MACHINE   INPUT     CLASS           INIT           ROT   COMPANY                             FULLNAME                                          FLAGS  LAYOUT */
+GAMEL( 1994, majorpkr,  0,        majorpkr, majorpkr, majorpkr_state, init_majorpkr, ROT0, "PAL System",                       "Major Poker (set 1, v2.0)",                      0,     layout_majorpkr )
+GAMEL( 1994, majorpkra, majorpkr, majorpkr, majorpkr, majorpkr_state, init_majorpkr, ROT0, "PAL System / Micro Manufacturing", "Major Poker (set 2, Micro Manufacturing intro)", 0,     layout_majorpkr )
+GAMEL( 1994, majorpkrb, majorpkr, majorpkr, majorpkr, majorpkr_state, init_majorpkr, ROT0, "PAL System / Micro Manufacturing", "Major Poker (set 3, Micro Manufacturing intro)", 0,     layout_majorpkr )
+GAMEL( 1994, majorpkrc, majorpkr, majorpkr, majorpkr, majorpkr_state, init_majorpkr, ROT0, "PAL System / Micro Manufacturing", "Major Poker (set 4, Micro Manufacturing intro)", 0,     layout_majorpkr )
+GAMEL( 1994, luckypkr,  majorpkr, majorpkr, majorpkr, majorpkr_state, init_majorpkr, ROT0, "bootleg",                          "Lucky Poker (bootleg/hack of Major Poker)",      0,     layout_majorpkr )

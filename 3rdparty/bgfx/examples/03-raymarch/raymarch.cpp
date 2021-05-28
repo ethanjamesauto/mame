@@ -1,10 +1,14 @@
 /*
- * Copyright 2011-2015 Branimir Karadzic. All rights reserved.
- * License: http://www.opensource.org/licenses/BSD-2-Clause
+ * Copyright 2011-2019 Branimir Karadzic. All rights reserved.
+ * License: https://github.com/bkaradzic/bgfx#license-bsd-2-clause
  */
 
 #include "common.h"
 #include "bgfx_utils.h"
+#include "imgui/imgui.h"
+
+namespace
+{
 
 struct PosColorTexCoord0Vertex
 {
@@ -17,7 +21,7 @@ struct PosColorTexCoord0Vertex
 
 	static void init()
 	{
-		ms_decl
+		ms_layout
 			.begin()
 			.add(bgfx::Attrib::Position,  3, bgfx::AttribType::Float)
 			.add(bgfx::Attrib::Color0,    4, bgfx::AttribType::Uint8, true)
@@ -25,24 +29,17 @@ struct PosColorTexCoord0Vertex
 			.end();
 	}
 
-	static bgfx::VertexDecl ms_decl;
+	static bgfx::VertexLayout ms_layout;
 };
 
-bgfx::VertexDecl PosColorTexCoord0Vertex::ms_decl;
+bgfx::VertexLayout PosColorTexCoord0Vertex::ms_layout;
 
-static bool s_oglNdc = false;
-
-inline void mtxProj(float* _result, float _fovy, float _aspect, float _near, float _far)
-{
-	bx::mtxProj(_result, _fovy, _aspect, _near, _far, s_oglNdc);
-}
-
-void renderScreenSpaceQuad(uint32_t _view, bgfx::ProgramHandle _program, float _x, float _y, float _width, float _height)
+void renderScreenSpaceQuad(uint8_t _view, bgfx::ProgramHandle _program, float _x, float _y, float _width, float _height)
 {
 	bgfx::TransientVertexBuffer tvb;
 	bgfx::TransientIndexBuffer tib;
 
-	if (bgfx::allocTransientBuffers(&tvb, PosColorTexCoord0Vertex::ms_decl, 4, &tib, 6) )
+	if (bgfx::allocTransientBuffers(&tvb, PosColorTexCoord0Vertex::ms_layout, 4, &tib, 6) )
 	{
 		PosColorTexCoord0Vertex* vertex = (PosColorTexCoord0Vertex*)tvb.data;
 
@@ -97,143 +94,179 @@ void renderScreenSpaceQuad(uint32_t _view, bgfx::ProgramHandle _program, float _
 
 		bgfx::setState(BGFX_STATE_DEFAULT);
 		bgfx::setIndexBuffer(&tib);
-		bgfx::setVertexBuffer(&tvb);
+		bgfx::setVertexBuffer(0, &tvb);
 		bgfx::submit(_view, _program);
 	}
 }
 
-int _main_(int _argc, char** _argv)
+class ExampleRaymarch : public entry::AppI
 {
-	Args args(_argc, _argv);
-
-	uint32_t width = 1280;
-	uint32_t height = 720;
-	uint32_t debug = BGFX_DEBUG_TEXT;
-	uint32_t reset = BGFX_RESET_VSYNC;
-
-	bgfx::init(args.m_type, args.m_pciId);
-	bgfx::reset(width, height, reset);
-
-	// Enable debug text.
-	bgfx::setDebug(debug);
-
-	// Set view 0 clear state.
-	bgfx::setViewClear(0
-		, BGFX_CLEAR_COLOR|BGFX_CLEAR_DEPTH
-		, 0x303030ff
-		, 1.0f
-		, 0
-		);
-
-	// Setup root path for binary shaders. Shader binaries are different
-	// for each renderer.
-	switch (bgfx::getRendererType() )
+public:
+	ExampleRaymarch(const char* _name, const char* _description, const char* _url)
+		: entry::AppI(_name, _description, _url)
 	{
-	default:
-		break;
-
-	case bgfx::RendererType::OpenGL:
-	case bgfx::RendererType::OpenGLES:
-		s_oglNdc = true;
-		break;
 	}
 
-	// Create vertex stream declaration.
-	PosColorTexCoord0Vertex::init();
-
-	bgfx::UniformHandle u_mtx          = bgfx::createUniform("u_mtx",      bgfx::UniformType::Mat4);
-	bgfx::UniformHandle u_lightDirTime = bgfx::createUniform("u_lightDirTime", bgfx::UniformType::Vec4);
-
-	// Create program from shaders.
-	bgfx::ProgramHandle raymarching = loadProgram("vs_raymarching", "fs_raymarching");
-
-	int64_t timeOffset = bx::getHPCounter();
-
-	while (!entry::processEvents(width, height, debug, reset) )
+	void init(int32_t _argc, const char* const* _argv, uint32_t _width, uint32_t _height) override
 	{
-		// Set view 0 default viewport.
-		bgfx::setViewRect(0, 0, 0, width, height);
+		Args args(_argc, _argv);
 
-		// Set view 1 default viewport.
-		bgfx::setViewRect(1, 0, 0, width, height);
+		m_width  = _width;
+		m_height = _height;
+		m_debug  = BGFX_DEBUG_NONE;
+		m_reset  = BGFX_RESET_VSYNC;
 
-		// This dummy draw call is here to make sure that view 0 is cleared
-		// if no other draw calls are submitted to viewZ 0.
-		bgfx::touch(0);
+		bgfx::Init init;
+		init.type     = args.m_type;
+		init.vendorId = args.m_pciId;
+		init.resolution.width  = m_width;
+		init.resolution.height = m_height;
+		init.resolution.reset  = m_reset;
+		bgfx::init(init);
 
-		int64_t now = bx::getHPCounter();
-		static int64_t last = now;
-		const int64_t frameTime = now - last;
-		last = now;
-		const double freq = double(bx::getHPFrequency() );
-		const double toMs = 1000.0/freq;
+		// Enable debug text.
+		bgfx::setDebug(m_debug);
 
-		// Use debug font to print information about this example.
-		bgfx::dbgTextClear();
-		bgfx::dbgTextPrintf(0, 1, 0x4f, "bgfx/examples/03-raymarch");
-		bgfx::dbgTextPrintf(0, 2, 0x6f, "Description: Updating shader uniforms.");
-		bgfx::dbgTextPrintf(0, 3, 0x0f, "Frame: % 7.3f[ms]", double(frameTime)*toMs);
+		// Set view 0 clear state.
+		bgfx::setViewClear(0
+				, BGFX_CLEAR_COLOR|BGFX_CLEAR_DEPTH
+				, 0x303030ff
+				, 1.0f
+				, 0
+				);
 
-		float at[3] = { 0.0f, 0.0f, 0.0f };
-		float eye[3] = { 0.0f, 0.0f, -15.0f };
+		// Create vertex stream declaration.
+		PosColorTexCoord0Vertex::init();
 
-		float view[16];
-		float proj[16];
-		bx::mtxLookAt(view, eye, at);
-		mtxProj(proj, 60.0f, float(width)/float(height), 0.1f, 100.0f);
+		u_mtx          = bgfx::createUniform("u_mtx",      bgfx::UniformType::Mat4);
+		u_lightDirTime = bgfx::createUniform("u_lightDirTime", bgfx::UniformType::Vec4);
 
-		// Set view and projection matrix for view 1.
-		bgfx::setViewTransform(0, view, proj);
+		// Create program from shaders.
+		m_program = loadProgram("vs_raymarching", "fs_raymarching");
 
-		float ortho[16];
-		bx::mtxOrtho(ortho, 0.0f, 1280.0f, 720.0f, 0.0f, 0.0f, 100.0f);
+		m_timeOffset = bx::getHPCounter();
 
-		// Set view and projection matrix for view 0.
-		bgfx::setViewTransform(1, NULL, ortho);
-
-		float time = (float)( (bx::getHPCounter()-timeOffset)/double(bx::getHPFrequency() ) );
-
-		float vp[16];
-		bx::mtxMul(vp, view, proj);
-
-		float mtx[16];
-		bx::mtxRotateXY(mtx
-			, time
-			, time*0.37f
-			);
-
-		float mtxInv[16];
-		bx::mtxInverse(mtxInv, mtx);
-		float lightDirModel[4] = { -0.4f, -0.5f, -1.0f, 0.0f };
-		float lightDirModelN[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
-		bx::vec3Norm(lightDirModelN, lightDirModel);
-		float lightDirTime[4];
-		bx::vec4MulMtx(lightDirTime, lightDirModelN, mtxInv);
-		lightDirTime[3] = time;
-		bgfx::setUniform(u_lightDirTime, lightDirTime);
-
-		float mvp[16];
-		bx::mtxMul(mvp, mtx, vp);
-
-		float invMvp[16];
-		bx::mtxInverse(invMvp, mvp);
-		bgfx::setUniform(u_mtx, invMvp);
-
-		renderScreenSpaceQuad(1, raymarching, 0.0f, 0.0f, 1280.0f, 720.0f);
-
-		// Advance to next frame. Rendering thread will be kicked to
-		// process submitted rendering primitives.
-		bgfx::frame();
+		imguiCreate();
 	}
 
-	// Cleanup.
-	bgfx::destroyProgram(raymarching);
+	int shutdown() override
+	{
+		imguiDestroy();
 
-	bgfx::destroyUniform(u_mtx);
-	bgfx::destroyUniform(u_lightDirTime);
+		// Cleanup.
+		bgfx::destroy(m_program);
 
-	// Shutdown bgfx.
-	bgfx::shutdown();
+		bgfx::destroy(u_mtx);
+		bgfx::destroy(u_lightDirTime);
 
-	return 0;
-}
+		// Shutdown bgfx.
+		bgfx::shutdown();
+
+		return 0;
+	}
+
+	bool update() override
+	{
+		if (!entry::processEvents(m_width, m_height, m_debug, m_reset, &m_mouseState) )
+		{
+			imguiBeginFrame(m_mouseState.m_mx
+				,  m_mouseState.m_my
+				, (m_mouseState.m_buttons[entry::MouseButton::Left  ] ? IMGUI_MBUT_LEFT   : 0)
+				| (m_mouseState.m_buttons[entry::MouseButton::Right ] ? IMGUI_MBUT_RIGHT  : 0)
+				| (m_mouseState.m_buttons[entry::MouseButton::Middle] ? IMGUI_MBUT_MIDDLE : 0)
+				,  m_mouseState.m_mz
+				, uint16_t(m_width)
+				, uint16_t(m_height)
+				);
+
+			showExampleDialog(this);
+
+			imguiEndFrame();
+			// Set view 0 default viewport.
+			bgfx::setViewRect(0, 0, 0, uint16_t(m_width), uint16_t(m_height) );
+
+			// Set view 1 default viewport.
+			bgfx::setViewRect(1, 0, 0, uint16_t(m_width), uint16_t(m_height) );
+
+			// This dummy draw call is here to make sure that view 0 is cleared
+			// if no other draw calls are submitted to viewZ 0.
+			bgfx::touch(0);
+
+			const bx::Vec3 at  = { 0.0f, 0.0f,   0.0f };
+			const bx::Vec3 eye = { 0.0f, 0.0f, -15.0f };
+
+			float view[16];
+			float proj[16];
+			bx::mtxLookAt(view, eye, at);
+
+			const bgfx::Caps* caps = bgfx::getCaps();
+			bx::mtxProj(proj, 60.0f, float(m_width)/float(m_height), 0.1f, 100.0f, caps->homogeneousDepth);
+
+			// Set view and projection matrix for view 1.
+			bgfx::setViewTransform(0, view, proj);
+
+			float ortho[16];
+			bx::mtxOrtho(ortho, 0.0f, 1280.0f, 720.0f, 0.0f, 0.0f, 100.0f, 0.0, caps->homogeneousDepth);
+
+			// Set view and projection matrix for view 0.
+			bgfx::setViewTransform(1, NULL, ortho);
+
+			float time = (float)( (bx::getHPCounter()-m_timeOffset)/double(bx::getHPFrequency() ) );
+
+			float vp[16];
+			bx::mtxMul(vp, view, proj);
+
+			float mtx[16];
+			bx::mtxRotateXY(mtx
+				, time
+				, time*0.37f
+				);
+
+			float mtxInv[16];
+			bx::mtxInverse(mtxInv, mtx);
+			float lightDirTime[4];
+			const bx::Vec3 lightDirModelN = bx::normalize(bx::Vec3{-0.4f, -0.5f, -1.0f});
+			bx::store(lightDirTime, bx::mul(lightDirModelN, mtxInv) );
+			lightDirTime[3] = time;
+			bgfx::setUniform(u_lightDirTime, lightDirTime);
+
+			float mvp[16];
+			bx::mtxMul(mvp, mtx, vp);
+
+			float invMvp[16];
+			bx::mtxInverse(invMvp, mvp);
+			bgfx::setUniform(u_mtx, invMvp);
+
+			renderScreenSpaceQuad(1, m_program, 0.0f, 0.0f, 1280.0f, 720.0f);
+
+			// Advance to next frame. Rendering thread will be kicked to
+			// process submitted rendering primitives.
+			bgfx::frame();
+
+			return true;
+		}
+
+		return false;
+	}
+
+	entry::MouseState m_mouseState;
+
+	uint32_t m_width;
+	uint32_t m_height;
+	uint32_t m_debug;
+	uint32_t m_reset;
+
+	int64_t m_timeOffset;
+	bgfx::UniformHandle u_mtx;
+	bgfx::UniformHandle u_lightDirTime;
+	bgfx::ProgramHandle m_program;
+};
+
+} // namespace
+
+ENTRY_IMPLEMENT_MAIN(
+	  ExampleRaymarch
+	, "03-raymarch"
+	, "Updating shader uniforms."
+	, "https://bkaradzic.github.io/bgfx/examples.html#raymarch"
+	);

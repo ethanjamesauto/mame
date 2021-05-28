@@ -1,5 +1,5 @@
 /*
-* $Id: pa_win_wdmks.c 1945 2015-01-21 06:24:32Z rbencina $
+* $Id$
 * PortAudio Windows WDM-KS interface
 *
 * Author: Andrew Baldwin, Robert Bielik (WaveRT)
@@ -50,8 +50,6 @@ format conversion. That means that it will lock out all other users
 of a device for the duration of active stream using those devices
 */
 
-#include <stdio.h>
-
 #if (defined(_WIN32) && (defined(_MSC_VER) && (_MSC_VER >= 1200))) /* MSC version 6 and above */
 #pragma comment( lib, "setupapi.lib" )
 #endif
@@ -60,6 +58,14 @@ of a device for the duration of active stream using those devices
 
 #define PA_LOGE_
 #define PA_LOGL_
+
+#ifdef __GNUC__
+#define _WIN32_WINNT 0x0501
+#define WINVER 0x0501
+#include <initguid.h>
+#endif
+
+#include <stdio.h>
 
 #include <string.h> /* strlen() */
 #include <assert.h>
@@ -88,7 +94,9 @@ of a device for the duration of active stream using those devices
 #endif
 
 #include <windows.h>
+#ifndef __GNUC__ /* Fix for ticket #257: MinGW-w64: Inclusion of <winioctl.h> triggers multiple redefinition errors. */
 #include <winioctl.h>
+#endif
 #include <process.h>
 
 #include <math.h>
@@ -114,7 +122,7 @@ Default is to use the pin category.
 #define PA_WDMKS_USE_CATEGORY_FOR_PIN_NAMES  1
 #endif
 
-#ifdef __GNUC__
+#if defined(__GNUC__) || (defined(_MSC_VER) && defined(__clang__))
 #undef PA_LOGE_
 #define PA_LOGE_ PA_DEBUG(("%s {\n",__FUNCTION__))
 #undef PA_LOGL_
@@ -150,7 +158,7 @@ Default is to use the pin category.
 #define PA_THREAD_FUNC static DWORD WINAPI
 #endif
 
-#ifdef _MSC_VER
+#if defined(_MSC_VER) && !defined(__clang__)
 #define NOMMIDS
 #define DYNAMIC_GUID(data) {data}
 #define _NTRTL_ /* Turn off default definition of DEFINE_GUIDEX */

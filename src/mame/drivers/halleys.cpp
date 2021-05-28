@@ -162,10 +162,19 @@ Video sync   6 F   Video sync                 Post   6 F   Post
 // Compiler Directives
 
 #include "emu.h"
-#include "cpu/z80/z80.h"
 #include "includes/taitoipt.h"
+
 #include "cpu/m6809/m6809.h"
+#include "cpu/z80/z80.h"
+#include "machine/gen_latch.h"
+#include "machine/timer.h"
 #include "sound/ay8910.h"
+#include "emupal.h"
+#include "screen.h"
+#include "speaker.h"
+
+
+namespace {
 
 #define HALLEYS_DEBUG 0
 
@@ -186,7 +195,6 @@ Video sync   6 F   Video sync                 Post   6 F   Post
 
 #define MAX_LAYERS    6
 #define MAX_SPRITES   256
-#define MAX_SOUNDS    16
 
 #define SP_2BACK     0x100
 #define SP_ALPHA     0x200
@@ -205,35 +213,51 @@ Video sync   6 F   Video sync                 Post   6 F   Post
 #define CLIP_SKIP           (VIS_MINY * SCREEN_WIDTH + VIS_MINX)
 #define CLIP_W              (VIS_MAXX - VIS_MINX + 1)
 #define CLIP_H              (VIS_MAXY - VIS_MINY + 1)
-#define CLIP_BYTEW          (CLIP_W << 1)
 
 
 class halleys_state : public driver_device
 {
 public:
-	halleys_state(const machine_config &mconfig, device_type type, const char *tag)
-		: driver_device(mconfig, type, tag),
+	halleys_state(const machine_config &mconfig, device_type type, const char *tag) :
+		driver_device(mconfig, type, tag),
 		m_blitter_ram(*this, "blitter_ram"),
 		m_io_ram(*this, "io_ram"),
 		m_maincpu(*this, "maincpu"),
 		m_audiocpu(*this, "audiocpu"),
-		m_palette(*this, "palette") { }
+		m_palette(*this, "palette"),
+		m_soundlatch(*this, "soundlatch")
+	{ }
 
-	UINT16 *m_render_layer[MAX_LAYERS];
-	UINT8 m_sound_fifo[MAX_SOUNDS];
-	UINT8 *m_gfx_plane02;
-	UINT8 *m_gfx_plane13;
-	std::unique_ptr<UINT8[]> m_collision_list;
-	UINT8 *m_scrolly0;
-	UINT8 *m_scrollx0;
-	UINT8 *m_scrolly1;
-	UINT8 *m_scrollx1;
-	std::unique_ptr<UINT32[]> m_internal_palette;
-	std::unique_ptr<UINT32[]> m_alpha_table;
-	UINT8 *m_cpu1_base;
-	std::unique_ptr<UINT8[]> m_gfx1_base;
-	required_shared_ptr<UINT8> m_blitter_ram;
-	required_shared_ptr<UINT8> m_io_ram;
+	void benberob(machine_config &config);
+	void halleys(machine_config &config);
+
+	void init_halley87();
+	void init_benberob();
+	void init_halleys();
+	void init_halleysp();
+
+protected:
+	virtual void machine_start() override;
+	virtual void machine_reset() override;
+	virtual void video_start() override;
+
+private:
+	std::unique_ptr<uint16_t[]> m_render_layer_alloc;
+	uint16_t *m_render_layer[MAX_LAYERS];
+	std::unique_ptr<uint8_t[]> m_gfx_plane_alloc;
+	uint8_t *m_gfx_plane02;
+	uint8_t *m_gfx_plane13;
+	std::unique_ptr<uint8_t[]> m_collision_list;
+	uint8_t *m_scrolly0;
+	uint8_t *m_scrollx0;
+	uint8_t *m_scrolly1;
+	uint8_t *m_scrollx1;
+	std::unique_ptr<uint32_t[]> m_internal_palette;
+	std::unique_ptr<uint32_t[]> m_alpha_table;
+	uint8_t *m_cpu1_base;
+	std::unique_ptr<uint8_t[]> m_gfx1_base;
+	required_shared_ptr<uint8_t> m_blitter_ram;
+	required_shared_ptr<uint8_t> m_io_ram;
 	int m_game_id;
 	int m_blitter_busy;
 	int m_collision_count;
@@ -247,46 +271,41 @@ public:
 	int m_firq_level;
 	emu_timer *m_blitter_reset_timer;
 	offs_t m_collision_detection;
-	int m_latch_delay;
-	std::vector<UINT8> m_paletteram;
+	std::vector<uint8_t> m_paletteram;
 
-	DECLARE_WRITE8_MEMBER(bgtile_w);
-	DECLARE_READ8_MEMBER(blitter_status_r);
-	DECLARE_READ8_MEMBER(blitter_r);
-	DECLARE_WRITE8_MEMBER(blitter_w);
-	DECLARE_READ8_MEMBER(collision_id_r);
-	DECLARE_READ8_MEMBER(paletteram_r);
-	DECLARE_WRITE8_MEMBER(paletteram_w);
-	DECLARE_READ8_MEMBER(zero_r);
-	DECLARE_READ8_MEMBER(debug_r);
-	DECLARE_READ8_MEMBER(vector_r);
-	DECLARE_WRITE8_MEMBER(firq_ack_w);
-	DECLARE_WRITE8_MEMBER(soundcommand_w);
-	DECLARE_READ8_MEMBER(coin_lockout_r);
-	DECLARE_READ8_MEMBER(io_mirror_r);
+	void bgtile_w(offs_t offset, uint8_t data);
+	uint8_t blitter_status_r();
+	uint8_t blitter_r(offs_t offset);
+	void blitter_w(offs_t offset, uint8_t data);
+	uint8_t collision_id_r();
+	uint8_t paletteram_r(offs_t offset);
+	void paletteram_w(offs_t offset, uint8_t data);
+	uint8_t vector_r(offs_t offset);
+	void firq_ack_w(uint8_t data);
+	void soundcommand_w(uint8_t data);
+	uint8_t coin_lockout_r();
+	uint8_t io_mirror_r(offs_t offset);
 	void blit(int offset);
-	DECLARE_WRITE8_MEMBER(sndnmi_msk_w);
-	DECLARE_DRIVER_INIT(halley87);
-	DECLARE_DRIVER_INIT(benberob);
-	DECLARE_DRIVER_INIT(halleys);
-	virtual void machine_reset() override;
-	virtual void video_start() override;
-	DECLARE_PALETTE_INIT(halleys);
-	UINT32 screen_update_halleys(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
-	UINT32 screen_update_benberob(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
+	void sndnmi_msk_w(uint8_t data);
+	void halleys_palette(palette_device &palette);
+	uint32_t screen_update_halleys(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
+	uint32_t screen_update_benberob(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
 	TIMER_CALLBACK_MEMBER(blitter_reset);
 	TIMER_DEVICE_CALLBACK_MEMBER(halleys_scanline);
 	TIMER_DEVICE_CALLBACK_MEMBER(benberob_scanline);
-	void halleys_decode_rgb(UINT32 *r, UINT32 *g, UINT32 *b, int addr, int data);
-	void copy_scroll_op(bitmap_ind16 &bitmap, UINT16 *source, int sx, int sy);
-	void copy_scroll_xp(bitmap_ind16 &bitmap, UINT16 *source, int sx, int sy);
-	void copy_fixed_xp(bitmap_ind16 &bitmap, UINT16 *source);
-	void copy_fixed_2b(bitmap_ind16 &bitmap, UINT16 *source);
+	void halleys_decode_rgb(uint32_t *r, uint32_t *g, uint32_t *b, int addr, int data);
+	void copy_scroll_op(bitmap_ind16 &bitmap, uint16_t *source, int sx, int sy);
+	void copy_scroll_xp(bitmap_ind16 &bitmap, uint16_t *source, int sx, int sy);
+	void copy_fixed_xp(bitmap_ind16 &bitmap, uint16_t *source);
+	void copy_fixed_2b(bitmap_ind16 &bitmap, uint16_t *source);
 	void filter_bitmap(bitmap_ind16 &bitmap, int mask);
 	void init_common();
 	required_device<cpu_device> m_maincpu;
 	required_device<cpu_device> m_audiocpu;
 	required_device<palette_device> m_palette;
+	required_device<generic_latch_8_device> m_soundlatch;
+	void halleys_map(address_map &map);
+	void sound_map(address_map &map);
 };
 
 
@@ -361,21 +380,21 @@ void halleys_state::blit(int offset)
 #define XMASK (SCREEN_WIDTH-1)
 #define YMASK (SCREEN_HEIGHT-1)
 
-	static const UINT8 penxlat[16]={0x03,0x07,0x0b,0x0f,0x02,0x06,0x0a,0x0e,0x01,0x05,0x09,0x0d,0x00,0x04,0x08,0x0c};
-	static const UINT8 rgbmask[16]={0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xfc,0xff,0xff,0xff,0xff,0xff};
-	static const UINT8 tyremap[ 8]={ 0, 5, 9,13,16,20,24,28};
+	static const uint8_t penxlat[16]={0x03,0x07,0x0b,0x0f,0x02,0x06,0x0a,0x0e,0x01,0x05,0x09,0x0d,0x00,0x04,0x08,0x0c};
+	static const uint8_t rgbmask[16]={0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xfc,0xff,0xff,0xff,0xff,0xff};
+	static const uint8_t tyremap[ 8]={ 0, 5, 9,13,16,20,24,28};
 
-	UINT8 *param, *src_base;
-	UINT16 *dst_base;
+	uint8_t *param, *src_base;
+	uint16_t *dst_base;
 	int stptr, mode, color, code, y, x, h, w, src1, src2;
 	int status, flags, group, command, bank, layer, pen0, pen1;
 	int yclip, xclip, src_yskip, src_xskip, dst_skip, hclip, wclip, src_dy, src_dx;
-	UINT32 *pal_ptr;
-	UINT8 *src1_ptr, *src2_ptr; // esi alias, ebx alias
-	UINT16 *dst_ptr;             // edi alias
+	uint32_t *pal_ptr;
+	uint8_t *src1_ptr, *src2_ptr; // esi alias, ebx alias
+	uint16_t *dst_ptr;             // edi alias
 	void *edi;                 // scratch
 	int eax, ebx, ecx, edx;    // scratch
-	UINT16 ax; UINT8 al, ah;      // partial regs
+	uint16_t ax; uint8_t al, ah;      // partial regs
 
 
 	param = m_blitter_ram + offset;
@@ -383,7 +402,7 @@ void halleys_state::blit(int offset)
 
 #if HALLEYS_DEBUG
 if (0) {
-	logerror("%s:[%04x]", machine.describe_context(), offset);
+	logerror("%s:[%04x]", machine().describe_context(), offset);
 	for (ecx=0; ecx<16; ecx++) logerror(" %02x", param[ecx]);
 	logerror("\n");
 }
@@ -434,76 +453,69 @@ if (0) {
 	bank = ((code & BANKBIT0) | (color & BANKBIT1)) << 8;
 	pal_ptr = m_internal_palette.get();
 
-
 	// the crossroad of fate
-	if (code & BGLAYER || command & 7) goto COMMAND_MODE;
-
-
-	// reject off-screen objects
-	if (flags & MIRROR_Y) { flags |= FLIP_Y; y -= (h - 1); }
-	if (flags & MIRROR_X) { flags |= FLIP_X; x -= (w - 1); }
-	if (y > VIS_MAXY || (y + h) <= VIS_MINY) return;
-	if (x > VIS_MAXX || (x + w) <= VIS_MINX) return;
-
-
-	// clip objects against the visible area
-	yclip = y; xclip = x; hclip = h; wclip = w;
-	src_yskip = src_xskip = 0;
-	if (yclip < VIS_MINY) { src_yskip = VIS_MINY - yclip; yclip = VIS_MINY; hclip -= src_yskip; }
-	if (yclip + hclip > VIS_MAXY+1) { hclip = VIS_MAXY+1 - yclip; }
-	if (xclip < VIS_MINX) { src_xskip = VIS_MINX - xclip; xclip = VIS_MINX; wclip -= src_xskip; }
-	if (xclip + wclip > VIS_MAXX+1) { wclip = VIS_MAXX+1 - xclip; }
-	dst_skip = (yclip << SCREEN_WIDTH_L2) + xclip;
-
-
-	// adjust orientations
-	eax = 0;
-	if (flags & (S1_REV | S2_REV)) { flags ^= FLIP_Y | FLIP_X; eax -= w * h - 8; }
-
-	if (flags & FLIP_Y)
+	if (!(code & BGLAYER || command & 7))
 	{
-		eax += w * (h - 1);
-		src_yskip = -src_yskip;
-		src_dy = (flags & FLIP_X) ? -w + wclip : -w - wclip;
+		// reject off-screen objects
+		if (flags & MIRROR_Y) { flags |= FLIP_Y; y -= (h - 1); }
+		if (flags & MIRROR_X) { flags |= FLIP_X; x -= (w - 1); }
+		if (y > VIS_MAXY || (y + h) <= VIS_MINY) return;
+		if (x > VIS_MAXX || (x + w) <= VIS_MINX) return;
 
-	}
-	else src_dy = (flags & FLIP_X) ? w + wclip : w - wclip;
+		// clip objects against the visible area
+		yclip = y; xclip = x; hclip = h; wclip = w;
+		src_yskip = src_xskip = 0;
+		if (yclip < VIS_MINY) { src_yskip = VIS_MINY - yclip; yclip = VIS_MINY; hclip -= src_yskip; }
+		if (yclip + hclip > VIS_MAXY+1) { hclip = VIS_MAXY+1 - yclip; }
+		if (xclip < VIS_MINX) { src_xskip = VIS_MINX - xclip; xclip = VIS_MINX; wclip -= src_xskip; }
+		if (xclip + wclip > VIS_MAXX+1) { wclip = VIS_MAXX+1 - xclip; }
+		dst_skip = (yclip << SCREEN_WIDTH_L2) + xclip;
 
-	if (flags & FLIP_X)
-	{
-		eax += w - 1;
-		src_xskip = -src_xskip;
-		src_dx = -1;
-	}
-	else src_dx = 1;
+		// adjust orientations
+		eax = 0;
+		if (flags & (S1_REV | S2_REV)) { flags ^= FLIP_Y | FLIP_X; eax -= w * h - 8; }
 
+		if (flags & FLIP_Y)
+		{
+			eax += w * (h - 1);
+			src_yskip = -src_yskip;
+			src_dy = (flags & FLIP_X) ? -w + wclip : -w - wclip;
+		}
+		else src_dy = (flags & FLIP_X) ? w + wclip : w - wclip;
 
-	// calculate entry points and loop constants
-	src1_ptr = m_gfx_plane02 + ((bank + src1)<<3) + eax;
-	src2_ptr = m_gfx_plane13 + ((bank + src2)<<3) + eax;
+		if (flags & FLIP_X)
+		{
+			eax += w - 1;
+			src_xskip = -src_xskip;
+			src_dx = -1;
+		}
+		else src_dx = 1;
 
-	if (!(flags & (S1_IDLE | S2_IDLE)))
-	{
-		eax = src_yskip * w + src_xskip;
-		src1_ptr += eax;
-		src2_ptr += eax;
-	}
-	else src_dy = src_dx = 0;
+		// calculate entry points and loop constants
+		src1_ptr = m_gfx_plane02 + ((bank + src1)<<3) + eax;
+		src2_ptr = m_gfx_plane13 + ((bank + src2)<<3) + eax;
 
-	dst_ptr = m_render_layer[layer] + dst_skip;
+		if (!(flags & (S1_IDLE | S2_IDLE)))
+		{
+			eax = src_yskip * w + src_xskip;
+			src1_ptr += eax;
+			src2_ptr += eax;
+		}
+		else src_dy = src_dx = 0;
 
+		dst_ptr = m_render_layer[layer] + dst_skip;
 
-	// look up pen values and set rendering flags
-	pen0 = code>>3 & 0x10;
-	pen1 = 0;
-	if (command == EFX1) { flags |= BACKMODE; pen0 |= SP_2BACK; }
-	if (src1 == src2)
-	{
-		flags |= SINGLE_PEN;
-		eax = (UINT32)penxlat[color & PENCOLOR];
-		if (eax) pen1 = pen0 + eax;
-	}
-	else if (color & PENCOLOR) flags |= RGB_MASK;
+		// look up pen values and set rendering flags
+		pen0 = code>>3 & 0x10;
+		pen1 = 0;
+		if (command == EFX1) { flags |= BACKMODE; pen0 |= SP_2BACK; }
+		if (src1 == src2)
+		{
+			flags |= SINGLE_PEN;
+			eax = (uint32_t)penxlat[color & PENCOLOR];
+			if (eax) pen1 = pen0 + eax;
+		}
+		else if (color & PENCOLOR) flags |= RGB_MASK;
 
 
 //--------------------------------------------------------------------------
@@ -512,228 +524,217 @@ if (0) {
 	eax = wclip<<1; \
 	ecx = hclip; \
 	edi = dst_ptr; \
-	do { memset((UINT8*)edi, 0, eax); edi = (UINT8*)edi + SCREEN_BYTEWIDTH; } while (--ecx); \
+	do { memset((uint8_t*)edi, 0, eax); edi = (uint8_t*)edi + SCREEN_BYTEWIDTH; } while (--ecx); \
 }
 
 //--------------------------------------------------------------------------
 
-	// multi-pen block or transparent blit
-	if ((flags & (SINGLE_PEN | RGB_MASK | COLOR_ON)) == COLOR_ON)
-	{
-		if (!(flags & IGNORE_0)) BLOCK_WIPE_COMMON
-
-		dst_ptr += wclip;
-		ecx = wclip = -wclip;
-		edx = src_dx;
-
-		if (flags & PPCD_ON) goto COLLISION_MODE;
-
-		al = ah = (UINT8)pen0;
-
-		if (!(flags & BACKMODE))
+		// multi-pen block or transparent blit
+		if ((flags & (SINGLE_PEN | RGB_MASK | COLOR_ON)) == COLOR_ON)
 		{
-			do {
-				do {
-					al |= *src1_ptr;
-					src1_ptr += edx;
-					al |= *src2_ptr;
-					src2_ptr += edx;
-					if (al & 0xf) { dst_ptr[ecx] = (UINT16)al;  al = ah;}
+			if (!(flags & IGNORE_0)) BLOCK_WIPE_COMMON
+
+			dst_ptr += wclip;
+			ecx = wclip = -wclip;
+			edx = src_dx;
+
+			if (!(flags & PPCD_ON))
+			{
+				al = ah = (uint8_t)pen0;
+
+				if (!(flags & BACKMODE))
+				{
+					do {
+						do {
+							al |= *src1_ptr;
+							src1_ptr += edx;
+							al |= *src2_ptr;
+							src2_ptr += edx;
+							if (al & 0xf) { dst_ptr[ecx] = (uint16_t)al;  al = ah;}
+						}
+						while (++ecx);
+						ecx = wclip; src1_ptr += src_dy; src2_ptr += src_dy; dst_ptr += SCREEN_WIDTH;
+					}
+					while (--hclip);
 				}
-				while (++ecx);
-				ecx = wclip; src1_ptr += src_dy; src2_ptr += src_dy; dst_ptr += SCREEN_WIDTH;
-			}
-			while (--hclip);
-		}
-		else
-		{
-			do {
-				do {
-					al |= *src1_ptr;
-					src1_ptr += edx;
-					al |= *src2_ptr;
-					src2_ptr += edx;
-					if (al & 0xf) { dst_ptr[ecx] = (UINT16)al | SP_2BACK;  al = ah; }
+				else
+				{
+					do {
+						do {
+							al |= *src1_ptr;
+							src1_ptr += edx;
+							al |= *src2_ptr;
+							src2_ptr += edx;
+							if (al & 0xf) { dst_ptr[ecx] = (uint16_t)al | SP_2BACK;  al = ah; }
+						}
+						while (++ecx);
+						ecx = wclip; src1_ptr += src_dy; src2_ptr += src_dy; dst_ptr += SCREEN_WIDTH;
+					}
+					while (--hclip);
 				}
-				while (++ecx);
-				ecx = wclip; src1_ptr += src_dy; src2_ptr += src_dy; dst_ptr += SCREEN_WIDTH;
+				return;
 			}
-			while (--hclip);
-		}
-		return;
-
-
-		COLLISION_MODE:
-
-		ax = 0;
-		if (group)
-		{
-			do {
+			ax = 0;
+			if (group)
+			{
 				do {
-					al = *src1_ptr;
-					src1_ptr += edx;
-					al |= *src2_ptr;
-					src2_ptr += edx;
-					if (al & 0xf) { dst_ptr[ecx] = (UINT16)al | SP_COLLD; } // set collision flag on group one pixels
+					do {
+						al = *src1_ptr;
+						src1_ptr += edx;
+						al |= *src2_ptr;
+						src2_ptr += edx;
+						if (al & 0xf) { dst_ptr[ecx] = (uint16_t)al | SP_COLLD; } // set collision flag on group one pixels
+					}
+					while (++ecx);
+					ecx = wclip; src1_ptr += src_dy; src2_ptr += src_dy; dst_ptr += SCREEN_WIDTH;
 				}
-				while (++ecx);
-				ecx = wclip; src1_ptr += src_dy; src2_ptr += src_dy; dst_ptr += SCREEN_WIDTH;
+				while (--hclip);
 			}
-			while (--hclip);
-		}
-		else
-		{
-			do {
+			else
+			{
 				do {
-					al = *src1_ptr;
-					src1_ptr += edx;
-					al |= *src2_ptr;
-					src2_ptr += edx;
-					if (al & 0xf) { ax |= dst_ptr[ecx]; dst_ptr[ecx] = (UINT16)al; } // combine collision flags in ax
+					do {
+						al = *src1_ptr;
+						src1_ptr += edx;
+						al |= *src2_ptr;
+						src2_ptr += edx;
+						if (al & 0xf) { ax |= dst_ptr[ecx]; dst_ptr[ecx] = (uint16_t)al; } // combine collision flags in ax
+					}
+					while (++ecx);
+					ecx = wclip; src1_ptr += src_dy; src2_ptr += src_dy; dst_ptr += SCREEN_WIDTH;
 				}
-				while (++ecx);
-				ecx = wclip; src1_ptr += src_dy; src2_ptr += src_dy; dst_ptr += SCREEN_WIDTH;
+				while (--hclip);
 			}
-			while (--hclip);
-		}
 
-		// update collision list if object collided with the other group
-		if (status & ACTIVE && ax & SP_COLLD)
-		{
-			m_collision_list[m_collision_count & (MAX_SPRITES-1)] = offset;
-			m_collision_count++;
+			// update collision list if object collided with the other group
+			if (status & ACTIVE && ax & SP_COLLD)
+			{
+				m_collision_list[m_collision_count & (MAX_SPRITES-1)] = offset;
+				m_collision_count++;
 
-			#if HALLEYS_DEBUG
-				popmessage("ID:%02x CC:%3d", offset, m_collision_count);
-			#endif
-		}
-
-	} else
+				#if HALLEYS_DEBUG
+					popmessage("ID:%02x CC:%3d", offset, m_collision_count);
+				#endif
+			}
+		} else
 
 //--------------------------------------------------------------------------
 
-	// multi-pen, RGB masked block or transparent blit
-	if ((flags & (RGB_MASK | COLOR_ON)) == RGB_MASK + COLOR_ON)
-	{
-		if (!(flags & IGNORE_0)) BLOCK_WIPE_COMMON
+		// multi-pen, RGB masked block or transparent blit
+		if ((flags & (RGB_MASK | COLOR_ON)) == RGB_MASK + COLOR_ON)
+		{
+			if (!(flags & IGNORE_0)) BLOCK_WIPE_COMMON
+			dst_ptr += wclip;
+			ecx = wclip = -wclip;
+			al = ah = (uint8_t)pen0;
+			ebx = rgbmask[color & PENCOLOR] | 0xffffff00;
 
-		dst_ptr += wclip;
-		ecx = wclip = -wclip;
-		al = ah = (UINT8)pen0;
-		ebx = rgbmask[color & PENCOLOR] | 0xffffff00;
-
-		do {
 			do {
-				al |= *src1_ptr;
-				src1_ptr += src_dx;
-				al |= *src2_ptr;
-				src2_ptr += src_dx;
-				if (al & 0xf) { edx = (UINT32)al;  al = ah;  dst_ptr[ecx] = pal_ptr[edx] & ebx; }
+				do {
+					al |= *src1_ptr;
+					src1_ptr += src_dx;
+					al |= *src2_ptr;
+					src2_ptr += src_dx;
+					if (al & 0xf) { edx = (uint32_t)al;  al = ah;  dst_ptr[ecx] = pal_ptr[edx] & ebx; }
+				}
+				while (++ecx);
+				ecx = wclip; src1_ptr += src_dy; src2_ptr += src_dy; dst_ptr += SCREEN_WIDTH;
 			}
-			while (++ecx);
-			ecx = wclip; src1_ptr += src_dy; src2_ptr += src_dy; dst_ptr += SCREEN_WIDTH;
-		}
-		while (--hclip);
-
-	} else
+			while (--hclip);
+		} else
 
 //--------------------------------------------------------------------------
 
 	// single-pen block or transparent blit
-	if ((flags & (SINGLE_PEN | COLOR_ON)) == SINGLE_PEN + COLOR_ON)
-	{
-		if (!(flags & IGNORE_0)) BLOCK_WIPE_COMMON
+		if ((flags & (SINGLE_PEN | COLOR_ON)) == SINGLE_PEN + COLOR_ON)
+		{
+			if (!(flags & IGNORE_0)) BLOCK_WIPE_COMMON
+			dst_ptr += wclip;
+			ebx = hclip;
+			ecx = wclip = -wclip;
+			edx = src_dx;
+			ax = (uint16_t)pen1;
 
-		dst_ptr += wclip;
-		ebx = hclip;
-		ecx = wclip = -wclip;
-		edx = src_dx;
-		ax = (UINT16)pen1;
-
-		do {
 			do {
-				if (*src1_ptr) dst_ptr[ecx] = ax;
-				src1_ptr += edx;
-			}
-			while (++ecx);
+				do {
+					if (*src1_ptr) dst_ptr[ecx] = ax;
+					src1_ptr += edx;
+				}
+				while (++ecx);
 
+				ecx = wclip;
+				src1_ptr += src_dy;
+				dst_ptr  += SCREEN_WIDTH;
+			}
+			while (--ebx);
+		} else
+
+//--------------------------------------------------------------------------
+
+		// transparent wipe
+		if ((flags & (IGNORE_0 | COLOR_ON)) == IGNORE_0)
+		{
+			dst_ptr += wclip;
+			wclip = -wclip;
 			ecx = wclip;
-			src1_ptr += src_dy;
-			dst_ptr  += SCREEN_WIDTH;
-		}
-		while (--ebx);
+			edx = src_dx;
 
-	} else
-
-//--------------------------------------------------------------------------
-
-	// transparent wipe
-	if ((flags & (IGNORE_0 | COLOR_ON)) == IGNORE_0)
-	{
-		dst_ptr += wclip;
-		wclip = -wclip;
-		ecx = wclip;
-		edx = src_dx;
-
-		if (flags & PPCD_ON && !group)
-		{
-			// preserve collision flags when wiping group zero objects
-			do {
+			if (flags & PPCD_ON && !group)
+			{
+				// preserve collision flags when wiping group zero objects
 				do {
-					al = *src1_ptr;
-					ah = *src2_ptr;
-					src1_ptr += edx;
-					src2_ptr += edx;
-					if (al | ah) dst_ptr[ecx] &= SP_COLLD;
-				}
-				while (++ecx);
+					do {
+						al = *src1_ptr;
+						ah = *src2_ptr;
+						src1_ptr += edx;
+						src2_ptr += edx;
+						if (al | ah) dst_ptr[ecx] &= SP_COLLD;
+					}
+					while (++ecx);
 
-				ecx = wclip;
-				src1_ptr += src_dy;
-				src2_ptr += src_dy;
-				dst_ptr  += SCREEN_WIDTH;
+					ecx = wclip;
+					src1_ptr += src_dy;
+					src2_ptr += src_dy;
+					dst_ptr  += SCREEN_WIDTH;
+				}
+				while (--hclip);
 			}
-			while (--hclip);
-		}
-		else
-		{
-			do {
+			else
+			{
 				do {
-					al = *src1_ptr;
-					ah = *src2_ptr;
-					src1_ptr += edx;
-					src2_ptr += edx;
-					if (al | ah) dst_ptr[ecx] = 0;
+					do {
+						al = *src1_ptr;
+						ah = *src2_ptr;
+						src1_ptr += edx;
+						src2_ptr += edx;
+						if (al | ah) dst_ptr[ecx] = 0;
+					}
+					while (++ecx);
+
+					ecx = wclip;
+					src1_ptr += src_dy;
+					src2_ptr += src_dy;
+					dst_ptr  += SCREEN_WIDTH;
 				}
-				while (++ecx);
-
-				ecx = wclip;
-				src1_ptr += src_dy;
-				src2_ptr += src_dy;
-				dst_ptr  += SCREEN_WIDTH;
+				while (--hclip);
 			}
-			while (--hclip);
-		}
-
-	} else
+		} else
 
 //--------------------------------------------------------------------------
 
-	// block wipe
-	if ((flags & (IGNORE_0 | COLOR_ON)) == 0) BLOCK_WIPE_COMMON
+		// block wipe
+		if ((flags & (IGNORE_0 | COLOR_ON)) == 0) BLOCK_WIPE_COMMON
 
 //--------------------------------------------------------------------------
 
-	// End of Standard Mode
-	return;
+		// End of Standard Mode
+		return;
 
 //--------------------------------------------------------------------------
 
-
-COMMAND_MODE:
+	}
 
 #define GFX_HI 0x10000
-
 
 	// reject illegal blits and adjust parameters
 	if (command)
@@ -820,12 +821,12 @@ COMMAND_MODE:
 		for (yclip=y+h; y<yclip; y+=16)
 		for (xclip=x+w; x<xclip; x+=16)
 		{
-			edx = (UINT32)*src2_ptr;
+			edx = (uint32_t)*src2_ptr;
 			src2_ptr++;
 			if (edx)
 			{
-				ax = (UINT16)*(src2_ptr-0x100 -1);
-				ebx = (UINT32)ax;
+				ax = (uint16_t)*(src2_ptr-0x100 -1);
+				ebx = (uint32_t)ax;
 				ax |= BG_MONO;
 				if (edx & 0x01) {                    dst_base[C2S(x,y,ebx)] = ax; }
 				if (edx & 0x02) { ecx = RORB(ebx,1); dst_base[C2S(x,y,ecx)] = ax; }
@@ -853,7 +854,7 @@ COMMAND_MODE:
 		edx = SCREEN_WIDTH - x - w;
 		w = -w;
 
-		ax = (UINT16)(~src_base[src2] & 0xff);
+		ax = (uint16_t)(~src_base[src2] & 0xff);
 
 		for (yclip=y+h; y<yclip; y++)
 		{
@@ -862,12 +863,12 @@ COMMAND_MODE:
 			if (edx < 0)
 			{
 				ecx = edx;
-				dst_ptr = (UINT16*)edi - edx;
+				dst_ptr = (uint16_t*)edi - edx;
 				do { if (dst_ptr[ecx]) dst_ptr[ecx] ^= ax; } while (++ecx);
 				ecx = x - SCREEN_WIDTH;
 			} else ecx = w;
 
-			dst_ptr = (UINT16*)edi + x - ecx;
+			dst_ptr = (uint16_t*)edi + x - ecx;
 			do { if (dst_ptr[ecx]) dst_ptr[ecx] ^= ax; } while (++ecx);
 		}
 
@@ -889,7 +890,7 @@ COMMAND_MODE:
 		    second pass at the same location with zeroes. In addition the
 		    X and Y values passed to the blitter do not reflect the tiles true
 		    locations. For example, tiles near the top or bottom of the screen
-		    are positioned resonably close but those in the middle are oddly
+		    are positioned reasonably close but those in the middle are oddly
 		    shifted toward either side. The tiles also resemble predefined
 		    patterns but I don't know if there are supposed to be lookup tables
 		    in ROM or hard-wired to the blitter chips.
@@ -914,7 +915,7 @@ COMMAND_MODE:
 		{
 			dst_ptr += x;
 			do {
-				ax = (UINT16)src1_ptr[edx];
+				ax = (uint16_t)src1_ptr[edx];
 				al = src1_ptr[edx+0x10000];
 				ax |= BG_RGB;
 				if (al & 0x01) *dst_ptr   = ax;
@@ -933,16 +934,23 @@ COMMAND_MODE:
 			#define WARPMASK ((SCREEN_WIDTH<<1)-1)
 			do {
 				ecx = x & WARPMASK;
-				ax = (UINT16)src1_ptr[edx];
+				ax = (uint16_t)src1_ptr[edx];
 				al = src1_ptr[edx+0x10000];
 				ax |= BG_RGB;
-				if (al & 0x01) dst_ptr[ecx] = ax;  ecx++; ecx &= WARPMASK;
-				if (al & 0x02) dst_ptr[ecx] = ax;  ecx++; ecx &= WARPMASK;
-				if (al & 0x04) dst_ptr[ecx] = ax;  ecx++; ecx &= WARPMASK;
-				if (al & 0x08) dst_ptr[ecx] = ax;  ecx++; ecx &= WARPMASK;
-				if (al & 0x10) dst_ptr[ecx] = ax;  ecx++; ecx &= WARPMASK;
-				if (al & 0x20) dst_ptr[ecx] = ax;  ecx++; ecx &= WARPMASK;
-				if (al & 0x40) dst_ptr[ecx] = ax;  ecx++; ecx &= WARPMASK;
+				if (al & 0x01) dst_ptr[ecx] = ax;
+				ecx++; ecx &= WARPMASK;
+				if (al & 0x02) dst_ptr[ecx] = ax;
+				ecx++; ecx &= WARPMASK;
+				if (al & 0x04) dst_ptr[ecx] = ax;
+				ecx++; ecx &= WARPMASK;
+				if (al & 0x08) dst_ptr[ecx] = ax;
+				ecx++; ecx &= WARPMASK;
+				if (al & 0x10) dst_ptr[ecx] = ax;
+				ecx++; ecx &= WARPMASK;
+				if (al & 0x20) dst_ptr[ecx] = ax;
+				ecx++; ecx &= WARPMASK;
+				if (al & 0x40) dst_ptr[ecx] = ax;
+				ecx++; ecx &= WARPMASK;
 				if (al & 0x80) dst_ptr[ecx] = ax;
 				dst_ptr += SCREEN_WIDTH;
 			} while (++edx);
@@ -957,9 +965,9 @@ COMMAND_MODE:
 	if (command == HORIZBAR && flags & COLOR_ON && !(layer & 1))
 	{
 		#define WARP_LINE_COMMON { \
-			if (ecx & 1) { ecx--; *dst_ptr = (UINT16)eax; dst_ptr++; } \
+			if (ecx & 1) { ecx--; *dst_ptr = (uint16_t)eax; dst_ptr++; } \
 			dst_ptr += ecx; ecx = -ecx; \
-			while (ecx) { *(UINT32*)(dst_ptr+ecx) = eax; ecx += 2; } \
+			while (ecx) { *(uint32_t*)(dst_ptr+ecx) = eax; ecx += 2; } \
 		}
 
 		src1_ptr = src_base + src1;
@@ -987,7 +995,7 @@ COMMAND_MODE:
 
 			for (yclip=y; yclip<hclip; yclip++)
 			{
-				eax = (UINT32)*src1_ptr;
+				eax = (uint32_t)*src1_ptr;
 				src1_ptr += src_dx;
 				if (!eax) continue;
 				eax = eax | (eax<<16) | ((BG_RGB<<16)|BG_RGB);
@@ -996,16 +1004,16 @@ COMMAND_MODE:
 				if (edx > 0)
 				{
 					ecx = edx;
-					dst_ptr = (UINT16*)edi;
+					dst_ptr = (uint16_t*)edi;
 					WARP_LINE_COMMON
 					ecx = SCREEN_WIDTH - xclip;
 				} else ecx = w;
 
-				dst_ptr = (UINT16*)edi + xclip;
+				dst_ptr = (uint16_t*)edi + xclip;
 				WARP_LINE_COMMON
 			}
 
-			edi = src1_ptr; src1_ptr = src2_ptr; src2_ptr = (UINT8*)edi;
+			edi = src1_ptr; src1_ptr = src2_ptr; src2_ptr = (uint8_t*)edi;
 		}
 
 		#undef WARP_LINE_COMMON
@@ -1018,11 +1026,11 @@ COMMAND_MODE:
 
 
 // draws Ben Bero Beh's color backdrop(verification required)
-WRITE8_MEMBER(halleys_state::bgtile_w)
+void halleys_state::bgtile_w(offs_t offset, uint8_t data)
 {
 	int yskip, xskip, ecx;
-	UINT16 *edi;
-	UINT16 ax;
+	uint16_t *edi;
+	uint16_t ax;
 
 	m_cpu1_base[0x1f00+offset] = data;
 	offset -= 0x18;
@@ -1037,21 +1045,21 @@ WRITE8_MEMBER(halleys_state::bgtile_w)
 
 	edi = m_render_layer[2] + (yskip<<SCREEN_WIDTH_L2) + xskip + (48<<SCREEN_WIDTH_L2);
 	ecx = -(48<<SCREEN_WIDTH_L2);
-	ax = (UINT16)data | BG_RGB;
+	ax = (uint16_t)data | BG_RGB;
 
 	do { edi[ecx] = edi[ecx+1] = edi[ecx+2] = edi[ecx+3] = edi[ecx+4] = ax; } while (ecx += SCREEN_WIDTH);
 }
 
 
-READ8_MEMBER(halleys_state::blitter_status_r)
+uint8_t halleys_state::blitter_status_r()
 {
-	if (m_game_id==GAME_HALLEYS && space.device().safe_pc()==0x8017) return(0x55); // HACK: trick SRAM test on startup
+	if (m_game_id==GAME_HALLEYS && m_maincpu->pc()==0x8017) return(0x55); // HACK: trick SRAM test on startup
 
 	return(0);
 }
 
 
-READ8_MEMBER(halleys_state::blitter_r)
+uint8_t halleys_state::blitter_r(offs_t offset)
 {
 	int i = offset & 0xf;
 
@@ -1067,7 +1075,7 @@ TIMER_CALLBACK_MEMBER(halleys_state::blitter_reset)
 }
 
 
-WRITE8_MEMBER(halleys_state::blitter_w)
+void halleys_state::blitter_w(offs_t offset, uint8_t data)
 {
 	int i = offset & 0xf;
 
@@ -1085,13 +1093,13 @@ WRITE8_MEMBER(halleys_state::blitter_w)
 		else
 		{
 			m_blitter_busy = 1;
-			m_blitter_reset_timer->adjust(downcast<cpu_device *>(&space.device())->cycles_to_attotime(100)); // free blitter if no updates in 100 cycles
+			m_blitter_reset_timer->adjust(m_maincpu->cycles_to_attotime(100)); // free blitter if no updates in 100 cycles
 		}
 	}
 }
 
 
-READ8_MEMBER(halleys_state::collision_id_r)
+uint8_t halleys_state::collision_id_r()
 {
 /*
     Collision detection abstract:
@@ -1115,7 +1123,7 @@ READ8_MEMBER(halleys_state::collision_id_r)
     UPDATE: re-implemented pixel collision to accompany the hack method.
 */
 
-	if (m_game_id==GAME_HALLEYS && space.device().safe_pc()==m_collision_detection) // HACK: collision detection bypass
+	if (m_game_id==GAME_HALLEYS && m_maincpu->pc()==m_collision_detection) // HACK: collision detection bypass
 	{
 		if (m_collision_count) { m_collision_count--; return(m_collision_list[m_collision_count]); }
 
@@ -1129,14 +1137,13 @@ READ8_MEMBER(halleys_state::collision_id_r)
 //**************************************************************************
 // Video Initializations and Updates
 
-PALETTE_INIT_MEMBER(halleys_state, halleys)
+void halleys_state::halleys_palette(palette_device &palette)
 {
-	UINT32 d, r, g, b, i, j, count;
 	// allocate memory for internal palette
-	m_internal_palette = std::make_unique<UINT32[]>(PALETTE_SIZE);
-	UINT32 *pal_ptr = m_internal_palette.get();
+	m_internal_palette = std::make_unique<uint32_t[]>(PALETTE_SIZE);
+	uint32_t *const pal_ptr = m_internal_palette.get();
 
-	for (count=0; count<1024; count++)
+	for (uint32_t count = 0; count < 1024; count++)
 	{
 		pal_ptr[count] = 0;
 		palette.set_pen_color(count, rgb_t(0, 0, 0));
@@ -1151,13 +1158,13 @@ PALETTE_INIT_MEMBER(halleys_state, halleys)
 	// 256-1023: palette mirrors
 
 	// 1024-1279: gray shades
-	for (i=0; i<16; i++)
+	for (uint32_t i = 0; i < 16; i++)
 	{
-		d = (i<<6&0xc0) | (i<<2&0x30) | (i&0x0c) | (i>>2&0x03) | BG_RGB;
-		for (count=0; count<16; count++)
+		uint32_t const d = (i << 6 & 0xc0) | (i << 2 & 0x30) | (i & 0x0c) | (i >> 2 & 0x03) | BG_RGB;
+		for (uint32_t count = 0; count < 16; count++)
 		{
-			r = i << 4;
-			g = r + count + BG_MONO;
+			uint32_t r = i << 4;
+			uint32_t const g = r + count + BG_MONO;
 			r += i;
 			pal_ptr[g] = d;
 			palette.set_pen_color(g, rgb_t(r, r, r));
@@ -1165,21 +1172,21 @@ PALETTE_INIT_MEMBER(halleys_state, halleys)
 	}
 
 	// 1280-1535: RGB
-	for (d=0; d<256; d++)
+	for (uint32_t d = 0; d < 256; d++)
 	{
-		j = d + BG_RGB;
+		uint32_t const j = d + BG_RGB;
 		pal_ptr[j] = j;
 
-		i = d>>6 & 0x03;
-		r = d>>2 & 0x0c; r |= i;
-		g = d    & 0x0c; g |= i;
-		b = d<<2 & 0x0c; b |= i;
+		uint32_t const i = (d>>6 & 0x03);
+		uint32_t const r = (d>>2 & 0x0c) | i;
+		uint32_t const g = (d    & 0x0c) | i;
+		uint32_t const b = (d<<2 & 0x0c) | i;
 
 		palette.set_pen_color(j, pal4bit(r), pal4bit(g), pal4bit(b));
 	}
 }
 
-void halleys_state::halleys_decode_rgb(UINT32 *r, UINT32 *g, UINT32 *b, int addr, int data)
+void halleys_state::halleys_decode_rgb(uint32_t *r, uint32_t *g, uint32_t *b, int addr, int data)
 {
 /*
     proms contain:
@@ -1187,8 +1194,8 @@ void halleys_state::halleys_decode_rgb(UINT32 *r, UINT32 *g, UINT32 *b, int addr
         00 00 00 00 01 61 29 26 0b f5 e2 17 57 fb cf f7
 */
 	int latch1_273, latch2_273;
-	UINT8 *sram_189;
-	UINT8 *prom_6330;
+	uint8_t *sram_189;
+	uint8_t *prom_6330;
 
 	int bit0, bit1, bit2, bit3, bit4;
 
@@ -1224,34 +1231,33 @@ void halleys_state::halleys_decode_rgb(UINT32 *r, UINT32 *g, UINT32 *b, int addr
 	*b = prom_6330[0x40 + (bit0|bit1|bit2|bit3|bit4)];
 }
 
-READ8_MEMBER(halleys_state::paletteram_r)
+uint8_t halleys_state::paletteram_r(offs_t offset)
 {
 	return m_paletteram[offset];
 }
 
-WRITE8_MEMBER(halleys_state::paletteram_w)
+void halleys_state::paletteram_w(offs_t offset, uint8_t data)
 {
-	UINT32 d, r, g, b, i, j;
-	UINT32 *pal_ptr = m_internal_palette.get();
+	uint32_t *const pal_ptr = m_internal_palette.get();
 
 	m_paletteram[offset] = data;
-	d = (UINT32)data;
-	j = d | BG_RGB;
+	uint32_t const d = uint32_t(data);
+	uint32_t const j = d | BG_RGB;
 	pal_ptr[offset] = j;
-	pal_ptr[offset+SP_2BACK] = j;
-	pal_ptr[offset+SP_ALPHA] = j;
-	pal_ptr[offset+SP_COLLD] = j;
+	pal_ptr[offset + SP_2BACK] = j;
+	pal_ptr[offset + SP_ALPHA] = j;
+	pal_ptr[offset + SP_COLLD] = j;
 
 	// 8-bit RGB format: IIRRGGBB
-	i = d>>6 & 0x03;
-	r = d>>2 & 0x0c; r |= i;  r = r<<4 | r;
-	g = d    & 0x0c; g |= i;  g = g<<4 | g;
-	b = d<<2 & 0x0c; b |= i;  b = b<<4 | b;
+	uint32_t i = (d>>6 & 0x03);
+	uint32_t r = (d>>2 & 0x0c) | i;  r = r<<4 | r;
+	uint32_t g = (d    & 0x0c) | i;  g = g<<4 | g;
+	uint32_t b = (d<<2 & 0x0c) | i;  b = b<<4 | b;
 
 	m_palette->set_pen_color(offset, rgb_t(r, g, b));
-	m_palette->set_pen_color(offset+SP_2BACK, rgb_t(r, g, b));
-	m_palette->set_pen_color(offset+SP_ALPHA, rgb_t(r, g, b));
-	m_palette->set_pen_color(offset+SP_COLLD, rgb_t(r, g, b));
+	m_palette->set_pen_color(offset + SP_2BACK, rgb_t(r, g, b));
+	m_palette->set_pen_color(offset + SP_ALPHA, rgb_t(r, g, b));
+	m_palette->set_pen_color(offset + SP_COLLD, rgb_t(r, g, b));
 
 	halleys_decode_rgb(&r, &g, &b, offset, 0);
 	m_palette->set_pen_color(offset+0x20, rgb_t(r, g, b));
@@ -1292,193 +1298,151 @@ void halleys_state::video_start()
 }
 
 
-void halleys_state::copy_scroll_op(bitmap_ind16 &bitmap, UINT16 *source, int sx, int sy)
+void halleys_state::copy_scroll_op(bitmap_ind16 &bitmap, uint16_t *source, int sx, int sy)
 {
-//--------------------------------------------------------------------------
-
-#define OPCOPY_COMMON { \
-	memcpy(edi, esi+sx, rcw); \
-	memcpy((UINT8*)edi+rcw, esi, CLIP_BYTEW-rcw); \
-	esi += SCREEN_WIDTH; \
-	edi += edx; }
-
-//--------------------------------------------------------------------------
-
-	UINT16 *esi, *edi;
-	int rcw, bch, ecx, edx;
-
 	sx = -sx & 0xff;
 	sy = -sy & 0xff;
 
-	if ((rcw = CLIP_W - sx) < 0) rcw = 0; else rcw <<= 1;
-	if ((bch = CLIP_H - sy) < 0) bch = 0;
+	int rcw = CLIP_W - sx;
+	if (rcw < 0)
+		rcw = 0;
 
-	esi = source + CLIP_SKIP + (sy << SCREEN_WIDTH_L2);
-	edi = &bitmap.pix16(VIS_MINY, VIS_MINX);
-	edx = bitmap.rowpixels();
+	int bch = CLIP_H - sy;
+	if (bch < 0)
+		bch = 0;
+
+	const uint16_t *src = source + CLIP_SKIP + sy * SCREEN_WIDTH;
 
 	// draw top split
-	for (ecx=bch; ecx; ecx--) OPCOPY_COMMON
-
-	esi = source + CLIP_SKIP;
-
-	// draw bottom split
-	for (ecx=CLIP_H-bch; ecx; ecx--) OPCOPY_COMMON
-
-#undef OPCOPY_COMMON
-}
-
-
-void halleys_state::copy_scroll_xp(bitmap_ind16 &bitmap, UINT16 *source, int sx, int sy)
-{
-//--------------------------------------------------------------------------
-
-#define XCOPY_COMMON \
-	if (ecx) { \
-		if (ecx & 1) { ecx--; ax = *esi; esi++; if (ax) *edi = ax; edi++; } \
-		esi += ecx; edi += ecx; ecx = -ecx; \
-		while (ecx) { \
-			ax = esi[ecx]; \
-			bx = esi[ecx+1]; \
-			if (ax) edi[ecx] = ax; \
-			if (bx) edi[ecx+1] = bx; \
-			ecx += 2; \
-		} \
+	for (int y=0; y != bch; y++) {
+		uint16_t *dest = &bitmap.pix(VIS_MINY + y, VIS_MINX);
+		memcpy(dest, src+sx, 2*rcw);
+		memcpy(dest + rcw, src, 2*(CLIP_W - rcw));
+		src += SCREEN_WIDTH;
 	}
 
-//--------------------------------------------------------------------------
+	src = source + CLIP_SKIP;
 
-#define YCOPY_COMMON { \
-	esi = src_base + sx; ecx = rcw; XCOPY_COMMON \
-	esi = src_base; ecx = CLIP_W - rcw; XCOPY_COMMON \
-	src_base += SCREEN_WIDTH; \
-	edi += dst_adv; \
+	// draw bottom split
+	for (int y = bch; y != CLIP_H; y++) {
+		uint16_t *dest = &bitmap.pix(VIS_MINY + y, VIS_MINX);
+		memcpy(dest, src+sx, 2*rcw);
+		memcpy(dest + rcw, src, 2*(CLIP_W - rcw));
+		src += SCREEN_WIDTH;
+	}
 }
 
-//--------------------------------------------------------------------------
 
-	int rcw, bch, dst_adv;
-
-	UINT16 *src_base, *esi, *edi;
-	int ecx, edx;
-	UINT16 ax, bx;
-
+void halleys_state::copy_scroll_xp(bitmap_ind16 &bitmap, uint16_t *source, int sx, int sy)
+{
 	sx = -sx & 0xff;
 	sy = -sy & 0xff;
 
-	if ((rcw = CLIP_W - sx) < 0) rcw = 0;
-	if ((bch = CLIP_H - sy) < 0) bch = 0;
+	int rcw = CLIP_W - sx;
+	if (rcw < 0)
+		rcw = 0;
 
-	src_base = source + CLIP_SKIP + (sy << SCREEN_WIDTH_L2);
-	edi = &bitmap.pix16(VIS_MINY, VIS_MINX);
-	dst_adv = bitmap.rowpixels() - CLIP_W;
+	int bch = CLIP_H - sy;
+	if (bch < 0)
+		bch = 0;
+
+	const uint16_t *src_base = source + CLIP_SKIP + sy * SCREEN_WIDTH;
 
 	// draw top split
-	for (edx=bch; edx; edx--) YCOPY_COMMON
+	for (int y=0; y != bch; y++)  {
+		uint16_t *dest = &bitmap.pix(VIS_MINY + y, VIS_MINX);
+		const uint16_t *src = src_base + sx;
+		for(int x=0; x != rcw; x++) {
+			uint16_t pixel = *src++;
+			if(pixel)
+				*dest = pixel;
+			dest++;
+		}
+
+		src = src_base;
+
+		for(int x=rcw; x != CLIP_W; x++) {
+			uint16_t pixel = *src++;
+			if(pixel)
+				*dest = pixel;
+			dest++;
+		}
+
+		src_base += SCREEN_WIDTH;
+	}
 
 	src_base = source + CLIP_SKIP;
 
 	// draw bottom split
-	for (edx=CLIP_H-bch; edx; edx--) YCOPY_COMMON
-
-#undef XCOPY_COMMON
-#undef YCOPY_COMMON
-}
-
-
-
-void halleys_state::copy_fixed_xp(bitmap_ind16 &bitmap, UINT16 *source)
-{
-	UINT16 *esi, *edi;
-	int dst_pitch, ecx, edx;
-	UINT16 ax, bx;
-
-	esi = source + CLIP_SKIP + CLIP_W;
-	edi = &bitmap.pix16(VIS_MINY, VIS_MINX + CLIP_W);
-	dst_pitch = bitmap.rowpixels();
-	ecx = -CLIP_W;
-	edx = CLIP_H;
-
-	do {
-		do {
-			ax = esi[ecx];
-			bx = esi[ecx+1];
-			if (ax) edi[ecx  ] = ax; ax = esi[ecx+2];
-			if (bx) edi[ecx+1] = bx; bx = esi[ecx+3];
-			if (ax) edi[ecx+2] = ax; ax = esi[ecx+4];
-			if (bx) edi[ecx+3] = bx; bx = esi[ecx+5];
-			if (ax) edi[ecx+4] = ax; ax = esi[ecx+6];
-			if (bx) edi[ecx+5] = bx; bx = esi[ecx+7];
-			if (ax) edi[ecx+6] = ax;
-			if (bx) edi[ecx+7] = bx;
+	for (int y = bch; y != CLIP_H; y++) {
+		uint16_t *dest = &bitmap.pix(VIS_MINY + y, VIS_MINX);
+		const uint16_t *src = src_base + sx;
+		for(int x=0; x != rcw; x++) {
+			uint16_t pixel = *src++;
+			if(pixel)
+				*dest = pixel;
+			dest++;
 		}
-		while (ecx += 8);
 
-		ecx = -CLIP_W;
-		esi += SCREEN_WIDTH;
-		edi += dst_pitch;
-	}
-	while (--edx);
-}
+		src = src_base;
 
-
-void halleys_state::copy_fixed_2b(bitmap_ind16 &bitmap, UINT16 *source)
-{
-	UINT16 *esi, *edi;
-	int dst_pitch, ecx, edx;
-	UINT16 ax, bx;
-
-	esi = source + CLIP_SKIP + CLIP_W;
-	edi = &bitmap.pix16(VIS_MINY, VIS_MINX + CLIP_W);
-	dst_pitch = bitmap.rowpixels();
-	ecx = -CLIP_W;
-	edx = CLIP_H;
-
-	do {
-		do {
-			ax = esi[ecx];
-			bx = esi[ecx+1];
-
-			if (!(ax)) goto SKIP0; if (!(ax&SP_2BACK)) goto DRAW0; if (edi[ecx  ]) goto SKIP0;
-			DRAW0: edi[ecx  ] = ax; SKIP0: ax = esi[ecx+2];
-			if (!(bx)) goto SKIP1; if (!(bx&SP_2BACK)) goto DRAW1; if (edi[ecx+1]) goto SKIP1;
-			DRAW1: edi[ecx+1] = bx; SKIP1: bx = esi[ecx+3];
-
-			if (!(ax)) goto SKIP2; if (!(ax&SP_2BACK)) goto DRAW2; if (edi[ecx+2]) goto SKIP2;
-			DRAW2: edi[ecx+2] = ax; SKIP2: ax = esi[ecx+4];
-			if (!(bx)) goto SKIP3; if (!(bx&SP_2BACK)) goto DRAW3; if (edi[ecx+3]) goto SKIP3;
-			DRAW3: edi[ecx+3] = bx; SKIP3: bx = esi[ecx+5];
-
-			if (!(ax)) goto SKIP4; if (!(ax&SP_2BACK)) goto DRAW4; if (edi[ecx+4]) goto SKIP4;
-			DRAW4: edi[ecx+4] = ax; SKIP4: ax = esi[ecx+6];
-			if (!(bx)) goto SKIP5; if (!(bx&SP_2BACK)) goto DRAW5; if (edi[ecx+5]) goto SKIP5;
-			DRAW5: edi[ecx+5] = bx; SKIP5: bx = esi[ecx+7];
-
-			if (!(ax)) goto SKIP6; if (!(ax&SP_2BACK)) goto DRAW6; if (edi[ecx+6]) goto SKIP6;
-			DRAW6: edi[ecx+6] = ax; SKIP6:
-			if (!(bx)) continue;   if (!(bx&SP_2BACK)) goto DRAW7; if (edi[ecx+7]) continue;
-			DRAW7: edi[ecx+7] = bx;
+		for(int x=rcw; x != CLIP_W; x++) {
+			uint16_t pixel = *src++;
+			if(pixel)
+				*dest = pixel;
+			dest++;
 		}
-		while (ecx += 8);
 
-		ecx = -CLIP_W;
-		esi += SCREEN_WIDTH;
-		edi += dst_pitch;
+		src_base += SCREEN_WIDTH;
 	}
-	while (--edx);
 }
 
+
+
+void halleys_state::copy_fixed_xp(bitmap_ind16 &bitmap, uint16_t *source)
+{
+	uint16_t *src = source + CLIP_SKIP;
+	for(int y=0; y != CLIP_H; y++) {
+		uint16_t *dest = &bitmap.pix(VIS_MINY + y, VIS_MINX);
+		for(int x=0; x != CLIP_W; x++) {
+			uint16_t pixel = src[x];
+
+			if (pixel)
+				dest[x] = pixel;
+		}
+
+		src += SCREEN_WIDTH;
+	}
+}
+
+void halleys_state::copy_fixed_2b(bitmap_ind16 &bitmap, uint16_t *source)
+{
+	uint16_t *src = source + CLIP_SKIP;
+	for(int y=0; y != CLIP_H; y++) {
+		uint16_t *dest = &bitmap.pix(VIS_MINY + y, VIS_MINX);
+		for(int x=0; x != CLIP_W; x++) {
+			uint16_t pixel = src[x];
+
+			if ((pixel && !(pixel & SP_2BACK)) || !dest[x])
+				dest[x] = pixel;
+		}
+
+		src += SCREEN_WIDTH;
+	}
+}
 
 void halleys_state::filter_bitmap(bitmap_ind16 &bitmap, int mask)
 {
+	return;
+#ifdef UNUSED
 	int dst_pitch;
 
-	UINT32 *pal_ptr, *edi;
+	uint32_t *pal_ptr, *edi;
 	int esi, eax, ebx, ecx, edx;
 
 	pal_ptr = m_internal_palette.get();
 	esi = mask | 0xffffff00;
-	edi = (UINT32*)&bitmap.pix16(VIS_MINY, VIS_MINX + CLIP_W);
+	edi = (uint32_t*)&bitmap.pix(VIS_MINY, VIS_MINX + CLIP_W);
 	dst_pitch = bitmap.rowpixels() >> 1;
 	ecx = -(CLIP_W>>1);
 	edx = CLIP_H;
@@ -1506,10 +1470,11 @@ void halleys_state::filter_bitmap(bitmap_ind16 &bitmap, int mask)
 		edi += dst_pitch;
 	}
 	while (--edx);
+#endif
 }
 
 
-UINT32 halleys_state::screen_update_halleys(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t halleys_state::screen_update_halleys(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	int i, j;
 
@@ -1537,7 +1502,7 @@ UINT32 halleys_state::screen_update_halleys(screen_device &screen, bitmap_ind16 
 }
 
 
-UINT32 halleys_state::screen_update_benberob(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t halleys_state::screen_update_benberob(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	if (m_io_ram[0xa0] & 0x80)
 		copy_scroll_op(bitmap, m_render_layer[2], *m_scrollx1, *m_scrolly1);
@@ -1555,9 +1520,9 @@ UINT32 halleys_state::screen_update_benberob(screen_device &screen, bitmap_ind16
 
 #if HALLEYS_DEBUG
 
-READ8_MEMBER(halleys_state::zero_r){ return(0); }
+uint8_t halleys_state::zero_r(){ return(0); }
 
-READ8_MEMBER(halleys_state::debug_r)
+uint8_t halleys_state::debug_r(offs_t offset)
 {
 	return(m_io_ram[offset]);
 }
@@ -1583,7 +1548,7 @@ TIMER_DEVICE_CALLBACK_MEMBER(halleys_state::halleys_scanline)
 
 		// In Halley's Comet, NMI is used exclusively to handle coin input
 		case 56*3:
-			m_maincpu->set_input_line(INPUT_LINE_NMI, PULSE_LINE);
+			m_maincpu->pulse_input_line(INPUT_LINE_NMI, attotime::zero);
 			break;
 
 		// FIRQ drives gameplay; we need both types of NMI each frame.
@@ -1609,7 +1574,7 @@ TIMER_DEVICE_CALLBACK_MEMBER(halleys_state::benberob_scanline)
 			break;
 
 		case 56*3:
-			m_maincpu->set_input_line(INPUT_LINE_NMI, PULSE_LINE);
+			m_maincpu->pulse_input_line(INPUT_LINE_NMI, attotime::zero);
 			break;
 
 		case 56*2:
@@ -1621,13 +1586,13 @@ TIMER_DEVICE_CALLBACK_MEMBER(halleys_state::benberob_scanline)
 }
 
 
-READ8_MEMBER(halleys_state::vector_r)
+uint8_t halleys_state::vector_r(offs_t offset)
 {
 	return(m_cpu1_base[0xffe0 + (offset^(m_mVectorType<<4))]);
 }
 
 
-WRITE8_MEMBER(halleys_state::firq_ack_w)
+void halleys_state::firq_ack_w(uint8_t data)
 {
 	m_io_ram[0x9c] = data;
 
@@ -1636,21 +1601,21 @@ WRITE8_MEMBER(halleys_state::firq_ack_w)
 }
 
 
-WRITE8_MEMBER(halleys_state::sndnmi_msk_w)
+void halleys_state::sndnmi_msk_w(uint8_t data)
 {
 	m_sndnmi_mask = data & 1;
 }
 
 
-WRITE8_MEMBER(halleys_state::soundcommand_w)
+void halleys_state::soundcommand_w(uint8_t data)
 {
 	m_io_ram[0x8a] = data;
-	soundlatch_byte_w(space,offset,data);
-	m_audiocpu->set_input_line(INPUT_LINE_NMI, PULSE_LINE);
+	m_soundlatch->write(data);
+	m_audiocpu->pulse_input_line(INPUT_LINE_NMI, attotime::zero);
 }
 
 
-READ8_MEMBER(halleys_state::coin_lockout_r)
+uint8_t halleys_state::coin_lockout_r()
 {
 	// This is a hack, but it lets you coin up when COIN1 or COIN2 are signaled.
 	// See NMI for the twisted logic that is involved in handling coin input :
@@ -1667,7 +1632,7 @@ READ8_MEMBER(halleys_state::coin_lockout_r)
 }
 
 
-READ8_MEMBER(halleys_state::io_mirror_r)
+uint8_t halleys_state::io_mirror_r(offs_t offset)
 {
 	static const char *const portnames[] = { "IN0", "IN1", "IN2", "IN3" };
 
@@ -1678,44 +1643,47 @@ READ8_MEMBER(halleys_state::io_mirror_r)
 //**************************************************************************
 // Memory Maps
 
-static ADDRESS_MAP_START( halleys_map, AS_PROGRAM, 8, halleys_state )
-	AM_RANGE(0x0000, 0x0fff) AM_READWRITE(blitter_r, blitter_w) AM_SHARE("blitter_ram")
-	AM_RANGE(0x1f00, 0x1fff) AM_WRITE(bgtile_w)     // background tiles?(Ben Bero Beh only)
-	AM_RANGE(0x1000, 0xefff) AM_ROM
-	AM_RANGE(0xf000, 0xfeff) AM_RAM                 // work ram
+void halleys_state::halleys_map(address_map &map)
+{
+	map(0x0000, 0x0fff).rw(FUNC(halleys_state::blitter_r), FUNC(halleys_state::blitter_w)).share("blitter_ram");
+	map(0x1f00, 0x1fff).w(FUNC(halleys_state::bgtile_w));     // background tiles?(Ben Bero Beh only)
+	map(0x1000, 0xefff).rom();
+	map(0xf000, 0xfeff).ram();                 // work ram
 
-	AM_RANGE(0xff66, 0xff66) AM_READ(collision_id_r) // HACK: collision detection bypass(Halley's Comet only)
-	AM_RANGE(0xff71, 0xff71) AM_READ(blitter_status_r)
-	AM_RANGE(0xff80, 0xff83) AM_READ(io_mirror_r)
-	AM_RANGE(0xff8a, 0xff8a) AM_WRITE(soundcommand_w)
-	AM_RANGE(0xff90, 0xff90) AM_READ_PORT("IN0")    // coin/start
-	AM_RANGE(0xff91, 0xff91) AM_READ_PORT("IN1")    // player 1
-	AM_RANGE(0xff92, 0xff92) AM_READ_PORT("IN2")    // player 2
-	AM_RANGE(0xff93, 0xff93) AM_READ_PORT("IN3")    // unused?
-	AM_RANGE(0xff94, 0xff94) AM_READ(coin_lockout_r)
-	AM_RANGE(0xff95, 0xff95) AM_READ_PORT("DSW1")   // dipswitch 4
-	AM_RANGE(0xff96, 0xff96) AM_READ_PORT("DSW2")   // dipswitch 3
-	AM_RANGE(0xff97, 0xff97) AM_READ_PORT("DSW3")   // dipswitch 2
-	AM_RANGE(0xff9c, 0xff9c) AM_WRITE(firq_ack_w)
-	AM_RANGE(0xff00, 0xffbf) AM_RAM AM_SHARE("io_ram")  // I/O write fall-through
+	map(0xff00, 0xffbf).ram().share("io_ram");  // I/O write fall-through
 
-	AM_RANGE(0xffc0, 0xffdf) AM_READWRITE(paletteram_r, paletteram_w)
-	AM_RANGE(0xffe0, 0xffff) AM_READ(vector_r)
-ADDRESS_MAP_END
+	map(0xff66, 0xff66).r(FUNC(halleys_state::collision_id_r)); // HACK: collision detection bypass(Halley's Comet only)
+	map(0xff71, 0xff71).r(FUNC(halleys_state::blitter_status_r));
+	map(0xff80, 0xff83).r(FUNC(halleys_state::io_mirror_r));
+	map(0xff8a, 0xff8a).w(FUNC(halleys_state::soundcommand_w));
+	map(0xff90, 0xff90).portr("IN0");    // coin/start
+	map(0xff91, 0xff91).portr("IN1");    // player 1
+	map(0xff92, 0xff92).portr("IN2");    // player 2
+	map(0xff93, 0xff93).portr("IN3");    // unused?
+	map(0xff94, 0xff94).r(FUNC(halleys_state::coin_lockout_r));
+	map(0xff95, 0xff95).portr("DSW1");   // dipswitch 4
+	map(0xff96, 0xff96).portr("DSW2");   // dipswitch 3
+	map(0xff97, 0xff97).portr("DSW3");   // dipswitch 2
+	map(0xff9c, 0xff9c).w(FUNC(halleys_state::firq_ack_w));
+
+	map(0xffc0, 0xffdf).rw(FUNC(halleys_state::paletteram_r), FUNC(halleys_state::paletteram_w));
+	map(0xffe0, 0xffff).r(FUNC(halleys_state::vector_r));
+}
 
 
-static ADDRESS_MAP_START( sound_map, AS_PROGRAM, 8, halleys_state )
-	AM_RANGE(0x0000, 0x3fff) AM_ROM
-	AM_RANGE(0x4000, 0x47ff) AM_RAM
-	AM_RANGE(0x4800, 0x4801) AM_DEVWRITE("ay2", ay8910_device, address_data_w)
-	AM_RANGE(0x4801, 0x4801) AM_DEVREAD("ay2", ay8910_device, data_r)
-	AM_RANGE(0x4802, 0x4803) AM_DEVWRITE("ay3", ay8910_device, address_data_w)
-	AM_RANGE(0x4803, 0x4803) AM_DEVREAD("ay3", ay8910_device, data_r)
-	AM_RANGE(0x4804, 0x4805) AM_DEVWRITE("ay4", ay8910_device, address_data_w)
-	AM_RANGE(0x4805, 0x4805) AM_DEVREAD("ay4", ay8910_device, data_r)
-	AM_RANGE(0x5000, 0x5000) AM_READ(soundlatch_byte_r)
-	AM_RANGE(0xe000, 0xefff) AM_ROM // space for diagnostic ROM
-ADDRESS_MAP_END
+void halleys_state::sound_map(address_map &map)
+{
+	map(0x0000, 0x3fff).rom();
+	map(0x4000, 0x47ff).ram();
+	map(0x4800, 0x4801).w("ay2", FUNC(ym2149_device::address_data_w));
+	map(0x4801, 0x4801).r("ay2", FUNC(ym2149_device::data_r));
+	map(0x4802, 0x4803).w("ay3", FUNC(ym2149_device::address_data_w));
+	map(0x4803, 0x4803).r("ay3", FUNC(ym2149_device::data_r));
+	map(0x4804, 0x4805).w("ay4", FUNC(ym2149_device::address_data_w));
+	map(0x4805, 0x4805).r("ay4", FUNC(ym2149_device::data_r));
+	map(0x5000, 0x5000).r(m_soundlatch, FUNC(generic_latch_8_device::read));
+	map(0xe000, 0xefff).rom(); // space for diagnostic ROM
+}
 
 
 //**************************************************************************
@@ -1955,9 +1923,13 @@ INPUT_PORTS_END
 //**************************************************************************
 // Machine Definitions and Initializations
 
-void halleys_state::machine_reset()
+void halleys_state::machine_start()
 {
 	m_mVectorType     = 0;
+}
+
+void halleys_state::machine_reset()
+{
 	m_firq_level      = 0;
 	m_blitter_busy    = 0;
 	m_collision_count = 0;
@@ -1969,56 +1941,56 @@ void halleys_state::machine_reset()
 }
 
 
-static MACHINE_CONFIG_START( halleys, halleys_state )
-	MCFG_CPU_ADD("maincpu", M6809, XTAL_19_968MHz/12) /* verified on pcb */
-	MCFG_CPU_PROGRAM_MAP(halleys_map)
-	MCFG_TIMER_DRIVER_ADD_SCANLINE("scantimer", halleys_state, halleys_scanline, "screen", 0, 1)
+void halleys_state::halleys(machine_config &config)
+{
+	MC6809E(config, m_maincpu, XTAL(19'968'000)/12); /* verified on pcb */
+	m_maincpu->set_addrmap(AS_PROGRAM, &halleys_state::halleys_map);
 
-	MCFG_CPU_ADD("audiocpu", Z80, XTAL_6MHz/2) /* verified on pcb */
-	MCFG_CPU_PROGRAM_MAP(sound_map)
-	MCFG_CPU_PERIODIC_INT_DRIVER(halleys_state, irq0_line_hold,  (double)6000000/(4*16*16*10*16))
+	TIMER(config, "scantimer").configure_scanline(FUNC(halleys_state::halleys_scanline), "screen", 0, 1);
+
+	Z80(config, m_audiocpu, XTAL(6'000'000)/2); /* verified on pcb */
+	m_audiocpu->set_addrmap(AS_PROGRAM, &halleys_state::sound_map);
+	m_audiocpu->set_periodic_int(FUNC(halleys_state::irq0_line_hold), attotime::from_hz((double)6000000/(4*16*16*10*16)));
 
 
 	// video hardware
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_RASTER));
+	screen.set_refresh_hz(59.50); /* verified on PCB */
+	screen.set_vblank_time(ATTOSECONDS_IN_USEC(0));
+	screen.set_size(SCREEN_WIDTH, SCREEN_HEIGHT);
+	screen.set_visarea(VIS_MINX, VIS_MAXX, VIS_MINY, VIS_MAXY);
+	screen.set_screen_update(FUNC(halleys_state::screen_update_halleys));
+	screen.set_palette(m_palette);
 
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_REFRESH_RATE(59.50) /* verified on PCB */
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(0))
-	MCFG_SCREEN_SIZE(SCREEN_WIDTH, SCREEN_HEIGHT)
-	MCFG_SCREEN_VISIBLE_AREA(VIS_MINX, VIS_MAXX, VIS_MINY, VIS_MAXY)
-	MCFG_SCREEN_UPDATE_DRIVER(halleys_state, screen_update_halleys)
-	MCFG_SCREEN_PALETTE("palette")
-
-	MCFG_PALETTE_ADD("palette", PALETTE_SIZE)
-	MCFG_PALETTE_INIT_OWNER(halleys_state, halleys)
+	PALETTE(config, m_palette, FUNC(halleys_state::halleys_palette), PALETTE_SIZE);
 
 	// sound hardware
-	MCFG_SPEAKER_STANDARD_MONO("mono")
+	SPEAKER(config, "mono").front_center();
 
-	MCFG_SOUND_ADD("ay1", AY8910, XTAL_6MHz/4) /* verified on pcb */
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.15)
+	GENERIC_LATCH_8(config, m_soundlatch);
 
-	MCFG_SOUND_ADD("ay2", AY8910, XTAL_6MHz/4) /* verified on pcb */
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.15)
+	YM2149(config, "ay1", XTAL(6'000'000)/4).add_route(ALL_OUTPUTS, "mono", 0.15); /* verified on pcb */
 
-	MCFG_SOUND_ADD("ay3", AY8910, XTAL_6MHz/4) /* verified on pcb */
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.15)
+	YM2149(config, "ay2", XTAL(6'000'000)/4).add_route(ALL_OUTPUTS, "mono", 0.15); /* verified on pcb */
 
-	MCFG_SOUND_ADD("ay4", AY8910, XTAL_6MHz/4) /* verified on pcb */
-	MCFG_AY8910_PORT_B_WRITE_CB(WRITE8(halleys_state, sndnmi_msk_w)) // port Bwrite
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.15)
-MACHINE_CONFIG_END
+	YM2149(config, "ay3", XTAL(6'000'000)/4).add_route(ALL_OUTPUTS, "mono", 0.15); /* verified on pcb */
+
+	ym2149_device &ay4(YM2149(config, "ay4", XTAL(6'000'000)/4)); /* verified on pcb */
+	ay4.port_b_write_callback().set(FUNC(halleys_state::sndnmi_msk_w));
+	ay4.add_route(ALL_OUTPUTS, "mono", 0.15);
+}
 
 
-static MACHINE_CONFIG_DERIVED( benberob, halleys )
-	MCFG_CPU_MODIFY("maincpu")
-	MCFG_CPU_CLOCK(XTAL_19_968MHz/12) /* not verified but pcb identical to halley's comet */
-	MCFG_TIMER_MODIFY("scantimer")
-	MCFG_TIMER_DRIVER_CALLBACK(halleys_state, benberob_scanline)
+void halleys_state::benberob(machine_config &config)
+{
+	halleys(config);
 
-	MCFG_SCREEN_MODIFY("screen")
-	MCFG_SCREEN_UPDATE_DRIVER(halleys_state, screen_update_benberob)
-MACHINE_CONFIG_END
+	m_maincpu->set_clock(XTAL(19'968'000)/12); /* not verified but pcb identical to halley's comet */
+
+	subdevice<timer_device>("scantimer")->set_callback(FUNC(halleys_state::benberob_scanline));
+
+	subdevice<screen_device>("screen")->set_screen_update(FUNC(halleys_state::screen_update_benberob));
+}
 
 
 //**************************************************************************
@@ -2050,7 +2022,7 @@ ROM_START( benberob )
 ROM_END
 
 
-ROM_START( halleys )
+ROM_START( halleysc )
 	ROM_REGION( 0x10000, "maincpu", 0 ) //MAIN PRG
 	ROM_LOAD( "a62_01.30",   0x0000, 0x4000, CRC(a5e82b3e) SHA1(c16c6a6c23a579454b8a2be4b951c35b04f2a856) )
 	ROM_LOAD( "a62_02.31",   0x4000, 0x4000, CRC(25f5bcd3) SHA1(9d72afe866df363d2ac33dab3ed6c3913f4de12d) )
@@ -2078,7 +2050,7 @@ ROM_START( halleys )
 ROM_END
 
 
-ROM_START( halleycj )
+ROM_START( halleyscj )
 	ROM_REGION( 0x10000, "maincpu", 0 ) //MAIN PRG
 	ROM_LOAD( "a62_01.30",   0x0000, 0x4000, CRC(a5e82b3e) SHA1(c16c6a6c23a579454b8a2be4b951c35b04f2a856) )
 	ROM_LOAD( "a62_02.31",   0x4000, 0x4000, CRC(25f5bcd3) SHA1(9d72afe866df363d2ac33dab3ed6c3913f4de12d) )
@@ -2106,7 +2078,7 @@ ROM_START( halleycj )
 ROM_END
 
 
-ROM_START( halleysc )
+ROM_START( halleyscja )
 	ROM_REGION( 0x10000, "maincpu", 0 ) //MAIN PRG
 	ROM_LOAD( "a62_01.30",   0x0000, 0x4000, CRC(a5e82b3e) SHA1(c16c6a6c23a579454b8a2be4b951c35b04f2a856) )
 	ROM_LOAD( "a62_02.31",   0x4000, 0x4000, CRC(25f5bcd3) SHA1(9d72afe866df363d2ac33dab3ed6c3913f4de12d) )
@@ -2134,7 +2106,35 @@ ROM_START( halleysc )
 ROM_END
 
 
-ROM_START( halley87 )
+ROM_START( halleyscjp ) /* earliest version, preproduction or possible prototype with all hand written labels */
+	ROM_REGION( 0x10000, "maincpu", 0 ) //MAIN PRG
+	ROM_LOAD( "p_0_19f8.30",   0x0000, 0x4000, CRC(10acefe8) SHA1(2f64e052999bc98219129206ec73b5d96d20ae60) ) /* hand written label P_0  19F8 */
+	ROM_LOAD( "p_1_87b4.31",   0x4000, 0x4000, CRC(1fe05cff) SHA1(d11c308aac6788233a48abe23b0278dc54254d13) ) /* hand written label P_1  87B4 */
+	ROM_LOAD( "p_2_aaaa.52",   0x8000, 0x4000, CRC(de4a14f0) SHA1(50b23289e00753b421a3373e0a9350124b75af9e) ) /* hand written label P_2  AAAA */
+	ROM_LOAD( "p_3_0341.50",   0xc000, 0x4000, CRC(b4b2b4f1) SHA1(5f01c013984958c689d09f1c85068379ffb3eb45) ) /* hand written label P_3  0341 */
+
+	ROM_REGION( 0x10000, "audiocpu", 0 ) //SOUND
+	ROM_LOAD( "s1_3d02.5",    0x0000, 0x2000, CRC(7ce290db) SHA1(e3c72ba5d97cb07f0f72d2765a068af6fb5cca29) ) /* hand written label S1 3D02 == a62_13.5 */
+	ROM_LOAD( "s2_213d.4",    0x2000, 0x2000, CRC(ea74b1a2) SHA1(7be3b9e9d51cfa753ce97e92f7eebd9723fe5821) ) /* hand written label S2 213D == a62_14.4  */
+
+	ROM_REGION( 0x20000, "gfx1", 0 ) //CHR
+	ROM_LOAD( "ic-78_3441.78",   0x00000, 0x4000, CRC(c5834a7a) SHA1(4a24b3fa707cde89ad5a52d4e994412fcf28e81f) ) /* hand written label IC-78 3441 == a62_12.78  */
+	ROM_LOAD( "ic-77_a097.77",   0x04000, 0x4000, CRC(3ae7231e) SHA1(277f12570001d82104c79d3d0a58a0b57ed18778) ) /* hand written label IC-77 A097 == a62_10.77  */
+	ROM_LOAD( "ic-80_7f98.80",   0x08000, 0x4000, CRC(b9210dbe) SHA1(f72f2307e9acd2dd622a3efce71bd334b68a9b60) ) /* hand written label IC-80 7F98 == a62_08.80  */
+	ROM_LOAD( "ic-79_9383.79",   0x0c000, 0x4000, CRC(600be9ca) SHA1(a705b10be37ee93908b1bbaf806cfe7955aa3ffc) ) /* hand written label IC-79 9383 == a62_06.79  */
+	ROM_LOAD( "ic-89_ef2b.89",   0x10000, 0x4000, CRC(d0e9974e) SHA1(6826cfb4fbf098ed7b9d8b00e2684d7c85a13c11) ) /* hand written label IC-89 EF2B == a62_11.89  */
+	ROM_LOAD( "ic-88_a03d.88",   0x14000, 0x4000, CRC(e93ef281) SHA1(8bfe1ecce1c7107a5bd1b43b531594c8cfc0719d) ) /* hand written label IC-88 A03D == a62_09.88  */
+	ROM_LOAD( "ic-91_8b4c.91",   0x18000, 0x4000, CRC(64c95e8b) SHA1(4c3320a764b13a5751c0019c9fafb899ea2f908f) ) /* hand written label IC-91 8B4C == a62_07.91  */
+	ROM_LOAD( "ic-90_057c.90",   0x1c000, 0x4000, CRC(c3c877ef) SHA1(23180b106e50b7a2a230c5e9948832e5631972ae) ) /* hand written label IC-90 057C == a62_05.90  */
+
+	ROM_REGION( 0x0060, "proms", 0 ) //COLOR (all identical!)
+	ROM_LOAD( "a26-13.109",  0x0000, 0x0020, CRC(ec449aee) SHA1(aa33e82b592276d5ffd540d9a73d1b48d7d4accf) )
+	ROM_LOAD( "a26-13.110",  0x0020, 0x0020, CRC(ec449aee) SHA1(aa33e82b592276d5ffd540d9a73d1b48d7d4accf) )
+	ROM_LOAD( "a26-13.111",  0x0040, 0x0020, CRC(ec449aee) SHA1(aa33e82b592276d5ffd540d9a73d1b48d7d4accf) )
+ROM_END
+
+
+ROM_START( halleysc87 )
 	ROM_REGION( 0x10000, "maincpu", 0 ) //MAIN PRG
 	ROM_LOAD( "a62-17.30",   0x0000, 0x4000, CRC(fa2a58a6) SHA1(42cb587aad166ff74ece987f275aa7ad16d58300) )
 	ROM_LOAD( "a62-18.31",   0x4000, 0x4000, CRC(f3a078e6) SHA1(f8fa548b5814276d1ae2d575b9a5d3f0cc2f54fa) )
@@ -2167,32 +2167,33 @@ ROM_END
 
 void halleys_state::init_common()
 {
-	UINT8 *buf, *rom;
+	uint8_t *buf, *rom;
 	int addr, i;
-	UINT8 al, ah, dl, dh;
+	uint8_t al, ah, dl, dh;
 
 
 	// allocate memory for unpacked graphics
-	buf = auto_alloc_array(machine(), UINT8, 0x100000);
-	m_gfx_plane02 = buf;
-	m_gfx_plane13 = buf + 0x80000;
+	m_gfx_plane_alloc = std::make_unique<uint8_t[]>(0x100000);
+	m_gfx_plane02 = &m_gfx_plane_alloc[0];
+	m_gfx_plane13 = &m_gfx_plane_alloc[0x80000];
 
 
 	// allocate memory for render layers
-	buf = auto_alloc_array(machine(), UINT8, SCREEN_BYTESIZE * MAX_LAYERS);
-	for (i=0; i<MAX_LAYERS; buf+=SCREEN_BYTESIZE, i++) m_render_layer[i] = (UINT16*)buf;
+	m_render_layer_alloc = std::make_unique<uint16_t[]>(SCREEN_BYTESIZE * MAX_LAYERS / 2);
+	for (i=0; i<MAX_LAYERS; i++)
+		m_render_layer[i] = &m_render_layer_alloc[SCREEN_BYTESIZE * i / 2];
 
 
 	// allocate memory for pre-processed ROMs
-	m_gfx1_base = std::make_unique<UINT8[]>(0x20000);
+	m_gfx1_base = std::make_unique<uint8_t[]>(0x20000);
 
 
 	// allocate memory for alpha table
-	m_alpha_table = std::make_unique<UINT32[]>(0x10000);
+	m_alpha_table = std::make_unique<uint32_t[]>(0x10000);
 
 
 	// allocate memory for hardware collision list
-	m_collision_list = std::make_unique<UINT8[]>(MAX_SPRITES);
+	m_collision_list = std::make_unique<uint8_t[]>(MAX_SPRITES);
 
 
 	// decrypt main program ROM
@@ -2201,8 +2202,8 @@ void halleys_state::init_common()
 
 	for (i=0; i<0x10000; i++)
 	{
-		addr = BITSWAP16(i,15,14,13,12,11,10,1,0,4,5,6,3,7,8,9,2);
-		buf[i] = BITSWAP8(rom[addr],0,7,6,5,1,4,2,3);
+		addr = bitswap<16>(i,15,14,13,12,11,10,1,0,4,5,6,3,7,8,9,2);
+		buf[i] = bitswap<8>(rom[addr],0,7,6,5,1,4,2,3);
 	}
 
 	memcpy(rom, buf, 0x10000);
@@ -2241,7 +2242,7 @@ void halleys_state::init_common()
 }
 
 
-DRIVER_INIT_MEMBER(halleys_state,benberob)
+void halleys_state::init_benberob()
 {
 	m_game_id = GAME_BENBEROB;
 
@@ -2251,15 +2252,29 @@ DRIVER_INIT_MEMBER(halleys_state,benberob)
 }
 
 
-DRIVER_INIT_MEMBER(halleys_state,halleys)
+void halleys_state::init_halleys()
 {
+/*
+LDA $66     96 66
+BNE +0E     26 0E <-- Intercept here
+ANDCC #$EF  1C EF
+*/
+
 	m_game_id = GAME_HALLEYS;
 	m_collision_detection = 0xb114;
 
 	init_common();
 }
 
-DRIVER_INIT_MEMBER(halleys_state,halley87)
+void halleys_state::init_halleysp()
+{
+	m_game_id = GAME_HALLEYS;
+	m_collision_detection = 0xb038;
+
+	init_common();
+}
+
+void halleys_state::init_halley87()
 {
 	m_game_id = GAME_HALLEYS;
 	m_collision_detection = 0xb10d;
@@ -2267,12 +2282,15 @@ DRIVER_INIT_MEMBER(halleys_state,halley87)
 	init_common();
 }
 
+} // Anonymous namespace
+
 
 //**************************************************************************
 // Game Definitions
 
-GAME( 1984, benberob, 0,       benberob, benberob, halleys_state, benberob,  ROT0,  "Taito", "Ben Bero Beh (Japan)", MACHINE_IMPERFECT_GRAPHICS | MACHINE_IMPERFECT_COLORS | MACHINE_NO_COCKTAIL )
-GAME( 1986, halleys,  0,       halleys,  halleys, halleys_state,  halleys,   ROT90, "Taito America Corporation (Coin-It license)", "Halley's Comet (US)", MACHINE_IMPERFECT_GRAPHICS | MACHINE_NO_COCKTAIL )
-GAME( 1986, halleysc, halleys, halleys,  halleys, halleys_state,  halleys,   ROT90, "Taito Corporation", "Halley's Comet (Japan, Newer)", MACHINE_IMPERFECT_GRAPHICS | MACHINE_NO_COCKTAIL )
-GAME( 1986, halleycj, halleys, halleys,  halleys, halleys_state,  halleys,   ROT90, "Taito Corporation", "Halley's Comet (Japan, Older)", MACHINE_IMPERFECT_GRAPHICS | MACHINE_NO_COCKTAIL )
-GAME( 1986, halley87, halleys, halleys,  halleys, halleys_state,  halley87,  ROT90, "Taito Corporation", "Halley's Comet '87", MACHINE_IMPERFECT_GRAPHICS | MACHINE_NO_COCKTAIL )
+GAME( 1984, benberob,   0,        benberob, benberob, halleys_state, init_benberob, ROT0,  "Taito",                                       "Ben Bero Beh (Japan)",              MACHINE_IMPERFECT_GRAPHICS | MACHINE_IMPERFECT_COLORS | MACHINE_NO_COCKTAIL )
+GAME( 1986, halleysc,   0,        halleys,  halleys,  halleys_state, init_halleys,  ROT90, "Taito America Corporation (Coin-It license)", "Halley's Comet (US)",               MACHINE_IMPERFECT_GRAPHICS | MACHINE_NO_COCKTAIL )
+GAME( 1986, halleyscj,  halleysc, halleys,  halleys,  halleys_state, init_halleys,  ROT90, "Taito Corporation",                           "Halley's Comet (Japan, rev 1)",     MACHINE_IMPERFECT_GRAPHICS | MACHINE_NO_COCKTAIL )
+GAME( 1986, halleyscja, halleysc, halleys,  halleys,  halleys_state, init_halleys,  ROT90, "Taito Corporation",                           "Halley's Comet (Japan)",            MACHINE_IMPERFECT_GRAPHICS | MACHINE_NO_COCKTAIL )
+GAME( 1985, halleyscjp, halleysc, halleys,  halleys,  halleys_state, init_halleysp, ROT90, "Taito Corporation",                           "Halley's Comet (Japan, prototype)", MACHINE_IMPERFECT_GRAPHICS | MACHINE_NO_COCKTAIL )
+GAME( 1986, halleysc87, halleysc, halleys,  halleys,  halleys_state, init_halley87, ROT90, "Taito Corporation",                           "Halley's Comet '87",                MACHINE_IMPERFECT_GRAPHICS | MACHINE_NO_COCKTAIL )

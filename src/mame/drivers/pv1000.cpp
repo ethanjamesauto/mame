@@ -10,55 +10,47 @@
 #include "cpu/z80/z80.h"
 #include "bus/generic/slot.h"
 #include "bus/generic/carts.h"
+#include "emupal.h"
+#include "screen.h"
 #include "softlist.h"
+#include "speaker.h"
+
+
 // PV-1000 Sound device
 
 class pv1000_sound_device : public device_t,
 									public device_sound_interface
 {
 public:
-	pv1000_sound_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	pv1000_sound_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
-	DECLARE_WRITE8_MEMBER(voice_w);
+	void voice_w(offs_t offset, uint8_t data);
 
 protected:
 	// device-level overrides
-	virtual void device_config_complete() override;
 	virtual void device_start() override;
 
 	// sound stream update overrides
-	virtual void sound_stream_update(sound_stream &stream, stream_sample_t **inputs, stream_sample_t **outputs, int samples) override;
+	virtual void sound_stream_update(sound_stream &stream, std::vector<read_stream_view> const &inputs, std::vector<write_stream_view> &outputs) override;
 
 private:
 
 	// internal state
 	struct
 	{
-		UINT32  count;
-		UINT16  period;
-		UINT8   val;
+		uint32_t  count;
+		uint16_t  period;
+		uint8_t   val;
 	}       m_voice[4];
 
 	sound_stream    *m_sh_channel;
 };
 
-extern const device_type PV1000;
+DEFINE_DEVICE_TYPE(PV1000, pv1000_sound_device, "pv1000_sound", "NEC D65010G031")
 
-const device_type PV1000 = &device_creator<pv1000_sound_device>;
-
-pv1000_sound_device::pv1000_sound_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-				: device_t(mconfig, PV1000, "NEC D65010G031", tag, owner, clock, "pv1000_sound", __FILE__),
-					device_sound_interface(mconfig, *this)
-{
-}
-
-//-------------------------------------------------
-//  device_config_complete - perform any
-//  operations now that the configuration is
-//  complete
-//-------------------------------------------------
-
-void pv1000_sound_device::device_config_complete()
+pv1000_sound_device::pv1000_sound_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: device_t(mconfig, PV1000, tag, owner, clock)
+	, device_sound_interface(mconfig, *this)
 {
 }
 
@@ -68,7 +60,7 @@ void pv1000_sound_device::device_config_complete()
 
 void pv1000_sound_device::device_start()
 {
-	m_sh_channel = machine().sound().stream_alloc(*this, 0, 1, clock() / 1024);
+	m_sh_channel = stream_alloc(0, 1, clock() / 1024);
 
 	save_item(NAME(m_voice[0].count));
 	save_item(NAME(m_voice[0].period));
@@ -85,7 +77,7 @@ void pv1000_sound_device::device_start()
 	save_item(NAME(m_voice[3].val));
 }
 
-WRITE8_MEMBER(pv1000_sound_device::voice_w)
+void pv1000_sound_device::voice_w(offs_t offset, uint8_t data)
 {
 	offset &= 0x03;
 	m_voice[offset].period = data;
@@ -106,20 +98,20 @@ WRITE8_MEMBER(pv1000_sound_device::voice_w)
  Note: the register periods are inverted.
  */
 
-void pv1000_sound_device::sound_stream_update(sound_stream &stream, stream_sample_t **inputs, stream_sample_t **outputs, int samples)
+void pv1000_sound_device::sound_stream_update(sound_stream &stream, std::vector<read_stream_view> const &inputs, std::vector<write_stream_view> &outputs)
 {
-	stream_sample_t *buffer = outputs[0];
+	auto &buffer = outputs[0];
 
-	while (samples > 0)
+	for (int sampindex = 0; sampindex < buffer.samples(); sampindex++)
 	{
-		*buffer=0;
+		s32 sum = 0;
 
 		for (int i = 0; i < 3; i++)
 		{
-			UINT32 per = (0x3f - (m_voice[i].period & 0x3f));
+			uint32_t per = (0x3f - (m_voice[i].period & 0x3f));
 
 			if (per != 0)   //OFF!
-				*buffer += m_voice[i].val * 8192;
+				sum += m_voice[i].val * 8192;
 
 			m_voice[i].count++;
 
@@ -130,8 +122,7 @@ void pv1000_sound_device::sound_stream_update(sound_stream &stream, stream_sampl
 			}
 		}
 
-		buffer++;
-		samples--;
+		buffer.put_int(sampindex, sum, 32768);
 	}
 }
 
@@ -142,72 +133,79 @@ void pv1000_sound_device::sound_stream_update(sound_stream &stream, stream_sampl
 class pv1000_state : public driver_device
 {
 public:
-	pv1000_state(const machine_config &mconfig, device_type type, const char *tag)
-		: driver_device(mconfig, type, tag),
+	pv1000_state(const machine_config &mconfig, device_type type, const char *tag) :
+		driver_device(mconfig, type, tag),
 		m_maincpu(*this, "maincpu"),
 		m_sound(*this, "pv1000_sound"),
 		m_cart(*this, "cartslot"),
-		m_p_videoram(*this, "p_videoram"),
+		m_p_videoram(*this, "videoram"),
 		m_gfxdecode(*this, "gfxdecode"),
 		m_screen(*this, "screen"),
 		m_palette(*this, "palette")
-		{ }
+	{ }
 
-	DECLARE_WRITE8_MEMBER(io_w);
-	DECLARE_READ8_MEMBER(io_r);
-	DECLARE_WRITE8_MEMBER(gfxram_w);
-	UINT8   m_io_regs[8];
-	UINT8   m_fd_data;
+	void pv1000(machine_config &config);
+
+private:
+	void io_w(offs_t offset, uint8_t data);
+	uint8_t io_r(offs_t offset);
+	void gfxram_w(offs_t offset, uint8_t data);
+	uint8_t   m_io_regs[8];
+	uint8_t   m_fd_data;
 
 	emu_timer       *m_irq_on_timer;
 	emu_timer       *m_irq_off_timer;
-	UINT8 m_pcg_bank;
-	UINT8 m_force_pattern;
-	UINT8 m_fd_buffer_flag;
-	UINT8 m_border_col;
+	uint8_t m_pcg_bank;
+	uint8_t m_force_pattern;
+	uint8_t m_fd_buffer_flag;
+	uint8_t m_border_col;
 
-	UINT8 * m_gfxram;
+	uint8_t * m_gfxram;
 	void pv1000_postload();
 
 	required_device<cpu_device> m_maincpu;
 	required_device<pv1000_sound_device> m_sound;
 	required_device<generic_slot_device> m_cart;
-	required_shared_ptr<UINT8> m_p_videoram;
+	required_shared_ptr<uint8_t> m_p_videoram;
 	virtual void machine_start() override;
 	virtual void machine_reset() override;
-	UINT32 screen_update_pv1000(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
+	uint32_t screen_update_pv1000(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
 	TIMER_CALLBACK_MEMBER(d65010_irq_on_cb);
 	TIMER_CALLBACK_MEMBER(d65010_irq_off_cb);
-	DECLARE_DEVICE_IMAGE_LOAD_MEMBER( pv1000_cart );
+	DECLARE_DEVICE_IMAGE_LOAD_MEMBER( cart_load );
 	required_device<gfxdecode_device> m_gfxdecode;
 	required_device<screen_device> m_screen;
 	required_device<palette_device> m_palette;
+	void pv1000_mem(address_map &map);
+	void pv1000_io(address_map &map);
 };
 
 
-static ADDRESS_MAP_START( pv1000, AS_PROGRAM, 8, pv1000_state )
-	//AM_RANGE(0x0000, 0x7fff)      // mapped by the cartslot
-	AM_RANGE(0xb800, 0xbbff) AM_RAM AM_SHARE("p_videoram")
-	AM_RANGE(0xbc00, 0xbfff) AM_RAM_WRITE(gfxram_w) AM_REGION("gfxram", 0)
-ADDRESS_MAP_END
-
-
-static ADDRESS_MAP_START( pv1000_io, AS_IO, 8, pv1000_state )
-	ADDRESS_MAP_GLOBAL_MASK(0xff)
-	AM_RANGE(0xf8, 0xff) AM_READWRITE(io_r, io_w)
-ADDRESS_MAP_END
-
-
-WRITE8_MEMBER( pv1000_state::gfxram_w )
+void pv1000_state::pv1000_mem(address_map &map)
 {
-	UINT8 *gfxram = memregion( "gfxram" )->base();
+	//map(0x0000, 0x7fff)      // mapped by the cartslot
+	map(0xb800, 0xbbff).ram().share("videoram");
+	map(0xbc00, 0xbfff).ram().w(FUNC(pv1000_state::gfxram_w)).region("gfxram", 0);
+}
+
+
+void pv1000_state::pv1000_io(address_map &map)
+{
+	map.global_mask(0xff);
+	map(0xf8, 0xff).rw(FUNC(pv1000_state::io_r), FUNC(pv1000_state::io_w));
+}
+
+
+void pv1000_state::gfxram_w(offs_t offset, uint8_t data)
+{
+	uint8_t *gfxram = memregion( "gfxram" )->base();
 
 	gfxram[ offset ] = data;
 	m_gfxdecode->gfx(1)->mark_dirty(offset/32);
 }
 
 
-WRITE8_MEMBER( pv1000_state::io_w )
+void pv1000_state::io_w(offs_t offset, uint8_t data)
 {
 	switch (offset)
 	{
@@ -215,7 +213,7 @@ WRITE8_MEMBER( pv1000_state::io_w )
 	case 0x01:
 	case 0x02:
 		//logerror("io_w offset=%02x, data=%02x (%03d)\n", offset, data , data);
-		m_sound->voice_w(space, offset, data);
+		m_sound->voice_w(offset, data);
 	break;
 
 	case 0x03:
@@ -238,9 +236,9 @@ WRITE8_MEMBER( pv1000_state::io_w )
 }
 
 
-READ8_MEMBER( pv1000_state::io_r )
+uint8_t pv1000_state::io_r(offs_t offset)
 {
-	UINT8 data = m_io_regs[offset];
+	uint8_t data = m_io_regs[offset];
 
 //  logerror("io_r offset=%02x\n", offset );
 
@@ -303,24 +301,24 @@ static INPUT_PORTS_START( pv1000 )
 INPUT_PORTS_END
 
 
-DEVICE_IMAGE_LOAD_MEMBER( pv1000_state, pv1000_cart )
+DEVICE_IMAGE_LOAD_MEMBER( pv1000_state::cart_load )
 {
-	UINT32 size = m_cart->common_get_size("rom");
+	uint32_t size = m_cart->common_get_size("rom");
 
 	if (size != 0x2000 && size != 0x4000)
 	{
 		image.seterror(IMAGE_ERROR_UNSPECIFIED, "Unsupported cartridge size");
-		return IMAGE_INIT_FAIL;
+		return image_init_result::FAIL;
 	}
 
 	m_cart->rom_alloc(size, GENERIC_ROM8_WIDTH, ENDIANNESS_LITTLE);
 	m_cart->common_load_rom(m_cart->get_rom_base(), size, "rom");
 
-	return IMAGE_INIT_PASS;
+	return image_init_result::PASS;
 }
 
 
-UINT32 pv1000_state::screen_update_pv1000(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t pv1000_state::screen_update_pv1000(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	int x, y;
 
@@ -330,7 +328,7 @@ UINT32 pv1000_state::screen_update_pv1000(screen_device &screen, bitmap_ind16 &b
 	{
 		for ( x = 2; x < 30; x++ ) // left-right most columns are definitely masked by the border color
 		{
-			UINT16 tile = m_p_videoram[ y * 32 + x ];
+			uint16_t tile = m_p_videoram[ y * 32 + x ];
 
 			if ( tile < 0xe0 || m_force_pattern )
 			{
@@ -383,7 +381,7 @@ void pv1000_state::pv1000_postload()
 {
 	// restore GFX ram
 	for (int i = 0; i < 0x400; i++)
-		gfxram_w(m_maincpu->space(AS_PROGRAM), i, m_gfxram[i]);
+		gfxram_w(i, m_gfxram[i]);
 }
 
 void pv1000_state::machine_start()
@@ -396,7 +394,7 @@ void pv1000_state::machine_start()
 
 	if (m_cart->exists())
 	{
-		m_maincpu->space(AS_PROGRAM).install_read_handler(0x0000, 0x7fff, read8_delegate(FUNC(generic_slot_device::read_rom),(generic_slot_device*)m_cart));
+		m_maincpu->space(AS_PROGRAM).install_read_handler(0x0000, 0x7fff, read8sm_delegate(*m_cart, FUNC(generic_slot_device::read_rom)));
 
 		// FIXME: this is needed for gfx decoding, but there is probably a cleaner solution!
 		std::string region_tag;
@@ -435,41 +433,39 @@ static const gfx_layout pv1000_3bpp_gfx =
 };
 
 
-static GFXDECODE_START( pv1000 )
+static GFXDECODE_START( gfx_pv1000 )
 	GFXDECODE_ENTRY( "gfxrom", 8, pv1000_3bpp_gfx, 0, 8 )
 	GFXDECODE_ENTRY( "gfxram", 8, pv1000_3bpp_gfx, 0, 8 )
 GFXDECODE_END
 
 
-static MACHINE_CONFIG_START( pv1000, pv1000_state )
-
-	MCFG_CPU_ADD( "maincpu", Z80, 17897725/5 )
-	MCFG_CPU_PROGRAM_MAP( pv1000 )
-	MCFG_CPU_IO_MAP( pv1000_io )
-
+void pv1000_state::pv1000(machine_config &config)
+{
+	Z80(config, m_maincpu, 17897725/5);
+	m_maincpu->set_addrmap(AS_PROGRAM, &pv1000_state::pv1000_mem);
+	m_maincpu->set_addrmap(AS_IO, &pv1000_state::pv1000_io);
 
 	/* D65010G031 - Video & sound chip */
-	MCFG_SCREEN_ADD( "screen", RASTER )
-	MCFG_SCREEN_RAW_PARAMS( 17897725/3, 380, 0, 256, 262, 0, 192 )
-	MCFG_SCREEN_UPDATE_DRIVER(pv1000_state, screen_update_pv1000)
-	MCFG_SCREEN_PALETTE("palette")
+	SCREEN(config, m_screen, SCREEN_TYPE_RASTER);
+	m_screen->set_raw(17897725/3, 380, 0, 256, 262, 0, 192);
+	m_screen->set_screen_update(FUNC(pv1000_state::screen_update_pv1000));
+	m_screen->set_palette(m_palette);
 
-	MCFG_PALETTE_ADD_3BIT_BGR("palette")
+	PALETTE(config, m_palette, palette_device::BGR_3BIT);
 
-	MCFG_GFXDECODE_ADD("gfxdecode", "palette", pv1000 )
+	GFXDECODE(config, m_gfxdecode, m_palette, gfx_pv1000);
 
-	MCFG_SPEAKER_STANDARD_MONO("mono")
-	MCFG_SOUND_ADD( "pv1000_sound", PV1000, 17897725 )
-	MCFG_SOUND_ROUTE( ALL_OUTPUTS, "mono", 1.00 )
+	SPEAKER(config, "mono").front_center();
+	PV1000(config, m_sound, 17897725).add_route(ALL_OUTPUTS, "mono", 1.00);
 
 	/* Cartridge slot */
-	MCFG_GENERIC_CARTSLOT_ADD("cartslot", generic_linear_slot, "pv1000_cart")
-	MCFG_GENERIC_MANDATORY
-	MCFG_GENERIC_LOAD(pv1000_state, pv1000_cart)
+	generic_cartslot_device &cartslot(GENERIC_CARTSLOT(config, "cartslot", generic_linear_slot, "pv1000_cart"));
+	cartslot.set_must_be_loaded(true);
+	cartslot.set_device_load(FUNC(pv1000_state::cart_load));
 
 	/* Software lists */
-	MCFG_SOFTWARE_LIST_ADD("cart_list","pv1000")
-MACHINE_CONFIG_END
+	SOFTWARE_LIST(config, "cart_list").set_original("pv1000");
+}
 
 
 ROM_START( pv1000 )
@@ -478,5 +474,5 @@ ROM_START( pv1000 )
 ROM_END
 
 
-/*    YEAR  NAME     PARENT  COMPAT  MACHINE  INPUT  INIT    COMPANY   FULLNAME    FLAGS */
-CONS( 1983, pv1000,  0,      0,      pv1000,  pv1000, driver_device,   0,   "Casio",  "PV-1000",  MACHINE_SUPPORTS_SAVE )
+/*    YEAR  NAME    PARENT  COMPAT  MACHINE  INPUT   CLASS         INIT        COMPANY  FULLNAME    FLAGS */
+CONS( 1983, pv1000, 0,      0,      pv1000,  pv1000, pv1000_state, empty_init, "Casio", "PV-1000",  MACHINE_SUPPORTS_SAVE )

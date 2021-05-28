@@ -6,7 +6,11 @@
 
 */
 
+#include "emu.h"
 #include "clgd542x.h"
+
+#include "screen.h"
+
 
 #define LOG_REG 0
 #define LOG_BLIT 1
@@ -29,7 +33,7 @@
 
 #define IBM8514_LINE_LENGTH (m_vga->offset())
 
-#define CHAR_WIDTH ((vga.sequencer.data[1]&1)?8:9)
+#define VGA_CH_WIDTH ((vga.sequencer.data[1]&1)?8:9)
 
 #define TEXT_COLUMNS (vga.crtc.horz_disp_end+1)
 #define TEXT_START_ADDRESS (vga.crtc.start_addr<<3)
@@ -37,42 +41,30 @@
 
 #define TEXT_COPY_9COLUMN(ch) (((ch & 0xe0) == 0xc0)&&(vga.attribute.data[0x10]&4))
 
-const device_type CIRRUS_GD5428 = &device_creator<cirrus_gd5428_device>;
-const device_type CIRRUS_GD5430 = &device_creator<cirrus_gd5430_device>;
+DEFINE_DEVICE_TYPE(CIRRUS_GD5428, cirrus_gd5428_device, "clgd5428", "Cirrus Logic GD5428")
+DEFINE_DEVICE_TYPE(CIRRUS_GD5430, cirrus_gd5430_device, "clgd5430", "Cirrus Logic GD5430")
+DEFINE_DEVICE_TYPE(CIRRUS_GD5446, cirrus_gd5446_device, "clgd5446", "Cirrus Logic GD5446")
 
 
-cirrus_gd5428_device::cirrus_gd5428_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: svga_device(mconfig, CIRRUS_GD5428, "Cirrus Logic GD5428", tag, owner, clock, "clgd5428", __FILE__)
+cirrus_gd5428_device::cirrus_gd5428_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: cirrus_gd5428_device(mconfig, CIRRUS_GD5428, tag, owner, clock)
 {
 }
 
-cirrus_gd5428_device::cirrus_gd5428_device(const machine_config &mconfig, device_type type, const char *name, const char *tag, device_t *owner, UINT32 clock, const char *shortname, const char *source)
-	: svga_device(mconfig, type, name, tag, owner, clock, shortname, source)
+cirrus_gd5428_device::cirrus_gd5428_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock)
+	: svga_device(mconfig, type, tag, owner, clock)
 {
 }
 
-cirrus_gd5430_device::cirrus_gd5430_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: cirrus_gd5428_device(mconfig, CIRRUS_GD5430, "Cirrus Logic GD5430", tag, owner, clock, "clgd5430", __FILE__)
+cirrus_gd5430_device::cirrus_gd5430_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: cirrus_gd5428_device(mconfig, CIRRUS_GD5430, tag, owner, clock)
 {
 }
 
-MACHINE_CONFIG_FRAGMENT( pcvideo_cirrus_gd5428 )
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_RAW_PARAMS(XTAL_25_1748MHz,900,0,640,526,0,480)
-	MCFG_SCREEN_UPDATE_DEVICE("vga", cirrus_gd5428_device, screen_update)
-
-	MCFG_PALETTE_ADD("palette", 0x100)
-	MCFG_DEVICE_ADD("vga", CIRRUS_GD5428, 0)
-MACHINE_CONFIG_END
-
-MACHINE_CONFIG_FRAGMENT( pcvideo_cirrus_gd5430 )
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_RAW_PARAMS(XTAL_25_1748MHz,900,0,640,526,0,480)
-	MCFG_SCREEN_UPDATE_DEVICE("vga", cirrus_gd5430_device, screen_update)
-
-	MCFG_PALETTE_ADD("palette", 0x100)
-	MCFG_DEVICE_ADD("vga", CIRRUS_GD5430, 0)
-MACHINE_CONFIG_END
+cirrus_gd5446_device::cirrus_gd5446_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: cirrus_gd5428_device(mconfig, CIRRUS_GD5446, tag, owner, clock)
+{
+}
 
 void cirrus_gd5428_device::device_start()
 {
@@ -80,13 +72,13 @@ void cirrus_gd5428_device::device_start()
 
 	int i;
 	for (i = 0; i < 0x100; i++)
-		m_palette->set_pen_color(i, 0, 0, 0);
+		set_pen_color(i, 0, 0, 0);
 
 	// Avoid an infinite loop when displaying.  0 is not possible anyway.
 	vga.crtc.maximum_scan_line = 1;
 
 	// copy over interfaces
-	vga.read_dipswitch = read8_delegate(); //read_dipswitch;
+	vga.read_dipswitch.set(nullptr); //read_dipswitch;
 	vga.svga_intf.seq_regcount = 0x1f;
 	vga.svga_intf.crtc_regcount = 0x2d;
 	vga.svga_intf.vram_size = 0x200000;
@@ -109,6 +101,13 @@ void cirrus_gd5430_device::device_start()
 	cirrus_gd5428_device::device_start();
 	m_chip_id = 0xa0;  // GD5430 - Rev 0
 }
+
+void cirrus_gd5446_device::device_start()
+{
+	cirrus_gd5428_device::device_start();
+	m_chip_id = 0x80 | 0x39;  // GD5446
+}
+
 
 void cirrus_gd5428_device::device_reset()
 {
@@ -133,40 +132,39 @@ void cirrus_gd5428_device::device_reset()
 	m_blt_system_transfer = false;
 }
 
-UINT32 cirrus_gd5428_device::screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
+uint32_t cirrus_gd5428_device::screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
 {
-	int x,y,bit;
-	UINT32 ptr = (vga.svga_intf.vram_size - 0x4000);  // cursor patterns are stored in the last 16kB of VRAM
+	uint32_t ptr = (vga.svga_intf.vram_size - 0x4000);  // cursor patterns are stored in the last 16kB of VRAM
 	svga_device::screen_update(screen, bitmap, cliprect);
 
-	/*UINT8 cur_mode =*/ pc_vga_choosevideomode();
+	/*uint8_t cur_mode =*/ pc_vga_choosevideomode();
 	if(m_cursor_attr & 0x01)  // hardware cursor enabled
 	{
 		// draw hardware graphics cursor
 		if(m_cursor_attr & 0x04)  // 64x64
 		{
 			ptr += ((m_cursor_addr & 0x3c) * 256);
-			for(y=0;y<64;y++)
+			for(int y=0;y<64;y++)
 			{
-				for(x=0;x<64;x+=8)
+				for(int x=0;x<64;x+=8)
 				{
-					for(bit=0;bit<8;bit++)
+					for(int bit=0;bit<8;bit++)
 					{
-						UINT8 pixel1 = vga.memory[ptr % vga.svga_intf.vram_size] >> (7-bit);
-						UINT8 pixel2 = vga.memory[(ptr+512) % vga.svga_intf.vram_size] >> (7-bit);
-						UINT8 output = ((pixel1 & 0x01) << 1) | (pixel2 & 0x01);
+						uint8_t pixel1 = vga.memory[ptr % vga.svga_intf.vram_size] >> (7-bit);
+						uint8_t pixel2 = vga.memory[(ptr+512) % vga.svga_intf.vram_size] >> (7-bit);
+						uint8_t output = ((pixel1 & 0x01) << 1) | (pixel2 & 0x01);
 						switch(output)
 						{
 						case 0:  // transparent - do nothing
 							break;
 						case 1:  // background
-							bitmap.pix32(m_cursor_y+y,m_cursor_x+x+bit) = (m_ext_palette[0].red << 16) | (m_ext_palette[0].green << 8) | (m_ext_palette[0].blue);
+							bitmap.pix(m_cursor_y+y,m_cursor_x+x+bit) = (m_ext_palette[0].red << 16) | (m_ext_palette[0].green << 8) | (m_ext_palette[0].blue);
 							break;
 						case 2:  // XOR
-							bitmap.pix32(m_cursor_y+y,m_cursor_x+x+bit) = ~bitmap.pix32(m_cursor_y+y,m_cursor_x+x+bit);
+							bitmap.pix(m_cursor_y+y,m_cursor_x+x+bit) = ~bitmap.pix(m_cursor_y+y,m_cursor_x+x+bit);
 							break;
 						case 3:  // foreground
-							bitmap.pix32(m_cursor_y+y,m_cursor_x+x+bit) = (m_ext_palette[15].red << 16) | (m_ext_palette[15].green << 8) | (m_ext_palette[15].blue);
+							bitmap.pix(m_cursor_y+y,m_cursor_x+x+bit) = (m_ext_palette[15].red << 16) | (m_ext_palette[15].green << 8) | (m_ext_palette[15].blue);
 							break;
 						}
 					}
@@ -176,27 +174,27 @@ UINT32 cirrus_gd5428_device::screen_update(screen_device &screen, bitmap_rgb32 &
 		else
 		{
 			ptr += ((m_cursor_addr & 0x3f) * 256);
-			for(y=0;y<32;y++)
+			for(int y=0;y<32;y++)
 			{
-				for(x=0;x<32;x+=8)
+				for(int x=0;x<32;x+=8)
 				{
-					for(bit=0;bit<8;bit++)
+					for(int bit=0;bit<8;bit++)
 					{
-						UINT8 pixel1 = vga.memory[ptr % vga.svga_intf.vram_size] >> (7-bit);
-						UINT8 pixel2 = vga.memory[(ptr+128) % vga.svga_intf.vram_size] >> (7-bit);
-						UINT8 output = ((pixel1 & 0x01) << 1) | (pixel2 & 0x01);
+						uint8_t pixel1 = vga.memory[ptr % vga.svga_intf.vram_size] >> (7-bit);
+						uint8_t pixel2 = vga.memory[(ptr+128) % vga.svga_intf.vram_size] >> (7-bit);
+						uint8_t output = ((pixel1 & 0x01) << 1) | (pixel2 & 0x01);
 						switch(output)
 						{
 						case 0:  // transparent - do nothing
 							break;
 						case 1:  // background
-							bitmap.pix32(m_cursor_y+y,m_cursor_x+x+bit) = (m_ext_palette[0].red << 18) | (m_ext_palette[0].green << 10) | (m_ext_palette[0].blue << 2);
+							bitmap.pix(m_cursor_y+y,m_cursor_x+x+bit) = (m_ext_palette[0].red << 18) | (m_ext_palette[0].green << 10) | (m_ext_palette[0].blue << 2);
 							break;
 						case 2:  // XOR
-							bitmap.pix32(m_cursor_y+y,m_cursor_x+x+bit) = ~bitmap.pix32(m_cursor_y+y,m_cursor_x+x+bit);
+							bitmap.pix(m_cursor_y+y,m_cursor_x+x+bit) = ~bitmap.pix(m_cursor_y+y,m_cursor_x+x+bit);
 							break;
 						case 3:  // foreground
-							bitmap.pix32(m_cursor_y+y,m_cursor_x+x+bit) = (m_ext_palette[15].red << 18) | (m_ext_palette[15].green << 10) | (m_ext_palette[15].blue << 2);
+							bitmap.pix(m_cursor_y+y,m_cursor_x+x+bit) = (m_ext_palette[15].red << 18) | (m_ext_palette[15].green << 10) | (m_ext_palette[15].blue << 2);
 							break;
 						}
 					}
@@ -210,9 +208,10 @@ UINT32 cirrus_gd5428_device::screen_update(screen_device &screen, bitmap_rgb32 &
 
 void cirrus_gd5428_device::cirrus_define_video_mode()
 {
-	UINT8 divisor = 1;
+	uint8_t divisor = 1;
 	float clock;
-	UINT8 clocksel = (vga.miscellaneous_output & 0xc) >> 2;
+	const XTAL xtal = XTAL(14'318'181);
+	uint8_t clocksel = (vga.miscellaneous_output & 0xc) >> 2;
 
 	svga.rgb8_en = 0;
 	svga.rgb15_en = 0;
@@ -221,14 +220,13 @@ void cirrus_gd5428_device::cirrus_define_video_mode()
 	svga.rgb32_en = 0;
 
 	if(gc_locked || m_vclk_num[clocksel] == 0 || m_vclk_denom[clocksel] == 0)
-		clock = (vga.miscellaneous_output & 0xc) ? XTAL_28_63636MHz : XTAL_25_1748MHz;
+		clock = ((vga.miscellaneous_output & 0xc) ? xtal*2: xtal*1.75).dvalue();
 	else
 	{
 		int numerator = m_vclk_num[clocksel] & 0x7f;
 		int denominator = (m_vclk_denom[clocksel] & 0x3e) >> 1;
 		int mul = m_vclk_denom[clocksel] & 0x01 ? 2 : 1;
-		clock = 14.31818f * ((float)numerator / ((float)denominator * mul));
-		clock *= 1000000;
+		clock = (xtal * numerator / denominator / mul).dvalue();
 	}
 
 	if (!gc_locked && (vga.sequencer.data[0x07] & 0x01))
@@ -244,9 +242,9 @@ void cirrus_gd5428_device::cirrus_define_video_mode()
 	recompute_params_clock(divisor, (int)clock);
 }
 
-UINT16 cirrus_gd5428_device::offset()
+uint16_t cirrus_gd5428_device::offset()
 {
-	UINT16 off = vga_device::offset();
+	uint16_t off = vga_device::offset();
 
 	if (svga.rgb8_en == 1) // guess
 		off <<= 2;
@@ -262,7 +260,7 @@ UINT16 cirrus_gd5428_device::offset()
 
 void cirrus_gd5428_device::start_bitblt()
 {
-	UINT32 x,y;
+	uint32_t x,y;
 
 	if(m_blt_mode & 0x01)
 	{
@@ -284,7 +282,7 @@ void cirrus_gd5428_device::start_bitblt()
 				if(m_blt_mode & 0x10)  // 16-bit colour expansion / transparency width
 				{
 					// use GR0/1/10/11 background/foreground regs
-					UINT16 pixel = (vga.memory[m_blt_source_current % vga.svga_intf.vram_size] >> (7-((x/2) % 8)) & 0x01) ? ((m_gr11 << 8) | vga.gc.enable_set_reset) : ((m_gr10 << 8) | vga.gc.set_reset);
+					uint16_t pixel = (vga.memory[m_blt_source_current % vga.svga_intf.vram_size] >> (7-((x/2) % 8)) & 0x01) ? ((m_gr11 << 8) | vga.gc.enable_set_reset) : ((m_gr10 << 8) | vga.gc.set_reset);
 
 					if(m_blt_dest_current & 1)
 						copy_pixel(pixel >> 8, vga.memory[m_blt_dest_current % vga.svga_intf.vram_size]);
@@ -295,7 +293,7 @@ void cirrus_gd5428_device::start_bitblt()
 				}
 				else
 				{
-					UINT8 pixel = (vga.memory[m_blt_source_current % vga.svga_intf.vram_size] >> (7-(x % 8)) & 0x01) ? vga.gc.enable_set_reset : vga.gc.set_reset;  // use GR0/1/10/11 background/foreground regs
+					uint8_t pixel = (vga.memory[m_blt_source_current % vga.svga_intf.vram_size] >> (7-(x % 8)) & 0x01) ? vga.gc.enable_set_reset : vga.gc.set_reset;  // use GR0/1/10/11 background/foreground regs
 
 					copy_pixel(pixel, vga.memory[m_blt_dest_current % vga.svga_intf.vram_size]);
 					if((x % 8) == 7 && !(m_blt_mode & 0x40))  // don't increment if a pattern (it's only 8 bits)
@@ -343,7 +341,7 @@ void cirrus_gd5428_device::start_bitblt()
 
 void cirrus_gd5428_device::start_reverse_bitblt()
 {
-	UINT32 x,y;
+	uint32_t x,y;
 
 	if(LOG_BLIT) logerror("CL: Reverse BitBLT started: Src: %06x Dst: %06x Width: %i Height %i ROP: %02x Mode: %02x\n",m_blt_source,m_blt_dest,m_blt_width,m_blt_height,m_blt_rop,m_blt_mode);
 
@@ -360,7 +358,7 @@ void cirrus_gd5428_device::start_reverse_bitblt()
 				if(m_blt_mode & 0x10)  // 16-bit colour expansion / transparency width
 				{
 					// use GR0/1/10/11 background/foreground regs
-					UINT16 pixel = (vga.memory[m_blt_source_current % vga.svga_intf.vram_size] >> (7-((x/2) % 8)) & 0x01) ? ((m_gr11 << 8) | vga.gc.enable_set_reset) : ((m_gr10 << 8) | vga.gc.set_reset);
+					uint16_t pixel = (vga.memory[m_blt_source_current % vga.svga_intf.vram_size] >> (7-((x/2) % 8)) & 0x01) ? ((m_gr11 << 8) | vga.gc.enable_set_reset) : ((m_gr10 << 8) | vga.gc.set_reset);
 
 					if(m_blt_dest_current & 1)
 						copy_pixel(pixel >> 8, vga.memory[m_blt_dest_current % vga.svga_intf.vram_size]);
@@ -371,7 +369,7 @@ void cirrus_gd5428_device::start_reverse_bitblt()
 				}
 				else
 				{
-				UINT8 pixel = (vga.memory[m_blt_source_current % vga.svga_intf.vram_size] >> (7-(x % 8)) & 0x01) ? vga.gc.enable_set_reset : vga.gc.set_reset;  // use GR0/1/10/11 background/foreground regs
+				uint8_t pixel = (vga.memory[m_blt_source_current % vga.svga_intf.vram_size] >> (7-(x % 8)) & 0x01) ? vga.gc.enable_set_reset : vga.gc.set_reset;  // use GR0/1/10/11 background/foreground regs
 
 				copy_pixel(pixel, vga.memory[m_blt_dest_current % vga.svga_intf.vram_size]);
 				if((x % 8) == 7 && !(m_blt_mode & 0x40))  // don't decrement if a pattern (it's only 8 bits)
@@ -432,7 +430,7 @@ void cirrus_gd5428_device::start_system_bitblt()
 void cirrus_gd5428_device::blit_dword()
 {
 	// TODO: add support for reverse direction
-	UINT8 x,pixel;
+	uint8_t x,pixel;
 
 	for(x=0;x<32;x+=8)
 	{
@@ -459,7 +457,7 @@ void cirrus_gd5428_device::blit_dword()
 void cirrus_gd5428_device::blit_byte()
 {
 	// TODO: add support for reverse direction
-	UINT8 x,pixel;
+	uint8_t x,pixel;
 
 	for(x=0;x<8;x++)
 	{
@@ -486,9 +484,9 @@ void cirrus_gd5428_device::blit_byte()
 	}
 }
 
-void cirrus_gd5428_device::copy_pixel(UINT8 src, UINT8 dst)
+void cirrus_gd5428_device::copy_pixel(uint8_t src, uint8_t dst)
 {
-	UINT8 res = src;
+	uint8_t res = src;
 
 	switch(m_blt_rop)
 	{
@@ -522,9 +520,9 @@ void cirrus_gd5428_device::copy_pixel(UINT8 src, UINT8 dst)
 	vga.memory[m_blt_dest_current % vga.svga_intf.vram_size] = res;
 }
 
-UINT8 cirrus_gd5428_device::cirrus_seq_reg_read(UINT8 index)
+uint8_t cirrus_gd5428_device::cirrus_seq_reg_read(uint8_t index)
 {
-	UINT8 res;
+	uint8_t res;
 
 	res = 0xff;
 
@@ -581,7 +579,7 @@ UINT8 cirrus_gd5428_device::cirrus_seq_reg_read(UINT8 index)
 	return res;
 }
 
-void cirrus_gd5428_device::cirrus_seq_reg_write(UINT8 index, UINT8 data)
+void cirrus_gd5428_device::cirrus_seq_reg_write(uint8_t index, uint8_t data)
 {
 	if(LOG_REG) logerror("CL: SEQ write %02x to SR%02x\n",data,index);
 	switch(index)
@@ -673,9 +671,9 @@ void cirrus_gd5428_device::cirrus_seq_reg_write(UINT8 index, UINT8 data)
 	}
 }
 
-UINT8 cirrus_gd5428_device::cirrus_gc_reg_read(UINT8 index)
+uint8_t cirrus_gd5428_device::cirrus_gc_reg_read(uint8_t index)
 {
-	UINT8 res = 0xff;
+	uint8_t res = 0xff;
 
 	switch(index)
 	{
@@ -795,7 +793,7 @@ UINT8 cirrus_gd5428_device::cirrus_gc_reg_read(UINT8 index)
 	return res;
 }
 
-void cirrus_gd5428_device::cirrus_gc_reg_write(UINT8 index, UINT8 data)
+void cirrus_gd5428_device::cirrus_gc_reg_write(uint8_t index, uint8_t data)
 {
 	if(LOG_REG) logerror("CL: GC write %02x to GR%02x\n",data,index);
 	switch(index)
@@ -924,9 +922,9 @@ void cirrus_gd5428_device::cirrus_gc_reg_write(UINT8 index, UINT8 data)
 	}
 }
 
-READ8_MEMBER(cirrus_gd5428_device::port_03c0_r)
+uint8_t cirrus_gd5428_device::port_03c0_r(offs_t offset)
 {
-	UINT8 res = 0xff;
+	uint8_t res = 0xff;
 
 	switch(offset)
 	{
@@ -935,7 +933,7 @@ READ8_MEMBER(cirrus_gd5428_device::port_03c0_r)
 			break;
 		case 0x09:
 			if(!m_ext_palette_enabled)
-				res = vga_device::port_03c0_r(space,offset,mem_mask);
+				res = vga_device::port_03c0_r(offset);
 			else
 			{
 				if (vga.dac.read)
@@ -965,14 +963,14 @@ READ8_MEMBER(cirrus_gd5428_device::port_03c0_r)
 			res = cirrus_gc_reg_read(vga.gc.index);
 			break;
 		default:
-			res = vga_device::port_03c0_r(space,offset,mem_mask);
+			res = vga_device::port_03c0_r(offset);
 			break;
 	}
 
 	return res;
 }
 
-WRITE8_MEMBER(cirrus_gd5428_device::port_03c0_w)
+void cirrus_gd5428_device::port_03c0_w(offs_t offset, uint8_t data)
 {
 	switch(offset)
 	{
@@ -981,7 +979,7 @@ WRITE8_MEMBER(cirrus_gd5428_device::port_03c0_w)
 			break;
 		case 0x09:
 			if(!m_ext_palette_enabled)
-				vga_device::port_03c0_w(space,offset,data,mem_mask);
+				vga_device::port_03c0_w(offset,data);
 			else
 			{
 				if (!vga.dac.read)
@@ -1010,15 +1008,15 @@ WRITE8_MEMBER(cirrus_gd5428_device::port_03c0_w)
 			cirrus_gc_reg_write(vga.gc.index,data);
 			break;
 		default:
-			vga_device::port_03c0_w(space,offset,data,mem_mask);
+			vga_device::port_03c0_w(offset,data);
 			break;
 	}
 	cirrus_define_video_mode();
 }
 
-READ8_MEMBER(cirrus_gd5428_device::port_03b0_r)
+uint8_t cirrus_gd5428_device::port_03b0_r(offs_t offset)
 {
-	UINT8 res = 0xff;
+	uint8_t res = 0xff;
 
 	if (CRTC_PORT_ADDR == 0x3b0)
 	{
@@ -1028,7 +1026,7 @@ READ8_MEMBER(cirrus_gd5428_device::port_03b0_r)
 				res = cirrus_crtc_reg_read(vga.crtc.index);
 				break;
 			default:
-				res = vga_device::port_03b0_r(space,offset,mem_mask);
+				res = vga_device::port_03b0_r(offset);
 				break;
 		}
 	}
@@ -1036,9 +1034,9 @@ READ8_MEMBER(cirrus_gd5428_device::port_03b0_r)
 	return res;
 }
 
-READ8_MEMBER(cirrus_gd5428_device::port_03d0_r)
+uint8_t cirrus_gd5428_device::port_03d0_r(offs_t offset)
 {
-	UINT8 res = 0xff;
+	uint8_t res = 0xff;
 
 	if (CRTC_PORT_ADDR == 0x3d0)
 	{
@@ -1048,7 +1046,7 @@ READ8_MEMBER(cirrus_gd5428_device::port_03d0_r)
 				res = cirrus_crtc_reg_read(vga.crtc.index);
 				break;
 			default:
-				res = vga_device::port_03d0_r(space,offset,mem_mask);
+				res = vga_device::port_03d0_r(offset);
 				break;
 		}
 	}
@@ -1056,7 +1054,7 @@ READ8_MEMBER(cirrus_gd5428_device::port_03d0_r)
 	return res;
 }
 
-WRITE8_MEMBER(cirrus_gd5428_device::port_03b0_w)
+void cirrus_gd5428_device::port_03b0_w(offs_t offset, uint8_t data)
 {
 	if (CRTC_PORT_ADDR == 0x3b0)
 	{
@@ -1067,14 +1065,14 @@ WRITE8_MEMBER(cirrus_gd5428_device::port_03b0_w)
 				cirrus_crtc_reg_write(vga.crtc.index,data);
 				break;
 			default:
-				vga_device::port_03b0_w(space,offset,data,mem_mask);
+				vga_device::port_03b0_w(offset,data);
 				break;
 		}
 	}
 	cirrus_define_video_mode();
 }
 
-WRITE8_MEMBER(cirrus_gd5428_device::port_03d0_w)
+void cirrus_gd5428_device::port_03d0_w(offs_t offset, uint8_t data)
 {
 	if (CRTC_PORT_ADDR == 0x3d0)
 	{
@@ -1085,16 +1083,16 @@ WRITE8_MEMBER(cirrus_gd5428_device::port_03d0_w)
 				cirrus_crtc_reg_write(vga.crtc.index,data);
 				break;
 			default:
-				vga_device::port_03d0_w(space,offset,data,mem_mask);
+				vga_device::port_03d0_w(offset,data);
 				break;
 		}
 	}
 	cirrus_define_video_mode();
 }
 
-UINT8 cirrus_gd5428_device::cirrus_crtc_reg_read(UINT8 index)
+uint8_t cirrus_gd5428_device::cirrus_crtc_reg_read(uint8_t index)
 {
-	UINT8 res = 0xff;
+	uint8_t res;
 
 	switch(index)
 	{
@@ -1121,7 +1119,7 @@ UINT8 cirrus_gd5428_device::cirrus_crtc_reg_read(UINT8 index)
 	return res;
 }
 
-void cirrus_gd5428_device::cirrus_crtc_reg_write(UINT8 index, UINT8 data)
+void cirrus_gd5428_device::cirrus_crtc_reg_write(uint8_t index, uint8_t data)
 {
 	if(LOG_REG) logerror("CL: CRTC write %02x to CR%02x\n",data,index);
 	switch(index)
@@ -1159,10 +1157,10 @@ void cirrus_gd5428_device::cirrus_crtc_reg_write(UINT8 index, UINT8 data)
 
 }
 
-inline UINT8 cirrus_gd5428_device::cirrus_vga_latch_write(int offs, UINT8 data)
+inline uint8_t cirrus_gd5428_device::cirrus_vga_latch_write(int offs, uint8_t data)
 {
-	UINT8 res = 0;
-	UINT8 mode_mask = (gc_mode_ext & 0x04) ? 0x07 : 0x03;
+	uint8_t res = 0;
+	uint8_t mode_mask = (gc_mode_ext & 0x04) ? 0x07 : 0x03;
 
 	switch (vga.gc.write_mode & mode_mask) {
 	case 0:
@@ -1195,14 +1193,14 @@ inline UINT8 cirrus_gd5428_device::cirrus_vga_latch_write(int offs, UINT8 data)
 	return res;
 }
 
-READ8_MEMBER(cirrus_gd5428_device::mem_r)
+uint8_t cirrus_gd5428_device::mem_r(offs_t offset)
 {
-	UINT32 addr;
-	UINT8 bank;
-	UINT8 cur_mode = pc_vga_choosevideomode();
+	uint32_t addr;
+	uint8_t bank;
+	uint8_t cur_mode = pc_vga_choosevideomode();
 
 	if(gc_locked || offset >= 0x10000 || cur_mode == TEXT_MODE || cur_mode == SCREEN_OFF)
-		return vga_device::mem_r(space,offset,mem_mask);
+		return vga_device::mem_r(offset);
 
 	if(offset >= 0x8000 && offset < 0x10000 && (gc_mode_ext & 0x01)) // if accessing bank 1 (if enabled)
 		bank = gc_bank_1;
@@ -1220,7 +1218,7 @@ READ8_MEMBER(cirrus_gd5428_device::mem_r)
 
 	if(svga.rgb8_en || svga.rgb15_en || svga.rgb16_en || svga.rgb24_en)
 	{
-		UINT8 data = 0;
+		uint8_t data = 0;
 		if(gc_mode_ext & 0x01)
 		{
 			if(offset & 0x10000)
@@ -1264,7 +1262,7 @@ READ8_MEMBER(cirrus_gd5428_device::mem_r)
 	if(vga.sequencer.data[4] & 4)
 	{
 		int data;
-		if (!space.debugger_access())
+		if (!machine().side_effects_disabled())
 		{
 			vga.gc.latch[0]=vga.memory[(offset+addr) % vga.svga_intf.vram_size];
 			vga.gc.latch[1]=vga.memory[((offset+addr)+0x10000) % vga.svga_intf.vram_size];
@@ -1274,8 +1272,8 @@ READ8_MEMBER(cirrus_gd5428_device::mem_r)
 
 		if (vga.gc.read_mode)
 		{
-			UINT8 byte,layer;
-			UINT8 fill_latch;
+			uint8_t byte,layer;
+			uint8_t fill_latch;
 			data=0;
 
 			for(byte=0;byte<8;byte++)
@@ -1299,8 +1297,8 @@ READ8_MEMBER(cirrus_gd5428_device::mem_r)
 	else
 	{
 		// TODO: Lines up in 16-colour mode, likely different for 256-colour modes (docs say video addresses are shifted right 3 places)
-		UINT8 i,data;
-//      UINT8 bits = ((gc_mode_ext & 0x08) && (vga.gc.write_mode == 1)) ? 8 : 4;
+		uint8_t i,data;
+//      uint8_t bits = ((gc_mode_ext & 0x08) && (vga.gc.write_mode == 1)) ? 8 : 4;
 
 		data = 0;
 		//printf("%08x\n",offset);
@@ -1326,11 +1324,11 @@ READ8_MEMBER(cirrus_gd5428_device::mem_r)
 	}
 }
 
-WRITE8_MEMBER(cirrus_gd5428_device::mem_w)
+void cirrus_gd5428_device::mem_w(offs_t offset, uint8_t data)
 {
-	UINT32 addr;
-	UINT8 bank;
-	UINT8 cur_mode = pc_vga_choosevideomode();
+	uint32_t addr;
+	uint8_t bank;
+	uint8_t cur_mode = pc_vga_choosevideomode();
 
 	if(m_blt_system_transfer)
 	{
@@ -1357,7 +1355,7 @@ WRITE8_MEMBER(cirrus_gd5428_device::mem_w)
 
 	if(gc_locked || offset >= 0x10000 || cur_mode == TEXT_MODE || cur_mode == SCREEN_OFF)
 	{
-		vga_device::mem_w(space,offset,data,mem_mask);
+		vga_device::mem_w(offset,data);
 		return;
 	}
 
@@ -1490,8 +1488,8 @@ WRITE8_MEMBER(cirrus_gd5428_device::mem_w)
 
 		{
 		// TODO: Lines up in 16-colour mode, likely different for 256-colour modes (docs say video addresses are shifted right 3 places)
-			UINT8 i;
-//          UINT8 bits = ((gc_mode_ext & 0x08) && (vga.gc.write_mode == 1)) ? 8 : 4;
+			uint8_t i;
+//          uint8_t bits = ((gc_mode_ext & 0x08) && (vga.gc.write_mode == 1)) ? 8 : 4;
 
 			for(i=0;i<4;i++)
 			{

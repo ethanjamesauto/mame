@@ -2,7 +2,7 @@
 // copyright-holders:Aaron Giles
 /*********************************************************************
 
-    debughlp.c
+    debughlp.cpp
 
     Debugger help engine.
 
@@ -10,7 +10,8 @@
 
 #include "emu.h"
 #include "debughlp.h"
-#include <ctype.h>
+#include "corestr.h"
+#include <cctype>
 
 
 
@@ -78,25 +79,29 @@ static const help_item static_help_list[] =
 		"Type help <command> for further details on each command\n"
 		"\n"
 		"  help [<topic>] -- get help on a particular topic\n"
+		"  helpcustom -- get help on any custom commands registered by devices\n"
 		"  do <expression> -- evaluates the given expression\n"
-		"  symlist [<cpu>] -- lists registered symbols\n"
+		"  symlist [<CPU>] -- lists registered symbols\n"
 		"  softreset -- executes a soft reset\n"
 		"  hardreset -- executes a hard reset\n"
 		"  print <item>[,...] -- prints one or more <item>s to the console\n"
 		"  printf <format>[,<item>[,...]] -- prints one or more <item>s to the console using <format>\n"
 		"  logerror <format>[,<item>[,...]] -- outputs one or more <item>s to the error.log\n"
 		"  tracelog <format>[,<item>[,...]] -- outputs one or more <item>s to the trace file using <format>\n"
-		"  history [<cpu>,<length>] -- outputs a brief history of visited opcodes\n"
-		"  trackpc [<bool>,<cpu>,<bool>] -- visually track visited opcodes [boolean to turn on and off, for the given cpu, clear]\n"
+		"  tracesym <item>[,...]] -- outputs one or more <item>s to the trace file\n"
+		"  history [<CPU>,<length>] -- outputs a brief history of visited opcodes\n"
+		"  trackpc [<bool>,<CPU>,<bool>] -- visually track visited opcodes [boolean to turn on and off, for the given CPU, clear]\n"
 		"  trackmem [<bool>,<bool>] -- record which PC writes to each memory address [boolean to turn on and off, clear]\n"
-		"  pcatmemp <address>[,<cpu>] -- query which PC wrote to a given program memory address for the current CPU\n"
-		"  pcatmemd <address>[,<cpu>] -- query which PC wrote to a given data memory address for the current CPU\n"
-		"  pcatmemi <address>[,<cpu>] -- query which PC wrote to a given I/O memory address for the current CPU\n"
+		"  pcatmemp <address>[,<CPU>] -- query which PC wrote to a given program memory address for the current CPU\n"
+		"  pcatmemd <address>[,<CPU>] -- query which PC wrote to a given data memory address for the current CPU\n"
+		"  pcatmemi <address>[,<CPU>] -- query which PC wrote to a given I/O memory address for the current CPU\n"
 		"                                (Note: you can also query this info by right clicking in a memory window\n"
+		"  rewind[rw] -- go back in time by loading the most recent rewind state"
 		"  statesave[ss] <filename> -- save a state file for the current driver\n"
 		"  stateload[sl] <filename> -- load a state file for the current driver\n"
 		"  snap [<filename>] -- save a screen snapshot.\n"
 		"  source <filename> -- reads commands from <filename> and executes them one by one\n"
+		"  cls -- clears the console text buffer\n"
 		"  quit -- exits MAME and the debugger\n"
 	},
 	{
@@ -105,19 +110,29 @@ static const help_item static_help_list[] =
 		"Memory Commands\n"
 		"Type help <command> for further details on each command\n"
 		"\n"
-		"  dasm <filename>,<address>,<length>[,<opcodes>[,<cpu>]] -- disassemble to the given file\n"
+		"  dasm <filename>,<address>,<length>[,<opcodes>[,<CPU>]] -- disassemble to the given file\n"
 		"  f[ind] <address>,<length>[,<data>[,...]] -- search program memory for data\n"
 		"  f[ind]d <address>,<length>[,<data>[,...]] -- search data memory for data\n"
 		"  f[ind]i <address>,<length>[,<data>[,...]] -- search I/O memory for data\n"
-		"  dump <filename>,<address>,<length>[,<size>[,<ascii>[,<cpu>]]] -- dump program memory as text\n"
-		"  dumpd <filename>,<address>,<length>[,<size>[,<ascii>[,<cpu>]]] -- dump data memory as text\n"
-		"  dumpi <filename>,<address>,<length>[,<size>[,<ascii>[,<cpu>]]] -- dump I/O memory as text\n"
-		"  save <filename>,<address>,<length>[,<cpu>] -- save binary program memory to the given file\n"
-		"  saved <filename>,<address>,<length>[,<cpu>] -- save binary data memory to the given file\n"
-		"  savei <filename>,<address>,<length>[,<cpu>] -- save binary I/O memory to the given file\n"
-		"  load <filename>,<address>,<length>[,<cpu>] -- load binary program memory from the given file\n"
-		"  loadd <filename>,<address>,<length>[,<cpu>] -- load binary data memory from the given file\n"
-		"  loadi <filename>,<address>,<length>[,<cpu>] -- load binary I/O memory from the given file\n"
+		"  fill <address>,<length>[,<data>[,...]] -- fill program memory with data\n"
+		"  filld <address>,<length>[,<data>[,...]] -- fill data memory with data\n"
+		"  filli <address>,<length>[,<data>[,...][ -- fill I/O memory with data\n"
+		"  dump <filename>,<address>,<length>[,<size>[,<ascii>[,<rowsize>[,<CPU>]]]] -- dump program memory as text\n"
+		"  dumpd <filename>,<address>,<length>[,<size>[,<ascii>[,<rowsize>[,<CPU>]]]] -- dump data memory as text\n"
+		"  dumpi <filename>,<address>,<length>[,<size>[,<ascii>[,<rowsize>[,<CPU>]]]] -- dump I/O memory as text\n"
+		"  dumpo <filename>,<address>,<length>[,<size>[,<ascii>[,<rowsize>[,<CPU>]]]] -- dump opcodes memory as text\n"
+		"  strdump <filename>,<address>,<length>[,<term>[,<CPU>]] -- dump ASCII strings from program memory\n"
+		"  strdumpd <filename>,<address>,<length>[,<term>[,<CPU>]] -- dump ASCII strings from data memory\n"
+		"  strdumpi <filename>,<address>,<length>[,<term>[,<CPU>]] -- dump ASCII strings from I/O memory\n"
+		"  strdumpo <filename>,<address>,<length>[,<term>[,<CPU>]] -- dump ASCII strings from opcodes memory\n"
+		"  save <filename>,<address>,<length>[,<CPU>] -- save binary program memory to the given file\n"
+		"  saved <filename>,<address>,<length>[,<CPU>] -- save binary data memory to the given file\n"
+		"  savei <filename>,<address>,<length>[,<CPU>] -- save binary I/O memory to the given file\n"
+		"  saver <filename>,<address>,<length>,<region> -- save binary memory region to the given file\n"
+		"  load <filename>,<address>[,<length>,<CPU>] -- load binary program memory from the given file\n"
+		"  loadd <filename>,<address>[,<length>,<CPU>] -- load binary data memory from the given file\n"
+		"  loadi <filename>,<address>[,<length>,<CPU>] -- load binary I/O memory from the given file\n"
+		"  loadr <filename>,<address>,<length>,<region> -- load binary memory region from the given file\n"
 		"  map <address> -- map logical program address to physical address and bank\n"
 		"  mapd <address> -- map logical data address to physical address and bank\n"
 		"  mapi <address> -- map logical I/O address to physical address and bank\n"
@@ -133,15 +148,19 @@ static const help_item static_help_list[] =
 		"  o[ver] [<count>=1] -- single steps over <count> instructions (F10)\n"
 		"  out -- single steps until the current subroutine/exception handler is exited (Shift-F11)\n"
 		"  g[o] [<address>] -- resumes execution, sets temp breakpoint at <address> (F5)\n"
+		"  ge[x] [<exception>[,<condition>]] -- resumes execution, setting temp breakpoint if <exception> is raised\n"
 		"  gi[nt] [<irqline>] -- resumes execution, setting temp breakpoint if <irqline> is taken (F7)\n"
 		"  gt[ime] <milliseconds> -- resumes execution until the given delay has elapsed\n"
 		"  gv[blank] -- resumes execution, setting temp breakpoint on the next VBLANK (F8)\n"
 		"  n[ext] -- executes until the next CPU switch (F6)\n"
-		"  focus <cpu> -- focuses debugger only on <cpu>\n"
-		"  ignore [<cpu>[,<cpu>[,...]]] -- stops debugging on <cpu>\n"
-		"  observe [<cpu>[,<cpu>[,...]]] -- resumes debugging on <cpu>\n"
-		"  trace {<filename>|OFF}[,<cpu>[,<action>]] -- trace the given CPU to a file (defaults to active CPU)\n"
-		"  traceover {<filename>|OFF}[,<cpu>[,<action>]] -- trace the given CPU to a file, but skip subroutines (defaults to active CPU)\n"
+		"  focus <CPU> -- focuses debugger only on <CPU>\n"
+		"  ignore [<CPU>[,<CPU>[,...]]] -- stops debugging on <CPU>\n"
+		"  observe [<CPU>[,<CPU>[,...]]] -- resumes debugging on <CPU>\n"
+		"  suspend [<CPU>[,<CPU>[,...]]] -- suspends execution on <CPU>\n"
+		"  resume [<CPU>[,<CPU>[,...]]] -- resumes execution on <CPU>\n"
+		"  cpulist -- list all CPUs\n"
+		"  trace {<filename>|OFF}[,<CPU>[,<detectloops>[,<action>]]] -- trace the given CPU to a file (defaults to active CPU)\n"
+		"  traceover {<filename>|OFF}[,<CPU>[,<detectloops>[,<action>]]] -- trace the given CPU to a file, but skip subroutines (defaults to active CPU)\n"
 		"  traceflush -- flushes all open trace files\n"
 	},
 	{
@@ -169,7 +188,7 @@ static const help_item static_help_list[] =
 		"  wpdisable [<wpnum>] -- disables a given watchpoint or all if no <wpnum> specified\n"
 		"  wpenable [<wpnum>] -- enables a given watchpoint or all if no <wpnum> specified\n"
 		"  wplist -- lists all the watchpoints\n"
-		"  hotspot [<cpu>,[<depth>[,<hits>]]] -- attempt to find hotspots\n"
+		"  hotspot [<CPU>,[<depth>[,<hits>]]] -- attempt to find hotspots\n"
 	},
 	{
 		"registerpoints",
@@ -207,15 +226,22 @@ static const help_item static_help_list[] =
 		"  = *= /= %= += -= <<= >>= &= |= ^= : assignment\n"
 		"  , : separate terms, function parameters\n"
 		"\n"
-		"These are the differences from C behaviors. First, All math is performed on full 64-bit unsigned "
-		"values, so things like a < 0 won't work as expected. Second, the logical operators && and || do "
-		"not have short-circuit properties -- both halves are always evaluated. Finally, the new memory "
-		"operators work like this: b@<addr> refers to the byte read from <addr>. Similarly, w@ refers to "
-		"a word in memory, d@ refers to a dword in memory, and q@ refers to a qword in memory. The memory "
-		"operators can be used as both lvalues and rvalues, so you can write b@100 = ff to store a byte "
-		"in memory. By default these operators read from the program memory space, but you can override "
-		"that by prefixing them with a 'd' or an 'i'. So dw@300 refers to data memory word at address "
-		"300 and id@400 refers to an I/O memory dword at address 400.\n"
+		"These are the differences from C behaviors:\n"
+		"\n"
+		"First, all math is performed on full 64-bit unsigned values, so things like a < 0 won't work "
+		"as expected.\n"
+		"Second, the logical operators && and || do not have short-circuit properties -- both halves are "
+		"always evaluated.\n"
+		"Finally, the new memory operators work like this:\n"
+		"b@<addr> refers to the byte at <addr> while suppressing side effects.\n"
+		"Similarly, w@ and w! refer to a word in memory, d@ and d! refer to a dword in memory, and "
+		"q@ and q! refer to a qword in memory.\n"
+		"The memory operators can be used as both lvalues and rvalues, so you can write b@100 = ff to "
+		"store a byte in memory. By default these operators read from the program memory space, but you "
+		"can override that by prefixing them with a 'd' or an 'i'.\n"
+		"As such, dw@300 refers to data memory word at address 300 and id@400 refers to an I/O memory "
+		"dword at address 400.\n"
+
 	},
 	{
 		"comments",
@@ -226,6 +252,8 @@ static const help_item static_help_list[] =
 		"  comadd[//] <address>,<comment> -- adds a comment to the disassembled code at given address\n"
 		"  comdelete <address> -- removes a comment from the given address\n"
 		"  comsave -- save the current comments to a file\n"
+		"  comlist -- print currently available comments from file\n"
+		"  commit[/*] <address>,<comment> -- gives a bulk comadd then comsave command\n"
 		"\n"
 	},
 	{
@@ -234,7 +262,7 @@ static const help_item static_help_list[] =
 		"Cheat Commands\n"
 		"Type help <command> for further details on each command\n"
 		"\n"
-		"  cheatinit [<address>,<length>[,<cpu>]] -- initialize the cheat search to the selected memory area\n"
+		"  cheatinit [<address>,<length>[,<CPU>]] -- initialize the cheat search to the selected memory area\n"
 		"  cheatrange <address>,<length> -- add to the cheat search the selected memory area\n"
 		"  cheatnext <condition>[,<comparisonvalue>] -- continue cheat search comparing with the last value\n"
 		"  cheatnextf <condition>[,<comparisonvalue>] -- continue cheat search comparing with the first value\n"
@@ -267,10 +295,10 @@ static const help_item static_help_list[] =
 	{
 		"symlist",
 		"\n"
-		"  symlist [<cpu>]\n"
+		"  symlist [<CPU>]\n"
 		"\n"
-		"Lists registered symbols. If <cpu> is not specified, then symbols in the global symbol table are "
-		"displayed; otherwise, the symbols for <cpu>'s specific CPU are displayed. Symbols are listed "
+		"Lists registered symbols. If <CPU> is not specified, then symbols in the global symbol table are "
+		"displayed; otherwise, the symbols for <CPU>'s specific CPU are displayed. Symbols are listed "
 		"alphabetically. Read-only symbols are flagged with an asterisk.\n"
 		"\n"
 		"Examples:\n"
@@ -383,31 +411,44 @@ static const help_item static_help_list[] =
 		"  Outputs A=<aval>, B=<bval> on one line, and C=<a+bval> on a second line.\n"
 	},
 	{
+		"tracesym",
+		"\n"
+		"  tracesym <item>[,...]\n"
+			"\n"
+			"The tracesym command prints the specified symbols and routes the output to the currently open trace "
+			"file (see the 'trace' command for details). If no file is currently open, tracesym does nothing. "
+			"\n"
+			"Examples:\n"
+			"\n"
+			"tracelog pc\n"
+			"  Outputs PC=<pcval> where <pcval> is displayed in the default format.\n"
+	},
+	{
 		"trackpc",
 		"\n"
-		"  trackpc [<bool>,<cpu>,<bool>]\n"
+		"  trackpc [<bool>,<CPU>,<bool>]\n"
 		"\n"
 		"The trackpc command displays which program counters have already been visited in all disassembler "
 		"windows. The first boolean argument toggles the process on and off.  The second argument is a "
-		"cpu selector; if no cpu is specified, the current cpu is automatically selected.  The third argument "
+		"CPU selector; if no CPU is specified, the current CPU is automatically selected.  The third argument "
 		"is a boolean denoting if the existing data should be cleared or not.\n"
 		"\n"
 		"Examples:\n"
 		"\n"
 		"trackpc 1\n"
-		"  Begin tracking the current cpu's pc.\n"
+		"  Begin tracking the current CPU's pc.\n"
 		"\n"
 		"trackpc 1, 0, 1\n"
-		"  Continue tracking pc on cpu 0, but clear existing track info.\n"
+		"  Continue tracking pc on CPU 0, but clear existing track info.\n"
 	},
 	{
 		"trackmem",
 		"\n"
-		"  trackmem [<bool>,<cpu>,<bool>]\n"
+		"  trackmem [<bool>,<CPU>,<bool>]\n"
 		"\n"
 		"The trackmem command logs the PC at each time a memory address is written to.  "
-		"The first boolean argument toggles the process on and off.  The second argument is a cpu "
-		"selector; if no cpu is specified, the current cpu is automatically selected. The third argument "
+		"The first boolean argument toggles the process on and off.  The second argument is a CPU "
+		"selector; if no CPU is specified, the current CPU is automatically selected. The third argument "
 		" is a boolean denoting if the existing data should be cleared or not.  Please refer to the "
 		"pcatmem command for information on how to retrieve this data.  Also, right clicking in "
 		"a memory window will display the logged PC for the given address.\n"
@@ -418,22 +459,35 @@ static const help_item static_help_list[] =
 		"  Begin tracking the current CPU's pc.\n"
 		"\n"
 		"trackmem 1, 0, 1\n"
-		"  Continue tracking memory writes on cpu 0, but clear existing track info.\n"
+		"  Continue tracking memory writes on CPU 0, but clear existing track info.\n"
 	},
 	{
 		"pcatmem",
 		"\n"
-		"  pcatmem(p/d/i) <address>[,<cpu>]\n"
+		"  pcatmem(p/d/i) <address>[,<CPU>]\n"
 		"\n"
 		"The pcatmem command returns which PC wrote to a given memory address for the current CPU. "
-		"The first argument is the requested address.  The second argument is a cpu selector; if no "
-		"cpu is specified, the current cpu is automatically selected.  Right clicking in a memory window "
+		"The first argument is the requested address.  The second argument is a CPU selector; if no "
+		"CPU is specified, the current CPU is automatically selected.  Right clicking in a memory window "
 		"will also display the logged PC for the given address.\n"
 		"\n"
 		"Examples:\n"
 		"\n"
 		"pcatmem 400000\n"
 		"  Print which PC wrote this CPU's memory location 0x400000.\n"
+	},
+	{
+		"rewind[rw]",
+		"\n"
+		"  rewind[rw]"
+		"\n"
+		"The rewind command loads the most recent RAM-based state.  Rewind states, when enabled, are "
+		"saved when \"step\", \"over\", or \"out\" command gets executed, storing the machine state as "
+		"of the moment before actually stepping.  Consecutively loading rewind states can work like "
+		"reverse execution.  Depending on which steps forward were taken previously, the behavior can "
+		"be similar to GDB's \"reverse-stepi\" or \"reverse-next\".  All output for this command is "
+		"currently echoed into the running machine window.  Previous memory and PC tracking statistics "
+		"are cleared, actual reverse execution does not occur.\n"
 	},
 	{
 		"statesave[ss]",
@@ -453,7 +507,7 @@ static const help_item static_help_list[] =
 	{
 		"stateload[sl]",
 		"\n"
-		"  stateload[ss] <filename>\n"
+		"  stateload[sl] <filename>\n"
 		"\n"
 		"The stateload command retrieves a save state from disk. "
 		"The given state file gets read from the standard state directory (sta), and gets .sta to it - "
@@ -508,14 +562,14 @@ static const help_item static_help_list[] =
 	{
 		"dasm",
 		"\n"
-		"  dasm <filename>,<address>,<length>[,<opcodes>[,<cpu>]]\n"
+		"  dasm <filename>,<address>,<length>[,<opcodes>[,<CPU>]]\n"
 		"\n"
 		"The dasm command disassembles program memory to the file specified in the <filename> parameter. "
 		"<address> indicates the address of the start of disassembly, and <length> indicates how much "
 		"memory to disassemble. The range <address> through <address>+<length>-1 inclusive will be "
 		"output to the file. By default, the raw opcode data is output with each line. The optional "
 		"<opcodes> parameter can be used to enable (1) or disable(0) this feature. Finally, you can "
-		"disassemble code from another CPU by specifying the <cpu> parameter.\n"
+		"disassemble code from another CPU by specifying the <CPU> parameter.\n"
 		"\n"
 		"Examples:\n"
 		"\n"
@@ -560,20 +614,37 @@ static const help_item static_help_list[] =
 		"followed by the string \"BEN\", followed by a word-sized 0.\n"
 	},
 	{
+		"fill",
+		"\n"
+		"  fill[{d|i}] <address>,<length>[,<data>[,...]]\n"
+		"\n"
+		"The fill/filld/filli commands overwrite a block of memory with copies of the specified "
+		"sequence of data. 'fill' will fill program space memory, while 'filld' will fill data space "
+		"memory and 'filli' will fill I/O space memory. <address> indicates the address to begin "
+		"writing, and <length> indicates how much memory to fill. <data> can either be a quoted "
+		"string or a numeric value or expression. Non-string data is written by default in the "
+		"native word size of the CPU. To override the data size for non-strings, you can prefix "
+		"the value with b. to force byte-sized fill, w. for word-sized fill, d. for dword-sized, "
+		"and q. for qword-sized. Overrides are remembered, so if you want to fill with a series of "
+		"words, you need only to prefix the first value with a w. Note also that you can intermix "
+		"sizes in order to perform more complex fills. The fill operation may be truncated if a page "
+		"fault occurs or if part of the sequence or string would fall beyond <address>+<length>-1.\n"
+	},
+	{
 		"dump",
 		"\n"
-		"  dump[{d|i}] <filename>,<address>,<length>[,<size>[,<ascii>[,<cpu>]]]\n"
+		"  dump[{d|i}] <filename>,<address>,<length>[,<size>[,<ascii>[,<CPU>]]]\n"
 		"\n"
-		"The dump/dumpd/dumpi commands dump memory to the text file specified in the <filename> "
-		"parameter. 'dump' will dump program space memory, while 'dumpd' will dump data space memory "
-		"and 'dumpi' will dump I/O space memory. <address> indicates the address of the start of dumping, "
-		"and <length> indicates how much memory to dump. The range <address> through <address>+<length>-1 "
-		"inclusive will be output to the file. By default, the data will be output in byte format, unless "
-		"the underlying address space is word/dword/qword-only. You can override this by specifying the "
-		"<size> parameter, which can be used to group the data in 1, 2, 4 or 8-byte chunks. The optional "
-		"<ascii> parameter can be used to enable (1) or disable (0) the output of ASCII characters to the "
-		"right of each line; by default, this is enabled. Finally, you can dump memory from another CPU "
-		"by specifying the <cpu> parameter.\n"
+		"The dump/dumpd/dumpi/dumpo commands dump memory to the text file specified in the <filename> "
+		"parameter. 'dump' will dump program space memory, while 'dumpd' will dump data space memory, "
+		"'dumpi' will dump I/O space memory and 'dumpo' will dump opcodes memory. <address> indicates "
+		"the address of the start of dumping, and <length> indicates how much memory to dump. The range "
+		"<address> through <address>+<length>-1 inclusive will be output to the file. By default, the data "
+		"will be output in byte format, unless the underlying address space is word/dword/qword-only. "
+		"You can override this by specifying the <size> parameter, which can be used to group the data in "
+		"1, 2, 4 or 8-byte chunks. The optional <ascii> parameter can be used to enable (1) or disable (0) "
+		"the output of ASCII characters to the right of each line; by default, this is enabled. Finally, "
+		"you can dump memory from another CPU by specifying the <CPU> parameter.\n"
 		"\n"
 		"Examples:\n"
 		"\n"
@@ -586,16 +657,31 @@ static const help_item static_help_list[] =
 		"to the file 'harddriv.dmp'.\n"
 	},
 	{
+		"strdump",
+		"\n"
+		"  strdump[{d|i}] <filename>,<address>,<length>[,<term>[,<CPU>]]\n"
+		"\n"
+		"The strdump/strdumpd/strdumpi/strdumpo commands dump memory to the text file specified in the "
+		"<filename> parameter. 'strdump' will dump program space memory, while 'strdumpd' will dump data "
+		"space memory, 'strdumpi' will dump I/O space memory and 'strdumpo' will dump opcodes memory. "
+		"<address> indicates the address of the start of dumping, and <length> indicates how much memory "
+		"to dump. The range <address> through <address>+<length>-1 inclusive will be output to the file. "
+		"By default, the data will be interpreted as a series of null-terminated strings, and the dump "
+		"will have one string on each line and C-style escapes for non-ASCII characters. The optional "
+		"<term> parameter can be used to specify a different character as the string terminator. Finally, "
+		"you can dump memory from another CPU by specifying the <CPU> parameter.\n"
+	},
+	{
 		"save",
 		"\n"
-		"  save[{d|i}] <filename>,<address>,<length>[,<cpu>]\n"
+		"  save[{d|i}] <filename>,<address>,<length>[,<CPU>]\n"
 		"\n"
 		"The save/saved/savei commands save raw memory to the binary file specified in the <filename> "
 		"parameter. 'save' will save program space memory, while 'saved' will save data space memory "
 		"and 'savei' will save I/O space memory. <address> indicates the address of the start of saving, "
 		"and <length> indicates how much memory to save. The range <address> through <address>+<length>-1 "
 		"inclusive will be output to the file. You can also save memory from another CPU by specifying the "
-		"<cpu> parameter.\n"
+		"<CPU> parameter.\n"
 		"\n"
 		"Examples:\n"
 		"\n"
@@ -606,17 +692,32 @@ static const help_item static_help_list[] =
 		"  Saves data memory addresses 3000-3fff from CPU #3 to the binary file 'harddriv.bin'.\n"
 	},
 	{
+		"saver",
+		"\n"
+		"  saver <filename>,<address>,<length>,<region>\n"
+		"\n"
+		"The saver command saves the raw content of memory region <region> to the binary file specified in the "
+		"<filename> parameter. <address> indicates the address of the start of saving, and <length> indicates "
+		"how much memory to save. The range <address> through <address>+<length>-1 inclusive will be output to "
+		"the file.\n"
+		"\n"
+		"Example:\n"
+		"\n"
+		"saver harddriv.bin,80000,40000,:maincpu\n"
+		"  Saves :maincpu region addresses 80000-bffff to the binary file 'harddriv.bin'.\n"
+	},
+	{
 		"load",
 		"\n"
-		"  load[{d|i}] <filename>,<address>,<length>[,<cpu>]\n"
+		"  load[{d|i}] <filename>,<address>[,<length>,<CPU>]\n"
 		"\n"
 		"The load/loadd/loadi commands load raw memory from the binary file specified in the <filename> "
 		"parameter. 'load' will load program space memory, while 'loadd' will load data space memory "
-		"and 'loadi' will load I/O space memory. <address> indicates the address of the start of saving, "
+		"and 'loadi' will load I/O space memory. <address> indicates the address of the start of loading, "
 		"and <length> indicates how much memory to load. The range <address> through <address>+<length>-1 "
 		"inclusive will be read in from the file. If you specify <length> = 0 or a length greater than the "
 		"total length of the file it will load the entire contents of the file and no more. You can also load "
-		"memory from another CPU by specifying the <cpu> parameter.\n"
+		"memory from another CPU by specifying the <CPU> parameter.\n"
 		"NOTE: This will only actually write memory that is possible to overwrite in the Memory Window\n"
 		"\n"
 		"Examples:\n"
@@ -626,6 +727,22 @@ static const help_item static_help_list[] =
 		"\n"
 		"loadd harddriv.bin,3000,1000,3\n"
 		"  Loads data memory addresses 3000-3fff from CPU #3 from the binary file 'harddriv.bin'.\n"
+	},
+	{
+		"loadr",
+		"\n"
+		"  loadr <filename>,<address>,<length>,<region>\n"
+		"\n"
+		"The loadr command loads raw memory in the memory region <region> from the binary file specified "
+		"in the <filename> parameter. <address> indicates the address of the start of loading, and <length> "
+		"indicates how much memory to load. The range <address> through <address>+<length>-1 inclusive will "
+		"be read in from the file. If you specify <length> = 0 or a length greater than the total length of "
+		"the file it will load the entire contents of the file and no more.\n"
+		"\n"
+		"Example:\n"
+		"\n"
+		"loadr harddriv.bin,80000,40000,:maincpu\n"
+		"  Loads addresses 80000-bffff in the :maincpu region from the binary file 'harddriv.bin'.\n"
 	},
 	{
 		"step",
@@ -763,9 +880,9 @@ static const help_item static_help_list[] =
 	{
 		"focus",
 		"\n"
-		"  focus <cpu>\n"
+		"  focus <CPU>\n"
 		"\n"
-		"Sets the debugger focus exclusively to the given <cpu>. This is equivalent to specifying "
+		"Sets the debugger focus exclusively to the given <CPU>. This is equivalent to specifying "
 		"'ignore' on all other CPUs.\n"
 		"\n"
 		"Examples:\n"
@@ -776,11 +893,11 @@ static const help_item static_help_list[] =
 	{
 		"ignore",
 		"\n"
-		"  ignore [<cpu>[,<cpu>[,...]]]\n"
+		"  ignore [<CPU>[,<CPU>[,...]]]\n"
 		"\n"
-		"Ignores the specified <cpu> in the debugger. This means that you won't ever see execution "
+		"Ignores the specified <CPU> in the debugger. This means that you won't ever see execution "
 		"on that CPU, nor will you be able to set breakpoints on that CPU. To undo this change use "
-		"the 'observe' command. You can specify multiple <cpu>s in a single command. Note also that "
+		"the 'observe' command. You can specify multiple <CPU>s in a single command. Note also that "
 		"you are not permitted to ignore all CPUs; at least one must be active at all times.\n"
 		"\n"
 		"Examples:\n"
@@ -797,10 +914,10 @@ static const help_item static_help_list[] =
 	{
 		"observe",
 		"\n"
-		"  observe [<cpu>[,<cpu>[,...]]]\n"
+		"  observe [<CPU>[,<CPU>[,...]]]\n"
 		"\n"
-		"Re-enables interaction with the specified <cpu> in the debugger. This command undoes the "
-		"effects of the 'ignore' command. You can specify multiple <cpu>s in a single command.\n"
+		"Re-enables interaction with the specified <CPU> in the debugger. This command undoes the "
+		"effects of the 'ignore' command. You can specify multiple <CPU>s in a single command.\n"
 		"\n"
 		"Examples:\n"
 		"\n"
@@ -816,11 +933,15 @@ static const help_item static_help_list[] =
 	{
 		"trace",
 		"\n"
-		"  trace {<filename>|OFF}[,<cpu>[,<action>]]\n"
+		"  trace {<filename>|OFF}[,<CPU>[,[noloop|logerror][,<action>]]]\n"
 		"\n"
-		"Starts or stops tracing of the execution of the specified <cpu>. If <cpu> is omitted, "
+		"Starts or stops tracing of the execution of the specified <CPU>. If <CPU> is omitted, "
 		"the currently active CPU is specified. When enabling tracing, specify the filename in the "
-		"<filename> parameter. To disable tracing, substitute the keyword 'off' for <filename>. If you "
+		"<filename> parameter. To disable tracing, substitute the keyword 'off' for <filename>. "
+		"<detectloops> should be either true or false. If 'noloop' is omitted, the trace "
+		"will have loops detected and condensed to a single line. If 'noloop' is specified, the trace "
+		"will contain every opcode as it is executed. If 'logerror' is specified, logerror output "
+		"will augment the trace.  If you "
 		"wish to log additional information on each trace, you can append an <action> parameter which "
 		"is a command that is executed before each trace is logged. Generally, this is used to include "
 		"a 'tracelog' command. Note that you may need to embed the action within braces { } in order "
@@ -829,11 +950,20 @@ static const help_item static_help_list[] =
 		"\n"
 		"Examples:\n"
 		"\n"
+		"trace joust.tr\n"
+		"  Begin tracing the currently active CPU, logging output to joust.tr.\n"
+		"\n"
 		"trace dribling.tr,0\n"
 		"  Begin tracing the execution of CPU #0, logging output to dribling.tr.\n"
 		"\n"
-		"trace joust.tr\n"
-		"  Begin tracing the currently active CPU, logging output to joust.tr.\n"
+		"trace starswep.tr,0,noloop\n"
+		"  Begin tracing the execution of CPU #0, logging output to starswep.tr, with loop detection disabled.\n"
+		"\n"
+		"trace starswep.tr,0,logerror\n"
+		"  Begin tracing the execution of CPU #0, logging output (along with logerror output) to starswep.tr.\n"
+		"\n"
+		"trace starswep.tr,0,logerror|noloop\n"
+		"  Begin tracing the execution of CPU #0, logging output (along with logerror output) to starswep.tr, with loop detection disabled.\n"
 		"\n"
 		"trace >>pigskin.tr\n"
 		"  Begin tracing the currently active CPU, appending log output to pigskin.tr.\n"
@@ -841,39 +971,44 @@ static const help_item static_help_list[] =
 		"trace off,0\n"
 		"  Turn off tracing on CPU #0.\n"
 		"\n"
-		"trace asteroid.tr,0,{tracelog \"A=%02X \",a}\n"
+		"trace asteroid.tr,0,,{tracelog \"A=%02X \",a}\n"
 		"  Begin tracing the execution of CPU #0, logging output to asteroid.tr. Before each line, "
 		"output A=<aval> to the tracelog.\n"
 	},
 	{
 		"traceover",
 		"\n"
-		"  traceover {<filename>|OFF}[,<cpu>[,<action>]]\n"
+		"  traceover {<filename>|OFF}[,<CPU>[,<detectloops>[,<action>]]]\n"
 		"\n"
-		"Starts or stops tracing of the execution of the specified <cpu>. When tracing reaches "
+		"Starts or stops tracing of the execution of the specified <CPU>. When tracing reaches "
 		"a subroutine or call, tracing will skip over the subroutine. The same algorithm is used as is "
 		"used in the step over command. This means that traceover will not work properly when calls "
 		"are recusive or the return address is not immediately following the call instruction. If "
-		"<cpu> is omitted, the currently active CPU is specified. When enabling tracing, specify the "
-		"filename in the <filename> parameter. To disable tracing, substitute the keyword 'off' for "
-		"<filename>. If you wish to log additional information on each trace, you can append an <action> "
-		"parameter which is a command that is executed before each trace is logged. Generally, this is "
-		"used to include a 'tracelog' command. Note that you may need to embed the action within braces "
-		"{ } in order to prevent commas and semicolons from being interpreted as applying to the trace "
-		"command itself.\n"
+		"<detectloops> should be either true or false. If <detectloops> is true or omitted, the trace "
+		"will have loops detected and condensed to a single line. If it is false, the trace will contain "
+		"every opcode as it is executed. If <CPU> is omitted, the currently active CPU is specified. When "
+		"enabling tracing, specify the filename in the <filename> parameter. To disable tracing, substitute "
+		"the keyword 'off' for <filename>. If you wish to log additional information on each trace, you can "
+		"append an <action> parameter which is a command that is executed before each trace is logged. "
+		"Generally, this is used to include a 'tracelog' command. Note that you may need to embed the "
+		"action within braces { } in order to prevent commas and semicolons from being interpreted as "
+		"applying to the trace command itself.\n"
 		"\n"
 		"Examples:\n"
-		"\n"
-		"traceover dribling.tr,0\n"
-		"  Begin tracing the execution of CPU #0, logging output to dribling.tr.\n"
 		"\n"
 		"traceover joust.tr\n"
 		"  Begin tracing the currently active CPU, logging output to joust.tr.\n"
 		"\n"
+		"traceover dribling.tr,0\n"
+		"  Begin tracing the execution of CPU #0, logging output to dribling.tr.\n"
+		"\n"
+		"traceover starswep.tr,0,false\n"
+		"  Begin tracing the execution of CPU #0, logging output to starswep.tr, with loop detection disabled.\n"
+		"\n"
 		"traceover off,0\n"
 		"  Turn off tracing on CPU #0.\n"
 		"\n"
-		"traceover asteroid.tr,0,{tracelog \"A=%02X \",a}\n"
+		"traceover asteroid.tr,0,true,{tracelog \"A=%02X \",a}\n"
 		"  Begin tracing the execution of CPU #0, logging output to asteroid.tr. Before each line, "
 		"output A=<aval> to the tracelog.\n"
 	},
@@ -1082,10 +1217,10 @@ static const help_item static_help_list[] =
 	{
 		"hotspot",
 		"\n"
-		"  hotspot [<cpu>,[<depth>[,<hits>]]]\n"
+		"  hotspot [<CPU>,[<depth>[,<hits>]]]\n"
 		"\n"
 		"The hotspot command attempts to help locate hotspots in the code where speedup opportunities "
-		"might be present. <cpu>, which defaults to the currently active CPU, specified which "
+		"might be present. <CPU>, which defaults to the currently active CPU, specified which "
 		"processor's memory to track. <depth>, which defaults to 64, controls the depth of the search "
 		"buffer. The search buffer tracks the last <depth> memory reads from unique PCs. The <hits> "
 		"parameter, which defaults to 250, specifies the minimum number of hits to report.\n"
@@ -1223,6 +1358,18 @@ static const help_item static_help_list[] =
 		"  Dumps memory to memdump.log.\n"
 	},
 	{
+		"comlist",
+		"\n"
+		"  comlist\n"
+		"\n"
+		"Prints the currently available comment file in human readable form in debugger output window."
+		"\n"
+		"Examples:\n"
+		"\n"
+		"comlist\n"
+		"  Shows currently available comments.\n"
+	},
+	{
 		"comadd",
 		"\n"
 		"  comadd[//] <address>,<comment>\n"
@@ -1236,6 +1383,23 @@ static const help_item static_help_list[] =
 		"  Adds the comment 'hello world.' to the code at address 0x0\n"
 		"\n"
 		"// 10, undocumented opcode!\n"
+		"  Adds the comment 'undocumented opcode!' to the code at address 0x10\n"
+		"\n"
+	},
+	{
+		"commit",
+		"\n"
+		"  commit[/*] <address>,<comment>\n"
+		"\n"
+		"Adds a string <comment> to the disassembled code at <address> then saves to file. Basically same as comadd + comsave via a single line.\n"
+		"The shortcut for this command is simply '/*'\n"
+		"\n"
+		"Examples:\n"
+		"\n"
+		"commit 0, hello world.\n"
+		"  Adds the comment 'hello world.' to the code at address 0x0\n"
+		"\n"
+		"/* 10, undocumented opcode!\n"
 		"  Adds the comment 'undocumented opcode!' to the code at address 0x10\n"
 		"\n"
 	},
@@ -1269,10 +1433,10 @@ static const help_item static_help_list[] =
 	{
 		"cheatinit",
 		"\n"
-		"  cheatinit [<sign><width><swap>,[<address>,<length>[,<cpu>]]]\n"
+		"  cheatinit [<sign><width><swap>,[<address>,<length>[,<CPU>]]]\n"
 		"\n"
 		"The cheatinit command initializes the cheat search to the selected memory area.\n"
-		"If no parameter is specified the cheat search is initialized to all changeable memory of the main cpu.\n"
+		"If no parameter is specified the cheat search is initialized to all changeable memory of the main CPU.\n"
 		"<sign> can be s(signed) or u(unsigned)\n"
 		"<width> can be b(8 bit), w(16 bit), d(32 bit) or q(64 bit)\n"
 		"<swap> append s for swapped search\n"
@@ -1444,7 +1608,7 @@ static const help_item static_help_list[] =
 		"Examples:\n"
 		"\n"
 		"mount cart,aladdin\n"
-		"  Mounts softlist item alladin on cart device.\n"
+		"  Mounts softlist item aladdin on cart device.\n"
 	},
 	{
 		"unmount",
@@ -1471,16 +1635,11 @@ const char *debug_get_help(const char *tag)
 	static char ambig_message[1024];
 	const help_item *found = nullptr;
 	int i, msglen, foundcount = 0;
-	int taglen = (int)strlen(tag);
-	char tagcopy[256];
-
-	/* make a lowercase copy of the tag */
-	for (i = 0; i <= taglen; i++)
-		tagcopy[i] = tolower((UINT8)tag[i]);
+	size_t taglen = strlen(tag);
 
 	/* find a match */
-	for (i = 0; i < ARRAY_LENGTH(static_help_list); i++)
-		if (!strncmp(static_help_list[i].tag, tagcopy, taglen))
+	for (i = 0; i < std::size(static_help_list); i++)
+		if (!core_strnicmp(static_help_list[i].tag, tag, taglen))
 		{
 			foundcount++;
 			found = &static_help_list[i];
@@ -1501,8 +1660,8 @@ const char *debug_get_help(const char *tag)
 
 	/* otherwise, indicate ambiguous help */
 	msglen = sprintf(ambig_message, "Ambiguous help request, did you mean:\n");
-	for (i = 0; i < ARRAY_LENGTH(static_help_list); i++)
-		if (!strncmp(static_help_list[i].tag, tagcopy, taglen))
+	for (i = 0; i < std::size(static_help_list); i++)
+		if (!core_strnicmp(static_help_list[i].tag, tag, taglen))
 			msglen += sprintf(&ambig_message[msglen], "  help %s?\n", static_help_list[i].tag);
 	return ambig_message;
 }

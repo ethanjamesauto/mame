@@ -34,6 +34,16 @@ RAM switch
 - Basic will work with 8K or 16K.
 
 
+The monitor
+-----------
+From Basic, do CALL 28672 to enter the monitor - you get a * prompt. Commands:
+D nnnn  - display memory
+G nnnn  - goto an address
+M nnnn  - modify memory
+Type the command letter, then all 4 digits, no need to hit Enter.
+To exit back to Basic, do G 8894 (Basic has no prompt).
+
+
 Status of cart-based games
 --------------------------
 backgammon - works, needs offset of 0x120, bottom line is coming from 0x3E0, should be 0x380
@@ -69,20 +79,26 @@ ToDo:
 ******************************************************************************************************************/
 
 #include "emu.h"
+
 #include "cpu/m6800/m6800.h"
-#include "video/mc6847.h"
-#include "sound/speaker.h"
-#include "sound/wave.h"
-#include "machine/6821pia.h"
-#include "machine/wd_fdc.h"
-#include "imagedev/cassette.h"
 #include "formats/apf_apt.h"
+#include "imagedev/cassette.h"
+#include "imagedev/floppy.h"
+#include "machine/6821pia.h"
 #include "machine/ram.h"
+#include "machine/wd_fdc.h"
+#include "sound/spkrdev.h"
+#include "video/mc6847.h"
 
 #include "bus/apf/slot.h"
 #include "bus/apf/rom.h"
 
+#include "screen.h"
 #include "softlist.h"
+#include "speaker.h"
+
+
+namespace {
 
 class apf_state : public driver_device
 {
@@ -101,31 +117,39 @@ public:
 		, m_fdc(*this, "fdc")
 		, m_floppy0(*this, "fdc:0")
 		, m_floppy1(*this, "fdc:1")
-		, m_joy(*this, "joy")
-		, m_key(*this, "key")
+		, m_joy(*this, "joy.%u", 0)
+		, m_key(*this, "key.%u", 0)
 		, m_p_videoram(*this, "videoram")
 	{ }
 
-	DECLARE_READ8_MEMBER(videoram_r);
-	DECLARE_READ8_MEMBER(pia0_porta_r);
-	DECLARE_WRITE8_MEMBER(pia0_portb_w);
-	DECLARE_WRITE_LINE_MEMBER(pia0_ca2_w);
-	DECLARE_READ8_MEMBER(pia1_porta_r);
-	DECLARE_READ8_MEMBER(pia1_portb_r);
-	DECLARE_WRITE8_MEMBER(pia1_portb_w);
-	DECLARE_WRITE8_MEMBER(apf_dischw_w);
-	DECLARE_READ8_MEMBER(serial_r);
-	DECLARE_WRITE8_MEMBER(serial_w);
+	void apfm1000(machine_config &config);
+	void apfimag(machine_config &config);
 
-private:
-	UINT8 m_latch;
-	UINT8 m_keyboard_data;
-	UINT8 m_pad_data;
-	UINT8 m_portb;
-	bool m_ca2;
-	bool m_has_cart_ram;
+protected:
 	virtual void machine_start() override;
 	virtual void machine_reset() override;
+
+private:
+	uint8_t videoram_r(offs_t offset);
+	uint8_t pia0_porta_r();
+	void pia0_portb_w(uint8_t data);
+	DECLARE_WRITE_LINE_MEMBER(pia0_ca2_w);
+	uint8_t pia1_porta_r();
+	uint8_t pia1_portb_r();
+	void pia1_portb_w(uint8_t data);
+	void apf_dischw_w(offs_t offset, uint8_t data);
+	uint8_t serial_r(offs_t offset);
+	void serial_w(offs_t offset, uint8_t data);
+
+	void apfimag_map(address_map &map);
+	void apfm1000_map(address_map &map);
+
+	uint8_t m_latch;
+	uint8_t m_keyboard_data;
+	uint8_t m_pad_data;
+	uint8_t m_portb;
+	bool m_ca2;
+	bool m_has_cart_ram;
 	required_device<m6800_cpu_device> m_maincpu;
 	optional_device<ram_device> m_ram;
 	required_device<mc6847_base_device> m_crtc;
@@ -134,18 +158,18 @@ private:
 	optional_device<pia6821_device> m_pia1;
 	optional_device<cassette_image_device> m_cass;
 	required_device<apf_cart_slot_device> m_cart;
-	optional_device<fd1771_t> m_fdc;
+	optional_device<fd1771_device> m_fdc;
 	optional_device<floppy_connector> m_floppy0;
 	optional_device<floppy_connector> m_floppy1;
 	required_ioport_array<4> m_joy;
 	optional_ioport_array<8> m_key;
-	required_shared_ptr<UINT8> m_p_videoram;
+	required_shared_ptr<uint8_t> m_p_videoram;
 };
 
 
-READ8_MEMBER( apf_state::videoram_r )
+uint8_t apf_state::videoram_r(offs_t offset)
 {
-	if BIT(m_pad_data, 7) // AG line
+	if (BIT(m_pad_data, 7)) // AG line
 	{
 		// Need the cpu and crtc to be locked together for proper graphics
 		// This is a hack to fix Rocket Patrol and Blackjack
@@ -156,17 +180,17 @@ READ8_MEMBER( apf_state::videoram_r )
 		if (BIT(m_pad_data, 6) && m_has_cart_ram)
 			offset -= 0x120;
 
-		UINT16 part1 = offset & 0x1f;
-		UINT16 part2 = (offset & 0x1e0) >> 5;
-		UINT16 part3 = (offset & 0x1e00) >> 4;
+		uint16_t part1 = offset & 0x1f;
+		uint16_t part2 = (offset & 0x1e0) >> 5;
+		uint16_t part3 = (offset & 0x1e00) >> 4;
 		if (m_ca2) m_latch = m_p_videoram[part3 | part1]; // get chr
 		m_crtc->css_w(BIT(m_latch, 6));
-		UINT16 latch = (m_latch & 0x1f) << 4;
+		uint16_t latch = (m_latch & 0x1f) << 4;
 		return m_p_videoram[latch | part2 | 0x200]; // get gfx
 	}
 	else
 	{
-		UINT8 data = m_p_videoram[(offset & 0x1ff) | 0x200];
+		uint8_t data = m_p_videoram[(offset & 0x1ff) | 0x200];
 		if (m_ca2) m_crtc->css_w(BIT(data, 6));
 		m_crtc->inv_w(BIT(data, 6));
 		m_crtc->as_w(BIT(data, 7));
@@ -174,9 +198,9 @@ READ8_MEMBER( apf_state::videoram_r )
 	}
 }
 
-READ8_MEMBER( apf_state::pia0_porta_r )
+uint8_t apf_state::pia0_porta_r()
 {
-	UINT8 data = 0xff;
+	uint8_t data = 0xff;
 
 	for (int i = 3; i >= 0; i--)
 		if (!BIT(m_pad_data, i))
@@ -185,7 +209,7 @@ READ8_MEMBER( apf_state::pia0_porta_r )
 	return data;
 }
 
-WRITE8_MEMBER( apf_state::pia0_portb_w )
+void apf_state::pia0_portb_w(uint8_t data)
 {
 	/* bit 7..6 video control */
 	m_crtc->ag_w(BIT(data, 7));
@@ -200,14 +224,14 @@ WRITE_LINE_MEMBER( apf_state::pia0_ca2_w )
 	m_ca2 = state;
 }
 
-READ8_MEMBER( apf_state::pia1_porta_r )
+uint8_t apf_state::pia1_porta_r()
 {
 	return m_key[m_keyboard_data]->read();
 }
 
-READ8_MEMBER( apf_state::pia1_portb_r )
+uint8_t apf_state::pia1_portb_r()
 {
-	UINT8 data = m_portb;
+	uint8_t data = m_portb;
 
 	if (m_cass->input() > 0.0038)
 		data |= 0x80;
@@ -216,7 +240,7 @@ READ8_MEMBER( apf_state::pia1_portb_r )
 }
 
 
-WRITE8_MEMBER( apf_state::pia1_portb_w )
+void apf_state::pia1_portb_w(uint8_t data)
 {
 	/* bits 2..0 = keyboard line */
 	/* bit 3 = cass audio enable */
@@ -242,17 +266,26 @@ void apf_state::machine_start()
 		switch (m_cart->get_type())
 		{
 			case APF_BASIC:
-				m_maincpu->space(AS_PROGRAM).install_read_handler(0x6800, 0x7fff, read8_delegate(FUNC(apf_cart_slot_device::extra_rom),(apf_cart_slot_device*)m_cart));
+				m_maincpu->space(AS_PROGRAM).install_read_handler(0x6800, 0x7fff, read8sm_delegate(*m_cart, FUNC(apf_cart_slot_device::extra_rom)));
 				break;
 			case APF_SPACEDST:
 				m_maincpu->space(AS_PROGRAM).unmap_readwrite(0x9800, 0x9fff);
-				m_maincpu->space(AS_PROGRAM).install_readwrite_handler(0x9800, 0x9bff, read8_delegate(FUNC(apf_cart_slot_device::read_ram),(apf_cart_slot_device*)m_cart), write8_delegate(FUNC(apf_cart_slot_device::write_ram),(apf_cart_slot_device*)m_cart));
+				m_maincpu->space(AS_PROGRAM).install_readwrite_handler(0x9800, 0x9bff, read8sm_delegate(*m_cart, FUNC(apf_cart_slot_device::read_ram)), write8sm_delegate(*m_cart, FUNC(apf_cart_slot_device::write_ram)));
 				m_has_cart_ram = true;
 				break;
 		}
 
 		m_cart->save_ram();
 	}
+
+	save_item(NAME(m_latch));
+	save_item(NAME(m_keyboard_data));
+	save_item(NAME(m_pad_data));
+	save_item(NAME(m_portb));
+	save_item(NAME(m_ca2));
+	save_item(NAME(m_has_cart_ram));
+
+	m_latch = 0;
 }
 
 
@@ -274,10 +307,10 @@ void apf_state::machine_reset()
 	}
 }
 
-WRITE8_MEMBER( apf_state::apf_dischw_w)
+void apf_state::apf_dischw_w(offs_t offset, uint8_t data)
 {
 	/* bit 3 is index of drive to select */
-	UINT8 drive = BIT(data, 3);
+	uint8_t drive = BIT(data, 3);
 
 	floppy_image_device *floppy = nullptr;
 	if (drive)
@@ -295,36 +328,38 @@ WRITE8_MEMBER( apf_state::apf_dischw_w)
 	logerror("disc w %04x %04x\n",offset,data);
 }
 
-READ8_MEMBER( apf_state::serial_r)
+uint8_t apf_state::serial_r(offs_t offset)
 {
 	logerror("serial r %04x\n",offset);
 	return 0;
 }
 
-WRITE8_MEMBER( apf_state::serial_w)
+void apf_state::serial_w(offs_t offset, uint8_t data)
 {
 	logerror("serial w %04x %04x\n",offset,data);
 }
 
-static ADDRESS_MAP_START( apfm1000_map, AS_PROGRAM, 8, apf_state )
-	AM_RANGE(0x0000, 0x03ff) AM_MIRROR(0x1c00) AM_RAM AM_SHARE("videoram")
-	AM_RANGE(0x2000, 0x3fff) AM_MIRROR(0x1ffc) AM_DEVREADWRITE("pia0", pia6821_device, read, write)
-	AM_RANGE(0x4000, 0x4fff) AM_MIRROR(0x1000) AM_ROM AM_REGION("roms", 0)
-	AM_RANGE(0x6800, 0x7fff) AM_NOP // BASIC accesses ROM here too, but this is installed at machine_start
-	AM_RANGE(0x8000, 0x9fff) AM_DEVREAD("cartslot", apf_cart_slot_device, read_rom)
-	AM_RANGE(0xe000, 0xefff) AM_MIRROR(0x1000) AM_ROM AM_REGION("roms", 0)
-ADDRESS_MAP_END
+void apf_state::apfm1000_map(address_map &map)
+{
+	map(0x0000, 0x03ff).mirror(0x1c00).ram().share("videoram");
+	map(0x2000, 0x2003).mirror(0x1ffc).rw(m_pia0, FUNC(pia6821_device::read), FUNC(pia6821_device::write));
+	map(0x4000, 0x4fff).mirror(0x1000).rom().region("roms", 0);
+	map(0x6800, 0x7fff).noprw(); // BASIC accesses ROM here too, but this is installed at machine_start
+	map(0x8000, 0x9fff).r(m_cart, FUNC(apf_cart_slot_device::read_rom));
+	map(0xe000, 0xefff).mirror(0x1000).rom().region("roms", 0);
+}
 
-static ADDRESS_MAP_START( apfimag_map, AS_PROGRAM, 8, apf_state )
-	AM_IMPORT_FROM(apfm1000_map)
-	AM_RANGE(0x6000, 0x63ff) AM_MIRROR(0x03fc) AM_DEVREADWRITE("pia1", pia6821_device, read, write)
+void apf_state::apfimag_map(address_map &map)
+{
+	apfm1000_map(map);
+	map(0x6000, 0x6003).mirror(0x03fc).rw(m_pia1, FUNC(pia6821_device::read), FUNC(pia6821_device::write));
 	// These need to be confirmed, disk does not work
-	AM_RANGE(0x6400, 0x64ff) AM_READWRITE(serial_r, serial_w)
-	AM_RANGE(0x6500, 0x6503) AM_DEVREADWRITE("fdc", fd1771_t, read, write)
-	AM_RANGE(0x6600, 0x6600) AM_WRITE(apf_dischw_w)
-	AM_RANGE(0xa000, 0xbfff) AM_RAM // standard
-	AM_RANGE(0xc000, 0xdfff) AM_RAM // expansion
-ADDRESS_MAP_END
+	map(0x6400, 0x64ff).rw(FUNC(apf_state::serial_r), FUNC(apf_state::serial_w));
+	map(0x6500, 0x6503).rw(m_fdc, FUNC(fd1771_device::read), FUNC(fd1771_device::write));
+	map(0x6600, 0x6600).w(FUNC(apf_state::apf_dischw_w));
+	map(0xa000, 0xbfff).ram(); // standard
+	map(0xc000, 0xdfff).ram(); // expansion
+}
 
 
 /* Each controller has these features:
@@ -492,83 +527,81 @@ static INPUT_PORTS_START( apfimag )
 INPUT_PORTS_END
 
 
-static SLOT_INTERFACE_START( apf_floppies )
-	SLOT_INTERFACE( "525dd", FLOPPY_525_SSDD )
-SLOT_INTERFACE_END
+static void apf_floppies(device_slot_interface &device)
+{
+	device.option_add("525dd", FLOPPY_525_SSDD);
+}
 
 
-static SLOT_INTERFACE_START(apf_cart)
-	SLOT_INTERFACE_INTERNAL("std",       APF_ROM_STD)
-	SLOT_INTERFACE_INTERNAL("basic",     APF_ROM_BASIC)
-	SLOT_INTERFACE_INTERNAL("spacedst",  APF_ROM_SPACEDST)
-SLOT_INTERFACE_END
+static void apf_cart(device_slot_interface &device)
+{
+	device.option_add_internal("std",       APF_ROM_STD);
+	device.option_add_internal("basic",     APF_ROM_BASIC);
+	device.option_add_internal("spacedst",  APF_ROM_SPACEDST);
+}
 
 
-static MACHINE_CONFIG_START( apfm1000, apf_state )
-
+void apf_state::apfm1000(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", M6800, XTAL_3_579545MHz / 4 )  // divided by 4 in external clock circuit
-	MCFG_CPU_PROGRAM_MAP(apfm1000_map)
+	M6800(config, m_maincpu, 3.579545_MHz_XTAL / 4);  // divided by 4 in external clock circuit
+	m_maincpu->set_addrmap(AS_PROGRAM, &apf_state::apfm1000_map);
 
 	/* video hardware */
-	MCFG_SCREEN_MC6847_NTSC_ADD("screen", "mc6847")
+	SCREEN(config, "screen", SCREEN_TYPE_RASTER);
 
-	MCFG_DEVICE_ADD("mc6847", MC6847_NTSC, XTAL_3_579545MHz)
-	MCFG_MC6847_FSYNC_CALLBACK(DEVWRITELINE("pia0", pia6821_device, cb1_w))
-	MCFG_MC6847_INPUT_CALLBACK(READ8(apf_state, videoram_r))
-	MCFG_MC6847_FIXED_MODE(MC6847_MODE_GM2 | MC6847_MODE_GM1)
+	MC6847_NTSC(config, m_crtc, 3.579545_MHz_XTAL);
+	m_crtc->fsync_wr_callback().set(m_pia0, FUNC(pia6821_device::cb1_w));
+	m_crtc->input_callback().set(FUNC(apf_state::videoram_r));
+	m_crtc->set_get_fixed_mode(mc6847_ntsc_device::MODE_GM2 | mc6847_ntsc_device::MODE_GM1);
+	m_crtc->set_screen("screen");
 	// INTEXT = GND
 	// other lines not connected
 
 	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_MONO("mono")
-	MCFG_SOUND_ADD("speaker", SPEAKER_SOUND, 0)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.50)
+	SPEAKER(config, "mono").front_center();
+	SPEAKER_SOUND(config, m_speaker).add_route(ALL_OUTPUTS, "mono", 0.50);
 
 	/* Devices */
-	MCFG_DEVICE_ADD("pia0", PIA6821, 0)
-	MCFG_PIA_READPA_HANDLER(READ8(apf_state, pia0_porta_r))
-	MCFG_PIA_WRITEPB_HANDLER(WRITE8(apf_state, pia0_portb_w))
-	MCFG_PIA_CA2_HANDLER(WRITELINE(apf_state, pia0_ca2_w))
-	MCFG_PIA_CB2_HANDLER(DEVWRITELINE("speaker", speaker_sound_device, level_w))
-	MCFG_PIA_IRQA_HANDLER(DEVWRITELINE("maincpu", m6800_cpu_device, irq_line))
-	MCFG_PIA_IRQB_HANDLER(DEVWRITELINE("maincpu", m6800_cpu_device, irq_line))
+	PIA6821(config, m_pia0, 0);
+	m_pia0->readpa_handler().set(FUNC(apf_state::pia0_porta_r));
+	m_pia0->writepb_handler().set(FUNC(apf_state::pia0_portb_w));
+	m_pia0->ca2_handler().set(FUNC(apf_state::pia0_ca2_w));
+	m_pia0->cb2_handler().set(m_speaker, FUNC(speaker_sound_device::level_w));
+	m_pia0->irqa_handler().set_inputline(m_maincpu, M6800_IRQ_LINE);
+	m_pia0->irqb_handler().set_inputline(m_maincpu, M6800_IRQ_LINE);
 
-	MCFG_APF_CARTRIDGE_ADD("cartslot", apf_cart, nullptr)
+	APF_CART_SLOT(config, m_cart, apf_cart, nullptr);
 
 	/* software lists */
-	MCFG_SOFTWARE_LIST_ADD("cart_list", "apfm1000")
-MACHINE_CONFIG_END
+	SOFTWARE_LIST(config, "cart_list").set_original("apfm1000");
+}
 
-static MACHINE_CONFIG_DERIVED( apfimag, apfm1000 )
-	MCFG_CPU_MODIFY( "maincpu" )
-	MCFG_CPU_PROGRAM_MAP( apfimag_map)
+void apf_state::apfimag(machine_config &config)
+{
+	apfm1000(config);
+	m_maincpu->set_addrmap(AS_PROGRAM, &apf_state::apfimag_map);
 
 	/* internal ram */
-	MCFG_RAM_ADD(RAM_TAG)
-	MCFG_RAM_DEFAULT_SIZE("8K")
-	MCFG_RAM_EXTRA_OPTIONS("16K")
+	RAM(config, RAM_TAG).set_default_size("8K").set_extra_options("16K");
 
-	MCFG_SOUND_WAVE_ADD(WAVE_TAG, "cassette")
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.15)
+	PIA6821(config, m_pia1, 0);
+	m_pia1->readpa_handler().set(FUNC(apf_state::pia1_porta_r));
+	m_pia1->readpb_handler().set(FUNC(apf_state::pia1_portb_r));
+	m_pia1->writepb_handler().set(FUNC(apf_state::pia1_portb_w));
 
-	MCFG_DEVICE_ADD("pia1", PIA6821, 0)
-	MCFG_PIA_READPA_HANDLER(READ8(apf_state, pia1_porta_r))
-	MCFG_PIA_READPB_HANDLER(READ8(apf_state, pia1_portb_r))
-	MCFG_PIA_WRITEPB_HANDLER(WRITE8(apf_state, pia1_portb_w))
+	CASSETTE(config, m_cass);
+	m_cass->set_formats(apf_cassette_formats);
+	m_cass->set_default_state(CASSETTE_STOPPED | CASSETTE_SPEAKER_ENABLED | CASSETTE_MOTOR_DISABLED);
+	m_cass->add_route(ALL_OUTPUTS, "mono", 0.15);
+	m_cass->set_interface("apf_cass");
 
-	MCFG_CASSETTE_ADD("cassette")
-	MCFG_CASSETTE_FORMATS(apf_cassette_formats)
-	MCFG_CASSETTE_DEFAULT_STATE(CASSETTE_STOPPED | CASSETTE_SPEAKER_ENABLED | CASSETTE_MOTOR_DISABLED)
+	FD1771(config, m_fdc, 1000000); // guess
+	FLOPPY_CONNECTOR(config, "fdc:0", apf_floppies, "525dd", floppy_image_device::default_mfm_floppy_formats).enable_sound(true);
+	FLOPPY_CONNECTOR(config, "fdc:1", apf_floppies, "525dd", floppy_image_device::default_mfm_floppy_formats).enable_sound(true);
 
-	MCFG_FD1771_ADD("fdc", 1000000) // guess
-	MCFG_FLOPPY_DRIVE_ADD("fdc:0", apf_floppies, "525dd", floppy_image_device::default_floppy_formats)
-	MCFG_FLOPPY_DRIVE_SOUND(true)
-	MCFG_FLOPPY_DRIVE_ADD("fdc:1", apf_floppies, "525dd", floppy_image_device::default_floppy_formats)
-	MCFG_FLOPPY_DRIVE_SOUND(true)
-
-	MCFG_SOFTWARE_LIST_ADD("cass_list", "apfimag_cass")
-MACHINE_CONFIG_END
+	SOFTWARE_LIST(config, "cass_list").set_original("apfimag_cass");
+}
 
 
 /***************************************************************************
@@ -580,20 +613,23 @@ MACHINE_CONFIG_END
 ROM_START(apfm1000)
 	ROM_REGION(0x1000,"roms", 0)
 	ROM_SYSTEM_BIOS( 0, "0", "Standard" )
-	ROMX_LOAD("apf_4000.rom", 0x0000, 0x0800, CRC(cc6ac840) SHA1(1110a234bcad99bd0894ad44c591389d16376ca4), ROM_BIOS(1) )
+	ROMX_LOAD("apf_4000.rom", 0x0000, 0x0800, CRC(cc6ac840) SHA1(1110a234bcad99bd0894ad44c591389d16376ca4), ROM_BIOS(0) )
 	ROM_RELOAD(0x0800, 0x0800)
 
 	ROM_SYSTEM_BIOS( 1, "trash", "Trash II" ) // In Rocket Patrol, the ships are replaced by garbage trucks
-	ROMX_LOAD("trash-ii.bin", 0x0000, 0x1000, CRC(3bd8640a) SHA1(da4cd8163990adbc5acd3eab604b41e1066bb832), ROM_BIOS(2) )
+	ROMX_LOAD("trash-ii.bin", 0x0000, 0x1000, CRC(3bd8640a) SHA1(da4cd8163990adbc5acd3eab604b41e1066bb832), ROM_BIOS(1) )
 
 	ROM_SYSTEM_BIOS( 2, "mod", "Mod Bios" ) // (c) 1982 W.Lunquist - In Basic, CALL 18450 to get a machine-language monitor
-	ROMX_LOAD("mod_bios.bin", 0x0000, 0x1000, CRC(f320aba6) SHA1(9442349fca8b001a5765e2fe8b84db4ece7886c1), ROM_BIOS(3) )
+	ROMX_LOAD("mod_bios.bin", 0x0000, 0x1000, CRC(f320aba6) SHA1(9442349fca8b001a5765e2fe8b84db4ece7886c1), ROM_BIOS(2) )
 ROM_END
 
 #define rom_apfimag rom_apfm1000
 
 // old rom, has a bad byte at 0087.
-//ROMX_LOAD("apf_4000.rom", 0x0000, 0x0800, CRC(2a331a33) SHA1(387b90882cd0b66c192d9cbaa3bec250f897e4f1), ROM_BIOS(1) )
+//ROMX_LOAD("apf_4000.rom", 0x0000, 0x0800, CRC(2a331a33) SHA1(387b90882cd0b66c192d9cbaa3bec250f897e4f1), ROM_BIOS(0) )
+
+} // Anonymous namespace
+
 
 /***************************************************************************
 
@@ -601,6 +637,6 @@ ROM_END
 
 ***************************************************************************/
 
-/*    YEAR  NAME     PARENT     COMPAT  MACHINE     INPUT      CLASS          INIT         COMPANY               FULLNAME */
-COMP( 1979, apfimag,  apfm1000,  0,      apfimag,    apfimag,   driver_device,  0,   "APF Electronics Inc.", "APF Imagination Machine", 0 )
-CONS( 1978, apfm1000, 0,         0,      apfm1000,   apfm1000,  driver_device,  0,   "APF Electronics Inc.", "APF M-1000", 0 )
+//    YEAR  NAME      PARENT    COMPAT  MACHINE   INPUT     CLASS      INIT        COMPANY                 FULLNAME
+COMP( 1979, apfimag,  apfm1000, 0,      apfimag,  apfimag,  apf_state, empty_init, "APF Electronics Inc.", "APF Imagination Machine", MACHINE_SUPPORTS_SAVE )
+CONS( 1978, apfm1000, 0,        0,      apfm1000, apfm1000, apf_state, empty_init, "APF Electronics Inc.", "APF M-1000", MACHINE_SUPPORTS_SAVE )

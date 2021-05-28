@@ -3,9 +3,9 @@
 // TMS32082 PP Disassembler
 
 #include "emu.h"
+#include "dis_pp.h"
 
-
-static const char *REG_NAMES[128] =
+char const *const tms32082_pp_disassembler::REG_NAMES[128] =
 {
 	// 0 - 15
 	"a0",       "a1",       "a2",       "a3",       "a4",       "???",      "a6",       "a7",
@@ -33,7 +33,7 @@ static const char *REG_NAMES[128] =
 	"???",      "???",      "???",      "???",      "tag0",     "tag1",     "tag2",     "tag3"
 };
 
-static const char *CONDITION_CODES[16] =
+char const *const tms32082_pp_disassembler::CONDITION_CODES[16] =
 {
 	"",         "[p] ",     "[ls] ",    "[hi] ",
 	"[lt] ",    "[le] ",    "[ge] ",    "[gt] ",
@@ -41,58 +41,39 @@ static const char *CONDITION_CODES[16] =
 	"[v] ",     "[nv] ",    "[n] ",     "[nn] "
 };
 
-static const char *TRANSFER_SIZE[4] =
+char const *const tms32082_pp_disassembler::TRANSFER_SIZE[4] =
 {
 	"b:", "h:", "w:", ""
 };
 
-
-static char *output;
-
-static void ATTR_PRINTF(1,2) print(const char *fmt, ...)
+std::string tms32082_pp_disassembler::format_address_mode(int mode, int areg, int s, int limx)
 {
-	va_list vl;
-
-	va_start(vl, fmt);
-	output += vsprintf(output, fmt, vl);
-	va_end(vl);
-}
-
-static char *format_address_mode(int mode, int areg, int s, int limx)
-{
-	static char buffer[64];
-
-	memset(buffer, 0, sizeof(char)*64);
-
 	switch (mode)
 	{
-		case 0x4: sprintf(buffer, "*(a%d++=x%d)", areg, limx); break;
-		case 0x5: sprintf(buffer, "*(a%d--=x%d)", areg, limx); break;
-		case 0x6: sprintf(buffer, "*(a%d++0x%04X)", areg, limx); break;
-		case 0x7: sprintf(buffer, "*(a%d--0x%04X)", areg, limx); break;
-		case 0x8: sprintf(buffer, "*(a%d+x%d)", areg, limx); break;
-		case 0x9: sprintf(buffer, "*(a%d-x%d)", areg, limx); break;
-		case 0xa: sprintf(buffer, "*(a%d+0x%04X)", areg, limx); break;
-		case 0xb: sprintf(buffer, "*(a%d-0x%04X)", areg, limx); break;
-		case 0xc: sprintf(buffer, "*(a%d+=x%d)", areg, limx); break;
-		case 0xd: sprintf(buffer, "*(a%d-=x%d)", areg, limx); break;
-		case 0xe: sprintf(buffer, "*(a%d+=0x%04X)", areg, limx); break;
-		case 0xf: sprintf(buffer, "*(a%d-=0x%04X)", areg, limx); break;
+		case 0x4: return util::string_format("*(a%d++=x%d)", areg, limx);
+		case 0x5: return util::string_format("*(a%d--=x%d)", areg, limx);
+		case 0x6: return util::string_format("*(a%d++0x%04X)", areg, limx);
+		case 0x7: return util::string_format("*(a%d--0x%04X)", areg, limx);
+		case 0x8: return util::string_format("*(a%d+x%d)", areg, limx);
+		case 0x9: return util::string_format("*(a%d-x%d)", areg, limx);
+		case 0xa: return util::string_format("*(a%d+0x%04X)", areg, limx);
+		case 0xb: return util::string_format("*(a%d-0x%04X)", areg, limx);
+		case 0xc: return util::string_format("*(a%d+=x%d)", areg, limx);
+		case 0xd: return util::string_format("*(a%d-=x%d)", areg, limx);
+		case 0xe: return util::string_format("*(a%d+=0x%04X)", areg, limx);
+		case 0xf: return util::string_format("*(a%d-=0x%04X)", areg, limx);
 	}
 
-	return buffer;
+	return "";
 }
 
-static void format_transfer(UINT64 op)
+void tms32082_pp_disassembler::format_transfer(uint64_t op)
 {
-	char buffer[128];
-	char *b = buffer;
+	std::string buffer;
 	int lmode = (op >> 35) & 0xf;
 	int gmode = (op >> 13) & 0xf;
 
 	bool is_nop = false;
-
-	memset(buffer, 0, sizeof(char)*128);
 
 	switch (lmode)
 	{
@@ -115,8 +96,8 @@ static void format_transfer(UINT64 op)
 					int dreg = (dstbank << 3) | dst;
 					int sreg = (srcbank << 3) | src;
 
-					b += sprintf(b, "%s", CONDITION_CODES[cond]);
-					b += sprintf(b, "%s = %s", REG_NAMES[dreg], REG_NAMES[sreg]);
+					buffer += util::string_format("%s", CONDITION_CODES[cond]);
+					buffer += util::string_format("%s = %s", REG_NAMES[dreg], REG_NAMES[sreg]);
 					break;
 				}
 				case 0x01:                                      // Format 8: Conditional DU ||Conditional Field Move
@@ -131,8 +112,8 @@ static void format_transfer(UINT64 op)
 					int dreg = (dstbank << 3) | dst;
 					int sreg = (4 << 3) | src;
 
-					b += sprintf(b, "%s", CONDITION_CODES[cond]);
-					b += sprintf(b, "%s = [%s%d]%s", REG_NAMES[dreg], TRANSFER_SIZE[size], itm, REG_NAMES[sreg]);
+					buffer += util::string_format("%s", CONDITION_CODES[cond]);
+					buffer += util::string_format("%s = [%s%d]%s", REG_NAMES[dreg], TRANSFER_SIZE[size], itm, REG_NAMES[sreg]);
 					break;
 				}
 				case 0x02: case 0x03:                           // Format 10: Conditional Non-D Data Unit
@@ -151,8 +132,8 @@ static void format_transfer(UINT64 op)
 					}
 					else
 					{
-						b += sprintf(b, "%s", CONDITION_CODES[cond]);
-						b += sprintf(b, "%s = %s", REG_NAMES[dreg], REG_NAMES[sreg]);
+						buffer += util::string_format("%s", CONDITION_CODES[cond]);
+						buffer += util::string_format("%s = %s", REG_NAMES[dreg], REG_NAMES[sreg]);
 					}
 					break;
 				}
@@ -170,14 +151,14 @@ static void format_transfer(UINT64 op)
 
 						int greg = (bank << 3) | reg;
 
-						b += sprintf(b, "%s", CONDITION_CODES[cond]);
+						buffer += util::string_format("%s", CONDITION_CODES[cond]);
 
 						switch (le)
 						{
-							case 0: b += sprintf(b, "&%s%s = %s", TRANSFER_SIZE[size], format_address_mode(gmode, ga, s, gimx), REG_NAMES[greg]); break;
-							case 1: b += sprintf(b, "%s = %s", REG_NAMES[greg], format_address_mode(gmode, ga, s, gimx)); break;
-							case 2: b += sprintf(b, "%s = &%s%s", REG_NAMES[greg], TRANSFER_SIZE[size], format_address_mode(gmode, ga, s, gimx)); break;
-							case 3: b += sprintf(b, "%s = &%s%s", REG_NAMES[greg], TRANSFER_SIZE[size], format_address_mode(gmode, ga, s, gimx)); break;
+							case 0: buffer += util::string_format("&%s%s = %s", TRANSFER_SIZE[size], format_address_mode(gmode, ga, s, gimx), REG_NAMES[greg]); break;
+							case 1: buffer += util::string_format("%s = %s", REG_NAMES[greg], format_address_mode(gmode, ga, s, gimx)); break;
+							case 2: buffer += util::string_format("%s = &%s%s", REG_NAMES[greg], TRANSFER_SIZE[size], format_address_mode(gmode, ga, s, gimx)); break;
+							case 3: buffer += util::string_format("%s = &%s%s", REG_NAMES[greg], TRANSFER_SIZE[size], format_address_mode(gmode, ga, s, gimx)); break;
 						}
 					}
 					else                                        // Format 5: Global (Long Offset)
@@ -199,10 +180,10 @@ static void format_transfer(UINT64 op)
 
 						switch (le)
 						{
-							case 0: b += sprintf(b, "&%s%s = %s", TRANSFER_SIZE[size], format_address_mode(gmode, ga, s, offset), REG_NAMES[greg]); break;
-							case 1: b += sprintf(b, "%s = %s", REG_NAMES[greg], format_address_mode(gmode, ga, s, offset)); break;
-							case 2: b += sprintf(b, "%s = &%s%s", REG_NAMES[greg], TRANSFER_SIZE[size], format_address_mode(gmode, ga, s, offset)); break;
-							case 3: b += sprintf(b, "%s = &%s%s", REG_NAMES[greg], TRANSFER_SIZE[size], format_address_mode(gmode, ga, s, offset)); break;
+							case 0: buffer += util::string_format("&%s%s = %s", TRANSFER_SIZE[size], format_address_mode(gmode, ga, s, offset), REG_NAMES[greg]); break;
+							case 1: buffer += util::string_format("%s = %s", REG_NAMES[greg], format_address_mode(gmode, ga, s, offset)); break;
+							case 2: buffer += util::string_format("%s = &%s%s", REG_NAMES[greg], TRANSFER_SIZE[size], format_address_mode(gmode, ga, s, offset)); break;
+							case 3: buffer += util::string_format("%s = &%s%s", REG_NAMES[greg], TRANSFER_SIZE[size], format_address_mode(gmode, ga, s, offset)); break;
 						}
 					}
 					break;
@@ -219,12 +200,12 @@ static void format_transfer(UINT64 op)
 			{
 				case 0x00:                                      // Format 2: Move || Local
 				{
-					b += sprintf(b, "move||local <TODO>");
+					buffer += util::string_format("move||local <TODO>");
 					break;
 				}
 				case 0x01:                                      // Format 3: Field Move || Local
 				{
-					b += sprintf(b, "field move||local <TODO>");
+					buffer += util::string_format("field move||local <TODO>");
 					break;
 				}
 				case 0x02: case 0x03:                           // Format 6: Non-D DU || Local
@@ -240,10 +221,10 @@ static void format_transfer(UINT64 op)
 
 					switch (le)
 					{
-						case 0: b += sprintf(b, "&%s%s = %s", TRANSFER_SIZE[size], format_address_mode(lmode, la, s, limx), REG_NAMES[reg]); break;
-						case 1: b += sprintf(b, "%s = %s", REG_NAMES[reg], format_address_mode(lmode, la, s, limx)); break;
-						case 2: b += sprintf(b, "%s = &%s%s", REG_NAMES[reg], TRANSFER_SIZE[size], format_address_mode(lmode, la, s, limx)); break;
-						case 3: b += sprintf(b, "%s = &%s%s", REG_NAMES[reg], TRANSFER_SIZE[size], format_address_mode(lmode, la, s, limx)); break;
+						case 0: buffer += util::string_format("&%s%s = %s", TRANSFER_SIZE[size], format_address_mode(lmode, la, s, limx), REG_NAMES[reg]); break;
+						case 1: buffer += util::string_format("%s = %s", REG_NAMES[reg], format_address_mode(lmode, la, s, limx)); break;
+						case 2: buffer += util::string_format("%s = &%s%s", REG_NAMES[reg], TRANSFER_SIZE[size], format_address_mode(lmode, la, s, limx)); break;
+						case 3: buffer += util::string_format("%s = &%s%s", REG_NAMES[reg], TRANSFER_SIZE[size], format_address_mode(lmode, la, s, limx)); break;
 					}
 					break;
 				}
@@ -258,7 +239,7 @@ static void format_transfer(UINT64 op)
 
 					int reg = (bank << 3) | d;
 
-					UINT16 offset = 0;
+					uint16_t offset;
 					if (s)
 					{
 						offset = op & 0x7fff;
@@ -272,10 +253,10 @@ static void format_transfer(UINT64 op)
 
 					switch (le)
 					{
-						case 0: b += sprintf(b, "&%s%s = %s", TRANSFER_SIZE[size], format_address_mode(lmode, la, s, offset), REG_NAMES[reg]); break;
-						case 1: b += sprintf(b, "%s = %s", REG_NAMES[reg], format_address_mode(lmode, la, s, offset)); break;
-						case 2: b += sprintf(b, "%s = &%s%s", REG_NAMES[reg], TRANSFER_SIZE[size], format_address_mode(lmode, la, s, offset)); break;
-						case 3: b += sprintf(b, "%s = &%s%s", REG_NAMES[reg], TRANSFER_SIZE[size], format_address_mode(lmode, la, s, offset)); break;
+						case 0: buffer += util::string_format("&%s%s = %s", TRANSFER_SIZE[size], format_address_mode(lmode, la, s, offset), REG_NAMES[reg]); break;
+						case 1: buffer += util::string_format("%s = %s", REG_NAMES[reg], format_address_mode(lmode, la, s, offset)); break;
+						case 2: buffer += util::string_format("%s = &%s%s", REG_NAMES[reg], TRANSFER_SIZE[size], format_address_mode(lmode, la, s, offset)); break;
+						case 3: buffer += util::string_format("%s = &%s%s", REG_NAMES[reg], TRANSFER_SIZE[size], format_address_mode(lmode, la, s, offset)); break;
 					}
 					break;
 				}
@@ -303,21 +284,21 @@ static void format_transfer(UINT64 op)
 					// local transfer
 					switch (local_le)
 					{
-						case 0: b += sprintf(b, "&%s%s = %s", TRANSFER_SIZE[local_size], format_address_mode(lmode, la, local_s, local_imx), REG_NAMES[lreg]); break;
-						case 1: b += sprintf(b, "%s = %s", REG_NAMES[lreg], format_address_mode(lmode, la, local_s, local_imx)); break;
-						case 2: b += sprintf(b, "%s = &%s%s", REG_NAMES[lreg], TRANSFER_SIZE[local_size], format_address_mode(lmode, la, local_s, local_imx)); break;
-						case 3: b += sprintf(b, "%s = &%s%s", REG_NAMES[lreg], TRANSFER_SIZE[local_size], format_address_mode(lmode, la, local_s, local_imx)); break;
+						case 0: buffer += util::string_format("&%s%s = %s", TRANSFER_SIZE[local_size], format_address_mode(lmode, la, local_s, local_imx), REG_NAMES[lreg]); break;
+						case 1: buffer += util::string_format("%s = %s", REG_NAMES[lreg], format_address_mode(lmode, la, local_s, local_imx)); break;
+						case 2: buffer += util::string_format("%s = &%s%s", REG_NAMES[lreg], TRANSFER_SIZE[local_size], format_address_mode(lmode, la, local_s, local_imx)); break;
+						case 3: buffer += util::string_format("%s = &%s%s", REG_NAMES[lreg], TRANSFER_SIZE[local_size], format_address_mode(lmode, la, local_s, local_imx)); break;
 					}
 
-					print(", ");
+					util::stream_format(*output, ", ");
 
 					// global transfer
 					switch (global_le)
 					{
-						case 0: b += sprintf(b, "&%s%s = %s", TRANSFER_SIZE[global_size], format_address_mode(gmode, ga, global_s, global_imx), REG_NAMES[greg]); break;
-						case 1: b += sprintf(b, "%s = %s", REG_NAMES[greg], format_address_mode(gmode, ga, global_s, global_imx)); break;
-						case 2: b += sprintf(b, "%s = &%s%s", REG_NAMES[greg], TRANSFER_SIZE[global_size], format_address_mode(gmode, ga, global_s, global_imx)); break;
-						case 3: b += sprintf(b, "%s = &%s%s", REG_NAMES[greg], TRANSFER_SIZE[global_size], format_address_mode(gmode, ga, global_s, global_imx)); break;
+						case 0: buffer += util::string_format("&%s%s = %s", TRANSFER_SIZE[global_size], format_address_mode(gmode, ga, global_s, global_imx), REG_NAMES[greg]); break;
+						case 1: buffer += util::string_format("%s = %s", REG_NAMES[greg], format_address_mode(gmode, ga, global_s, global_imx)); break;
+						case 2: buffer += util::string_format("%s = &%s%s", REG_NAMES[greg], TRANSFER_SIZE[global_size], format_address_mode(gmode, ga, global_s, global_imx)); break;
+						case 3: buffer += util::string_format("%s = &%s%s", REG_NAMES[greg], TRANSFER_SIZE[global_size], format_address_mode(gmode, ga, global_s, global_imx)); break;
 					}
 					break;
 				}
@@ -326,31 +307,31 @@ static void format_transfer(UINT64 op)
 	}
 
 	if (!is_nop)
-		print(" || %s", buffer);
+		util::stream_format(*output, " || %s", buffer);
 }
 
-static void format_alu_op(int aluop, int a, const char *dst_text, const char *a_text, const char *b_text, const char *c_text)
+void tms32082_pp_disassembler::format_alu_op(int aluop, int a, const char *dst_text, const char *a_text, const char *b_text, const char *c_text)
 {
 	if (a)      // arithmetic
 	{
 		int bits = (aluop & 1) | ((aluop >> 1) & 2) | ((aluop >> 2) & 4) | ((aluop >> 3) & 8);
 		switch (bits)
 		{
-			case 1:     print("%s = %s - %s<1<", dst_text, a_text, b_text); break;
-			case 2:     print("%s = %s + %s<0<", dst_text, a_text, b_text); break;
-			case 3:     print("%s = %s - %s", dst_text, a_text, c_text); break;
-			case 4:     print("%s = %s - %s>1>", dst_text, a_text, b_text); break;
-			case 5:     print("%s = %s - %s", dst_text, a_text, b_text); break;
-			case 6:     print("?"); break;
-			case 7:     print("%s = %s - %s>0>", dst_text, a_text, b_text); break;
-			case 8:     print("%s = %s + %s>0>", dst_text, a_text, b_text); break;
-			case 9:     print("?"); break;
-			case 10:    print("%s = %s + %s", dst_text, a_text, b_text); break;
-			case 11:    print("%s = %s + %s>1>", dst_text, a_text, b_text); break;
-			case 12:    print("%s = %s + %s", dst_text, a_text, c_text); break;
-			case 13:    print("%s = %s - %s<0<", dst_text, a_text, b_text); break;
-			case 14:    print("%s = %s + %s<1<", dst_text, a_text, b_text); break;
-			case 15:    print("%s = field %s + %s", dst_text, a_text, b_text); break;
+			case 1:     util::stream_format(*output, "%s = %s - %s<1<", dst_text, a_text, b_text); break;
+			case 2:     util::stream_format(*output, "%s = %s + %s<0<", dst_text, a_text, b_text); break;
+			case 3:     util::stream_format(*output, "%s = %s - %s", dst_text, a_text, c_text); break;
+			case 4:     util::stream_format(*output, "%s = %s - %s>1>", dst_text, a_text, b_text); break;
+			case 5:     util::stream_format(*output, "%s = %s - %s", dst_text, a_text, b_text); break;
+			case 6:     util::stream_format(*output, "?"); break;
+			case 7:     util::stream_format(*output, "%s = %s - %s>0>", dst_text, a_text, b_text); break;
+			case 8:     util::stream_format(*output, "%s = %s + %s>0>", dst_text, a_text, b_text); break;
+			case 9:     util::stream_format(*output, "?"); break;
+			case 10:    util::stream_format(*output, "%s = %s + %s", dst_text, a_text, b_text); break;
+			case 11:    util::stream_format(*output, "%s = %s + %s>1>", dst_text, a_text, b_text); break;
+			case 12:    util::stream_format(*output, "%s = %s + %s", dst_text, a_text, c_text); break;
+			case 13:    util::stream_format(*output, "%s = %s - %s<0<", dst_text, a_text, b_text); break;
+			case 14:    util::stream_format(*output, "%s = %s + %s<1<", dst_text, a_text, b_text); break;
+			case 15:    util::stream_format(*output, "%s = field %s + %s", dst_text, a_text, b_text); break;
 		}
 	}
 	else        // boolean
@@ -358,80 +339,84 @@ static void format_alu_op(int aluop, int a, const char *dst_text, const char *a_
 		switch (aluop)
 		{
 			case 0xaa:      // A & B & C | A & ~B & C | A & B & ~C | A & ~B & ~C       = A
-				print("%s = %s", dst_text, a_text);
+				util::stream_format(*output, "%s = %s", dst_text, a_text);
 				break;
 
 			case 0x55:      // ~A & B & C | ~A & ~B & C | ~A & B & ~C | ~A & ~B & ~C   = ~A
-				print("%s = ~%s", dst_text, a_text);
+				util::stream_format(*output, "%s = ~%s", dst_text, a_text);
 				break;
 
 			case 0xcc:      // A & B & C | ~A & B & C | A & B & ~C | ~A & B & ~C       = B
-				print("%s = %s", dst_text, b_text);
+				util::stream_format(*output, "%s = %s", dst_text, b_text);
 				break;
 
 			case 0x33:      // A & ~B & C | ~A & ~B & C | A & ~B & ~C | ~A & ~B & ~C   = ~B
-				print("%s = %s", dst_text, b_text);
+				util::stream_format(*output, "%s = %s", dst_text, b_text);
 				break;
 
 			case 0xf0:      // A & B & C | ~A & B & C | A & ~B & C | ~A & ~B & C       = C
-				print("%s = %s", dst_text, c_text);
+				util::stream_format(*output, "%s = %s", dst_text, c_text);
 				break;
 
 			case 0x0f:      // A & B & ~C | ~A & B & ~C | A & ~B & ~C | ~A & ~B & ~C   = ~C
-				print("%s = ~%s", dst_text, c_text);
+				util::stream_format(*output, "%s = ~%s", dst_text, c_text);
 				break;
 
 			case 0x80:      // A & B & C
-				print("%s = %s & %s & %s", dst_text, a_text, b_text, c_text);
+				util::stream_format(*output, "%s = %s & %s & %s", dst_text, a_text, b_text, c_text);
 				break;
 
 			case 0x88:      // A & B & C | A & B & ~C                                  = A & B
-				print("%s = %s & %s", dst_text, a_text, b_text);
+				util::stream_format(*output, "%s = %s & %s", dst_text, a_text, b_text);
 				break;
 
 			case 0xa0:      // A & B & C | A & ~B & C                                  = A & C
-				print("%s = %s & %s", dst_text, a_text, c_text);
+				util::stream_format(*output, "%s = %s & %s", dst_text, a_text, c_text);
 				break;
 
 			case 0xc0:      // A & B & C | ~A & B & C                                  = B & C
-				print("%s = %s & %s", dst_text, b_text, c_text);
+				util::stream_format(*output, "%s = %s & %s", dst_text, b_text, c_text);
 				break;
 
 			case 0xea:      //  A &  B &  C | ~A &  B &  C |  A & ~B &  C |
 							//  A &  B & ~C |  A & ~B & ~C                             = A | C
-				print("%s = %s | %s", dst_text, a_text, c_text);
+				util::stream_format(*output, "%s = %s | %s", dst_text, a_text, c_text);
 				break;
 
 			case 0xee:      //  A &  B &  C | ~A &  B &  C |  A & ~B &  C |
 							//  A &  B & ~C | ~A &  B & ~C |  A & ~B & ~C              = A | B
-				print("%s = %s | %s", dst_text, a_text, b_text);
+				util::stream_format(*output, "%s = %s | %s", dst_text, a_text, b_text);
 				break;
 
 			case 0x44:      // ~A &  B &  C | ~A &  B & ~C                             = ~A & B
-				print("%s = ~%s & %s", dst_text, a_text, b_text);
+				util::stream_format(*output, "%s = ~%s & %s", dst_text, a_text, b_text);
 				break;
 
 			default:
-				print("%s = b%02X(%s, %s, %s)", dst_text, aluop, a_text, b_text, c_text);
+				util::stream_format(*output, "%s = b%02X(%s, %s, %s)", dst_text, aluop, a_text, b_text, c_text);
 				break;
 		}
 	}
 }
 
-static offs_t tms32082_disasm_pp(char *buffer, offs_t pc, const UINT8 *oprom)
+u32 tms32082_pp_disassembler::opcode_alignment() const
 {
-	output = buffer;
-	UINT32 flags = 0;
+	return 8;
+}
 
-	UINT64 op = ((UINT64)(oprom[0]) << 56) | ((UINT64)(oprom[1]) << 48) | ((UINT64)(oprom[2]) << 40) | ((UINT64)(oprom[3]) << 32) |
-				((UINT64)(oprom[4]) << 24) | ((UINT64)(oprom[5]) << 16) | ((UINT64)(oprom[6]) << 8) | ((UINT64)(oprom[7]));
+offs_t tms32082_pp_disassembler::disassemble(std::ostream &stream, offs_t pc, const data_buffer &opcodes, const data_buffer &params)
+{
+	output = &stream;
+	uint32_t flags = 0;
+
+	uint64_t op = opcodes.r64(pc);
 
 	switch (op >> 60)
 	{
 		case 0x6:
 		case 0x7:           // Six-operand
 		{
-			print("A: six operand <TODO>");
+			util::stream_format(*output, "A: six operand <TODO>");
 			break;
 		}
 
@@ -444,17 +429,17 @@ static offs_t tms32082_disasm_pp(char *buffer, offs_t pc, const UINT8 *oprom)
 		case 0xe:
 		case 0xf:
 		{
-			if ((op & U64(0xfaa8100000000000)) == U64(0x8800000000000000))
+			if ((op & 0xfaa8100000000000U) == 0x8800000000000000U)
 			{
 				int operation = (op >> 39) & 0x1f;
-				UINT64 parallel_xfer = (op & U64(0x0000007fffffffff));
+				uint64_t parallel_xfer = (op & 0x0000007fffffffffU);
 
 				switch (operation)
 				{
-					case 0x00: print("nop"); break;
-					case 0x02: print("eint"); break;
-					case 0x03: print("dint"); break;
-					default:   print("<reserved>"); break;
+					case 0x00: util::stream_format(*output, "nop"); break;
+					case 0x02: util::stream_format(*output, "eint"); break;
+					case 0x03: util::stream_format(*output, "dint"); break;
+					default:   util::stream_format(*output, "<reserved>"); break;
 				}
 
 				format_transfer(parallel_xfer);
@@ -471,7 +456,7 @@ static offs_t tms32082_disasm_pp(char *buffer, offs_t pc, const UINT8 *oprom)
 					case 0:
 					case 1:     // Base set ALU (5-bit immediate)
 					{
-						UINT64 parallel_xfer = (op & U64(0x0000007fffffffff));
+						uint64_t parallel_xfer = (op & 0x0000007fffffffffU);
 
 						int dst = (op >> 48) & 7;
 						int src1 = (op >> 45) & 7;
@@ -550,7 +535,7 @@ static offs_t tms32082_disasm_pp(char *buffer, offs_t pc, const UINT8 *oprom)
 
 					case 2:     // Base set ALU (reg src2)
 					{
-						UINT64 parallel_xfer = (op & U64(0x0000007fffffffff));
+						uint64_t parallel_xfer = (op & 0x0000007fffffffffU);
 
 						int dst = (op >> 48) & 7;
 						int src1 = (op >> 45) & 7;
@@ -638,7 +623,7 @@ static offs_t tms32082_disasm_pp(char *buffer, offs_t pc, const UINT8 *oprom)
 						int cl = (op >> 60) & 7;
 						int aluop = (op >> 51) & 0xff;
 						int a = (op >> 59) & 1;
-						UINT32 imm32 = (UINT32)(op);
+						uint32_t imm32 = (uint32_t)(op);
 
 						int dreg = dst | (dstbank << 3);
 						int s1reg = src1 | (s1bank << 3);
@@ -689,7 +674,7 @@ static offs_t tms32082_disasm_pp(char *buffer, offs_t pc, const UINT8 *oprom)
 								break;
 						}
 
-						print("%s", CONDITION_CODES[cond]);
+						util::stream_format(*output, "%s", CONDITION_CODES[cond]);
 
 						format_alu_op(aluop, a, dst_text, a_text, b_text, c_text);
 						break;
@@ -700,15 +685,9 @@ static offs_t tms32082_disasm_pp(char *buffer, offs_t pc, const UINT8 *oprom)
 		}
 
 		default:
-			print("??? (%02X)", (UINT32)(op >> 60));
+			util::stream_format(*output, "??? (%02X)", (uint32_t)(op >> 60));
 			break;
 	}
 
-	return 8 | flags | DASMFLAG_SUPPORTED;
-}
-
-
-CPU_DISASSEMBLE(tms32082_pp)
-{
-	return tms32082_disasm_pp(buffer, pc, oprom);
+	return 8 | flags | SUPPORTED;
 }

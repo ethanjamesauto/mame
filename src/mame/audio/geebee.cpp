@@ -2,7 +2,7 @@
 // copyright-holders:Juergen Buchmueller
 /****************************************************************************
  *
- * geebee.c
+ * geebee.cpp
  *
  * sound driver
  * juergen buchmueller <pullmoll@t-online.de>, jan 2000
@@ -10,13 +10,13 @@
  ****************************************************************************/
 
 #include "emu.h"
-#include "audio/warpwarp.h"
+#include "audio/geebee.h"
 
 
-const device_type GEEBEE = &device_creator<geebee_sound_device>;
+DEFINE_DEVICE_TYPE(GEEBEE_SOUND, geebee_sound_device, "geebee_sound", "Gee Bee Custom Sound")
 
-geebee_sound_device::geebee_sound_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: device_t(mconfig, GEEBEE, "Gee Bee Audio Custom", tag, owner, clock, "geebee_sound", __FILE__),
+geebee_sound_device::geebee_sound_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: device_t(mconfig, GEEBEE_SOUND, tag, owner, clock),
 		device_sound_interface(mconfig, *this),
 		m_decay(nullptr),
 		m_channel(nullptr),
@@ -36,13 +36,13 @@ geebee_sound_device::geebee_sound_device(const machine_config &mconfig, const ch
 
 void geebee_sound_device::device_start()
 {
-	m_decay = std::make_unique<UINT16[]>(32768);
+	m_decay = std::make_unique<uint16_t[]>(32768);
 
 	for (int i = 0; i < 0x8000; i++)
-		m_decay[0x7fff - i] = (INT16) (0x7fff/exp(1.0*i/4096));
+		m_decay[0x7fff - i] = (int16_t) (0x7fff/exp(1.0*i/4096));
 
 	/* 1V = HSYNC = 18.432MHz / 3 / 2 / 384 = 8000Hz */
-	m_channel = machine().sound().stream_alloc(*this, 0, 1, 18432000 / 3 / 2 / 384);
+	m_channel = stream_alloc(0, 1, clock() / 3 / 2 / 384);
 	m_vcount = 0;
 
 	m_volume_timer = timer_alloc(TIMER_VOLUME_DECAY);
@@ -58,17 +58,17 @@ void geebee_sound_device::device_timer(emu_timer &timer, device_timer_id id, int
 {
 	switch (id)
 	{
-		case TIMER_VOLUME_DECAY:
-			if (--m_volume < 0)
-				m_volume = 0;
-			break;
+	case TIMER_VOLUME_DECAY:
+		if (--m_volume < 0)
+			m_volume = 0;
+		break;
 
-		default:
-			assert_always(FALSE, "Unknown id in geebee_device::device_timer");
+	default:
+		throw emu_fatalerror("Unknown id in geebee_device::device_timer");
 	}
 }
 
-WRITE8_MEMBER( geebee_sound_device::sound_w )
+void geebee_sound_device::sound_w(u8 data)
 {
 	m_channel->update();
 	m_sound_latch = data;
@@ -106,13 +106,13 @@ WRITE8_MEMBER( geebee_sound_device::sound_w )
 //  sound_stream_update - handle a stream update
 //-------------------------------------------------
 
-void geebee_sound_device::sound_stream_update(sound_stream &stream, stream_sample_t **inputs, stream_sample_t **outputs, int samples)
-	{
-	stream_sample_t *buffer = outputs[0];
+void geebee_sound_device::sound_stream_update(sound_stream &stream, std::vector<read_stream_view> const &inputs, std::vector<write_stream_view> &outputs)
+{
+	auto &buffer = outputs[0];
 
-	while (samples--)
+	for (int sampindex = 0; sampindex < buffer.samples(); sampindex++)
 	{
-		*buffer++ = m_sound_signal;
+		buffer.put_int(sampindex, m_sound_signal, 32768);
 		/* 1V = HSYNC = 18.432MHz / 3 / 2 / 384 = 8000Hz */
 		{
 			m_vcount++;

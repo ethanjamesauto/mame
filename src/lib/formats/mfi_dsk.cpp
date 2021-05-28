@@ -1,6 +1,6 @@
 // license:BSD-3-Clause
 // copyright-holders:Olivier Galibert
-#include <assert.h>
+#include <cassert>
 
 #include "mfi_dsk.h"
 #include <zlib.h>
@@ -94,7 +94,7 @@ bool mfi_format::supports_save() const
 	return true;
 }
 
-int mfi_format::identify(io_generic *io, UINT32 form_factor)
+int mfi_format::identify(io_generic *io, uint32_t form_factor, const std::vector<uint32_t> &variants)
 {
 	header h;
 
@@ -108,18 +108,22 @@ int mfi_format::identify(io_generic *io, UINT32 form_factor)
 	return 0;
 }
 
-bool mfi_format::load(io_generic *io, UINT32 form_factor, floppy_image *image)
+bool mfi_format::load(io_generic *io, uint32_t form_factor, const std::vector<uint32_t> &variants, floppy_image *image)
 {
 	header h;
 	entry entries[84*2*4];
 	io_generic_read(io, &h, 0, sizeof(header));
 	int resolution = h.cyl_count >> RESOLUTION_SHIFT;
 	h.cyl_count &= CYLINDER_MASK;
+
 	io_generic_read(io, &entries, sizeof(header), (h.cyl_count << resolution)*h.head_count*sizeof(entry));
 
-	image->set_variant(h.variant);
+	image->set_form_variant(h.form_factor, h.variant);
 
-	dynamic_buffer compressed;
+	if(!h.cyl_count)
+		return true;
+
+	std::vector<uint8_t> compressed;
 
 	entry *ent = entries;
 	for(unsigned int cyl=0; cyl <= (h.cyl_count - 1) << 2; cyl += 4 >> resolution)
@@ -138,29 +142,34 @@ bool mfi_format::load(io_generic *io, UINT32 form_factor, floppy_image *image)
 			io_generic_read(io, &compressed[0], ent->offset, ent->compressed_size);
 
 			unsigned int cell_count = ent->uncompressed_size/4;
-			std::vector<UINT32> &trackbuf = image->get_buffer(cyl >> 2, head, cyl & 3);;
+			std::vector<uint32_t> &trackbuf = image->get_buffer(cyl >> 2, head, cyl & 3);;
 			trackbuf.resize(cell_count);
 
 			uLongf size = ent->uncompressed_size;
-			if(uncompress((Bytef *)&trackbuf[0], &size, &compressed[0], ent->compressed_size) != Z_OK)
+			if(uncompress((Bytef *)&trackbuf[0], &size, &compressed[0], ent->compressed_size) != Z_OK) {
+				fprintf(stderr, "fail1\n");
 				return false;
+			}
 
-			UINT32 cur_time = 0;
+			uint32_t cur_time = 0;
 			for(unsigned int i=0; i != cell_count; i++) {
-				UINT32 next_cur_time = cur_time + (trackbuf[i] & TIME_MASK);
+				uint32_t next_cur_time = cur_time + (trackbuf[i] & TIME_MASK);
 				trackbuf[i] = (trackbuf[i] & MG_MASK) | cur_time;
 				cur_time = next_cur_time;
 			}
-			if(cur_time != 200000000)
+			if(cur_time != 200000000) {
+				fprintf(stderr, "fail2 %d\n", cur_time);
 				return false;
+			}
 
 			ent++;
 		}
 
+	fprintf(stderr, "tick\n");
 	return true;
 }
 
-bool mfi_format::save(io_generic *io, floppy_image *image)
+bool mfi_format::save(io_generic *io, const std::vector<uint32_t> &variants, floppy_image *image)
 {
 	int tracks, heads;
 	image->get_actual_geometry(tracks, heads);
@@ -187,19 +196,19 @@ bool mfi_format::save(io_generic *io, floppy_image *image)
 
 	int pos = sizeof(header) + (tracks << resolution)*heads*sizeof(entry);
 	int epos = 0;
-	auto precomp = global_alloc_array(UINT32, max_track_size);
-	auto postcomp = global_alloc_array(UINT8, max_track_size*4 + 1000);
+	auto precomp = std::make_unique<uint32_t []>(max_track_size);
+	auto postcomp = std::make_unique<uint8_t []>(max_track_size*4 + 1000);
 
 	for(int track=0; track <= (tracks-1) << 2; track += 4 >> resolution)
 		for(int head=0; head<heads; head++) {
-			std::vector<UINT32> &buffer = image->get_buffer(track >> 2, head, track & 3);
+			std::vector<uint32_t> &buffer = image->get_buffer(track >> 2, head, track & 3);
 			int tsize = buffer.size();
 			if(!tsize) {
 				epos++;
 				continue;
 			}
 
-			memcpy(precomp, &buffer[0], tsize*4);
+			memcpy(&precomp[0], &buffer[0], tsize*4);
 			for(int j=0; j<tsize-1; j++)
 				precomp[j] = (precomp[j] & floppy_image::MG_MASK) |
 					((precomp[j+1] & floppy_image::TIME_MASK) -
@@ -208,11 +217,8 @@ bool mfi_format::save(io_generic *io, floppy_image *image)
 				(200000000 - (precomp[tsize-1] & floppy_image::TIME_MASK));
 
 			uLongf csize = max_track_size*4 + 1000;
-			if(compress(postcomp, &csize, (const Bytef *)precomp, tsize*4) != Z_OK) {
-				global_free_array(precomp);
-				global_free_array(postcomp);
+			if(compress(postcomp.get(), &csize, (const Bytef *)precomp.get(), tsize*4) != Z_OK)
 				return false;
-			}
 
 			entries[epos].offset = pos;
 			entries[epos].uncompressed_size = tsize*4;
@@ -220,13 +226,11 @@ bool mfi_format::save(io_generic *io, floppy_image *image)
 			entries[epos].write_splice = image->get_write_splice_position(track >> 2, head, track & 3);
 			epos++;
 
-			io_generic_write(io, postcomp, pos, csize);
+			io_generic_write(io, postcomp.get(), pos, csize);
 			pos += csize;
 		}
 
 	io_generic_write(io, entries, sizeof(header), (tracks << resolution)*heads*sizeof(entry));
-	global_free_array(precomp);
-	global_free_array(postcomp);
 	return true;
 }
 

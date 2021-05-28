@@ -2,30 +2,36 @@
 // copyright-holders:Juergen Buchmueller, Krzysztof Strzecha, Robbbert
 /*****************************************************************************
  *
- * includes/zx.h
+ * ZX-80/ZX-81 and derivatives
  *
  ****************************************************************************/
 
-#ifndef ZX_H_
-#define ZX_H_
+#ifndef MAME_INCLUDES_ZX_H
+#define MAME_INCLUDES_ZX_H
 
-#include "emu.h"
+#pragma once
+
 #include "cpu/z80/z80.h"
-#include "sound/speaker.h"
-#include "sound/wave.h"
 #include "imagedev/cassette.h"
-#include "formats/zx81_p.h"
 #include "machine/ram.h"
+#include "sound/spkrdev.h"
+
+#include "emupal.h"
+#include "screen.h"
+
+#include "formats/tzx_cas.h"
+#include "formats/zx81_p.h"
 
 
 class zx_state : public driver_device
 {
 public:
-	zx_state(const machine_config &mconfig, device_type type, const char *tag)
-		: driver_device(mconfig, type, tag),
+	zx_state(const machine_config &mconfig, device_type type, const char *tag) :
+		driver_device(mconfig, type, tag),
 		m_maincpu(*this, "maincpu"),
 		m_ram(*this, RAM_TAG),
 		m_cassette(*this, "cassette"),
+		m_softlist(*this, "cass_list"),
 		m_speaker(*this, "speaker"),
 		m_region_maincpu(*this, "maincpu"),
 		m_region_gfx1(*this, "gfx1"),
@@ -38,39 +44,57 @@ public:
 		m_io_row6(*this, "ROW6"),
 		m_io_row7(*this, "ROW7"),
 		m_io_config(*this, "CONFIG"),
-		m_screen(*this, "screen") { }
+		m_screen(*this, "screen")
+	{ }
 
-	UINT32 screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
+	void zx81(machine_config &config);
+	void zx81_spk(machine_config &config);
+	void ts1000(machine_config &config);
+	void pc8300(machine_config &config);
+	void pow3000(machine_config &config);
+	void ts1500(machine_config &config);
+	void zx80(machine_config &config);
 
-	DECLARE_READ8_MEMBER(ula_high_r);
-	DECLARE_READ8_MEMBER(ula_low_r);
-	DECLARE_WRITE16_MEMBER(refresh_w);
-	DECLARE_READ8_MEMBER(zx80_io_r);
-	DECLARE_READ8_MEMBER(zx81_io_r);
-	DECLARE_READ8_MEMBER(pc8300_io_r);
-	DECLARE_READ8_MEMBER(pow3000_io_r);
-	DECLARE_WRITE8_MEMBER(zx80_io_w);
-	DECLARE_WRITE8_MEMBER(zx81_io_w);
-	DECLARE_DRIVER_INIT(zx);
+	void init_zx();
+
+protected:
 	virtual void machine_reset() override;
 	virtual void video_start() override;
-	DECLARE_PALETTE_INIT(zx);
-	DECLARE_PALETTE_INIT(ts1000);
+
+private:
+	uint32_t screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
+
+	uint8_t ula_high_r(offs_t offset);
+	uint8_t ula_low_r(offs_t offset);
+	void refresh_w(offs_t offset, uint8_t data);
+	uint8_t zx80_io_r(offs_t offset);
+	uint8_t zx81_io_r(offs_t offset);
+	uint8_t pc8300_io_r(offs_t offset);
+	uint8_t pow3000_io_r(offs_t offset);
+	void zx80_io_w(offs_t offset, uint8_t data);
+	void zx81_io_w(offs_t offset, uint8_t data);
+
 	void zx_tape_input();
 	void zx_ula_hsync();
 
-	UINT32 get_ram_size();
+	void pc8300_io_map(address_map &map);
+	void pow3000_io_map(address_map &map);
+	void ula_map(address_map &map);
+	void zx80_io_map(address_map &map);
+	void zx80_map(address_map &map);
+	void zx81_io_map(address_map &map);
+	void zx81_map(address_map &map);
 
-protected:
 	enum
 	{
 		TIMER_TAPE_INPUT,
 		TIMER_ULA_HSYNC
 	};
 
-	required_device<cpu_device> m_maincpu;
+	required_device<z80_device> m_maincpu;
 	required_device<ram_device> m_ram;
 	required_device<cassette_image_device> m_cassette;
+	required_device<software_list_device> m_softlist;
 	optional_device<speaker_sound_device> m_speaker;
 	required_memory_region m_region_maincpu;
 	optional_memory_region m_region_gfx1;
@@ -89,16 +113,16 @@ protected:
 	emu_timer *m_tape_input, *m_ula_hsync;
 
 	bool m_vsync_active, m_hsync_active, m_nmi_on, m_nmi_generator_active;
-	UINT64 m_base_vsync_clock, m_vsync_start_time;
-	UINT32 m_ypos;
+	uint64_t m_base_vsync_clock, m_vsync_start_time;
+	uint32_t m_ypos;
 
-	UINT8 m_prev_refresh;
-	UINT8 m_speaker_state;
+	uint8_t m_prev_refresh;
+	uint8_t m_speaker_state;
 
 	std::unique_ptr<bitmap_ind16> m_bitmap_render;
 	std::unique_ptr<bitmap_ind16> m_bitmap_buffer;
 
-	UINT16 m_ula_char_buffer;
+	uint16_t m_ula_char_buffer;
 	double m_cassette_cur_level;
 
 	virtual void device_timer(emu_timer &timer, device_timer_id id, int param, void *ptr) override;
@@ -107,4 +131,4 @@ protected:
 	void recalc_hsync();
 };
 
-#endif /* ZX_H_ */
+#endif // MAME_INCLUDES_ZX_H

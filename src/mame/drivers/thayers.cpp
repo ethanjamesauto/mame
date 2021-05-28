@@ -13,98 +13,111 @@
 */
 
 #include "emu.h"
+#include "cpu/cop400/cop400.h"
 #include "cpu/z80/z80.h"
 #include "machine/ldstub.h"
 #include "machine/ldv1000.h"
-#include "cpu/cop400/cop400.h"
-//#include "dlair.lh"
+#include "speaker.h"
 
+#include "thayers.lh"
+
+
+#define LOG 0
 
 struct ssi263_t
 {
-	UINT8 dr;
-	UINT8 p;
-	UINT16 i;
-	UINT8 r;
-	UINT8 t;
-	UINT8 c;
-	UINT8 a;
-	UINT8 f;
-	UINT8 mode;
+	uint8_t dr;
+	uint8_t p;
+	uint16_t i;
+	uint8_t r;
+	uint8_t t;
+	uint8_t c;
+	uint8_t a;
+	uint8_t f;
+	uint8_t mode;
 };
 
 class thayers_state : public driver_device
 {
 public:
+	thayers_state(const machine_config &mconfig, device_type type, const char *tag)
+		: driver_device(mconfig, type, tag)
+		, m_pr7820(*this, "laserdisc")
+		, m_ldv1000(*this, "ldv1000")
+		, m_maincpu(*this, "maincpu")
+		, m_row(*this, "ROW.%u", 0)
+		, m_digits(*this, "digit%u", 0U)
+	{
+	}
+
+	void thayers(machine_config &config);
+
+	DECLARE_READ_LINE_MEMBER(laserdisc_enter_r);
+	DECLARE_READ_LINE_MEMBER(laserdisc_ready_r);
+
+private:
 	enum
 	{
 		TIMER_INTRQ_TICK,
 		TIMER_SSI263_PHONEME_TICK
 	};
 
-	thayers_state(const machine_config &mconfig, device_type type, const char *tag)
-		: driver_device(mconfig, type, tag),
-		m_pr7820(*this, "laserdisc"),
-		m_ldv1000(*this, "ldv1000"),
-		m_maincpu(*this, "maincpu"),
-		m_row(*this, "ROW") { }
-
 	optional_device<pioneer_pr7820_device> m_pr7820;
 	optional_device<pioneer_ldv1000_device> m_ldv1000;
-	UINT8 m_laserdisc_data;
+	uint8_t m_laserdisc_data;
 	int m_rx_bit;
 	int m_keylatch;
-	UINT8 m_cop_data_latch;
+	uint8_t m_keydata;
+	bool m_kbdata;
+	bool m_kbclk;
+	uint8_t m_cop_data_latch;
 	int m_cop_data_latch_enable;
-	UINT8 m_cop_l;
-	UINT8 m_cop_cmd_latch;
+	uint8_t m_cop_l;
+	uint8_t m_cop_cmd_latch;
 	int m_timer_int;
 	int m_data_rdy_int;
 	int m_ssi_data_request;
 	int m_cart_present;
 	int m_pr7820_enter;
 	struct ssi263_t m_ssi263;
-	DECLARE_WRITE8_MEMBER(intrq_w);
-	DECLARE_READ8_MEMBER(irqstate_r);
-	DECLARE_WRITE8_MEMBER(timer_int_ack_w);
-	DECLARE_WRITE8_MEMBER(data_rdy_int_ack_w);
-	DECLARE_WRITE8_MEMBER(cop_d_w);
-	DECLARE_READ8_MEMBER(cop_data_r);
-	DECLARE_WRITE8_MEMBER(cop_data_w);
-	DECLARE_READ8_MEMBER(cop_l_r);
-	DECLARE_WRITE8_MEMBER(cop_l_w);
-	DECLARE_READ8_MEMBER(cop_g_r);
-	DECLARE_WRITE8_MEMBER(control_w);
-	DECLARE_WRITE8_MEMBER(cop_g_w);
-	DECLARE_READ_LINE_MEMBER(cop_si_r);
-	DECLARE_WRITE_LINE_MEMBER(cop_so_w);
-	DECLARE_WRITE8_MEMBER(control2_w);
-	DECLARE_READ8_MEMBER(dsw_b_r);
-	DECLARE_READ8_MEMBER(laserdsc_data_r);
-	DECLARE_WRITE8_MEMBER(laserdsc_data_w);
-	DECLARE_WRITE8_MEMBER(laserdsc_control_w);
-	DECLARE_WRITE8_MEMBER(den1_w);
-	DECLARE_WRITE8_MEMBER(den2_w);
-	DECLARE_WRITE8_MEMBER(ssi263_register_w);
-	DECLARE_READ8_MEMBER(ssi263_register_r);
-	DECLARE_CUSTOM_INPUT_MEMBER(laserdisc_enter_r);
-	DECLARE_CUSTOM_INPUT_MEMBER(laserdisc_ready_r);
+	void intrq_w(uint8_t data);
+	uint8_t irqstate_r();
+	void timer_int_ack_w(uint8_t data);
+	void data_rdy_int_ack_w(uint8_t data);
+	void cop_d_w(uint8_t data);
+	uint8_t cop_data_r();
+	void cop_data_w(uint8_t data);
+	uint8_t cop_l_r();
+	void cop_l_w(uint8_t data);
+	uint8_t cop_g_r();
+	void control_w(uint8_t data);
+	void cop_g_w(uint8_t data);
+	DECLARE_READ_LINE_MEMBER(kbdata_r);
+	DECLARE_WRITE_LINE_MEMBER(kbclk_w);
+	void control2_w(uint8_t data);
+	uint8_t dsw_b_r();
+	uint8_t laserdsc_data_r();
+	void laserdsc_data_w(uint8_t data);
+	void laserdsc_control_w(uint8_t data);
+	void den1_w(uint8_t data);
+	void den2_w(uint8_t data);
+	void ssi263_register_w(offs_t offset, uint8_t data);
+	uint8_t ssi263_register_r();
+
 	virtual void machine_start() override;
 	virtual void machine_reset() override;
 	void check_interrupt();
 	required_device<cpu_device> m_maincpu;
 	required_ioport_array<10> m_row;
+	output_finder<16> m_digits;
 
-protected:
+	void thayers_io_map(address_map &map);
+	void thayers_map(address_map &map);
+
 	virtual void device_timer(emu_timer &timer, device_timer_id id, int param, void *ptr) override;
 };
 
-
-extern const char layout_dlair[];
-
-
-
-static const UINT8 led_map[16] = { 0x3f, 0x06, 0x5b, 0x4f, 0x66, 0x6d, 0x7c, 0x07, 0x7f, 0x67, 0x77, 0x7c, 0x39, 0x5e, 0x79, 0x00 };
+static const uint8_t led_map[16] = { 0x3f, 0x06, 0x5b, 0x4f, 0x66, 0x6d, 0x7c, 0x07, 0x7f, 0x67, 0x77, 0x7c, 0x39, 0x5e, 0x79, 0x00 };
 
 /* Interrupts */
 
@@ -120,7 +133,7 @@ void thayers_state::device_timer(emu_timer &timer, device_timer_id id, int param
 		check_interrupt();
 		break;
 	default:
-		assert_always(FALSE, "Unknown id in thayers_state::device_timer");
+		throw emu_fatalerror("Unknown id in thayers_state::device_timer");
 	}
 }
 
@@ -128,7 +141,7 @@ void thayers_state::check_interrupt()
 {
 	if (!m_timer_int || !m_data_rdy_int || !m_ssi_data_request)
 	{
-		m_maincpu->set_input_line(INPUT_LINE_IRQ0, HOLD_LINE);
+		m_maincpu->set_input_line(INPUT_LINE_IRQ0, ASSERT_LINE);
 	}
 	else
 	{
@@ -136,16 +149,16 @@ void thayers_state::check_interrupt()
 	}
 }
 
-WRITE8_MEMBER(thayers_state::intrq_w)
+void thayers_state::intrq_w(uint8_t data)
 {
 	// T = 1.1 * R30 * C53 = 1.1 * 750K * 0.01uF = 8.25 ms
 
-	m_maincpu->set_input_line(INPUT_LINE_IRQ0, HOLD_LINE);
+	m_maincpu->set_input_line(INPUT_LINE_IRQ0, ASSERT_LINE);
 
 	timer_set(attotime::from_usec(8250), TIMER_INTRQ_TICK);
 }
 
-READ8_MEMBER(thayers_state::irqstate_r)
+uint8_t thayers_state::irqstate_r()
 {
 	/*
 
@@ -162,24 +175,28 @@ READ8_MEMBER(thayers_state::irqstate_r)
 
 	*/
 
-	return (m_data_rdy_int << 5) | (m_timer_int << 4) | 0x08 | (m_ssi_data_request << 2);
+	return m_cart_present << 6 | (m_data_rdy_int << 5) | (m_timer_int << 4) | 0x08 | (m_ssi_data_request << 2);
 }
 
-WRITE8_MEMBER(thayers_state::timer_int_ack_w)
+void thayers_state::timer_int_ack_w(uint8_t data)
 {
+	if (LOG) logerror("%s %s TIMER INT ACK\n", machine().time().as_string(), machine().describe_context());
+
 	m_timer_int = 1;
 
 	check_interrupt();
 }
 
-WRITE8_MEMBER(thayers_state::data_rdy_int_ack_w)
+void thayers_state::data_rdy_int_ack_w(uint8_t data)
 {
+	if (LOG) logerror("%s %s DATA RDY INT ACK\n", machine().time().as_string(), machine().describe_context());
+
 	m_data_rdy_int = 1;
 
 	check_interrupt();
 }
 
-WRITE8_MEMBER(thayers_state::cop_d_w)
+void thayers_state::cop_d_w(uint8_t data)
 {
 	/*
 
@@ -194,11 +211,13 @@ WRITE8_MEMBER(thayers_state::cop_d_w)
 
 	if (!BIT(data, 0))
 	{
+		if (LOG) logerror("%s %s TIMER INT\n", machine().time().as_string(), machine().describe_context());
 		m_timer_int = 0;
 	}
 
 	if (!BIT(data, 1))
 	{
+		if (LOG) logerror("%s %s DATA RDY INT\n", machine().time().as_string(), machine().describe_context());
 		m_data_rdy_int = 0;
 	}
 
@@ -207,7 +226,7 @@ WRITE8_MEMBER(thayers_state::cop_d_w)
 
 /* COP Communication */
 
-READ8_MEMBER(thayers_state::cop_data_r)
+uint8_t thayers_state::cop_data_r()
 {
 	if (!m_cop_data_latch_enable)
 	{
@@ -219,12 +238,13 @@ READ8_MEMBER(thayers_state::cop_data_r)
 	}
 }
 
-WRITE8_MEMBER(thayers_state::cop_data_w)
+void thayers_state::cop_data_w(uint8_t data)
 {
 	m_cop_data_latch = data;
+	if (LOG) logerror("COP DATA %02x\n", m_cop_data_latch);
 }
 
-READ8_MEMBER(thayers_state::cop_l_r)
+uint8_t thayers_state::cop_l_r()
 {
 	if (!m_cop_data_latch_enable)
 	{
@@ -236,12 +256,13 @@ READ8_MEMBER(thayers_state::cop_l_r)
 	}
 }
 
-WRITE8_MEMBER(thayers_state::cop_l_w)
+void thayers_state::cop_l_w(uint8_t data)
 {
 	m_cop_l = data;
+	if (LOG) logerror("COP L %02x\n", m_cop_l);
 }
 
-READ8_MEMBER(thayers_state::cop_g_r)
+uint8_t thayers_state::cop_g_r()
 {
 	/*
 
@@ -257,7 +278,7 @@ READ8_MEMBER(thayers_state::cop_g_r)
 	return m_cop_cmd_latch;
 }
 
-WRITE8_MEMBER(thayers_state::control_w)
+void thayers_state::control_w(uint8_t data)
 {
 	/*
 
@@ -275,9 +296,10 @@ WRITE8_MEMBER(thayers_state::control_w)
 	*/
 
 	m_cop_cmd_latch = (data >> 5) & 0x07;
+	if (LOG) logerror("COP G0..2 %u\n", m_cop_cmd_latch);
 }
 
-WRITE8_MEMBER(thayers_state::cop_g_w)
+void thayers_state::cop_g_w(uint8_t data)
 {
 	/*
 
@@ -291,68 +313,71 @@ WRITE8_MEMBER(thayers_state::cop_g_w)
 	*/
 
 	m_cop_data_latch_enable = BIT(data, 3);
+	if (LOG) logerror("U17 enable %u\n", m_cop_data_latch_enable);
 }
 
 /* Keyboard */
 
-READ_LINE_MEMBER(thayers_state::cop_si_r)
+READ_LINE_MEMBER(thayers_state::kbdata_r)
 {
-	/* keyboard data */
-
-	/*
-
-	    Serial communications format
-
-	    1, 1, 0, 1, Q8, P0, P1, P2, P3, 0
-
-	*/
-
-	switch (m_rx_bit)
-	{
-	case 0:
-	case 1:
-	case 3:
-		return 1;
-
-	case 4:
-		return (m_keylatch == 9);
-
-	case 5:
-	case 6:
-	case 7:
-	case 8:
-		return BIT(m_row[m_keylatch]->read(), m_rx_bit - 5);
-
-	default:
-		return 0;
-	}
+	if (LOG) logerror("%s KBDATA %u BIT %u\n",machine().time().as_string(),m_kbdata,m_rx_bit);
+	return m_kbdata;
 }
 
-WRITE_LINE_MEMBER(thayers_state::cop_so_w)
+WRITE_LINE_MEMBER(thayers_state::kbclk_w)
 {
-	/* keyboard clock */
+	if (m_kbclk != state) {
+		if (LOG) logerror("%s %s KBCLK %u\n", machine().time().as_string(), machine().describe_context(),state);
+	}
 
-	if (state)
-	{
+	if (!m_kbclk && state) {
 		m_rx_bit++;
 
-		if (m_rx_bit == 10)
+		// 1, 1, 0, 1, Q9, P3, P2, P1, P0, 0
+		switch (m_rx_bit)
 		{
+		case 0: case 1: case 3:
+			m_kbdata = 1;
+			break;
+
+		case 2: case 9:
+			m_kbdata = 0;
+			break;
+
+		case 10:
 			m_rx_bit = 0;
+			m_kbdata = 1;
 
 			m_keylatch++;
 
-			if (m_keylatch == 10)
-			{
+			if (m_keylatch == 10) {
 				m_keylatch = 0;
 			}
+
+			m_keydata = m_row[m_keylatch]->read();
+
+			if (LOG) logerror("keylatch %u\n",m_keylatch);
+			break;
+
+		case 4:
+			m_kbdata = (m_keylatch == 9);
+			break;
+
+		default:
+			m_kbdata = BIT(m_keydata, 3);
+			m_keydata <<= 1;
+
+			if (LOG) logerror("keydata %02x shift\n",m_keydata);
+			break;
 		}
 	}
+
+	m_kbclk = state;
 }
 
 /* I/O Board */
 
-WRITE8_MEMBER(thayers_state::control2_w)
+void thayers_state::control2_w(uint8_t data)
 {
 	/*
 
@@ -375,24 +400,24 @@ WRITE8_MEMBER(thayers_state::control2_w)
 	}
 }
 
-READ8_MEMBER(thayers_state::dsw_b_r)
+uint8_t thayers_state::dsw_b_r()
 {
 	return (ioport("COIN")->read() & 0xf0) | (ioport("DSWB")->read() & 0x0f);
 }
 
-READ8_MEMBER(thayers_state::laserdsc_data_r)
+uint8_t thayers_state::laserdsc_data_r()
 {
 	if (m_ldv1000 != nullptr) return m_ldv1000->status_r();
 	if (m_pr7820 != nullptr) return m_pr7820->data_r();
 	return 0;
 }
 
-WRITE8_MEMBER(thayers_state::laserdsc_data_w)
+void thayers_state::laserdsc_data_w(uint8_t data)
 {
 	m_laserdisc_data = data;
 }
 
-WRITE8_MEMBER(thayers_state::laserdsc_control_w)
+void thayers_state::laserdsc_control_w(uint8_t data)
 {
 	/*
 
@@ -409,7 +434,7 @@ WRITE8_MEMBER(thayers_state::laserdsc_control_w)
 
 	*/
 
-	coin_counter_w(machine(), 0, BIT(data, 4));
+	machine().bookkeeping().coin_counter_w(0, BIT(data, 4));
 
 	if (BIT(data, 5))
 	{
@@ -428,7 +453,7 @@ WRITE8_MEMBER(thayers_state::laserdsc_control_w)
 	}
 }
 
-WRITE8_MEMBER(thayers_state::den1_w)
+void thayers_state::den1_w(uint8_t data)
 {
 	/*
 
@@ -445,10 +470,10 @@ WRITE8_MEMBER(thayers_state::den1_w)
 
 	*/
 
-	output_set_digit_value(data >> 4, led_map[data & 0x0f]);
+	m_digits[data >> 4] = led_map[data & 0x0f];
 }
 
-WRITE8_MEMBER(thayers_state::den2_w)
+void thayers_state::den2_w(uint8_t data)
 {
 	/*
 
@@ -465,7 +490,7 @@ WRITE8_MEMBER(thayers_state::den2_w)
 
 	*/
 
-	output_set_digit_value(8 + (data >> 4), led_map[data & 0x0f]);
+	m_digits[8 + (data >> 4)] = led_map[data & 0x0f];
 }
 
 /* SSI-263 */
@@ -478,17 +503,15 @@ WRITE8_MEMBER(thayers_state::den2_w)
 
 */
 
-#define SSI263_CLOCK (XTAL_4MHz/2)
+#define SSI263_CLOCK (XTAL(4'000'000)/2)
 
-#if 0
 static const char SSI263_PHONEMES[0x40][5] =
 {
 	"PA", "E", "E1", "Y", "YI", "AY", "IE", "I", "A", "AI", "EH", "EH1", "AE", "AE1", "AH", "AH1", "W", "O", "OU", "OO", "IU", "IU1", "U", "U1", "UH", "UH1", "UH2", "UH3", "ER", "R", "R1", "R2",
 	"L", "L1", "LF", "W", "B", "D", "KV", "P", "T", "K", "HV", "HVC", "HF", "HFC", "HN", "Z", "S", "J", "SCH", "V", "F", "THV", "TH", "M", "N", "NG", ":A", ":OH", ":U", ":UH", "E2", "LB"
 };
-#endif
 
-WRITE8_MEMBER(thayers_state::ssi263_register_w)
+void thayers_state::ssi263_register_w(offs_t offset, uint8_t data)
 {
 	struct ssi263_t &ssi263 = m_ssi263;
 	switch (offset)
@@ -523,6 +546,7 @@ WRITE8_MEMBER(thayers_state::ssi263_register_w)
 
 		//logerror("SSI263 Phoneme Duration: %u\n", ssi263.dr);
 		//logerror("SSI263 Phoneme: %02x %s\n", ssi263.p, SSI263_PHONEMES[ssi263.p]);
+		if (LOG && ssi263.p) printf("%s ", SSI263_PHONEMES[ssi263.p]);
 		}
 		break;
 
@@ -590,7 +614,7 @@ WRITE8_MEMBER(thayers_state::ssi263_register_w)
 	}
 }
 
-READ8_MEMBER(thayers_state::ssi263_register_r)
+uint8_t thayers_state::ssi263_register_r()
 {
 	// D7 becomes an output, as the inverted state of A/_R. The register address bits are ignored.
 
@@ -599,40 +623,42 @@ READ8_MEMBER(thayers_state::ssi263_register_r)
 
 /* Memory Maps */
 
-static ADDRESS_MAP_START( thayers_map, AS_PROGRAM, 8, thayers_state )
-	AM_RANGE(0x0000, 0x7fff) AM_ROM
-	AM_RANGE(0x8000, 0xbfff) AM_RAM
-	AM_RANGE(0xc000, 0xdfff) AM_ROM
-ADDRESS_MAP_END
+void thayers_state::thayers_map(address_map &map)
+{
+	map(0x0000, 0x7fff).rom();
+	map(0x8000, 0xbfff).ram();
+	map(0xc000, 0xdfff).rom();
+}
 
-static ADDRESS_MAP_START( thayers_io_map, AS_IO, 8, thayers_state )
-	ADDRESS_MAP_GLOBAL_MASK(0xff)
-	AM_RANGE(0x00, 0x07) AM_READWRITE(ssi263_register_r, ssi263_register_w)
-	AM_RANGE(0x20, 0x20) AM_WRITE(control_w)
-	AM_RANGE(0x40, 0x40) AM_READWRITE(irqstate_r, control2_w)
-	AM_RANGE(0x80, 0x80) AM_READWRITE(cop_data_r, cop_data_w)
-	AM_RANGE(0xa0, 0xa0) AM_WRITE(timer_int_ack_w)
-	AM_RANGE(0xc0, 0xc0) AM_WRITE(data_rdy_int_ack_w)
-	AM_RANGE(0xf0, 0xf0) AM_READ(laserdsc_data_r)
-	AM_RANGE(0xf1, 0xf1) AM_READ(dsw_b_r)
-	AM_RANGE(0xf2, 0xf2) AM_READ_PORT("DSWA")
-	AM_RANGE(0xf3, 0xf3) AM_WRITE(intrq_w)
-	AM_RANGE(0xf4, 0xf4) AM_WRITE(laserdsc_data_w)
-	AM_RANGE(0xf5, 0xf5) AM_WRITE(laserdsc_control_w)
-	AM_RANGE(0xf6, 0xf6) AM_WRITE(den1_w)
-	AM_RANGE(0xf7, 0xf7) AM_WRITE(den2_w)
-ADDRESS_MAP_END
+void thayers_state::thayers_io_map(address_map &map)
+{
+	map.global_mask(0xff);
+	map(0x00, 0x07).rw(FUNC(thayers_state::ssi263_register_r), FUNC(thayers_state::ssi263_register_w));
+	map(0x20, 0x20).w(FUNC(thayers_state::control_w));
+	map(0x40, 0x40).rw(FUNC(thayers_state::irqstate_r), FUNC(thayers_state::control2_w));
+	map(0x80, 0x80).rw(FUNC(thayers_state::cop_data_r), FUNC(thayers_state::cop_data_w));
+	map(0xa0, 0xa0).w(FUNC(thayers_state::timer_int_ack_w));
+	map(0xc0, 0xc0).w(FUNC(thayers_state::data_rdy_int_ack_w));
+	map(0xf0, 0xf0).r(FUNC(thayers_state::laserdsc_data_r));
+	map(0xf1, 0xf1).r(FUNC(thayers_state::dsw_b_r));
+	map(0xf2, 0xf2).portr("DSWA");
+	map(0xf3, 0xf3).w(FUNC(thayers_state::intrq_w));
+	map(0xf4, 0xf4).w(FUNC(thayers_state::laserdsc_data_w));
+	map(0xf5, 0xf5).w(FUNC(thayers_state::laserdsc_control_w));
+	map(0xf6, 0xf6).w(FUNC(thayers_state::den1_w));
+	map(0xf7, 0xf7).w(FUNC(thayers_state::den2_w));
+}
 
 /* Input Ports */
 
-CUSTOM_INPUT_MEMBER(thayers_state::laserdisc_enter_r)
+READ_LINE_MEMBER(thayers_state::laserdisc_enter_r)
 {
 	if (m_pr7820 != nullptr) return m_pr7820_enter;
 	if (m_ldv1000 != nullptr) return (m_ldv1000->status_strobe_r() == ASSERT_LINE) ? 0 : 1;
 	return 0;
 }
 
-CUSTOM_INPUT_MEMBER(thayers_state::laserdisc_ready_r)
+READ_LINE_MEMBER(thayers_state::laserdisc_ready_r)
 {
 	if (m_pr7820 != nullptr) return (m_pr7820->ready_r() == ASSERT_LINE) ? 0 : 1;
 	if (m_ldv1000 != nullptr) return (m_ldv1000->command_strobe_r() == ASSERT_LINE) ? 0 : 1;
@@ -676,74 +702,75 @@ static INPUT_PORTS_START( thayers )
 	PORT_START("COIN")
 	PORT_BIT( 0x10, IP_ACTIVE_LOW, IPT_COIN1 )
 	PORT_BIT( 0x20, IP_ACTIVE_LOW, IPT_COIN2 )
-	PORT_BIT( 0x40, IP_ACTIVE_HIGH, IPT_SPECIAL ) PORT_CUSTOM_MEMBER(DEVICE_SELF, thayers_state,laserdisc_enter_r, NULL)
-	PORT_BIT( 0x80, IP_ACTIVE_HIGH, IPT_SPECIAL ) PORT_CUSTOM_MEMBER(DEVICE_SELF, thayers_state,laserdisc_ready_r, NULL)
+	PORT_BIT( 0x40, IP_ACTIVE_HIGH, IPT_CUSTOM ) PORT_READ_LINE_MEMBER(thayers_state, laserdisc_enter_r)
+	PORT_BIT( 0x80, IP_ACTIVE_HIGH, IPT_CUSTOM ) PORT_READ_LINE_MEMBER(thayers_state, laserdisc_ready_r)
 
 	PORT_START("ROW.0")
-	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_OTHER ) PORT_NAME( "2" ) PORT_CODE( KEYCODE_F2 )
-	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_OTHER ) PORT_NAME( "1 - Clear" ) PORT_CODE( KEYCODE_BACKSPACE )
-	PORT_BIT( 0x04, IP_ACTIVE_HIGH, IPT_OTHER ) PORT_NAME( "Q" ) PORT_CODE( KEYCODE_Q )
-	PORT_BIT( 0x08, IP_ACTIVE_HIGH, IPT_OTHER ) PORT_NAME( DEF_STR( Yes ) ) PORT_CODE( KEYCODE_0_PAD )
+	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_NAME("1 YES") PORT_CODE(KEYCODE_1)
+	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_CODE(KEYCODE_Q)
+	PORT_BIT( 0x04, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_NAME("F1 CLEAR") PORT_CODE(KEYCODE_F1) PORT_CODE(KEYCODE_BACKSPACE)
+	PORT_BIT( 0x08, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_CODE(KEYCODE_F2)
 
 	PORT_START("ROW.1")
-	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_OTHER ) PORT_NAME( "Z - Spell of Release" ) PORT_CODE( KEYCODE_Z )
-	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_OTHER ) PORT_NAME( "A" ) PORT_CODE( KEYCODE_A )
-	PORT_BIT( 0x04, IP_ACTIVE_HIGH, IPT_OTHER ) PORT_NAME( "W - Amulet" ) PORT_CODE( KEYCODE_W )
-	PORT_BIT( 0x08, IP_ACTIVE_HIGH, IPT_OTHER ) PORT_NAME( "Items" ) PORT_CODE( KEYCODE_1_PAD )
+	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_NAME("2 ITEMS") PORT_CODE(KEYCODE_2)
+	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_NAME("W AMULET") PORT_CODE(KEYCODE_W)
+	PORT_BIT( 0x04, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_CODE(KEYCODE_A)
+	PORT_BIT( 0x08, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_NAME("Z SPELL OF RELEASE") PORT_CODE(KEYCODE_Z)
 
 	PORT_START("ROW.2")
-	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_OTHER ) PORT_NAME( "X - Scepter" ) PORT_CODE( KEYCODE_X )
-	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_OTHER ) PORT_NAME( "S - Dagger" ) PORT_CODE( KEYCODE_S )
-	PORT_BIT( 0x04, IP_ACTIVE_HIGH, IPT_OTHER ) PORT_NAME( "E - Black Mace" ) PORT_CODE( KEYCODE_E )
-	PORT_BIT( 0x08, IP_ACTIVE_HIGH, IPT_OTHER ) PORT_NAME( "Drop Item" ) PORT_CODE( KEYCODE_2_PAD )
+	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_NAME("3 DROP ITEM") PORT_CODE(KEYCODE_3)
+	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_NAME("E BLACK MACE") PORT_CODE(KEYCODE_E)
+	PORT_BIT( 0x04, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_NAME("S DAGGER") PORT_CODE(KEYCODE_S)
+	PORT_BIT( 0x08, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_NAME("X SCEPTER") PORT_CODE(KEYCODE_X)
 
 	PORT_START("ROW.3")
-	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_OTHER ) PORT_NAME( "C - Spell of Seeing" ) PORT_CODE( KEYCODE_C )
-	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_OTHER ) PORT_NAME( "D - Great Circlet" ) PORT_CODE( KEYCODE_D )
-	PORT_BIT( 0x04, IP_ACTIVE_HIGH, IPT_OTHER ) PORT_NAME( "R - Blood Sword" ) PORT_CODE( KEYCODE_R )
-	PORT_BIT( 0x08, IP_ACTIVE_HIGH, IPT_OTHER ) PORT_NAME( "Give Score" ) PORT_CODE( KEYCODE_3_PAD )
+	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_NAME("4 GIVE SCORE") PORT_CODE(KEYCODE_4)
+	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_NAME("R BLOOD SWORD") PORT_CODE(KEYCODE_R)
+	PORT_BIT( 0x04, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_NAME("D GREAT CIRCLET") PORT_CODE(KEYCODE_D)
+	PORT_BIT( 0x08, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_NAME("C SPELL OF SEEING") PORT_CODE(KEYCODE_C)
 
 	PORT_START("ROW.4")
-	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_OTHER ) PORT_NAME( "V - Shield" ) PORT_CODE( KEYCODE_V )
-	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_OTHER ) PORT_NAME( "F - Hunting Horn" ) PORT_CODE( KEYCODE_F )
-	PORT_BIT( 0x04, IP_ACTIVE_HIGH, IPT_OTHER ) PORT_NAME( "T - Chalice" ) PORT_CODE( KEYCODE_T )
-	PORT_BIT( 0x08, IP_ACTIVE_HIGH, IPT_OTHER ) PORT_NAME( "Replay" ) PORT_CODE( KEYCODE_4_PAD )
+	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_NAME("5 REPLAY") PORT_CODE(KEYCODE_5)
+	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_NAME("T CHALICE") PORT_CODE(KEYCODE_T)
+	PORT_BIT( 0x04, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_NAME("F HUNTING HORN") PORT_CODE(KEYCODE_F)
+	PORT_BIT( 0x08, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_NAME("V SHIELD") PORT_CODE(KEYCODE_V)
 
 	PORT_START("ROW.5")
-	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_OTHER ) PORT_NAME( "B - Silver Wheat" ) PORT_CODE( KEYCODE_B )
-	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_OTHER ) PORT_NAME( "G - Long Bow" ) PORT_CODE( KEYCODE_G )
-	PORT_BIT( 0x04, IP_ACTIVE_HIGH, IPT_OTHER ) PORT_NAME( "Y - Coins" ) PORT_CODE( KEYCODE_Y )
-	PORT_BIT( 0x08, IP_ACTIVE_HIGH, IPT_OTHER ) PORT_NAME( "Combine Action" ) PORT_CODE( KEYCODE_6_PAD )
+	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_NAME("6 COMBINE ACTION") PORT_CODE(KEYCODE_6)
+	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_NAME("Y COINS") PORT_CODE(KEYCODE_Y)
+	PORT_BIT( 0x04, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_NAME("G LONG BOW") PORT_CODE(KEYCODE_G)
+	PORT_BIT( 0x08, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_NAME("B SILVER WHEAT") PORT_CODE(KEYCODE_B)
 
 	PORT_START("ROW.6")
-	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_OTHER ) PORT_NAME( "N - Staff" ) PORT_CODE( KEYCODE_N )
-	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_OTHER ) PORT_NAME( "H - Medallion" ) PORT_CODE( KEYCODE_H )
-	PORT_BIT( 0x04, IP_ACTIVE_HIGH, IPT_OTHER ) PORT_NAME( "U - Cold Fire" ) PORT_CODE( KEYCODE_U )
-	PORT_BIT( 0x08, IP_ACTIVE_HIGH, IPT_OTHER ) PORT_NAME( "Save Game" ) PORT_CODE( KEYCODE_7_PAD )
+	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_NAME("7 SAVE GAME") PORT_CODE(KEYCODE_7)
+	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_NAME("U COLD FIRE") PORT_CODE(KEYCODE_U)
+	PORT_BIT( 0x04, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_NAME("H MEDALLION") PORT_CODE(KEYCODE_H)
+	PORT_BIT( 0x08, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_NAME("N STAFF") PORT_CODE(KEYCODE_N)
 
 	PORT_START("ROW.7")
-	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_OTHER ) PORT_NAME( "M - Spell of Understanding" ) PORT_CODE( KEYCODE_M )
-	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_OTHER ) PORT_NAME( "J - Onyx Seal" ) PORT_CODE( KEYCODE_J )
-	PORT_BIT( 0x04, IP_ACTIVE_HIGH, IPT_OTHER ) PORT_NAME( "I - Crown" ) PORT_CODE( KEYCODE_I )
-	PORT_BIT( 0x08, IP_ACTIVE_HIGH, IPT_OTHER ) PORT_NAME( "Update" ) PORT_CODE( KEYCODE_8_PAD )
+	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_NAME("8 UPDATE") PORT_CODE(KEYCODE_8)
+	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_NAME("I CROWN") PORT_CODE(KEYCODE_I)
+	PORT_BIT( 0x04, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_NAME("J ONYX SEAL") PORT_CODE(KEYCODE_J)
+	PORT_BIT( 0x08, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_NAME("M SPELL OF UNDERSTANDING") PORT_CODE(KEYCODE_M)
 
 	PORT_START("ROW.8")
-	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_OTHER ) PORT_NAME( "3 - Enter" ) PORT_CODE( KEYCODE_ENTER )
-	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_OTHER ) PORT_NAME( "K - Orb of Quoid" ) PORT_CODE( KEYCODE_K )
-	PORT_BIT( 0x04, IP_ACTIVE_HIGH, IPT_OTHER ) PORT_NAME( "O - Crystal" ) PORT_CODE( KEYCODE_O )
-	PORT_BIT( 0x08, IP_ACTIVE_HIGH, IPT_OTHER ) PORT_NAME( "Hint" ) PORT_CODE( KEYCODE_9_PAD )
+	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_NAME("9 HINT") PORT_CODE(KEYCODE_9)
+	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_NAME("O CRYSTAL") PORT_CODE(KEYCODE_O)
+	PORT_BIT( 0x04, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_NAME("K ORB OF QUOID") PORT_CODE(KEYCODE_K)
+	PORT_BIT( 0x08, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_NAME("F4 SPACE") PORT_CODE(KEYCODE_F4) PORT_CODE(KEYCODE_SPACE)
 
 	PORT_START("ROW.9")
-	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_OTHER ) PORT_NAME( "4 - Space" ) PORT_CODE( KEYCODE_SPACE )
-	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_OTHER ) PORT_NAME( "L" ) PORT_CODE( KEYCODE_L )
-	PORT_BIT( 0x04, IP_ACTIVE_HIGH, IPT_OTHER ) PORT_NAME( "P" ) PORT_CODE( KEYCODE_P )
-	PORT_BIT( 0x08, IP_ACTIVE_HIGH, IPT_OTHER ) PORT_NAME( DEF_STR( No ) ) PORT_CODE( KEYCODE_0_PAD )
+	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_NAME("0 NO") PORT_CODE(KEYCODE_0)
+	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_CODE(KEYCODE_P)
+	PORT_BIT( 0x04, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_CODE(KEYCODE_L)
+	PORT_BIT( 0x08, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_NAME("F3 ENTER") PORT_CODE(KEYCODE_F3) PORT_CODE(KEYCODE_ENTER)
 INPUT_PORTS_END
 
 /* Machine Initialization */
 
 void thayers_state::machine_start()
 {
+	m_digits.resolve();
 	memset(&m_ssi263, 0, sizeof(m_ssi263));
 }
 
@@ -752,7 +779,9 @@ void thayers_state::machine_reset()
 	m_laserdisc_data = 0;
 
 	m_rx_bit = 0;
+	m_kbdata = 1;
 	m_keylatch = 0;
+	m_keydata = m_row[m_keylatch]->read();
 
 	m_cop_data_latch = 0;
 	m_cop_data_latch_enable = 0;
@@ -765,45 +794,46 @@ void thayers_state::machine_reset()
 
 	m_cart_present = 0;
 	m_pr7820_enter = 0;
-
-//  newtype = (ioport("DSWB")->read() & 0x18) ? LASERDISC_TYPE_PIONEER_LDV1000 : LASERDISC_TYPE_PIONEER_PR7820;
-//  laserdisc_set_type(m_laserdisc, newtype);
 }
 
 /* Machine Driver */
 
-static MACHINE_CONFIG_START( thayers, thayers_state )
-
+void thayers_state::thayers(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", Z80, XTAL_4MHz)
-	MCFG_CPU_PROGRAM_MAP(thayers_map)
-	MCFG_CPU_IO_MAP(thayers_io_map)
+	Z80(config, m_maincpu, XTAL(4'000'000));
+	m_maincpu->set_addrmap(AS_PROGRAM, &thayers_state::thayers_map);
+	m_maincpu->set_addrmap(AS_IO, &thayers_state::thayers_io_map);
 
-	MCFG_CPU_ADD("mcu", COP421, XTAL_4MHz/2) // COP421L-PCA/N
-	MCFG_COP400_CONFIG( COP400_CKI_DIVISOR_4, COP400_CKO_OSCILLATOR_OUTPUT, COP400_MICROBUS_DISABLED )
-	MCFG_COP400_READ_L_CB(READ8(thayers_state, cop_l_r))
-	MCFG_COP400_WRITE_L_CB(WRITE8(thayers_state, cop_l_w))
-	MCFG_COP400_READ_G_CB(READ8(thayers_state, cop_g_r))
-	MCFG_COP400_WRITE_G_CB(WRITE8(thayers_state, cop_g_w))
-	MCFG_COP400_WRITE_D_CB(WRITE8(thayers_state, cop_d_w))
-	MCFG_COP400_READ_SI_CB(READLINE(thayers_state, cop_si_r))
-	MCFG_COP400_WRITE_SO_CB(WRITELINE(thayers_state, cop_so_w))
-
-	MCFG_LASERDISC_PR7820_ADD("laserdisc")
+	cop421_cpu_device &mcu(COP421(config, "mcu", XTAL(4'000'000)/2)); // COP421L-PCA/N
+	mcu.set_config(COP400_CKI_DIVISOR_16, COP400_CKO_OSCILLATOR_OUTPUT, false);
+	mcu.read_l().set(FUNC(thayers_state::cop_l_r));
+	mcu.write_l().set(FUNC(thayers_state::cop_l_w));
+	mcu.read_g().set(FUNC(thayers_state::cop_g_r));
+	mcu.write_g().set(FUNC(thayers_state::cop_g_w));
+	mcu.write_d().set(FUNC(thayers_state::cop_d_w));
+	mcu.read_si().set(FUNC(thayers_state::kbdata_r));
+	mcu.write_so().set(FUNC(thayers_state::kbclk_w));
 
 	/* video hardware */
-	MCFG_LASERDISC_SCREEN_ADD_NTSC("screen", "laserdisc")
+	PIONEER_PR7820(config, m_pr7820, 0);
+	m_pr7820->set_screen("screen");
 
-	MCFG_PALETTE_ADD("palette", 256)
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_RASTER));
+	screen.set_video_attributes(VIDEO_SELF_RENDER);
+	screen.set_raw(XTAL(14'318'181)*2, 910, 0, 704, 525, 44, 524);
+	screen.set_screen_update("laserdisc", FUNC(laserdisc_device::screen_update));
+
+	PALETTE(config, "palette").set_entries(256);
 
 	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_STEREO("lspeaker", "rspeaker")
+	SPEAKER(config, "lspeaker").front_left();
+	SPEAKER(config, "rspeaker").front_right();
 	// SSI 263 @ 2MHz
 
-	MCFG_SOUND_MODIFY("laserdisc")
-	MCFG_SOUND_ROUTE(0, "lspeaker", 1.0)
-	MCFG_SOUND_ROUTE(1, "rspeaker", 1.0)
-MACHINE_CONFIG_END
+	m_pr7820->add_route(0, "lspeaker", 1.0);
+	m_pr7820->add_route(1, "rspeaker", 1.0);
+}
 
 /* ROMs */
 
@@ -833,6 +863,6 @@ ROM_END
 
 /* Game Drivers */
 
-/*     YEAR  NAME      PARENT   MACHINE  INPUT    INIT  MONITOR  COMPANY               FULLNAME                   FLAGS                             LAYOUT */
-GAMEL( 1984, thayers,  0,       thayers, thayers, driver_device, 0, ROT0,    "RDI Video Systems",  "Thayer's Quest (set 1)",  MACHINE_NOT_WORKING | MACHINE_NO_SOUND, layout_dlair)
-GAMEL( 1984, thayersa, thayers, thayers, thayers, driver_device, 0, ROT0,    "RDI Video Systems",  "Thayer's Quest (set 2)",  MACHINE_NOT_WORKING | MACHINE_NO_SOUND, layout_dlair)
+//     YEAR  NAME      PARENT   MACHINE  INPUT    CLASS          INIT        MONITOR  COMPANY               FULLNAME                   FLAGS                                   LAYOUT
+GAMEL( 1984, thayers,  0,       thayers, thayers, thayers_state, empty_init, ROT0,    "RDI Video Systems",  "Thayer's Quest (set 1)",  MACHINE_NOT_WORKING | MACHINE_NO_SOUND, layout_thayers)
+GAMEL( 1984, thayersa, thayers, thayers, thayers, thayers_state, empty_init, ROT0,    "RDI Video Systems",  "Thayer's Quest (set 2)",  MACHINE_NOT_WORKING | MACHINE_NO_SOUND, layout_thayers)

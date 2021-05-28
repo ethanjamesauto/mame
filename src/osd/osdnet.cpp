@@ -3,67 +3,70 @@
 #include "emu.h"
 #include "osdnet.h"
 
-static class simple_list<osd_netdev::entry_t> netdev_list;
+static class std::vector<std::unique_ptr<osd_netdev::entry_t>> netdev_list;
 
 void add_netdev(const char *name, const char *description, create_netdev func)
 {
-	auto entry = global_alloc_clear(osd_netdev::entry_t);
-	entry->id = netdev_list.count();
+	auto entry = std::make_unique<osd_netdev::entry_t>();
+	entry->id = netdev_list.size();
 	strncpy(entry->name, name, 255);
 	entry->name[255] = '\0';
 	strncpy(entry->description, (description != nullptr) ? description : "(no name)", 255);
 	entry->description[255] = '\0';
 	entry->func = func;
-	netdev_list.append(*entry);
+	netdev_list.push_back(std::move(entry));
 }
 
 void clear_netdev()
 {
-	netdev_list.reset();
+	netdev_list.clear();
 }
 
-const osd_netdev::entry_t *netdev_first() {
-	return netdev_list.first();
+const std::vector<std::unique_ptr<osd_netdev::entry_t>>& get_netdev_list()
+{
+	return netdev_list;
 }
 
 class osd_netdev *open_netdev(int id, class device_network_interface *ifdev, int rate)
 {
-	osd_netdev::entry_t *entry = netdev_list.first();
-	while(entry) {
+	for(auto &entry : netdev_list)
 		if(entry->id==id)
 			return entry->func(entry->name, ifdev, rate);
-		entry = entry->m_next;
-	}
-
 	return nullptr;
 }
 
 osd_netdev::osd_netdev(class device_network_interface *ifdev, int rate)
 {
 	m_dev = ifdev;
-	m_stop = false;
 	m_timer = ifdev->device().machine().scheduler().timer_alloc(timer_expired_delegate(FUNC(osd_netdev::recv), this));
 	m_timer->adjust(attotime::from_hz(rate), 0, attotime::from_hz(rate));
 }
 
 osd_netdev::~osd_netdev()
 {
-	m_stop = true;
-// nasty hack to prevent Segmentation fault on emulation stop
-//  m_timer->reset();
 }
 
-int osd_netdev::send(UINT8 *buf, int len)
+void osd_netdev::start()
+{
+	m_timer->enable(true);
+}
+
+void osd_netdev::stop()
+{
+	m_timer->enable(false);
+}
+
+int osd_netdev::send(uint8_t *buf, int len)
 {
 	return 0;
 }
 
 void osd_netdev::recv(void *ptr, int param)
 {
-	UINT8 *buf;
+	uint8_t *buf;
 	int len;
 	//const char atalkmac[] = { 0x09, 0x00, 0x07, 0xff, 0xff, 0xff };
-	while((!m_stop) && (len = recv_dev(&buf)))
+	while(m_timer->enabled() && (len = recv_dev(&buf)))
 	{
 #if 0
 		if(buf[0] & 1)
@@ -81,7 +84,7 @@ void osd_netdev::recv(void *ptr, int param)
 	}
 }
 
-int osd_netdev::recv_dev(UINT8 **buf)
+int osd_netdev::recv_dev(uint8_t **buf)
 {
 	return 0;
 }
@@ -110,13 +113,13 @@ const char *osd_netdev::get_mac()
 
 int netdev_count()
 {
-	return netdev_list.count();
+	return netdev_list.size();
 }
 
-void osd_list_network_adapters(void)
+void osd_list_network_adapters()
 {
 	#ifdef USE_NETWORK
-	int num_devs = netdev_list.count();
+	int num_devs = netdev_list.size();
 
 	if (num_devs == 0)
 	{
@@ -125,10 +128,9 @@ void osd_list_network_adapters(void)
 	}
 
 	printf("Available network adapters:\n");
-	const osd_netdev::entry_t *entry = netdev_first();
-	while(entry) {
+	for (auto &entry : netdev_list)
+	{
 		printf("    %s\n", entry->description);
-		entry = entry->m_next;
 	}
 
 	#else

@@ -1,14 +1,16 @@
 // license:BSD-3-Clause
-// copyright-holders:Luca Elia
+// copyright-holders:Luca Elia,Roberto Fresca
 /***************************************************************************
 
-Galaxi (C)2000 B.R.L.
+  Galaxi (C)2000 B.R.L.
 
-driver by Luca Elia
+  Driver by Luca Elia.
+  Additional work by Roberto Fresca.
 
-Hardware info (29/07/2008 f205v):
 
-Chips:
+  Hardware info (29/07/2008 f205v):
+
+  Chips:
     1x missing main CPU (u1)(from the socket I would say it's a 68000)
     1x A40MX04-PL84 (u29)
     1x AD-65 (equivalent to M6295) (u9)(sound)
@@ -16,28 +18,18 @@ Chips:
     1x TDA2003 (u8)(sound)
     1x oscillator 10.000MHz (QZ1)
     1x oscillator 16.000000 (QZ2)
-ROMs:
+  ROMs:
     1x AT27C020 (1)
     2x M27C4001 (2,3)
     2x AT49F010 (4,5)
     2x DS1230Y (non volatile SRAM)
-Notes:
+  Notes:
     1x 28x2 edge connector
     1x trimmer (volume)
 
-- This hardware is almost identical to that in magic10.c
+  - This hardware is almost identical to that in magic10.cpp
 
-
-[31/08/2008] (Roberto Fresca)
-
-- Added Magic Joker.
-- Fixed the 3rd background offset to Galaxi.
-- Remapped inputs to match the standard poker games.
-
-[12/09/2008] (Roberto Fresca)
-
-- Added lamps support to magjoker & galaxi.
-
+  CPU is a MC68000P10, from the other games boards...
 
 ***************************************************************************/
 
@@ -45,13 +37,21 @@ Notes:
 #include "cpu/m68000/m68000.h"
 #include "sound/okim6295.h"
 #include "machine/nvram.h"
+#include "emupal.h"
+#include "screen.h"
+#include "speaker.h"
+#include "tilemap.h"
+
 #include "galaxi.lh"
+
+#define CPU_CLOCK       (XTAL(10'000'000))
+#define SND_CLOCK       (XTAL(16'000'000))/16
 
 class galaxi_state : public driver_device
 {
 public:
-	galaxi_state(const machine_config &mconfig, device_type type, const char *tag)
-		: driver_device(mconfig, type, tag),
+	galaxi_state(const machine_config &mconfig, device_type type, const char *tag) :
+		driver_device(mconfig, type, tag),
 		m_bg1_ram(*this, "bg1_ram"),
 		m_bg2_ram(*this, "bg2_ram"),
 		m_bg3_ram(*this, "bg3_ram"),
@@ -60,15 +60,39 @@ public:
 		m_maincpu(*this, "maincpu"),
 		m_gfxdecode(*this, "gfxdecode"),
 		m_screen(*this, "screen"),
-		m_palette(*this, "palette") { }
+		m_palette(*this, "palette"),
+		m_lamps(*this, "lamp%u", 1U),
+		m_bg3_xscroll(8),
+		m_bg3_yscroll(0)
+	{ }
 
+	void galaxi(machine_config &config);
+	void lastfour(machine_config &config);
+	void magjoker(machine_config &config);
+
+	DECLARE_READ_LINE_MEMBER(ticket_r);
+	DECLARE_READ_LINE_MEMBER(hopper_r);
+
+protected:
+	virtual void machine_start() override;
+	virtual void machine_reset() override;
+	virtual void video_start() override;
+
+private:
 	/* memory pointers */
-	required_shared_ptr<UINT16> m_bg1_ram;
-	required_shared_ptr<UINT16> m_bg2_ram;
-	required_shared_ptr<UINT16> m_bg3_ram;
-	required_shared_ptr<UINT16> m_bg4_ram;
-	required_shared_ptr<UINT16> m_fg_ram;
-//  UINT16 *  m_nvram;        // currently this uses generic nvram handling
+	required_shared_ptr<uint16_t> m_bg1_ram;
+	required_shared_ptr<uint16_t> m_bg2_ram;
+	required_shared_ptr<uint16_t> m_bg3_ram;
+	required_shared_ptr<uint16_t> m_bg4_ram;
+	required_shared_ptr<uint16_t> m_fg_ram;
+//  uint16_t *  m_nvram;        // currently this uses generic nvram handling
+
+	required_device<cpu_device> m_maincpu;
+	required_device<gfxdecode_device> m_gfxdecode;
+	required_device<screen_device> m_screen;
+	required_device<palette_device> m_palette;
+
+	output_finder<6> m_lamps;
 
 	/* video-related */
 	tilemap_t   *m_bg1_tmap;
@@ -77,34 +101,34 @@ public:
 	tilemap_t   *m_bg4_tmap;
 	tilemap_t   *m_fg_tmap;
 
+	uint16_t m_bg3_xscroll;
+	uint16_t m_bg3_yscroll;
+
 	/* misc */
 	int       m_hopper;
 	int       m_ticket;
-	UINT16    m_out[3];
-	DECLARE_WRITE16_MEMBER(galaxi_bg1_w);
-	DECLARE_WRITE16_MEMBER(galaxi_bg2_w);
-	DECLARE_WRITE16_MEMBER(galaxi_bg3_w);
-	DECLARE_WRITE16_MEMBER(galaxi_bg4_w);
-	DECLARE_WRITE16_MEMBER(galaxi_fg_w);
-	DECLARE_WRITE16_MEMBER(galaxi_500000_w);
-	DECLARE_WRITE16_MEMBER(galaxi_500002_w);
-	DECLARE_WRITE16_MEMBER(galaxi_500004_w);
-	DECLARE_CUSTOM_INPUT_MEMBER(ticket_r);
-	DECLARE_CUSTOM_INPUT_MEMBER(hopper_r);
+	uint16_t    m_out;
+
+	void bg1_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	void bg2_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	void bg3_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	void bg4_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	void fg_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	void _500000_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	void _500002_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	void _500004_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+
 	TILE_GET_INFO_MEMBER(get_bg1_tile_info);
 	TILE_GET_INFO_MEMBER(get_bg2_tile_info);
 	TILE_GET_INFO_MEMBER(get_bg3_tile_info);
 	TILE_GET_INFO_MEMBER(get_bg4_tile_info);
 	TILE_GET_INFO_MEMBER(get_fg_tile_info);
-	virtual void machine_start() override;
-	virtual void machine_reset() override;
-	virtual void video_start() override;
-	UINT32 screen_update_galaxi(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
-	void show_out(  );
-	required_device<cpu_device> m_maincpu;
-	required_device<gfxdecode_device> m_gfxdecode;
-	required_device<screen_device> m_screen;
-	required_device<palette_device> m_palette;
+
+	uint32_t screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
+	void show_out();
+
+	void galaxi_map(address_map &map);
+	void lastfour_map(address_map &map);
 };
 
 
@@ -114,59 +138,59 @@ public:
 
 TILE_GET_INFO_MEMBER(galaxi_state::get_bg1_tile_info)
 {
-	UINT16 code = m_bg1_ram[tile_index];
-	SET_TILE_INFO_MEMBER(0, code, 0x10 + (code >> 12), 0);
+	uint16_t code = m_bg1_ram[tile_index];
+	tileinfo.set(0, code, 0x10 + (code >> 12), 0);
 }
 
 TILE_GET_INFO_MEMBER(galaxi_state::get_bg2_tile_info)
 {
-	UINT16 code = m_bg2_ram[tile_index];
-	SET_TILE_INFO_MEMBER(0, code, 0x10 + (code >> 12), 0);
+	uint16_t code = m_bg2_ram[tile_index];
+	tileinfo.set(0, code, 0x10 + (code >> 12), 0);
 }
 
 TILE_GET_INFO_MEMBER(galaxi_state::get_bg3_tile_info)
 {
-	UINT16 code = m_bg3_ram[tile_index];
-	SET_TILE_INFO_MEMBER(0, code, (code >> 12), 0);
+	uint16_t code = m_bg3_ram[tile_index];
+	tileinfo.set(0, code, (code >> 12), 0);
 }
 
 TILE_GET_INFO_MEMBER(galaxi_state::get_bg4_tile_info)
 {
-	UINT16 code = m_bg4_ram[tile_index];
-	SET_TILE_INFO_MEMBER(0, code, (code >> 12), 0);
+	uint16_t code = m_bg4_ram[tile_index];
+	tileinfo.set(0, code, (code >> 12), 0);
 }
 
 TILE_GET_INFO_MEMBER(galaxi_state::get_fg_tile_info)
 {
-	UINT16 code = m_fg_ram[tile_index];
-	SET_TILE_INFO_MEMBER(1, code, 0x20 + (code >> 12), 0);
+	uint16_t code = m_fg_ram[tile_index];
+	tileinfo.set(1, code, 0x20 + (code >> 12), 0);
 }
 
-WRITE16_MEMBER(galaxi_state::galaxi_bg1_w)
+void galaxi_state::bg1_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	COMBINE_DATA(&m_bg1_ram[offset]);
 	m_bg1_tmap->mark_tile_dirty(offset);
 }
 
-WRITE16_MEMBER(galaxi_state::galaxi_bg2_w)
+void galaxi_state::bg2_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	COMBINE_DATA(&m_bg2_ram[offset]);
 	m_bg2_tmap->mark_tile_dirty(offset);
 }
 
-WRITE16_MEMBER(galaxi_state::galaxi_bg3_w)
+void galaxi_state::bg3_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	COMBINE_DATA(&m_bg3_ram[offset]);
 	m_bg3_tmap->mark_tile_dirty(offset);
 }
 
-WRITE16_MEMBER(galaxi_state::galaxi_bg4_w)
+void galaxi_state::bg4_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	COMBINE_DATA(&m_bg4_ram[offset]);
 	m_bg4_tmap->mark_tile_dirty(offset);
 }
 
-WRITE16_MEMBER(galaxi_state::galaxi_fg_w)
+void galaxi_state::fg_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	COMBINE_DATA(&m_fg_ram[offset]);
 	m_fg_tmap->mark_tile_dirty(offset);
@@ -174,12 +198,12 @@ WRITE16_MEMBER(galaxi_state::galaxi_fg_w)
 
 void galaxi_state::video_start()
 {
-	m_bg1_tmap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(galaxi_state::get_bg1_tile_info),this), TILEMAP_SCAN_ROWS, 16, 16, 0x20, 0x10);
-	m_bg2_tmap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(galaxi_state::get_bg2_tile_info),this), TILEMAP_SCAN_ROWS, 16, 16, 0x20, 0x10);
-	m_bg3_tmap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(galaxi_state::get_bg3_tile_info),this), TILEMAP_SCAN_ROWS, 16, 16, 0x20, 0x10);
-	m_bg4_tmap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(galaxi_state::get_bg4_tile_info),this), TILEMAP_SCAN_ROWS, 16, 16, 0x20, 0x10);
+	m_bg1_tmap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(galaxi_state::get_bg1_tile_info)), TILEMAP_SCAN_ROWS, 16, 16, 0x20, 0x10);
+	m_bg2_tmap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(galaxi_state::get_bg2_tile_info)), TILEMAP_SCAN_ROWS, 16, 16, 0x20, 0x10);
+	m_bg3_tmap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(galaxi_state::get_bg3_tile_info)), TILEMAP_SCAN_ROWS, 16, 16, 0x20, 0x10);
+	m_bg4_tmap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(galaxi_state::get_bg4_tile_info)), TILEMAP_SCAN_ROWS, 16, 16, 0x20, 0x10);
 
-	m_fg_tmap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(galaxi_state::get_fg_tile_info),this), TILEMAP_SCAN_ROWS, 8, 8, 0x40, 0x20);
+	m_fg_tmap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(galaxi_state::get_fg_tile_info)), TILEMAP_SCAN_ROWS, 8, 8, 0x40, 0x20);
 
 	m_bg1_tmap->set_transparent_pen(0);
 	m_bg2_tmap->set_transparent_pen(0);
@@ -187,12 +211,13 @@ void galaxi_state::video_start()
 	m_bg4_tmap->set_transparent_pen(0);
 
 	m_fg_tmap->set_transparent_pen(0);
-
-	m_bg3_tmap->set_scrolldx(-8, 0);
 }
 
-UINT32 galaxi_state::screen_update_galaxi(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t galaxi_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
+	m_bg3_tmap->set_scrollx(m_bg3_xscroll);
+	m_bg3_tmap->set_scrolly(m_bg3_yscroll);
+
 	int layers_ctrl = -1;
 
 #ifdef MAME_DEBUG
@@ -208,6 +233,7 @@ UINT32 galaxi_state::screen_update_galaxi(screen_device &screen, bitmap_ind16 &b
 	}
 #endif
 
+
 	if (layers_ctrl & 1)    m_bg1_tmap->draw(screen, bitmap, cliprect, TILEMAP_DRAW_OPAQUE, 0);
 	else                bitmap.fill(m_palette->black_pen(), cliprect);
 	if (layers_ctrl & 2)    m_bg2_tmap->draw(screen, bitmap, cliprect, 0, 0);
@@ -220,27 +246,27 @@ UINT32 galaxi_state::screen_update_galaxi(screen_device &screen, bitmap_ind16 &b
 }
 
 /***************************************************************************
-                            Memory Maps
+                               Handlers
 ***************************************************************************/
 
 void galaxi_state::show_out(  )
 {
-//  popmessage("%04x %04x %04x", m_out[0], m_out[1], m_out[2]);
+//  popmessage("%04x", m_out);
 }
 
-WRITE16_MEMBER(galaxi_state::galaxi_500000_w)
+void galaxi_state::_500000_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
-	COMBINE_DATA(&m_out[0]);
+	COMBINE_DATA(&m_bg3_yscroll);
 	show_out();
 }
 
-WRITE16_MEMBER(galaxi_state::galaxi_500002_w)
+void galaxi_state::_500002_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
-	COMBINE_DATA(&m_out[1]);
+	COMBINE_DATA(&m_bg3_xscroll);
 	show_out();
 }
 
-WRITE16_MEMBER(galaxi_state::galaxi_500004_w)
+void galaxi_state::_500004_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	if (ACCESSING_BITS_0_7)
 	{
@@ -257,57 +283,85 @@ WRITE16_MEMBER(galaxi_state::galaxi_500004_w)
 	    -x-- ----  Payout.
 
 	*/
-		output_set_lamp_value(1, (data & 1));           /* Lamp 1 - HOLD 1 */
-		output_set_lamp_value(2, (data >> 1) & 1);      /* Lamp 2 - HOLD 2 */
-		output_set_lamp_value(3, (data >> 2) & 1);      /* Lamp 3 - HOLD 3 */
-		output_set_lamp_value(4, (data >> 3) & 1);      /* Lamp 4 - HOLD 4 */
-		output_set_lamp_value(5, (data >> 4) & 1);      /* Lamp 5 - HOLD 5 */
-		output_set_lamp_value(6, (data >> 5) & 1);      /* Lamp 6 - START  */
+		for (int n = 0; n < 6; n++)
+			m_lamps[n] = BIT(data, n);
 	}
 	if (ACCESSING_BITS_8_15)
 	{
 		m_ticket = data & 0x0100;
 		m_hopper = data & 0x1000;
-		coin_counter_w(machine(), 0, data & 0x2000);    // coins
+		machine().bookkeeping().coin_counter_w(0, data & 0x2000);    // coins
 	}
 
-	COMBINE_DATA(&m_out[2]);
+	COMBINE_DATA(&m_out);
 	show_out();
 }
 
-CUSTOM_INPUT_MEMBER(galaxi_state::ticket_r)
+READ_LINE_MEMBER(galaxi_state::ticket_r)
 {
 	return m_ticket && !(m_screen->frame_number() % 10);
 }
 
-CUSTOM_INPUT_MEMBER(galaxi_state::hopper_r)
+READ_LINE_MEMBER(galaxi_state::hopper_r)
 {
 	return m_hopper && !(m_screen->frame_number() % 10);
 }
 
 
-static ADDRESS_MAP_START( galaxi_map, AS_PROGRAM, 16, galaxi_state )
-	AM_RANGE(0x000000, 0x03ffff) AM_ROM
+/***************************************************************************
+                            Memory Maps
+***************************************************************************/
 
-	AM_RANGE(0x100000, 0x1003ff) AM_RAM_WRITE(galaxi_bg1_w) AM_SHARE("bg1_ram")
-	AM_RANGE(0x100400, 0x1007ff) AM_RAM_WRITE(galaxi_bg2_w) AM_SHARE("bg2_ram")
-	AM_RANGE(0x100800, 0x100bff) AM_RAM_WRITE(galaxi_bg3_w) AM_SHARE("bg3_ram")
-	AM_RANGE(0x100c00, 0x100fff) AM_RAM_WRITE(galaxi_bg4_w) AM_SHARE("bg4_ram")
+void galaxi_state::galaxi_map(address_map &map)
+{
+	map(0x000000, 0x03ffff).rom();
 
-	AM_RANGE(0x101000, 0x101fff) AM_RAM_WRITE(galaxi_fg_w ) AM_SHARE("fg_ram")
-	AM_RANGE(0x102000, 0x1047ff) AM_READNOP // unknown
+	map(0x100000, 0x1003ff).ram().w(FUNC(galaxi_state::bg1_w)).share("bg1_ram");
+	map(0x100400, 0x1007ff).ram().w(FUNC(galaxi_state::bg2_w)).share("bg2_ram");
+	map(0x100800, 0x100bff).ram().w(FUNC(galaxi_state::bg3_w)).share("bg3_ram");
+	map(0x100c00, 0x100fff).ram().w(FUNC(galaxi_state::bg4_w)).share("bg4_ram");
 
-	AM_RANGE(0x300000, 0x3007ff) AM_RAM_DEVWRITE("palette", palette_device, write) AM_SHARE("palette")
+	map(0x101000, 0x101fff).ram().w(FUNC(galaxi_state::fg_w)).share("fg_ram");
+	map(0x102000, 0x107fff).nopr(); // unknown
 
-	AM_RANGE(0x500000, 0x500001) AM_READ_PORT("INPUTS")
-	AM_RANGE(0x500000, 0x500001) AM_WRITE(galaxi_500000_w)
-	AM_RANGE(0x500002, 0x500003) AM_WRITE(galaxi_500002_w)
-	AM_RANGE(0x500004, 0x500005) AM_WRITE(galaxi_500004_w)
+	map(0x300000, 0x3007ff).ram().w(m_palette, FUNC(palette_device::write16)).share("palette");
 
-	AM_RANGE(0x700000, 0x700001) AM_DEVREADWRITE8("oki", okim6295_device, read, write, 0x00ff)
+	map(0x500000, 0x500001).portr("INPUTS");
+	map(0x500000, 0x500001).w(FUNC(galaxi_state::_500000_w));
+	map(0x500002, 0x500003).w(FUNC(galaxi_state::_500002_w));
+	map(0x500004, 0x500005).w(FUNC(galaxi_state::_500004_w));
 
-	AM_RANGE(0x600000, 0x607fff) AM_RAM AM_SHARE("nvram")   // 2x DS1230Y (non volatile SRAM)
-ADDRESS_MAP_END
+	map(0x700001, 0x700001).rw("oki", FUNC(okim6295_device::read), FUNC(okim6295_device::write));
+
+	map(0x600000, 0x607fff).ram().share("nvram");   // 2x DS1230Y (non volatile SRAM)
+}
+
+
+void galaxi_state::lastfour_map(address_map &map)
+{
+	map(0x000000, 0x03ffff).rom();
+
+	// bg3+4 / 1+2 seem to be swapped, order, palettes, scroll register etc. all suggest this
+	map(0x100000, 0x1003ff).ram().w(FUNC(galaxi_state::bg3_w)).share("bg3_ram");
+	map(0x100400, 0x1007ff).ram().w(FUNC(galaxi_state::bg4_w)).share("bg4_ram");
+	map(0x100800, 0x100bff).ram().w(FUNC(galaxi_state::bg1_w)).share("bg1_ram");
+	map(0x100c00, 0x100fff).ram().w(FUNC(galaxi_state::bg2_w)).share("bg2_ram");
+
+	map(0x101000, 0x101fff).ram().w(FUNC(galaxi_state::fg_w)).share("fg_ram");
+	map(0x102000, 0x107fff).nopr(); // unknown
+
+	map(0x300000, 0x3007ff).ram().w(m_palette, FUNC(palette_device::write16)).share("palette");
+
+	map(0x500000, 0x500001).portr("INPUTS");
+	map(0x500000, 0x500001).w(FUNC(galaxi_state::_500000_w));
+	map(0x500002, 0x500003).w(FUNC(galaxi_state::_500002_w));
+	map(0x500004, 0x500005).w(FUNC(galaxi_state::_500004_w));
+
+	map(0x700001, 0x700001).rw("oki", FUNC(okim6295_device::read), FUNC(okim6295_device::write));
+
+	map(0x600000, 0x607fff).ram().share("nvram");   // 2x DS1230Y (non volatile SRAM)
+}
+
 
 /***************************************************************************
                                 Input Ports
@@ -322,15 +376,15 @@ static INPUT_PORTS_START( galaxi )
 	PORT_BIT( 0x0010, IP_ACTIVE_HIGH, IPT_POKER_HOLD5 )
 	PORT_BIT( 0x0020, IP_ACTIVE_HIGH, IPT_START1 )
 	PORT_BIT( 0x0040, IP_ACTIVE_HIGH, IPT_GAMBLE_PAYOUT )
-	PORT_BIT( 0x0080, IP_ACTIVE_HIGH, IPT_SPECIAL) PORT_CUSTOM_MEMBER(DEVICE_SELF, galaxi_state,hopper_r, (void *)nullptr )   // hopper sensor
+	PORT_BIT( 0x0080, IP_ACTIVE_HIGH, IPT_CUSTOM) PORT_READ_LINE_MEMBER(galaxi_state, hopper_r)   // hopper sensor
 	PORT_BIT( 0x0100, IP_ACTIVE_HIGH, IPT_COIN1 ) PORT_IMPULSE(5)   // coin a
 	PORT_BIT( 0x0200, IP_ACTIVE_HIGH, IPT_COIN2 ) PORT_IMPULSE(5)   // coin b (token)
 	PORT_BIT( 0x0400, IP_ACTIVE_HIGH, IPT_COIN3 )   // pin 25LC
-	PORT_BIT( 0x0800, IP_ACTIVE_HIGH, IPT_SPECIAL ) PORT_CUSTOM_MEMBER(DEVICE_SELF, galaxi_state,ticket_r, (void *)nullptr )  // ticket sensor
-	PORT_BIT( 0x1000, IP_ACTIVE_HIGH, IPT_SPECIAL ) // hopper out (pin 14LS)
+	PORT_BIT( 0x0800, IP_ACTIVE_HIGH, IPT_CUSTOM ) PORT_READ_LINE_MEMBER(galaxi_state, ticket_r)  // ticket sensor
+	PORT_BIT( 0x1000, IP_ACTIVE_HIGH, IPT_CUSTOM ) // hopper out (pin 14LS)
 	PORT_SERVICE_NO_TOGGLE( 0x2000, IP_ACTIVE_HIGH )    // test
-	PORT_BIT( 0x4000, IP_ACTIVE_HIGH, IPT_SPECIAL ) // (pin 26LC)
-	PORT_BIT( 0x8000, IP_ACTIVE_HIGH, IPT_SPECIAL ) // (pin 15LS)
+	PORT_BIT( 0x4000, IP_ACTIVE_HIGH, IPT_CUSTOM ) // (pin 26LC)
+	PORT_BIT( 0x8000, IP_ACTIVE_HIGH, IPT_CUSTOM ) // (pin 15LS)
 INPUT_PORTS_END
 
 static INPUT_PORTS_START( magjoker )
@@ -342,20 +396,20 @@ static INPUT_PORTS_START( magjoker )
 	PORT_BIT( 0x0010, IP_ACTIVE_HIGH, IPT_POKER_HOLD5 )
 	PORT_BIT( 0x0020, IP_ACTIVE_HIGH, IPT_START1 )
 	PORT_BIT( 0x0040, IP_ACTIVE_HIGH, IPT_GAMBLE_PAYOUT )
-	PORT_BIT( 0x0080, IP_ACTIVE_HIGH, IPT_SPECIAL )PORT_CUSTOM_MEMBER(DEVICE_SELF, galaxi_state,hopper_r, (void *)nullptr )   // hopper sensor
+	PORT_BIT( 0x0080, IP_ACTIVE_HIGH, IPT_CUSTOM ) PORT_READ_LINE_MEMBER(galaxi_state, hopper_r)   // hopper sensor
 	PORT_BIT( 0x0100, IP_ACTIVE_HIGH, IPT_COIN1 ) PORT_IMPULSE(5)   // coin a
 	PORT_BIT( 0x0200, IP_ACTIVE_HIGH, IPT_COIN2 ) PORT_IMPULSE(5)   // coin b (token)
 	PORT_BIT( 0x0400, IP_ACTIVE_HIGH, IPT_SERVICE ) PORT_NAME("Hopper Refill") PORT_CODE(KEYCODE_H)
-	PORT_BIT( 0x0800, IP_ACTIVE_HIGH, IPT_SPECIAL ) PORT_CUSTOM_MEMBER(DEVICE_SELF, galaxi_state,ticket_r, (void *)nullptr )  // ticket sensor
-	PORT_BIT( 0x1000, IP_ACTIVE_HIGH, IPT_SPECIAL ) // hopper out (pin 14LS)
+	PORT_BIT( 0x0800, IP_ACTIVE_HIGH, IPT_CUSTOM ) PORT_READ_LINE_MEMBER(galaxi_state, ticket_r)  // ticket sensor
+	PORT_BIT( 0x1000, IP_ACTIVE_HIGH, IPT_CUSTOM ) // hopper out (pin 14LS)
 	PORT_SERVICE_NO_TOGGLE( 0x2000, IP_ACTIVE_HIGH )    // test
 	PORT_BIT( 0x4000, IP_ACTIVE_HIGH, IPT_GAMBLE_KEYOUT )   // (pin 26LC)
-	PORT_BIT( 0x8000, IP_ACTIVE_HIGH, IPT_SPECIAL ) // (pin 15LS)
+	PORT_BIT( 0x8000, IP_ACTIVE_HIGH, IPT_CUSTOM ) // (pin 15LS)
 INPUT_PORTS_END
 
 
 /***************************************************************************
-                               Graphics Layout
+                      Graphics Layout & Graphics Decode
 ***************************************************************************/
 
 static const gfx_layout layout_8x8x4 =
@@ -380,14 +434,14 @@ static const gfx_layout layout_16x16x4 =
 	16*16*4
 };
 
-static GFXDECODE_START( galaxi )
+static GFXDECODE_START( gfx_galaxi )
 	GFXDECODE_ENTRY( "gfx1", 0x00000, layout_16x16x4, 0, 0x400/0x10 )
 	GFXDECODE_ENTRY( "gfx1", 0x80000, layout_8x8x4,   0, 0x400/0x10 )
 GFXDECODE_END
 
 
 /***************************************************************************
-                              Machine Drivers
+                           Machine Start & Reset
 ***************************************************************************/
 
 void galaxi_state::machine_start()
@@ -395,59 +449,68 @@ void galaxi_state::machine_start()
 	save_item(NAME(m_hopper));
 	save_item(NAME(m_ticket));
 	save_item(NAME(m_out));
+
+	m_lamps.resolve();
 }
 
 void galaxi_state::machine_reset()
 {
 	m_hopper = 0;
 	m_ticket = 0;
-	m_out[0] = 0;
-	m_out[1] = 0;
-	m_out[2] = 0;
+	m_out = 0;
 }
 
-static MACHINE_CONFIG_START( galaxi, galaxi_state )
+/***************************************************************************
+                              Machine Drivers
+***************************************************************************/
 
+void galaxi_state::galaxi(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", M68000, XTAL_10MHz) // ?
-	MCFG_CPU_PROGRAM_MAP(galaxi_map)
-	MCFG_CPU_VBLANK_INT_DRIVER("screen", galaxi_state,  irq4_line_hold)
+	M68000(config, m_maincpu, CPU_CLOCK);
+	m_maincpu->set_addrmap(AS_PROGRAM, &galaxi_state::galaxi_map);
+	m_maincpu->set_vblank_int("screen", FUNC(galaxi_state::irq4_line_hold));
 
-	MCFG_NVRAM_ADD_0FILL("nvram")
+	NVRAM(config, "nvram", nvram_device::DEFAULT_ALL_0);
 
 	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_REFRESH_RATE(60)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(0))
-	MCFG_SCREEN_SIZE(512, 256)
-	MCFG_SCREEN_VISIBLE_AREA(16*5, 512-16*2-1, 16*1, 256-1)
-	MCFG_SCREEN_UPDATE_DRIVER(galaxi_state, screen_update_galaxi)
-	MCFG_SCREEN_PALETTE("palette")
+	SCREEN(config, m_screen, SCREEN_TYPE_RASTER);
+	m_screen->set_refresh_hz(60);
+	m_screen->set_vblank_time(ATTOSECONDS_IN_USEC(0));
+	m_screen->set_size(512, 256);
+	m_screen->set_visarea(16*5, 512-16*2-1, 16*1, 256-1);
+	m_screen->set_screen_update(FUNC(galaxi_state::screen_update));
+	m_screen->set_palette(m_palette);
 
-	MCFG_GFXDECODE_ADD("gfxdecode", "palette", galaxi)
-	MCFG_PALETTE_ADD("palette", 0x400)
-	MCFG_PALETTE_FORMAT(xRRRRRGGGGGBBBBB)
-
+	GFXDECODE(config, m_gfxdecode, m_palette, gfx_galaxi);
+	PALETTE(config, m_palette).set_format(palette_device::xRGB_555, 0x400);
 
 	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_MONO("mono")
+	SPEAKER(config, "mono").front_center();
 
-	MCFG_OKIM6295_ADD("oki", XTAL_16MHz/16, OKIM6295_PIN7_LOW)  // ?
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 1.0)
-MACHINE_CONFIG_END
+	OKIM6295(config, "oki", SND_CLOCK, okim6295_device::PIN7_LOW).add_route(ALL_OUTPUTS, "mono", 1.0);  // ?
+}
 
 
-static MACHINE_CONFIG_DERIVED( magjoker, galaxi )
-
-	/* basic machine hardware */
+void galaxi_state::magjoker(machine_config &config)
+{
+	galaxi(config);
 
 	/* sound hardware */
-	MCFG_SOUND_MODIFY("oki")
 
 	/* ADPCM samples are recorded with extremely low volume */
-	MCFG_SOUND_ROUTES_RESET()
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 4.0)
-MACHINE_CONFIG_END
+	subdevice<okim6295_device>("oki")->reset_routes();
+	subdevice<okim6295_device>("oki")->add_route(ALL_OUTPUTS, "mono", 4.0);
+}
+
+
+void galaxi_state::lastfour(machine_config &config)
+{
+	galaxi(config);
+
+	/* basic machine hardware */
+	m_maincpu->set_addrmap(AS_PROGRAM, &galaxi_state::lastfour_map);
+}
 
 
 /***************************************************************************
@@ -480,11 +543,59 @@ ROM_START( magjoker )
 	ROM_LOAD( "21.u38", 0x00000, 0x40000, CRC(199baf33) SHA1(006708d955481fe1ae44555d27896d18e1ff8440) )
 ROM_END
 
+/*
+  Last Four
+  2001, BRL.
+
+  CPUs:
+  1x MC68000P10 (u1) 16/32-bit Microprocessor (main).
+  1x AD-65      (u9) 4-Channel Mixing ADCPM Voice Synthesis LSI (sound).
+  1x MC1458     (u10) Dual Operational Amplifier (sound).
+  1x TDA2003    (u8) Audio Amplifier (sound).
+  1x 10.000000MHz. oscillator (QZ1).
+  1x 16.000MHz. oscillator (QZ2).
+
+  ROMs:
+  1x AF49F010 (14) dumped.
+  1x Am27C010 (15) dumped.
+  1x MC27C100 (21) dumped.
+  2x M27C4001 (12, 13) dumped.
+
+  RAMs:
+  2x KT76C28K-10 (u16, u17).
+  2x HT6264-70 (u26, u27).
+  2x DS1230Y-100 (u4, u5) not dumped.
+
+  PLDs:
+  1x A40MX04-PL84 (u29) read protected.
+
+  Others:
+  1x 28x2 JAMMA edge connector.
+  1x trimmer (volume).
+
+  Notes:
+  PCB is etched: GALAXI - 26 05 2000 BRL S.R.L. BOLOGNA.
+
+*/
+ROM_START( lastfour )
+	ROM_REGION( 0x40000, "maincpu", 0 )
+	ROM_LOAD16_BYTE( "15.u48", 0x00000, 0x20000, CRC(9168e19c) SHA1(4a2f0d100e457bd33691ba084a0f0549e8bf0790) )
+	ROM_LOAD16_BYTE( "14.u47", 0x00001, 0x20000, CRC(b10ce31a) SHA1(8d51ead24319ff775fc873957e6b4de748432a8d) )
+
+	ROM_REGION( 0x100000, "gfx1", 0 )
+	ROM_LOAD16_BYTE( "13.u34", 0x00000, 0x80000, CRC(d595d4c4) SHA1(7fe8c9f36b03d763965abf325d1ff6d754342100) )
+	ROM_LOAD16_BYTE( "12.u33", 0x00001, 0x80000, CRC(5ee5568b) SHA1(6384e5dfa24b5ad4e4419fa3bbffb4d552867465) )
+
+	ROM_REGION( 0x40000, "oki", 0 ) /* 4-bit ADPCM mono @ 6 kHz.*/
+	ROM_LOAD( "21.u38", 0x00000, 0x20000, CRC(e48523dd) SHA1(47bc2e5c2164b93d685fa134397845e0ed7aaa5f) )
+ROM_END
+
 
 /***************************************************************************
                                Game Drivers
 ***************************************************************************/
 
-/*     YEAR  NAME      PARENT  MACHINE   INPUT     INIT  ROT    COMPANY   FULLNAME                       FLAGS                   LAYOUT  */
-GAMEL( 2000, galaxi,   0,      galaxi,   galaxi, driver_device,   0,    ROT0,  "B.R.L.", "Galaxi (v2.0)",               MACHINE_SUPPORTS_SAVE,     layout_galaxi )
-GAMEL( 2000, magjoker, 0,      magjoker, magjoker, driver_device, 0,    ROT0,  "B.R.L.", "Magic Joker (v1.25.10.2000)", MACHINE_SUPPORTS_SAVE,     layout_galaxi )
+//     YEAR  NAME      PARENT  MACHINE   INPUT     CLASS         INIT        ROT   COMPANY   FULLNAME                        FLAGS                   LAYOUT
+GAMEL( 2000, galaxi,   0,      galaxi,   galaxi,   galaxi_state, empty_init, ROT0, "B.R.L.", "Galaxi (v2.0)",                MACHINE_SUPPORTS_SAVE,  layout_galaxi )
+GAMEL( 2000, magjoker, 0,      magjoker, magjoker, galaxi_state, empty_init, ROT0, "B.R.L.", "Magic Joker (v1.25.10.2000)",  MACHINE_SUPPORTS_SAVE,  layout_galaxi )
+GAMEL( 2001, lastfour, 0,      lastfour, magjoker, galaxi_state, empty_init, ROT0, "B.R.L.", "Last Four (09:12 16/01/2001)", MACHINE_SUPPORTS_SAVE,  layout_galaxi )

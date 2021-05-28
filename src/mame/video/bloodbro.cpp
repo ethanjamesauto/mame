@@ -12,6 +12,7 @@
 
 #include "emu.h"
 #include "includes/bloodbro.h"
+#include "screen.h"
 
 
 /***************************************************************************
@@ -23,7 +24,7 @@
 TILE_GET_INFO_MEMBER(bloodbro_state::get_bg_tile_info)
 {
 	int code = m_bgvideoram[tile_index];
-	SET_TILE_INFO_MEMBER(1,
+	tileinfo.set(1,
 			code & 0xfff,
 			(code >> 12),
 			0);
@@ -32,7 +33,7 @@ TILE_GET_INFO_MEMBER(bloodbro_state::get_bg_tile_info)
 TILE_GET_INFO_MEMBER(bloodbro_state::get_fg_tile_info)
 {
 	int code = m_fgvideoram[tile_index];
-	SET_TILE_INFO_MEMBER(2,
+	tileinfo.set(2,
 			(code & 0xfff)+0x1000,
 			(code >> 12),
 			0);
@@ -41,7 +42,7 @@ TILE_GET_INFO_MEMBER(bloodbro_state::get_fg_tile_info)
 TILE_GET_INFO_MEMBER(bloodbro_state::get_tx_tile_info)
 {
 	int code = m_txvideoram[tile_index];
-	SET_TILE_INFO_MEMBER(0,
+	tileinfo.set(0,
 			code & 0xfff,
 			code >> 12,
 			0);
@@ -57,9 +58,9 @@ TILE_GET_INFO_MEMBER(bloodbro_state::get_tx_tile_info)
 
 void bloodbro_state::video_start()
 {
-	m_bg_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(bloodbro_state::get_bg_tile_info),this),TILEMAP_SCAN_ROWS,16,16,32,16);
-	m_fg_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(bloodbro_state::get_fg_tile_info),this),TILEMAP_SCAN_ROWS,16,16,32,16);
-	m_tx_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(bloodbro_state::get_tx_tile_info),this),TILEMAP_SCAN_ROWS, 8, 8,32,32);
+	m_bg_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(bloodbro_state::get_bg_tile_info)), TILEMAP_SCAN_ROWS, 16, 16, 32, 16);
+	m_fg_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(bloodbro_state::get_fg_tile_info)), TILEMAP_SCAN_ROWS, 16, 16, 32, 16);
+	m_tx_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(bloodbro_state::get_tx_tile_info)), TILEMAP_SCAN_ROWS,  8,  8, 32, 32);
 
 	m_fg_tilemap->set_transparent_pen(15);
 	m_tx_tilemap->set_transparent_pen(15);
@@ -76,19 +77,19 @@ void bloodbro_state::video_start()
 
 ***************************************************************************/
 
-WRITE16_MEMBER(bloodbro_state::bgvideoram_w)
+void bloodbro_state::bgvideoram_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	COMBINE_DATA(&m_bgvideoram[offset]);
 	m_bg_tilemap->mark_tile_dirty(offset);
 }
 
-WRITE16_MEMBER(bloodbro_state::fgvideoram_w)
+void bloodbro_state::fgvideoram_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	COMBINE_DATA(&m_fgvideoram[offset]);
 	m_fg_tilemap->mark_tile_dirty(offset);
 }
 
-WRITE16_MEMBER(bloodbro_state::txvideoram_w)
+void bloodbro_state::txvideoram_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	COMBINE_DATA(&m_txvideoram[offset]);
 	m_tx_tilemap->mark_tile_dirty(offset);
@@ -146,7 +147,7 @@ WRITE16_MEMBER(bloodbro_state::txvideoram_w)
 
 void bloodbro_state::bloodbro_draw_sprites(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
-	UINT16 *spriteram16 = m_spriteram;
+	uint16_t *spriteram16 = m_spriteram;
 	int offs;
 	for (offs = 0;offs < m_spriteram.bytes()/2;offs += 4)
 	{
@@ -194,11 +195,10 @@ void bloodbro_state::bloodbro_draw_sprites(screen_device &screen, bitmap_ind16 &
 
 void bloodbro_state::weststry_draw_sprites(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
-	UINT16 *spriteram16 = m_spriteram;
+	uint16_t *spriteram16 = m_spriteram;
 	int offs;
 
-	/* TODO: the last two entries are not sprites - control registers? */
-	for (offs = 0;offs < m_spriteram.bytes()/2 - 8;offs += 4)
+	for (offs = m_spriteram.bytes()/2 - 4; offs >= 0; offs -= 4)
 	{
 		int data = spriteram16[offs+2];
 		int data0 = spriteram16[offs+0];
@@ -229,7 +229,7 @@ void bloodbro_state::weststry_draw_sprites(screen_device &screen, bitmap_ind16 &
 
 
 
-UINT32 bloodbro_state::screen_update_bloodbro(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t bloodbro_state::screen_update_bloodbro(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	m_bg_tilemap->set_scrollx(0,m_scrollram[0]);
 	m_bg_tilemap->set_scrolly(0,m_scrollram[1]);
@@ -249,12 +249,11 @@ UINT32 bloodbro_state::screen_update_bloodbro(screen_device &screen, bitmap_ind1
 	return 0;
 }
 
-UINT32 bloodbro_state::screen_update_weststry(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t bloodbro_state::screen_update_weststry(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
-//  m_bg_tilemap->set_scrollx(0,m_scroll[0x10]);    /* ? */
-//  m_bg_tilemap->set_scrolly(0,m_scroll[0x11]);    /* ? */
-//  m_fg_tilemap->set_scrollx(0,m_scroll[0x12]);
-//  m_fg_tilemap->set_scrolly(0,m_scroll[0x13]);
+	// The bootleg video hardware probably also allows BG scrolling, but weststry doesn't use it
+	m_fg_tilemap->set_scrollx(0, (int8_t)m_scrollram[1] - 13);
+	m_fg_tilemap->set_scrolly(0, (int8_t)m_scrollram[0] + 1);
 
 	screen.priority().fill(0, cliprect);
 
@@ -266,7 +265,7 @@ UINT32 bloodbro_state::screen_update_weststry(screen_device &screen, bitmap_ind1
 }
 
 
-UINT32 bloodbro_state::screen_update_skysmash(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t bloodbro_state::screen_update_skysmash(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	m_bg_tilemap->set_scrollx(0,m_scrollram[0]);
 	m_bg_tilemap->set_scrolly(0,m_scrollram[1]);

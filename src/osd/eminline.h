@@ -4,100 +4,34 @@
 
     eminline.h
 
-    Definitions for inline functions that can be overriden by OSD-
+    Definitions for inline functions that can be overridden by OSD-
     specific code.
 
 ***************************************************************************/
 
-#ifndef __EMINLINE__
-#define __EMINLINE__
+#ifndef MAME_OSD_EMINLINE_H
+#define MAME_OSD_EMINLINE_H
+
+#pragma once
+
+#include "osdcomm.h"
+#include "osdcore.h"
 
 #if !defined(MAME_NOASM)
-/* we come with implementations for GCC x86 and PPC */
+
 #if defined(__GNUC__)
-
-#if defined(__i386__) || defined(__x86_64__)
-
-
-static inline void ATTR_FORCE_INLINE
-osd_yield_processor(void)
-{
-	__asm__ __volatile__ ( " rep ; nop ;" );
-}
-
-
-#if defined(__x86_64__)
-
-//============================================================
-//  osd_exchange64
-//============================================================
-
-static inline INT64 ATTR_UNUSED ATTR_NONNULL(1) ATTR_FORCE_INLINE
-_osd_exchange64(INT64 volatile *ptr, INT64 exchange)
-{
-	INT64 ret;
-	__asm__ __volatile__ (
-		" lock ; xchg %[exchange], %[ptr] ;"
-		: [ptr]      "+m" (*ptr)
-		, [ret]      "=r" (ret)
-		: [exchange] "1"  (exchange)
-	);
-	return ret;
-}
-#define osd_exchange64 _osd_exchange64
-
-#endif /* __x86_64__ */
-
-
-#elif defined(__ppc__) || defined (__PPC__) || defined(__ppc64__) || defined(__PPC64__)
-
-
-static inline void ATTR_FORCE_INLINE
-osd_yield_processor(void)
-{
-	__asm__ __volatile__ ( " nop \n nop \n" );
-}
-
-
-
-#if defined(__ppc64__) || defined(__PPC64__)
-
-//============================================================
-//  osd_exchange64
-//============================================================
-
-static inline INT64 ATTR_UNUSED ATTR_NONNULL(1) ATTR_FORCE_INLINE
-_osd_exchange64(INT64 volatile *ptr, INT64 exchange)
-{
-	INT64 ret;
-	__asm__ __volatile__ (
-		"1: ldarx  %[ret], 0, %[ptr]      \n"
-		"   stdcx. %[exchange], 0, %[ptr] \n"
-		"   bne-   1b                     \n"
-		: [ret]      "=&r" (ret)
-		: [ptr]      "r"   (ptr)
-		, [exchange] "r"   (exchange)
-		: "cr0"
-	);
-	return ret;
-}
-#define osd_exchange64 _osd_exchange64
-
-#endif /* __ppc64__ || __PPC64__ */
-
-#endif
 
 #if defined(__i386__) || defined(__x86_64__)
 #include "eigccx86.h"
 #elif defined(__ppc__) || defined (__PPC__) || defined(__ppc64__) || defined(__PPC64__)
 #include "eigccppc.h"
-#else
-#error "no matching assembler implementations found - please compile with NOASM=1"
+#elif defined(__arm__) || defined(__aarch64__)
+#include "eigccarm.h"
 #endif
 
-#else
+#include "eigcc.h"
 
-#if defined(_MSC_VER)
+#elif defined(_MSC_VER)
 
 #if (defined(_M_IX86) || defined(_M_X64))
 #include "eivcx86.h"
@@ -105,41 +39,9 @@ _osd_exchange64(INT64 volatile *ptr, INT64 exchange)
 
 #include "eivc.h"
 
-INT32 win_compare_exchange32(INT32 volatile *ptr, INT32 compare, INT32 exchange);
-INT32 win_atomic_exchange32(INT32 volatile *ptr, INT32 exchange);
-INT32 win_atomic_add32(INT32 volatile *ptr, INT32 delta);
-
-#ifdef PTR64
-INT64 win_compare_exchange64(INT64 volatile *ptr, INT64 compare, INT64 exchange);
 #endif
 
-
-#ifndef compare_exchange32
-#define compare_exchange32 win_compare_exchange32
-#endif /* compare_exchange32 */
-
-#ifdef PTR64
-#ifndef compare_exchange64
-#define compare_exchange64 win_compare_exchange64
-#endif /* compare_exchange64 */
-#endif
-
-#ifndef atomic_exchange32
-#define atomic_exchange32 win_atomic_exchange32
-#endif /* atomic_exchange32 */
-
-
-#ifndef atomic_add32
-#define atomic_add32 win_atomic_add32
-#endif /* atomic_add32 */
-#else
-
-#error "no matching assembler implementations found - please compile with NOASM=1"
-
-#endif
-
-#endif
-#endif
+#endif // !defined(MAME_NOASM)
 
 
 /***************************************************************************
@@ -152,9 +54,9 @@ INT64 win_compare_exchange64(INT64 volatile *ptr, INT64 compare, INT64 exchange)
 -------------------------------------------------*/
 
 #ifndef mul_32x32
-static inline INT64 mul_32x32(INT32 a, INT32 b)
+constexpr int64_t mul_32x32(int32_t a, int32_t b)
 {
-	return (INT64)a * (INT64)b;
+	return int64_t(a) * int64_t(b);
 }
 #endif
 
@@ -166,9 +68,9 @@ static inline INT64 mul_32x32(INT32 a, INT32 b)
 -------------------------------------------------*/
 
 #ifndef mulu_32x32
-static inline UINT64 mulu_32x32(UINT32 a, UINT32 b)
+constexpr uint64_t mulu_32x32(uint32_t a, uint32_t b)
 {
-	return (UINT64)a * (UINT64)b;
+	return uint64_t(a) * uint64_t(b);
 }
 #endif
 
@@ -180,9 +82,9 @@ static inline UINT64 mulu_32x32(UINT32 a, UINT32 b)
 -------------------------------------------------*/
 
 #ifndef mul_32x32_hi
-static inline INT32 mul_32x32_hi(INT32 a, INT32 b)
+constexpr int32_t mul_32x32_hi(int32_t a, int32_t b)
 {
-	return (UINT32)(((INT64)a * (INT64)b) >> 32);
+	return uint32_t((int64_t(a) * int64_t(b)) >> 32);
 }
 #endif
 
@@ -194,9 +96,9 @@ static inline INT32 mul_32x32_hi(INT32 a, INT32 b)
 -------------------------------------------------*/
 
 #ifndef mulu_32x32_hi
-static inline UINT32 mulu_32x32_hi(UINT32 a, UINT32 b)
+constexpr uint32_t mulu_32x32_hi(uint32_t a, uint32_t b)
 {
-	return (UINT32)(((UINT64)a * (UINT64)b) >> 32);
+	return uint32_t((uint64_t(a) * uint64_t(b)) >> 32);
 }
 #endif
 
@@ -209,9 +111,9 @@ static inline UINT32 mulu_32x32_hi(UINT32 a, UINT32 b)
 -------------------------------------------------*/
 
 #ifndef mul_32x32_shift
-static inline INT32 mul_32x32_shift(INT32 a, INT32 b, UINT8 shift)
+constexpr int32_t mul_32x32_shift(int32_t a, int32_t b, uint8_t shift)
 {
-	return (INT32)(((INT64)a * (INT64)b) >> shift);
+	return int32_t((int64_t(a) * int64_t(b)) >> shift);
 }
 #endif
 
@@ -224,9 +126,9 @@ static inline INT32 mul_32x32_shift(INT32 a, INT32 b, UINT8 shift)
 -------------------------------------------------*/
 
 #ifndef mulu_32x32_shift
-static inline UINT32 mulu_32x32_shift(UINT32 a, UINT32 b, UINT8 shift)
+constexpr uint32_t mulu_32x32_shift(uint32_t a, uint32_t b, uint8_t shift)
 {
-	return (UINT32)(((UINT64)a * (UINT64)b) >> shift);
+	return uint32_t((uint64_t(a) * uint64_t(b)) >> shift);
 }
 #endif
 
@@ -237,9 +139,9 @@ static inline UINT32 mulu_32x32_shift(UINT32 a, UINT32 b, UINT8 shift)
 -------------------------------------------------*/
 
 #ifndef div_64x32
-static inline INT32 div_64x32(INT64 a, INT32 b)
+constexpr int32_t div_64x32(int64_t a, int32_t b)
 {
-	return a / (INT64)b;
+	return a / int64_t(b);
 }
 #endif
 
@@ -250,9 +152,9 @@ static inline INT32 div_64x32(INT64 a, INT32 b)
 -------------------------------------------------*/
 
 #ifndef divu_64x32
-static inline UINT32 divu_64x32(UINT64 a, UINT32 b)
+constexpr uint32_t divu_64x32(uint64_t a, uint32_t b)
 {
-	return a / (UINT64)b;
+	return a / uint64_t(b);
 }
 #endif
 
@@ -264,10 +166,10 @@ static inline UINT32 divu_64x32(UINT64 a, UINT32 b)
 -------------------------------------------------*/
 
 #ifndef div_64x32_rem
-static inline INT32 div_64x32_rem(INT64 a, INT32 b, INT32 *remainder)
+inline int32_t div_64x32_rem(int64_t a, int32_t b, int32_t &remainder)
 {
-	INT32 res = div_64x32(a, b);
-	*remainder = a - ((INT64)b * res);
+	int32_t const res(div_64x32(a, b));
+	remainder = a - (int64_t(b) * res);
 	return res;
 }
 #endif
@@ -280,10 +182,10 @@ static inline INT32 div_64x32_rem(INT64 a, INT32 b, INT32 *remainder)
 -------------------------------------------------*/
 
 #ifndef divu_64x32_rem
-static inline UINT32 divu_64x32_rem(UINT64 a, UINT32 b, UINT32 *remainder)
+inline uint32_t divu_64x32_rem(uint64_t a, uint32_t b, uint32_t &remainder)
 {
-	UINT32 res = divu_64x32(a, b);
-	*remainder = a - ((UINT64)b * res);
+	uint32_t const res(divu_64x32(a, b));
+	remainder = a - (uint64_t(b) * res);
 	return res;
 }
 #endif
@@ -296,9 +198,9 @@ static inline UINT32 divu_64x32_rem(UINT64 a, UINT32 b, UINT32 *remainder)
 -------------------------------------------------*/
 
 #ifndef div_32x32_shift
-static inline INT32 div_32x32_shift(INT32 a, INT32 b, UINT8 shift)
+constexpr int32_t div_32x32_shift(int32_t a, int32_t b, uint8_t shift)
 {
-	return ((INT64)a << shift) / (INT64)b;
+	return (int64_t(a) << shift) / int64_t(b);
 }
 #endif
 
@@ -310,9 +212,9 @@ static inline INT32 div_32x32_shift(INT32 a, INT32 b, UINT8 shift)
 -------------------------------------------------*/
 
 #ifndef divu_32x32_shift
-static inline UINT32 divu_32x32_shift(UINT32 a, UINT32 b, UINT8 shift)
+constexpr uint32_t divu_32x32_shift(uint32_t a, uint32_t b, uint8_t shift)
 {
-	return ((UINT64)a << shift) / (UINT64)b;
+	return (uint64_t(a) << shift) / uint64_t(b);
 }
 #endif
 
@@ -323,7 +225,7 @@ static inline UINT32 divu_32x32_shift(UINT32 a, UINT32 b, UINT8 shift)
 -------------------------------------------------*/
 
 #ifndef mod_64x32
-static inline INT32 mod_64x32(INT64 a, INT32 b)
+constexpr int32_t mod_64x32(int64_t a, int32_t b)
 {
 	return a - (b * div_64x32(a, b));
 }
@@ -336,7 +238,7 @@ static inline INT32 mod_64x32(INT64 a, INT32 b)
 -------------------------------------------------*/
 
 #ifndef modu_64x32
-static inline UINT32 modu_64x32(UINT64 a, UINT32 b)
+constexpr uint32_t modu_64x32(uint64_t a, uint32_t b)
 {
 	return a - (b * divu_64x32(a, b));
 }
@@ -349,9 +251,97 @@ static inline UINT32 modu_64x32(UINT64 a, UINT32 b)
 -------------------------------------------------*/
 
 #ifndef recip_approx
-static inline float recip_approx(float value)
+constexpr float recip_approx(float value)
 {
 	return 1.0f / value;
+}
+#endif
+
+
+/*-------------------------------------------------
+    mul_64x64 - perform a signed 64 bit x 64 bit
+    multiply and return the full 128 bit result
+-------------------------------------------------*/
+
+#ifndef mul_64x64
+inline int64_t mul_64x64(int64_t a, int64_t b, int64_t &hi)
+{
+	uint64_t const a_hi = uint64_t(a) >> 32;
+	uint64_t const b_hi = uint64_t(b) >> 32;
+	uint64_t const a_lo = uint32_t(uint64_t(a));
+	uint64_t const b_lo = uint32_t(uint64_t(b));
+
+	uint64_t const ab_lo = a_lo * b_lo;
+	uint64_t const ab_m1 = a_hi * b_lo;
+	uint64_t const ab_m2 = a_lo * b_hi;
+	uint64_t const ab_hi = a_hi * b_hi;
+	uint64_t const carry = ((ab_lo >> 32) + uint32_t(ab_m1) + uint32_t(ab_m2)) >> 32;
+
+	hi = ab_hi + (ab_m1 >> 32) + (ab_m2 >> 32) + carry;
+
+	// adjust for sign
+	if (a < 0)
+		hi -= b;
+	if (b < 0)
+		hi -= a;
+
+	return ab_lo + (ab_m1 << 32) + (ab_m2 << 32);
+}
+#endif
+
+
+/*-------------------------------------------------
+    mulu_64x64 - perform an unsigned 64 bit x 64
+    bit multiply and return the full 128 bit result
+-------------------------------------------------*/
+
+#ifndef mulu_64x64
+inline uint64_t mulu_64x64(uint64_t a, uint64_t b, uint64_t &hi)
+{
+	uint64_t const a_hi = uint32_t(a >> 32);
+	uint64_t const b_hi = uint32_t(b >> 32);
+	uint64_t const a_lo = uint32_t(a);
+	uint64_t const b_lo = uint32_t(b);
+
+	uint64_t const ab_lo = a_lo * b_lo;
+	uint64_t const ab_m1 = a_hi * b_lo;
+	uint64_t const ab_m2 = a_lo * b_hi;
+	uint64_t const ab_hi = a_hi * b_hi;
+	uint64_t const carry = ((ab_lo >> 32) + uint32_t(ab_m1) + uint32_t(ab_m2)) >> 32;
+
+	hi = ab_hi + (ab_m1 >> 32) + (ab_m2 >> 32) + carry;
+
+	return ab_lo + (ab_m1 << 32) + (ab_m2 << 32);
+}
+#endif
+
+
+/*-------------------------------------------------
+    addu_32x32_co - perform an unsigned 32 bit + 32
+    bit addition and return the result with carry
+    out
+-------------------------------------------------*/
+
+#ifndef addu_32x32_co
+inline bool addu_32x32_co(uint32_t a, uint32_t b, uint32_t &sum)
+{
+	sum = a + b;
+	return (a > sum) || (b > sum);
+}
+#endif
+
+
+/*-------------------------------------------------
+    addu_64x64_co - perform an unsigned 64 bit + 64
+    bit addition and return the result with carry
+    out
+-------------------------------------------------*/
+
+#ifndef addu_64x64_co
+inline bool addu_64x64_co(uint64_t a, uint64_t b, uint64_t &sum)
+{
+	sum = a + b;
+	return (a > sum) || (b > sum);
 }
 #endif
 
@@ -367,10 +357,11 @@ static inline float recip_approx(float value)
 -------------------------------------------------*/
 
 #ifndef count_leading_zeros
-static inline UINT8 count_leading_zeros(UINT32 val)
+inline uint8_t count_leading_zeros(uint32_t val)
 {
-	UINT8 count;
-	for (count = 0; (INT32)val >= 0; count++) val <<= 1;
+	if (!val) return 32U;
+	uint8_t count;
+	for (count = 0; int32_t(val) >= 0; count++) val <<= 1;
 	return count;
 }
 #endif
@@ -382,167 +373,72 @@ static inline UINT8 count_leading_zeros(UINT32 val)
 -------------------------------------------------*/
 
 #ifndef count_leading_ones
-static inline UINT8 count_leading_ones(UINT32 val)
+inline uint8_t count_leading_ones(uint32_t val)
 {
-	UINT8 count;
-	for (count = 0; (INT32)val < 0; count++) val <<= 1;
+	uint8_t count;
+	for (count = 0; int32_t(val) < 0; count++) val <<= 1;
 	return count;
 }
 #endif
 
 
-
-/***************************************************************************
-    INLINE SYNCHRONIZATION FUNCTIONS
-***************************************************************************/
-
 /*-------------------------------------------------
-    compare_exchange32 - compare the 'compare'
-    value against the memory at 'ptr'; if equal,
-    swap in the 'exchange' value. Regardless,
-    return the previous value at 'ptr'.
-
-    Note that the default implementation does
-    no synchronization. You MUST override this
-    in osinline.h for it to be useful in a
-    multithreaded environment!
+    population_count_32 - return the number of
+    one bits in a 32-bit value
 -------------------------------------------------*/
 
-#ifndef compare_exchange32
-static inline INT32 compare_exchange32(INT32 volatile *ptr, INT32 compare, INT32 exchange)
+#ifndef population_count_32
+inline unsigned population_count_32(uint32_t val)
 {
-	INT32 oldval = *ptr;
-	if (*ptr == compare)
-		*ptr = exchange;
-	return oldval;
-}
-#endif
-
-
-/*-------------------------------------------------
-    compare_exchange64 - compare the 'compare'
-    value against the memory at 'ptr'; if equal,
-    swap in the 'exchange' value. Regardless,
-    return the previous value at 'ptr'.
-
-    Note that the default implementation does
-    no synchronization. You MUST override this
-    in osinline.h for it to be useful in a
-    multithreaded environment!
--------------------------------------------------*/
-
-#ifdef PTR64
-#ifndef compare_exchange64
-static inline INT64 compare_exchange64(INT64 volatile *ptr, INT64 compare, INT64 exchange)
-{
-	INT64 oldval = *ptr;
-	if (*ptr == compare)
-		*ptr = exchange;
-	return oldval;
-}
-#endif
-#endif
-
-
-/*-------------------------------------------------
-    compare_exchange_ptr - compare the 'compare'
-    value against the memory at 'ptr'; if equal,
-    swap in the 'exchange' value. Regardless,
-    return the previous value at 'ptr'.
--------------------------------------------------*/
-
-#ifndef compare_exchange_ptr
-static inline void *compare_exchange_ptr(void * volatile *ptr, void *compare, void *exchange)
-{
-#ifdef PTR64
-	INT64 result;
-	result = compare_exchange64((INT64 volatile *)ptr, (INT64)compare, (INT64)exchange);
+#if defined(__NetBSD__)
+	return popcount32(val);
 #else
-	INT32 result;
-	result = compare_exchange32((INT32 volatile *)ptr, (INT32)compare, (INT32)exchange);
+	// optimal Hamming weight assuming fast 32*32->32
+	constexpr uint32_t m1(0x55555555);
+	constexpr uint32_t m2(0x33333333);
+	constexpr uint32_t m4(0x0f0f0f0f);
+	constexpr uint32_t h01(0x01010101);
+	val -= (val >> 1) & m1;
+	val = (val & m2) + ((val >> 2) & m2);
+	val = (val + (val >> 4)) & m4;
+	return unsigned((val * h01) >> 24);
 #endif
-	return (void *)result;
 }
 #endif
 
 
 /*-------------------------------------------------
-    atomic_exchange32 - atomically exchange the
-    exchange value with the memory at 'ptr',
-    returning the original value.
-
-    Note that the default implementation does
-    no synchronization. You MUST override this
-    in osinline.h for it to be useful in a
-    multithreaded environment!
+    population_count_64 - return the number of
+    one bits in a 64-bit value
 -------------------------------------------------*/
 
-#ifndef atomic_exchange32
-static inline INT32 atomic_exchange32(INT32 volatile *ptr, INT32 exchange)
+#ifndef population_count_64
+inline unsigned population_count_64(uint64_t val)
 {
-	INT32 oldval = *ptr;
-	*ptr = exchange;
-	return oldval;
+#if defined(__NetBSD__)
+	return popcount64(val);
+#else
+	// guess that architectures with 64-bit pointers have 64-bit multiplier
+	if (sizeof(void *) >= sizeof(uint64_t))
+	{
+		// optimal Hamming weight assuming fast 64*64->64
+		constexpr uint64_t m1(0x5555555555555555);
+		constexpr uint64_t m2(0x3333333333333333);
+		constexpr uint64_t m4(0x0f0f0f0f0f0f0f0f);
+		constexpr uint64_t h01(0x0101010101010101);
+		val -= (val >> 1) & m1;
+		val = (val & m2) + ((val >> 2) & m2);
+		val = (val + (val >> 4)) & m4;
+		return unsigned((val * h01) >> 56);
+	}
+	else
+	{
+		// fall back to two 32-bit operations to avoid slow multiply
+		return population_count_32(uint32_t(val)) + population_count_32(uint32_t(val >> 32));
+	}
+#endif
 }
 #endif
-
-
-/*-------------------------------------------------
-    atomic_add32 - atomically add the delta value
-    to the memory at 'ptr', returning the final
-    result.
-
-    Note that the default implementation does
-    no synchronization. You MUST override this
-    in osinline.h for it to be useful in a
-    multithreaded environment!
--------------------------------------------------*/
-
-#ifndef atomic_add32
-static inline INT32 atomic_add32(INT32 volatile *ptr, INT32 delta)
-{
-	return (*ptr += delta);
-}
-#endif
-
-
-/*-------------------------------------------------
-    atomic_increment32 - atomically increment the
-    32-bit value in memory at 'ptr', returning the
-    final result.
-
-    Note that the default implementation does
-    no synchronization. You MUST override this
-    in osinline.h for it to be useful in a
-    multithreaded environment!
--------------------------------------------------*/
-
-#ifndef atomic_increment32
-static inline INT32 atomic_increment32(INT32 volatile *ptr)
-{
-	return atomic_add32(ptr, 1);
-}
-#endif
-
-
-/*-------------------------------------------------
-    atomic_decrement32 - atomically decrement the
-    32-bit value in memory at 'ptr', returning the
-    final result.
-
-    Note that the default implementation does
-    no synchronization. You MUST override this
-    in osinline.h for it to be useful in a
-    multithreaded environment!
--------------------------------------------------*/
-
-#ifndef atomic_decrement32
-static inline INT32 atomic_decrement32(INT32 volatile *ptr)
-{
-	return atomic_add32(ptr, -1);
-}
-#endif
-
 
 
 /***************************************************************************
@@ -557,10 +453,10 @@ static inline INT32 atomic_decrement32(INT32 volatile *ptr)
 -------------------------------------------------*/
 
 #ifndef get_profile_ticks
-static inline INT64 get_profile_ticks(void)
+inline int64_t get_profile_ticks()
 {
 	return osd_ticks();
 }
 #endif
 
-#endif /* __EMINLINE__ */
+#endif // MAME_OSD_EMINLINE_H

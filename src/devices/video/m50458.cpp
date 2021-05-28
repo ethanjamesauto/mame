@@ -19,6 +19,7 @@
 #include "emu.h"
 #include "video/m50458.h"
 
+#include "screen.h"
 
 
 //**************************************************************************
@@ -26,19 +27,23 @@
 //**************************************************************************
 
 // device type definition
-const device_type M50458 = &device_creator<m50458_device>;
+DEFINE_DEVICE_TYPE(M50458, m50458_device, "m50458", "Mitsubishi M50458 OSD")
 
-static ADDRESS_MAP_START( m50458_vram, AS_0, 16, m50458_device )
-	AM_RANGE(0x0000, 0x023f) AM_RAM // vram
-	AM_RANGE(0x0240, 0x0241) AM_WRITE(vreg_120_w)
-	AM_RANGE(0x0242, 0x0243) AM_WRITE(vreg_121_w)
-	AM_RANGE(0x0244, 0x0245) AM_WRITE(vreg_122_w)
-	AM_RANGE(0x0246, 0x0247) AM_WRITE(vreg_123_w)
-	AM_RANGE(0x0248, 0x0249) AM_WRITE(vreg_124_w)
-	AM_RANGE(0x024a, 0x024b) AM_WRITE(vreg_125_w)
-	AM_RANGE(0x024c, 0x024d) AM_WRITE(vreg_126_w)
-	AM_RANGE(0x024e, 0x024f) AM_WRITE(vreg_127_w)
-ADDRESS_MAP_END
+void m50458_device::m50458_vram(address_map &map)
+{
+	if (!has_configured_map(0))
+	{
+		map(0x0000, 0x023f).ram(); // vram
+		map(0x0240, 0x0241).w(FUNC(m50458_device::vreg_120_w));
+		map(0x0242, 0x0243).w(FUNC(m50458_device::vreg_121_w));
+		map(0x0244, 0x0245).w(FUNC(m50458_device::vreg_122_w));
+		map(0x0246, 0x0247).w(FUNC(m50458_device::vreg_123_w));
+		map(0x0248, 0x0249).w(FUNC(m50458_device::vreg_124_w));
+		map(0x024a, 0x024b).w(FUNC(m50458_device::vreg_125_w));
+		map(0x024c, 0x024d).w(FUNC(m50458_device::vreg_126_w));
+		map(0x024e, 0x024f).w(FUNC(m50458_device::vreg_127_w));
+	}
+}
 
 // internal GFX ROM (TODO: GFXs in here should be 12x18, not 16x18)
 // (also note: ROM length CAN'T be 0x1200)
@@ -48,12 +53,12 @@ ROM_START( m50458 )
 	ROM_LOAD("m50458_char.bin",  0x0000, 0x1200, BAD_DUMP CRC(011cc342) SHA1(d5b9f32d6e251b4b25945267d7c68c099bd83e96) )
 ROM_END
 
-WRITE16_MEMBER( m50458_device::vreg_120_w)
+void m50458_device::vreg_120_w(uint16_t data)
 {
 //  printf("%04x\n",data);
 }
 
-WRITE16_MEMBER( m50458_device::vreg_121_w)
+void m50458_device::vreg_121_w(uint16_t data)
 {
 	/* Horizontal char size for line 0 */
 	m_hsz1 = (data & 0xc0) >> 6;
@@ -66,7 +71,7 @@ WRITE16_MEMBER( m50458_device::vreg_121_w)
 }
 
 
-WRITE16_MEMBER( m50458_device::vreg_122_w)
+void m50458_device::vreg_122_w(uint16_t data)
 {
 	/* Vertical char size for line 0 */
 	m_vsz1 = (data & 0xc0) >> 6;
@@ -79,7 +84,7 @@ WRITE16_MEMBER( m50458_device::vreg_122_w)
 
 }
 
-WRITE16_MEMBER( m50458_device::vreg_123_w)
+void m50458_device::vreg_123_w(uint16_t data)
 {
 	/* fractional part of vertical scrolling */
 	m_scrf = data & 0x1f;
@@ -92,17 +97,17 @@ WRITE16_MEMBER( m50458_device::vreg_123_w)
 //  printf("%02x %02x %02x\n",m_scrr,m_scrf,m_space);
 }
 
-WRITE16_MEMBER( m50458_device::vreg_124_w)
+void m50458_device::vreg_124_w(uint16_t data)
 {
 }
 
-WRITE16_MEMBER( m50458_device::vreg_125_w)
+void m50458_device::vreg_125_w(uint16_t data)
 {
 	/* blinking cycle */
 	m_blink = data & 4 ? 0x20 : 0x40;
 }
 
-WRITE16_MEMBER( m50458_device::vreg_126_w)
+void m50458_device::vreg_126_w(uint16_t data)
 {
 	/* Raster Color Setting */
 	m_phase = data & 7;
@@ -111,7 +116,7 @@ WRITE16_MEMBER( m50458_device::vreg_126_w)
 }
 
 
-WRITE16_MEMBER( m50458_device::vreg_127_w)
+void m50458_device::vreg_127_w(uint16_t data)
 {
 	if(data & 0x20) // RAMERS, display RAM is erased
 	{
@@ -126,7 +131,7 @@ WRITE16_MEMBER( m50458_device::vreg_127_w)
 //  rom_region - device-specific ROM region
 //-------------------------------------------------
 
-const rom_entry *m50458_device::device_rom_region() const
+const tiny_rom_entry *m50458_device::device_rom_region() const
 {
 	return ROM_NAME( m50458 );
 }
@@ -136,9 +141,11 @@ const rom_entry *m50458_device::device_rom_region() const
 //  any address spaces owned by this device
 //-------------------------------------------------
 
-const address_space_config *m50458_device::memory_space_config(address_spacenum spacenum) const
+device_memory_interface::space_config_vector m50458_device::memory_space_config() const
 {
-	return (spacenum == AS_0) ? &m_space_config : nullptr;
+	return space_config_vector {
+		std::make_pair(0, &m_space_config)
+	};
 }
 
 //**************************************************************************
@@ -149,7 +156,7 @@ const address_space_config *m50458_device::memory_space_config(address_spacenum 
 //  read_word - read a word at the given address
 //-------------------------------------------------
 
-inline UINT16 m50458_device::read_word(offs_t address)
+inline uint16_t m50458_device::read_word(offs_t address)
 {
 	return space().read_word(address << 1);
 }
@@ -158,7 +165,7 @@ inline UINT16 m50458_device::read_word(offs_t address)
 //  write_word - write a word at the given address
 //-------------------------------------------------
 
-inline void m50458_device::write_word(offs_t address, UINT16 data)
+inline void m50458_device::write_word(offs_t address, uint16_t data)
 {
 	space().write_word(address << 1, data);
 }
@@ -172,11 +179,11 @@ inline void m50458_device::write_word(offs_t address, UINT16 data)
 //  m50458_device - constructor
 //-------------------------------------------------
 
-m50458_device::m50458_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: device_t(mconfig, M50458, "M50458 OSD", tag, owner, clock, "m50458", __FILE__),
-		device_memory_interface(mconfig, *this),
-		device_video_interface(mconfig, *this),
-		m_space_config("videoram", ENDIANNESS_LITTLE, 16, 16, 0, nullptr, *ADDRESS_MAP_NAME(m50458_vram))
+m50458_device::m50458_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: device_t(mconfig, M50458, tag, owner, clock)
+	, device_memory_interface(mconfig, *this)
+	, device_video_interface(mconfig, *this)
+	, m_space_config("videoram", ENDIANNESS_LITTLE, 16, 16, 0, address_map_constructor(FUNC(m50458_device::m50458_vram), this))
 {
 }
 
@@ -197,21 +204,19 @@ void m50458_device::device_validity_check(validity_checker &valid) const
 
 void m50458_device::device_start()
 {
-	UINT16 tmp;
-	UINT8 *pcg = memregion("m50458")->base();
-	int tile;
-	int yi;
-	UINT16 src,dst;
+	uint8_t const *const pcg = memregion("m50458")->base();
 
 	/* Create an array for shadow gfx */
 	/* this will spread the source ROM into four directions (up-left, up-right, down-left, down-right) thus creating a working shadow copy */
-	m_shadow_gfx = make_unique_clear<UINT8[]>(0x1200);
+	m_shadow_gfx = make_unique_clear<uint8_t[]>(0x1200);
 
-	for(tile=0;tile<0x80;tile++)
+	for(int tile=0;tile<0x80;tile++)
 	{
-		for(yi=1;yi<17;yi++)
+		for(int yi=1;yi<17;yi++)
 		{
-			src = (tile & 0x7f)*36+yi*2; /* source offset */
+			uint16_t tmp, dst;
+
+			uint16_t const src = (tile & 0x7f)*36+yi*2; /* source offset */
 
 			dst = (tile & 0x7f)*36+(yi-1)*2; /* destination offset */
 
@@ -282,6 +287,8 @@ WRITE_LINE_MEMBER( m50458_device::set_cs_line )
 
 WRITE_LINE_MEMBER( m50458_device::set_clock_line )
 {
+	(void)m_clock_line;
+
 	if (m_reset_line == CLEAR_LINE)
 	{
 		if(state == 1)
@@ -320,42 +327,36 @@ WRITE_LINE_MEMBER( m50458_device::set_clock_line )
 //  update_screen -
 //-------------------------------------------------
 
-UINT32 m50458_device::screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
+uint32_t m50458_device::screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
 {
-	int x,y;
-	UINT8 *pcg = memregion("m50458")->base();
-	UINT8 bg_r,bg_g,bg_b;
+	uint8_t const *const pcg = memregion("m50458")->base();
 
 	/* TODO: there's probably a way to control the brightness in this */
-	bg_r = m_phase & 1 ? 0xdf : 0;
-	bg_g = m_phase & 2 ? 0xdf : 0;
-	bg_b = m_phase & 4 ? 0xdf : 0;
+	uint8_t const bg_r = m_phase & 1 ? 0xdf : 0;
+	uint8_t const bg_g = m_phase & 2 ? 0xdf : 0;
+	uint8_t const bg_b = m_phase & 4 ? 0xdf : 0;
 	bitmap.fill(rgb_t(0xff,bg_r,bg_g,bg_b),cliprect);
 
-	for(y=0;y<12;y++)
+	for(int y=0;y<12;y++)
 	{
-		for(x=0;x<24;x++)
+		for(int x=0;x<24;x++)
 		{
-			int xi,yi;
-			UINT16 tile;
 			int y_base = y;
 
 			if(y != 0 && m_scrr > 1) { y_base+=(m_scrr - 1); }
 			if(y_base > 11)          { y_base -= 11; }
 			if(m_scrr && y == 11)    { y_base = 0; } /* Guess: repeat line 0 if scrolling is active */
 
-			tile = read_word(x+y_base*24);
+			uint16_t const tile = read_word(x+y_base*24);
 
-			for(yi=0;yi<18;yi++)
+			for(int yi=0;yi<18;yi++)
 			{
-				for(xi=4;xi<16;xi++) /* TODO: remove 4 / 16 / -4 offset once that the ROM is fixed */
+				for(int xi=4;xi<16;xi++) /* TODO: remove 4 / 16 / -4 offset once that the ROM is fixed */
 				{
-					UINT8 pix;
-					UINT8 color = (tile & 0x700) >> 8;
-					UINT16 offset = ((tile & 0x7f)*36+yi*2);
-					int res_y,res_x;
-					UINT8 xh,yh;
+					uint8_t const color = (tile & 0x700) >> 8;
+					uint16_t const offset = ((tile & 0x7f)*36+yi*2);
 
+					uint8_t pix;
 					if(xi>=8)
 						pix = ((pcg[offset+1] >> (7-(xi & 0x7))) & 1) << 1;
 					else
@@ -367,14 +368,14 @@ UINT32 m50458_device::screen_update(screen_device &screen, bitmap_rgb32 &bitmap,
 						pix |= ((m_shadow_gfx[offset+0] >> (7-(xi & 0x7))) & 1);
 
 					/* blinking, VERY preliminary */
-					if(tile & 0x800 && m_screen->frame_number() & m_blink)
+					if(tile & 0x800 && screen.frame_number() & m_blink)
 						pix = 0;
 
 					if(yi == 17 && tile & 0x1000) /* underline? */
 						pix |= 1;
 
-					res_y = y*18+yi;
-					res_x = x*12+(xi-4);
+					int res_y = y*18+yi;
+					int res_x = x*12+(xi-4);
 
 					if(y != 0 && y != 11)
 					{
@@ -385,7 +386,7 @@ UINT32 m50458_device::screen_update(screen_device &screen, bitmap_rgb32 &bitmap,
 
 					if(pix != 0)
 					{
-						UINT8 r,g,b;
+						uint8_t r,g,b;
 
 						if(pix & 2)
 						{
@@ -410,9 +411,9 @@ UINT32 m50458_device::screen_update(screen_device &screen, bitmap_rgb32 &bitmap,
 							if(res_y > 215 || res_x > 288)
 								continue;
 
-							for(yh=0;yh<m_vsz1+1;yh++)
-								for(xh=0;xh<m_hsz1+1;xh++)
-									bitmap.pix32(res_y+yh,res_x+xh) = r << 16 | g << 8 | b;
+							for(uint8_t yh=0;yh<m_vsz1+1;yh++)
+								for(uint8_t xh=0;xh<m_hsz1+1;xh++)
+									bitmap.pix(res_y+yh,res_x+xh) = r << 16 | g << 8 | b;
 						}
 						else if(y_base == 11)
 						{
@@ -423,9 +424,9 @@ UINT32 m50458_device::screen_update(screen_device &screen, bitmap_rgb32 &bitmap,
 							if(res_y > 215 || res_x > 288)
 								continue;
 
-							for(yh=0;yh<m_vsz3+1;yh++)
-								for(xh=0;xh<m_hsz3+1;xh++)
-									bitmap.pix32(res_y+yh,res_x+xh) = r << 16 | g << 8 | b;
+							for(uint8_t yh=0;yh<m_vsz3+1;yh++)
+								for(uint8_t xh=0;xh<m_hsz3+1;xh++)
+									bitmap.pix(res_y+yh,res_x+xh) = r << 16 | g << 8 | b;
 						}
 						else
 						{
@@ -435,9 +436,9 @@ UINT32 m50458_device::screen_update(screen_device &screen, bitmap_rgb32 &bitmap,
 							if(res_y > 215 || res_x > 288)
 								continue;
 
-							for(yh=0;yh<m_vsz2+1;yh++)
-								for(xh=0;xh<m_hsz2+1;xh++)
-									bitmap.pix32(res_y+yh,res_x+xh) = r << 16 | g << 8 | b;
+							for(uint8_t yh=0;yh<m_vsz2+1;yh++)
+								for(uint8_t xh=0;xh<m_hsz2+1;xh++)
+									bitmap.pix(res_y+yh,res_x+xh) = r << 16 | g << 8 | b;
 						}
 					}
 				}

@@ -32,116 +32,112 @@
 
 ***************************************************************************/
 
-PALETTE_INIT_MEMBER(mappy_state,superpac)
+void mappy_state::superpac_palette(palette_device &palette) const
 {
-	const UINT8 *color_prom = memregion("proms")->base();
-	static const int resistances[3] = { 1000, 470, 220 };
-	double rweights[3], gweights[3], bweights[2];
-	int i;
+	const uint8_t *color_prom = memregion("proms")->base();
+	static constexpr int resistances[3] = { 1000, 470, 220 };
 
-	/* compute the color output resistor weights */
+	// compute the color output resistor weights
+	double rweights[3], gweights[3], bweights[2];
 	compute_resistor_weights(0, 255, -1.0,
 			3, &resistances[0], rweights, 0, 0,
 			3, &resistances[0], gweights, 0, 0,
 			2, &resistances[1], bweights, 0, 0);
 
-	/* create a lookup table for the palette */
-	for (i = 0; i < 32; i++)
+	// create a lookup table for the palette
+	for (int i = 0; i < 32; i++)
 	{
 		int bit0, bit1, bit2;
-		int r, g, b;
 
-		/* red component */
-		bit0 = (color_prom[i] >> 0) & 0x01;
-		bit1 = (color_prom[i] >> 1) & 0x01;
-		bit2 = (color_prom[i] >> 2) & 0x01;
-		r = combine_3_weights(rweights, bit0, bit1, bit2);
+		// red component
+		bit0 = BIT(color_prom[i], 0);
+		bit1 = BIT(color_prom[i], 1);
+		bit2 = BIT(color_prom[i], 2);
+		int const r = combine_weights(rweights, bit0, bit1, bit2);
 
-		/* green component */
-		bit0 = (color_prom[i] >> 3) & 0x01;
-		bit1 = (color_prom[i] >> 4) & 0x01;
-		bit2 = (color_prom[i] >> 5) & 0x01;
-		g = combine_3_weights(gweights, bit0, bit1, bit2);
+		// green component
+		bit0 = BIT(color_prom[i], 3);
+		bit1 = BIT(color_prom[i], 4);
+		bit2 = BIT(color_prom[i], 5);
+		int const g = combine_weights(gweights, bit0, bit1, bit2);
 
-		/* blue component */
-		bit0 = (color_prom[i] >> 6) & 0x01;
-		bit1 = (color_prom[i] >> 7) & 0x01;
-		b = combine_2_weights(bweights, bit0, bit1);
+		// blue component
+		bit0 = BIT(color_prom[i], 6);
+		bit1 = BIT(color_prom[i], 7);
+		int const b = combine_weights(bweights, bit0, bit1);
 
 		palette.set_indirect_color(i, rgb_t(r, g, b));
 	}
 
-	/* color_prom now points to the beginning of the lookup table */
+	// color_prom now points to the beginning of the lookup table
 	color_prom += 32;
 
-	/* characters map to the upper 16 palette entries */
-	for (i = 0; i < 64*4; i++)
+	// characters map to the upper 16 palette entries
+	for (int i = 0; i < 64*4; i++)
 	{
-		UINT8 ctabentry = color_prom[i] & 0x0f;
+		uint8_t const ctabentry = color_prom[i] & 0x0f;
 		palette.set_pen_indirect(i, (ctabentry ^ 15) + 0x10);
 	}
 
-	/* sprites map to the lower 16 palette entries */
-	for (i = 64*4; i < 128*4; i++)
+	// sprites map to the lower 16 palette entries
+	for (int i = 64*4; i < 128*4; i++)
 	{
-		UINT8 ctabentry = color_prom[i] & 0x0f;
+		uint8_t const ctabentry = color_prom[i] & 0x0f;
 		palette.set_pen_indirect(i, ctabentry);
 	}
 }
 
-PALETTE_INIT_MEMBER(mappy_state,mappy)
+void mappy_state::mappy_palette(palette_device &palette) const
 {
-	const UINT8 *color_prom = memregion("proms")->base();
-	static const int resistances[3] = { 1000, 470, 220 };
-	double rweights[3], gweights[3], bweights[2];
-	int i;
+	const uint8_t *color_prom = memregion("proms")->base();
+	static constexpr int resistances[3] = { 1000, 470, 220 };
 
-	/* compute the color output resistor weights */
+	// compute the color output resistor weights
+	double rweights[3], gweights[3], bweights[2];
 	compute_resistor_weights(0, 255, -1.0,
 			3, &resistances[0], rweights, 0, 0,
 			3, &resistances[0], gweights, 0, 0,
 			2, &resistances[1], bweights, 0, 0);
 
-	/* create a lookup table for the palette */
-	for (i = 0; i < 32; i++)
+	// create a lookup table for the palette
+	for (int i = 0; i < 32; i++)
 	{
 		int bit0, bit1, bit2;
-		int r, g, b;
 
-		/* red component */
-		bit0 = (color_prom[i] >> 0) & 0x01;
-		bit1 = (color_prom[i] >> 1) & 0x01;
-		bit2 = (color_prom[i] >> 2) & 0x01;
-		r = combine_3_weights(rweights, bit0, bit1, bit2);
+		// red component
+		bit0 = BIT(color_prom[i], 0);
+		bit1 = BIT(color_prom[i], 1);
+		bit2 = BIT(color_prom[i], 2);
+		int const r = combine_weights(rweights, bit0, bit1, bit2);
 
-		/* green component */
-		bit0 = (color_prom[i] >> 3) & 0x01;
-		bit1 = (color_prom[i] >> 4) & 0x01;
-		bit2 = (color_prom[i] >> 5) & 0x01;
-		g = combine_3_weights(gweights, bit0, bit1, bit2);
+		// green component
+		bit0 = BIT(color_prom[i], 3);
+		bit1 = BIT(color_prom[i], 4);
+		bit2 = BIT(color_prom[i], 5);
+		int const g = combine_weights(gweights, bit0, bit1, bit2);
 
-		/* blue component */
-		bit0 = (color_prom[i] >> 6) & 0x01;
-		bit1 = (color_prom[i] >> 7) & 0x01;
-		b = combine_2_weights(bweights, bit0, bit1);
+		// blue component
+		bit0 = BIT(color_prom[i], 6);
+		bit1 = BIT(color_prom[i], 7);
+		int const b = combine_weights(bweights, bit0, bit1);
 
 		palette.set_indirect_color(i, rgb_t(r, g, b));
 	}
 
-	/* color_prom now points to the beginning of the lookup table */
+	// color_prom now points to the beginning of the lookup table
 	color_prom += 32;
 
-	/* characters map to the upper 16 palette entries */
-	for (i = 0*4; i < 64*4; i++)
+	// characters map to the upper 16 palette entries
+	for (int i = 0*4; i < 64*4; i++)
 	{
-		UINT8 ctabentry = color_prom[i] & 0x0f;
+		uint8_t const ctabentry = color_prom[i] & 0x0f;
 		palette.set_pen_indirect(i, ctabentry + 0x10);
 	}
 
-	/* sprites map to the lower 16 palette entries */
-	for (i = 64*4; i < palette.entries(); i++)
+	// sprites map to the lower 16 palette entries
+	for (int i = 64*4; i < palette.entries(); i++)
 	{
-		UINT8 ctabentry = color_prom[i] & 0x0f;
+		uint8_t const ctabentry = color_prom[i] & 0x0f;
 		palette.set_pen_indirect(i, ctabentry);
 	}
 }
@@ -158,63 +154,61 @@ PALETTE_INIT_MEMBER(mappy_state,mappy)
 
 ***************************************************************************/
 
-PALETTE_INIT_MEMBER(mappy_state,phozon)
+void mappy_state::phozon_palette(palette_device &palette) const
 {
-	const UINT8 *color_prom = memregion("proms")->base();
-	static const int resistances[4] = { 2200, 1000, 470, 220 };
-	double rweights[4], gweights[4], bweights[4];
-	int i;
+	const uint8_t *color_prom = memregion("proms")->base();
+	static constexpr int resistances[4] = { 2200, 1000, 470, 220 };
 
-	/* compute the color output resistor weights */
+	// compute the color output resistor weights
+	double rweights[4], gweights[4], bweights[4];
 	compute_resistor_weights(0, 255, -1.0,
 			4, &resistances[0], rweights, 0, 0,
 			4, &resistances[0], gweights, 0, 0,
 			4, &resistances[0], bweights, 0, 0);
 
-	/* create a lookup table for the palette */
-	for (i = 0; i < 32; i++)
+	// create a lookup table for the palette
+	for (int i = 0; i < 32; i++)
 	{
 		int bit0, bit1, bit2, bit3;
-		int r, g, b;
 
-		/* red component */
-		bit0 = (color_prom[i] >> 0) & 0x01;
-		bit1 = (color_prom[i] >> 1) & 0x01;
-		bit2 = (color_prom[i] >> 2) & 0x01;
-		bit3 = (color_prom[i] >> 3) & 0x01;
-		r = combine_4_weights(rweights, bit0, bit1, bit2, bit3);
+		// red component
+		bit0 = BIT(color_prom[i], 0);
+		bit1 = BIT(color_prom[i], 1);
+		bit2 = BIT(color_prom[i], 2);
+		bit3 = BIT(color_prom[i], 3);
+		int const r = combine_weights(rweights, bit0, bit1, bit2, bit3);
 
-		/* green component */
-		bit0 = (color_prom[i + 0x100] >> 0) & 0x01;
-		bit1 = (color_prom[i + 0x100] >> 1) & 0x01;
-		bit2 = (color_prom[i + 0x100] >> 2) & 0x01;
-		bit3 = (color_prom[i + 0x100] >> 3) & 0x01;
-		g = combine_4_weights(gweights, bit0, bit1, bit2, bit3);
+		// green component
+		bit0 = BIT(color_prom[i | 0x100], 0);
+		bit1 = BIT(color_prom[i | 0x100], 1);
+		bit2 = BIT(color_prom[i | 0x100], 2);
+		bit3 = BIT(color_prom[i | 0x100], 3);
+		int const g = combine_weights(gweights, bit0, bit1, bit2, bit3);
 
-		/* blue component */
-		bit0 = (color_prom[i + 0x200] >> 0) & 0x01;
-		bit1 = (color_prom[i + 0x200] >> 1) & 0x01;
-		bit2 = (color_prom[i + 0x200] >> 2) & 0x01;
-		bit3 = (color_prom[i + 0x200] >> 3) & 0x01;
-		b = combine_4_weights(bweights, bit0, bit1, bit2, bit3);
+		// blue component
+		bit0 = BIT(color_prom[i | 0x200], 0);
+		bit1 = BIT(color_prom[i | 0x200], 1);
+		bit2 = BIT(color_prom[i | 0x200], 2);
+		bit3 = BIT(color_prom[i | 0x200], 3);
+		int const b = combine_weights(bweights, bit0, bit1, bit2, bit3);
 
 		palette.set_indirect_color(i, rgb_t(r, g, b));
 	}
 
-	/* color_prom now points to the beginning of the lookup table */
+	// color_prom now points to the beginning of the lookup table
 	color_prom += 0x300;
 
-	/* characters map to the lower 16 palette entries */
-	for (i = 0; i < 64*4; i++)
+	// characters map to the lower 16 palette entries
+	for (int i = 0; i < 64*4; i++)
 	{
-		UINT8 ctabentry = color_prom[i] & 0x0f;
+		uint8_t const ctabentry = color_prom[i] & 0x0f;
 		palette.set_pen_indirect(i, ctabentry);
 	}
 
-	/* sprites map to the upper 16 palette entries */
-	for (i = 64*4; i < 128*4; i++)
+	// sprites map to the upper 16 palette entries
+	for (int i = 64*4; i < 128*4; i++)
 	{
-		UINT8 ctabentry = color_prom[i] & 0x0f;
+		uint8_t const ctabentry = color_prom[i] & 0x0f;
 		palette.set_pen_indirect(i, ctabentry + 0x10);
 	}
 }
@@ -266,11 +260,11 @@ TILEMAP_MAPPER_MEMBER(mappy_state::mappy_tilemap_scan)
 
 TILE_GET_INFO_MEMBER(mappy_state::superpac_get_tile_info)
 {
-	UINT8 attr = m_videoram[tile_index + 0x400];
+	uint8_t attr = m_videoram[tile_index + 0x400];
 
 	tileinfo.category = (attr & 0x40) >> 6;
 	tileinfo.group = attr & 0x3f;
-	SET_TILE_INFO_MEMBER(0,
+	tileinfo.set(0,
 			m_videoram[tile_index],
 			attr & 0x3f,
 			0);
@@ -278,11 +272,11 @@ TILE_GET_INFO_MEMBER(mappy_state::superpac_get_tile_info)
 
 TILE_GET_INFO_MEMBER(mappy_state::phozon_get_tile_info)
 {
-	UINT8 attr = m_videoram[tile_index + 0x400];
+	uint8_t attr = m_videoram[tile_index + 0x400];
 
 	tileinfo.category = (attr & 0x40) >> 6;
 	tileinfo.group = attr & 0x3f;
-	SET_TILE_INFO_MEMBER(0,
+	tileinfo.set(0,
 			m_videoram[tile_index] + ((attr & 0x80) << 1),
 			attr & 0x3f,
 			0);
@@ -290,11 +284,11 @@ TILE_GET_INFO_MEMBER(mappy_state::phozon_get_tile_info)
 
 TILE_GET_INFO_MEMBER(mappy_state::mappy_get_tile_info)
 {
-	UINT8 attr = m_videoram[tile_index + 0x800];
+	uint8_t attr = m_videoram[tile_index + 0x800];
 
 	tileinfo.category = (attr & 0x40) >> 6;
 	tileinfo.group = attr & 0x3f;
-	SET_TILE_INFO_MEMBER(0,
+	tileinfo.set(0,
 			m_videoram[tile_index],
 			attr & 0x3f,
 			0);
@@ -310,7 +304,7 @@ TILE_GET_INFO_MEMBER(mappy_state::mappy_get_tile_info)
 
 VIDEO_START_MEMBER(mappy_state,superpac)
 {
-	m_bg_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(mappy_state::superpac_get_tile_info),this),tilemap_mapper_delegate(FUNC(mappy_state::superpac_tilemap_scan),this),8,8,36,28);
+	m_bg_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(mappy_state::superpac_get_tile_info)), tilemap_mapper_delegate(*this, FUNC(mappy_state::superpac_tilemap_scan)), 8, 8, 36, 28);
 	m_screen->register_screen_bitmap(m_sprite_bitmap);
 
 	m_bg_tilemap->configure_groups(*m_gfxdecode->gfx(0), 31);
@@ -318,14 +312,14 @@ VIDEO_START_MEMBER(mappy_state,superpac)
 
 VIDEO_START_MEMBER(mappy_state,phozon)
 {
-	m_bg_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(mappy_state::phozon_get_tile_info),this),tilemap_mapper_delegate(FUNC(mappy_state::superpac_tilemap_scan),this),8,8,36,28);
+	m_bg_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(mappy_state::phozon_get_tile_info)), tilemap_mapper_delegate(*this, FUNC(mappy_state::superpac_tilemap_scan)), 8, 8, 36, 28);
 
 	m_bg_tilemap->configure_groups(*m_gfxdecode->gfx(0), 15);
 }
 
 VIDEO_START_MEMBER(mappy_state,mappy)
 {
-	m_bg_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(mappy_state::mappy_get_tile_info),this),tilemap_mapper_delegate(FUNC(mappy_state::mappy_tilemap_scan),this),8,8,36,60);
+	m_bg_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(mappy_state::mappy_get_tile_info)), tilemap_mapper_delegate(*this, FUNC(mappy_state::mappy_tilemap_scan)), 8, 8, 36, 60);
 
 	m_bg_tilemap->configure_groups(*m_gfxdecode->gfx(0), 31);
 	m_bg_tilemap->set_scroll_cols(36);
@@ -341,30 +335,30 @@ VIDEO_START_MEMBER(mappy_state,mappy)
 
 ***************************************************************************/
 
-WRITE8_MEMBER(mappy_state::superpac_videoram_w)
+void mappy_state::superpac_videoram_w(offs_t offset, uint8_t data)
 {
 	m_videoram[offset] = data;
 	m_bg_tilemap->mark_tile_dirty(offset & 0x3ff);
 }
 
-WRITE8_MEMBER(mappy_state::mappy_videoram_w)
+void mappy_state::mappy_videoram_w(offs_t offset, uint8_t data)
 {
 	m_videoram[offset] = data;
 	m_bg_tilemap->mark_tile_dirty(offset & 0x7ff);
 }
 
-WRITE8_MEMBER(mappy_state::superpac_flipscreen_w)
+void mappy_state::superpac_flipscreen_w(uint8_t data)
 {
 	flip_screen_set(data & 1);
 }
 
-READ8_MEMBER(mappy_state::superpac_flipscreen_r)
+uint8_t mappy_state::superpac_flipscreen_r()
 {
 	flip_screen_set(1);
 	return 0xff;
 }
 
-WRITE8_MEMBER(mappy_state::mappy_scroll_w)
+void mappy_state::mappy_scroll_w(offs_t offset, uint8_t data)
 {
 	m_scroll = offset >> 3;
 }
@@ -377,11 +371,11 @@ WRITE8_MEMBER(mappy_state::mappy_scroll_w)
 
 ***************************************************************************/
 
-void mappy_state::mappy_draw_sprites(bitmap_ind16 &bitmap, const rectangle &cliprect, UINT8 *spriteram_base)
+void mappy_state::mappy_draw_sprites(bitmap_ind16 &bitmap, const rectangle &cliprect, uint8_t *spriteram_base)
 {
-	UINT8 *spriteram = spriteram_base + 0x780;
-	UINT8 *spriteram_2 = spriteram + 0x800;
-	UINT8 *spriteram_3 = spriteram_2 + 0x800;
+	uint8_t *spriteram = spriteram_base + 0x780;
+	uint8_t *spriteram_2 = spriteram + 0x800;
+	uint8_t *spriteram_3 = spriteram_2 + 0x800;
 	int offs;
 
 	for (offs = 0;offs < 0x80;offs += 2)
@@ -389,7 +383,7 @@ void mappy_state::mappy_draw_sprites(bitmap_ind16 &bitmap, const rectangle &clip
 		/* is it on? */
 		if ((spriteram_3[offs+1] & 2) == 0)
 		{
-			static const UINT8 gfx_offs[2][2] =
+			static const uint8_t gfx_offs[2][2] =
 			{
 				{ 0, 1 },
 				{ 2, 3 }
@@ -454,11 +448,11 @@ spriteram_3
 1   -------x  X position MSB
 */
 
-void mappy_state::phozon_draw_sprites(bitmap_ind16 &bitmap, const rectangle &cliprect, UINT8 *spriteram_base)
+void mappy_state::phozon_draw_sprites(bitmap_ind16 &bitmap, const rectangle &cliprect, uint8_t *spriteram_base)
 {
-	UINT8 *spriteram = spriteram_base + 0x780;
-	UINT8 *spriteram_2 = spriteram + 0x800;
-	UINT8 *spriteram_3 = spriteram_2 + 0x800;
+	uint8_t *spriteram = spriteram_base + 0x780;
+	uint8_t *spriteram_2 = spriteram + 0x800;
+	uint8_t *spriteram_3 = spriteram_2 + 0x800;
 	int offs;
 
 	for (offs = 0;offs < 0x80;offs += 2)
@@ -466,8 +460,8 @@ void mappy_state::phozon_draw_sprites(bitmap_ind16 &bitmap, const rectangle &cli
 		/* is it on? */
 		if ((spriteram_3[offs+1] & 2) == 0)
 		{
-			static const UINT8 size[4] = { 1, 0, 3, 0 };    /* 16, 8, 32 pixels; fourth combination unused? */
-			static const UINT8 gfx_offs[4][4] =
+			static const uint8_t size[4] = { 1, 0, 3, 0 };    /* 16, 8, 32 pixels; fourth combination unused? */
+			static const uint8_t gfx_offs[4][4] =
 			{
 				{ 0, 1, 4, 5 },
 				{ 2, 3, 6, 7 },
@@ -510,10 +504,9 @@ void mappy_state::phozon_draw_sprites(bitmap_ind16 &bitmap, const rectangle &cli
 }
 
 
-UINT32 mappy_state::screen_update_superpac(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t mappy_state::screen_update_superpac(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	bitmap_ind16 &sprite_bitmap = m_sprite_bitmap;
-	int x,y;
 
 	m_bg_tilemap->draw(screen, bitmap, cliprect, TILEMAP_DRAW_OPAQUE | TILEMAP_DRAW_ALL_CATEGORIES,0);
 
@@ -525,20 +518,20 @@ UINT32 mappy_state::screen_update_superpac(screen_device &screen, bitmap_ind16 &
 	m_bg_tilemap->draw(screen, bitmap, cliprect, 1,0);
 
 	/* sprite color 0/1 still has priority over that (ghost eyes in Pac 'n Pal) */
-	for (y = 0;y < sprite_bitmap.height();y++)
+	for (int y = 0;y < sprite_bitmap.height();y++)
 	{
-		for (x = 0;x < sprite_bitmap.width();x++)
+		for (int x = 0;x < sprite_bitmap.width();x++)
 		{
-			int spr_entry = sprite_bitmap.pix16(y, x);
+			int spr_entry = sprite_bitmap.pix(y, x);
 			int spr_pen = m_palette->pen_indirect(spr_entry);
 			if (spr_pen == 0 || spr_pen == 1)
-				bitmap.pix16(y, x) = spr_entry;
+				bitmap.pix(y, x) = spr_entry;
 		}
 	}
 	return 0;
 }
 
-UINT32 mappy_state::screen_update_phozon(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t mappy_state::screen_update_phozon(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	/* flip screen control is embedded in RAM */
 	flip_screen_set(m_spriteram[0x1f7f-0x800] & 1);
@@ -552,7 +545,7 @@ UINT32 mappy_state::screen_update_phozon(screen_device &screen, bitmap_ind16 &bi
 	return 0;
 }
 
-UINT32 mappy_state::screen_update_mappy(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t mappy_state::screen_update_mappy(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	int offs;
 

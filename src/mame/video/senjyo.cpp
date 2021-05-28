@@ -9,7 +9,6 @@
 ***************************************************************************/
 
 #include "emu.h"
-#include "machine/segacrpt.h"
 #include "includes/senjyo.h"
 
 
@@ -21,13 +20,13 @@
 
 TILE_GET_INFO_MEMBER(senjyo_state::get_fg_tile_info)
 {
-	UINT8 attr = m_fgcolorram[tile_index];
+	uint8_t attr = m_fgcolorram[tile_index];
 	int flags = (attr & 0x80) ? TILE_FLIPY : 0;
 
 	if (m_is_senjyo && (tile_index & 0x1f) >= 32-8)
 		flags |= TILE_FORCE_LAYER0;
 
-	SET_TILE_INFO_MEMBER(0,
+	tileinfo.set(0,
 			m_fgvideoram[tile_index] + ((attr & 0x10) << 4),
 			attr & 0x07,
 			flags);
@@ -35,9 +34,9 @@ TILE_GET_INFO_MEMBER(senjyo_state::get_fg_tile_info)
 
 TILE_GET_INFO_MEMBER(senjyo_state::senjyo_bg1_tile_info)
 {
-	UINT8 code = m_bg1videoram[tile_index];
+	uint8_t code = m_bg1videoram[tile_index];
 
-	SET_TILE_INFO_MEMBER(1,
+	tileinfo.set(1,
 			code,
 			(code & 0x70) >> 4,
 			0);
@@ -47,20 +46,19 @@ TILE_GET_INFO_MEMBER(senjyo_state::starforc_bg1_tile_info)
 {
 	/* Star Force has more tiles in bg1, so to get a uniform color code spread */
 	/* they wired bit 7 of the tile code in place of bit 4 to get the color code */
-	static const UINT8 colormap[8] = { 0, 2, 4, 6, 1, 3, 5, 7 };
-	UINT8 code = m_bg1videoram[tile_index];
+	uint8_t code = m_bg1videoram[tile_index];
 
-	SET_TILE_INFO_MEMBER(1,
+	tileinfo.set(1,
 			code,
-			colormap[(code & 0xe0) >> 5],
+			bitswap<3>(((code & 0xe0) >> 5), 1, 0, 2),
 			0);
 }
 
 TILE_GET_INFO_MEMBER(senjyo_state::get_bg2_tile_info)
 {
-	UINT8 code = m_bg2videoram[tile_index];
+	uint8_t code = m_bg2videoram[tile_index];
 
-	SET_TILE_INFO_MEMBER(2,
+	tileinfo.set(2,
 			code,
 			(code & 0xe0) >> 5,
 			0);
@@ -68,9 +66,9 @@ TILE_GET_INFO_MEMBER(senjyo_state::get_bg2_tile_info)
 
 TILE_GET_INFO_MEMBER(senjyo_state::get_bg3_tile_info)
 {
-	UINT8 code = m_bg3videoram[tile_index];
+	uint8_t code = m_bg3videoram[tile_index];
 
-	SET_TILE_INFO_MEMBER(3,
+	tileinfo.set(3,
 			code,
 			(code & 0xe0) >> 5,
 			0);
@@ -86,19 +84,19 @@ TILE_GET_INFO_MEMBER(senjyo_state::get_bg3_tile_info)
 
 void senjyo_state::video_start()
 {
-	m_fg_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(senjyo_state::get_fg_tile_info),this), TILEMAP_SCAN_ROWS, 8, 8, 32, 32);
+	m_fg_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(senjyo_state::get_fg_tile_info)), TILEMAP_SCAN_ROWS, 8, 8, 32, 32);
 
 	if (m_is_senjyo)
 	{
-		m_bg1_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(senjyo_state::senjyo_bg1_tile_info),this), TILEMAP_SCAN_ROWS, 16, 16, 16, 32);
-		m_bg2_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(senjyo_state::get_bg2_tile_info),this),    TILEMAP_SCAN_ROWS, 16, 16, 16, 48);   /* only 16x32 used by Star Force */
-		m_bg3_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(senjyo_state::get_bg3_tile_info),this),    TILEMAP_SCAN_ROWS, 16, 16, 16, 56);   /* only 16x32 used by Star Force */
+		m_bg1_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(senjyo_state::senjyo_bg1_tile_info)), TILEMAP_SCAN_ROWS, 16, 16, 16, 32);
+		m_bg2_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(senjyo_state::get_bg2_tile_info)),    TILEMAP_SCAN_ROWS, 16, 16, 16, 48);   // only 16x32 used by Star Force
+		m_bg3_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(senjyo_state::get_bg3_tile_info)),    TILEMAP_SCAN_ROWS, 16, 16, 16, 56);   // only 16x32 used by Star Force
 	}
 	else
 	{
-		m_bg1_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(senjyo_state::starforc_bg1_tile_info),this), TILEMAP_SCAN_ROWS, 16, 16, 16, 32);
-		m_bg2_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(senjyo_state::get_bg2_tile_info),this),      TILEMAP_SCAN_ROWS, 16, 16, 16, 32); /* only 16x32 used by Star Force */
-		m_bg3_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(senjyo_state::get_bg3_tile_info),this),      TILEMAP_SCAN_ROWS, 16, 16, 16, 32); /* only 16x32 used by Star Force */
+		m_bg1_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(senjyo_state::starforc_bg1_tile_info)), TILEMAP_SCAN_ROWS, 16, 16, 16, 32);
+		m_bg2_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(senjyo_state::get_bg2_tile_info)),      TILEMAP_SCAN_ROWS, 16, 16, 16, 32); // only 16x32 used by Star Force
+		m_bg3_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(senjyo_state::get_bg3_tile_info)),      TILEMAP_SCAN_ROWS, 16, 16, 16, 32); // only 16x32 used by Star Force
 	}
 
 	m_fg_tilemap->set_transparent_pen(0);
@@ -108,21 +106,21 @@ void senjyo_state::video_start()
 	m_fg_tilemap->set_scroll_cols(32);
 }
 
-PALETTE_DECODER_MEMBER( senjyo_state, IIBBGGRR )
+rgb_t senjyo_state::IIBBGGRR(uint32_t raw)
 {
-	UINT8 i = (raw >> 6) & 3;
-	UINT8 r = (raw << 2) & 0x0c;
-	UINT8 g = (raw     ) & 0x0c;
-	UINT8 b = (raw >> 2) & 0x0c;
+	uint8_t const i = (raw >> 6) & 0x03;
+	uint8_t const r = (raw << 2) & 0x0c;
+	uint8_t const g = (raw     ) & 0x0c;
+	uint8_t const b = (raw >> 2) & 0x0c;
 
 	return rgb_t(pal4bit(r ? (r | i) : 0), pal4bit(g ? (g | i) : 0), pal4bit(b ? (b | i) : 0));
 }
 
-PALETTE_INIT_MEMBER( senjyo_state, radar )
+void senjyo_state::radar_palette(palette_device &palette) const
 {
 	// two colors for the radar dots (verified on the real board)
-	m_radar_palette->set_pen_color(0, rgb_t(0xff, 0x00, 0x00));  // red for enemies
-	m_radar_palette->set_pen_color(1, rgb_t(0xff, 0xff, 0x00));  // yellow for player
+	palette.set_pen_color(0, rgb_t(0xff, 0x00, 0x00));  // red for enemies
+	palette.set_pen_color(1, rgb_t(0xff, 0xff, 0x00));  // yellow for player
 }
 
 
@@ -132,27 +130,27 @@ PALETTE_INIT_MEMBER( senjyo_state, radar )
 
 ***************************************************************************/
 
-WRITE8_MEMBER(senjyo_state::fgvideoram_w)
+void senjyo_state::fgvideoram_w(offs_t offset, uint8_t data)
 {
 	m_fgvideoram[offset] = data;
 	m_fg_tilemap->mark_tile_dirty(offset);
 }
-WRITE8_MEMBER(senjyo_state::fgcolorram_w)
+void senjyo_state::fgcolorram_w(offs_t offset, uint8_t data)
 {
 	m_fgcolorram[offset] = data;
 	m_fg_tilemap->mark_tile_dirty(offset);
 }
-WRITE8_MEMBER(senjyo_state::bg1videoram_w)
+void senjyo_state::bg1videoram_w(offs_t offset, uint8_t data)
 {
 	m_bg1videoram[offset] = data;
 	m_bg1_tilemap->mark_tile_dirty(offset);
 }
-WRITE8_MEMBER(senjyo_state::bg2videoram_w)
+void senjyo_state::bg2videoram_w(offs_t offset, uint8_t data)
 {
 	m_bg2videoram[offset] = data;
 	m_bg2_tilemap->mark_tile_dirty(offset);
 }
-WRITE8_MEMBER(senjyo_state::bg3videoram_w)
+void senjyo_state::bg3videoram_w(offs_t offset, uint8_t data)
 {
 	m_bg3videoram[offset] = data;
 	m_bg3_tilemap->mark_tile_dirty(offset);
@@ -166,7 +164,9 @@ WRITE8_MEMBER(senjyo_state::bg3videoram_w)
 
 void senjyo_state::draw_bgbitmap(bitmap_rgb32 &bitmap, const rectangle &cliprect)
 {
-	if (m_bgstripes == 0xff) /* off */
+	// assume +1 from disabling layer being 0xff
+	uint8_t stripe_width = m_bgstripesram[0]+1;
+	if (stripe_width == 0)
 		bitmap.fill(m_palette->pen_color(0), cliprect);
 	else
 	{
@@ -174,7 +174,7 @@ void senjyo_state::draw_bgbitmap(bitmap_rgb32 &bitmap, const rectangle &cliprect
 
 		int pen = 0;
 		int count = 0;
-		int strwid = m_bgstripes;
+		int strwid = stripe_width;
 		if (strwid == 0) strwid = 0x100;
 		if (flip) strwid ^= 0xff;
 
@@ -182,10 +182,10 @@ void senjyo_state::draw_bgbitmap(bitmap_rgb32 &bitmap, const rectangle &cliprect
 		{
 			if (flip)
 				for (int y = 0;y < 256;y++)
-					bitmap.pix32(y, 255 - x) = m_palette->pen_color(384 + pen);
+					bitmap.pix(y, 255 - x) = m_palette->pen_color(384 + pen);
 			else
 				for (int y = 0;y < 256;y++)
-					bitmap.pix32(y, x) = m_palette->pen_color(384 + pen);
+					bitmap.pix(y, x) = m_palette->pen_color(384 + pen);
 
 			count += 0x10;
 			if (count >= strwid)
@@ -215,7 +215,7 @@ void senjyo_state::draw_radar(bitmap_rgb32 &bitmap, const rectangle &cliprect)
 				}
 
 				if (cliprect.contains(sx, sy))
-					bitmap.pix32(sy, sx) =  m_radar_palette->pen_color(offs < 0x200 ? 0 : 1);
+					bitmap.pix(sy, sx) =  m_radar_palette->pen_color(offs < 0x200 ? 0 : 1);
 			}
 }
 
@@ -266,7 +266,7 @@ void senjyo_state::draw_sprites(bitmap_rgb32 &bitmap, const rectangle &cliprect,
 	}
 }
 
-UINT32 senjyo_state::screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
+uint32_t senjyo_state::screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
 {
 	int flip = flip_screen();
 
@@ -313,7 +313,7 @@ UINT32 senjyo_state::screen_update(screen_device &screen, bitmap_rgb32 &bitmap, 
 #if 0
 {
 	char baf[80];
-	UINT8 *senjyo_scrolly3 = m_scrolly3;
+	uint8_t *senjyo_scrolly3 = m_scrolly3;
 
 	sprintf(baf,"%02x %02x %02x %02x %02x %02x %02x %02x",
 		senjyo_scrolly3[0x00],

@@ -1,7 +1,9 @@
 // license:BSD-3-Clause
 // copyright-holders:Fabio Priuli
-#ifndef __CRVISION_ROM_H
-#define __CRVISION_ROM_H
+#ifndef MAME_BUS_CPC_CRVISION_ROM_H
+#define MAME_BUS_CPC_CRVISION_ROM_H
+
+#pragma once
 
 #include "slot.h"
 
@@ -13,15 +15,17 @@ class crvision_rom_device : public device_t,
 {
 public:
 	// construction/destruction
-	crvision_rom_device(const machine_config &mconfig, device_type type, const char *name, const char *tag, device_t *owner, UINT32 clock, const char *shortname, const char *source);
-	crvision_rom_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	crvision_rom_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
+
+	// reading and writing
+	virtual uint8_t read_rom80(offs_t offset) override;
+
+protected:
+	crvision_rom_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock);
 
 	// device-level overrides
 	virtual void device_start() override {}
 	virtual void device_reset() override {}
-
-	// reading and writing
-	virtual DECLARE_READ8_MEMBER(read_rom80) override;
 };
 
 // ======================> crvision_rom6k_device
@@ -30,10 +34,10 @@ class crvision_rom6k_device : public crvision_rom_device
 {
 public:
 	// construction/destruction
-	crvision_rom6k_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	crvision_rom6k_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
 	// reading and writing
-	virtual DECLARE_READ8_MEMBER(read_rom80) override;
+	virtual uint8_t read_rom80(offs_t offset) override;
 };
 
 // ======================> crvision_rom8k_device
@@ -42,10 +46,10 @@ class crvision_rom8k_device : public crvision_rom_device
 {
 public:
 	// construction/destruction
-	crvision_rom8k_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	crvision_rom8k_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
 	// reading and writing
-	virtual DECLARE_READ8_MEMBER(read_rom80) override;
+	virtual uint8_t read_rom80(offs_t offset) override;
 };
 
 // ======================> crvision_rom10k_device
@@ -54,11 +58,11 @@ class crvision_rom10k_device : public crvision_rom_device
 {
 public:
 	// construction/destruction
-	crvision_rom10k_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	crvision_rom10k_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
 	// reading and writing
-	virtual DECLARE_READ8_MEMBER(read_rom40) override;
-	virtual DECLARE_READ8_MEMBER(read_rom80) override;
+	virtual uint8_t read_rom40(offs_t offset) override;
+	virtual uint8_t read_rom80(offs_t offset) override;
 };
 
 // ======================> crvision_rom12k_device
@@ -67,11 +71,11 @@ class crvision_rom12k_device : public crvision_rom_device
 {
 public:
 	// construction/destruction
-	crvision_rom12k_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	crvision_rom12k_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
 	// reading and writing
-	virtual DECLARE_READ8_MEMBER(read_rom40) override;
-	virtual DECLARE_READ8_MEMBER(read_rom80) override;
+	virtual uint8_t read_rom40(offs_t offset) override;
+	virtual uint8_t read_rom80(offs_t offset) override;
 };
 
 // ======================> crvision_rom16k_device
@@ -80,10 +84,10 @@ class crvision_rom16k_device : public crvision_rom_device
 {
 public:
 	// construction/destruction
-	crvision_rom16k_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	crvision_rom16k_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
 	// reading and writing
-	virtual DECLARE_READ8_MEMBER(read_rom80) override;
+	virtual uint8_t read_rom80(offs_t offset) override;
 };
 
 // ======================> crvision_rom18k_device
@@ -92,25 +96,22 @@ class crvision_rom18k_device : public crvision_rom_device
 {
 public:
 	// construction/destruction
-	crvision_rom18k_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	crvision_rom18k_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
 	// reading and writing
-	virtual DECLARE_READ8_MEMBER(read_rom40) override;
-	virtual DECLARE_READ8_MEMBER(read_rom80) override;
+	virtual uint8_t read_rom40(offs_t offset) override;
+	virtual uint8_t read_rom80(offs_t offset) override;
 };
 
 
-
-
-
 // device type definition
-extern const device_type CRVISION_ROM_4K;
-extern const device_type CRVISION_ROM_6K;
-extern const device_type CRVISION_ROM_8K;
-extern const device_type CRVISION_ROM_10K;
-extern const device_type CRVISION_ROM_12K;
-extern const device_type CRVISION_ROM_16K;
-extern const device_type CRVISION_ROM_18K;
+DECLARE_DEVICE_TYPE(CRVISION_ROM_4K,  crvision_rom_device)
+DECLARE_DEVICE_TYPE(CRVISION_ROM_6K,  crvision_rom6k_device)
+DECLARE_DEVICE_TYPE(CRVISION_ROM_8K,  crvision_rom8k_device)
+DECLARE_DEVICE_TYPE(CRVISION_ROM_10K, crvision_rom10k_device)
+DECLARE_DEVICE_TYPE(CRVISION_ROM_12K, crvision_rom12k_device)
+DECLARE_DEVICE_TYPE(CRVISION_ROM_16K, crvision_rom16k_device)
+DECLARE_DEVICE_TYPE(CRVISION_ROM_18K, crvision_rom18k_device)
 
 
-#endif
+#endif // MAME_BUS_CPC_CRVISION_ROM_H

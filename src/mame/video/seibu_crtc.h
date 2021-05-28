@@ -6,21 +6,10 @@
 
 ***************************************************************************/
 
+#ifndef MAME_VIDEO_SEIBU_CRTC_H
+#define MAME_VIDEO_SEIBU_CRTC_H
+
 #pragma once
-
-#ifndef __SEIBU_CRTCDEV_H__
-#define __SEIBU_CRTCDEV_H__
-
-
-//**************************************************************************
-//  INTERFACE CONFIGURATION MACROS
-//**************************************************************************
-
-#define MCFG_SEIBU_CRTC_LAYER_EN_CB(_devcb) \
-	devcb = &seibu_crtc_device::set_layer_en_callback(*device, DEVCB_##_devcb);
-
-#define MCFG_SEIBU_CRTC_LAYER_SCROLL_CB(_devcb) \
-	devcb = &seibu_crtc_device::set_layer_scroll_callback(*device, DEVCB_##_devcb);
 
 
 //**************************************************************************
@@ -35,38 +24,49 @@ class seibu_crtc_device : public device_t,
 {
 public:
 	// construction/destruction
-	seibu_crtc_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	seibu_crtc_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
-	template<class _Object> static devcb_base &set_layer_en_callback(device_t &device, _Object object) { return downcast<seibu_crtc_device &>(device).m_layer_en_cb.set_callback(object); }
-	template<class _Object> static devcb_base &set_layer_scroll_callback(device_t &device, _Object object) { return downcast<seibu_crtc_device &>(device).m_layer_scroll_cb.set_callback(object); }
+	auto decrypt_key_callback() { return m_decrypt_key_cb.bind(); }
+	auto layer_en_callback() { return m_layer_en_cb.bind(); }
+	auto layer_scroll_callback() { return m_layer_scroll_cb.bind(); }
+	auto reg_1a_callback() { return m_reg_1a_cb.bind(); }
+	auto layer_scroll_base_callback() { return m_layer_scroll_base_cb.bind(); }
 
 	// I/O operations
-	DECLARE_WRITE16_MEMBER( write );
-	DECLARE_WRITE16_MEMBER( write_alt );
-	DECLARE_WRITE16_MEMBER( write_xor );
-	DECLARE_READ16_MEMBER( read );
-	DECLARE_READ16_MEMBER( read_alt );
-	DECLARE_READ16_MEMBER( read_xor );
-	DECLARE_WRITE16_MEMBER(layer_en_w);
-	DECLARE_WRITE16_MEMBER(layer_scroll_w);
+	void write(offs_t offset, uint16_t data);
+	void write_alt(offs_t offset, uint16_t data);
+	uint16_t read(offs_t offset);
+	uint16_t read_alt(offs_t offset);
+	void decrypt_key_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	void layer_en_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	uint16_t reg_1a_r();
+	void reg_1a_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	void layer_scroll_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	void layer_scroll_base_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
 
+	void seibu_crtc_vregs(address_map &map);
 protected:
 	// device-level overrides
 	virtual void device_validity_check(validity_checker &valid) const override;
 	virtual void device_start() override;
 	virtual void device_reset() override;
-	virtual const address_space_config *memory_space_config(address_spacenum spacenum = AS_0) const override;
+	virtual space_config_vector memory_space_config() const override;
 
 private:
+	devcb_write16       m_decrypt_key_cb;
 	devcb_write16       m_layer_en_cb;
 	devcb_write16       m_layer_scroll_cb;
+	devcb_write16       m_reg_1a_cb;
+	devcb_write16       m_layer_scroll_base_cb;
 	const address_space_config      m_space_config;
-	inline UINT16 read_word(offs_t address);
-	inline void write_word(offs_t address, UINT16 data);
+	inline uint16_t read_word(offs_t address);
+	inline void write_word(offs_t address, uint16_t data);
+
+	uint16_t m_reg_1a;
 };
 
 
 // device type definition
-extern const device_type SEIBU_CRTC;
+DECLARE_DEVICE_TYPE(SEIBU_CRTC, seibu_crtc_device)
 
-#endif
+#endif // MAME_VIDEO_SEIBU_CRTC_H

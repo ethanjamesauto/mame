@@ -9,8 +9,7 @@
 #include "emu.h"
 #include "debugger.h"
 #include "ssem.h"
-
-CPU_DISASSEMBLE( ssem );
+#include "ssemdasm.h"
 
 
 #define SSEM_DISASM_ON_UNIMPL           0
@@ -25,7 +24,7 @@ CPU_DISASSEMBLE( ssem );
 // The de facto snapshot format for other SSEM simulators stores the data physically in that format as well.
 // Therefore, in MESS, every 32-bit word has its bits reversed, too, and as a result the values must be
 // un-reversed before being used.
-static inline UINT32 reverse(UINT32 v)
+static inline uint32_t reverse(uint32_t v)
 {
 	// Taken from http://www-graphics.stanford.edu/~seander/bithacks.html#ReverseParallel
 	// swap odd and even bits
@@ -42,9 +41,9 @@ static inline UINT32 reverse(UINT32 v)
 	return v;
 }
 
-inline UINT32 ssem_device::program_read32(UINT32 address)
+inline uint32_t ssem_device::program_read32(uint32_t address)
 {
-	UINT32 v = 0;
+	uint32_t v = 0;
 	// The MAME core does not have a good way of specifying a minimum datum size that is more than
 	// 8 bits in width.  The minimum datum width on the SSEM is 32 bits, so we need to quadruple
 	// the address value to get the appropriate byte index.
@@ -58,9 +57,9 @@ inline UINT32 ssem_device::program_read32(UINT32 address)
 	return reverse(v);
 }
 
-inline void ssem_device::program_write32(UINT32 address, UINT32 data)
+inline void ssem_device::program_write32(uint32_t address, uint32_t data)
 {
-	UINT32 v = reverse(data);
+	uint32_t v = reverse(data);
 
 	// The MAME core does not have a good way of specifying a minimum datum size that is more than
 	// 8 bits in width.  The minimum datum width on the SSEM is 32 bits, so we need to quadruple
@@ -76,20 +75,20 @@ inline void ssem_device::program_write32(UINT32 address, UINT32 data)
 
 /*****************************************************************************/
 
-const device_type SSEMCPU = &device_creator<ssem_device>;
+DEFINE_DEVICE_TYPE(SSEMCPU, ssem_device, "ssem_cpu", "Manchester SSEM")
 
 //-------------------------------------------------
 //  ssem_device - constructor
 //-------------------------------------------------
 
-ssem_device::ssem_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: cpu_device(mconfig, SSEMCPU, "SSEMCPU", tag, owner, clock, "ssem_cpu", __FILE__),
-		m_program_config("program", ENDIANNESS_LITTLE, 8, 16),
-		m_pc(1),
-		m_shifted_pc(1<<2),
-		m_a(0),
-		m_halt(0),
-		m_icount(0)
+ssem_device::ssem_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: cpu_device(mconfig, SSEMCPU, tag, owner, clock)
+	, m_program_config("program", ENDIANNESS_LITTLE, 8, 16)
+	, m_pc(1)
+	, m_shifted_pc(1<<2)
+	, m_a(0)
+	, m_halt(0)
+	, m_icount(0)
 {
 	// Allocate & setup
 }
@@ -101,6 +100,7 @@ void ssem_device::device_start()
 
 	// register our state for the debugger
 	state_add(STATE_GENPC,     "GENPC",     m_pc).noshow();
+	state_add(STATE_GENPCBASE, "CURPC",     m_pc).noshow();
 	state_add(STATE_GENFLAGS,  "GENFLAGS",  m_halt).callimport().callexport().formatstr("%1s").noshow();
 	state_add(SSEM_PC,         "PC",        m_shifted_pc).mask(0xffff);
 	state_add(SSEM_A,          "A",         m_a).mask(0xffffffff);
@@ -112,7 +112,7 @@ void ssem_device::device_start()
 	save_item(NAME(m_halt));
 
 	// set our instruction counter
-	m_icountptr = &m_icount;
+	set_icountptr(m_icount);
 }
 
 void ssem_device::device_stop()
@@ -130,17 +130,15 @@ void ssem_device::device_reset()
 
 //-------------------------------------------------
 //  memory_space_config - return the configuration
-//  of the specified address space, or NULL if
+//  of the specified address space, or nullptr if
 //  the space doesn't exist
 //-------------------------------------------------
 
-const address_space_config *ssem_device::memory_space_config(address_spacenum spacenum) const
+device_memory_interface::space_config_vector ssem_device::memory_space_config() const
 {
-	if (spacenum == AS_PROGRAM)
-	{
-		return &m_program_config;
-	}
-	return nullptr;
+	return space_config_vector {
+		std::make_pair(AS_PROGRAM, &m_program_config)
+	};
 }
 
 
@@ -149,48 +147,25 @@ const address_space_config *ssem_device::memory_space_config(address_spacenum sp
 //  for the debugger
 //-------------------------------------------------
 
-void ssem_device::state_string_export(const device_state_entry &entry, std::string &str)
+void ssem_device::state_string_export(const device_state_entry &entry, std::string &str) const
 {
 	switch (entry.index())
 	{
 		case STATE_GENFLAGS:
-			strprintf(str, "%c", m_halt ? 'H' : '.');
+			str = string_format("%c", m_halt ? 'H' : '.');
 			break;
 	}
 }
 
 
 //-------------------------------------------------
-//  disasm_min_opcode_bytes - return the length
-//  of the shortest instruction, in bytes
-//-------------------------------------------------
-
-UINT32 ssem_device::disasm_min_opcode_bytes() const
-{
-	return 4;
-}
-
-
-//-------------------------------------------------
-//  disasm_max_opcode_bytes - return the length
-//  of the longest instruction, in bytes
-//-------------------------------------------------
-
-UINT32 ssem_device::disasm_max_opcode_bytes() const
-{
-	return 4;
-}
-
-
-//-------------------------------------------------
-//  disasm_disassemble - call the disassembly
+//  disassemble - call the disassembly
 //  helper function
 //-------------------------------------------------
 
-offs_t ssem_device::disasm_disassemble(char *buffer, offs_t pc, const UINT8 *oprom, const UINT8 *opram, UINT32 options)
+std::unique_ptr<util::disasm_interface> ssem_device::create_disassembler()
 {
-	extern CPU_DISASSEMBLE( ssem );
-	return CPU_DISASSEMBLE_NAME(ssem)(this, buffer, pc, oprom, opram, options);
+	return std::make_unique<ssem_disassembler>();
 }
 
 
@@ -203,7 +178,7 @@ offs_t ssem_device::disasm_disassemble(char *buffer, offs_t pc, const UINT8 *opr
 //  cycles it takes for one instruction to execute
 //-------------------------------------------------
 
-UINT32 ssem_device::execute_min_cycles() const
+uint32_t ssem_device::execute_min_cycles() const noexcept
 {
 	return 1;
 }
@@ -214,7 +189,7 @@ UINT32 ssem_device::execute_min_cycles() const
 //  cycles it takes for one instruction to execute
 //-------------------------------------------------
 
-UINT32 ssem_device::execute_max_cycles() const
+uint32_t ssem_device::execute_max_cycles() const noexcept
 {
 	return 1;
 }
@@ -225,7 +200,7 @@ UINT32 ssem_device::execute_max_cycles() const
 //  input/interrupt lines
 //-------------------------------------------------
 
-UINT32 ssem_device::execute_input_lines() const
+uint32_t ssem_device::execute_input_lines() const noexcept
 {
 	return 0;
 }
@@ -248,14 +223,14 @@ void ssem_device::execute_set_input(int inputnum, int state)
 
 void ssem_device::execute_run()
 {
-	UINT32 op;
+	uint32_t op;
 
 	m_pc &= 0x1f;
 	m_shifted_pc = m_pc << 2;
 
 	while (m_icount > 0)
 	{
-		debugger_instruction_hook(this, m_pc);
+		debugger_instruction_hook(m_pc);
 
 		op = program_read32(m_pc);
 
@@ -278,12 +253,12 @@ void ssem_device::execute_run()
 				break;
 			case 1:
 				// JRP: Add the value at the specified address to the Program Counter.
-				m_pc += (INT32)program_read32(ADDR);
+				m_pc += (int32_t)program_read32(ADDR);
 				m_shifted_pc = m_pc << 2;
 				break;
 			case 2:
 				// LDN: Load the accumulator with the two's-complement negation of the value at the specified address.
-				m_a = (UINT32)(0 - (INT32)program_read32(ADDR));
+				m_a = (uint32_t)(0 - (int32_t)program_read32(ADDR));
 				break;
 			case 3:
 				// STO: Store the value in the accumulator at the specified address.
@@ -296,7 +271,7 @@ void ssem_device::execute_run()
 				break;
 			case 6:
 				// CMP: If the accumulator is less than zero, skip the next opcode.
-				if((INT32)(m_a) < 0)
+				if((int32_t)(m_a) < 0)
 				{
 					m_pc++;
 					m_shifted_pc = m_pc << 2;

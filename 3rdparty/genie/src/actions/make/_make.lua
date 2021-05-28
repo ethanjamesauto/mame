@@ -33,6 +33,27 @@
 		end
 	end
 
+--
+-- Escape quoted string so it can be passed as define via command line.
+--
+
+	function _MAKE.escquote(value)
+		local result
+		if (type(value) == "table") then
+			result = { }
+			for _,v in ipairs(value) do
+				table.insert(result, _MAKE.escquote(v))
+			end
+			return result
+		else
+			-- handle simple replacements
+			--result = value:gsub(" ", "\\ ")
+			--result = result:gsub("\"", "\\\"")
+			--return result
+			return value
+		end
+	end
+
 
 --
 -- Rules for file ops based on the shell type. Can't use defines and $@ because
@@ -132,13 +153,15 @@
 		shortname       = "GNU Make",
 		description     = "Generate GNU makefiles for POSIX, MinGW, and Cygwin",
 
-		valid_kinds     = { "ConsoleApp", "WindowedApp", "StaticLib", "SharedLib" },
+		valid_kinds     = { "ConsoleApp", "WindowedApp", "StaticLib", "SharedLib", "Bundle" },
 
-		valid_languages = { "C", "C++", "C#" },
+		valid_languages = { "C", "C++", "C#", "Vala", "Swift" },
 
 		valid_tools     = {
-			cc     = { "gcc" },
+			cc     = { "gcc", "ghs" },
 			dotnet = { "mono", "msnet", "pnet" },
+			valac  = { "valac" },
+			swift  = { "swift" },
 		},
 
 		onsolution = function(sln)
@@ -149,8 +172,12 @@
 			local makefile = _MAKE.getmakefilename(prj, true)
 			if premake.isdotnetproject(prj) then
 				premake.generate(prj, makefile, premake.make_csharp)
-			else
+			elseif premake.iscppproject(prj) then
 				premake.generate(prj, makefile, premake.make_cpp)
+			elseif premake.isswiftproject(prj) then
+				premake.generate(prj, makefile, premake.make_swift)
+			else
+				premake.generate(prj, makefile, premake.make_vala)
 			end
 		end,
 
@@ -160,5 +187,7 @@
 
 		oncleanproject = function(prj)
 			premake.clean.file(prj, _MAKE.getmakefilename(prj, true))
-		end
+		end,
+
+		gmake = {}
 	}

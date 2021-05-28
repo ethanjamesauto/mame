@@ -1,29 +1,44 @@
 --
--- Copyright 2010-2015 Branimir Karadzic. All rights reserved.
--- License: http://www.opensource.org/licenses/BSD-2-Clause
+-- Copyright 2010-2019 Branimir Karadzic. All rights reserved.
+-- License: https://github.com/bkaradzic/bgfx#license-bsd-2-clause
 --
 
 project "texturec"
-	uuid "838801ee-7bc3-11e1-9f19-eae7d36e7d26"
+	uuid (os.uuid("texturec"))
 	kind "ConsoleApp"
 
 	includedirs {
-		path.join(BX_DIR, "include"),
+		path.join(BX_DIR,   "include"),
+		path.join(BIMG_DIR, "include"),
 		path.join(BGFX_DIR, "include"),
-		path.join(BGFX_DIR, "src"),
+		path.join(BIMG_DIR, "3rdparty/iqa/include"),
 	}
 
 	files {
-		path.join(BGFX_DIR, "src/image.*"),
-		path.join(BGFX_DIR, "tools/texturec/**.cpp"),
-		path.join(BGFX_DIR, "tools/texturec/**.h"),
+		path.join(BIMG_DIR, "tools/texturec/texturec.cpp"),
 	}
 
 	links {
---		"bgfx",
+		"bimg_decode",
+		"bimg_encode",
+		"bimg",
+		"bx",
 	}
+
+	configuration { "mingw-*" }
+		targetextension ".exe"
+		links {
+			"psapi",
+		}
 
 	configuration { "osx" }
 		links {
 			"Cocoa.framework",
 		}
+
+	configuration { "vs20*" }
+		links {
+			"psapi",
+		}
+
+	configuration {}

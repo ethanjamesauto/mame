@@ -10,17 +10,14 @@
 ***************************************************************************/
 
 #include "emu.h"
-#include "cpu/m6809/m6809.h"
 #include "audio/exidy440.h"
+#include "includes/exidy440.h"
+
+#include "cpu/m6809/m6809.h"
 
 
 #define SOUND_LOG       0
 #define FADE_TO_ZERO    1
-
-
-#define EXIDY440_AUDIO_CLOCK    (XTAL_12_9792MHz / 16)
-#define EXIDY440_MC3418_CLOCK   (EXIDY440_AUDIO_CLOCK / 16)
-#define EXIDY440_MC3417_CLOCK   (EXIDY440_AUDIO_CLOCK / 32)
 
 
 /* internal caching */
@@ -46,15 +43,37 @@ static const int channel_bits[4] =
 };
 
 
-const device_type EXIDY440 = &device_creator<exidy440_sound_device>;
+/*************************************
+ *
+ *  Audio CPU memory map
+ *
+ *************************************/
 
-exidy440_sound_device::exidy440_sound_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: device_t(mconfig, EXIDY440, "Exidy 440 CVSD", tag, owner, clock, "exidy440_sound", __FILE__),
+void exidy440_sound_device::exidy440_audio_map(address_map &map)
+{
+	map(0x0000, 0x7fff).noprw();
+	map(0x8000, 0x801f).mirror(0x03e0).rw(FUNC(exidy440_sound_device::m6844_r), FUNC(exidy440_sound_device::m6844_w));
+	map(0x8400, 0x840f).mirror(0x03f0).rw(FUNC(exidy440_sound_device::sound_volume_r), FUNC(exidy440_sound_device::sound_volume_w));
+	map(0x8800, 0x8800).mirror(0x03ff).r(FUNC(exidy440_sound_device::sound_command_r)).nopw();
+	map(0x8c00, 0x93ff).noprw();
+	map(0x9400, 0x9403).mirror(0x03fc).nopr().w(FUNC(exidy440_sound_device::sound_banks_w));
+	map(0x9800, 0x9800).mirror(0x03ff).nopr().w(FUNC(exidy440_sound_device::sound_interrupt_clear_w));
+	map(0x9c00, 0x9fff).noprw();
+	map(0xa000, 0xbfff).ram();
+	map(0xc000, 0xdfff).noprw();
+	map(0xe000, 0xffff).rom().region("audiocpu", 0);
+}
+
+
+DEFINE_DEVICE_TYPE(EXIDY440, exidy440_sound_device, "exidy440_sound", "Exidy 440 CVSD")
+
+exidy440_sound_device::exidy440_sound_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: device_t(mconfig, EXIDY440, tag, owner, clock),
 		device_sound_interface(mconfig, *this),
+		m_audiocpu(*this, "audiocpu"),
+		m_samples(*this, "samples"),
 		m_sound_command(0),
 		m_sound_command_ack(0),
-		m_mixer_buffer_left(nullptr),
-		m_mixer_buffer_right(nullptr),
 		m_sound_cache(nullptr),
 		m_sound_cache_end(nullptr),
 		m_sound_cache_max(nullptr),
@@ -74,13 +93,21 @@ exidy440_sound_device::exidy440_sound_device(const machine_config &mconfig, cons
 }
 
 //-------------------------------------------------
-//  device_config_complete - perform any
-//  operations now that the configuration is
-//  complete
+//  device_add_mconfig - add device configuration
 //-------------------------------------------------
 
-void exidy440_sound_device::device_config_complete()
+void exidy440_sound_device::device_add_mconfig(machine_config &config)
 {
+	MC6809(config, m_audiocpu, EXIDY440_AUDIO_CLOCK);
+	m_audiocpu->set_addrmap(AS_PROGRAM, &exidy440_sound_device::exidy440_audio_map);
+
+//  MC3418(config, "cvsd1", EXIDY440_MC3418_CLOCK).add_route(ALL_OUTPUTS, "lspeaker", 1.0);
+
+//  MC3418(config, "cvsd2", EXIDY440_MC3418_CLOCK).add_route(ALL_OUTPUTS, "rspeaker", 1.0);
+
+//  MC3417(config, "cvsd3", EXIDY440_MC3417_CLOCK).add_route(ALL_OUTPUTS, "lspeaker", 1.0);
+
+//  MC3417(config, "cvsd4", EXIDY440_MC3417_CLOCK).add_route(ALL_OUTPUTS, "rspeaker", 1.0);
 }
 
 //-------------------------------------------------
@@ -117,19 +144,19 @@ void exidy440_sound_device::device_start()
 	m_channel_frequency[3] = clock()/2;
 
 	/* get stream channels */
-	m_stream = machine().sound().stream_alloc(*this, 0, 2, clock());
+	m_stream = stream_alloc(0, 2, clock());
 
 	/* allocate the sample cache */
-	length = machine().root_device().memregion("cvsd")->bytes() * 16 + MAX_CACHE_ENTRIES * sizeof(sound_cache_entry);
-	m_sound_cache = (sound_cache_entry *)auto_alloc_array_clear(machine(), UINT8, length);
+	length = m_samples.bytes() * 16 + MAX_CACHE_ENTRIES * sizeof(sound_cache_entry);
+	m_sound_cache = (sound_cache_entry *)auto_alloc_array_clear(machine(), uint8_t, length);
 
 	/* determine the hard end of the cache and reset */
-	m_sound_cache_max = (sound_cache_entry *)((UINT8 *)m_sound_cache + length);
+	m_sound_cache_max = (sound_cache_entry *)((uint8_t *)m_sound_cache + length);
 	reset_sound_cache();
 
 	/* allocate the mixer buffer */
-	m_mixer_buffer_left = make_unique_clear<INT32[]>(clock());
-	m_mixer_buffer_right = make_unique_clear<INT32[]>(clock());
+	m_mixer_buffer_left.resize(clock()/50);
+	m_mixer_buffer_right.resize(clock()/50);
 
 	if (SOUND_LOG)
 		m_debuglog = fopen("sound.log", "w");
@@ -151,10 +178,10 @@ void exidy440_sound_device::device_stop()
  *
  *************************************/
 
-void exidy440_sound_device::add_and_scale_samples(int ch, INT32 *dest, int samples, int volume)
+void exidy440_sound_device::add_and_scale_samples(int ch, int32_t *dest, int samples, int volume)
 {
 	sound_channel_data *channel = &m_sound_channel[ch];
-	INT16 *srcdata;
+	int16_t *srcdata;
 	int i;
 
 	/* channels 2 and 3 are half-rate samples */
@@ -172,7 +199,7 @@ void exidy440_sound_device::add_and_scale_samples(int ch, INT32 *dest, int sampl
 		/* copy 1 for 2 to the destination */
 		for (i = 0; i < samples; i += 2)
 		{
-			INT16 sample = *srcdata++ * volume / 256;
+			int16_t sample = *srcdata++ * volume / 256;
 			*dest++ += sample;
 			*dest++ += sample;
 		}
@@ -195,24 +222,15 @@ void exidy440_sound_device::add_and_scale_samples(int ch, INT32 *dest, int sampl
  *
  *************************************/
 
-void exidy440_sound_device::mix_to_16(int length, stream_sample_t *dest_left, stream_sample_t *dest_right)
+void exidy440_sound_device::mix_to_16(write_stream_view &dest_left, write_stream_view &dest_right)
 {
-	INT32 *mixer_left = m_mixer_buffer_left.get();
-	INT32 *mixer_right = m_mixer_buffer_right.get();
-	int i, clippers = 0;
+	int32_t *mixer_left = &m_mixer_buffer_left[0];
+	int32_t *mixer_right = &m_mixer_buffer_right[0];
 
-	for (i = 0; i < length; i++)
+	for (int i = 0; i < dest_left.samples(); i++)
 	{
-		INT32 sample_left = *mixer_left++;
-		INT32 sample_right = *mixer_right++;
-
-		if (sample_left < -32768) { sample_left = -32768; clippers++; }
-		else if (sample_left > 32767) { sample_left = 32767; clippers++; }
-		if (sample_right < -32768) { sample_right = -32768; clippers++; }
-		else if (sample_right > 32767) { sample_right = 32767; clippers++; }
-
-		*dest_left++ = sample_left;
-		*dest_right++ = sample_right;
+		dest_left.put_int_clamp(i, *mixer_left++, 32768);
+		dest_right.put_int_clamp(i, *mixer_right++, 32768);
 	}
 }
 
@@ -222,25 +240,25 @@ void exidy440_sound_device::mix_to_16(int length, stream_sample_t *dest_left, st
  *
  *************************************/
 
-READ8_MEMBER( exidy440_sound_device::sound_command_r )
+uint8_t exidy440_sound_device::sound_command_r()
 {
 	/* clear the FIRQ that got us here and acknowledge the read to the main CPU */
-	space.machine().device("audiocpu")->execute().set_input_line(1, CLEAR_LINE);
+	m_audiocpu->set_input_line(M6809_FIRQ_LINE, CLEAR_LINE);
 	m_sound_command_ack = 1;
 
 	return m_sound_command;
 }
 
 
-void exidy440_sound_device::exidy440_sound_command(UINT8 param)
+void exidy440_sound_device::exidy440_sound_command(uint8_t param)
 {
 	m_sound_command = param;
 	m_sound_command_ack = 0;
-	machine().device("audiocpu")->execute().set_input_line(INPUT_LINE_IRQ1, ASSERT_LINE);
+	m_audiocpu->set_input_line(M6809_FIRQ_LINE, ASSERT_LINE);
 }
 
 
-UINT8 exidy440_sound_device::exidy440_sound_command_ack()
+uint8_t exidy440_sound_device::exidy440_sound_command_ack()
 {
 	return m_sound_command_ack;
 }
@@ -253,12 +271,12 @@ UINT8 exidy440_sound_device::exidy440_sound_command_ack()
  *
  *************************************/
 
-READ8_MEMBER( exidy440_sound_device::sound_volume_r )
+uint8_t exidy440_sound_device::sound_volume_r(offs_t offset)
 {
 	return m_sound_volume[offset];
 }
 
-WRITE8_MEMBER( exidy440_sound_device::sound_volume_w )
+void exidy440_sound_device::sound_volume_w(offs_t offset, uint8_t data)
 {
 	if (SOUND_LOG && m_debuglog)
 		fprintf(m_debuglog, "Volume %02X=%02X\n", offset, data);
@@ -278,9 +296,20 @@ WRITE8_MEMBER( exidy440_sound_device::sound_volume_w )
  *
  *************************************/
 
-WRITE8_MEMBER( exidy440_sound_device::sound_interrupt_clear_w )
+WRITE_LINE_MEMBER(exidy440_sound_device::sound_interrupt_w)
 {
-	space.machine().device("audiocpu")->execute().set_input_line(0, CLEAR_LINE);
+	if (state)
+		m_audiocpu->set_input_line(M6809_IRQ_LINE, ASSERT_LINE);
+}
+
+void exidy440_sound_device::sound_interrupt_clear_w(uint8_t data)
+{
+	m_audiocpu->set_input_line(M6809_IRQ_LINE, CLEAR_LINE);
+}
+
+WRITE_LINE_MEMBER(exidy440_sound_device::sound_reset_w)
+{
+	m_audiocpu->set_input_line(INPUT_LINE_RESET, state);
 }
 
 
@@ -320,7 +349,7 @@ void exidy440_sound_device::m6844_finished(m6844_channel_data *channel)
  *
  *************************************/
 
-READ8_MEMBER( exidy440_sound_device::m6844_r )
+uint8_t exidy440_sound_device::m6844_r(offs_t offset)
 {
 	m6844_channel_data *m6844_channel = m_m6844_channel;
 	int result = 0;
@@ -405,7 +434,7 @@ READ8_MEMBER( exidy440_sound_device::m6844_r )
 }
 
 
-WRITE8_MEMBER( exidy440_sound_device::m6844_w )
+void exidy440_sound_device::m6844_w(offs_t offset, uint8_t data)
 {
 	m6844_channel_data *m6844_channel = m_m6844_channel;
 	int i;
@@ -522,12 +551,12 @@ void exidy440_sound_device::reset_sound_cache()
 }
 
 
-INT16 *exidy440_sound_device::add_to_sound_cache(UINT8 *input, int address, int length, int bits, int frequency)
+int16_t *exidy440_sound_device::add_to_sound_cache(uint8_t *input, int address, int length, int bits, int frequency)
 {
 	sound_cache_entry *current = m_sound_cache_end;
 
 	/* compute where the end will be once we add this entry */
-	m_sound_cache_end = (sound_cache_entry *)((UINT8 *)current + sizeof(sound_cache_entry) + length * 16);
+	m_sound_cache_end = (sound_cache_entry *)((uint8_t *)current + sizeof(sound_cache_entry) + length * 16);
 
 	/* if this will overflow the cache, reset and re-add */
 	if (m_sound_cache_end > m_sound_cache_max)
@@ -549,7 +578,7 @@ INT16 *exidy440_sound_device::add_to_sound_cache(UINT8 *input, int address, int 
 }
 
 
-INT16 *exidy440_sound_device::find_or_add_to_sound_cache(int address, int length, int bits, int frequency)
+int16_t *exidy440_sound_device::find_or_add_to_sound_cache(int address, int length, int bits, int frequency)
 {
 	sound_cache_entry *current;
 
@@ -557,7 +586,7 @@ INT16 *exidy440_sound_device::find_or_add_to_sound_cache(int address, int length
 		if (current->address == address && current->length == length && current->bits == bits && current->frequency == frequency)
 			return current->data;
 
-	return add_to_sound_cache(&machine().root_device().memregion("cvsd")->base()[address], address, length, bits, frequency);
+	return add_to_sound_cache(&m_samples[address], address, length, bits, frequency);
 }
 
 
@@ -573,7 +602,7 @@ void exidy440_sound_device::play_cvsd(int ch)
 	sound_channel_data *channel = &m_sound_channel[ch];
 	int address = m_m6844_channel[ch].address;
 	int length = m_m6844_channel[ch].counter;
-	INT16 *base;
+	int16_t *base;
 
 	/* add the bank number to the address */
 	if (m_sound_banks[ch] & 1)
@@ -634,11 +663,11 @@ void exidy440_sound_device::stop_cvsd(int ch)
  *
  *************************************/
 
-void exidy440_sound_device::fir_filter(INT32 *input, INT16 *output, int count)
+void exidy440_sound_device::fir_filter(int32_t *input, int16_t *output, int count)
 {
 	while (count--)
 	{
-		INT32 result = (input[-1] - input[-8] - input[-48] + input[-55]) << 2;
+		int32_t result = (input[-1] - input[-8] - input[-48] + input[-55]) << 2;
 		result += (input[0] + input[-18] + input[-38] + input[-56]) << 3;
 		result += (-input[-2] - input[-4] + input[-5] + input[-51] - input[-52] - input[-54]) << 4;
 		result += (-input[-3] - input[-11] - input[-45] - input[-53]) << 5;
@@ -669,9 +698,9 @@ void exidy440_sound_device::fir_filter(INT32 *input, INT16 *output, int count)
  *
  *************************************/
 
-void exidy440_sound_device::decode_and_filter_cvsd(UINT8 *input, int bytes, int maskbits, int frequency, INT16 *output)
+void exidy440_sound_device::decode_and_filter_cvsd(uint8_t *input, int bytes, int maskbits, int frequency, int16_t *output)
 {
-	INT32 buffer[SAMPLE_BUFFER_LENGTH + FIR_HISTORY_LENGTH];
+	int32_t buffer[SAMPLE_BUFFER_LENGTH + FIR_HISTORY_LENGTH];
 	int total_samples = bytes * 8;
 	int mask = (1 << maskbits) - 1;
 	double filter, integrator, leak;
@@ -688,7 +717,7 @@ void exidy440_sound_device::decode_and_filter_cvsd(UINT8 *input, int bytes, int 
 	gain = SAMPLE_GAIN;
 
 	/* clear the history words for a start */
-	memset(&buffer[0], 0, FIR_HISTORY_LENGTH * sizeof(INT32));
+	memset(&buffer[0], 0, FIR_HISTORY_LENGTH * sizeof(int32_t));
 
 	/* initialize the CVSD decoder */
 	steps = 0xaa;
@@ -698,7 +727,7 @@ void exidy440_sound_device::decode_and_filter_cvsd(UINT8 *input, int bytes, int 
 	/* loop over chunks */
 	for (chunk_start = 0; chunk_start < total_samples; chunk_start += SAMPLE_BUFFER_LENGTH)
 	{
-		INT32 *bufptr = &buffer[FIR_HISTORY_LENGTH];
+		int32_t *bufptr = &buffer[FIR_HISTORY_LENGTH];
 		int chunk_bytes;
 		int ind;
 
@@ -771,13 +800,13 @@ void exidy440_sound_device::decode_and_filter_cvsd(UINT8 *input, int bytes, int 
 		fir_filter(&buffer[FIR_HISTORY_LENGTH], &output[chunk_start], chunk_bytes * 8);
 
 		/* copy the last few input samples down to the start for a new history */
-		memcpy(&buffer[0], &buffer[SAMPLE_BUFFER_LENGTH], FIR_HISTORY_LENGTH * sizeof(INT32));
+		memcpy(&buffer[0], &buffer[SAMPLE_BUFFER_LENGTH], FIR_HISTORY_LENGTH * sizeof(int32_t));
 	}
 
 	/* make sure the volume goes smoothly to 0 over the last 512 samples */
 	if (FADE_TO_ZERO)
 	{
-		INT16 *data;
+		int16_t *data;
 
 		chunk_start = (total_samples > 512) ? total_samples - 512 : 0;
 		data = output + chunk_start;
@@ -790,7 +819,7 @@ void exidy440_sound_device::decode_and_filter_cvsd(UINT8 *input, int bytes, int 
 }
 
 
-WRITE8_MEMBER( exidy440_sound_device::sound_banks_w )
+void exidy440_sound_device::sound_banks_w(offs_t offset, uint8_t data)
 {
 	m_sound_banks[offset] = data;
 }
@@ -799,19 +828,19 @@ WRITE8_MEMBER( exidy440_sound_device::sound_banks_w )
 //  sound_stream_update - handle a stream update
 //-------------------------------------------------
 
-void exidy440_sound_device::sound_stream_update(sound_stream &stream, stream_sample_t **inputs, stream_sample_t **outputs, int samples)
+void exidy440_sound_device::sound_stream_update(sound_stream &stream, std::vector<read_stream_view> const &inputs, std::vector<write_stream_view> &outputs)
 {
 	int ch;
 
 	/* reset the mixer buffers */
-	memset(m_mixer_buffer_left.get(), 0, samples * sizeof(INT32));
-	memset(m_mixer_buffer_right.get(), 0, samples * sizeof(INT32));
+	std::fill_n(&m_mixer_buffer_left[0], outputs[0].samples(), 0);
+	std::fill_n(&m_mixer_buffer_right[0], outputs[0].samples(), 0);
 
 	/* loop over channels */
 	for (ch = 0; ch < 4; ch++)
 	{
 		sound_channel_data *channel = &m_sound_channel[ch];
-		int length, volume, left = samples;
+		int length, volume, left = outputs[0].samples();
 		int effective_offset;
 
 		/* if we're not active, bail */
@@ -824,12 +853,12 @@ void exidy440_sound_device::sound_stream_update(sound_stream &stream, stream_sam
 		/* get a pointer to the sample data and copy to the left */
 		volume = m_sound_volume[2 * ch + 0];
 		if (volume)
-			add_and_scale_samples(ch, m_mixer_buffer_left.get(), length, volume);
+			add_and_scale_samples(ch, &m_mixer_buffer_left[0], length, volume);
 
 		/* get a pointer to the sample data and copy to the left */
 		volume = m_sound_volume[2 * ch + 1];
 		if (volume)
-			add_and_scale_samples(ch, m_mixer_buffer_right.get(), length, volume);
+			add_and_scale_samples(ch, &m_mixer_buffer_right[0], length, volume);
 
 		/* update our counters */
 		channel->offset += length;
@@ -849,59 +878,5 @@ void exidy440_sound_device::sound_stream_update(sound_stream &stream, stream_sam
 	}
 
 	/* all done, time to mix it */
-	mix_to_16(samples, outputs[0], outputs[1]);
+	mix_to_16(outputs[0], outputs[1]);
 }
-
-
-/*************************************
- *
- *  Memory handlers
- *
- *************************************/
-
-static ADDRESS_MAP_START( exidy440_audio_map, AS_PROGRAM, 8, driver_device )
-	AM_RANGE(0x0000, 0x7fff) AM_NOP
-	AM_RANGE(0x8000, 0x801f) AM_MIRROR(0x03e0) AM_DEVREADWRITE("custom", exidy440_sound_device, m6844_r, m6844_w)
-	AM_RANGE(0x8400, 0x840f) AM_MIRROR(0x03f0) AM_DEVREADWRITE("custom", exidy440_sound_device, sound_volume_r, sound_volume_w)
-	AM_RANGE(0x8800, 0x8800) AM_MIRROR(0x03ff) AM_DEVREAD("custom", exidy440_sound_device, sound_command_r) AM_WRITENOP
-	AM_RANGE(0x8c00, 0x93ff) AM_NOP
-	AM_RANGE(0x9400, 0x9403) AM_MIRROR(0x03fc) AM_READNOP AM_DEVWRITE("custom", exidy440_sound_device, sound_banks_w)
-	AM_RANGE(0x9800, 0x9800) AM_MIRROR(0x03ff) AM_READNOP AM_DEVWRITE("custom", exidy440_sound_device, sound_interrupt_clear_w)
-	AM_RANGE(0x9c00, 0x9fff) AM_NOP
-	AM_RANGE(0xa000, 0xbfff) AM_RAM
-	AM_RANGE(0xc000, 0xdfff) AM_NOP
-	AM_RANGE(0xe000, 0xffff) AM_ROM
-ADDRESS_MAP_END
-
-
-
-/*************************************
- *
- *  Machine driver
- *
- *************************************/
-
-MACHINE_CONFIG_FRAGMENT( exidy440_audio )
-
-	MCFG_CPU_ADD("audiocpu", M6809, EXIDY440_AUDIO_CLOCK)
-	MCFG_CPU_PROGRAM_MAP(exidy440_audio_map)
-	MCFG_CPU_VBLANK_INT_DRIVER("screen", driver_device, irq0_line_assert)
-
-	MCFG_SPEAKER_STANDARD_STEREO("lspeaker", "rspeaker")
-
-	MCFG_SOUND_ADD("custom", EXIDY440, EXIDY440_AUDIO_CLOCK/16)
-	MCFG_SOUND_ROUTE(0, "lspeaker", 1.0)
-	MCFG_SOUND_ROUTE(1, "rspeaker", 1.0)
-
-//  MCFG_SOUND_ADD("cvsd1", MC3418, EXIDY440_MC3418_CLOCK)
-//  MCFG_SOUND_ROUTE(ALL_OUTPUTS, "lspeaker", 1.0)
-
-//  MCFG_SOUND_ADD("cvsd2", MC3418, EXIDY440_MC3418_CLOCK)
-//  MCFG_SOUND_ROUTE(ALL_OUTPUTS, "rspeaker", 1.0)
-
-//  MCFG_SOUND_ADD("cvsd3", MC3417, EXIDY440_MC3417_CLOCK)
-//  MCFG_SOUND_ROUTE(ALL_OUTPUTS, "lspeaker", 1.0)
-
-//  MCFG_SOUND_ADD("cvsd4", MC3417, EXIDY440_MC3417_CLOCK)
-//  MCFG_SOUND_ROUTE(ALL_OUTPUTS, "rspeaker", 1.0)
-MACHINE_CONFIG_END

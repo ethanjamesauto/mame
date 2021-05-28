@@ -1,41 +1,65 @@
 // license:BSD-3-Clause
 // copyright-holders:Olivier Galibert
-#ifndef PCI_USB_H
-#define PCI_USB_H
+#ifndef MAME_MACHINE_PCI_USB_H
+#define MAME_MACHINE_PCI_USB_H
+
+#pragma once
 
 #include "pci.h"
 
-#define MCFG_USB_UHCI_ADD(_tag, _main_id, _revision, _subdevice_id) \
-	MCFG_PCI_DEVICE_ADD(_tag, USB_UHCI, _main_id, _revision, 0x0c0300, _subdevice_id)
-
-#define MCFG_USB_EHCI_ADD(_tag, _main_id, _revision, _subdevice_id) \
-	MCFG_PCI_DEVICE_ADD(_tag, USB_EHCI, _main_id, _revision, 0x0c0320, _subdevice_id)
-
-class usb_uhci_device : public pci_device {
+class usb_ohci_device : public pci_device {
 public:
-	usb_uhci_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	usb_ohci_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock, uint32_t main_id, uint32_t revision, uint32_t subdevice_id)
+		: usb_ohci_device(mconfig, tag, owner, clock)
+	{
+		set_ids(main_id, revision, 0x0c0310, subdevice_id);
+	}
+	usb_ohci_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
 protected:
 	virtual void device_start() override;
 	virtual void device_reset() override;
 
 private:
-	DECLARE_ADDRESS_MAP(map, 32);
+	void map(address_map &map);
+};
+
+class usb_uhci_device : public pci_device {
+public:
+	usb_uhci_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock, uint32_t main_id, uint32_t revision, uint32_t subdevice_id)
+		: usb_uhci_device(mconfig, tag, owner, clock)
+	{
+		set_ids(main_id, revision, 0x0c0300, subdevice_id);
+	}
+	usb_uhci_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
+
+protected:
+	virtual void device_start() override;
+	virtual void device_reset() override;
+
+private:
+	void map(address_map &map);
 };
 
 class usb_ehci_device : public pci_device {
 public:
-	usb_ehci_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	usb_ehci_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock, uint32_t main_id, uint32_t revision, uint32_t subdevice_id)
+		: usb_ehci_device(mconfig, tag, owner, clock)
+	{
+		set_ids(main_id, revision, 0x0c0320, subdevice_id);
+	}
+	usb_ehci_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
 protected:
 	virtual void device_start() override;
 	virtual void device_reset() override;
 
 private:
-	DECLARE_ADDRESS_MAP(map, 32);
+	void map(address_map &map);
 };
 
-extern const device_type USB_UHCI;
-extern const device_type USB_EHCI;
+DECLARE_DEVICE_TYPE(USB_OHCI, usb_ohci_device)
+DECLARE_DEVICE_TYPE(USB_UHCI, usb_uhci_device)
+DECLARE_DEVICE_TYPE(USB_EHCI, usb_ehci_device)
 
-#endif
+#endif // MAME_MACHINE_PCI_USB_H

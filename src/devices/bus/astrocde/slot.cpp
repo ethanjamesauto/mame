@@ -7,7 +7,6 @@
 
  ***********************************************************************************************************/
 
-
 #include "emu.h"
 #include "slot.h"
 
@@ -15,7 +14,7 @@
 //  GLOBAL VARIABLES
 //**************************************************************************
 
-const device_type ASTROCADE_CART_SLOT = &device_creator<astrocade_cart_slot_device>;
+DEFINE_DEVICE_TYPE(ASTROCADE_CART_SLOT, astrocade_cart_slot_device, "astrocade_cart_slot", "Bally Astrocade Cartridge Slot")
 
 //**************************************************************************
 //    Astrocade Cartridges Interface
@@ -25,10 +24,10 @@ const device_type ASTROCADE_CART_SLOT = &device_creator<astrocade_cart_slot_devi
 //  device_astrocade_cart_interface - constructor
 //-------------------------------------------------
 
-device_astrocade_cart_interface::device_astrocade_cart_interface(const machine_config &mconfig, device_t &device)
-	: device_slot_card_interface(mconfig, device),
-		m_rom(nullptr),
-		m_rom_size(0)
+device_astrocade_cart_interface::device_astrocade_cart_interface(const machine_config &mconfig, device_t &device) :
+	device_interface(device, "astrocadecart"),
+	m_rom(nullptr),
+	m_rom_size(0)
 {
 }
 
@@ -45,7 +44,7 @@ device_astrocade_cart_interface::~device_astrocade_cart_interface()
 //  rom_alloc - alloc the space for the cart
 //-------------------------------------------------
 
-void device_astrocade_cart_interface::rom_alloc(UINT32 size, const char *tag)
+void device_astrocade_cart_interface::rom_alloc(uint32_t size, const char *tag)
 {
 	if (m_rom == nullptr)
 	{
@@ -62,11 +61,11 @@ void device_astrocade_cart_interface::rom_alloc(UINT32 size, const char *tag)
 //-------------------------------------------------
 //  astrocade_cart_slot_device - constructor
 //-------------------------------------------------
-astrocade_cart_slot_device::astrocade_cart_slot_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock) :
-						device_t(mconfig, ASTROCADE_CART_SLOT, "Bally Astrocade Cartridge Slot", tag, owner, clock, "astrocade_cart_slot", __FILE__),
-						device_image_interface(mconfig, *this),
-						device_slot_interface(mconfig, *this),
-						m_type(ASTROCADE_STD), m_cart(nullptr)
+astrocade_cart_slot_device::astrocade_cart_slot_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock) :
+	device_t(mconfig, ASTROCADE_CART_SLOT, tag, owner, clock),
+	device_image_interface(mconfig, *this),
+	device_single_card_slot_interface<device_astrocade_cart_interface>(mconfig, *this),
+	m_type(ASTROCADE_STD), m_cart(nullptr)
 {
 }
 
@@ -85,19 +84,7 @@ astrocade_cart_slot_device::~astrocade_cart_slot_device()
 
 void astrocade_cart_slot_device::device_start()
 {
-	m_cart = dynamic_cast<device_astrocade_cart_interface *>(get_card_device());
-}
-
-//-------------------------------------------------
-//  device_config_complete - perform any
-//  operations now that the configuration is
-//  complete
-//-------------------------------------------------
-
-void astrocade_cart_slot_device::device_config_complete()
-{
-	// set brief and instance name
-	update_names();
+	m_cart = get_card_device();
 }
 
 
@@ -116,14 +103,15 @@ static const astrocade_slot slot_list[] =
 {
 	{ ASTROCADE_STD,  "rom" },
 	{ ASTROCADE_256K, "rom_256k" },
-	{ ASTROCADE_512K, "rom_512k" }
+	{ ASTROCADE_512K, "rom_512k" },
+	{ ASTROCADE_CASS, "rom_cass" }
 };
 
 static int astrocade_get_pcb_id(const char *slot)
 {
 	for (auto & elem : slot_list)
 	{
-		if (!core_stricmp(elem.slot_option, slot))
+		if (!strcmp(elem.slot_option, slot))
 			return elem.pcb_id;
 	}
 
@@ -146,19 +134,19 @@ static const char *astrocade_get_slot(int type)
  call load
  -------------------------------------------------*/
 
-bool astrocade_cart_slot_device::call_load()
+image_init_result astrocade_cart_slot_device::call_load()
 {
 	if (m_cart)
 	{
-		UINT32 size = (software_entry() == nullptr) ? length() : get_software_region_length("rom");
+		uint32_t size = !loaded_through_softlist() ? length() : get_software_region_length("rom");
 		m_cart->rom_alloc(size, tag());
 
-		if (software_entry() == nullptr)
+		if (!loaded_through_softlist())
 			fread(m_cart->get_rom_base(), size);
 		else
 			memcpy(m_cart->get_rom_base(), get_software_region("rom"), size);
 
-		if (software_entry() == nullptr)
+		if (!loaded_through_softlist())
 		{
 			m_type = ASTROCADE_STD;
 
@@ -176,21 +164,10 @@ bool astrocade_cart_slot_device::call_load()
 
 		//printf("Type: %s\n", astrocade_get_slot(m_type));
 
-		return IMAGE_INIT_PASS;
+		return image_init_result::PASS;
 	}
 
-	return IMAGE_INIT_PASS;
-}
-
-
-/*-------------------------------------------------
- call softlist load
- -------------------------------------------------*/
-
-bool astrocade_cart_slot_device::call_softlist_load(software_list_device &swlist, const char *swname, const rom_entry *start_entry)
-{
-	load_software_part_region(*this, swlist, swname, start_entry);
-	return TRUE;
+	return image_init_result::PASS;
 }
 
 
@@ -198,12 +175,12 @@ bool astrocade_cart_slot_device::call_softlist_load(software_list_device &swlist
  get default card software
  -------------------------------------------------*/
 
-void astrocade_cart_slot_device::get_default_card_software(std::string &result)
+std::string astrocade_cart_slot_device::get_default_card_software(get_default_card_software_hook &hook) const
 {
-	if (open_image_file(mconfig().options()))
+	if (hook.image_file())
 	{
-		const char *slot_string = "rom";
-		UINT32 size = core_fsize(m_file);
+		const char *slot_string;
+		uint32_t size = hook.image_file()->size();
 		int type = ASTROCADE_STD;
 
 		if (size == 0x40000)
@@ -214,23 +191,21 @@ void astrocade_cart_slot_device::get_default_card_software(std::string &result)
 		slot_string = astrocade_get_slot(type);
 
 		//printf("type: %s\n", slot_string);
-		clear();
 
-		result.assign(slot_string);
-		return;
+		return std::string(slot_string);
 	}
 
-	software_get_default_slot(result, "rom");
+	return software_get_default_slot("rom");
 }
 
 /*-------------------------------------------------
  read
  -------------------------------------------------*/
 
-READ8_MEMBER(astrocade_cart_slot_device::read_rom)
+uint8_t astrocade_cart_slot_device::read_rom(offs_t offset)
 {
 	if (m_cart)
-		return m_cart->read_rom(space, offset);
+		return m_cart->read_rom(offset);
 	else
 		return 0xff;
 }

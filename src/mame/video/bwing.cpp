@@ -19,28 +19,28 @@ revised by Alex W. Jackson
 // Exports
 
 
-WRITE8_MEMBER(bwing_state::videoram_w)
+void bwing_state::videoram_w(offs_t offset, uint8_t data)
 {
 	m_videoram[offset] = data;
 	m_charmap->mark_tile_dirty(offset);
 }
 
 
-WRITE8_MEMBER(bwing_state::fgscrollram_w)
+void bwing_state::fgscrollram_w(offs_t offset, uint8_t data)
 {
 	m_fgscrollram[offset] = data;
 	m_fgmap->mark_tile_dirty(offset);
 }
 
 
-WRITE8_MEMBER(bwing_state::bgscrollram_w)
+void bwing_state::bgscrollram_w(offs_t offset, uint8_t data)
 {
 	m_bgscrollram[offset] = data;
 	m_bgmap->mark_tile_dirty(offset);
 }
 
 
-WRITE8_MEMBER(bwing_state::gfxram_w)
+void bwing_state::gfxram_w(offs_t offset, uint8_t data)
 {
 	m_gfxram[offset] = data;
 	int whichgfx = (offset & 0x1000) ? 3 : 2;
@@ -48,7 +48,7 @@ WRITE8_MEMBER(bwing_state::gfxram_w)
 }
 
 
-WRITE8_MEMBER(bwing_state::scrollreg_w)
+void bwing_state::scrollreg_w(offs_t offset, uint8_t data)
 {
 	m_sreg[offset] = data;
 
@@ -64,7 +64,7 @@ WRITE8_MEMBER(bwing_state::scrollreg_w)
 }
 
 
-WRITE8_MEMBER(bwing_state::paletteram_w)
+void bwing_state::paletteram_w(offs_t offset, uint8_t data)
 {
 	static const float rgb[4][3] = {
 		{0.85f, 0.95f, 1.00f},
@@ -102,17 +102,17 @@ WRITE8_MEMBER(bwing_state::paletteram_w)
 
 TILE_GET_INFO_MEMBER(bwing_state::get_fgtileinfo)
 {
-	SET_TILE_INFO_MEMBER(2, m_fgscrollram[tile_index] & 0x7f, m_fgscrollram[tile_index] >> 7, 0);
+	tileinfo.set(2, m_fgscrollram[tile_index] & 0x7f, m_fgscrollram[tile_index] >> 7, 0);
 }
 
 TILE_GET_INFO_MEMBER(bwing_state::get_bgtileinfo)
 {
-	SET_TILE_INFO_MEMBER(3, m_bgscrollram[tile_index] & 0x7f, m_bgscrollram[tile_index] >> 7, 0);
+	tileinfo.set(3, m_bgscrollram[tile_index] & 0x7f, m_bgscrollram[tile_index] >> 7, 0);
 }
 
 TILE_GET_INFO_MEMBER(bwing_state::get_charinfo)
 {
-	SET_TILE_INFO_MEMBER(0, m_videoram[tile_index], 0, 0);
+	tileinfo.set(0, m_videoram[tile_index], 0, 0);
 }
 
 TILEMAP_MAPPER_MEMBER(bwing_state::scan_cols)
@@ -125,9 +125,9 @@ void bwing_state::video_start()
 {
 	int i;
 
-	m_charmap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(bwing_state::get_charinfo),this), TILEMAP_SCAN_COLS, 8, 8, 32, 32);
-	m_fgmap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(bwing_state::get_fgtileinfo),this), tilemap_mapper_delegate(FUNC(bwing_state::scan_cols),this), 16, 16, 64, 64);
-	m_bgmap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(bwing_state::get_bgtileinfo),this), tilemap_mapper_delegate(FUNC(bwing_state::scan_cols),this), 16, 16, 64, 64);
+	m_charmap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(bwing_state::get_charinfo)), TILEMAP_SCAN_COLS, 8, 8, 32, 32);
+	m_fgmap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(bwing_state::get_fgtileinfo)), tilemap_mapper_delegate(*this, FUNC(bwing_state::scan_cols)), 16, 16, 64, 64);
+	m_bgmap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(bwing_state::get_bgtileinfo)), tilemap_mapper_delegate(*this, FUNC(bwing_state::scan_cols)), 16, 16, 64, 64);
 
 	m_charmap->set_transparent_pen(0);
 	m_fgmap->set_transparent_pen(0);
@@ -139,7 +139,7 @@ void bwing_state::video_start()
 //****************************************************************************
 // Realtime
 
-void bwing_state::draw_sprites( bitmap_ind16 &bmp, const rectangle &clip, UINT8 *ram, int pri )
+void bwing_state::draw_sprites( bitmap_ind16 &bmp, const rectangle &clip, uint8_t *ram, int pri )
 {
 	int attrib, fx, fy, code, x, y, color, i;
 	gfx_element *gfx = m_gfxdecode->gfx(1);
@@ -180,7 +180,7 @@ void bwing_state::draw_sprites( bitmap_ind16 &bmp, const rectangle &clip, UINT8 
 }
 
 
-UINT32 bwing_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t bwing_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	unsigned flip, x, y, shiftx;
 

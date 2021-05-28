@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!DOCTYPE softwarelist SYSTEM "softwarelist.dtd">
-
 <!--
+license:CC0
 
 Undumped carts:
 
@@ -115,7 +115,7 @@ Undumped carts:
 			</dataarea>
 		</part>
 	</software>
-	
+
 	<software name="fightbug" supported="no">
 		<description>Fighting Bug</description>
 		<year>1982</year>

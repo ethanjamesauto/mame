@@ -8,61 +8,10 @@
 ************************************************************/
 
 #include "emu.h"
-#include "debugger.h"
-#include "minx.h"
+#include "minxd.h"
 
-enum e_mnemonic {
-	zADD=0, zADDC, zAND, zBCDD, zBCDE, zBCDX, zCALL, zCALLC, zCALLG, zCALLGE, zCALLL,
-	zCALLLE, zCALLN, zCALLNC, zCALLNO, zCALLNZ, zCALLO, zCALLP, zCALLNX0,
-	zCALLNX1, zCALLNX2, zCALLNX3, zCALLX0, zCALLX1, zCALLX2, zCALLX3, zCALLZ,
-	zCMP, zCMPN, zDEC, zDIV, zEXT, zHALT, zINC, zINT,
-	zJC, zJDBNZ, zJG, zJGE, zJINT, zJL, zJLE, zJMP,
-	zJN, zJNX0, zJNX1, zJNX2, zJNX3, zJNC, zJNO, zJNZ,
-	zJO, zJP, zJX0, zJX1, zJX2, zJX3, zJZ, zMOV,
-	zMUL, zNEG, zNOP, zNOT, zOR, zPOP, zPOPA, zPOPAX,
-	zPOPX, zPUSH, zPUSHA, zPUSHAX, zPUSHX, zRET, zRETI, zRETSKIP,
-	zROL, zROLC, zROR, zRORC, zSAL, zSAR, zSHL, zSHR, zSUB,
-	zSUBC, zTEST, zXCHG, zXOR, zDB
-};
 
-enum e_operand {
-	R_A=1,      /* A */
-	R_B,        /* B */
-	R_L,        /* L */
-	R_H,        /* H */
-	R_N,        /* N */
-	R_F,        /* F */
-	R_SP,       /* SP */
-	R_BA,       /* BA */
-	R_HL,       /* HL */
-	R_X,        /* X */
-	R_Y,        /* Y */
-	R_U,        /* U */
-	R_V,        /* V */
-	R_I,        /* I */
-	R_XI,       /* XI */
-	R_YI,       /* YI */
-	R_PC,       /* PC */
-	I_8,        /* 8 bit immediate */
-	I_16,       /* 16 bit immediate */
-	D_8,        /* PC + 8 bit displacement (signed) */
-	D_16,       /* PC + 16 bit displacement */
-	S_8,        /* SP + 8 bit displacement (signed) */
-	M_IHL,      /* [I+HL] */
-	M_N8,       /* [I+N+ofs8] */
-	M_I16,      /* [I+ofs16] */
-	M_X,        /* [X] */
-	M_Y,        /* [Y] */
-	M_X8,       /* [X + 8 bit displacement (signed)] */
-	M_Y8,       /* [Y + 8 bit displacement (signed)] */
-	M_XL,       /* [X + L (signed)] */
-	M_YL,       /* [Y + L (signed)] */
-	M_16,       /* [16bit] */
-	M_HL,       /* [HL] */
-	OP, OP1
-};
-
-static const char *const s_mnemonic[] = {
+const char *const minx_disassembler::s_mnemonic[] = {
 	"add", "addc", "and", "bcdd", "bcde", "bcdx", "call", "callc", "callg", "callge", "calll",
 	"callle", "calln", "callnc", "callno", "callnz", "callo", "callp", "callnx0",
 	"callnx1", "callnx2", "callnx3", "callx0", "callx1", "callx2", "callx3", "callz",
@@ -76,30 +25,21 @@ static const char *const s_mnemonic[] = {
 	"subc", "test", "xchg", "xor", "db"
 };
 
-#define _OVER  DASMFLAG_STEP_OVER
-#define _OUT   DASMFLAG_STEP_OUT
-
-static const UINT32 s_flags[] = {
-	0, 0, 0, 0, 0, 0, _OVER, _OVER, _OVER, _OVER, _OVER,
-	_OVER, _OVER, _OVER, _OVER, _OVER, _OVER, _OVER, _OVER,
-	_OVER, _OVER, _OVER, _OVER, _OVER, _OVER, _OVER, _OVER,
-	0, 0, 0, 0, 0, _OVER, 0, _OVER,
+const uint32_t minx_disassembler::s_flags[] = {
+	0, 0, 0, 0, 0, 0, STEP_OVER, STEP_OVER, STEP_OVER, STEP_OVER, STEP_OVER,
+	STEP_OVER, STEP_OVER, STEP_OVER, STEP_OVER, STEP_OVER, STEP_OVER, STEP_OVER, STEP_OVER,
+	STEP_OVER, STEP_OVER, STEP_OVER, STEP_OVER, STEP_OVER, STEP_OVER, STEP_OVER, STEP_OVER,
+	0, 0, 0, 0, 0, STEP_OVER, 0, STEP_OVER,
 	0, 0, 0, 0, 0, 0, 0, 0,
 	0, 0, 0, 0, 0, 0, 0, 0,
 	0, 0, 0, 0, 0, 0, 0, 0,
 	0, 0, 0, 0, 0, 0, 0, 0,
-	0, 0, 0, 0, 0, _OUT, _OUT, _OUT,
+	0, 0, 0, 0, 0, STEP_OUT, STEP_OUT, STEP_OUT,
 	0, 0, 0, 0, 0, 0, 0, 0, 0,
 	0, 0, 0, 0, 0,
 };
 
-struct minxdasm {
-	UINT8   mnemonic;
-	UINT8   argument1;
-	UINT8   argument2;
-};
-
-static const minxdasm mnemonic[256] = {
+const minx_disassembler::minxdasm minx_disassembler::mnemonic[256] = {
 	/* 00 - 0F */
 	{zADD,R_A,R_A},    {zADD,R_A,R_B},     {zADD,R_A,I_8},    {zADD,R_A,M_IHL},
 	{zADD,R_A,M_N8},   {zADD,R_A,M_I16},   {zADD,R_A,M_X},    {zADD,R_A,M_Y},
@@ -182,7 +122,7 @@ static const minxdasm mnemonic[256] = {
 	{zINT,I_8,0},      {zJINT,I_8,0},      {zDB,OP,0},        {zNOP,0,0}
 };
 
-static const minxdasm mnemonic_ce[256] = {
+const minx_disassembler::minxdasm minx_disassembler::mnemonic_ce[256] = {
 	/* 00 - 0F */
 	{zADD,R_A,M_X8},   {zADD,R_A,M_Y8},    {zADD,R_A,M_XL},   {zADD,R_A,M_YL},
 	{zADD,M_IHL,R_A},  {zADD,M_IHL,I_8},   {zADD,M_IHL,M_X},  {zADD,M_IHL,M_Y},
@@ -265,7 +205,7 @@ static const minxdasm mnemonic_ce[256] = {
 	{zCALLX0,D_8,0},   {zCALLX1,D_8,0},    {zCALLX2,D_8,0},   {zCALLX3,D_8,0}
 };
 
-static const minxdasm mnemonic_cf[256] = {
+const minx_disassembler::minxdasm minx_disassembler::mnemonic_cf[256] = {
 	/* 00 - 0F */
 	{zADD,R_BA,R_BA},  {zADD,R_BA,R_HL},   {zADD,R_BA,R_X},   {zADD,R_BA,R_Y},
 	{zADDC,R_BA,R_BA}, {zADDC,R_BA,R_HL},  {zADDC,R_BA,R_X},  {zADDC,R_BA,R_Y},
@@ -349,95 +289,99 @@ static const minxdasm mnemonic_cf[256] = {
 };
 
 #define HANDLE_ARGUMENT                         \
-case R_A:   dst += sprintf( dst, "%cA", fill ); break;          \
-case R_B:   dst += sprintf( dst, "%cB", fill ); break;          \
-case R_L:   dst += sprintf( dst, "%cL", fill ); break;          \
-case R_H:   dst += sprintf( dst, "%cH", fill ); break;          \
-case R_N:   dst += sprintf( dst, "%cN", fill ); break;          \
-case R_F:   dst += sprintf( dst, "%cF", fill ); break;          \
-case R_SP:  dst += sprintf( dst, "%cSP", fill ); break;         \
-case R_BA:  dst += sprintf( dst, "%cBA", fill ); break;         \
-case R_HL:  dst += sprintf( dst, "%cHL", fill ); break;         \
-case R_X:   dst += sprintf( dst, "%cX", fill ); break;          \
-case R_Y:   dst += sprintf( dst, "%cY", fill ); break;          \
-case R_U:   dst += sprintf( dst, "%cU", fill ); break;          \
-case R_V:   dst += sprintf( dst, "%cV", fill ); break;          \
-case R_I:   dst += sprintf( dst, "%cI", fill ); break;          \
-case R_XI:  dst += sprintf( dst, "%cXI", fill ); break;         \
-case R_YI:  dst += sprintf( dst, "%cYI", fill ); break;         \
-case R_PC:  dst += sprintf( dst, "%cPC", fill ); break;         \
+case R_A:   util::stream_format(stream, "%cA", fill); break;          \
+case R_B:   util::stream_format(stream, "%cB", fill); break;          \
+case R_L:   util::stream_format(stream, "%cL", fill); break;          \
+case R_H:   util::stream_format(stream, "%cH", fill); break;          \
+case R_N:   util::stream_format(stream, "%cN", fill); break;          \
+case R_F:   util::stream_format(stream, "%cF", fill); break;          \
+case R_SP:  util::stream_format(stream, "%cSP", fill); break;         \
+case R_BA:  util::stream_format(stream, "%cBA", fill); break;         \
+case R_HL:  util::stream_format(stream, "%cHL", fill); break;         \
+case R_X:   util::stream_format(stream, "%cX", fill); break;          \
+case R_Y:   util::stream_format(stream, "%cY", fill); break;          \
+case R_U:   util::stream_format(stream, "%cU", fill); break;          \
+case R_V:   util::stream_format(stream, "%cV", fill); break;          \
+case R_I:   util::stream_format(stream, "%cI", fill); break;          \
+case R_XI:  util::stream_format(stream, "%cXI", fill); break;         \
+case R_YI:  util::stream_format(stream, "%cYI", fill); break;         \
+case R_PC:  util::stream_format(stream, "%cPC", fill); break;         \
 case I_8:            /* 8 bit immediate */              \
-	ea = oprom[pos++];                      \
-	dst += sprintf( dst, "%c$%02X", fill, ea );         \
+	ea = opcodes.r8(pos++);                      \
+	util::stream_format(stream, "%c$%02X", fill, ea);         \
 	break;                              \
 case I_16:           /* 16 bit immediate */             \
-	ea = oprom[pos++];                      \
-	ea += oprom[pos++] << 8;                    \
-	dst += sprintf( dst, "%c$%04X", fill, ea );         \
+	ea = opcodes.r8(pos++);                      \
+	ea += opcodes.r8(pos++) << 8;                    \
+	util::stream_format(stream, "%c$%04X", fill, ea);         \
 	break;                              \
 case D_8:            /* PC + 8 bit displacement (signed) */     \
-	ofs8 = oprom[pos++];                        \
-	dst += sprintf( dst, "%c$%04X", fill, pc + pos - 1 + ofs8 );    \
+	ofs8 = opcodes.r8(pos++);                        \
+	util::stream_format(stream, "%c$%04X", fill, pos - 1 + ofs8);    \
 	break;                              \
 case D_16:           /* PC + 16 bit displacement */         \
-	ea = oprom[pos++];                      \
-	ea += oprom[pos++] << 8;                    \
+	ea = opcodes.r8(pos++);                      \
+	ea += opcodes.r8(pos++) << 8;                    \
 	ea = ea - 1;                            \
-	dst += sprintf( dst, "%c$%04X", fill, pc + pos + ea );      \
+	util::stream_format(stream, "%c$%04X", fill, pos + ea);      \
 	break;                              \
 case S_8:            /* SP + 8 bit displacement (signed) */     \
-	ea = oprom[pos++];                      \
-	dst += sprintf( dst, "%cSP+$%02X", fill, ea );          \
+	ea = opcodes.r8(pos++);                      \
+	util::stream_format(stream, "%cSP+$%02X", fill, ea);          \
 	break;                              \
-case M_IHL: dst += sprintf( dst, "%c[I+HL]", fill ); break;     \
+case M_IHL: util::stream_format(stream, "%c[I+HL]", fill); break;     \
 case M_N8:           /* [I+N+ofs8] */                   \
-	ea = oprom[pos++];                      \
-	dst += sprintf( dst, "%c[I+N+$%02X]", fill, ea );       \
+	ea = opcodes.r8(pos++);                      \
+	util::stream_format(stream, "%c[I+N+$%02X]", fill, ea);       \
 	break;                              \
 case M_I16:          /* [I+ofs16] */                    \
-	ea = oprom[pos++];                      \
-	ea += oprom[pos++] << 8;                    \
-	dst += sprintf( dst, "%c[I+$%04X]", fill, ea );         \
+	ea = opcodes.r8(pos++);                      \
+	ea += opcodes.r8(pos++) << 8;                    \
+	util::stream_format(stream, "%c[I+$%04X]", fill, ea);         \
 	break;                              \
-case M_X:   dst += sprintf( dst, "%c[X]", fill ); break;        \
-case M_Y:   dst += sprintf( dst, "%c[Y]", fill ); break;        \
+case M_X:   util::stream_format(stream, "%c[X]", fill); break;        \
+case M_Y:   util::stream_format(stream, "%c[Y]", fill); break;        \
 case M_X8:           /* [X + 8 bit displacement (signed)] */        \
-	ea = oprom[pos++];                      \
-	dst += sprintf( dst, "%c[X+$%02X]", fill, ea );         \
+	ea = opcodes.r8(pos++);                      \
+	util::stream_format(stream, "%c[X+$%02X]", fill, ea);         \
 	break;                              \
 case M_Y8:           /* [Y + 8 bit displacement (signed)] */        \
-	ea = oprom[pos++];                      \
-	dst += sprintf( dst, "%c[Y+$%02X]", fill, ea );         \
+	ea = opcodes.r8(pos++);                      \
+	util::stream_format(stream, "%c[Y+$%02X]", fill, ea);         \
 	break;                              \
-case M_XL:  dst += sprintf( dst, "%c[X+L]", fill ); break;      \
-case M_YL:  dst += sprintf( dst, "%c[Y+L]", fill ); break;      \
+case M_XL:  util::stream_format(stream, "%c[X+L]", fill); break;      \
+case M_YL:  util::stream_format(stream, "%c[Y+L]", fill); break;      \
 case M_16:           /* [16bit] */                  \
-	ea = oprom[pos++];                      \
-	ea += oprom[pos++] << 8;                    \
-	dst += sprintf( dst, "%c[$%04X]", fill, ea );           \
+	ea = opcodes.r8(pos++);                      \
+	ea += opcodes.r8(pos++) << 8;                    \
+	util::stream_format(stream, "%c[$%04X]", fill, ea);           \
 	break;                              \
-case M_HL:  dst += sprintf( dst, "%c[HL]", fill ); break;       \
-case OP:    dst += sprintf( dst, "%c$%02X", fill, op ); break;      \
-case OP1:   dst += sprintf( dst, "%c$%02X", fill, op1 ); break;
+case M_HL:  util::stream_format(stream, "%c[HL]", fill); break;       \
+case OP:    util::stream_format(stream, "%c$%02X", fill, op); break;      \
+case OP1:   util::stream_format(stream, "%c$%02X", fill, op1); break;
 
-CPU_DISASSEMBLE( minx )
+u32 minx_disassembler::opcode_alignment() const
+{
+	return 1;
+}
+
+offs_t minx_disassembler::disassemble(std::ostream &stream, offs_t pc, const data_buffer &opcodes, const data_buffer &params)
 {
 	const minxdasm *instr;
-	UINT8 op, op1;
-	INT8  ofs8 = 0;
-	UINT16 ea = 0;
-	int pos = 0;
-	char *dst = buffer;
+	uint8_t op, op1;
+	int8_t  ofs8;
+	uint16_t ea;
+	offs_t pos = pc;
 
-	op1 = op = oprom[pos++];
+	op1 = op = opcodes.r8(pos++);
 
 	switch (op) {
 	case 0xCE:
-		op = oprom[pos++];
+		op = opcodes.r8(pos++);
 		instr = &mnemonic_ce[op];
 		break;
 	case 0xCF:
-		op = oprom[pos++];
+		op = opcodes.r8(pos++);
 		instr = &mnemonic_cf[op];
 		break;
 	default:
@@ -445,7 +389,7 @@ CPU_DISASSEMBLE( minx )
 		break;
 	}
 
-	dst += sprintf( dst, "%-6s", s_mnemonic[ instr->mnemonic ] );
+	util::stream_format(stream, "%-6s", s_mnemonic[ instr->mnemonic ]);
 
 	if ( instr->argument1 ) {
 		char fill = ' ';
@@ -461,5 +405,5 @@ CPU_DISASSEMBLE( minx )
 			HANDLE_ARGUMENT;
 		}
 	}
-	return pos | s_flags[instr->mnemonic] | DASMFLAG_SUPPORTED;
+	return (pos - pc) | s_flags[instr->mnemonic] | SUPPORTED;
 }

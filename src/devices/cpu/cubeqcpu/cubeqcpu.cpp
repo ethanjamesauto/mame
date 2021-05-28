@@ -16,6 +16,7 @@
 #include "emu.h"
 #include "debugger.h"
 #include "cubeqcpu.h"
+#include "cubedasm.h"
 
 
 /***************************************************************************
@@ -70,50 +71,55 @@ enum alu_dst
 ***************************************************************************/
 
 
-const device_type CQUESTSND = &device_creator<cquestsnd_cpu_device>;
-const device_type CQUESTROT = &device_creator<cquestrot_cpu_device>;
-const device_type CQUESTLIN = &device_creator<cquestlin_cpu_device>;
+DEFINE_DEVICE_TYPE(CQUESTSND, cquestsnd_cpu_device, "cquestsnd", "Cube Quest Sound CPU")
+DEFINE_DEVICE_TYPE(CQUESTROT, cquestrot_cpu_device, "cquestrot", "Cube Quest Rotate CPU")
+DEFINE_DEVICE_TYPE(CQUESTLIN, cquestlin_cpu_device, "cquestlin", "Cube Quest Line CPU")
 
 
-cquestsnd_cpu_device::cquestsnd_cpu_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: cpu_device(mconfig, CQUESTSND, "Cube Quest Sound CPU", tag, owner, clock, "cquestsnd", __FILE__)
+cquestsnd_cpu_device::cquestsnd_cpu_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock)
+	: cpu_device(mconfig, CQUESTSND, tag, owner, clock)
 	, m_program_config("program", ENDIANNESS_BIG, 64, 8, -3)
 	, m_dac_w(*this)
 	, m_sound_region_tag(nullptr)
 {
 }
 
-
-offs_t cquestsnd_cpu_device::disasm_disassemble(char *buffer, offs_t pc, const UINT8 *oprom, const UINT8 *opram, UINT32 options)
+device_memory_interface::space_config_vector cquestsnd_cpu_device::memory_space_config() const
 {
-	extern CPU_DISASSEMBLE( cquestsnd );
-	return CPU_DISASSEMBLE_NAME(cquestsnd)(this, buffer, pc, oprom, opram, options);
+	return space_config_vector {
+		std::make_pair(AS_PROGRAM, &m_program_config)
+	};
 }
 
 
-cquestrot_cpu_device::cquestrot_cpu_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: cpu_device(mconfig, CQUESTROT, "Cube Quest Rotate CPU", tag, owner, clock, "cquestrot", __FILE__)
+std::unique_ptr<util::disasm_interface> cquestsnd_cpu_device::create_disassembler()
+{
+	return std::make_unique<cquestsnd_disassembler>();
+}
+
+
+cquestrot_cpu_device::cquestrot_cpu_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock)
+	: cpu_device(mconfig, CQUESTROT, tag, owner, clock)
 	, m_program_config("program", ENDIANNESS_BIG, 64, 9, -3)
 	, m_linedata_w(*this)
 {
 }
 
 
-READ16_MEMBER( cquestrot_cpu_device::linedata_r )
+u16 cquestrot_cpu_device::linedata_r()
 {
 	return m_linedata;
 }
 
 
-offs_t cquestrot_cpu_device::disasm_disassemble(char *buffer, offs_t pc, const UINT8 *oprom, const UINT8 *opram, UINT32 options)
+std::unique_ptr<util::disasm_interface> cquestrot_cpu_device::create_disassembler()
 {
-	extern CPU_DISASSEMBLE( cquestrot );
-	return CPU_DISASSEMBLE_NAME(cquestrot)(this, buffer, pc, oprom, opram, options);
+	return std::make_unique<cquestsnd_disassembler>();
 }
 
 
-cquestlin_cpu_device::cquestlin_cpu_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: cpu_device(mconfig, CQUESTLIN, "Cube Quest Line CPU", tag, owner, clock, "cquestlin", __FILE__)
+cquestlin_cpu_device::cquestlin_cpu_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock)
+	: cpu_device(mconfig, CQUESTLIN, tag, owner, clock)
 	, m_program_config("program", ENDIANNESS_BIG, 64, 8, -3)
 	, m_linedata_r(*this)
 	, m_flags(0)
@@ -121,15 +127,20 @@ cquestlin_cpu_device::cquestlin_cpu_device(const machine_config &mconfig, const 
 {
 }
 
-
-offs_t cquestlin_cpu_device::disasm_disassemble(char *buffer, offs_t pc, const UINT8 *oprom, const UINT8 *opram, UINT32 options)
+device_memory_interface::space_config_vector cquestlin_cpu_device::memory_space_config() const
 {
-	extern CPU_DISASSEMBLE( cquestlin );
-	return CPU_DISASSEMBLE_NAME(cquestlin)(this, buffer, pc, oprom, opram, options);
+	return space_config_vector {
+		std::make_pair(AS_PROGRAM, &m_program_config)
+	};
+}
+
+std::unique_ptr<util::disasm_interface> cquestlin_cpu_device::create_disassembler()
+{
+	return std::make_unique<cquestlin_disassembler>();
 }
 
 
-WRITE16_MEMBER( cquestlin_cpu_device::linedata_w )
+void cquestlin_cpu_device::linedata_w(offs_t offset, u16 data)
 {
 	m_sram[offset] = data;
 }
@@ -139,23 +150,23 @@ WRITE16_MEMBER( cquestlin_cpu_device::linedata_w )
     MEMORY ACCESSORS FOR 68000
 ***************************************************************************/
 
-WRITE16_MEMBER( cquestsnd_cpu_device::sndram_w )
+void cquestsnd_cpu_device::sndram_w(offs_t offset, u16 data, u16 mem_mask)
 {
 	COMBINE_DATA(&m_sram[offset]);
 }
 
-READ16_MEMBER( cquestsnd_cpu_device::sndram_r )
+u16 cquestsnd_cpu_device::sndram_r(offs_t offset)
 {
 	return m_sram[offset];
 }
 
 
-WRITE16_MEMBER( cquestrot_cpu_device::rotram_w )
+void cquestrot_cpu_device::rotram_w(offs_t offset, u16 data, u16 mem_mask)
 {
 	COMBINE_DATA(&m_dram[offset]);
 }
 
-READ16_MEMBER( cquestrot_cpu_device::rotram_r )
+u16 cquestrot_cpu_device::rotram_r(offs_t offset)
 {
 	return m_dram[offset];
 }
@@ -169,10 +180,10 @@ void cquestsnd_cpu_device::device_start()
 {
 	m_dac_w.resolve_safe();
 	assert(m_sound_region_tag != nullptr);
-	m_sound_data = (UINT16*)machine().root_device().memregion(m_sound_region_tag)->base();
+	m_sound_data = (u16*)machine().root_device().memregion(m_sound_region_tag)->base();
 
-	m_program = &space(AS_PROGRAM);
-	m_direct = &m_program->direct();
+	space(AS_PROGRAM).cache(m_cache);
+	space(AS_PROGRAM).specific(m_program);
 
 	memset(m_ram, 0, sizeof(m_ram));
 	m_q = 0;
@@ -207,31 +218,32 @@ void cquestsnd_cpu_device::device_start()
 	save_item(NAME(m_prev_ipram));
 	save_item(NAME(m_prev_ipwrt));
 
-	state_add( CQUESTSND_PC,       "PC",     m_pc).formatstr("%02X");
-	state_add( CQUESTSND_Q,        "Q",      m_q).formatstr("%04X");
-	state_add( CQUESTSND_RTNLATCH, "RTN",    m_rtnlatch).formatstr("%02X");
-	state_add( CQUESTSND_ADRCNTR,  "CNT",    m_adrcntr).formatstr("%02X");
-	state_add( CQUESTSND_DINLATCH, "DINX",   m_dinlatch).formatstr("%04X");
-	state_add( CQUESTSND_RAM0,     "RAM[0]", m_ram[0x0]).formatstr("%04X");
-	state_add( CQUESTSND_RAM1,     "RAM[1]", m_ram[0x1]).formatstr("%04X");
-	state_add( CQUESTSND_RAM2,     "RAM[2]", m_ram[0x2]).formatstr("%04X");
-	state_add( CQUESTSND_RAM3,     "RAM[3]", m_ram[0x3]).formatstr("%04X");
-	state_add( CQUESTSND_RAM4,     "RAM[4]", m_ram[0x4]).formatstr("%04X");
-	state_add( CQUESTSND_RAM5,     "RAM[5]", m_ram[0x5]).formatstr("%04X");
-	state_add( CQUESTSND_RAM6,     "RAM[6]", m_ram[0x6]).formatstr("%04X");
-	state_add( CQUESTSND_RAM7,     "RAM[7]", m_ram[0x7]).formatstr("%04X");
-	state_add( CQUESTSND_RAM8,     "RAM[8]", m_ram[0x8]).formatstr("%04X");
-	state_add( CQUESTSND_RAM9,     "RAM[9]", m_ram[0x9]).formatstr("%04X");
-	state_add( CQUESTSND_RAMA,     "RAM[A]", m_ram[0xa]).formatstr("%04X");
-	state_add( CQUESTSND_RAMB,     "RAM[B]", m_ram[0xb]).formatstr("%04X");
-	state_add( CQUESTSND_RAMC,     "RAM[C]", m_ram[0xc]).formatstr("%04X");
-	state_add( CQUESTSND_RAMD,     "RAM[D]", m_ram[0xd]).formatstr("%04X");
-	state_add( CQUESTSND_RAME,     "RAM[E]", m_ram[0xe]).formatstr("%04X");
-	state_add( CQUESTSND_RAMF,     "RAM[F]", m_ram[0xf]).formatstr("%04X");
+	state_add(CQUESTSND_PC,       "PC",     m_pc).formatstr("%02X");
+	state_add(CQUESTSND_Q,        "Q",      m_q).formatstr("%04X");
+	state_add(CQUESTSND_RTNLATCH, "RTN",    m_rtnlatch).formatstr("%02X");
+	state_add(CQUESTSND_ADRCNTR,  "CNT",    m_adrcntr).formatstr("%02X");
+	state_add(CQUESTSND_DINLATCH, "DINX",   m_dinlatch).formatstr("%04X");
+	state_add(CQUESTSND_RAM0,     "RAM[0]", m_ram[0x0]).formatstr("%04X");
+	state_add(CQUESTSND_RAM1,     "RAM[1]", m_ram[0x1]).formatstr("%04X");
+	state_add(CQUESTSND_RAM2,     "RAM[2]", m_ram[0x2]).formatstr("%04X");
+	state_add(CQUESTSND_RAM3,     "RAM[3]", m_ram[0x3]).formatstr("%04X");
+	state_add(CQUESTSND_RAM4,     "RAM[4]", m_ram[0x4]).formatstr("%04X");
+	state_add(CQUESTSND_RAM5,     "RAM[5]", m_ram[0x5]).formatstr("%04X");
+	state_add(CQUESTSND_RAM6,     "RAM[6]", m_ram[0x6]).formatstr("%04X");
+	state_add(CQUESTSND_RAM7,     "RAM[7]", m_ram[0x7]).formatstr("%04X");
+	state_add(CQUESTSND_RAM8,     "RAM[8]", m_ram[0x8]).formatstr("%04X");
+	state_add(CQUESTSND_RAM9,     "RAM[9]", m_ram[0x9]).formatstr("%04X");
+	state_add(CQUESTSND_RAMA,     "RAM[A]", m_ram[0xa]).formatstr("%04X");
+	state_add(CQUESTSND_RAMB,     "RAM[B]", m_ram[0xb]).formatstr("%04X");
+	state_add(CQUESTSND_RAMC,     "RAM[C]", m_ram[0xc]).formatstr("%04X");
+	state_add(CQUESTSND_RAMD,     "RAM[D]", m_ram[0xd]).formatstr("%04X");
+	state_add(CQUESTSND_RAME,     "RAM[E]", m_ram[0xe]).formatstr("%04X");
+	state_add(CQUESTSND_RAMF,     "RAM[F]", m_ram[0xf]).formatstr("%04X");
 
-	state_add(STATE_GENPC, "curpc", m_pc).formatstr("%02X").noshow();
+	state_add(STATE_GENPC, "GENPC", m_pc).formatstr("%02X").noshow();
+	state_add(STATE_GENPCBASE, "CURPC", m_pc).formatstr("%02X").noshow();
 
-	m_icountptr = &m_icount;
+	set_icountptr(m_icount);
 }
 
 
@@ -249,8 +261,8 @@ void cquestrot_cpu_device::device_start()
 {
 	m_linedata_w.resolve_safe();
 
-	m_program = &space(AS_PROGRAM);
-	m_direct = &m_program->direct();
+	space(AS_PROGRAM).cache(m_cache);
+	space(AS_PROGRAM).specific(m_program);
 
 	memset(m_ram, 0, sizeof(m_ram));
 	m_q = 0;
@@ -302,39 +314,40 @@ void cquestrot_cpu_device::device_start()
 	save_pointer(NAME(m_dram), 16384);
 	save_pointer(NAME(m_sram), 2048);
 
-	state_add( CQUESTROT_PC,        "PC",        m_pc).formatstr("%02X");
-	state_add( CQUESTROT_Q,         "Q",         m_q).formatstr("%04X");
-	state_add( CQUESTROT_RAM0,      "RAM[0]",    m_ram[0x0]).formatstr("%04X");
-	state_add( CQUESTROT_RAM1,      "RAM[1]",    m_ram[0x1]).formatstr("%04X");
-	state_add( CQUESTROT_RAM2,      "RAM[2]",    m_ram[0x2]).formatstr("%04X");
-	state_add( CQUESTROT_RAM3,      "RAM[3]",    m_ram[0x3]).formatstr("%04X");
-	state_add( CQUESTROT_RAM4,      "RAM[4]",    m_ram[0x4]).formatstr("%04X");
-	state_add( CQUESTROT_RAM5,      "RAM[5]",    m_ram[0x5]).formatstr("%04X");
-	state_add( CQUESTROT_RAM6,      "RAM[6]",    m_ram[0x6]).formatstr("%04X");
-	state_add( CQUESTROT_RAM7,      "RAM[7]",    m_ram[0x7]).formatstr("%04X");
-	state_add( CQUESTROT_RAM8,      "RAM[8]",    m_ram[0x8]).formatstr("%04X");
-	state_add( CQUESTROT_RAM9,      "RAM[9]",    m_ram[0x9]).formatstr("%04X");
-	state_add( CQUESTROT_RAMA,      "RAM[A]",    m_ram[0xa]).formatstr("%04X");
-	state_add( CQUESTROT_RAMB,      "RAM[B]",    m_ram[0xb]).formatstr("%04X");
-	state_add( CQUESTROT_RAMC,      "RAM[C]",    m_ram[0xc]).formatstr("%04X");
-	state_add( CQUESTROT_RAMD,      "RAM[D]",    m_ram[0xd]).formatstr("%04X");
-	state_add( CQUESTROT_RAME,      "RAM[E]",    m_ram[0xe]).formatstr("%04X");
-	state_add( CQUESTROT_RAMF,      "RAM[F]",    m_ram[0xf]).formatstr("%04X");
-	state_add( CQUESTROT_SEQCNT,    "SEQCNT",    m_seqcnt).formatstr("%01X");
-	state_add( CQUESTROT_DYNADDR,   "DYNADDR",   m_dynaddr).formatstr("%04X");
-	state_add( CQUESTROT_DYNDATA,   "DYNDATA",   m_dyndata).formatstr("%04X");
-	state_add( CQUESTROT_YRLATCH,   "YRLATCH",   m_yrlatch).formatstr("%04X");
-	state_add( CQUESTROT_YDLATCH,   "YDLATCH",   m_ydlatch).formatstr("%04X");
-	state_add( CQUESTROT_DINLATCH,  "DINLATCH",  m_dinlatch).formatstr("%04X");
-	state_add( CQUESTROT_DSRCLATCH, "DSRCLATCH", m_dsrclatch).formatstr("%04X");
-	state_add( CQUESTROT_RSRCLATCH, "RSRCLATCH", m_rsrclatch).formatstr("%04X");
-	state_add( CQUESTROT_LDADDR,    "LDADDR",    m_lineaddr).formatstr("%04X");
-	state_add( CQUESTROT_LDDATA,    "LDDATA",    m_linedata).formatstr("%04X");
+	state_add(CQUESTROT_PC,        "PC",        m_pc).formatstr("%02X");
+	state_add(CQUESTROT_Q,         "Q",         m_q).formatstr("%04X");
+	state_add(CQUESTROT_RAM0,      "RAM[0]",    m_ram[0x0]).formatstr("%04X");
+	state_add(CQUESTROT_RAM1,      "RAM[1]",    m_ram[0x1]).formatstr("%04X");
+	state_add(CQUESTROT_RAM2,      "RAM[2]",    m_ram[0x2]).formatstr("%04X");
+	state_add(CQUESTROT_RAM3,      "RAM[3]",    m_ram[0x3]).formatstr("%04X");
+	state_add(CQUESTROT_RAM4,      "RAM[4]",    m_ram[0x4]).formatstr("%04X");
+	state_add(CQUESTROT_RAM5,      "RAM[5]",    m_ram[0x5]).formatstr("%04X");
+	state_add(CQUESTROT_RAM6,      "RAM[6]",    m_ram[0x6]).formatstr("%04X");
+	state_add(CQUESTROT_RAM7,      "RAM[7]",    m_ram[0x7]).formatstr("%04X");
+	state_add(CQUESTROT_RAM8,      "RAM[8]",    m_ram[0x8]).formatstr("%04X");
+	state_add(CQUESTROT_RAM9,      "RAM[9]",    m_ram[0x9]).formatstr("%04X");
+	state_add(CQUESTROT_RAMA,      "RAM[A]",    m_ram[0xa]).formatstr("%04X");
+	state_add(CQUESTROT_RAMB,      "RAM[B]",    m_ram[0xb]).formatstr("%04X");
+	state_add(CQUESTROT_RAMC,      "RAM[C]",    m_ram[0xc]).formatstr("%04X");
+	state_add(CQUESTROT_RAMD,      "RAM[D]",    m_ram[0xd]).formatstr("%04X");
+	state_add(CQUESTROT_RAME,      "RAM[E]",    m_ram[0xe]).formatstr("%04X");
+	state_add(CQUESTROT_RAMF,      "RAM[F]",    m_ram[0xf]).formatstr("%04X");
+	state_add(CQUESTROT_SEQCNT,    "SEQCNT",    m_seqcnt).formatstr("%01X");
+	state_add(CQUESTROT_DYNADDR,   "DYNADDR",   m_dynaddr).formatstr("%04X");
+	state_add(CQUESTROT_DYNDATA,   "DYNDATA",   m_dyndata).formatstr("%04X");
+	state_add(CQUESTROT_YRLATCH,   "YRLATCH",   m_yrlatch).formatstr("%04X");
+	state_add(CQUESTROT_YDLATCH,   "YDLATCH",   m_ydlatch).formatstr("%04X");
+	state_add(CQUESTROT_DINLATCH,  "DINLATCH",  m_dinlatch).formatstr("%04X");
+	state_add(CQUESTROT_DSRCLATCH, "DSRCLATCH", m_dsrclatch).formatstr("%04X");
+	state_add(CQUESTROT_RSRCLATCH, "RSRCLATCH", m_rsrclatch).formatstr("%04X");
+	state_add(CQUESTROT_LDADDR,    "LDADDR",    m_lineaddr).formatstr("%04X");
+	state_add(CQUESTROT_LDDATA,    "LDDATA",    m_linedata).formatstr("%04X");
 
-	state_add(STATE_GENPC, "curpc", m_pc).formatstr("%02X").noshow();
+	state_add(STATE_GENPC, "GENPC", m_pc).formatstr("%02X").noshow();
+	state_add(STATE_GENPCBASE, "CURPC", m_pc).formatstr("%02X").noshow();
 	state_add(STATE_GENFLAGS, "GENFLAGS", m_flags).formatstr("%3s").noshow();
 
-	m_icountptr = &m_icount;
+	set_icountptr(m_icount);
 }
 
 
@@ -347,18 +360,25 @@ void cquestrot_cpu_device::device_reset()
 }
 
 
-void cquestrot_cpu_device::state_string_export(const device_state_entry &entry, std::string &str)
+void cquestrot_cpu_device::state_string_export(const device_state_entry &entry, std::string &str) const
 {
 	switch (entry.index())
 	{
 		case STATE_GENFLAGS:
-			strprintf(str, "%c%c%c", m_cflag ? 'C' : '.',
-										m_vflag ? 'V' : '.',
-										m_f ? '.' : 'Z');
+			str = string_format("%c%c%c",
+					m_cflag ? 'C' : '.',
+					m_vflag ? 'V' : '.',
+					m_f ? '.' : 'Z');
 			break;
 	}
 }
 
+device_memory_interface::space_config_vector cquestrot_cpu_device::memory_space_config() const
+{
+	return space_config_vector {
+		std::make_pair(AS_PROGRAM, &m_program_config)
+	};
+}
 
 /***************************************************************************
     LINE DRAWER INITIALIZATION AND SHUTDOWN
@@ -372,8 +392,8 @@ void cquestlin_cpu_device::device_start()
 {
 	m_linedata_r.resolve_safe(0);
 
-	m_program = &space(AS_PROGRAM);
-	m_direct = &m_program->direct();
+	space(AS_PROGRAM).cache(m_cache);
+	space(AS_PROGRAM).specific(m_program);
 
 	memset(m_ram, 0, sizeof(m_ram));
 	m_q = 0;
@@ -428,38 +448,39 @@ void cquestlin_cpu_device::device_start()
 	save_pointer(NAME(m_e_stack), 32768);
 	save_pointer(NAME(m_o_stack), 32768);
 
-	state_add( CQUESTLIN_FGPC,     "FPC", m_pc[FOREGROUND]).formatstr("%02X");
-	state_add( CQUESTLIN_BGPC,     "BPC", m_pc[BACKGROUND]).formatstr("%02X");
-	state_add( CQUESTLIN_Q,        "Q", m_q).formatstr("%04X");
-	state_add( CQUESTLIN_RAM0,     "RAM[0]", m_ram[0x0]).formatstr("%04X");
-	state_add( CQUESTLIN_RAM1,     "RAM[1]", m_ram[0x1]).formatstr("%04X");
-	state_add( CQUESTLIN_RAM2,     "RAM[2]", m_ram[0x2]).formatstr("%04X");
-	state_add( CQUESTLIN_RAM3,     "RAM[3]", m_ram[0x3]).formatstr("%04X");
-	state_add( CQUESTLIN_RAM4,     "RAM[4]", m_ram[0x4]).formatstr("%04X");
-	state_add( CQUESTLIN_RAM5,     "RAM[5]", m_ram[0x5]).formatstr("%04X");
-	state_add( CQUESTLIN_RAM6,     "RAM[6]", m_ram[0x6]).formatstr("%04X");
-	state_add( CQUESTLIN_RAM7,     "RAM[7]", m_ram[0x7]).formatstr("%04X");
-	state_add( CQUESTLIN_RAM8,     "RAM[8]", m_ram[0x8]).formatstr("%04X");
-	state_add( CQUESTLIN_RAM9,     "RAM[9]", m_ram[0x9]).formatstr("%04X");
-	state_add( CQUESTLIN_RAMA,     "RAM[A]", m_ram[0xa]).formatstr("%04X");
-	state_add( CQUESTLIN_RAMB,     "RAM[B]", m_ram[0xb]).formatstr("%04X");
-	state_add( CQUESTLIN_RAMC,     "RAM[C]", m_ram[0xc]).formatstr("%04X");
-	state_add( CQUESTLIN_RAMD,     "RAM[D]", m_ram[0xd]).formatstr("%04X");
-	state_add( CQUESTLIN_RAME,     "RAM[E]", m_ram[0xe]).formatstr("%04X");
-	state_add( CQUESTLIN_RAMF,     "RAM[F]", m_ram[0xf]).formatstr("%04X");
+	state_add(CQUESTLIN_FGPC,     "FPC", m_pc[FOREGROUND]).formatstr("%02X");
+	state_add(CQUESTLIN_BGPC,     "BPC", m_pc[BACKGROUND]).formatstr("%02X");
+	state_add(CQUESTLIN_Q,        "Q", m_q).formatstr("%04X");
+	state_add(CQUESTLIN_RAM0,     "RAM[0]", m_ram[0x0]).formatstr("%04X");
+	state_add(CQUESTLIN_RAM1,     "RAM[1]", m_ram[0x1]).formatstr("%04X");
+	state_add(CQUESTLIN_RAM2,     "RAM[2]", m_ram[0x2]).formatstr("%04X");
+	state_add(CQUESTLIN_RAM3,     "RAM[3]", m_ram[0x3]).formatstr("%04X");
+	state_add(CQUESTLIN_RAM4,     "RAM[4]", m_ram[0x4]).formatstr("%04X");
+	state_add(CQUESTLIN_RAM5,     "RAM[5]", m_ram[0x5]).formatstr("%04X");
+	state_add(CQUESTLIN_RAM6,     "RAM[6]", m_ram[0x6]).formatstr("%04X");
+	state_add(CQUESTLIN_RAM7,     "RAM[7]", m_ram[0x7]).formatstr("%04X");
+	state_add(CQUESTLIN_RAM8,     "RAM[8]", m_ram[0x8]).formatstr("%04X");
+	state_add(CQUESTLIN_RAM9,     "RAM[9]", m_ram[0x9]).formatstr("%04X");
+	state_add(CQUESTLIN_RAMA,     "RAM[A]", m_ram[0xa]).formatstr("%04X");
+	state_add(CQUESTLIN_RAMB,     "RAM[B]", m_ram[0xb]).formatstr("%04X");
+	state_add(CQUESTLIN_RAMC,     "RAM[C]", m_ram[0xc]).formatstr("%04X");
+	state_add(CQUESTLIN_RAMD,     "RAM[D]", m_ram[0xd]).formatstr("%04X");
+	state_add(CQUESTLIN_RAME,     "RAM[E]", m_ram[0xe]).formatstr("%04X");
+	state_add(CQUESTLIN_RAMF,     "RAM[F]", m_ram[0xf]).formatstr("%04X");
 
-	state_add( CQUESTLIN_FADLATCH, "FADDR", m_fadlatch).formatstr("%04X");
-	state_add( CQUESTLIN_BADLATCH, "BADDR", m_badlatch).formatstr("%04X");
-	state_add( CQUESTLIN_SREG,     "SREG", m_sreg).formatstr("%04X");
-	state_add( CQUESTLIN_XCNT,     "XCNT", m_xcnt).formatstr("%03X");
-	state_add( CQUESTLIN_YCNT,     "YCNT", m_ycnt).formatstr("%03X");
-	state_add( CQUESTLIN_CLATCH,   "CLATCH", m_clatch).formatstr("%04X");
-	state_add( CQUESTLIN_ZLATCH,   "ZLATCH", m_zlatch).formatstr("%04X");
+	state_add(CQUESTLIN_FADLATCH, "FADDR", m_fadlatch).formatstr("%04X");
+	state_add(CQUESTLIN_BADLATCH, "BADDR", m_badlatch).formatstr("%04X");
+	state_add(CQUESTLIN_SREG,     "SREG", m_sreg).formatstr("%04X");
+	state_add(CQUESTLIN_XCNT,     "XCNT", m_xcnt).formatstr("%03X");
+	state_add(CQUESTLIN_YCNT,     "YCNT", m_ycnt).formatstr("%03X");
+	state_add(CQUESTLIN_CLATCH,   "CLATCH", m_clatch).formatstr("%04X");
+	state_add(CQUESTLIN_ZLATCH,   "ZLATCH", m_zlatch).formatstr("%04X");
 
-	state_add(STATE_GENPC, "curpc", m_curpc).callimport().callexport().formatstr("%02X").noshow();
+	state_add(STATE_GENPC, "GENPC", m_curpc).formatstr("%02X").noshow();
+	state_add(STATE_GENPCBASE, "CURPC", m_curpc).formatstr("%02X").noshow();
 	state_add(STATE_GENFLAGS, "GENFLAGS", m_flags).formatstr("%6s").noshow();
 
-	m_icountptr = &m_icount;
+	set_icountptr(m_icount);
 }
 
 
@@ -471,15 +492,16 @@ void cquestlin_cpu_device::device_reset()
 }
 
 
-void cquestlin_cpu_device::state_string_export(const device_state_entry &entry, std::string &str)
+void cquestlin_cpu_device::state_string_export(const device_state_entry &entry, std::string &str) const
 {
 	switch (entry.index())
 	{
 		case STATE_GENFLAGS:
-			strprintf(str, "%c%c%c|%cG", m_cflag ? 'C' : '.',
-											m_vflag ? 'V' : '.',
-											m_f ? '.' : 'Z',
-											( m_clkcnt & 3 ) ? 'B' : 'F');
+			str = string_format("%c%c%c|%cG",
+					m_cflag ? 'C' : '.',
+					m_vflag ? 'V' : '.',
+					m_f ? '.' : 'Z',
+					(m_clkcnt & 3) ? 'B' : 'F');
 			break;
 	}
 }
@@ -499,19 +521,19 @@ enum snd_latch_type
 	ADLATCH = 2
 };
 
-int cquestsnd_cpu_device::do_sndjmp(int jmp)
+bool cquestsnd_cpu_device::do_sndjmp(u8 jmp)
 {
 	switch (jmp)
 	{
-		/* JUMP */ case 0: return 1;
-		/* MSB  */ case 2: return m_f & 0x8000 ? 0 : 1;
-		/* !MSB */ case 3: return m_f & 0x8000 ? 1 : 0;
-		/* ZERO */ case 5: return m_f == 0 ? 0 : 1;
-		/* OVR  */ case 6: return m_vflag ? 0 : 1;
-		/* LOOP */ case 7: return m_adrcntr & 0x80 ? 0: 1;
+		/* JUMP */ case 0: return true;
+		/* MSB  */ case 2: return m_f & 0x8000 ? false : true;
+		/* !MSB */ case 3: return m_f & 0x8000 ? true : false;
+		/* ZERO */ case 5: return m_f == 0 ? false : true;
+		/* OVR  */ case 6: return m_vflag ? false : true;
+		/* LOOP */ case 7: return m_adrcntr & 0x80 ? false: true;
 	}
 
-	return 0;
+	return false;
 }
 
 void cquestsnd_cpu_device::execute_run()
@@ -520,28 +542,28 @@ void cquestsnd_cpu_device::execute_run()
 	do
 	{
 		/* Decode the instruction */
-		UINT64 inst = m_direct->read_qword(SND_PC << 3);
-		UINT32 inslow = inst & 0xffffffff;
-		UINT32 inshig = inst >> 32;
+		u64 inst = m_cache.read_qword(SND_PC);
+		u32 inslow = inst & 0xffffffff;
+		u32 inshig = inst >> 32;
 
-		int t       = (inshig >> 24) & 0xff;
-		int b       = (inshig >> 20) & 0xf;
-		int a       = (inshig >> 16) & 0xf;
-		int ci      = (inshig >> 15) & 1;
-		int i5_3    = (inshig >> 12) & 7;
-		int _ramen  = (inshig >> 11) & 1;
-		int i2_0    = (inshig >> 8) & 7;
-		int rtnltch = (inshig >> 7) & 1;
-		int jmp     = (inshig >> 4) & 7;
-		int inca    = (inshig >> 3) & 1;
-		int i8_6    = (inshig >> 0) & 7;
-		int _ipram  = (inslow >> 31) & 1;
-		int _ipwrt  = (inslow >> 30) & 1;
-		int latch   = (inslow >> 28) & 3;
-		int rtn     = (inslow >> 27) & 1;
-		int _rin    = (inslow >> 26) & 1;
+		u8 t               = (inshig >> 24) & 0xff;
+		const u8 b         = (inshig >> 20) & 0xf;
+		const u8 a         = (inshig >> 16) & 0xf;
+		const u8 ci        = (inshig >> 15) & 1;
+		const u8 i5_3      = (inshig >> 12) & 7;
+		const bool _ramen  = (inshig >> 11) & 1;
+		const u8 i2_0      = (inshig >> 8) & 7;
+		const bool rtnltch = (inshig >> 7) & 1;
+		const u8 jmp       = (inshig >> 4) & 7;
+		const bool inca    = (inshig >> 3) & 1;
+		const u8 i8_6      = (inshig >> 0) & 7;
+		const bool _ipram  = (inslow >> 31) & 1;
+		const bool _ipwrt  = (inslow >> 30) & 1;
+		const u8 latch     = (inslow >> 28) & 3;
+		const bool rtn     = (inslow >> 27) & 1;
+		const bool _rin    = (inslow >> 26) & 1;
 
-		debugger_instruction_hook(this, m_pc);
+		debugger_instruction_hook(m_pc);
 
 		/* Don't think this matters, but just in case */
 		if (rtn)
@@ -549,12 +571,12 @@ void cquestsnd_cpu_device::execute_run()
 
 		/* Handle the AM2901 ALU instruction */
 		{
-			UINT16 r = 0;
-			UINT16 s = 0;
+			u16 r = 0;
+			u16 s = 0;
 
-			UINT32 res = 0;
-			UINT32 cflag = 0;
-			UINT32 vflag = 0;
+			u32 res = 0;
+			u32 cflag = 0;
+			u32 vflag = 0;
 
 			/* Determine the ALU sources */
 			switch (i2_0)
@@ -627,7 +649,7 @@ void cquestsnd_cpu_device::execute_run()
 					break;
 				case RAMQD:
 				{
-					UINT16 qin;
+					u16 qin;
 
 					m_ram[b] = (_rin ? 0 : 0x8000) | (m_f >> 1);
 					m_q >>= 1;
@@ -658,7 +680,7 @@ void cquestsnd_cpu_device::execute_run()
 		/* Now handle any SRAM accesses from the previous cycle */
 		if (!m_prev_ipram)
 		{
-			UINT16 addr = m_adrlatch | (m_adrcntr & 0x7f);
+			u16 addr = m_adrlatch | (m_adrcntr & 0x7f);
 
 			if (!m_prev_ipwrt)
 			m_sram[addr] = m_ramwlatch;
@@ -685,7 +707,7 @@ void cquestsnd_cpu_device::execute_run()
 		}
 
 		/* Check for jump/return */
-		if ( do_sndjmp(jmp) )
+		if (do_sndjmp(jmp))
 			m_pc = rtn ? m_rtnlatch : t;
 		else
 			m_pc++;
@@ -747,7 +769,7 @@ enum rot_yout
 /* The Dynamic RAM latch clocks in a value at the end of this cycle */
 /* So CPU waits for sync before reading from DRAM */
 
-int cquestrot_cpu_device::do_rotjmp(int jmp)
+int cquestrot_cpu_device::do_rotjmp(u8 jmp)
 {
 	int ret = 0;
 
@@ -776,30 +798,30 @@ void cquestrot_cpu_device::execute_run()
 	do
 	{
 		/* Decode the instruction */
-		UINT64 inst = m_direct->read_qword(ROT_PC << 3);
+		u64 inst = m_cache.read_qword(ROT_PC);
 
-		UINT32 inslow = inst & 0xffffffff;
-		UINT32 inshig = inst >> 32;
+		u32 inslow = inst & 0xffffffff;
+		u32 inshig = inst >> 32;
 
-		int t       = (inshig >> 20) & 0xfff;
-		int jmp     = (inshig >> 16) & 0xf;
-		int spf     = (inshig >> 12) & 0xf;
-		int rsrc    = (inshig >> 11) & 0x1;
-		int yout    = (inshig >> 8) & 0x7;
-		int sel     = (inshig >> 6) & 0x3;
-		int dsrc    = (inshig >> 4) & 0x3;
-		int b       = (inshig >> 0) & 0xf;
-		int a       = (inslow >> 28) & 0xf;
-		int i8_6    = (inslow >> 24) & 0x7;
-		int ci      = (inslow >> 23) & 0x1;
-		int i5_3    = (inslow >> 20) & 0x7;
-		int _sex    = (inslow >> 19) & 0x1;
-		int i2_0    = (inslow >> 16) & 0x7;
+		u16 t              = (inshig >> 20) & 0xfff;
+		const u8 jmp       = (inshig >> 16) & 0xf;
+		const u8 spf       = (inshig >> 12) & 0xf;
+		const bool rsrc    = (inshig >> 11) & 0x1;
+		const u8 yout      = (inshig >> 8) & 0x7;
+		const u8 sel       = (inshig >> 6) & 0x3;
+		const u8 dsrc      = (inshig >> 4) & 0x3;
+		const u8 b         = (inshig >> 0) & 0xf;
+		const u8 a         = (inslow >> 28) & 0xf;
+		const u8 i8_6      = (inslow >> 24) & 0x7;
+		u8 ci              = (inslow >> 23) & 0x1;
+		u8 i5_3            = (inslow >> 20) & 0x7;
+		const bool _sex    = (inslow >> 19) & 0x1;
+		u8 i2_0            = (inslow >> 16) & 0x7;
 
 		int dsrclatch;
-		UINT16 data_in = 0xffff;
+		u16 data_in = 0xffff;
 
-		debugger_instruction_hook(this, ROT_PC);
+		debugger_instruction_hook(ROT_PC);
 
 		/* Handle DRAM accesses - I ought to check this... */
 		if (!(m_clkcnt & 3))
@@ -849,12 +871,12 @@ void cquestrot_cpu_device::execute_run()
 
 		/* No do the ALU operation */
 		{
-			UINT16 r = 0;
-			UINT16 s = 0;
+			u16 r = 0;
+			u16 s = 0;
 
-			UINT32 res = 0;
-			UINT32 cflag = 0;
-			UINT32 vflag = 0;
+			u32 res = 0;
+			u32 cflag = 0;
+			u32 vflag = 0;
 
 			/* First, determine correct I1 bit */
 			if ((spf == SPF_MULT) && !_BIT(m_q, 0))
@@ -938,10 +960,10 @@ void cquestrot_cpu_device::execute_run()
 					break;
 				case RAMQD:
 				{
-					UINT16 q0 = m_q & 1;
-					UINT16 r0 = m_f & 1;
-					UINT16 q15 = 0;
-					UINT16 r15 = 0;
+					u16 q0 = m_q & 1;
+					u16 r0 = m_f & 1;
+					u16 q15 = 0;
+					u16 r15 = 0;
 
 					/* Determine Q15 and RAM15 */
 					switch (sel)
@@ -965,8 +987,8 @@ void cquestrot_cpu_device::execute_run()
 				}
 				case RAMD:
 				{
-					UINT16 r0 = m_f & 1;
-					UINT16 r15 = 0;
+					u16 r0 = m_f & 1;
+					u16 r15 = 0;
 
 					switch (sel)
 					{
@@ -984,10 +1006,10 @@ void cquestrot_cpu_device::execute_run()
 				}
 				case RAMQU:
 				{
-					UINT16 q15 = BIT(m_q, 15);
-					UINT16 r15 = BIT(m_f, 15);
-					UINT16 q0 = 0;
-					UINT16 r0 = 0;
+					u16 q15 = BIT(m_q, 15);
+					u16 r15 = BIT(m_f, 15);
+					u16 q0 = 0;
+					u16 r0 = 0;
 
 					switch (sel)
 					{
@@ -1009,9 +1031,9 @@ void cquestrot_cpu_device::execute_run()
 				}
 				case RAMU:
 				{
-					UINT16 q15 = BIT(m_q, 15);
-					UINT16 r15 = BIT(m_f, 15);
-					UINT16 r0 = 0;
+					u16 q15 = BIT(m_q, 15);
+					u16 r15 = BIT(m_f, 15);
+					u16 r0 = 0;
 
 					switch (sel)
 					{
@@ -1029,7 +1051,7 @@ void cquestrot_cpu_device::execute_run()
 		}
 
 		/* Check for jump */
-		if ( do_rotjmp(jmp) )
+		if (do_rotjmp(jmp))
 			m_pc = t;
 		else
 			m_pc = (m_pc + 1) & 0xfff;
@@ -1037,7 +1059,7 @@ void cquestrot_cpu_device::execute_run()
 		/* Rising edge; update the sequence counter */
 		if (spf == SPF_SQLTCH)
 			m_seqcnt = t & 0xf;
-		else if ( (spf == SPF_MULT) || (spf == SPF_DIV) )
+		else if ((spf == SPF_MULT) || (spf == SPF_DIV))
 			m_seqcnt = (m_seqcnt + 1) & 0xf;
 
 		/* Rising edge; write data source reg */
@@ -1063,7 +1085,7 @@ void cquestrot_cpu_device::execute_run()
 			case YOUT_Y2LDD:
 			{
 				m_linedata = ((t & 0xf) << 12) | (m_y & 0xfff);
-				m_linedata_w( m_lineaddr, m_linedata, 0xffff );
+				m_linedata_w(m_lineaddr, m_linedata);
 				break;
 			}
 			case YOUT_Y2DAD: m_dynaddr = m_y & 0x3fff;  break;
@@ -1125,7 +1147,7 @@ enum sreg_bits
 	SREG_LDX    = 7
 };
 
-int cquestlin_cpu_device::do_linjmp(int jmp)
+int cquestlin_cpu_device::do_linjmp(u8 jmp)
 {
 	int ret = 0;
 
@@ -1155,13 +1177,13 @@ void cquestlin_cpu_device::cubeqcpu_clear_stack()
 }
 
 
-UINT8 cquestlin_cpu_device::cubeqcpu_get_ptr_ram_val(int i)
+u8 cquestlin_cpu_device::cubeqcpu_get_ptr_ram_val(int i)
 {
 	return m_ptr_ram[((m_field^1) * 256) + i];
 }
 
 
-UINT32* cquestlin_cpu_device::cubeqcpu_get_stack_ram()
+u32* cquestlin_cpu_device::cubeqcpu_get_stack_ram()
 {
 	if (m_field != ODD_FIELD)
 		return m_o_stack;
@@ -1174,8 +1196,8 @@ void cquestlin_cpu_device::execute_run()
 {
 #define LINE_PC ((m_pc[prog] & 0x7f) | ((prog == BACKGROUND) ? 0x80 : 0))
 
-	UINT32  *stack_ram;
-	UINT8   *ptr_ram;
+	u32  *stack_ram;
+	u8   *ptr_ram;
 
 	/* Check the field and set the stack/pointer RAM pointers appropriately */
 	if (m_field == ODD_FIELD)
@@ -1196,27 +1218,27 @@ void cquestlin_cpu_device::execute_run()
 		int prog = (m_clkcnt & 3) ? BACKGROUND : FOREGROUND;
 
 		m_curpc = LINE_PC;
-		UINT64 inst = m_direct->read_qword(LINE_PC << 3);
+		u64 inst = m_cache.read_qword(LINE_PC);
 
-		UINT32 inslow = inst & 0xffffffff;
-		UINT32 inshig = inst >> 32;
+		u32 inslow = inst & 0xffffffff;
+		u32 inshig = inst >> 32;
 
-		int t       = (inshig >> 24) & 0xff;
-		int jmp     = (inshig >> 20) & 0xf;
-		int latch   = (inshig >> 16) & 0x7;
-		int op      = (inshig >> 15) & 0x1;
-		int spf     = (inshig >> 12) & 0x7;
-		int b       = (inshig >> 8) & 0xf;
-		int a       = (inshig >> 4) & 0xf;
-		int i8_6    = (inshig >> 0) & 0x7;
-		int ci      = (inslow >> 31) & 0x1;
-		int i5_3    = (inslow >> 28) & 0x7;
-		int _pbcs   = (inslow >> 27) & 0x1;
-		int i2_0    = (inslow >> 24) & 0x7;
+		u8 t               = (inshig >> 24) & 0xff;
+		const u8 jmp       = (inshig >> 20) & 0xf;
+		const u8 latch     = (inshig >> 16) & 0x7;
+		const bool op      = (inshig >> 15) & 0x1;
+		const u8 spf       = (inshig >> 12) & 0x7;
+		const u8 b         = (inshig >> 8) & 0xf;
+		u8 a               = (inshig >> 4) & 0xf;
+		const u8 i8_6      = (inshig >> 0) & 0x7;
+		const u8 ci        = (inslow >> 31) & 0x1;
+		const u8 i5_3      = (inslow >> 28) & 0x7;
+		const u8 _pbcs     = (inslow >> 27) & 0x1;
+		u8 i2_0            = (inslow >> 24) & 0x7;
 
-		UINT16  data_in = 0;
+		u16  data_in = 0;
 
-		debugger_instruction_hook(this, m_pc[prog]);
+		debugger_instruction_hook(m_pc[prog]);
 
 		/* Handle accesses to and from shared SRAM */
 		if (prog == FOREGROUND)
@@ -1242,16 +1264,16 @@ void cquestlin_cpu_device::execute_run()
 			if (_BIT(m_fglatch, 4) && (m_ycnt < 256))
 			{
 				/* 20-bit words */
-				UINT32 data;
-				UINT16 h = m_xcnt;
-				UINT8 v = m_ycnt & 0xff;
+				u32 data;
+				u16 h = m_xcnt;
+				u8 v = m_ycnt & 0xff;
 
 				/* Clamp H between 0 and 319 */
 				if (h >= 320)
 					h = (h & 0x800) ? 0 : 319;
 
 				/* Stack word type depends on STOP/#START bit */
-				if ( _BIT(m_fglatch, 3) )
+				if (_BIT(m_fglatch, 3))
 					data = (0 << 19) | (h << 8) | m_zlatch;
 				else
 					data = (1 << 19) | ((m_clatch & 0x100) << 9) | (h << 8) | (m_clatch & 0xff);
@@ -1277,12 +1299,12 @@ void cquestlin_cpu_device::execute_run()
 
 		/* Now do the ALU operation */
 		{
-			UINT16 r = 0;
-			UINT16 s = 0;
+			u16 r = 0;
+			u16 s = 0;
 
-			UINT16 res = 0;
-			UINT32 cflag = 0;
-			UINT32 vflag = 0;
+			u16 res = 0;
+			u32 cflag = 0;
+			u32 vflag = 0;
 
 			/* Determine the ALU sources */
 			switch (i2_0)
@@ -1359,8 +1381,8 @@ void cquestlin_cpu_device::execute_run()
 					break;
 				case RAMQD:
 				{
-					UINT16 r11 = (BIT(m_f, 11) ^ m_vflag) ? 0x800 : 0;
-					UINT16 q11 = (prog == BACKGROUND) ? 0x800 : 0;
+					u16 r11 = (BIT(m_f, 11) ^ m_vflag) ? 0x800 : 0;
+					u16 q11 = (prog == BACKGROUND) ? 0x800 : 0;
 
 					m_ram[b] = r11 | (m_f >> 1);
 					m_q = q11 | (m_q >> 1);
@@ -1369,7 +1391,7 @@ void cquestlin_cpu_device::execute_run()
 				}
 				case RAMD:
 				{
-					UINT16 r11 = (BIT(m_f, 11) ^ m_vflag) ? 0x800 : 0;
+					u16 r11 = (BIT(m_f, 11) ^ m_vflag) ? 0x800 : 0;
 
 					m_ram[b] = r11 | (m_f >> 1);
 					m_y = m_f;
@@ -1378,7 +1400,7 @@ void cquestlin_cpu_device::execute_run()
 				case RAMQU:
 				{
 					/* Determine shift inputs */
-					UINT16 r0 = (prog == BACKGROUND);
+					u16 r0 = (prog == BACKGROUND);
 
 					/* This should never happen - Q0 will be invalid */
 					m_ram[b] = (m_f << 1) | r0;
@@ -1388,7 +1410,7 @@ void cquestlin_cpu_device::execute_run()
 				}
 				case RAMU:
 				{
-					UINT16 r0 = (prog == BACKGROUND);
+					u16 r0 = (prog == BACKGROUND);
 
 					m_ram[b] = (m_f << 1) | r0;
 					m_y = m_f;
@@ -1398,7 +1420,7 @@ void cquestlin_cpu_device::execute_run()
 		}
 
 		/* Adjust program counter */
-		if ( do_linjmp(jmp) )
+		if (do_linjmp(jmp))
 			m_pc[prog] = t & 0x7f;
 		else
 			m_pc[prog] = (m_pc[prog] + 1) & 0x7f;
@@ -1459,7 +1481,7 @@ void cquestlin_cpu_device::execute_run()
 			m_badlatch = m_y & 0xfff;
 
 		/* What about the SRAM dlatch? */
-		if ( !_BIT(m_bglatch, 5) )
+		if (!_BIT(m_bglatch, 5))
 			m_sramdlatch = ((t & 0xf) << 12) | (m_y & 0x0fff);
 
 		/* BG and FG latches */

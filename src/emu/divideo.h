@@ -14,17 +14,8 @@
 #error Dont include this file directly; include emu.h instead.
 #endif
 
-#ifndef __DIVIDEO_H__
-#define __DIVIDEO_H__
-
-
-//**************************************************************************
-//  INTERFACE CONFIGURATION MACROS
-//**************************************************************************
-
-#define MCFG_VIDEO_SET_SCREEN(_tag) \
-	device_video_interface::static_set_screen(*device, _tag);
-
+#ifndef MAME_EMU_DIVIDEO_H
+#define MAME_EMU_DIVIDEO_H
 
 
 //**************************************************************************
@@ -42,19 +33,34 @@ public:
 	device_video_interface(const machine_config &mconfig, device_t &device, bool screen_required = true);
 	virtual ~device_video_interface();
 
-	// static configuration
-	static void static_set_screen(device_t &device, const char *tag);
+	// configuration
+	void set_screen(const char *tag);
+	void set_screen(device_t &base, const char *tag)
+	{
+		m_screen_base = &base;
+		m_screen_tag = tag;
+	}
+	template <class ObjectClass, bool Required>
+	void set_screen(device_finder<ObjectClass, Required> &finder)
+	{
+		m_screen_base = &finder.finder_target().first;
+		m_screen_tag = finder.finder_target().second;
+	}
 
 	// getters
 	screen_device &screen() const { return *m_screen; }
+	bool has_screen() const { return m_screen != nullptr; }
 
 protected:
 	// optional operation overrides
+	virtual void interface_config_complete() override;
 	virtual void interface_validity_check(validity_checker &valid) const override;
 	virtual void interface_pre_start() override;
 
+private:
 	// configuration state
 	bool            m_screen_required;          // is a screen required?
+	device_t *      m_screen_base;              // base device for resolving target screen
 	const char *    m_screen_tag;               // configured tag for the target screen
 
 	// internal state
@@ -62,7 +68,7 @@ protected:
 };
 
 // iterator
-typedef device_interface_iterator<device_video_interface> video_interface_iterator;
+typedef device_interface_enumerator<device_video_interface> video_interface_enumerator;
 
 
-#endif  /* __DIVIDEO_H__ */
+#endif  /* MAME_EMU_DIVIDEO_H */

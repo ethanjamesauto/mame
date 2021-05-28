@@ -8,10 +8,11 @@
 
 *********************************************************************/
 
-#ifndef __A2BUS_THEMILL__
-#define __A2BUS_THEMILL__
+#ifndef MAME_BUS_A2BUS_A2THEMILL_H
+#define MAME_BUS_A2BUS_A2THEMILL_H
 
-#include "emu.h"
+#pragma once
+
 #include "a2bus.h"
 
 //**************************************************************************
@@ -24,34 +25,37 @@ class a2bus_themill_device:
 {
 public:
 	// construction/destruction
-	a2bus_themill_device(const machine_config &mconfig, device_type type, const char *name, const char *tag, device_t *owner, UINT32 clock, const char *shortname, const char *source);
-	a2bus_themill_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
-
-	// optional information overrides
-	virtual machine_config_constructor device_mconfig_additions() const override;
-
-	DECLARE_READ8_MEMBER( dma_r );
-	DECLARE_WRITE8_MEMBER( dma_w );
+	a2bus_themill_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
 protected:
+	a2bus_themill_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock);
+
 	virtual void device_start() override;
 	virtual void device_reset() override;
+	virtual void device_add_mconfig(machine_config &config) override;
+	virtual ioport_constructor device_input_ports() const override;
 
 	// overrides of standard a2bus slot functions
-	virtual UINT8 read_c0nx(address_space &space, UINT8 offset) override;
-	virtual void write_c0nx(address_space &space, UINT8 offset, UINT8 data) override;
+	virtual uint8_t read_c0nx(uint8_t offset) override;
+	virtual void write_c0nx(uint8_t offset, uint8_t data) override;
 	virtual bool take_c800() override;
 
-	required_device<cpu_device> m_6809;
-
 private:
+	required_device<cpu_device> m_6809;
+	required_ioport m_cfgsw;
+
 	bool m_bEnabled;
 	bool m_flipAddrSpace;
 	bool m_6809Mode;
-	UINT8 m_status;
+	uint8_t m_status;
+
+	uint8_t dma_r(offs_t offset);
+	void dma_w(offs_t offset, uint8_t data);
+
+	void m6809_mem(address_map &map);
 };
 
 // device type definition
-extern const device_type A2BUS_THEMILL;
+DECLARE_DEVICE_TYPE(A2BUS_THEMILL, a2bus_themill_device)
 
-#endif /* __A2BUS_THEMILL__ */
+#endif // MAME_BUS_A2BUS_A2THEMILL_H

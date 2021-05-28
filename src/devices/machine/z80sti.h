@@ -29,45 +29,14 @@
 
 **********************************************************************/
 
-#ifndef __Z80STI__
-#define __Z80STI__
+#ifndef MAME_MACHINE_Z80STI_H
+#define MAME_MACHINE_Z80STI_H
 
-#include "cpu/z80/z80daisy.h"
+#pragma once
 
+#include "machine/z80daisy.h"
+#include "diserial.h"
 
-//**************************************************************************
-//  DEVICE CONFIGURATION MACROS
-//**************************************************************************
-
-#define MCFG_Z80STI_RXCLOCK(_clock) \
-	z80sti_device::set_rx_clock(*device, _clock);
-
-#define MCFG_Z80STI_TXCLOCK(_clock) \
-	z80sti_device::set_tx_clock(*device, _clock);
-
-#define MCFG_Z80STI_OUT_INT_CB(_devcb) \
-	devcb = &z80sti_device::set_out_int_callback(*device, DEVCB_##_devcb);
-
-#define MCFG_Z80STI_IN_GPIO_CB(_devcb) \
-	devcb = &z80sti_device::set_in_gpio_callback(*device, DEVCB_##_devcb);
-
-#define MCFG_Z80STI_OUT_GPIO_CB(_devcb) \
-	devcb = &z80sti_device::set_out_gpio_callback(*device, DEVCB_##_devcb);
-
-#define MCFG_Z80STI_OUT_SO_CB(_devcb) \
-	devcb = &z80sti_device::set_out_so_callback(*device, DEVCB_##_devcb);
-
-#define MCFG_Z80STI_OUT_TAO_CB(_devcb) \
-	devcb = &z80sti_device::set_out_tao_callback(*device, DEVCB_##_devcb);
-
-#define MCFG_Z80STI_OUT_TBO_CB(_devcb) \
-	devcb = &z80sti_device::set_out_tbo_callback(*device, DEVCB_##_devcb);
-
-#define MCFG_Z80STI_OUT_TCO_CB(_devcb) \
-	devcb = &z80sti_device::set_out_tco_callback(*device, DEVCB_##_devcb);
-
-#define MCFG_Z80STI_OUT_TDO_CB(_devcb) \
-	devcb = &z80sti_device::set_out_tdo_callback(*device, DEVCB_##_devcb);
 
 //**************************************************************************
 //  TYPE DEFINITIONS
@@ -81,22 +50,22 @@ class z80sti_device :   public device_t,
 {
 public:
 	// construction/destruction
-	z80sti_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	z80sti_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
-	template<class _Object> static devcb_base &set_out_int_callback(device_t &device, _Object object) { return downcast<z80sti_device &>(device).m_out_int_cb.set_callback(object); }
-	template<class _Object> static devcb_base &set_in_gpio_callback(device_t &device, _Object object) { return downcast<z80sti_device &>(device).m_in_gpio_cb.set_callback(object); }
-	template<class _Object> static devcb_base &set_out_gpio_callback(device_t &device, _Object object) { return downcast<z80sti_device &>(device).m_out_gpio_cb.set_callback(object); }
-	template<class _Object> static devcb_base &set_out_so_callback(device_t &device, _Object object) { return downcast<z80sti_device &>(device).m_out_so_cb.set_callback(object); }
-	template<class _Object> static devcb_base &set_out_tao_callback(device_t &device, _Object object) { return downcast<z80sti_device &>(device).m_out_tao_cb.set_callback(object); }
-	template<class _Object> static devcb_base &set_out_tbo_callback(device_t &device, _Object object) { return downcast<z80sti_device &>(device).m_out_tbo_cb.set_callback(object); }
-	template<class _Object> static devcb_base &set_out_tco_callback(device_t &device, _Object object) { return downcast<z80sti_device &>(device).m_out_tco_cb.set_callback(object); }
-	template<class _Object> static devcb_base &set_out_tdo_callback(device_t &device, _Object object) { return downcast<z80sti_device &>(device).m_out_tdo_cb.set_callback(object); }
+	auto out_int_cb() { return m_out_int_cb.bind(); }
+	auto in_gpio_cb() { return m_in_gpio_cb.bind(); }
+	auto out_gpio_cb() { return m_out_gpio_cb.bind(); }
+	auto out_so_cb() { return m_out_so_cb.bind(); }
+	auto out_tao_cb() { return m_out_tao_cb.bind(); }
+	auto out_tbo_cb() { return m_out_tbo_cb.bind(); }
+	auto out_tco_cb() { return m_out_tco_cb.bind(); }
+	auto out_tdo_cb() { return m_out_tdo_cb.bind(); }
 
-	static void set_rx_clock(device_t &device, int clock) { downcast<z80sti_device &>(device).m_rx_clock = clock; }
-	static void set_tx_clock(device_t &device, int clock) { downcast<z80sti_device &>(device).m_tx_clock = clock; }
+	void set_rx_clock(int clock) { m_rx_clock = clock; }
+	void set_tx_clock(int clock) { m_tx_clock = clock; }
 
-	DECLARE_READ8_MEMBER( read );
-	DECLARE_WRITE8_MEMBER( write );
+	uint8_t read(offs_t offset);
+	void write(offs_t offset, uint8_t data);
 
 	DECLARE_WRITE_LINE_MEMBER( i0_w );
 	DECLARE_WRITE_LINE_MEMBER( i1_w );
@@ -173,7 +142,7 @@ private:
 
 	static const int INT_LEVEL_GPIP[];
 	static const int INT_LEVEL_TIMER[];
-	static const UINT8 INT_VECTOR[];
+	static const uint8_t INT_VECTOR[];
 	static const int PRESCALER[];
 
 	// device-level overrides
@@ -211,31 +180,31 @@ private:
 	int m_tx_clock;                     // serial transmit clock
 
 	// I/O state
-	UINT8 m_gpip;                       // general purpose I/O register
-	UINT8 m_aer;                        // active edge register
-	UINT8 m_ddr;                        // data direction register
+	uint8_t m_gpip;                       // general purpose I/O register
+	uint8_t m_aer;                        // active edge register
+	uint8_t m_ddr;                        // data direction register
 
 	// interrupt state
-	UINT16 m_ier;                       // interrupt enable register
-	UINT16 m_ipr;                       // interrupt pending register
-	UINT16 m_isr;                       // interrupt in-service register
-	UINT16 m_imr;                       // interrupt mask register
-	UINT8 m_pvr;                        // interrupt vector register
+	uint16_t m_ier;                       // interrupt enable register
+	uint16_t m_ipr;                       // interrupt pending register
+	uint16_t m_isr;                       // interrupt in-service register
+	uint16_t m_imr;                       // interrupt mask register
+	uint8_t m_pvr;                        // interrupt vector register
 	int m_int_state[16];                // interrupt state
 
 	// timer state
-	UINT8 m_tabc;                       // timer A/B control register
-	UINT8 m_tcdc;                       // timer C/D control register
-	UINT8 m_tdr[4];                     // timer data registers
-	UINT8 m_tmc[4];                     // timer main counters
+	uint8_t m_tabc;                       // timer A/B control register
+	uint8_t m_tcdc;                       // timer C/D control register
+	uint8_t m_tdr[4];                     // timer data registers
+	uint8_t m_tmc[4];                     // timer main counters
 	int m_to[4];                        // timer out latch
 
 	// serial state
-	UINT8 m_scr;                        // synchronous character register
-	UINT8 m_ucr;                        // USART control register
-	UINT8 m_tsr;                        // transmitter status register
-	UINT8 m_rsr;                        // receiver status register
-	UINT8 m_udr;                        // USART data register
+	uint8_t m_scr;                        // synchronous character register
+	uint8_t m_ucr;                        // USART control register
+	uint8_t m_tsr;                        // transmitter status register
+	uint8_t m_rsr;                        // receiver status register
+	uint8_t m_udr;                        // USART data register
 
 	// timers
 	emu_timer *m_timer[4];              // counter timers
@@ -243,8 +212,6 @@ private:
 
 
 // device type definition
-extern const device_type Z80STI;
+DECLARE_DEVICE_TYPE(Z80STI, z80sti_device)
 
-
-
-#endif
+#endif // MAME_MACHINE_Z80STI_H

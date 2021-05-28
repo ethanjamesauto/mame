@@ -2,7 +2,7 @@
 // copyright-holders:Vas Crabb, Ryan Holtz
 /***************************************************************************
 
-    rgbsse.c
+    rgbsse.cpp
 
     SSE optimized RGB utilities.
 
@@ -10,11 +10,12 @@
 
 ***************************************************************************/
 
-#if (!defined(MAME_DEBUG) || defined(__OPTIMIZE__)) && (defined(__SSE2__) || defined(_MSC_VER)) && defined(PTR64)
-
 #include "emu.h"
-#include <emmintrin.h>
+
+#if (!defined(MAME_DEBUG) || defined(__OPTIMIZE__)) && (defined(__SSE2__) || (defined(_M_IX86_FP) && (_M_IX86_FP >= 2)))
+
 #include "rgbsse.h"
+
 
 /***************************************************************************
     TABLES
@@ -164,15 +165,15 @@ const struct rgbaint_t::_statics rgbaint_t::statics =
     HIGHER LEVEL OPERATIONS
 ***************************************************************************/
 
-void rgbaint_t::blend(const rgbaint_t& other, UINT8 factor)
+void rgbaint_t::blend(const rgbaint_t& other, u8 factor)
 {
-	__m128i scale1 = _mm_set1_epi32(factor);
-	__m128i scale2 = _mm_sub_epi32(_mm_set1_epi32(0x100), scale1);
+	const __m128i scale1 = _mm_set1_epi32(factor);
+	const rgbaint_t scale2(_mm_sub_epi32(_mm_set1_epi32(0x100), scale1));
 
 	rgbaint_t scaled_other(other);
 	scaled_other.mul(scale2);
 
-	mul(scale1);
+	mul(rgbaint_t(scale1));
 	add(scaled_other);
 	sra_imm(8);
 }
@@ -184,11 +185,4 @@ void rgbaint_t::scale_and_clamp(const rgbaint_t& scale)
 	clamp_to_uint8();
 }
 
-void rgbaint_t::scale_imm_and_clamp(const INT32 scale)
-{
-	mul_imm(scale);
-	sra_imm(8);
-	clamp_to_uint8();
-}
-
-#endif // defined(__SSE2__) || defined(_MSC_VER)
+#endif // (!defined(MAME_DEBUG) || defined(__OPTIMIZE__)) && (defined(__SSE2__) || (defined(_M_IX86_FP) && (_M_IX86_FP >= 2)))

@@ -10,9 +10,14 @@
  *****************************************************************************/
 
 #include "emu.h"
+#include "saturn.h"
+
 #include "debugger.h"
 
-#include "saturn.h"
+
+//#define VERBOSE 1
+#include "logmacro.h"
+
 
 #define R0 0
 #define R1 1
@@ -26,11 +31,6 @@
 #define I 9 // invalid
 
 
-#define VERBOSE 0
-
-#define LOG(x)  do { if (VERBOSE) logerror x; } while (0)
-
-
 // Hardware status bits
 #define XM 1 // external Modules missing
 #define SB 2 // Sticky bit
@@ -39,11 +39,11 @@
 
 
 
-const device_type SATURN = &device_creator<saturn_device>;
+DEFINE_DEVICE_TYPE(SATURN, saturn_device, "saturn_cpu", "Hewlett-Packard Saturn")
 
 
-saturn_device::saturn_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: cpu_device(mconfig, SATURN, "HP Saturn", tag, owner, clock, "saturn_cpu", __FILE__)
+saturn_device::saturn_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: cpu_device(mconfig, SATURN, tag, owner, clock)
 	, m_program_config("program", ENDIANNESS_LITTLE, 8, 20, 0)
 	, m_out_func(*this)
 	, m_in_func(*this)
@@ -52,16 +52,30 @@ saturn_device::saturn_device(const machine_config &mconfig, const char *tag, dev
 	, m_unconfig_func(*this)
 	, m_id_func(*this)
 	, m_crc_func(*this)
-	, m_rsi_func(*this), m_pc(0), m_oldpc(0), m_p(0), m_out(0), m_carry(0), m_decimal(0), m_st(0), m_hst(0), m_nmi_state(0), m_irq_state(0), m_irq_enable(0), m_in_irq(0),
-	m_pending_irq(0), m_sleeping(0), m_monitor_id(0), m_monitor_in(0), m_program(nullptr), m_direct(nullptr), m_icount(0), m_debugger_temp(0)
+	, m_rsi_func(*this)
+	, m_pc(0), m_oldpc(0), m_p(0), m_out(0), m_carry(0), m_decimal(0), m_st(0), m_hst(0)
+	, m_nmi_state(0), m_irq_state(0), m_irq_enable(0), m_in_irq(0), m_pending_irq(0)
+	, m_sleeping(0), m_monitor_id(0), m_monitor_in(0)
+	, m_icount(0)
+	, m_debugger_temp(0)
 {
 }
 
-
-offs_t saturn_device::disasm_disassemble(char *buffer, offs_t pc, const UINT8 *oprom, const UINT8 *opram, UINT32 options)
+device_memory_interface::space_config_vector saturn_device::memory_space_config() const
 {
-	extern CPU_DISASSEMBLE( saturn );
-	return CPU_DISASSEMBLE_NAME(saturn)(this, buffer, pc, oprom, opram, options);
+	return space_config_vector{ std::make_pair(AS_PROGRAM, &m_program_config) };
+}
+
+bool saturn_device::get_nonstandard_mnemonics_mode() const
+{
+	// Needs to become configurable live
+	return false;
+}
+
+
+std::unique_ptr<util::disasm_interface> saturn_device::create_disassembler()
+{
+	return std::make_unique<saturn_disassembler>(this);
 }
 
 
@@ -69,8 +83,8 @@ offs_t saturn_device::disasm_disassemble(char *buffer, offs_t pc, const UINT8 *o
  * include the opcode macros, functions and tables
  ***************************************************************/
 
-#include "satops.inc"
-#include "sattable.inc"
+#include "satops.ipp"
+#include "sattable.ipp"
 
 /*****************************************************************************
  *
@@ -80,8 +94,8 @@ offs_t saturn_device::disasm_disassemble(char *buffer, offs_t pc, const UINT8 *o
 
 void saturn_device::device_start()
 {
-	m_program = &space(AS_PROGRAM);
-	m_direct = &m_program->direct();
+	space(AS_PROGRAM).cache(m_cache);
+	space(AS_PROGRAM).specific(m_program);
 
 	m_out_func.resolve_safe();
 	m_in_func.resolve_safe(0);
@@ -164,12 +178,13 @@ void saturn_device::device_start()
 	state_add( SATURN_SLEEPING, "sleep", m_sleeping).formatstr("%1X");
 
 	state_add( STATE_GENPC, "GENPC", m_pc ).noshow();
+	state_add( STATE_GENPCBASE, "CURPC", m_pc ).noshow();
 	state_add( STATE_GENFLAGS, "GENFLAGS", m_debugger_temp).formatstr("%2s").noshow();
 
-	m_icountptr = &m_icount;
+	set_icountptr(m_icount);
 }
 
-void saturn_device::state_string_export(const device_state_entry &entry, std::string &str)
+void saturn_device::state_string_export(const device_state_entry &entry, std::string &str) const
 {
 #define Reg64Data(s) s[15],s[14],s[13],s[12],s[11],s[10],s[9],s[8],s[7],s[6],s[5],s[4],s[3],s[2],s[1],s[0]
 #define Reg64Format "%x %x%x%x%x%x%x%x %x%x%x %x%x%x%x%x"
@@ -177,47 +192,47 @@ void saturn_device::state_string_export(const device_state_entry &entry, std::st
 	switch (entry.index())
 	{
 		case SATURN_A:
-			strprintf(str,  Reg64Format, Reg64Data(m_reg[A]) );
+			str = string_format( Reg64Format, Reg64Data(m_reg[A]) );
 			break;
 
 		case SATURN_B:
-			strprintf(str,  Reg64Format, Reg64Data(m_reg[B]) );
+			str = string_format( Reg64Format, Reg64Data(m_reg[B]) );
 			break;
 
 		case SATURN_C:
-			strprintf(str,  Reg64Format, Reg64Data(m_reg[C]) );
+			str = string_format( Reg64Format, Reg64Data(m_reg[C]) );
 			break;
 
 		case SATURN_D:
-			strprintf(str,  Reg64Format, Reg64Data(m_reg[D]) );
+			str = string_format( Reg64Format, Reg64Data(m_reg[D]) );
 			break;
 
 		case SATURN_R0:
-			strprintf(str,  Reg64Format, Reg64Data(m_reg[R0]) );
+			str = string_format( Reg64Format, Reg64Data(m_reg[R0]) );
 			break;
 
 		case SATURN_R1:
-			strprintf(str,  Reg64Format, Reg64Data(m_reg[R1]) );
+			str = string_format( Reg64Format, Reg64Data(m_reg[R1]) );
 			break;
 
 		case SATURN_R2:
-			strprintf(str,  Reg64Format, Reg64Data(m_reg[R2]) );
+			str = string_format( Reg64Format, Reg64Data(m_reg[R2]) );
 			break;
 
 		case SATURN_R3:
-			strprintf(str,  Reg64Format, Reg64Data(m_reg[R3]) );
+			str = string_format( Reg64Format, Reg64Data(m_reg[R3]) );
 			break;
 
 		case SATURN_R4:
-			strprintf(str,  Reg64Format, Reg64Data(m_reg[R4]) );
+			str = string_format( Reg64Format, Reg64Data(m_reg[R4]) );
 			break;
 
 		case SATURN_IRQ_STATE:
-			strprintf(str,  "%c%c%c%i", m_in_irq?'S':'.', m_irq_enable?'e':'.', m_pending_irq?'p':'.', m_irq_state );
+			str = string_format( "%c%c%c%i", m_in_irq?'S':'.', m_irq_enable?'e':'.', m_pending_irq?'p':'.', m_irq_state );
 			break;
 
 		case STATE_GENFLAGS:
-			strprintf(str,  "%c%c", m_decimal?'D':'.', m_carry ? 'C':'.' );
+			str = string_format( "%c%c", m_decimal?'D':'.', m_carry ? 'C':'.' );
 			break;
 	}
 }
@@ -325,7 +340,7 @@ void saturn_device::saturn_take_irq()
 	saturn_push(m_pc);
 	m_pc=IRQ_ADDRESS;
 
-	LOG(("Saturn '%s' takes IRQ ($%04x)\n", tag(), m_pc));
+	LOG("SATURN takes IRQ ($%04x)\n", m_pc);
 
 	standard_irq_callback(SATURN_IRQ_LINE);
 }
@@ -336,7 +351,7 @@ void saturn_device::execute_run()
 	{
 		m_oldpc = m_pc;
 
-		debugger_instruction_hook(this, m_pc);
+		debugger_instruction_hook(m_pc);
 
 		if ( m_sleeping )
 		{
@@ -366,7 +381,7 @@ void saturn_device::execute_set_input(int inputnum, int state)
 			m_nmi_state = state;
 			if ( state != CLEAR_LINE )
 			{
-				LOG(( "SATURN '%s' set_nmi_line(ASSERT)\n", tag()));
+				LOG("SATURN set_nmi_line(ASSERT)\n");
 				m_pending_irq = 1;
 			}
 			break;
@@ -376,7 +391,7 @@ void saturn_device::execute_set_input(int inputnum, int state)
 			m_irq_state = state;
 			if ( state != CLEAR_LINE && m_irq_enable )
 			{
-				LOG(( "SATURN '%s' set_irq_line(ASSERT)\n", tag()));
+				LOG("SATURN set_irq_line(ASSERT)\n");
 				m_pending_irq = 1;
 			}
 			break;
@@ -384,7 +399,7 @@ void saturn_device::execute_set_input(int inputnum, int state)
 		case SATURN_WAKEUP_LINE:
 			if (m_sleeping && state==1)
 			{
-				LOG(( "SATURN '%s' set_wakeup_line(ASSERT)\n", tag()));
+				LOG("SATURN set_wakeup_line(ASSERT)\n");
 				standard_irq_callback(SATURN_WAKEUP_LINE);
 				m_sleeping = 0;
 			}
@@ -393,7 +408,7 @@ void saturn_device::execute_set_input(int inputnum, int state)
 }
 
 
-void saturn_device::IntReg64(Saturn64 r, INT64 d)
+void saturn_device::IntReg64(Saturn64 r, int64_t d)
 {
 	int i;
 	for (i=0; i<16; i++)
@@ -401,11 +416,11 @@ void saturn_device::IntReg64(Saturn64 r, INT64 d)
 }
 
 
-INT64 saturn_device::Reg64Int(Saturn64 r)
+int64_t saturn_device::Reg64Int(Saturn64 r)
 {
-	INT64 x = 0;
+	int64_t x = 0;
 	int i;
 	for (i=0; i<16; i++)
-		x |= (INT64) r[i] << (4*i);
+		x |= (int64_t) r[i] << (4*i);
 	return x;
 }

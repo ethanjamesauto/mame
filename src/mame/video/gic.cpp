@@ -45,9 +45,9 @@
 
    for a total of (12*20*16) = 3840 RAM reads (3 clocks per read at 1.79MHz)
 
-   Then it relingishes control to the CPU by raising BUSREQ.
+   Then it relinquishes control to the CPU by raising BUSREQ.
 
-   Cloking in more detail: (in 1.79MHz clocks)
+   Clocking in more detail: (in 1.79MHz clocks)
    boot:
     busy:1  5360 clocks
     busy:0 22116 clocks
@@ -62,9 +62,10 @@
 
 #include "emu.h"
 #include "gic.h"
+#include "screen.h"
 
 // device type definition
-const device_type GIC = &device_creator<gic_device>;
+DEFINE_DEVICE_TYPE(GIC, gic_device, "gic", "AY-3-8800-1 GIC")
 
 
 //Font data taken from Paul Robson's simulator
@@ -80,32 +81,25 @@ ROM_END
 //  gic_device - constructor
 //-------------------------------------------------
 
-gic_device::gic_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: device_t(mconfig, GIC, "GIC", tag, owner, clock, "gic", __FILE__)
-	, device_sound_interface(mconfig, *this)
-	, device_video_interface(mconfig, *this)
-	, m_cgrom(nullptr)
-	, m_audiocnt(0)
-	, m_audioval(0)
-	, m_audioreset(0)
-	, m_ram(nullptr)
+gic_device::gic_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: gic_device(mconfig, GIC, tag, owner, clock)
 {
 }
 
 
-gic_device::gic_device(const machine_config &mconfig, device_type type, const char *name, const char *tag, device_t *owner, UINT32 clock, int lines, const char *shortname, const char *source)
-	: device_t(mconfig, type, name, tag, owner, clock, shortname, source)
+gic_device::gic_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock)
+	: device_t(mconfig, type, tag, owner, clock)
 	, device_sound_interface(mconfig, *this)
 	, device_video_interface(mconfig, *this)
-	, m_cgrom(nullptr)
+	, m_cgrom(*this, "cgrom")
 	, m_audiocnt(0)
 	, m_audioval(0)
 	, m_audioreset(0)
-	, m_ram(nullptr)
+	, m_ram(*this)
 {
 }
 
-const rom_entry *gic_device::device_rom_region() const
+const tiny_rom_entry *gic_device::device_rom_region() const
 {
 	//there is only one... how do I get rid of this?
 	return ROM_NAME( gic_font );
@@ -117,16 +111,16 @@ const rom_entry *gic_device::device_rom_region() const
 
 void gic_device::device_start()
 {
-	m_cgrom = memregion("cgrom")->base();
-
 	// Let the screen create our temporary bitmap with the screen's dimensions
-	m_screen->register_screen_bitmap(m_bitmap);
+	screen().register_screen_bitmap(m_bitmap);
 
 	m_vblank_timer = timer_alloc(TIMER_VBLANK);
-	m_vblank_timer->adjust( m_screen->time_until_pos(1, END_ACTIVE_SCAN + 18 ), 0, m_screen->scan_period() );
+	m_vblank_timer->adjust( screen().time_until_pos(1, END_ACTIVE_SCAN + 18 ), 0, screen().scan_period() );
 
 	// allocate the audio stream
 	m_stream = stream_alloc( 0, 1, clock()/(2*228) );
+
+	m_ram.resolve_safe(0xff);
 }
 
 
@@ -144,42 +138,42 @@ void gic_device::device_reset()
 #define GIC_CLUB    28
 #define GIC_SPACE    0
 
-void gic_device::draw_char_left(int startx, int starty, UINT8 code, bitmap_ind16 &bitmap){
-	UINT8*ptr = &m_cgrom[code*GIC_CHAR_H];
+void gic_device::draw_char_left(int startx, int starty, uint8_t code, bitmap_ind16 &bitmap){
+	uint8_t*ptr = &m_cgrom[code*GIC_CHAR_H];
 
 	for (size_t y=0;y<GIC_CHAR_H;y++){
-		UINT8 current = *ptr++;
-		UINT8 nextx=0;
-		UINT8 curry= starty+y;
-		for(UINT8 x=0x20;x!=0;x=x/2){
+		uint8_t current = *ptr++;
+		uint8_t nextx=0;
+		uint8_t curry= starty+y;
+		for(uint8_t x=0x20;x!=0;x=x/2){
 			if (current&x)
-				m_bitmap.pix16(curry,startx+nextx) = GIC_WHITE;
+				m_bitmap.pix(curry,startx+nextx) = GIC_WHITE;
 			nextx++;
 		}
 	}
 }
 
-void gic_device::draw_char_right(int startx, int starty, UINT8 code, bitmap_ind16 &bitmap, int bg_col){
-	UINT8*ptr = &m_cgrom[code*GIC_CHAR_H];
+void gic_device::draw_char_right(int startx, int starty, uint8_t code, bitmap_ind16 &bitmap, int bg_col){
+	uint8_t*ptr = &m_cgrom[code*GIC_CHAR_H];
 
 	for (size_t y=0;y<GIC_CHAR_H;y++){
-		UINT8 current = *ptr++;
-		UINT8 nextx=0;
-		UINT8 curry= starty+y;
+		uint8_t current = *ptr++;
+		uint8_t nextx=0;
+		uint8_t curry= starty+y;
 
-		m_bitmap.pix16(curry,startx+nextx) = bg_col;
+		m_bitmap.pix(curry,startx+nextx) = bg_col;
 		nextx++;
-		for(UINT8 x=0x20;x!=0;x=x/2){
-			m_bitmap.pix16(curry,startx+nextx) = (current&x)?GIC_WHITE:bg_col;
+		for(uint8_t x=0x20;x!=0;x=x/2){
+			m_bitmap.pix(curry,startx+nextx) = (current&x)?GIC_WHITE:bg_col;
 			nextx++;
 		}
-		m_bitmap.pix16(curry,startx+nextx) = bg_col;
+		m_bitmap.pix(curry,startx+nextx) = bg_col;
 		nextx++;
-		m_bitmap.pix16(curry,startx+nextx) = bg_col;
+		m_bitmap.pix(curry,startx+nextx) = bg_col;
 	}
 }
 
-UINT32 gic_device::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t gic_device::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	m_bitmap.fill(GIC_GREEN);
 
@@ -187,12 +181,12 @@ UINT32 gic_device::screen_update(screen_device &screen, bitmap_ind16 &bitmap, co
 	size_t YSTART = START_ACTIVE_SCAN;
 
 	//left hand side first
-	UINT8 current=0;
-	for(UINT8 cy=0;cy<GIC_LEFT_H;cy++){
-		for(UINT8 cx=0;cx<GIC_LEFT_W;cx++){
+	uint8_t current=0;
+	for(uint8_t cy=0;cy<GIC_LEFT_H;cy++){
+		for(uint8_t cx=0;cx<GIC_LEFT_W;cx++){
 			draw_char_left(XSTART+(cx*GIC_CHAR_W),
 							YSTART+(cy*GIC_CHAR_H),
-							m_ram[current],
+							m_ram(current),
 							m_bitmap);
 			current++;
 		}
@@ -202,10 +196,10 @@ UINT32 gic_device::screen_update(screen_device &screen, bitmap_ind16 &bitmap, co
 	current=0x48;//110 octal
 	XSTART+=(GIC_LEFT_W*GIC_CHAR_W)+1;
 
-	for(UINT8 cy=0;cy<GIC_RIGHT_H;cy++){
-		for(UINT8 cx=0;cx<GIC_RIGHT_W;cx++){
+	for(uint8_t cy=0;cy<GIC_RIGHT_H;cy++){
+		for(uint8_t cx=0;cx<GIC_RIGHT_W;cx++){
 			//complex case
-			UINT8 data = m_ram[current++];
+			uint8_t data = m_ram(current++);
 
 			size_t currX   = (XSTART+           (cx*(3+GIC_CHAR_W)));
 			size_t currUP  = (YSTART+           (cy*(2*GIC_CHAR_H)));
@@ -258,14 +252,14 @@ void gic_device::device_timer(emu_timer &timer, device_timer_id id, int param, v
 
 #define GIC_AUDIO_BYTE 0x96
 
-void gic_device::sound_stream_update(sound_stream &stream, stream_sample_t **inputs, stream_sample_t **outputs, int samples)
+void gic_device::sound_stream_update(sound_stream &stream, std::vector<read_stream_view> const &inputs, std::vector<write_stream_view> &outputs)
 {
-	stream_sample_t *buffer = outputs[0];
+	auto &buffer = outputs[0];
 
 	//Audio is basic and badly implemented (doubt that was the intent)
-	//The datasheet list the 3 different frequencies the GIC can generate: 500,1000 and 2000Hz
+	//The datasheet lists the 3 different frequencies the GIC can generate: 500,1000 and 2000Hz
 	//but it is clear (for an audio guy at least) that the resulting spectrum
-	//is not a pure square wav. In fact, the counter is reset on vertical sync!
+	//is not a pure square wave. In fact, the counter is reset on vertical sync!
 	//http://twitter.com/plgDavid/status/527269086016077825
 	//...thus creating a buzzing sound.
 
@@ -301,13 +295,10 @@ void gic_device::sound_stream_update(sound_stream &stream, stream_sample_t **inp
 	//lo for 1824(228*8)
 	//hi for 1824(228*8)
 
-	if(!m_ram) return;
-
-	UINT8 audioByte = m_ram[GIC_AUDIO_BYTE]*2;
+	uint8_t audioByte = m_ram(GIC_AUDIO_BYTE)*2;
 
 	if(!audioByte){
-		for(size_t i = 0; i < samples; i++)
-			*buffer++ = 0;
+		buffer.fill(0);
 
 		m_audioval   = 0;
 		m_audiocnt   = 0;
@@ -322,12 +313,12 @@ void gic_device::sound_stream_update(sound_stream &stream, stream_sample_t **inp
 		m_audioreset = 0;
 	}
 
-	for(size_t i=0; i < samples; i++){
+	for(size_t i=0; i < buffer.samples(); i++){
 		m_audiocnt++;
 		if(m_audiocnt >= audioByte){
 			m_audioval = !m_audioval;
 			m_audiocnt=0;
 		}
-		*buffer++ = m_audioval<<13;
+		buffer.put(i, m_audioval ? 1.0 : 0.0);
 	}
 }

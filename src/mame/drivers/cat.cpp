@@ -91,6 +91,11 @@ Canon cat credits easter egg:
 * hit EXPLAIN (use front + N) and the credits screen will be displayed
 
 Canon Cat credits details: (WIP)
+Jef Raskin
+John "Sandy" Bumgarner
+Charles Springer
+Jonathan Sand
+Terry Holmes - wrote tForth, the language in which the cat is programmed
 Scott Kim - responsible for fonts on swyft and cat
 Ralph Voorhees - Model construction and mockups (swyft 'flat cat')
 
@@ -115,7 +120,7 @@ Canon Cat versions:
 There is really only one version of the cat which saw wide release, the US version.
 * It is possible a very small number of UK/European units were released as a test.
   If so, these will have slightly different keyboard key caps and different
-  system and spellcheck roms.
+  system and spellcheck ROMs.
 
 As for prototypes/dev cat machines, a few minor variants exist:
 * Prototype cat motherboards used 16k*4bit drams instead of 64k*4bit as the
@@ -169,11 +174,11 @@ ToDo:
   original compile, and Dwight's recompile from the released source code),
   2.42 (NEED DUMP)
   It is possible a few prototype UK 1.74 or 2.40 units were produced; the code
-  roms of these will differ (they contain different spellcheck "core" code) as
-  well as the spellcheck roms, the keyboard id and the keycaps.
-- Known Spellcheck roms: NH7-0684 (US, dumped); NH7-0724 (UK, NEED DUMP);
+  ROMs of these will differ (they contain different spellcheck "core" code) as
+  well as the spellcheck ROMs, the keyboard id and the keycaps.
+- Known Spellcheck ROMs: NH7-0684 (US, dumped); NH7-0724 (UK, NEED DUMP);
   NH7-0813/0814 (Quebec/France, NEED DUMP); NH7-1019/1020/1021 (Germany, NEED DUMP)
-  It is possible the non-US roms were never officially released.
+  It is possible the non-US ROMs were never officially released.
   Wordlist sources: American Heritage (US and UK), Librarie Larousse (FR),
   Langenscheidt (DE)
 - (would-be-really-nice-but-totally-unnecessary feature): due to open bus, the
@@ -181,7 +186,7 @@ ToDo:
   respectively on a real machine (and hence appear inverted/'fail'-state).
   This requires sub-cycle accurate 68k open bus emulation to pull off, as well
   as emulating the fact that UDS/LDS are ?not connected? (unclear because this
-  happens inside an asic) for the SVROMS (or the svram or the code roms, for
+  happens inside an asic) for the SVROMS (or the svram or the code ROMs, for
   that matter!)
 - Hook Battery Low input to a dipswitch.
 - Hook pfail to a dipswitch.
@@ -189,6 +194,19 @@ ToDo:
   confused.
 
 ****************************************************************************/
+
+#include "emu.h"
+#include "cpu/m68000/m68000.h"
+#include "machine/clock.h"
+#include "machine/mc68681.h"
+#include "machine/nvram.h"
+#include "sound/spkrdev.h"
+#include "bus/centronics/ctronics.h"
+#include "screen.h"
+#include "speaker.h"
+
+
+namespace {
 
 // Defines
 
@@ -221,15 +239,6 @@ ToDo:
 #define DEBUG_SWYFT_VIA1 1
 
 
-// Includes
-#include "emu.h"
-#include "cpu/m68000/m68000.h"
-#include "machine/clock.h"
-#include "machine/mc68681.h"
-#include "machine/nvram.h"
-#include "sound/speaker.h"
-#include "bus/centronics/ctronics.h"
-
 class cat_state : public driver_device
 {
 public:
@@ -239,8 +248,8 @@ public:
 		TIMER_COUNTER_6MS
 	};
 
-	cat_state(const machine_config &mconfig, device_type type, const char *tag)
-		: driver_device(mconfig, type, tag),
+	cat_state(const machine_config &mconfig, device_type type, const char *tag) :
+		driver_device(mconfig, type, tag),
 		m_maincpu(*this, "maincpu"),
 		//m_nvram(*this, "nvram"), // merge with svram?
 		m_duart(*this, "duartn68681"),
@@ -258,16 +267,27 @@ public:
 		m_y6(*this, "Y6"),
 		m_y7(*this, "Y7"),
 		m_dipsw(*this, "DIPSW1")
-		{ }
+	{ }
 
+	void cat(machine_config &config);
+
+	void init_cat();
+
+protected:
+	virtual void machine_start() override;
+	virtual void machine_reset() override;
+	virtual void video_start() override;
+	virtual void device_timer(emu_timer &timer, device_timer_id id, int param, void *ptr) override;
+
+private:
 	required_device<cpu_device> m_maincpu;
 	//optional_device<nvram_device> m_nvram;
 	required_device<mc68681_device> m_duart;
 	required_device<centronics_device> m_ctx;
 	required_device<output_latch_device> m_ctx_data_out;
 	required_device<speaker_sound_device> m_speaker;
-	required_shared_ptr<UINT16> m_svram;
-	required_shared_ptr<UINT16> m_p_cat_videoram;
+	required_shared_ptr<uint16_t> m_svram;
+	required_shared_ptr<uint16_t> m_p_cat_videoram;
 	required_ioport m_y0;
 	required_ioport m_y1;
 	required_ioport m_y2;
@@ -280,39 +300,34 @@ public:
 	emu_timer *m_keyboard_timer;
 	emu_timer *m_6ms_timer;
 
-	DECLARE_MACHINE_START(cat);
-	DECLARE_MACHINE_RESET(cat);
-	DECLARE_VIDEO_START(cat);
-	DECLARE_DRIVER_INIT(cat);
-
-	UINT32 screen_update_cat(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
+	uint32_t screen_update_cat(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect);
 
 	DECLARE_WRITE_LINE_MEMBER(cat_duart_irq_handler);
 	DECLARE_WRITE_LINE_MEMBER(cat_duart_txa);
 	DECLARE_WRITE_LINE_MEMBER(cat_duart_txb);
-	DECLARE_WRITE8_MEMBER(cat_duart_output);
+	void cat_duart_output(uint8_t data);
 	DECLARE_WRITE_LINE_MEMBER(prn_ack_ff);
 
-	DECLARE_READ16_MEMBER(cat_floppy_control_r);
-	DECLARE_WRITE16_MEMBER(cat_floppy_control_w);
-	DECLARE_WRITE16_MEMBER(cat_printer_data_w);
-	DECLARE_READ16_MEMBER(cat_floppy_data_r);
-	DECLARE_WRITE16_MEMBER(cat_floppy_data_w);
-	DECLARE_READ16_MEMBER(cat_keyboard_r);
-	DECLARE_WRITE16_MEMBER(cat_keyboard_w);
-	DECLARE_WRITE16_MEMBER(cat_video_control_w);
-	DECLARE_READ16_MEMBER(cat_floppy_status_r);
-	DECLARE_READ16_MEMBER(cat_battery_r);
-	DECLARE_WRITE16_MEMBER(cat_printer_control_w);
-	DECLARE_READ16_MEMBER(cat_modem_r);
-	DECLARE_WRITE16_MEMBER(cat_modem_w);
-	DECLARE_READ16_MEMBER(cat_6ms_counter_r);
-	DECLARE_WRITE16_MEMBER(cat_opr_w);
-	DECLARE_READ16_MEMBER(cat_wdt_r);
-	DECLARE_WRITE16_MEMBER(cat_tcb_w);
-	DECLARE_READ16_MEMBER(cat_2e80_r);
-	DECLARE_READ16_MEMBER(cat_0080_r);
-	DECLARE_READ16_MEMBER(cat_0000_r);
+	uint16_t cat_floppy_control_r(offs_t offset);
+	void cat_floppy_control_w(offs_t offset, uint16_t data);
+	void cat_printer_data_w(offs_t offset, uint16_t data);
+	uint16_t cat_floppy_data_r(offs_t offset);
+	void cat_floppy_data_w(offs_t offset, uint16_t data);
+	uint16_t cat_keyboard_r(offs_t offset);
+	void cat_keyboard_w(uint16_t data);
+	void cat_video_control_w(offs_t offset, uint16_t data);
+	uint16_t cat_floppy_status_r(offs_t offset);
+	uint16_t cat_battery_r();
+	void cat_printer_control_w(offs_t offset, uint16_t data);
+	uint16_t cat_modem_r(offs_t offset);
+	void cat_modem_w(offs_t offset, uint16_t data);
+	uint16_t cat_6ms_counter_r();
+	void cat_opr_w(offs_t offset, uint16_t data);
+	uint16_t cat_wdt_r();
+	void cat_tcb_w(offs_t offset, uint16_t data);
+	uint16_t cat_2e80_r();
+	uint16_t cat_0080_r();
+	uint16_t cat_0000_r();
 
 
 	/* gate array 2 has a 16-bit counter inside which counts at 10mhz and
@@ -324,14 +339,14 @@ public:
 	   The watchdog counter and the 6ms counter are both incremented
 	   every time the KTOBF pulses.
 	 */
-	UINT16 m_6ms_counter;
-	UINT8 m_wdt_counter;
-	UINT8 m_duart_ktobf_ff;
+	uint16_t m_6ms_counter;
+	uint8_t m_wdt_counter;
+	uint8_t m_duart_ktobf_ff;
 	/* the /ACK line from the centronics printer port goes through a similar
 	   flipflop to the ktobf line as well, so duart IP4 inverts on /ACK rising edge
 	 */
-	UINT8 m_duart_prn_ack_prev_state;
-	UINT8 m_duart_prn_ack_ff;
+	uint8_t m_duart_prn_ack_prev_state;
+	uint8_t m_duart_prn_ack_ff;
 	/* Gate array 2 is in charge of serializing the video for display to the screen;
 	   Gate array 1 is in charge of vblank/hblank timing, and in charge of refreshing
 	   dram and indicating to GA2, using the /LDPS signal, what times the address it is
@@ -340,32 +355,30 @@ public:
 	   GA2 then takes: ((output_bit XNOR video_invert) AND video enable), and serially
 	   bangs the result to the analog display circuitry.
 	 */
-	UINT8 m_video_enable;
-	UINT8 m_video_invert;
-	UINT16 m_pr_cont;
-	UINT8 m_keyboard_line;
-	UINT8 m_floppy_control;
+	uint8_t m_video_enable;
+	uint8_t m_video_invert;
+	uint16_t m_pr_cont;
+	uint8_t m_keyboard_line;
+	uint8_t m_floppy_control;
 
 	//TIMER_CALLBACK_MEMBER(keyboard_callback);
 	TIMER_CALLBACK_MEMBER(counter_6ms_callback);
-	IRQ_CALLBACK_MEMBER(cat_int_ack);
 
-protected:
-	virtual void device_timer(emu_timer &timer, device_timer_id id, int param, void *ptr) override;
+	void cat_mem(address_map &map);
+	void cpu_space_map(address_map &map);
 };
 
 // TODO: this init doesn't actually work yet! please fix me!
 /*
-DRIVER_INIT_MEMBER( cat_state,cat )
+void cat_state::init_cat()
 {
-    UINT8 *svrom = memregion("svrom")->base();
-    int i;
+    uint8_t *svrom = memregion("svrom")->base();
     // fill svrom with the correct 2e80 pattern except where svrom1 sits
     // first half
-    for (i = 0; i < 0x20000; i+=2)
+    for (int i = 0; i < 0x20000; i+=2)
         svrom[i] = 0x2E;
     // second half
-    for (i = 0x20000; i < 0x40000; i+=2)
+    for (int i = 0x20000; i < 0x40000; i+=2)
     {
         svrom[i] = 0x2E;
         svrom[i+1] = 0x80;
@@ -397,7 +410,7 @@ DRIVER_INIT_MEMBER( cat_state,cat )
  650xxx - HSS (HSync Start)
  658xxx - VOC (Video Control)
  */
-WRITE16_MEMBER( cat_state::cat_video_control_w )
+void cat_state::cat_video_control_w(offs_t offset, uint16_t data)
 {
 	/*
 	 * 006500AE ,          ( HSS HSync Start    89 )
@@ -429,7 +442,10 @@ WRITE16_MEMBER( cat_state::cat_video_control_w )
 	 *     Suffice to say, whatever bit combination 0b00011100000x does, it enables both horiz and vert sync and both are positive
 	 */
 #ifdef DEBUG_VIDEO_CONTROL_W
-	static const char *const regDest[16] = { "VSE (End of frame)", "VST (End of VSync)", "VSS (Start of VSync)", "VDE (Active Lines)", "unknown 620xxx", "unknown 628xxx", "unknown 630xxx", "unknown 638xxx", "HSE (end of horizontal line)", "HST (end of HSync)", "HSS (HSync Start)", "VOC (Video Control)", "unknown 660xxx", "unknown 668xxx", "unknown 670xxx", "unknown 678xxx" };
+	static const char *const regDest[16] = { "VSE (End of frame)", "VST (End of VSync)", "VSS (Start of VSync)", "VDE (Active Lines)",
+	"unknown 620xxx", "unknown 628xxx", "unknown 630xxx", "unknown 638xxx",
+	"HSE (end of horizontal line)", "HST (end of HSync)", "HSS (HSync Start)", "VOC (Video Control)",
+	"unknown 660xxx", "unknown 668xxx", "unknown 670xxx", "unknown 678xxx" };
 	fprintf(stderr,"Write to video chip address %06X; %02X -> register %s with data %04X\n", 0x600000+(offset<<1), offset&0xFF, regDest[(offset&0x3C000)>>14], data);
 #endif
 }
@@ -451,7 +467,7 @@ WRITE16_MEMBER( cat_state::cat_video_control_w )
 	 * [2] this bit's function is unknown. it could possibly be an FM vs MFM selector bit, where high = MFM, low = FM ? or MFM vs GCR?
 	 */
 // 0x800000-0x800001 read
-READ16_MEMBER( cat_state::cat_floppy_control_r )
+uint16_t cat_state::cat_floppy_control_r(offs_t offset)
 {
 #ifdef DEBUG_FLOPPY_CONTROL_R
 	fprintf(stderr,"Read from Floppy Status address %06X\n", 0x800000+(offset<<1));
@@ -459,7 +475,7 @@ READ16_MEMBER( cat_state::cat_floppy_control_r )
 	return (m_floppy_control << 8)|0x80; // LOW 8 BITS ARE OPEN BUS
 }
 // 0x800000-0x800001 write
-WRITE16_MEMBER( cat_state::cat_floppy_control_w )
+void cat_state::cat_floppy_control_w(offs_t offset, uint16_t data)
 {
 #ifdef DEBUG_FLOPPY_CONTROL_W
 	fprintf(stderr,"Write to Floppy Control address %06X, data %04X\n", 0x800000+(offset<<1), data);
@@ -469,7 +485,7 @@ WRITE16_MEMBER( cat_state::cat_floppy_control_w )
 
 // 0x800002-0x800003 read = 0x0080, see open bus
 // 0x800002-0x800003 write
-WRITE16_MEMBER( cat_state::cat_keyboard_w )
+void cat_state::cat_keyboard_w(uint16_t data)
 {
 	m_keyboard_line = data >> 8;
 }
@@ -477,7 +493,7 @@ WRITE16_MEMBER( cat_state::cat_keyboard_w )
 // 0x800004-0x800005 'pr.data' write
 // /DSTB (centronics pin 1) is implied by the cat source code to be pulsed
 // low (for some unknown period of time) upon any write to this port.
-WRITE16_MEMBER( cat_state::cat_printer_data_w )
+void cat_state::cat_printer_data_w(offs_t offset, uint16_t data)
 {
 #ifdef DEBUG_PRINTER_DATA_W
 	fprintf(stderr,"Write to Printer Data address %06X, data %04X\n", 0x800004+(offset<<1), data);
@@ -488,14 +504,14 @@ WRITE16_MEMBER( cat_state::cat_printer_data_w )
 	m_ctx->write_strobe(1);
 }
 // 0x800006-0x800007: Floppy data register (called fd.dwr in the cat source code)
-READ16_MEMBER( cat_state::cat_floppy_data_r )
+uint16_t cat_state::cat_floppy_data_r(offs_t offset)
 {
 #ifdef DEBUG_FLOPPY_DATA_R
 	fprintf(stderr,"Read from Floppy Data address %06X\n", 0x800006+(offset<<1));
 #endif
 	return 0x0080;
 }
-WRITE16_MEMBER( cat_state::cat_floppy_data_w )
+void cat_state::cat_floppy_data_w(offs_t offset, uint16_t data)
 {
 #ifdef DEBUG_FLOPPY_DATA_W
 	fprintf(stderr,"Write to Floppy Data address %06X, data %04X\n", 0x800006+(offset<<1), data);
@@ -514,7 +530,7 @@ WRITE16_MEMBER( cat_state::cat_floppy_data_w )
 	 * \--------- ? this bit may indicate 'data separator overflow'; it is usually low but becomes high if you manually select the floppy drive
 	 ALL of these bits except bit F seem to be reset when the selected drive in floppy control is switched
 	 */
-READ16_MEMBER( cat_state::cat_floppy_status_r )
+uint16_t cat_state::cat_floppy_status_r(offs_t offset)
 {
 #ifdef DEBUG_FLOPPY_STATUS_R
 	fprintf(stderr,"Read from Floppy Status address %06X\n", 0x800008+(offset<<1));
@@ -523,9 +539,9 @@ READ16_MEMBER( cat_state::cat_floppy_status_r )
 }
 
 // 0x80000a-0x80000b
-READ16_MEMBER( cat_state::cat_keyboard_r )
+uint16_t cat_state::cat_keyboard_r(offs_t offset)
 {
-	UINT16 retVal = 0;
+	uint16_t retVal = 0;
 	// Read country code
 	if ((m_pr_cont&0xFF00) == 0x0900)
 		retVal = m_dipsw->read();
@@ -558,7 +574,7 @@ READ16_MEMBER( cat_state::cat_keyboard_r )
 // 0x80000c-0x80000d (unused in cat source code; may have originally been a separate read only port where 800006 would have been write-only)
 
 // 0x80000e-0x80000f 'pr.cont' read
-READ16_MEMBER( cat_state::cat_battery_r )
+uint16_t cat_state::cat_battery_r()
 {
 	/*
 	 * FEDCBA98 (76543210 is open bus)
@@ -577,7 +593,7 @@ READ16_MEMBER( cat_state::cat_battery_r )
 	return 0x0080;
 }
 // 0x80000e-0x80000f 'pr.cont' write
-WRITE16_MEMBER( cat_state::cat_printer_control_w )
+void cat_state::cat_printer_control_w(offs_t offset, uint16_t data)
 {
 	/*
 	 * FEDCBA98 (76543210 is ignored)
@@ -599,7 +615,7 @@ WRITE16_MEMBER( cat_state::cat_printer_control_w )
 }
 
 // 0x820000: AMI S35213 300/1200 Single Chip Modem (datasheet found at http://bitsavers.trailing-edge.com/pdf/ami/_dataBooks/1985_AMI_MOS_Products_Catalog.pdf on pdf page 243)
-READ16_MEMBER( cat_state::cat_modem_r )
+uint16_t cat_state::cat_modem_r(offs_t offset)
 {
 #ifdef DEBUG_MODEM_R
 	fprintf(stderr,"Read from s35213 modem address %06X\n", 0x820000+(offset<<1));
@@ -608,7 +624,7 @@ READ16_MEMBER( cat_state::cat_modem_r )
 	return 0x00;
 }
 
-WRITE16_MEMBER( cat_state::cat_modem_w )
+void cat_state::cat_modem_w(offs_t offset, uint16_t data)
 {
 #ifdef DEBUG_MODEM_W
 	fprintf(stderr,"Write to s35213 modem address %06X, data %04X\n", 0x820000+(offset<<1), data);
@@ -616,7 +632,7 @@ WRITE16_MEMBER( cat_state::cat_modem_w )
 }
 
 // 0x830000: 6ms counter (counts KTOBF pulses and does not reset; 16 bits wide)
-READ16_MEMBER( cat_state::cat_6ms_counter_r )
+uint16_t cat_state::cat_6ms_counter_r()
 {
 	return m_6ms_counter;
 }
@@ -626,7 +642,7 @@ READ16_MEMBER( cat_state::cat_6ms_counter_r )
  * if the watchdog expires /NMI (and maybe /RESET) are asserted to the cpu
  * watchdog counter (counts KTOBF pulses and is reset on any ga2opr write with bit 3 set; <9 bits wide)
  */
-WRITE16_MEMBER( cat_state::cat_opr_w )
+void cat_state::cat_opr_w(offs_t offset, uint16_t data)
 {
 	/*
 	 * 76543210 (FEDCBA98 are ignored)
@@ -667,7 +683,7 @@ WRITE16_MEMBER( cat_state::cat_opr_w )
 	 * |\-------- (always 0?)
 	 * \--------- (always 0?)
 	 */
-READ16_MEMBER( cat_state::cat_wdt_r )
+uint16_t cat_state::cat_wdt_r()
 {
 	uint16 Retval = 0x0100; // set pfail to 1; should this be a dipswitch?
 	return Retval | m_wdt_counter;
@@ -676,7 +692,7 @@ READ16_MEMBER( cat_state::cat_wdt_r )
 // 0x860000: 'tcb' "test control bits" test mode register; what the bits do is
 // unknown. 0x0000 is written here to disable test mode, and that is the extent
 // of the cat touching this register.
-WRITE16_MEMBER( cat_state::cat_tcb_w )
+void cat_state::cat_tcb_w(offs_t offset, uint16_t data)
 {
 #ifdef DEBUG_TEST_W
 	fprintf(stderr, "Test reg write: offset %06X, data %04X\n", 0x860000+(offset<<1), data);
@@ -684,17 +700,17 @@ WRITE16_MEMBER( cat_state::cat_tcb_w )
 }
 
 // open bus etc handlers
-READ16_MEMBER( cat_state::cat_2e80_r )
+uint16_t cat_state::cat_2e80_r()
 {
 	return 0x2e80;
 }
 
-READ16_MEMBER( cat_state::cat_0000_r )
+uint16_t cat_state::cat_0000_r()
 {
 	return 0x0000;
 }
 
-READ16_MEMBER( cat_state::cat_0080_r )
+uint16_t cat_state::cat_0080_r()
 {
 	return 0x0080;
 }
@@ -710,10 +726,12 @@ a23 a22 a21 a20 a19 a18 a17 a16 a15 a14 a13 a12 a11 a10 a9  a8  a7  a6  a5  a4  
 0   0   0   x   x   1   1   0   x   x   x   x   x   x   x   x   x   x   x   x   x   x   x   0       O   OPEN BUS (reads as 0x2e) [may be controlled via GA2 /RAMCS?]
 0   0   0   x   x   1   x   x   x   x   x   x   x   x   x   x   x   x   x   x   x   x   x   1       O   OPEN BUS (reads as 0x80) [may be controlled via GA2 /RAMCS?]
 0   0   1   x   x   0   *   *   *   *   *   *   *   *   *   *   *   *   *   *   *   *   *   0       R   SVROM 2 ic7 (not present on cat as sold, open bus reads as 0x2e) [controlled via GA2 /SVCS0]
-0   0   1   x   x   0   *   *   *   *   *   *   *   *   *   *   *   *   *   *   *   *   *   1       R   SVROM 0 ic6 (MASK ROM tc531000) [controlled via GA2 /SVCS0]
+0   0   1   x   x   0   *   *   *   *   *   *   *   *   *   *   *   *   *   *   *   *   *   1       R   SVROM 0 ic6 (mask ROM tc531000) [controlled via GA2 /SVCS0]
 0   0   1   x   x   1   *   *   *   *   *   *   *   *   *   *   *   *   *   *   *   *   *   0       O   OPEN BUS (reads as 0x2e) [controlled via GA2 /SVCS1] *SEE BELOW*
 0   0   1   x   x   1   *   *   *   *   *   *   *   *   *   *   *   *   *   *   *   *   *   1       R   SVROM 1 ic8 (not present on cat as sold, open bus reads as 0x80) [controlled via GA2 /SVCS1] *SEE BELOW*
-                                                                                                    *NOTE: on Dwight E's user-made developer unit, two 128K SRAMS are mapped in place of the two entries immediately above!* (this involves some creative wiring+sockets); the official IAI 'shadow ram board' maps the ram to the A00000-A3FFFF area instead)
+                                                                                                    *NOTE: on Dwight E's user-made developer unit, two 128K SRAMS are mapped in place of the
+                                                                                                    two entries immediately above!* (this involves some creative wiring+sockets); the official
+                                                                                                    IAI 'shadow ram board' maps the ram to the A00000-A3FFFF area instead)
 0   1   *   *   *   *   *   *   *   *   *   *   *   *   *   *   *   *   *   *   *   *   *   *       *BOTH GATE ARRAYS 1 and 2 DECODE THIS AREA; 2 DEALS WITH ADDR AND 1 WITH DATA/CAS/RAS*
 0   1   0   x   x   a   b   *   *   *   *   *   *   *   *   *   *   *   *   *   *   *   *   *       RW  VIDEO/SYSTEM DRAM (ab: 00=row 0, ic26-29; 01=row 1, ic22-25; 10=row 2; ic18-21; 11=row 3; ic14-17)
                                                                                                     *NOTE: DRAM rows 2 and 3 above are only usually populated in cat developer units!*
@@ -738,37 +756,38 @@ a23 a22 a21 a20 a19 a18 a17 a16 a15 a14 a13 a12 a11 a10 a9  a8  a7  a6  a5  a4  
 1   0   0   x   x   1   1   0   x   x   x   x   x   x   x   x   x   x   x   x   x   x   x   *       R?W {'tcb'} test control bits (reads as 0x0000)
 1   0   0   x   x   1   1   1   x   x   x   x   x   x   x   x   x   x   x   x   x   x   x   *       ?   Unknown (reads as 0x2e80)
 
-1   0   1   x   x   x   x   x   x   x   x   x   x   x   x   x   x   x   x   x   x   x   x   x       O   OPEN BUS (reads as 0x2e80) [68k DTACK is asserted by gate array 1 when accessing this area, for testing?] On real IAI shadow rom board, at least 0x40000 of ram lives here.
+1   0   1   x   x   x   x   x   x   x   x   x   x   x   x   x   x   x   x   x   x   x   x   x       O   OPEN BUS (reads as 0x2e80) [68k DTACK is asserted by gate array 1 when accessing this area, for testing?] On real IAI shadow ROM board, at least 0x40000 of ram lives here.
 1   1   x   x   x   x   x   x   x   x   x   x   x   x   x   x   x   x   x   x   x   x   x   x       O   OPEN BUS (reads as 0x2e80) [68k VPA is asserted by gate array 1 when accessing this area, for testing?]
 */
 
 
-static ADDRESS_MAP_START(cat_mem, AS_PROGRAM, 16, cat_state)
-	ADDRESS_MAP_UNMAP_HIGH
-	AM_RANGE(0x000000, 0x03ffff) AM_ROM AM_MIRROR(0x180000) // 256 KB ROM
-	AM_RANGE(0x040000, 0x043fff) AM_RAM AM_SHARE("svram") AM_MIRROR(0x18C000)// SRAM powered by battery
-	AM_RANGE(0x200000, 0x27ffff) AM_ROM AM_REGION("svrom",0x0000) AM_MIRROR(0x180000) // SV ROM
-	AM_RANGE(0x400000, 0x47ffff) AM_RAM AM_SHARE("p_cat_vram") AM_MIRROR(0x180000) // 512 KB RAM
-	AM_RANGE(0x600000, 0x67ffff) AM_READWRITE(cat_2e80_r,cat_video_control_w) AM_MIRROR(0x180000) // Gate Array #1: Video Addressing and Timing, dram refresh timing, dram /cs and /wr (ga2 does the actual video invert/display and access to the dram data bus)
-	AM_RANGE(0x800000, 0x800001) AM_READWRITE(cat_floppy_control_r, cat_floppy_control_w) AM_MIRROR(0x18FFE0) // floppy control lines and readback
-	AM_RANGE(0x800002, 0x800003) AM_READWRITE(cat_0080_r, cat_keyboard_w) AM_MIRROR(0x18FFE0) // keyboard col write
-	AM_RANGE(0x800004, 0x800005) AM_READWRITE(cat_0080_r, cat_printer_data_w) AM_MIRROR(0x18FFE0) // Centronics Printer Data
-	AM_RANGE(0x800006, 0x800007) AM_READWRITE(cat_floppy_data_r,cat_floppy_data_w) AM_MIRROR(0x18FFE0) // floppy data read/write
-	AM_RANGE(0x800008, 0x800009) AM_READ(cat_floppy_status_r) AM_MIRROR(0x18FFE0) // floppy status lines
-	AM_RANGE(0x80000a, 0x80000b) AM_READ(cat_keyboard_r) AM_MIRROR(0x18FFE0) // keyboard row read
-	AM_RANGE(0x80000c, 0x80000d) AM_READ(cat_0080_r) AM_MIRROR(0x18FFE0) // Open bus?
-	AM_RANGE(0x80000e, 0x80000f) AM_READWRITE(cat_battery_r,cat_printer_control_w) AM_MIRROR(0x18FFE0) // Centronics Printer Control, keyboard led and country code enable
-	AM_RANGE(0x800010, 0x80001f) AM_READ(cat_0080_r) AM_MIRROR(0x18FFE0) // Open bus?
-	AM_RANGE(0x810000, 0x81001f) AM_DEVREADWRITE8("duartn68681", mc68681_device, read, write, 0xff ) AM_MIRROR(0x18FFE0)
-	AM_RANGE(0x820000, 0x82003f) AM_READWRITE(cat_modem_r,cat_modem_w) AM_MIRROR(0x18FFC0) // AMI S35213 Modem Chip, all access is on bit 7
-	AM_RANGE(0x830000, 0x830001) AM_READ(cat_6ms_counter_r) AM_MIRROR(0x18FFFE) // 16bit 6ms counter clocked by output of another 16bit counter clocked at 10mhz
-	AM_RANGE(0x840000, 0x840001) AM_READWRITE(cat_2e80_r,cat_opr_w) AM_MIRROR(0x18FFFE) // GA2 Output port register (video enable, invert, watchdog reset, phone relays)
-	AM_RANGE(0x850000, 0x850001) AM_READ(cat_wdt_r) AM_MIRROR(0x18FFFE) // watchdog and power fail state read
-	AM_RANGE(0x860000, 0x860001) AM_READWRITE(cat_0000_r, cat_tcb_w) AM_MIRROR(0x18FFFE) // Test mode
-	AM_RANGE(0x870000, 0x870001) AM_READ(cat_2e80_r) AM_MIRROR(0x18FFFE) // Open bus?
-	AM_RANGE(0xA00000, 0xA00001) AM_READ(cat_2e80_r) AM_MIRROR(0x1FFFFE) // Open bus/dtack? The 0xA00000-0xA3ffff area is ram used for shadow rom storage on cat developer machines, which is either banked over top of, or jumped to instead of the normal rom
-	AM_RANGE(0xC00000, 0xC00001) AM_READ(cat_2e80_r) AM_MIRROR(0x3FFFFE) // Open bus/vme?
-ADDRESS_MAP_END
+void cat_state::cat_mem(address_map &map)
+{
+	map.unmap_value_high();
+	map(0x000000, 0x03ffff).rom().mirror(0x180000); // 256 KB ROM
+	map(0x040000, 0x043fff).ram().share("svram").mirror(0x18C000);// SRAM powered by battery
+	map(0x200000, 0x27ffff).rom().region("svrom", 0x0000).mirror(0x180000); // SV ROM
+	map(0x400000, 0x47ffff).ram().share("p_cat_vram").mirror(0x180000); // 512 KB RAM
+	map(0x600000, 0x67ffff).rw(FUNC(cat_state::cat_2e80_r), FUNC(cat_state::cat_video_control_w)).mirror(0x180000); // Gate Array #1: Video Addressing and Timing, dram refresh timing, dram /cs and /wr (ga2 does the actual video invert/display and access to the dram data bus)
+	map(0x800000, 0x800001).rw(FUNC(cat_state::cat_floppy_control_r), FUNC(cat_state::cat_floppy_control_w)).mirror(0x18FFE0); // floppy control lines and readback
+	map(0x800002, 0x800003).rw(FUNC(cat_state::cat_0080_r), FUNC(cat_state::cat_keyboard_w)).mirror(0x18FFE0); // keyboard col write
+	map(0x800004, 0x800005).rw(FUNC(cat_state::cat_0080_r), FUNC(cat_state::cat_printer_data_w)).mirror(0x18FFE0); // Centronics Printer Data
+	map(0x800006, 0x800007).rw(FUNC(cat_state::cat_floppy_data_r), FUNC(cat_state::cat_floppy_data_w)).mirror(0x18FFE0); // floppy data read/write
+	map(0x800008, 0x800009).r(FUNC(cat_state::cat_floppy_status_r)).mirror(0x18FFE0); // floppy status lines
+	map(0x80000a, 0x80000b).r(FUNC(cat_state::cat_keyboard_r)).mirror(0x18FFE0); // keyboard row read
+	map(0x80000c, 0x80000d).r(FUNC(cat_state::cat_0080_r)).mirror(0x18FFE0); // Open bus?
+	map(0x80000e, 0x80000f).rw(FUNC(cat_state::cat_battery_r), FUNC(cat_state::cat_printer_control_w)).mirror(0x18FFE0); // Centronics Printer Control, keyboard led and country code enable
+	map(0x800010, 0x80001f).r(FUNC(cat_state::cat_0080_r)).mirror(0x18FFE0); // Open bus?
+	map(0x810000, 0x81001f).rw(m_duart, FUNC(mc68681_device::read), FUNC(mc68681_device::write)).umask16(0x00ff).mirror(0x18FFE0);
+	map(0x820000, 0x82003f).rw(FUNC(cat_state::cat_modem_r), FUNC(cat_state::cat_modem_w)).mirror(0x18FFC0); // AMI S35213 Modem Chip, all access is on bit 7
+	map(0x830000, 0x830001).r(FUNC(cat_state::cat_6ms_counter_r)).mirror(0x18FFFE); // 16bit 6ms counter clocked by output of another 16bit counter clocked at 10mhz
+	map(0x840000, 0x840001).rw(FUNC(cat_state::cat_2e80_r), FUNC(cat_state::cat_opr_w)).mirror(0x18FFFE); // GA2 Output port register (video enable, invert, watchdog reset, phone relays)
+	map(0x850000, 0x850001).r(FUNC(cat_state::cat_wdt_r)).mirror(0x18FFFE); // watchdog and power fail state read
+	map(0x860000, 0x860001).rw(FUNC(cat_state::cat_0000_r), FUNC(cat_state::cat_tcb_w)).mirror(0x18FFFE); // Test mode
+	map(0x870000, 0x870001).r(FUNC(cat_state::cat_2e80_r)).mirror(0x18FFFE); // Open bus?
+	map(0xA00000, 0xA00001).r(FUNC(cat_state::cat_2e80_r)).mirror(0x1FFFFE); // Open bus/dtack? The 0xA00000-0xA3ffff area is ram used for shadow ROM storage on cat developer machines, which is either banked over top of, or jumped to instead of the normal ROM
+	map(0xC00000, 0xC00001).r(FUNC(cat_state::cat_2e80_r)).mirror(0x3FFFFE); // Open bus/vme?
+}
 
 /* Input ports */
 
@@ -804,7 +823,7 @@ static INPUT_PORTS_START( cat )
 	PORT_BIT(0x08, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_J) PORT_CHAR('j') PORT_CHAR('J')
 	PORT_BIT(0x10, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_Y) PORT_CHAR('y') PORT_CHAR('Y')
 	PORT_BIT(0x20, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_T) PORT_CHAR('t') PORT_CHAR('T')
-	PORT_BIT(0x40, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_6) PORT_CHAR('6') PORT_CHAR('\xa2')
+	PORT_BIT(0x40, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_6) PORT_CHAR('6') PORT_CHAR(0xA2)
 	PORT_BIT(0x80, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_5) PORT_CHAR('5') PORT_CHAR('%')
 
 	PORT_START("Y1")
@@ -852,7 +871,7 @@ static INPUT_PORTS_START( cat )
 	PORT_BIT(0x02, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_SPACE) PORT_CHAR(' ')
 	PORT_BIT(0x04, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("Return") PORT_CODE(KEYCODE_ENTER) PORT_CHAR(13)
 	PORT_BIT(0x08, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_S) PORT_CHAR('s') PORT_CHAR('S')
-	PORT_BIT(0x10, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_OPENBRACE) PORT_CHAR('\xbd') PORT_CHAR('\xbc') //PORT_CHAR('}') PORT_CHAR('{')
+	PORT_BIT(0x10, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_OPENBRACE) PORT_CHAR(0xBD) PORT_CHAR(0xBC) //PORT_CHAR('}') PORT_CHAR('{')
 	PORT_BIT(0x20, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_Q) PORT_CHAR('q') PORT_CHAR('Q')
 	PORT_BIT(0x40, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_MINUS) PORT_CHAR('-') PORT_CHAR('_')
 	PORT_BIT(0x80, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_1) PORT_CHAR('1') PORT_CHAR('!')
@@ -875,7 +894,7 @@ static INPUT_PORTS_START( cat )
 	PORT_BIT(0x10, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("Erase") PORT_CODE(KEYCODE_BACKSPACE)
 	PORT_BIT(0x20, IP_ACTIVE_LOW, IPT_UNUSED) // totally unused
 	PORT_BIT(0x40, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("UNDO") PORT_CODE(KEYCODE_BACKSLASH)
-	PORT_BIT(0x80, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_TILDE) PORT_CHAR('\xb1') PORT_CHAR('\xb0') // PORT_CHAR('\\') PORT_CHAR('~')
+	PORT_BIT(0x80, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_TILDE) PORT_CHAR(0xB1) PORT_CHAR(0xB0) // PORT_CHAR('\\') PORT_CHAR('~')
 INPUT_PORTS_END
 
 
@@ -887,7 +906,7 @@ void cat_state::device_timer(emu_timer &timer, device_timer_id id, int param, vo
 		counter_6ms_callback(ptr, param);
 		break;
 	default:
-		assert_always(FALSE, "Unknown id in cat_state::device_timer");
+		throw emu_fatalerror("Unknown id in cat_state::device_timer");
 	}
 }
 
@@ -901,13 +920,13 @@ TIMER_CALLBACK_MEMBER(cat_state::counter_6ms_callback)
 	m_6ms_counter++;
 }
 
-IRQ_CALLBACK_MEMBER(cat_state::cat_int_ack)
+void cat_state::cpu_space_map(address_map &map)
 {
-	m_maincpu->set_input_line(M68K_IRQ_1,CLEAR_LINE);
-	return M68K_INT_ACK_AUTOVECTOR;
+	map(0xfffff0, 0xffffff).m(m_maincpu, FUNC(m68000_base_device::autovectors_map));
+	map(0xfffff3, 0xfffff3).lr8(NAME([this]() { m_maincpu->set_input_line(1, CLEAR_LINE); return m68000_device::autovector(1); }));
 }
 
-MACHINE_START_MEMBER(cat_state,cat)
+void cat_state::machine_start()
 {
 	m_duart_ktobf_ff = 0; // reset doesn't touch this
 	m_duart_prn_ack_prev_state = 1; // technically uninitialized
@@ -917,44 +936,44 @@ MACHINE_START_MEMBER(cat_state,cat)
 	m_video_enable = 1;
 	m_video_invert = 0;
 	m_6ms_timer = timer_alloc(TIMER_COUNTER_6MS);
-	machine().device<nvram_device>("nvram")->set_base(m_svram, 0x4000);
+	subdevice<nvram_device>("nvram")->set_base(m_svram, 0x4000);
 }
 
-MACHINE_RESET_MEMBER(cat_state,cat)
+void cat_state::machine_reset()
 {
 	m_6ms_counter = 0;
 	m_wdt_counter = 0;
 	m_floppy_control = 0;
-	m_6ms_timer->adjust(attotime::zero, 0, attotime::from_hz((XTAL_19_968MHz/2)/65536));
+	m_6ms_timer->adjust(attotime::zero, 0, attotime::from_hz((XTAL(19'968'000)/2)/65536));
 }
 
-VIDEO_START_MEMBER(cat_state,cat)
+void cat_state::video_start()
 {
 }
 
-UINT32 cat_state::screen_update_cat(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t cat_state::screen_update_cat(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
 {
-	UINT16 code;
-	int y, x, b;
+	const rgb_t on_color = m_video_invert ? rgb_t::black() : rgb_t::white();
+	const rgb_t off_color = m_video_invert ? rgb_t::white() : rgb_t::black();
 
 	int addr = 0;
 	if (m_video_enable == 1)
 	{
-		for (y = 0; y < 344; y++)
+		for (int y = 0; y < 344; y++)
 		{
 			int horpos = 0;
-			for (x = 0; x < 42; x++)
+			for (int x = 0; x < 42; x++)
 			{
-				code = m_p_cat_videoram[addr++];
-				for (b = 15; b >= 0; b--)
+				const uint16_t code = m_p_cat_videoram[addr++];
+				for (int b = 15; b >= 0; b--)
 				{
-					bitmap.pix16(y, horpos++) = ((code >> b) & 0x01) ^ m_video_invert;
+					bitmap.pix(y, horpos++) = BIT(code, b) ? on_color : off_color;
 				}
 			}
 		}
 	} else {
 		const rectangle black_area(0, 672 - 1, 0, 344 - 1);
-		bitmap.fill(0, black_area);
+		bitmap.fill(rgb_t::black(), black_area);
 	}
 	return 0;
 }
@@ -969,12 +988,10 @@ UINT32 cat_state::screen_update_cat(screen_device &screen, bitmap_ind16 &bitmap,
  */
 WRITE_LINE_MEMBER(cat_state::cat_duart_irq_handler)
 {
-	int irqvector = m_duart->get_irq_vector();
-
 #ifdef DEBUG_DUART_IRQ_HANDLER
 	fprintf(stderr, "Duart IRQ handler called: state: %02X, vector: %06X\n", state, irqvector);
 #endif
-	m_maincpu->set_input_line_and_vector(M68K_IRQ_1, state, irqvector);
+	m_maincpu->set_input_line(M68K_IRQ_1, state);
 }
 
 WRITE_LINE_MEMBER(cat_state::cat_duart_txa) // semit sends stuff here; connects to the serial port on the back
@@ -993,8 +1010,17 @@ WRITE_LINE_MEMBER(cat_state::cat_duart_txb) // memit sends stuff here; connects 
 
 /* mc68681 DUART Input pins:
  * IP0: CTS [using the DUART builtin hardware-CTS feature?]
- * IP1: Centronics /ACK (pin 10) positive edge detect (IP1 changes state 0->1 or 1->0 on the rising edge of /ACK using a 74ls74a d-flipflop)
- * IP2: KTOBF (IP2 changes state 0->1 or 1->0 on the rising edge of KTOBF using a 74ls74a d-flipflop; KTOBF is a 6.5536ms-period squarewave generated by one of the gate arrays, I need to check with a scope to see whether it is a single spike/pulse every 6.5536ms or if from the gate array it inverts every 6.5536ms, documentation isn't 100% clear but I suspect the former) [uses the Delta IP2 state change detection feature to generate an interrupt; I'm not sure if IP2 is used as a counter clock source but given the beep frequency of the real unit I very much doubt it, 6.5536ms is too slow]
+ * IP1: Centronics /ACK (pin 10) positive edge detect (IP1 changes state 0->1
+        or 1->0 on the rising edge of /ACK using a 74ls74a d-flipflop)
+ * IP2: KTOBF (IP2 changes state 0->1 or 1->0 on the rising edge of KTOBF
+        using a 74ls74a d-flipflop; KTOBF is a 6.5536ms-period squarewave
+        generated by one of the gate arrays, I need to check with a scope to
+        see whether it is a single spike/pulse every 6.5536ms or if from the
+        gate array it inverts every 6.5536ms, documentation isn't 100% clear
+        but I suspect the former) [uses the Delta IP2 state change detection
+        feature to generate an interrupt; I'm not sure if IP2 is used as a
+        counter clock source but given the beep frequency of the real unit I
+        very much doubt it, 6.5536ms is too slow]
  * IP3: RG ("ring" input)
  * IP4: Centronics BUSY (pin 11), inverted
  * IP5: DSR
@@ -1010,7 +1036,7 @@ WRITE_LINE_MEMBER(cat_state::cat_duart_txb) // memit sends stuff here; connects 
  * OP6: TD01 "
  * OP7: TD00 "
  */
-WRITE8_MEMBER(cat_state::cat_duart_output)
+void cat_state::cat_duart_output(uint8_t data)
 {
 #ifdef DEBUG_DUART_OUTPUT_LINES
 	fprintf(stderr,"Duart output io lines changed to: %02X\n", data);
@@ -1031,46 +1057,39 @@ WRITE_LINE_MEMBER(cat_state::prn_ack_ff) // switch the flipflop state on the ris
 #endif
 }
 
-static MACHINE_CONFIG_START( cat, cat_state )
-
+void cat_state::cat(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu",M68000, XTAL_19_968MHz/4)
-	MCFG_CPU_PROGRAM_MAP(cat_mem)
-	MCFG_CPU_IRQ_ACKNOWLEDGE_DRIVER(cat_state,cat_int_ack)
-
-	MCFG_MACHINE_START_OVERRIDE(cat_state,cat)
-	MCFG_MACHINE_RESET_OVERRIDE(cat_state,cat)
+	M68000(config, m_maincpu, XTAL(19'968'000)/4);
+	m_maincpu->set_addrmap(AS_PROGRAM, &cat_state::cat_mem);
+	m_maincpu->set_addrmap(m68000_base_device::AS_CPU_SPACE, &cat_state::cpu_space_map);
 
 	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_REFRESH_RATE(50)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(2500)) /* not accurate */
-	MCFG_SCREEN_SIZE(672, 344)
-	MCFG_SCREEN_VISIBLE_AREA(0, 672-1, 0, 344-1)
-	MCFG_SCREEN_UPDATE_DRIVER(cat_state, screen_update_cat)
-	MCFG_SCREEN_PALETTE("palette")
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_RASTER));
+	screen.set_refresh_hz(50);
+	screen.set_vblank_time(ATTOSECONDS_IN_USEC(2500)); /* not accurate */
+	screen.set_size(672, 344);
+	screen.set_visarea_full();
+	screen.set_screen_update(FUNC(cat_state::screen_update_cat));
 
-	MCFG_PALETTE_ADD_BLACK_AND_WHITE("palette")
+	MC68681(config, m_duart, (XTAL(19'968'000)*2)/11); // duart is normally clocked by 3.6864mhz xtal, but cat seemingly uses a divider from the main xtal instead which probably yields 3.63054545Mhz. There is a trace to cut and a mounting area to allow using an actual 3.6864mhz xtal if you so desire
+	m_duart->irq_cb().set(FUNC(cat_state::cat_duart_irq_handler));
+	m_duart->a_tx_cb().set(FUNC(cat_state::cat_duart_txa));
+	m_duart->b_tx_cb().set(FUNC(cat_state::cat_duart_txb));
+	m_duart->outport_cb().set(FUNC(cat_state::cat_duart_output));
 
-	MCFG_VIDEO_START_OVERRIDE(cat_state,cat)
+	CENTRONICS(config, m_ctx, centronics_devices, "printer");
+	m_ctx->ack_handler().set(FUNC(cat_state::prn_ack_ff));
+	m_ctx->busy_handler().set(m_duart, FUNC(mc68681_device::ip4_w)).invert();
 
-	MCFG_MC68681_ADD( "duartn68681", (XTAL_19_968MHz*2)/11 ) // duart is normally clocked by 3.6864mhz xtal, but cat seemingly uses a divider from the main xtal instead which probably yields 3.63054545Mhz. There is a trace to cut and a mounting area to allow using an actual 3.6864mhz xtal if you so desire
-	MCFG_MC68681_IRQ_CALLBACK(WRITELINE(cat_state, cat_duart_irq_handler))
-	MCFG_MC68681_A_TX_CALLBACK(WRITELINE(cat_state, cat_duart_txa))
-	MCFG_MC68681_B_TX_CALLBACK(WRITELINE(cat_state, cat_duart_txb))
-	MCFG_MC68681_OUTPORT_CALLBACK(WRITE8(cat_state, cat_duart_output))
+	OUTPUT_LATCH(config, m_ctx_data_out);
+	m_ctx->set_output_latch(*m_ctx_data_out);
 
-	MCFG_CENTRONICS_ADD("ctx", centronics_devices, "printer")
-	MCFG_CENTRONICS_ACK_HANDLER(WRITELINE(cat_state, prn_ack_ff))
-	MCFG_CENTRONICS_BUSY_HANDLER(DEVWRITELINE("duartn68681", mc68681_device, ip4_w)) MCFG_DEVCB_XOR(1)
-	MCFG_CENTRONICS_OUTPUT_LATCH_ADD("ctx_data_out", "ctx")
+	SPEAKER(config, "mono").front_center();
+	SPEAKER_SOUND(config, "speaker").add_route(ALL_OUTPUTS, "mono", 1.00);
 
-	MCFG_SPEAKER_STANDARD_MONO("mono")
-	MCFG_SOUND_ADD("speaker", SPEAKER_SOUND, 0)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 1.00)
-
-	MCFG_NVRAM_ADD_0FILL("nvram")
-MACHINE_CONFIG_END
+	NVRAM(config, "nvram", nvram_device::DEFAULT_ALL_0);
+}
 
 ROM_START( cat )
 	ROM_REGION( 0x40000, "maincpu", ROMREGION_ERASEFF )
@@ -1085,10 +1104,10 @@ ROM_START( cat )
 	 * 4 rows populated on a "released" cat.
 	 */
 	ROM_SYSTEM_BIOS( 0, "r240", "Canon Cat V2.40 US Firmware")
-	ROMX_LOAD( "boultl0.ic2", 0x00001, 0x10000, CRC(77b66208) SHA1(9d718c0a521fefe4f86ef328805b7921bade9d89), ROM_SKIP(1) | ROM_BIOS(1))
-	ROMX_LOAD( "boulth0.ic4", 0x00000, 0x10000, CRC(f1e1361a) SHA1(0a85385527e2cc55790de9f9919eb44ac32d7f62), ROM_SKIP(1) | ROM_BIOS(1))
-	ROMX_LOAD( "boultl1.ic3", 0x20001, 0x10000, CRC(c61dafb0) SHA1(93216c26c2d5fc71412acc548c96046a996ea668), ROM_SKIP(1) | ROM_BIOS(1))
-	ROMX_LOAD( "boulth1.ic5", 0x20000, 0x10000, CRC(bed1f761) SHA1(d177e1d3a39b005dd94a6bda186221d597129af4), ROM_SKIP(1) | ROM_BIOS(1))
+	ROMX_LOAD( "boultl0.ic2", 0x00001, 0x10000, CRC(77b66208) SHA1(9d718c0a521fefe4f86ef328805b7921bade9d89), ROM_SKIP(1) | ROM_BIOS(0))
+	ROMX_LOAD( "boulth0.ic4", 0x00000, 0x10000, CRC(f1e1361a) SHA1(0a85385527e2cc55790de9f9919eb44ac32d7f62), ROM_SKIP(1) | ROM_BIOS(0))
+	ROMX_LOAD( "boultl1.ic3", 0x20001, 0x10000, CRC(c61dafb0) SHA1(93216c26c2d5fc71412acc548c96046a996ea668), ROM_SKIP(1) | ROM_BIOS(0))
+	ROMX_LOAD( "boulth1.ic5", 0x20000, 0x10000, CRC(bed1f761) SHA1(d177e1d3a39b005dd94a6bda186221d597129af4), ROM_SKIP(1) | ROM_BIOS(0))
 	/* This 2.40 code was compiled by Dwight Elvey based on the v2.40 source
 	 * code disks recovered around 2004. It does NOT exactly match the above
 	 * set exactly but has a few small differences. One of the printer drivers
@@ -1097,31 +1116,31 @@ ROM_START( cat )
 	 * set above.
 	 */
 	ROM_SYSTEM_BIOS( 1, "r240r", "Canon Cat V2.40 US Firmware compiled from recovered source code")
-	ROMX_LOAD( "r240l0.ic2", 0x00001, 0x10000, CRC(1b89bdc4) SHA1(39c639587dc30f9d6636b46d0465f06272838432), ROM_SKIP(1) | ROM_BIOS(2))
-	ROMX_LOAD( "r240h0.ic4", 0x00000, 0x10000, CRC(94f89b8c) SHA1(6c336bc30636a02c625d31f3057ec86bf4d155fc), ROM_SKIP(1) | ROM_BIOS(2))
-	ROMX_LOAD( "r240l1.ic3", 0x20001, 0x10000, CRC(1a73be4f) SHA1(e2de2cb485f78963368fb8ceba8fb66ca56dba34), ROM_SKIP(1) | ROM_BIOS(2))
-	ROMX_LOAD( "r240h1.ic5", 0x20000, 0x10000, CRC(898dd9f6) SHA1(93e791dd4ed7e4afa47a04df6fdde359e41c2075), ROM_SKIP(1) | ROM_BIOS(2))
+	ROMX_LOAD( "r240l0.ic2", 0x00001, 0x10000, CRC(1b89bdc4) SHA1(39c639587dc30f9d6636b46d0465f06272838432), ROM_SKIP(1) | ROM_BIOS(1))
+	ROMX_LOAD( "r240h0.ic4", 0x00000, 0x10000, CRC(94f89b8c) SHA1(6c336bc30636a02c625d31f3057ec86bf4d155fc), ROM_SKIP(1) | ROM_BIOS(1))
+	ROMX_LOAD( "r240l1.ic3", 0x20001, 0x10000, CRC(1a73be4f) SHA1(e2de2cb485f78963368fb8ceba8fb66ca56dba34), ROM_SKIP(1) | ROM_BIOS(1))
+	ROMX_LOAD( "r240h1.ic5", 0x20000, 0x10000, CRC(898dd9f6) SHA1(93e791dd4ed7e4afa47a04df6fdde359e41c2075), ROM_SKIP(1) | ROM_BIOS(1))
 	/* This v1.74 code comes from (probably) the 'main us release' of first-run
 	 * Canon cats, and was dumped from machine serial number R12014979
-	 * Canon cat v1.74 roms are labeled as r74; they only added the major number
-	 * to the rom label after v2.0?
+	 * Canon cat v1.74 ROMs are labeled as r74; they only added the major number
+	 * to the ROM label after v2.0?
 	 */
 	ROM_SYSTEM_BIOS( 2, "r174", "Canon Cat V1.74 US Firmware")
-	ROMX_LOAD( "r74__0l__c18c.blue.ic2", 0x00001, 0x10000, CRC(b19aa0c8) SHA1(85b3e549cfb91bd3dd32335e02eaaf9350e80900), ROM_SKIP(1) | ROM_BIOS(3))
-	ROMX_LOAD( "r74__0h__75a6.yellow.ic4", 0x00000, 0x10000, CRC(75281f77) SHA1(ed8b5e37713892ee83413d23c839d09e2fd2c1a9), ROM_SKIP(1) | ROM_BIOS(3))
-	ROMX_LOAD( "r74__1l__c8a3.green.ic3", 0x20001, 0x10000, CRC(93275558) SHA1(f690077a87076fd51ae385ac5a455804cbc43c8f), ROM_SKIP(1) | ROM_BIOS(3))
-	ROMX_LOAD( "r74__1h__3c37.white.ic5", 0x20000, 0x10000, CRC(5d7c3962) SHA1(8335993583fdd30b894c01c1a7a6aca61cd81bb4), ROM_SKIP(1) | ROM_BIOS(3))
+	ROMX_LOAD( "r74__0l__c18c.blue.ic2", 0x00001, 0x10000, CRC(b19aa0c8) SHA1(85b3e549cfb91bd3dd32335e02eaaf9350e80900), ROM_SKIP(1) | ROM_BIOS(2))
+	ROMX_LOAD( "r74__0h__75a6.yellow.ic4", 0x00000, 0x10000, CRC(75281f77) SHA1(ed8b5e37713892ee83413d23c839d09e2fd2c1a9), ROM_SKIP(1) | ROM_BIOS(2))
+	ROMX_LOAD( "r74__1l__c8a3.green.ic3", 0x20001, 0x10000, CRC(93275558) SHA1(f690077a87076fd51ae385ac5a455804cbc43c8f), ROM_SKIP(1) | ROM_BIOS(2))
+	ROMX_LOAD( "r74__1h__3c37.white.ic5", 0x20000, 0x10000, CRC(5d7c3962) SHA1(8335993583fdd30b894c01c1a7a6aca61cd81bb4), ROM_SKIP(1) | ROM_BIOS(2))
 	// According to Sandy Bumgarner, there should be a 2.42 version which fixes some bugs in the calc command vs 2.40
 	// According to the Cat Repair Manual page 4-20, there should be a version called B91U0x (maybe 1.91 or 0.91?) with sum16s of 9F1F, FF0A, 79BF and 03FF
 
-	ROM_REGION( 0x80000, "svrom", ROMREGION_ERASE00 )
+	ROM_REGION16_BE( 0x80000, "svrom", ROMREGION_ERASE00 )
 	// SPELLING VERIFICATION ROM (SVROM)
-	/* Romspace here is a little strange: there are 3 rom sockets on the board:
+	/* Romspace here is a little strange: there are 3 ROM sockets on the board:
 	 * svrom-0 maps to 200000-21ffff every ODD byte (d8-d0)
 	 * svrom-1 maps to 200000-21ffff every EVEN byte (d15-d7)
-	 *  (since no rom is in the socket; it reads as open bus, sometimes 0x2E)
+	 *  (since no ROM is in the socket; it reads as open bus, sometimes 0x2E)
 	 * svrom-2 maps to 240000-25ffff every ODD byte (d8-d0)
-	 *  (since no rom is in the socket; it reads as open bus, sometimes 0x80)
+	 *  (since no ROM is in the socket; it reads as open bus, sometimes 0x80)
 	 * there is no svrom-3 socket; 240000-25ffff EVEN always reads as 0x2E
 	 * since ROM_FILL16BE(0x0, 0x80000, 0x2e80) doesn't exist, the
 	 * even bytes and latter chunk of the svrom space need to be filled in
@@ -1129,13 +1148,13 @@ ROM_START( cat )
 	 * 'open bus' once the mame/mess core supports that.
 	 * NOTE: there are at least 6 more SVROMS which existed (possibly in
 	 * limited form), and are not dumped:
-	 * UK (1 rom, NH7-0724)
-	 * French/Quebec (2 roms, NH7-0813/0814)
-	 * German (3 roms, NH7-1019/1020/1021)
-	 * Each of these will also have its own code romset as well.
+	 * UK (1 ROM, NH7-0724)
+	 * French/Quebec (2 ROMs, NH7-0813/0814)
+	 * German (3 ROMs, NH7-1019/1020/1021)
+	 * Each of these will also have its own code ROMset as well.
 	 */
 	// NH7-0684 (US, dumped):
-	ROMX_LOAD( "uv1__nh7-0684__hn62301apc11__7h1.ic6", 0x00000, 0x20000, CRC(229ca210) SHA1(564b57647a34acdd82159993a3990a412233da14), ROM_SKIP(1)) // this is a 28pin tc531000 mask rom, 128KB long; "US" SVROM
+	ROMX_LOAD( "uv1__nh7-0684__hn62301apc11__7h1.ic6", 0x00001, 0x20000, CRC(229ca210) SHA1(564b57647a34acdd82159993a3990a412233da14), ROM_SKIP(1)) // this is a 28pin tc531000 mask ROM, 128KB long; "US" SVROM
 
 	/* There is an unpopulated PAL16L8 at IC9 whose original purpose (based
 	 * on the schematics) was probably to cause a 68k bus error when
@@ -1144,15 +1163,16 @@ ROM_START( cat )
 	 * Its connections are (where Ix = inp on pin x, Ox = out on pin x):
 	 * I1 = A23, I2 = A22, I3 = A2, I4 = R/W, I5 = A5, I6 = FC2, I7 = gnd,
 	 * I8 = A1, I9 = gnd, I11 = gnd, O16 = /BERR,
-	 * I14 = REMAP (connects to emulator 'shadow rom' board or to gnd when unused)
+	 * I14 = REMAP (connects to emulator 'shadow ROM' board or to gnd when unused)
 	 * Based on the inputs and outputs of this pal, almost if not the entire
 	 * open bus and mirrored areas of the cat address space could be made
 	 * to cause bus errors. REMAP was probably used to 'open up' the A00000-A7ffff
-	 * shadow rom/ram area and make it writeable without erroring.
+	 * shadow ROM/RAM area and make it writeable without erroring.
 	 */
 ROM_END
 
+} // Anonymous namespace
 /* Driver */
 
-/*    YEAR  NAME  PARENT  COMPAT   MACHINE    INPUT    DEVICE         INIT     COMPANY   FULLNAME       FLAGS */
-COMP( 1987, cat,  0,  0,       cat,       cat,     driver_device, 0,       "Canon",  "Cat", MACHINE_NOT_WORKING)
+/*    YEAR  NAME  PARENT  COMPAT  MACHINE  INPUT  CLASS      INIT        COMPANY  FULLNAME  FLAGS */
+COMP( 1987, cat,  0,      0,      cat,     cat,   cat_state, empty_init, "Canon", "Cat",    MACHINE_NOT_WORKING)

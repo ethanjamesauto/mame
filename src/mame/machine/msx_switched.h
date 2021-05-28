@@ -1,21 +1,16 @@
 // license:BSD-3-Clause
 // copyright-holders:Wilbert Pol
-#ifndef __MSX_SWITCHED_H
-#define __MSX_SWITCHED_H
+#ifndef MAME_MACHINE_MSX_SWITCHED_H
+#define MAME_MACHINE_MSX_SWITCHED_H
+
+#pragma once
 
 
-class msx_switched_device : public device_t
+class msx_switched_interface
 {
 public:
-	msx_switched_device(const machine_config &mconfig, device_type type, const char *name, const char *tag, device_t *owner, UINT32 clock, const char *shortname, const char *source);
-
-	virtual UINT8 get_id() = 0;
-
-	virtual DECLARE_READ8_MEMBER(io_read) = 0;
-	virtual DECLARE_WRITE8_MEMBER(io_write) = 0;
-
-protected:
-	virtual void device_start() override;
+	virtual uint8_t switched_read(offs_t offset) = 0;
+	virtual void switched_write(offs_t offset, uint8_t data) = 0;
 };
 
-#endif
+#endif // MAME_MACHINE_MSX_SWITCHED_H

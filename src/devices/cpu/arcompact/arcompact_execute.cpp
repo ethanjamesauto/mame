@@ -4,7 +4,13 @@
 #include "emu.h"
 #include "debugger.h"
 #include "arcompact.h"
-#include "arcompact_common.h"
+#include "arcompactdasm.h"
+
+#define REG_BLINK (0x1f) // r31
+#define REG_SP (0x1c) // r28
+#define REG_ILINK1 (0x1d) // r29
+#define REG_ILINK2 (0x1e) // r30
+#define REG_LP_COUNT (0x3c) // r60
 
 #define ARCOMPACT_LOGGING 1
 
@@ -14,18 +20,18 @@
 
 void arcompact_device::execute_run()
 {
-	//UINT32 lres;
+	//uint32_t lres;
 	//lres = 0;
 
 	while (m_icount > 0)
 	{
-		debugger_instruction_hook(this, m_pc);
+		debugger_instruction_hook(m_pc);
 
 //      printf("new pc %04x\n", m_pc);
 
 		if (m_delayactive)
 		{
-			UINT16 op = READ16((m_pc + 0) >> 1);
+			uint16_t op = READ16((m_pc + 0) >> 1);
 			m_pc = get_insruction(op);
 			if (m_delaylinks) m_regs[REG_BLINK] = m_pc;
 
@@ -34,7 +40,7 @@ void arcompact_device::execute_run()
 		}
 		else
 		{
-			UINT16 op = READ16((m_pc + 0) >> 1);
+			uint16_t op = READ16((m_pc + 0) >> 1);
 			m_pc = get_insruction(op);
 		}
 
@@ -56,7 +62,7 @@ void arcompact_device::execute_run()
 
 
 #define GET_01_01_01_BRANCH_ADDR \
-	INT32 address = (op & 0x00fe0000) >> 17; \
+	int32_t address = (op & 0x00fe0000) >> 17; \
 	address |= ((op & 0x00008000) >> 15) << 7; \
 	if (address & 0x80) address = -0x80 + (address & 0x7f);
 
@@ -83,10 +89,10 @@ void arcompact_device::execute_run()
 #define COMMON32_GET_s12 \
 		int S_temp = (op & 0x0000003f) >> 0; \
 		int s_temp = (op & 0x00000fc0) >> 6; \
-		INT32 S = s_temp | (S_temp<<6); \
+		int32_t S = s_temp | (S_temp<<6); \
 		if (S & 0x800) S = -0x800 + (S&0x7ff); /* sign extend */
 #define COMMON32_GET_CONDITION \
-		UINT8 condition = op & 0x0000001f;
+		uint8_t condition = op & 0x0000001f;
 
 
 #define COMMON16_GET_breg \
@@ -121,42 +127,42 @@ void arcompact_device::execute_run()
 #define PC_ALIGNED32 \
 	(m_pc&0xfffffffc)
 
-int arcompact_device::check_condition(UINT8 condition)
+int arcompact_device::check_condition(uint8_t condition)
 {
 	switch (condition & 0x1f)
 	{
 		case 0x00: return 1; // AL
 		case 0x01: return CONDITION_EQ;
 		case 0x02: return !CONDITION_EQ; // NE
-		case 0x03: fatalerror("unhandled condition check %s", conditions[condition]); return -1;
+		case 0x03: fatalerror("unhandled condition check %s", arcompact_disassembler::conditions[condition]); return -1;
 		case 0x04: return CONDITION_MI; // MI (N)
 		case 0x05: return CONDITION_CS; // CS (Carry Set / Lower than)
-		case 0x06: fatalerror("unhandled condition check %s", conditions[condition]); return -1;
-		case 0x07: fatalerror("unhandled condition check %s", conditions[condition]); return -1;
-		case 0x08: fatalerror("unhandled condition check %s", conditions[condition]); return -1;
-		case 0x09: fatalerror("unhandled condition check %s", conditions[condition]); return -1;
-		case 0x0a: fatalerror("unhandled condition check %s", conditions[condition]); return -1;
-		case 0x0b: fatalerror("unhandled condition check %s", conditions[condition]); return -1;
-		case 0x0c: fatalerror("unhandled condition check %s", conditions[condition]); return -1;
-		case 0x0d: fatalerror("unhandled condition check %s", conditions[condition]); return -1;
-		case 0x0e: fatalerror("unhandled condition check %s", conditions[condition]); return -1;
-		case 0x0f: fatalerror("unhandled condition check %s", conditions[condition]); return -1;
-		case 0x10: fatalerror("unhandled condition check %s", conditions[condition]); return -1;
-		case 0x11: fatalerror("unhandled condition check %s", conditions[condition]); return -1;
-		case 0x12: fatalerror("unhandled condition check %s", conditions[condition]); return -1;
-		case 0x13: fatalerror("unhandled condition check %s", conditions[condition]); return -1;
-		case 0x14: fatalerror("unhandled condition check %s", conditions[condition]); return -1;
-		case 0x15: fatalerror("unhandled condition check %s", conditions[condition]); return -1;
-		case 0x16: fatalerror("unhandled condition check %s", conditions[condition]); return -1;
-		case 0x17: fatalerror("unhandled condition check %s", conditions[condition]); return -1;
-		case 0x18: fatalerror("unhandled condition check %s", conditions[condition]); return -1;
-		case 0x19: fatalerror("unhandled condition check %s", conditions[condition]); return -1;
-		case 0x1a: fatalerror("unhandled condition check %s", conditions[condition]); return -1;
-		case 0x1b: fatalerror("unhandled condition check %s", conditions[condition]); return -1;
-		case 0x1c: fatalerror("unhandled condition check %s", conditions[condition]); return -1;
-		case 0x1d: fatalerror("unhandled condition check %s", conditions[condition]); return -1;
-		case 0x1e: fatalerror("unhandled condition check %s", conditions[condition]); return -1;
-		case 0x1f: fatalerror("unhandled condition check %s", conditions[condition]); return -1;
+		case 0x06: fatalerror("unhandled condition check %s", arcompact_disassembler::conditions[condition]); return -1;
+		case 0x07: fatalerror("unhandled condition check %s", arcompact_disassembler::conditions[condition]); return -1;
+		case 0x08: fatalerror("unhandled condition check %s", arcompact_disassembler::conditions[condition]); return -1;
+		case 0x09: fatalerror("unhandled condition check %s", arcompact_disassembler::conditions[condition]); return -1;
+		case 0x0a: fatalerror("unhandled condition check %s", arcompact_disassembler::conditions[condition]); return -1;
+		case 0x0b: fatalerror("unhandled condition check %s", arcompact_disassembler::conditions[condition]); return -1;
+		case 0x0c: fatalerror("unhandled condition check %s", arcompact_disassembler::conditions[condition]); return -1;
+		case 0x0d: fatalerror("unhandled condition check %s", arcompact_disassembler::conditions[condition]); return -1;
+		case 0x0e: fatalerror("unhandled condition check %s", arcompact_disassembler::conditions[condition]); return -1;
+		case 0x0f: fatalerror("unhandled condition check %s", arcompact_disassembler::conditions[condition]); return -1;
+		case 0x10: fatalerror("unhandled condition check %s", arcompact_disassembler::conditions[condition]); return -1;
+		case 0x11: fatalerror("unhandled condition check %s", arcompact_disassembler::conditions[condition]); return -1;
+		case 0x12: fatalerror("unhandled condition check %s", arcompact_disassembler::conditions[condition]); return -1;
+		case 0x13: fatalerror("unhandled condition check %s", arcompact_disassembler::conditions[condition]); return -1;
+		case 0x14: fatalerror("unhandled condition check %s", arcompact_disassembler::conditions[condition]); return -1;
+		case 0x15: fatalerror("unhandled condition check %s", arcompact_disassembler::conditions[condition]); return -1;
+		case 0x16: fatalerror("unhandled condition check %s", arcompact_disassembler::conditions[condition]); return -1;
+		case 0x17: fatalerror("unhandled condition check %s", arcompact_disassembler::conditions[condition]); return -1;
+		case 0x18: fatalerror("unhandled condition check %s", arcompact_disassembler::conditions[condition]); return -1;
+		case 0x19: fatalerror("unhandled condition check %s", arcompact_disassembler::conditions[condition]); return -1;
+		case 0x1a: fatalerror("unhandled condition check %s", arcompact_disassembler::conditions[condition]); return -1;
+		case 0x1b: fatalerror("unhandled condition check %s", arcompact_disassembler::conditions[condition]); return -1;
+		case 0x1c: fatalerror("unhandled condition check %s", arcompact_disassembler::conditions[condition]); return -1;
+		case 0x1d: fatalerror("unhandled condition check %s", arcompact_disassembler::conditions[condition]); return -1;
+		case 0x1e: fatalerror("unhandled condition check %s", arcompact_disassembler::conditions[condition]); return -1;
+		case 0x1f: fatalerror("unhandled condition check %s", arcompact_disassembler::conditions[condition]); return -1;
 	}
 
 		return -1;
@@ -166,7 +172,7 @@ int arcompact_device::check_condition(UINT8 condition)
 
 ARCOMPACT_RETTYPE arcompact_device::get_insruction(OPS_32)
 {
-	UINT8 instruction = ARCOMPACT_OPERATION;
+	uint8_t instruction = ARCOMPACT_OPERATION;
 
 	if (instruction < 0x0c)
 	{
@@ -221,7 +227,7 @@ ARCOMPACT_RETTYPE arcompact_device::get_insruction(OPS_32)
 
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle00(OPS_32)
 {
-	UINT8 subinstr = (op & 0x00010000) >> 16;
+	uint8_t subinstr = (op & 0x00010000) >> 16;
 
 	switch (subinstr)
 	{
@@ -234,7 +240,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle00(OPS_32)
 
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle01(OPS_32)
 {
-	UINT8 subinstr = (op & 0x00010000) >> 16;
+	uint8_t subinstr = (op & 0x00010000) >> 16;
 
 	switch (subinstr)
 	{
@@ -247,7 +253,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle01(OPS_32)
 
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle01_00(OPS_32)
 {
-	UINT8 subinstr2 = (op & 0x00020000) >> 17;
+	uint8_t subinstr2 = (op & 0x00020000) >> 17;
 
 	switch (subinstr2)
 	{
@@ -260,7 +266,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle01_00(OPS_32)
 
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle01_01(OPS_32)
 {
-	UINT8 subinstr2 = (op & 0x00000010) >> 4;
+	uint8_t subinstr2 = (op & 0x00000010) >> 4;
 
 	switch (subinstr2)
 	{
@@ -273,7 +279,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle01_01(OPS_32)
 
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle01_01_00(OPS_32)
 {
-	UINT8 subinstr3 = (op & 0x0000000f) >> 0;
+	uint8_t subinstr3 = (op & 0x0000000f) >> 0;
 
 	switch (subinstr3)
 	{
@@ -300,7 +306,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle01_01_00(OPS_32)
 
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle01_01_01(OPS_32) //  Branch on Compare/Bit Test Register-Immediate
 {
-	UINT8 subinstr3 = (op & 0x0000000f) >> 0;
+	uint8_t subinstr3 = (op & 0x0000000f) >> 0;
 
 	switch (subinstr3)
 	{
@@ -327,7 +333,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle01_01_01(OPS_32) //  Branch 
 
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04(OPS_32)
 {
-	UINT8 subinstr = (op & 0x003f0000) >> 16;
+	uint8_t subinstr = (op & 0x003f0000) >> 16;
 
 	switch (subinstr)
 	{
@@ -402,7 +408,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04(OPS_32)
 
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_2f(OPS_32)
 {
-	UINT8 subinstr2 = (op & 0x0000003f) >> 0;
+	uint8_t subinstr2 = (op & 0x0000003f) >> 0;
 
 	switch (subinstr2)
 	{
@@ -478,7 +484,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_2f(OPS_32)
 
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle05_2f(OPS_32)
 {
-	UINT8 subinstr2 = (op & 0x0000003f) >> 0;
+	uint8_t subinstr2 = (op & 0x0000003f) >> 0;
 
 	switch (subinstr2)
 	{
@@ -553,7 +559,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle05_2f(OPS_32)
 
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_2f_3f(OPS_32)
 {
-	UINT8 subinstr3 = (op & 0x07000000) >> 24;
+	uint8_t subinstr3 = (op & 0x07000000) >> 24;
 	subinstr3 |= ((op & 0x00007000) >> 12) << 3;
 
 	switch (subinstr3)
@@ -630,7 +636,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_2f_3f(OPS_32)
 
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle05_2f_3f(OPS_32) // useless ZOP group, no actual opcodes
 {
-	UINT8 subinstr3 = (op & 0x07000000) >> 24;
+	uint8_t subinstr3 = (op & 0x07000000) >> 24;
 	subinstr3 |= ((op & 0x00007000) >> 12) << 3;
 
 	switch (subinstr3)
@@ -708,7 +714,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle05_2f_3f(OPS_32) // useless 
 // this is an Extension ALU group, maybe optional on some CPUs?
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle05(OPS_32)
 {
-	UINT8 subinstr = (op & 0x003f0000) >> 16;
+	uint8_t subinstr = (op & 0x003f0000) >> 16;
 
 	switch (subinstr)
 	{
@@ -783,7 +789,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle05(OPS_32)
 
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle0c(OPS_16)
 {
-	UINT8 subinstr = (op & 0x0018) >> 3;
+	uint8_t subinstr = (op & 0x0018) >> 3;
 
 	switch (subinstr)
 	{
@@ -798,7 +804,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle0c(OPS_16)
 
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle0d(OPS_16)
 {
-	UINT8 subinstr = (op & 0x0018) >> 3;
+	uint8_t subinstr = (op & 0x0018) >> 3;
 
 	switch (subinstr)
 	{
@@ -813,7 +819,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle0d(OPS_16)
 
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle0e(OPS_16)
 {
-	UINT8 subinstr = (op & 0x0018) >> 3;
+	uint8_t subinstr = (op & 0x0018) >> 3;
 
 	switch (subinstr)
 	{
@@ -828,7 +834,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle0e(OPS_16)
 
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle0f(OPS_16)
 {
-	UINT8 subinstr = (op & 0x01f) >> 0;
+	uint8_t subinstr = (op & 0x01f) >> 0;
 
 	switch (subinstr)
 	{
@@ -872,7 +878,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle0f(OPS_16)
 
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle0f_00(OPS_16)
 {
-	UINT8 subinstr = (op & 0x00e0) >> 5;
+	uint8_t subinstr = (op & 0x00e0) >> 5;
 
 	switch (subinstr)
 	{
@@ -892,7 +898,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle0f_00(OPS_16)
 
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle0f_00_07(OPS_16)
 {
-	UINT8 subinstr3 = (op & 0x0700) >> 8;
+	uint8_t subinstr3 = (op & 0x0700) >> 8;
 
 	switch (subinstr3)
 	{
@@ -912,7 +918,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle0f_00_07(OPS_16)
 
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle17(OPS_16)
 {
-	UINT8 subinstr = (op & 0x00e0) >> 5;
+	uint8_t subinstr = (op & 0x00e0) >> 5;
 
 	switch (subinstr)
 	{
@@ -931,7 +937,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle17(OPS_16)
 
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle18(OPS_16)
 {
-	UINT8 subinstr = (op & 0x00e0) >> 5;
+	uint8_t subinstr = (op & 0x00e0) >> 5;
 
 	switch (subinstr)
 	{
@@ -950,7 +956,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle18(OPS_16)
 
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle18_05(OPS_16)
 {
-	UINT8 subinstr2 = (op & 0x0700) >> 8;
+	uint8_t subinstr2 = (op & 0x0700) >> 8;
 
 	switch (subinstr2)
 	{
@@ -969,7 +975,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle18_05(OPS_16)
 
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle18_06(OPS_16)
 {
-	UINT8 subinstr2 = (op & 0x001f) >> 0;
+	uint8_t subinstr2 = (op & 0x001f) >> 0;
 
 	switch (subinstr2)
 	{
@@ -1012,7 +1018,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle18_06(OPS_16)
 
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle18_07(OPS_16)
 {
-	UINT8 subinstr2 = (op & 0x001f) >> 0;
+	uint8_t subinstr2 = (op & 0x001f) >> 0;
 
 	switch (subinstr2)
 	{
@@ -1055,7 +1061,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle18_07(OPS_16)
 
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle19(OPS_16)
 {
-	UINT8 subinstr = (op & 0x0600) >> 9;
+	uint8_t subinstr = (op & 0x0600) >> 9;
 
 	switch (subinstr)
 	{
@@ -1070,7 +1076,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle19(OPS_16)
 
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle1c(OPS_16)
 {
-	UINT8 subinstr = (op & 0x0080) >> 7;
+	uint8_t subinstr = (op & 0x0080) >> 7;
 
 	switch (subinstr)
 	{
@@ -1083,7 +1089,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle1c(OPS_16)
 
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle1d(OPS_16)
 {
-	UINT8 subinstr = (op & 0x0080) >> 7;
+	uint8_t subinstr = (op & 0x0080) >> 7;
 
 	switch (subinstr)
 	{
@@ -1096,7 +1102,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle1d(OPS_16)
 
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle1e(OPS_16)
 {
-	UINT8 subinstr = (op & 0x0600) >> 9;
+	uint8_t subinstr = (op & 0x0600) >> 9;
 
 	switch (subinstr)
 	{
@@ -1111,7 +1117,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle1e(OPS_16)
 
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle1e_03(OPS_16)
 {
-	UINT8 subinstr2 = (op & 0x01c0) >> 6;
+	uint8_t subinstr2 = (op & 0x01c0) >> 6;
 
 	switch (subinstr2)
 	{
@@ -1130,7 +1136,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle1e_03(OPS_16)
 
 // handlers
 
-UINT32 arcompact_device::handle_jump_to_addr(int delay, int link, UINT32 address, UINT32 next_addr)
+uint32_t arcompact_device::handle_jump_to_addr(int delay, int link, uint32_t address, uint32_t next_addr)
 {
 	if (delay)
 	{
@@ -1148,7 +1154,7 @@ UINT32 arcompact_device::handle_jump_to_addr(int delay, int link, UINT32 address
 
 }
 
-UINT32 arcompact_device::handle_jump_to_register(int delay, int link, UINT32 reg, UINT32 next_addr, int flag)
+uint32_t arcompact_device::handle_jump_to_register(int delay, int link, uint32_t reg, uint32_t next_addr, int flag)
 {
 	if (reg == LIMM_REG)
 		arcompact_fatal("handle_jump_to_register called with LIMM register, call handle_jump_to_addr instead");
@@ -1176,7 +1182,7 @@ UINT32 arcompact_device::handle_jump_to_register(int delay, int link, UINT32 reg
 		else
 		{
 			//arcompact_fatal("jump not supported");
-			UINT32 target = m_regs[reg];
+			uint32_t target = m_regs[reg];
 			return handle_jump_to_addr(delay, link, target, next_addr);
 		}
 	}
@@ -1195,12 +1201,12 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle00_00(OPS_32)
 
 	// Branch Conditionally
 	// 0000 0sss ssss sss0 SSSS SSSS SSNQ QQQQ
-	INT32 address = (op & 0x07fe0000) >> 17;
+	int32_t address = (op & 0x07fe0000) >> 17;
 	address |= ((op & 0x0000ffc0) >> 6) << 10;
 	if (address & 0x80000) address = -0x80000 + (address & 0x7ffff);
 	int n = (op & 0x00000020) >> 5; op &= ~0x00000020;
 
-	UINT32 realaddress = PC_ALIGNED32 + (address * 2);
+	uint32_t realaddress = PC_ALIGNED32 + (address * 2);
 
 	if (n)
 	{
@@ -1222,14 +1228,14 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle00_01(OPS_32)
 {
 	int size = 4;
 	// Branch Unconditionally Far
-	INT32 address = (op & 0x07fe0000) >> 17;
+	int32_t address = (op & 0x07fe0000) >> 17;
 	address |= ((op & 0x0000ffc0) >> 6) << 10;
 	address |= ((op & 0x0000000f) >> 0) << 20;
 	if (address & 0x800000) address = -0x800000 + (address & 0x7fffff);
 	int n = (op & 0x00000020) >> 5; op &= ~0x00000020;
 //  int res =  (op & 0x00000010) >> 4; op &= ~0x00000010; // should be set to 0
 
-	UINT32 realaddress = PC_ALIGNED32 + (address * 2);
+	uint32_t realaddress = PC_ALIGNED32 + (address * 2);
 
 	if (n)
 	{
@@ -1264,14 +1270,14 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle01_00_01dasm(OPS_32)
 	int size = 4;
 	// Branch and Link Unconditionally Far
 	// 00001 sssssssss 10  SSSSSSSSSS N R TTTT
-	INT32 address =   (op & 0x07fc0000) >> 17;
+	int32_t address =   (op & 0x07fc0000) >> 17;
 	address |=        ((op & 0x0000ffc0) >> 6) << 10;
 	address |=        ((op & 0x0000000f) >> 0) << 20;
 	if (address & 0x800000) address = -0x800000 + (address&0x7fffff);
 	int n = (op & 0x00000020) >> 5; op &= ~0x00000020;
 //  int res =  (op & 0x00000010) >> 4; op &= ~0x00000010;
 
-	UINT32 realaddress = PC_ALIGNED32 + (address * 2);
+	uint32_t realaddress = PC_ALIGNED32 + (address * 2);
 
 	if (n)
 	{
@@ -1293,7 +1299,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle01_00_01dasm(OPS_32)
 
 ARCOMPACT_RETTYPE arcompact_device::arcompact_01_01_00_helper(OPS_32, const char* optext)
 {
-	int size = 4;
+	int size;
 
 	// Branch on Compare / Bit Test - Register-Register
 
@@ -1307,7 +1313,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_01_01_00_helper(OPS_32, const char
 	}
 	else
 	{
-		//UINT32 limm;
+		//uint32_t limm;
 		//GET_LIMM_32;
 		size = 8;
 	}
@@ -1326,7 +1332,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_01_01_00_helper(OPS_32, const char
 	COMMON32_GET_creg; \
 	COMMON32_GET_breg; \
 	int n = (op & 0x00000020) >> 5; \
-	UINT32 b,c; \
+	uint32_t b,c; \
 	if ((breg != LIMM_REG) && (creg != LIMM_REG)) \
 	{ \
 		b = m_regs[breg]; \
@@ -1334,7 +1340,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_01_01_00_helper(OPS_32, const char
 	} \
 	else \
 	{ \
-		UINT32 limm; \
+		uint32_t limm; \
 		GET_LIMM_32; \
 		size = 8; \
 		\
@@ -1350,7 +1356,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_01_01_00_helper(OPS_32, const char
 	}
 #define BR_TAKEJUMP \
 	/* take jump */ \
-	UINT32 realaddress = PC_ALIGNED32 + (address * 2); \
+	uint32_t realaddress = PC_ALIGNED32 + (address * 2); \
 		\
 	if (n) \
 	{ \
@@ -1395,7 +1401,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle01_01_00_02(OPS_32) // regit
 	BR_REGREG_SETUP
 
 	// BRLT  (signed operation)
-	if ((INT32)b < (INT32)c)
+	if ((int32_t)b < (int32_t)c)
 	{
 		BR_TAKEJUMP
 	}
@@ -1408,7 +1414,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle01_01_00_03(OPS_32) // regis
 	BR_REGREG_SETUP
 
 	// BRGE  (signed operation)
-	if ((INT32)b >= (INT32)c)
+	if ((int32_t)b >= (int32_t)c)
 	{
 		BR_TAKEJUMP
 	}
@@ -1460,7 +1466,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_01_01_01_helper(OPS_32, const char
 	COMMON32_GET_u6; \
 	COMMON32_GET_breg; \
 	int n = (op & 0x00000020) >> 5; \
-	UINT32 b,c; \
+	uint32_t b,c; \
 	c = u; \
 	/* comparing a LIMM  to an immediate is pointless, is it a valid encoding? */ \
 	if ((breg != LIMM_REG)) \
@@ -1469,7 +1475,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_01_01_01_helper(OPS_32, const char
 	} \
 	else \
 	{ \
-		UINT32 limm; \
+		uint32_t limm; \
 		GET_LIMM_32; \
 		size = 8; \
 		b = limm; \
@@ -1509,7 +1515,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle01_01_01_02(OPS_32) // BRLT 
 	BR_REGIMM_SETUP
 
 	// BRLT  (signed operation)
-	if ((INT32)b < (INT32)c)
+	if ((int32_t)b < (int32_t)c)
 	{
 		BR_TAKEJUMP
 	}
@@ -1522,7 +1528,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle01_01_01_03(OPS_32)
 	BR_REGIMM_SETUP
 
 	// BRGE  (signed operation)
-	if ((INT32)b >= (INT32)c)
+	if ((int32_t)b >= (int32_t)c)
 	{
 		BR_TAKEJUMP
 	}
@@ -1564,7 +1570,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle01_01_01_0f(OPS_32)  { retur
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle02(OPS_32)
 {
 	int size = 4;
-	UINT32 limm = 0;
+	uint32_t limm;
 
 	int S = (op & 0x00008000) >> 15;// op &= ~0x00008000;
 	int s = (op & 0x00ff0000) >> 16;// op &= ~0x00ff0000;
@@ -1578,7 +1584,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle02(OPS_32)
 	int a = (op & 0x00000600) >> 9;  //op &= ~0x00000600;
 //  int D = (op & 0x00000800) >> 11;// op &= ~0x00000800; // we don't use the data cache currently
 
-	UINT32 address = m_regs[breg];
+	uint32_t address = m_regs[breg];
 
 	if (breg == LIMM_REG)
 	{
@@ -1613,7 +1619,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle02(OPS_32)
 		}
 	}
 
-	UINT32 readdata = 0;
+	uint32_t readdata = 0;
 
 	// read data
 	if (Z == 0)
@@ -1663,7 +1669,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle02(OPS_32)
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle03(OPS_32)
 {
 	int size = 4;
-	UINT32 limm = 0;
+	uint32_t limm = 0;
 	int got_limm = 0;
 	int S = (op & 0x00008000) >> 15;
 	int s = (op & 0x00ff0000) >> 16;
@@ -1678,7 +1684,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle03(OPS_32)
 //  int D = (op & 0x00000020) >> 5; // we don't use the data cache currently
 
 
-	UINT32 address = m_regs[breg];
+	uint32_t address = m_regs[breg];
 
 	if (breg == LIMM_REG)
 	{
@@ -1689,7 +1695,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle03(OPS_32)
 		address = limm;
 	}
 
-	UINT32 writedata = m_regs[creg];
+	uint32_t writedata = m_regs[creg];
 
 	if (creg == LIMM_REG)
 	{
@@ -1761,8 +1767,8 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle03(OPS_32)
 
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_helper(OPS_32, const char* optext, int ignore_dst, int b_reserved)
 {
-	int size = 4;
-	//UINT32 limm = 0;
+	int size;
+	//uint32_t limm = 0;
 	int got_limm = 0;
 
 	COMMON32_GET_p;
@@ -1840,62 +1846,4493 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_helper(OPS_32, const char
 }
 
 
-#include "cpu/arcompact/arcompact.inc"
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_00_p00(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+	int got_limm = 0;
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_creg;
+	COMMON32_GET_areg;
+
+	uint32_t c;
+	uint32_t b;
+
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+		got_limm = 1;
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	if (creg == LIMM_REG)
+	{
+		if (!got_limm)
+		{
+			GET_LIMM_32;
+			size = 8;
+		}
+		c = limm;
+	}
+	else
+	{
+		c = m_regs[creg];
+	}
+	/* todo: is the limm, limm syntax valid? (it's pointless.) */
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = b + c;
+	m_regs[areg] = result;
+
+	if (F)
+	{
+		if (result & 0x80000000) { STATUS32_SET_N; }
+		else { STATUS32_CLEAR_N; }
+		if (result == 0x00000000) { STATUS32_SET_Z; }
+		else { STATUS32_CLEAR_Z; }
+		if ((b & 0x80000000) == (c & 0x80000000))
+		{
+			if ((result & 0x80000000) != (b & 0x80000000))
+			{
+				STATUS32_SET_V;
+			}
+			else
+			{
+				STATUS32_CLEAR_V;
+			}
+		}
+		if (b < c)
+		{
+			STATUS32_SET_C;
+		}
+		else
+		{
+			STATUS32_CLEAR_C;
+		}
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_00_p01(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_u6;
+	COMMON32_GET_areg;
+
+	uint32_t c;
+	uint32_t b;
+
+	/* is having b as LIMM valid here? LIMM vs. fixed u6 value makes no sense */
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+/*      got_limm = 1; */
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	c = u;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = b + c;
+	m_regs[areg] = result;
+
+	if (F)
+	{
+		if (result & 0x80000000) { STATUS32_SET_N; }
+		else { STATUS32_CLEAR_N; }
+		if (result == 0x00000000) { STATUS32_SET_Z; }
+		else { STATUS32_CLEAR_Z; }
+		if ((b & 0x80000000) == (c & 0x80000000))
+		{
+			if ((result & 0x80000000) != (b & 0x80000000))
+			{
+				STATUS32_SET_V;
+			}
+			else
+			{
+				STATUS32_CLEAR_V;
+			}
+		}
+		if (b < c)
+		{
+			STATUS32_SET_C;
+		}
+		else
+		{
+			STATUS32_CLEAR_C;
+		}
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_00_p10(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_s12;
+
+	uint32_t c;
+	uint32_t b;
+
+	/* is having b as LIMM valid here? LIMM vs. fixed u6 value makes no sense */
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+/*      got_limm = 1; */
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	c = (uint32_t)S;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = b + c;
+	m_regs[breg] = result;
+
+	if (F)
+	{
+		if (result & 0x80000000) { STATUS32_SET_N; }
+		else { STATUS32_CLEAR_N; }
+		if (result == 0x00000000) { STATUS32_SET_Z; }
+		else { STATUS32_CLEAR_Z; }
+		if ((b & 0x80000000) == (c & 0x80000000))
+		{
+			if ((result & 0x80000000) != (b & 0x80000000))
+			{
+				STATUS32_SET_V;
+			}
+			else
+			{
+				STATUS32_CLEAR_V;
+			}
+		}
+		if (b < c)
+		{
+			STATUS32_SET_C;
+		}
+		else
+		{
+			STATUS32_CLEAR_C;
+		}
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_00_p11_m0(OPS_32)
+{
+	int size = 4;
+	arcompact_fatal("arcompact_handle04_00_p11_m0 (ADD)\n");
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_00_p11_m1(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_u6;
+	 //COMMON32_GET_areg; // areg bits already used as condition code select
+
+	uint32_t c;
+	uint32_t b;
+
+	/* is having b as LIMM valid here? LIMM vs. fixed u6 value makes no sense */
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+/*      got_limm = 1; */
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	c = u;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	COMMON32_GET_CONDITION;
+	if (!check_condition(condition))
+		return m_pc + (size>>0);
+
+	uint32_t result = b + c;
+	m_regs[breg] = result;
+
+	if (F)
+	{
+		if (result & 0x80000000) { STATUS32_SET_N; }
+		else { STATUS32_CLEAR_N; }
+		if (result == 0x00000000) { STATUS32_SET_Z; }
+		else { STATUS32_CLEAR_Z; }
+		if ((b & 0x80000000) == (c & 0x80000000))
+		{
+			if ((result & 0x80000000) != (b & 0x80000000))
+			{
+				STATUS32_SET_V;
+			}
+			else
+			{
+				STATUS32_CLEAR_V;
+			}
+		}
+		if (b < c)
+		{
+			STATUS32_SET_C;
+		}
+		else
+		{
+			STATUS32_CLEAR_C;
+		}
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_02_p00(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+	int got_limm = 0;
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_creg;
+	COMMON32_GET_areg;
+
+	uint32_t c;
+	uint32_t b;
+
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+		got_limm = 1;
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	if (creg == LIMM_REG)
+	{
+		if (!got_limm)
+		{
+			GET_LIMM_32;
+			size = 8;
+		}
+		c = limm;
+	}
+	else
+	{
+		c = m_regs[creg];
+	}
+	/* todo: is the limm, limm syntax valid? (it's pointless.) */
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = b - c;
+	m_regs[areg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_02 (SUB) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_02_p01(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_u6;
+	COMMON32_GET_areg;
+
+	uint32_t c;
+	uint32_t b;
+
+	/* is having b as LIMM valid here? LIMM vs. fixed u6 value makes no sense */
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+/*      got_limm = 1; */
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	c = u;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = b - c;
+	m_regs[areg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_02 (SUB) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_02_p10(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_s12;
+
+	uint32_t c;
+	uint32_t b;
+
+	/* is having b as LIMM valid here? LIMM vs. fixed u6 value makes no sense */
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+/*      got_limm = 1; */
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	c = (uint32_t)S;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = b - c;
+	m_regs[breg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_02 (SUB) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_02_p11_m0(OPS_32)
+{
+	int size = 4;
+	arcompact_fatal("arcompact_handle04_02_p11_m0 (SUB)\n");
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_02_p11_m1(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_u6;
+	 //COMMON32_GET_areg; // areg bits already used as condition code select
+
+	uint32_t c;
+	uint32_t b;
+
+	/* is having b as LIMM valid here? LIMM vs. fixed u6 value makes no sense */
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+/*      got_limm = 1; */
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	c = u;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	COMMON32_GET_CONDITION;
+	if (!check_condition(condition))
+		return m_pc + (size>>0);
+
+	uint32_t result = b - c;
+	m_regs[breg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_02 (SUB) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_04_p00(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+	int got_limm = 0;
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_creg;
+	COMMON32_GET_areg;
+
+	uint32_t c;
+	uint32_t b;
+
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+		got_limm = 1;
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	if (creg == LIMM_REG)
+	{
+		if (!got_limm)
+		{
+			GET_LIMM_32;
+			size = 8;
+		}
+		c = limm;
+	}
+	else
+	{
+		c = m_regs[creg];
+	}
+	/* todo: is the limm, limm syntax valid? (it's pointless.) */
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = b & c;
+	if (areg != LIMM_REG) { m_regs[areg] = result; }
+
+	if (F)
+	{
+		if (result & 0x80000000) { STATUS32_SET_N; }
+		else { STATUS32_CLEAR_N; }
+		if (result == 0x00000000) { STATUS32_SET_Z; }
+		else { STATUS32_CLEAR_Z; }
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_04_p01(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_u6;
+	COMMON32_GET_areg;
+
+	uint32_t c;
+	uint32_t b;
+
+	/* is having b as LIMM valid here? LIMM vs. fixed u6 value makes no sense */
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+/*      got_limm = 1; */
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	c = u;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = b & c;
+	if (areg != LIMM_REG) { m_regs[areg] = result; }
+
+	if (F)
+	{
+		if (result & 0x80000000) { STATUS32_SET_N; }
+		else { STATUS32_CLEAR_N; }
+		if (result == 0x00000000) { STATUS32_SET_Z; }
+		else { STATUS32_CLEAR_Z; }
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_04_p10(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_s12;
+
+	uint32_t c;
+	uint32_t b;
+
+	/* is having b as LIMM valid here? LIMM vs. fixed u6 value makes no sense */
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+/*      got_limm = 1; */
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	c = (uint32_t)S;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = b & c;
+	if (breg != LIMM_REG) { m_regs[breg] = result; }
+
+	if (F)
+	{
+		if (result & 0x80000000) { STATUS32_SET_N; }
+		else { STATUS32_CLEAR_N; }
+		if (result == 0x00000000) { STATUS32_SET_Z; }
+		else { STATUS32_CLEAR_Z; }
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_04_p11_m0(OPS_32)
+{
+	int size = 4;
+	arcompact_fatal("arcompact_handle04_04_p11_m0 (AND)\n");
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_04_p11_m1(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_u6;
+	 //COMMON32_GET_areg; // areg bits already used as condition code select
+
+	uint32_t c;
+	uint32_t b;
+
+	/* is having b as LIMM valid here? LIMM vs. fixed u6 value makes no sense */
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+/*      got_limm = 1; */
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	c = u;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	COMMON32_GET_CONDITION;
+	if (!check_condition(condition))
+		return m_pc + (size>>0);
+
+	uint32_t result = b & c;
+	if (breg != LIMM_REG) { m_regs[breg] = result; }
+
+	if (F)
+	{
+		if (result & 0x80000000) { STATUS32_SET_N; }
+		else { STATUS32_CLEAR_N; }
+		if (result == 0x00000000) { STATUS32_SET_Z; }
+		else { STATUS32_CLEAR_Z; }
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_05_p00(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+	int got_limm = 0;
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_creg;
+	COMMON32_GET_areg;
+
+	uint32_t c;
+	uint32_t b;
+
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+		got_limm = 1;
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	if (creg == LIMM_REG)
+	{
+		if (!got_limm)
+		{
+			GET_LIMM_32;
+			size = 8;
+		}
+		c = limm;
+	}
+	else
+	{
+		c = m_regs[creg];
+	}
+	/* todo: is the limm, limm syntax valid? (it's pointless.) */
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = b | c;
+	m_regs[areg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_05 (OR) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_05_p01(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_u6;
+	COMMON32_GET_areg;
+
+	uint32_t c;
+	uint32_t b;
+
+	/* is having b as LIMM valid here? LIMM vs. fixed u6 value makes no sense */
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+/*      got_limm = 1; */
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	c = u;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = b | c;
+	m_regs[areg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_05 (OR) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_05_p10(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_s12;
+
+	uint32_t c;
+	uint32_t b;
+
+	/* is having b as LIMM valid here? LIMM vs. fixed u6 value makes no sense */
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+/*      got_limm = 1; */
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	c = (uint32_t)S;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = b | c;
+	m_regs[breg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_05 (OR) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_05_p11_m0(OPS_32)
+{
+	int size = 4;
+	arcompact_fatal("arcompact_handle04_05_p11_m0 (OR)\n");
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_05_p11_m1(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_u6;
+	 //COMMON32_GET_areg; // areg bits already used as condition code select
+
+	uint32_t c;
+	uint32_t b;
+
+	/* is having b as LIMM valid here? LIMM vs. fixed u6 value makes no sense */
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+/*      got_limm = 1; */
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	c = u;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	COMMON32_GET_CONDITION;
+	if (!check_condition(condition))
+		return m_pc + (size>>0);
+
+	uint32_t result = b | c;
+	m_regs[breg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_05 (OR) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_06_p00(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+	int got_limm = 0;
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_creg;
+	COMMON32_GET_areg;
+
+	uint32_t c;
+	uint32_t b;
+
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+		got_limm = 1;
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	if (creg == LIMM_REG)
+	{
+		if (!got_limm)
+		{
+			GET_LIMM_32;
+			size = 8;
+		}
+		c = limm;
+	}
+	else
+	{
+		c = m_regs[creg];
+	}
+	/* todo: is the limm, limm syntax valid? (it's pointless.) */
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = b & (~c);
+	m_regs[areg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_06 (BIC) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_06_p01(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_u6;
+	COMMON32_GET_areg;
+
+	uint32_t c;
+	uint32_t b;
+
+	/* is having b as LIMM valid here? LIMM vs. fixed u6 value makes no sense */
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+/*      got_limm = 1; */
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	c = u;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = b & (~c);
+	m_regs[areg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_06 (BIC) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_06_p10(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_s12;
+
+	uint32_t c;
+	uint32_t b;
+
+	/* is having b as LIMM valid here? LIMM vs. fixed u6 value makes no sense */
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+/*      got_limm = 1; */
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	c = (uint32_t)S;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = b & (~c);
+	m_regs[breg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_06 (BIC) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_06_p11_m0(OPS_32)
+{
+	int size = 4;
+	arcompact_fatal("arcompact_handle04_06_p11_m0 (BIC)\n");
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_06_p11_m1(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_u6;
+	 //COMMON32_GET_areg; // areg bits already used as condition code select
+
+	uint32_t c;
+	uint32_t b;
+
+	/* is having b as LIMM valid here? LIMM vs. fixed u6 value makes no sense */
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+/*      got_limm = 1; */
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	c = u;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	COMMON32_GET_CONDITION;
+	if (!check_condition(condition))
+		return m_pc + (size>>0);
+
+	uint32_t result = b & (~c);
+	m_regs[breg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_06 (BIC) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_07_p00(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+	int got_limm = 0;
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_creg;
+	COMMON32_GET_areg;
+
+	uint32_t c;
+	uint32_t b;
+
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+		got_limm = 1;
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	if (creg == LIMM_REG)
+	{
+		if (!got_limm)
+		{
+			GET_LIMM_32;
+			size = 8;
+		}
+		c = limm;
+	}
+	else
+	{
+		c = m_regs[creg];
+	}
+	/* todo: is the limm, limm syntax valid? (it's pointless.) */
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = b ^ c;
+	m_regs[areg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_07 (XOR) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_07_p01(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_u6;
+	COMMON32_GET_areg;
+
+	uint32_t c;
+	uint32_t b;
+
+	/* is having b as LIMM valid here? LIMM vs. fixed u6 value makes no sense */
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+/*      got_limm = 1; */
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	c = u;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = b ^ c;
+	m_regs[areg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_07 (XOR) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_07_p10(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_s12;
+
+	uint32_t c;
+	uint32_t b;
+
+	/* is having b as LIMM valid here? LIMM vs. fixed u6 value makes no sense */
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+/*      got_limm = 1; */
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	c = (uint32_t)S;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = b ^ c;
+	m_regs[breg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_07 (XOR) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_07_p11_m0(OPS_32)
+{
+	int size = 4;
+	arcompact_fatal("arcompact_handle04_07_p11_m0 (XOR)\n");
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_07_p11_m1(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_u6;
+	 //COMMON32_GET_areg; // areg bits already used as condition code select
+
+	uint32_t c;
+	uint32_t b;
+
+	/* is having b as LIMM valid here? LIMM vs. fixed u6 value makes no sense */
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+/*      got_limm = 1; */
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	c = u;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	COMMON32_GET_CONDITION;
+	if (!check_condition(condition))
+		return m_pc + (size>>0);
+
+	uint32_t result = b ^ c;
+	m_regs[breg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_07 (XOR) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_0a_p00(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+	int got_limm = 0;
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_creg;
+	 //COMMON32_GET_areg; // areg is reserved / not used
+
+	uint32_t c;
+
+	if (creg == LIMM_REG)
+	{
+		if (!got_limm)
+		{
+			GET_LIMM_32;
+			size = 8;
+		}
+		c = limm;
+	}
+	else
+	{
+		c = m_regs[creg];
+	}
+	/* todo: is the limm, limm syntax valid? (it's pointless.) */
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = c;
+	m_regs[breg] = result;
+
+	if (F)
+	{
+		if (result & 0x80000000) { STATUS32_SET_N; }
+		else { STATUS32_CLEAR_N; }
+		if (result == 0x00000000) { STATUS32_SET_Z; }
+		else { STATUS32_CLEAR_Z; }
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_0a_p01(OPS_32)
+{
+	int size = 4;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_u6;
+	 //COMMON32_GET_areg; // areg is reserved / not used
+
+	uint32_t c;
+
+	c = u;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = c;
+	m_regs[breg] = result;
+
+	if (F)
+	{
+		if (result & 0x80000000) { STATUS32_SET_N; }
+		else { STATUS32_CLEAR_N; }
+		if (result == 0x00000000) { STATUS32_SET_Z; }
+		else { STATUS32_CLEAR_Z; }
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_0a_p10(OPS_32)
+{
+	int size = 4;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_s12;
+
+	uint32_t c;
+
+	c = (uint32_t)S;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = c;
+	m_regs[breg] = result;
+
+	if (F)
+	{
+		if (result & 0x80000000) { STATUS32_SET_N; }
+		else { STATUS32_CLEAR_N; }
+		if (result == 0x00000000) { STATUS32_SET_Z; }
+		else { STATUS32_CLEAR_Z; }
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_0a_p11_m0(OPS_32)
+{
+	int size = 4;
+	arcompact_fatal("arcompact_handle04_0a_p11_m0 (MOV)\n");
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_0a_p11_m1(OPS_32)
+{
+	int size = 4;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_u6;
+	 //COMMON32_GET_areg; // areg bits already used as condition code select
+
+	uint32_t c;
+
+	c = u;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	COMMON32_GET_CONDITION;
+	if (!check_condition(condition))
+		return m_pc + (size>>0);
+
+	uint32_t result = c;
+	m_regs[breg] = result;
+
+	if (F)
+	{
+		if (result & 0x80000000) { STATUS32_SET_N; }
+		else { STATUS32_CLEAR_N; }
+		if (result == 0x00000000) { STATUS32_SET_Z; }
+		else { STATUS32_CLEAR_Z; }
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_0e_p00(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+	int got_limm = 0;
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_creg;
+	COMMON32_GET_areg;
+
+	uint32_t c;
+	uint32_t b;
+
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+		got_limm = 1;
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	if (creg == LIMM_REG)
+	{
+		if (!got_limm)
+		{
+			GET_LIMM_32;
+			size = 8;
+		}
+		c = limm;
+	}
+	else
+	{
+		c = m_regs[creg];
+	}
+	/* todo: is the limm, limm syntax valid? (it's pointless.) */
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = c - b;
+	m_regs[areg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_0e (RSUB) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_0e_p01(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_u6;
+	COMMON32_GET_areg;
+
+	uint32_t c;
+	uint32_t b;
+
+	/* is having b as LIMM valid here? LIMM vs. fixed u6 value makes no sense */
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+/*      got_limm = 1; */
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	c = u;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = c - b;
+	m_regs[areg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_0e (RSUB) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_0e_p10(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_s12;
+
+	uint32_t c;
+	uint32_t b;
+
+	/* is having b as LIMM valid here? LIMM vs. fixed u6 value makes no sense */
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+/*      got_limm = 1; */
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	c = (uint32_t)S;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = c - b;
+	m_regs[breg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_0e (RSUB) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_0e_p11_m0(OPS_32)
+{
+	int size = 4;
+	arcompact_fatal("arcompact_handle04_0e_p11_m0 (RSUB)\n");
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_0e_p11_m1(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_u6;
+	 //COMMON32_GET_areg; // areg bits already used as condition code select
+
+	uint32_t c;
+	uint32_t b;
+
+	/* is having b as LIMM valid here? LIMM vs. fixed u6 value makes no sense */
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+/*      got_limm = 1; */
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	c = u;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	COMMON32_GET_CONDITION;
+	if (!check_condition(condition))
+		return m_pc + (size>>0);
+
+	uint32_t result = c - b;
+	m_regs[breg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_0e (RSUB) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_0f_p00(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+	int got_limm = 0;
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_creg;
+	COMMON32_GET_areg;
+
+	uint32_t c;
+	uint32_t b;
+
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+		got_limm = 1;
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	if (creg == LIMM_REG)
+	{
+		if (!got_limm)
+		{
+			GET_LIMM_32;
+			size = 8;
+		}
+		c = limm;
+	}
+	else
+	{
+		c = m_regs[creg];
+	}
+	/* todo: is the limm, limm syntax valid? (it's pointless.) */
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = b | (1 << (c & 0x1f));
+	m_regs[areg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_0f (BSET) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_0f_p01(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_u6;
+	COMMON32_GET_areg;
+
+	uint32_t c;
+	uint32_t b;
+
+	/* is having b as LIMM valid here? LIMM vs. fixed u6 value makes no sense */
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+/*      got_limm = 1; */
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	c = u;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = b | (1 << (c & 0x1f));
+	m_regs[areg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_0f (BSET) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_0f_p10(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_s12;
+
+	uint32_t c;
+	uint32_t b;
+
+	/* is having b as LIMM valid here? LIMM vs. fixed u6 value makes no sense */
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+/*      got_limm = 1; */
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	c = (uint32_t)S;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = b | (1 << (c & 0x1f));
+	m_regs[breg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_0f (BSET) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_0f_p11_m0(OPS_32)
+{
+	int size = 4;
+	arcompact_fatal("arcompact_handle04_0f_p11_m0 (BSET)\n");
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_0f_p11_m1(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_u6;
+	 //COMMON32_GET_areg; // areg bits already used as condition code select
+
+	uint32_t c;
+	uint32_t b;
+
+	/* is having b as LIMM valid here? LIMM vs. fixed u6 value makes no sense */
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+/*      got_limm = 1; */
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	c = u;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	COMMON32_GET_CONDITION;
+	if (!check_condition(condition))
+		return m_pc + (size>>0);
+
+	uint32_t result = b | (1 << (c & 0x1f));
+	m_regs[breg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_0f (BSET) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_13_p00(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+	int got_limm = 0;
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_creg;
+	COMMON32_GET_areg;
+
+	uint32_t c;
+	uint32_t b;
+
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+		got_limm = 1;
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	if (creg == LIMM_REG)
+	{
+		if (!got_limm)
+		{
+			GET_LIMM_32;
+			size = 8;
+		}
+		c = limm;
+	}
+	else
+	{
+		c = m_regs[creg];
+	}
+	/* todo: is the limm, limm syntax valid? (it's pointless.) */
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = b & ((1<<(c+1))-1);
+	m_regs[areg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_13 (BMSK) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_13_p01(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_u6;
+	COMMON32_GET_areg;
+
+	uint32_t c;
+	uint32_t b;
+
+	/* is having b as LIMM valid here? LIMM vs. fixed u6 value makes no sense */
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+/*      got_limm = 1; */
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	c = u;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = b & ((1<<(c+1))-1);
+	m_regs[areg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_13 (BMSK) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_13_p10(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_s12;
+
+	uint32_t c;
+	uint32_t b;
+
+	/* is having b as LIMM valid here? LIMM vs. fixed u6 value makes no sense */
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+/*      got_limm = 1; */
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	c = (uint32_t)S;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = b & ((1<<(c+1))-1);
+	m_regs[breg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_13 (BMSK) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_13_p11_m0(OPS_32)
+{
+	int size = 4;
+	arcompact_fatal("arcompact_handle04_13_p11_m0 (BMSK)\n");
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_13_p11_m1(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_u6;
+	 //COMMON32_GET_areg; // areg bits already used as condition code select
+
+	uint32_t c;
+	uint32_t b;
+
+	/* is having b as LIMM valid here? LIMM vs. fixed u6 value makes no sense */
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+/*      got_limm = 1; */
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	c = u;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	COMMON32_GET_CONDITION;
+	if (!check_condition(condition))
+		return m_pc + (size>>0);
+
+	uint32_t result = b & ((1<<(c+1))-1);
+	m_regs[breg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_13 (BMSK) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_14_p00(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+	int got_limm = 0;
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_creg;
+	COMMON32_GET_areg;
+
+	uint32_t c;
+	uint32_t b;
+
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+		got_limm = 1;
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	if (creg == LIMM_REG)
+	{
+		if (!got_limm)
+		{
+			GET_LIMM_32;
+			size = 8;
+		}
+		c = limm;
+	}
+	else
+	{
+		c = m_regs[creg];
+	}
+	/* todo: is the limm, limm syntax valid? (it's pointless.) */
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = b + (c << 1);
+	m_regs[areg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_14 (ADD1) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_14_p01(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_u6;
+	COMMON32_GET_areg;
+
+	uint32_t c;
+	uint32_t b;
+
+	/* is having b as LIMM valid here? LIMM vs. fixed u6 value makes no sense */
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+/*      got_limm = 1; */
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	c = u;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = b + (c << 1);
+	m_regs[areg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_14 (ADD1) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_14_p10(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_s12;
+
+	uint32_t c;
+	uint32_t b;
+
+	/* is having b as LIMM valid here? LIMM vs. fixed u6 value makes no sense */
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+/*      got_limm = 1; */
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	c = (uint32_t)S;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = b + (c << 1);
+	m_regs[breg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_14 (ADD1) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_14_p11_m0(OPS_32)
+{
+	int size = 4;
+	arcompact_fatal("arcompact_handle04_14_p11_m0 (ADD1)\n");
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_14_p11_m1(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_u6;
+	 //COMMON32_GET_areg; // areg bits already used as condition code select
+
+	uint32_t c;
+	uint32_t b;
+
+	/* is having b as LIMM valid here? LIMM vs. fixed u6 value makes no sense */
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+/*      got_limm = 1; */
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	c = u;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	COMMON32_GET_CONDITION;
+	if (!check_condition(condition))
+		return m_pc + (size>>0);
+
+	uint32_t result = b + (c << 1);
+	m_regs[breg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_14 (ADD1) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_15_p00(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+	int got_limm = 0;
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_creg;
+	COMMON32_GET_areg;
+
+	uint32_t c;
+	uint32_t b;
+
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+		got_limm = 1;
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	if (creg == LIMM_REG)
+	{
+		if (!got_limm)
+		{
+			GET_LIMM_32;
+			size = 8;
+		}
+		c = limm;
+	}
+	else
+	{
+		c = m_regs[creg];
+	}
+	/* todo: is the limm, limm syntax valid? (it's pointless.) */
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = b + (c << 2);
+	m_regs[areg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_15 (ADD2) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_15_p01(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_u6;
+	COMMON32_GET_areg;
+
+	uint32_t c;
+	uint32_t b;
+
+	/* is having b as LIMM valid here? LIMM vs. fixed u6 value makes no sense */
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+/*      got_limm = 1; */
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	c = u;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = b + (c << 2);
+	m_regs[areg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_15 (ADD2) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_15_p10(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_s12;
+
+	uint32_t c;
+	uint32_t b;
+
+	/* is having b as LIMM valid here? LIMM vs. fixed u6 value makes no sense */
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+/*      got_limm = 1; */
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	c = (uint32_t)S;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = b + (c << 2);
+	m_regs[breg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_15 (ADD2) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_15_p11_m0(OPS_32)
+{
+	int size = 4;
+	arcompact_fatal("arcompact_handle04_15_p11_m0 (ADD2)\n");
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_15_p11_m1(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_u6;
+	 //COMMON32_GET_areg; // areg bits already used as condition code select
+
+	uint32_t c;
+	uint32_t b;
+
+	/* is having b as LIMM valid here? LIMM vs. fixed u6 value makes no sense */
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+/*      got_limm = 1; */
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	c = u;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	COMMON32_GET_CONDITION;
+	if (!check_condition(condition))
+		return m_pc + (size>>0);
+
+	uint32_t result = b + (c << 2);
+	m_regs[breg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_15 (ADD2) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_16_p00(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+	int got_limm = 0;
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_creg;
+	COMMON32_GET_areg;
+
+	uint32_t c;
+	uint32_t b;
+
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+		got_limm = 1;
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	if (creg == LIMM_REG)
+	{
+		if (!got_limm)
+		{
+			GET_LIMM_32;
+			size = 8;
+		}
+		c = limm;
+	}
+	else
+	{
+		c = m_regs[creg];
+	}
+	/* todo: is the limm, limm syntax valid? (it's pointless.) */
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = b + (c << 3);
+	m_regs[areg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_16 (ADD3) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_16_p01(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_u6;
+	COMMON32_GET_areg;
+
+	uint32_t c;
+	uint32_t b;
+
+	/* is having b as LIMM valid here? LIMM vs. fixed u6 value makes no sense */
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+/*      got_limm = 1; */
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	c = u;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = b + (c << 3);
+	m_regs[areg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_16 (ADD3) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_16_p10(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_s12;
+
+	uint32_t c;
+	uint32_t b;
+
+	/* is having b as LIMM valid here? LIMM vs. fixed u6 value makes no sense */
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+/*      got_limm = 1; */
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	c = (uint32_t)S;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = b + (c << 3);
+	m_regs[breg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_16 (ADD3) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_16_p11_m0(OPS_32)
+{
+	int size = 4;
+	arcompact_fatal("arcompact_handle04_16_p11_m0 (ADD3)\n");
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_16_p11_m1(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_u6;
+	 //COMMON32_GET_areg; // areg bits already used as condition code select
+
+	uint32_t c;
+	uint32_t b;
+
+	/* is having b as LIMM valid here? LIMM vs. fixed u6 value makes no sense */
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+/*      got_limm = 1; */
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	c = u;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	COMMON32_GET_CONDITION;
+	if (!check_condition(condition))
+		return m_pc + (size>>0);
+
+	uint32_t result = b + (c << 3);
+	m_regs[breg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_16 (ADD3) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_17_p00(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+	int got_limm = 0;
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_creg;
+	COMMON32_GET_areg;
+
+	uint32_t c;
+	uint32_t b;
+
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+		got_limm = 1;
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	if (creg == LIMM_REG)
+	{
+		if (!got_limm)
+		{
+			GET_LIMM_32;
+			size = 8;
+		}
+		c = limm;
+	}
+	else
+	{
+		c = m_regs[creg];
+	}
+	/* todo: is the limm, limm syntax valid? (it's pointless.) */
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = b - (c << 1);
+	m_regs[areg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_17 (SUB1) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_17_p01(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_u6;
+	COMMON32_GET_areg;
+
+	uint32_t c;
+	uint32_t b;
+
+	/* is having b as LIMM valid here? LIMM vs. fixed u6 value makes no sense */
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+/*      got_limm = 1; */
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	c = u;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = b - (c << 1);
+	m_regs[areg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_17 (SUB1) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_17_p10(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_s12;
+
+	uint32_t c;
+	uint32_t b;
+
+	/* is having b as LIMM valid here? LIMM vs. fixed u6 value makes no sense */
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+/*      got_limm = 1; */
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	c = (uint32_t)S;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = b - (c << 1);
+	m_regs[breg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_17 (SUB1) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_17_p11_m0(OPS_32)
+{
+	int size = 4;
+	arcompact_fatal("arcompact_handle04_17_p11_m0 (SUB1)\n");
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_17_p11_m1(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_u6;
+	 //COMMON32_GET_areg; // areg bits already used as condition code select
+
+	uint32_t c;
+	uint32_t b;
+
+	/* is having b as LIMM valid here? LIMM vs. fixed u6 value makes no sense */
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+/*      got_limm = 1; */
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	c = u;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	COMMON32_GET_CONDITION;
+	if (!check_condition(condition))
+		return m_pc + (size>>0);
+
+	uint32_t result = b - (c << 1);
+	m_regs[breg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_17 (SUB1) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_18_p00(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+	int got_limm = 0;
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_creg;
+	COMMON32_GET_areg;
+
+	uint32_t c;
+	uint32_t b;
+
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+		got_limm = 1;
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	if (creg == LIMM_REG)
+	{
+		if (!got_limm)
+		{
+			GET_LIMM_32;
+			size = 8;
+		}
+		c = limm;
+	}
+	else
+	{
+		c = m_regs[creg];
+	}
+	/* todo: is the limm, limm syntax valid? (it's pointless.) */
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = b - (c << 2);
+	m_regs[areg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_18 (SUB2) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_18_p01(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_u6;
+	COMMON32_GET_areg;
+
+	uint32_t c;
+	uint32_t b;
+
+	/* is having b as LIMM valid here? LIMM vs. fixed u6 value makes no sense */
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+/*      got_limm = 1; */
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	c = u;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = b - (c << 2);
+	m_regs[areg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_18 (SUB2) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_18_p10(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_s12;
+
+	uint32_t c;
+	uint32_t b;
+
+	/* is having b as LIMM valid here? LIMM vs. fixed u6 value makes no sense */
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+/*      got_limm = 1; */
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	c = (uint32_t)S;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = b - (c << 2);
+	m_regs[breg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_18 (SUB2) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_18_p11_m0(OPS_32)
+{
+	int size = 4;
+	arcompact_fatal("arcompact_handle04_18_p11_m0 (SUB2)\n");
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_18_p11_m1(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_u6;
+	 //COMMON32_GET_areg; // areg bits already used as condition code select
+
+	uint32_t c;
+	uint32_t b;
+
+	/* is having b as LIMM valid here? LIMM vs. fixed u6 value makes no sense */
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+/*      got_limm = 1; */
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	c = u;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	COMMON32_GET_CONDITION;
+	if (!check_condition(condition))
+		return m_pc + (size>>0);
+
+	uint32_t result = b - (c << 2);
+	m_regs[breg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_18 (SUB2) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_19_p00(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+	int got_limm = 0;
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_creg;
+	COMMON32_GET_areg;
+
+	uint32_t c;
+	uint32_t b;
+
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+		got_limm = 1;
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	if (creg == LIMM_REG)
+	{
+		if (!got_limm)
+		{
+			GET_LIMM_32;
+			size = 8;
+		}
+		c = limm;
+	}
+	else
+	{
+		c = m_regs[creg];
+	}
+	/* todo: is the limm, limm syntax valid? (it's pointless.) */
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = b - (c << 3);
+	m_regs[areg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_19 (SUB3) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_19_p01(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_u6;
+	COMMON32_GET_areg;
+
+	uint32_t c;
+	uint32_t b;
+
+	/* is having b as LIMM valid here? LIMM vs. fixed u6 value makes no sense */
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+/*      got_limm = 1; */
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	c = u;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = b - (c << 3);
+	m_regs[areg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_19 (SUB3) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_19_p10(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_s12;
+
+	uint32_t c;
+	uint32_t b;
+
+	/* is having b as LIMM valid here? LIMM vs. fixed u6 value makes no sense */
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+/*      got_limm = 1; */
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	c = (uint32_t)S;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = b - (c << 3);
+	m_regs[breg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_19 (SUB3) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_19_p11_m0(OPS_32)
+{
+	int size = 4;
+	arcompact_fatal("arcompact_handle04_19_p11_m0 (SUB3)\n");
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_19_p11_m1(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_u6;
+	 //COMMON32_GET_areg; // areg bits already used as condition code select
+
+	uint32_t c;
+	uint32_t b;
+
+	/* is having b as LIMM valid here? LIMM vs. fixed u6 value makes no sense */
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+/*      got_limm = 1; */
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	c = u;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	COMMON32_GET_CONDITION;
+	if (!check_condition(condition))
+		return m_pc + (size>>0);
+
+	uint32_t result = b - (c << 3);
+	m_regs[breg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_19 (SUB3) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_2a_p00(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+	int got_limm = 0;
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_creg;
+	 //COMMON32_GET_areg; // areg is reserved / not used
+
+	uint32_t c;
+
+	if (creg == LIMM_REG)
+	{
+		if (!got_limm)
+		{
+			GET_LIMM_32;
+			size = 8;
+		}
+		c = limm;
+	}
+	else
+	{
+		c = m_regs[creg];
+	}
+	/* todo: is the limm, limm syntax valid? (it's pointless.) */
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	m_regs[breg] = READAUX(c);
+
+
+	if (F)
+	{
+		// no flag changes
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_2a_p01(OPS_32)
+{
+	int size = 4;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_u6;
+	 //COMMON32_GET_areg; // areg is reserved / not used
+
+	uint32_t c;
+
+	c = u;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	m_regs[breg] = READAUX(c);
+
+
+	if (F)
+	{
+		// no flag changes
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_2a_p10(OPS_32)
+{
+	int size = 4;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_s12;
+
+	uint32_t c;
+
+	c = (uint32_t)S;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	m_regs[breg] = READAUX(c);
+
+
+	if (F)
+	{
+		// no flag changes
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_2a_p11_m0(OPS_32)
+{
+	int size = 4;
+	arcompact_fatal("arcompact_handle04_2a_p11_m0 (LR)\n");
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_2a_p11_m1(OPS_32)
+{
+	int size = 4;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_u6;
+	 //COMMON32_GET_areg; // areg bits already used as condition code select
+
+	uint32_t c;
+
+	c = u;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	COMMON32_GET_CONDITION;
+	if (!check_condition(condition))
+		return m_pc + (size>>0);
+
+	m_regs[breg] = READAUX(c);
+
+
+	if (F)
+	{
+		// no flag changes
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_2b_p00(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+	int got_limm = 0;
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_creg;
+	 //COMMON32_GET_areg; // areg is reserved / not used
+
+	uint32_t c;
+	uint32_t b;
+
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+		got_limm = 1;
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	if (creg == LIMM_REG)
+	{
+		if (!got_limm)
+		{
+			GET_LIMM_32;
+			size = 8;
+		}
+		c = limm;
+	}
+	else
+	{
+		c = m_regs[creg];
+	}
+	/* todo: is the limm, limm syntax valid? (it's pointless.) */
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	WRITEAUX(c,b);
+
+
+	if (F)
+	{
+		// no flag changes
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_2b_p01(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_u6;
+	 //COMMON32_GET_areg; // areg is reserved / not used
+
+	uint32_t c;
+	uint32_t b;
+
+	/* is having b as LIMM valid here? LIMM vs. fixed u6 value makes no sense */
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+/*      got_limm = 1; */
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	c = u;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	WRITEAUX(c,b);
+
+
+	if (F)
+	{
+		// no flag changes
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_2b_p10(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_s12;
+
+	uint32_t c;
+	uint32_t b;
+
+	/* is having b as LIMM valid here? LIMM vs. fixed u6 value makes no sense */
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+/*      got_limm = 1; */
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	c = (uint32_t)S;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	WRITEAUX(c,b);
+
+
+	if (F)
+	{
+		// no flag changes
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_2b_p11_m0(OPS_32)
+{
+	int size = 4;
+	arcompact_fatal("arcompact_handle04_2b_p11_m0 (SR)\n");
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_2b_p11_m1(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_u6;
+	 //COMMON32_GET_areg; // areg bits already used as condition code select
+
+	uint32_t c;
+	uint32_t b;
+
+	/* is having b as LIMM valid here? LIMM vs. fixed u6 value makes no sense */
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+/*      got_limm = 1; */
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	c = u;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	COMMON32_GET_CONDITION;
+	if (!check_condition(condition))
+		return m_pc + (size>>0);
+
+	WRITEAUX(c,b);
+
+
+	if (F)
+	{
+		// no flag changes
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle05_00_p00(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+	int got_limm = 0;
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_creg;
+	COMMON32_GET_areg;
+
+	uint32_t c;
+	uint32_t b;
+
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+		got_limm = 1;
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	if (creg == LIMM_REG)
+	{
+		if (!got_limm)
+		{
+			GET_LIMM_32;
+			size = 8;
+		}
+		c = limm;
+	}
+	else
+	{
+		c = m_regs[creg];
+	}
+	/* todo: is the limm, limm syntax valid? (it's pointless.) */
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = b << (c&0x1f);
+	m_regs[areg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle05_00 (ASL) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle05_00_p01(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_u6;
+	COMMON32_GET_areg;
+
+	uint32_t c;
+	uint32_t b;
+
+	/* is having b as LIMM valid here? LIMM vs. fixed u6 value makes no sense */
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+/*      got_limm = 1; */
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	c = u;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = b << (c&0x1f);
+	m_regs[areg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle05_00 (ASL) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle05_00_p10(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_s12;
+
+	uint32_t c;
+	uint32_t b;
+
+	/* is having b as LIMM valid here? LIMM vs. fixed u6 value makes no sense */
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+/*      got_limm = 1; */
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	c = (uint32_t)S;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = b << (c&0x1f);
+	m_regs[breg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle05_00 (ASL) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle05_00_p11_m0(OPS_32)
+{
+	int size = 4;
+	arcompact_fatal("arcompact_handle05_00_p11_m0 (ASL)\n");
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle05_00_p11_m1(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_u6;
+	 //COMMON32_GET_areg; // areg bits already used as condition code select
+
+	uint32_t c;
+	uint32_t b;
+
+	/* is having b as LIMM valid here? LIMM vs. fixed u6 value makes no sense */
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+/*      got_limm = 1; */
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	c = u;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	COMMON32_GET_CONDITION;
+	if (!check_condition(condition))
+		return m_pc + (size>>0);
+
+	uint32_t result = b << (c&0x1f);
+	m_regs[breg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle05_00 (ASL) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle05_01_p00(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+	int got_limm = 0;
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_creg;
+	COMMON32_GET_areg;
+
+	uint32_t c;
+	uint32_t b;
+
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+		got_limm = 1;
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	if (creg == LIMM_REG)
+	{
+		if (!got_limm)
+		{
+			GET_LIMM_32;
+			size = 8;
+		}
+		c = limm;
+	}
+	else
+	{
+		c = m_regs[creg];
+	}
+	/* todo: is the limm, limm syntax valid? (it's pointless.) */
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = b >> (c&0x1f);
+	m_regs[areg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle05_01 (LSR) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle05_01_p01(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_u6;
+	COMMON32_GET_areg;
+
+	uint32_t c;
+	uint32_t b;
+
+	/* is having b as LIMM valid here? LIMM vs. fixed u6 value makes no sense */
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+/*      got_limm = 1; */
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	c = u;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = b >> (c&0x1f);
+	m_regs[areg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle05_01 (LSR) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle05_01_p10(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_s12;
+
+	uint32_t c;
+	uint32_t b;
+
+	/* is having b as LIMM valid here? LIMM vs. fixed u6 value makes no sense */
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+/*      got_limm = 1; */
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	c = (uint32_t)S;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = b >> (c&0x1f);
+	m_regs[breg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle05_01 (LSR) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle05_01_p11_m0(OPS_32)
+{
+	int size = 4;
+	arcompact_fatal("arcompact_handle05_01_p11_m0 (LSR)\n");
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle05_01_p11_m1(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_u6;
+	 //COMMON32_GET_areg; // areg bits already used as condition code select
+
+	uint32_t c;
+	uint32_t b;
+
+	/* is having b as LIMM valid here? LIMM vs. fixed u6 value makes no sense */
+	if (breg == LIMM_REG)
+	{
+		GET_LIMM_32;
+		size = 8;
+/*      got_limm = 1; */
+		b = limm;
+	}
+	else
+	{
+		b = m_regs[breg];
+	}
+
+	c = u;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	COMMON32_GET_CONDITION;
+	if (!check_condition(condition))
+		return m_pc + (size>>0);
+
+	uint32_t result = b >> (c&0x1f);
+	m_regs[breg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle05_01 (LSR) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_2f_02_p00(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+	int got_limm = 0;
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_creg;
+	 //COMMON32_GET_areg; // areg bits already used as opcode select
+
+	uint32_t c;
+
+	if (creg == LIMM_REG)
+	{
+		if (!got_limm)
+		{
+			GET_LIMM_32;
+			size = 8;
+		}
+		c = limm;
+	}
+	else
+	{
+		c = m_regs[creg];
+	}
+	/* todo: is the limm, limm syntax valid? (it's pointless.) */
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = c >> 1;
+	m_regs[breg] = result;
+
+	if (F)
+	{
+		if (result & 0x80000000) { STATUS32_SET_N; }
+		else { STATUS32_CLEAR_N; }
+		if (result == 0x00000000) { STATUS32_SET_Z; }
+		else { STATUS32_CLEAR_Z; }
+		if (c == 0x00000001) { STATUS32_SET_C; }
+		else { STATUS32_CLEAR_C; }
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_2f_02_p01(OPS_32)
+{
+	int size = 4;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_u6;
+	 //COMMON32_GET_areg; // areg bits already used as opcode select
+
+	uint32_t c;
+
+	c = u;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = c >> 1;
+	m_regs[breg] = result;
+
+	if (F)
+	{
+		if (result & 0x80000000) { STATUS32_SET_N; }
+		else { STATUS32_CLEAR_N; }
+		if (result == 0x00000000) { STATUS32_SET_Z; }
+		else { STATUS32_CLEAR_Z; }
+		if (c == 0x00000001) { STATUS32_SET_C; }
+		else { STATUS32_CLEAR_C; }
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_2f_02_p10(OPS_32)
+{
+	int size = 4;
+	arcompact_fatal("illegal arcompact_handle04_2f_02_p10 (ares bits already used as opcode select, can't be used as s12) (LSR1)\n");
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_2f_02_p11_m0(OPS_32)
+{
+	int size = 4;
+	arcompact_fatal("illegal arcompact_handle04_2f_02_p11_m0 (ares bits already used as opcode select, can't be used as Q condition) (LSR1)\n");
+	return m_pc + (size >> 0);
+}
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_2f_02_p11_m1(OPS_32)
+{
+	int size = 4;
+	arcompact_fatal("illegal arcompact_handle04_2f_02_p11_m1 (ares bits already used as opcode select, can't be used as Q condition) (LSR1)\n");
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_2f_03_p00(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+	int got_limm = 0;
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_creg;
+	 //COMMON32_GET_areg; // areg bits already used as opcode select
+
+	uint32_t c;
+
+	if (creg == LIMM_REG)
+	{
+		if (!got_limm)
+		{
+			GET_LIMM_32;
+			size = 8;
+		}
+		c = limm;
+	}
+	else
+	{
+		c = m_regs[creg];
+	}
+	/* todo: is the limm, limm syntax valid? (it's pointless.) */
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	int shift = 1; uint32_t mask = (1 << (shift)) - 1; mask <<= (32-shift); uint32_t result = ((c >> shift) & ~mask) | ((c << (32-shift)) & mask);
+	m_regs[breg] = result;
+
+	if (F)
+	{
+		if (result & 0x80000000) { STATUS32_SET_N; }
+		else { STATUS32_CLEAR_N; }
+		if (result == 0x00000000) { STATUS32_SET_Z; }
+		else { STATUS32_CLEAR_Z; }
+		if (c == 0x00000001) { STATUS32_SET_C; }
+		else { STATUS32_CLEAR_C; }
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_2f_03_p01(OPS_32)
+{
+	int size = 4;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_u6;
+	 //COMMON32_GET_areg; // areg bits already used as opcode select
+
+	uint32_t c;
+
+	c = u;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	int shift = 1; uint32_t mask = (1 << (shift)) - 1; mask <<= (32-shift); uint32_t result = ((c >> shift) & ~mask) | ((c << (32-shift)) & mask);
+	m_regs[breg] = result;
+
+	if (F)
+	{
+		if (result & 0x80000000) { STATUS32_SET_N; }
+		else { STATUS32_CLEAR_N; }
+		if (result == 0x00000000) { STATUS32_SET_Z; }
+		else { STATUS32_CLEAR_Z; }
+		if (c == 0x00000001) { STATUS32_SET_C; }
+		else { STATUS32_CLEAR_C; }
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_2f_03_p10(OPS_32)
+{
+	int size = 4;
+	arcompact_fatal("illegal arcompact_handle04_2f_03_p10 (ares bits already used as opcode select, can't be used as s12) (ROR)\n");
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_2f_03_p11_m0(OPS_32)
+{
+	int size = 4;
+	arcompact_fatal("illegal arcompact_handle04_2f_03_p11_m0 (ares bits already used as opcode select, can't be used as Q condition) (ROR)\n");
+	return m_pc + (size >> 0);
+}
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_2f_03_p11_m1(OPS_32)
+{
+	int size = 4;
+	arcompact_fatal("illegal arcompact_handle04_2f_03_p11_m1 (ares bits already used as opcode select, can't be used as Q condition) (ROR)\n");
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_2f_07_p00(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+	int got_limm = 0;
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_creg;
+	 //COMMON32_GET_areg; // areg bits already used as opcode select
+
+	uint32_t c;
+
+	if (creg == LIMM_REG)
+	{
+		if (!got_limm)
+		{
+			GET_LIMM_32;
+			size = 8;
+		}
+		c = limm;
+	}
+	else
+	{
+		c = m_regs[creg];
+	}
+	/* todo: is the limm, limm syntax valid? (it's pointless.) */
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = c & 0x000000ff;
+	m_regs[breg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_2f_07 (EXTB) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_2f_07_p01(OPS_32)
+{
+	int size = 4;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_u6;
+	 //COMMON32_GET_areg; // areg bits already used as opcode select
+
+	uint32_t c;
+
+	c = u;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = c & 0x000000ff;
+	m_regs[breg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_2f_07 (EXTB) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_2f_07_p10(OPS_32)
+{
+	int size = 4;
+	arcompact_fatal("illegal arcompact_handle04_2f_07_p10 (ares bits already used as opcode select, can't be used as s12) (EXTB)\n");
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_2f_07_p11_m0(OPS_32)
+{
+	int size = 4;
+	arcompact_fatal("illegal arcompact_handle04_2f_07_p11_m0 (ares bits already used as opcode select, can't be used as Q condition) (EXTB)\n");
+	return m_pc + (size >> 0);
+}
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_2f_07_p11_m1(OPS_32)
+{
+	int size = 4;
+	arcompact_fatal("illegal arcompact_handle04_2f_07_p11_m1 (ares bits already used as opcode select, can't be used as Q condition) (EXTB)\n");
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_2f_08_p00(OPS_32)
+{
+	int size = 4;
+	uint32_t limm = 0;
+	int got_limm = 0;
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_creg;
+	 //COMMON32_GET_areg; // areg bits already used as opcode select
+
+	uint32_t c;
+
+	if (creg == LIMM_REG)
+	{
+		if (!got_limm)
+		{
+			GET_LIMM_32;
+			size = 8;
+		}
+		c = limm;
+	}
+	else
+	{
+		c = m_regs[creg];
+	}
+	/* todo: is the limm, limm syntax valid? (it's pointless.) */
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = c & 0x0000ffff;
+	m_regs[breg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_2f_08 (EXTW) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_2f_08_p01(OPS_32)
+{
+	int size = 4;
+/*  int got_limm = 0; */
+
+	COMMON32_GET_breg;
+	COMMON32_GET_F;
+	COMMON32_GET_u6;
+	 //COMMON32_GET_areg; // areg bits already used as opcode select
+
+	uint32_t c;
+
+	c = u;
+
+	/* todo: if areg = LIMM then there is no result (but since that register can never be read, I guess it doesn't matter if we store it there anyway?) */
+	uint32_t result = c & 0x0000ffff;
+	m_regs[breg] = result;
+
+	if (F)
+	{
+		arcompact_fatal("arcompact_handle04_2f_08 (EXTW) (F set)\n"); // not yet supported
+	}
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_2f_08_p10(OPS_32)
+{
+	int size = 4;
+	arcompact_fatal("illegal arcompact_handle04_2f_08_p10 (ares bits already used as opcode select, can't be used as s12) (EXTW)\n");
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_2f_08_p11_m0(OPS_32)
+{
+	int size = 4;
+	arcompact_fatal("illegal arcompact_handle04_2f_08_p11_m0 (ares bits already used as opcode select, can't be used as Q condition) (EXTW)\n");
+	return m_pc + (size >> 0);
+}
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_2f_08_p11_m1(OPS_32)
+{
+	int size = 4;
+	arcompact_fatal("illegal arcompact_handle04_2f_08_p11_m1 (ares bits already used as opcode select, can't be used as Q condition) (EXTW)\n");
+	return m_pc + (size >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle0d_00(OPS_16)
+{
+	int u, breg, creg;
+
+	COMMON16_GET_u3;
+	COMMON16_GET_breg;
+	COMMON16_GET_creg;
+
+	REG_16BIT_RANGE(breg);
+	REG_16BIT_RANGE(creg);
+
+	uint32_t result = m_regs[breg] + u;
+	m_regs[creg] = result;
+
+	return m_pc + (2 >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle0d_01(OPS_16)
+{
+	int u, breg, creg;
+
+	COMMON16_GET_u3;
+	COMMON16_GET_breg;
+	COMMON16_GET_creg;
+
+	REG_16BIT_RANGE(breg);
+	REG_16BIT_RANGE(creg);
+
+	uint32_t result = m_regs[breg] - u;
+	m_regs[creg] = result;
+
+	return m_pc + (2 >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle0d_02(OPS_16)
+{
+	int u, breg, creg;
+
+	COMMON16_GET_u3;
+	COMMON16_GET_breg;
+	COMMON16_GET_creg;
+
+	REG_16BIT_RANGE(breg);
+	REG_16BIT_RANGE(creg);
+
+	uint32_t result = m_regs[breg] << u;
+	m_regs[creg] = result;
+
+	return m_pc + (2 >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle0f_02(OPS_16)
+{
+	int breg, creg;
+
+	COMMON16_GET_breg;
+	COMMON16_GET_creg;
+
+	REG_16BIT_RANGE(breg);
+	REG_16BIT_RANGE(creg);
+
+	uint32_t result = m_regs[breg] - m_regs[creg];
+	m_regs[breg] = result;
+
+	return m_pc + (2 >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle0f_04(OPS_16)
+{
+	int breg, creg;
+
+	COMMON16_GET_breg;
+	COMMON16_GET_creg;
+
+	REG_16BIT_RANGE(breg);
+	REG_16BIT_RANGE(creg);
+
+	uint32_t result = m_regs[breg] & m_regs[creg];
+	m_regs[breg] = result;
+
+	return m_pc + (2 >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle0f_05(OPS_16)
+{
+	int breg, creg;
+
+	COMMON16_GET_breg;
+	COMMON16_GET_creg;
+
+	REG_16BIT_RANGE(breg);
+	REG_16BIT_RANGE(creg);
+
+	uint32_t result = m_regs[breg] | m_regs[creg];
+	m_regs[breg] = result;
+
+	return m_pc + (2 >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle0f_07(OPS_16)
+{
+	int breg, creg;
+
+	COMMON16_GET_breg;
+	COMMON16_GET_creg;
+
+	REG_16BIT_RANGE(breg);
+	REG_16BIT_RANGE(creg);
+
+	uint32_t result = m_regs[breg] ^ m_regs[creg];
+	m_regs[breg] = result;
+
+	return m_pc + (2 >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle0f_0f(OPS_16)
+{
+	int breg, creg;
+
+	COMMON16_GET_breg;
+	COMMON16_GET_creg;
+
+	REG_16BIT_RANGE(breg);
+	REG_16BIT_RANGE(creg);
+
+	uint32_t result = m_regs[creg] & 0x000000ff;
+	m_regs[breg] = result;
+
+	return m_pc + (2 >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle0f_10(OPS_16)
+{
+	int breg, creg;
+
+	COMMON16_GET_breg;
+	COMMON16_GET_creg;
+
+	REG_16BIT_RANGE(breg);
+	REG_16BIT_RANGE(creg);
+
+	uint32_t result = m_regs[creg] & 0x0000ffff;
+	m_regs[breg] = result;
+
+	return m_pc + (2 >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle0f_13(OPS_16)
+{
+	int breg, creg;
+
+	COMMON16_GET_breg;
+	COMMON16_GET_creg;
+
+	REG_16BIT_RANGE(breg);
+	REG_16BIT_RANGE(creg);
+
+	 uint32_t result = 0 - m_regs[creg];
+	m_regs[breg] = result;
+
+	return m_pc + (2 >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle0f_14(OPS_16)
+{
+	int breg, creg;
+
+	COMMON16_GET_breg;
+	COMMON16_GET_creg;
+
+	REG_16BIT_RANGE(breg);
+	REG_16BIT_RANGE(creg);
+
+	 uint32_t result = m_regs[breg] + (m_regs[creg] <<1);
+	m_regs[breg] = result;
+
+	return m_pc + (2 >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle0f_15(OPS_16)
+{
+	int breg, creg;
+
+	COMMON16_GET_breg;
+	COMMON16_GET_creg;
+
+	REG_16BIT_RANGE(breg);
+	REG_16BIT_RANGE(creg);
+
+	 uint32_t result = m_regs[breg] + (m_regs[creg] <<2);
+	m_regs[breg] = result;
+
+	return m_pc + (2 >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle0f_16(OPS_16)
+{
+	int breg, creg;
+
+	COMMON16_GET_breg;
+	COMMON16_GET_creg;
+
+	REG_16BIT_RANGE(breg);
+	REG_16BIT_RANGE(creg);
+
+	 uint32_t result = m_regs[breg] + (m_regs[creg] <<3);
+	m_regs[breg] = result;
+
+	return m_pc + (2 >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle0f_19(OPS_16)
+{
+	int breg, creg;
+
+	COMMON16_GET_breg;
+	COMMON16_GET_creg;
+
+	REG_16BIT_RANGE(breg);
+	REG_16BIT_RANGE(creg);
+
+	uint32_t result = m_regs[breg] >> (m_regs[creg]&0x1f);
+	m_regs[breg] = result;
+
+	return m_pc + (2 >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle0f_1b(OPS_16)
+{
+	int breg, creg;
+
+	COMMON16_GET_breg;
+	COMMON16_GET_creg;
+
+	REG_16BIT_RANGE(breg);
+	REG_16BIT_RANGE(creg);
+
+	uint32_t result = m_regs[creg] << 1;
+	m_regs[breg] = result;
+
+	return m_pc + (2 >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle17_00(OPS_16)
+{
+	int breg, u;
+
+	COMMON16_GET_breg;
+	COMMON16_GET_u5;
+
+	REG_16BIT_RANGE(breg);
+
+	m_regs[breg] = m_regs[breg] << (u&0x1f);
+
+	return m_pc + (2 >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle17_01(OPS_16)
+{
+	int breg, u;
+
+	COMMON16_GET_breg;
+	COMMON16_GET_u5;
+
+	REG_16BIT_RANGE(breg);
+
+	m_regs[breg] = m_regs[breg] >> (u&0x1f);
+
+	return m_pc + (2 >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle17_02(OPS_16)
+{
+	int breg, u;
+
+	COMMON16_GET_breg;
+	COMMON16_GET_u5;
+
+	REG_16BIT_RANGE(breg);
+
+	int32_t temp = (int32_t)m_regs[breg]; m_regs[breg] = temp >> (u&0x1f); // treat it as a signed value, so sign extension occurs during shift
+
+	return m_pc + (2 >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle17_03(OPS_16)
+{
+	int breg, u;
+
+	COMMON16_GET_breg;
+	COMMON16_GET_u5;
+
+	REG_16BIT_RANGE(breg);
+
+	m_regs[breg] = m_regs[breg] - u;
+
+	return m_pc + (2 >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle17_04(OPS_16)
+{
+	int breg, u;
+
+	COMMON16_GET_breg;
+	COMMON16_GET_u5;
+
+	REG_16BIT_RANGE(breg);
+
+	m_regs[breg] = m_regs[breg] | (1 << (u & 0x1f));
+
+	return m_pc + (2 >> 0);
+}
+
+
+ARCOMPACT_RETTYPE arcompact_device::arcompact_handle17_06(OPS_16)
+{
+	int breg, u;
+
+	COMMON16_GET_breg;
+	COMMON16_GET_u5;
+
+	REG_16BIT_RANGE(breg);
+
+	m_regs[breg] = m_regs[breg] | ((1 << (u + 1)) - 1);
+
+	return m_pc + (2 >> 0);
+}
+
+
 
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_01(OPS_32)
 {
-	return arcompact_handle04_helper(PARAMS, opcodes_04[0x01], /*"ADC"*/ 0,0);
+	return arcompact_handle04_helper(PARAMS, arcompact_disassembler::opcodes_04[0x01], /*"ADC"*/ 0,0);
 }
 
 
 
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_03(OPS_32)
 {
-	return arcompact_handle04_helper(PARAMS, opcodes_04[0x03], /*"SBC"*/ 0,0);
+	return arcompact_handle04_helper(PARAMS, arcompact_disassembler::opcodes_04[0x03], /*"SBC"*/ 0,0);
 }
 
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_08(OPS_32)
 {
-	return arcompact_handle04_helper(PARAMS, opcodes_04[0x08], /*"MAX"*/ 0,0);
+	return arcompact_handle04_helper(PARAMS, arcompact_disassembler::opcodes_04[0x08], /*"MAX"*/ 0,0);
 }
 
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_09(OPS_32)
 {
-	return arcompact_handle04_helper(PARAMS, opcodes_04[0x09], /*"MIN"*/ 0,0);
+	return arcompact_handle04_helper(PARAMS, arcompact_disassembler::opcodes_04[0x09], /*"MIN"*/ 0,0);
 }
 
 
 
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_0b(OPS_32)
 {
-	return arcompact_handle04_helper(PARAMS, opcodes_04[0x0b], /*"TST"*/ 1,0);
+	return arcompact_handle04_helper(PARAMS, arcompact_disassembler::opcodes_04[0x0b], /*"TST"*/ 1,0);
 }
 
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_0c(OPS_32)
 {
-	return arcompact_handle04_helper(PARAMS, opcodes_04[0x0c], /*"CMP"*/ 1,0);
+	return arcompact_handle04_helper(PARAMS, arcompact_disassembler::opcodes_04[0x0c], /*"CMP"*/ 1,0);
 }
 
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_0d(OPS_32)
 {
-	return arcompact_handle04_helper(PARAMS, opcodes_04[0x0d], /*"RCMP"*/ 1,0);
+	return arcompact_handle04_helper(PARAMS, arcompact_disassembler::opcodes_04[0x0d], /*"RCMP"*/ 1,0);
 }
 
 
 
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_10(OPS_32)
 {
-	return arcompact_handle04_helper(PARAMS, opcodes_04[0x10], /*"BCLR"*/ 0,0);
+	return arcompact_handle04_helper(PARAMS, arcompact_disassembler::opcodes_04[0x10], /*"BCLR"*/ 0,0);
 }
 
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_11(OPS_32)
 {
-	return arcompact_handle04_helper(PARAMS, opcodes_04[0x11], /*"BTST"*/ 0,0);
+	return arcompact_handle04_helper(PARAMS, arcompact_disassembler::opcodes_04[0x11], /*"BTST"*/ 0,0);
 }
 
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_12(OPS_32)
 {
-	return arcompact_handle04_helper(PARAMS, opcodes_04[0x12], /*"BXOR"*/ 0,0);
+	return arcompact_handle04_helper(PARAMS, arcompact_disassembler::opcodes_04[0x12], /*"BXOR"*/ 0,0);
 }
 
 
@@ -1905,28 +6342,28 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_12(OPS_32)
 
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_1a(OPS_32)
 {
-	return arcompact_handle04_helper(PARAMS, opcodes_04[0x1a], /*"MPY"*/ 0,0);
+	return arcompact_handle04_helper(PARAMS, arcompact_disassembler::opcodes_04[0x1a], /*"MPY"*/ 0,0);
 } // *
 
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_1b(OPS_32)
 {
-	return arcompact_handle04_helper(PARAMS, opcodes_04[0x1b], /*"MPYH"*/ 0,0);
+	return arcompact_handle04_helper(PARAMS, arcompact_disassembler::opcodes_04[0x1b], /*"MPYH"*/ 0,0);
 } // *
 
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_1c(OPS_32)
 {
-	return arcompact_handle04_helper(PARAMS, opcodes_04[0x1c], /*"MPYHU"*/ 0,0);
+	return arcompact_handle04_helper(PARAMS, arcompact_disassembler::opcodes_04[0x1c], /*"MPYHU"*/ 0,0);
 } // *
 
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_1d(OPS_32)
 {
-	return arcompact_handle04_helper(PARAMS, opcodes_04[0x1d], /*"MPYU"*/ 0,0);
+	return arcompact_handle04_helper(PARAMS, arcompact_disassembler::opcodes_04[0x1d], /*"MPYU"*/ 0,0);
 } // *
 
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_20_p00(OPS_32)
 {
-	int size = 4;
-	UINT32 limm = 0;
+	int size;
+	uint32_t limm = 0;
 	int got_limm = 0;
 
 	COMMON32_GET_creg
@@ -2004,14 +6441,14 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_20_p10(OPS_32)
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_20_p11_m0(OPS_32) // Jcc   (no link, no delay)
 {
 	int size = 4;
-	UINT32 limm = 0;
+	uint32_t limm = 0;
 	int got_limm = 0;
 
 	COMMON32_GET_creg
 	COMMON32_GET_CONDITION;
 	COMMON32_GET_F
 
-	UINT32 c = 0;
+	uint32_t c;
 
 	if (creg == LIMM_REG)
 	{
@@ -2048,7 +6485,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_20_p11_m0(OPS_32) // Jcc 
 		}
 		else
 		{
-			UINT32 realaddress = c;
+			uint32_t realaddress = c;
 			return realaddress;
 		}
 	}
@@ -2085,7 +6522,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_20_p11_m1(OPS_32)
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_21_p00(OPS_32)
 {
 	int size = 4;
-	UINT32 limm = 0;
+	uint32_t limm = 0;
 	int got_limm = 0;
 
 	COMMON32_GET_creg
@@ -2127,14 +6564,14 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_21_p10(OPS_32)
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_21_p11_m0(OPS_32) // Jcc.D   (no link, delay)
 {
 	int size = 4;
-	UINT32 limm = 0;
+	uint32_t limm;
 	int got_limm = 0;
 
 	COMMON32_GET_creg
 	COMMON32_GET_CONDITION;
 	COMMON32_GET_F
 
-	//UINT32 c = 0;
+	//uint32_t c = 0;
 
 	if (creg == LIMM_REG)
 	{
@@ -2202,12 +6639,12 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_21_p11_m1(OPS_32)
 
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_22(OPS_32)
 {
-	return arcompact_handle04_helper(PARAMS, opcodes_04[0x22], /*"JL"*/ 1,1);
+	return arcompact_handle04_helper(PARAMS, arcompact_disassembler::opcodes_04[0x22], /*"JL"*/ 1,1);
 }
 
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_23(OPS_32)
 {
-	return arcompact_handle04_helper(PARAMS, opcodes_04[0x23], /*"JL.D"*/ 1,1);
+	return arcompact_handle04_helper(PARAMS, arcompact_disassembler::opcodes_04[0x23], /*"JL.D"*/ 1,1);
 }
 
 
@@ -2238,12 +6675,12 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_28(OPS_32) // LPcc (loop 
 	{ // 0010 0RRR 1110 1000 0RRR uuuu uu1Q QQQQ
 		COMMON32_GET_u6
 		COMMON32_GET_CONDITION
-		//arcompact_fatal("Lp conditional %s not supported %d", conditions[condition], u);
+		//arcompact_fatal("Lp conditional %s not supported %d", arcompact_disassembler::conditions[condition], u);
 
 		// if the loop condition fails then just jump to after the end of the loop, don't set any registers
 		if (!check_condition(condition))
 		{
-			UINT32 realoffset = PC_ALIGNED32 + (u * 2);
+			uint32_t realoffset = PC_ALIGNED32 + (u * 2);
 			return realoffset;
 		}
 		else
@@ -2264,13 +6701,13 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_28(OPS_32) // LPcc (loop 
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_29(OPS_32)
 {
 	// leapster bios uses formats for FLAG that are not defined, bug I guess work anyway (P modes 0 / 1)
-	return arcompact_handle04_helper(PARAMS, opcodes_04[0x29], /*"FLAG"*/ 1,1);
+	return arcompact_handle04_helper(PARAMS, arcompact_disassembler::opcodes_04[0x29], /*"FLAG"*/ 1,1);
 }
 
 
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_2f_helper(OPS_32, const char* optext)
 {
-	int size = 4;
+	int size;
 
 	COMMON32_GET_p;
 	//COMMON32_GET_breg;
@@ -2281,7 +6718,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_2f_helper(OPS_32, const c
 
 		if (creg == LIMM_REG)
 		{
-			//UINT32 limm;
+			//uint32_t limm;
 			//GET_LIMM_32;
 			size = 8;
 		}
@@ -2330,8 +6767,8 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_2f_3f_05(OPS_32)  { arcom
 
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle04_3x_helper(OPS_32, int dsize, int extend)
 {
-	int size = 4;
-	//UINT32 limm=0;
+	int size;
+	//uint32_t limm=0;
 	int got_limm = 0;
 
 
@@ -2406,7 +6843,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle05_29(OPS_32)  { return arco
 
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle05_2f_0x_helper(OPS_32, const char* optext)
 {
-	int size = 4;
+	int size;
 
 	COMMON32_GET_p;
 	//COMMON32_GET_breg;
@@ -2417,7 +6854,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle05_2f_0x_helper(OPS_32, cons
 
 		if (creg == LIMM_REG)
 		{
-			//UINT32 limm;
+			//uint32_t limm;
 			//GET_LIMM_32;
 			size = 8;
 
@@ -2548,13 +6985,13 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle0d_03(OPS_16)
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle0e_0x_helper(OPS_16, const char* optext, int revop)
 {
 	int h;// , breg;
-	int size = 2;
+	int size;
 
 	GROUP_0e_GET_h;
 
 	if (h == LIMM_REG)
 	{
-		//UINT32 limm;
+		//uint32_t limm;
 		//GET_LIMM;
 		size = 6;
 	}
@@ -2579,7 +7016,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle0e_00(OPS_16) // ADD_s b, b,
 
 	if (h == LIMM_REG)
 	{
-		UINT32 limm;
+		uint32_t limm;
 		GET_LIMM_16;
 		size = 6;
 
@@ -2609,7 +7046,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle0e_01(OPS_16) // MOV_S b <- 
 		// opcode        iiii ibbb hhhI Ihhh
 		// MOV_S b, limm 0111 0bbb 1100 1111 [LIMM]   (h == LIMM)
 
-		UINT32 limm;
+		uint32_t limm;
 		GET_LIMM_16;
 		size = 6;
 
@@ -2914,14 +7351,14 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle18_0x_helper(OPS_16, const c
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle18_00(OPS_16)   // LD_S b, [SP, u7]
 {
 	int breg;
-	UINT32 u;
+	uint32_t u;
 
 	COMMON16_GET_breg;
 	COMMON16_GET_u5;
 
 	REG_16BIT_RANGE(breg);
 
-	UINT32 address = m_regs[REG_SP] + (u << 2);
+	uint32_t address = m_regs[REG_SP] + (u << 2);
 
 	m_regs[breg] = READ32(address >> 2);
 
@@ -2936,14 +7373,14 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle18_01(OPS_16)
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle18_02(OPS_16)  // ST_S b, [SP, u7]
 {
 	int breg;
-	UINT32 u;
+	uint32_t u;
 
 	COMMON16_GET_breg;
 	COMMON16_GET_u5;
 
 	REG_16BIT_RANGE(breg);
 
-	UINT32 address = m_regs[REG_SP] + (u << 2);
+	uint32_t address = m_regs[REG_SP] + (u << 2);
 
 	WRITE32(address >> 2, m_regs[breg]);
 
@@ -2958,7 +7395,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle18_03(OPS_16)
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle18_04(OPS_16)  // ADD_S b, SP, u7
 {
 	int breg;
-	UINT32 u;
+	uint32_t u;
 
 	COMMON16_GET_breg;
 	COMMON16_GET_u5;
@@ -3060,7 +7497,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle1a(OPS_16)
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle1b(OPS_16) // MOV_S b, u8
 {
 	int breg;
-	UINT32 u;
+	uint32_t u;
 	COMMON16_GET_breg;
 	COMMON16_GET_u8;
 	REG_16BIT_RANGE(breg);
@@ -3073,7 +7510,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle1b(OPS_16) // MOV_S b, u8
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle1c_00(OPS_16) // ADD_S b, b, u7
 {
 	int breg;
-	UINT32 u;
+	uint32_t u;
 	COMMON16_GET_breg;
 	COMMON16_GET_u7;
 	REG_16BIT_RANGE(breg);
@@ -3086,7 +7523,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle1c_00(OPS_16) // ADD_S b, b,
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle1c_01(OPS_16) // CMP b, u7
 {
 	int breg;
-	UINT32 u;
+	uint32_t u;
 	COMMON16_GET_breg;
 	COMMON16_GET_u7;
 	REG_16BIT_RANGE(breg);
@@ -3114,7 +7551,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle1c_01(OPS_16) // CMP b, u7
 		STATUS32_CLEAR_C;
 	}
 	// signed checks
-	INT32 temp = (INT32)m_regs[breg] - (INT32)u;
+	int32_t temp = (int32_t)m_regs[breg] - (int32_t)u;
 
 	if (temp < 0)
 	{
@@ -3155,7 +7592,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle1d_00(OPS_16) // BREQ_S b,0,
 	{
 		int s = (op & 0x007f) >> 0; op &= ~0x007f;
 		if (s & 0x40) s = -0x40 + (s & 0x3f);
-		UINT32 realaddress = PC_ALIGNED32 + (s * 2);
+		uint32_t realaddress = PC_ALIGNED32 + (s * 2);
 		//m_regs[REG_BLINK] = m_pc + (2 >> 0); // don't link
 		return realaddress;
 	}
@@ -3174,7 +7611,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle1d_01(OPS_16) // BRNE_S b,0,
 	{
 		int s = (op & 0x007f) >> 0; op &= ~0x007f;
 		if (s & 0x40) s = -0x40 + (s & 0x3f);
-		UINT32 realaddress = PC_ALIGNED32 + (s * 2);
+		uint32_t realaddress = PC_ALIGNED32 + (s * 2);
 		//m_regs[REG_BLINK] = m_pc + (2 >> 0); // don't link
 		return realaddress;
 	}
@@ -3195,7 +7632,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle1e_00(OPS_16) // B_S s10  (b
 {
 	int s = (op & 0x01ff) >> 0; op &= ~0x01ff;
 	if (s & 0x100) s = -0x100 + (s & 0xff);
-	UINT32 realaddress = PC_ALIGNED32 + (s * 2);
+	uint32_t realaddress = PC_ALIGNED32 + (s * 2);
 	//m_regs[REG_BLINK] = m_pc + (2 >> 0); // don't link
 	return realaddress;
 }
@@ -3206,7 +7643,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle1e_01(OPS_16) // BEQ_S s10 (
 	{
 		int s = (op & 0x01ff) >> 0; op &= ~0x01ff;
 		if (s & 0x100) s = -0x100 + (s & 0xff);
-		UINT32 realaddress = PC_ALIGNED32 + (s * 2);
+		uint32_t realaddress = PC_ALIGNED32 + (s * 2);
 		//m_regs[REG_BLINK] = m_pc + (2 >> 0); // don't link
 		return realaddress;
 	}
@@ -3220,7 +7657,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle1e_02(OPS_16) // BNE_S s10  
 	{
 		int s = (op & 0x01ff) >> 0; op &= ~0x01ff;
 		if (s & 0x100) s = -0x100 + (s & 0xff);
-		UINT32 realaddress = PC_ALIGNED32 + (s * 2);
+		uint32_t realaddress = PC_ALIGNED32 + (s * 2);
 		//m_regs[REG_BLINK] = m_pc + (2 >> 0); // don't link
 		return realaddress;
 	}
@@ -3243,7 +7680,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle1e_03_02(OPS_16) // BLT_S
 	{
 		int s = (op & 0x003f) >> 0; op &= ~0x003f;
 		if (s & 0x020) s = -0x20 + (s & 0x1f);
-		UINT32 realaddress = PC_ALIGNED32 + (s * 2);
+		uint32_t realaddress = PC_ALIGNED32 + (s * 2);
 		//m_regs[REG_BLINK] = m_pc + (2 >> 0); // don't link
 		return realaddress;
 	}
@@ -3257,7 +7694,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle1e_03_03(OPS_16) // BLE_S
 	{
 		int s = (op & 0x003f) >> 0; op &= ~0x003f;
 		if (s & 0x020) s = -0x20 + (s & 0x1f);
-		UINT32 realaddress = PC_ALIGNED32 + (s * 2);
+		uint32_t realaddress = PC_ALIGNED32 + (s * 2);
 		//m_regs[REG_BLINK] = m_pc + (2 >> 0); // don't link
 		return realaddress;
 	}
@@ -3275,7 +7712,7 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle1f(OPS_16) // BL_S s13
 	int s = (op & 0x07ff) >> 0; op &= ~0x07ff;
 	if (s & 0x400) s = -0x400 + (s & 0x3ff);
 
-	UINT32 realaddress = PC_ALIGNED32 + (s * 4);
+	uint32_t realaddress = PC_ALIGNED32 + (s * 4);
 
 	m_regs[REG_BLINK] = m_pc + (2 >> 0);
 	return realaddress;
@@ -3695,3 +8132,4 @@ ARCOMPACT_RETTYPE arcompact_device::arcompact_handle18_07_1c(OPS_16)  { arcompac
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle18_07_1d(OPS_16)  { arcompact_fatal("<illegal 0x18_07_1d> (%04x)",  op); return m_pc + (2 >> 0);}
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle18_07_1e(OPS_16)  { arcompact_fatal("<illegal 0x18_07_1e> (%04x)",  op); return m_pc + (2 >> 0);}
 ARCOMPACT_RETTYPE arcompact_device::arcompact_handle18_07_1f(OPS_16)  { arcompact_fatal("<illegal 0x18_07_1f> (%04x)",  op); return m_pc + (2 >> 0);}
+

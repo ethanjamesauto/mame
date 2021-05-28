@@ -35,8 +35,10 @@ Standard dm01 memorymap
 ***************************************************************************/
 
 #include "emu.h"
-#include "cpu/m6809/m6809.h"
 #include "bfm_dm01.h"
+
+#include "cpu/m6809/m6809.h"
+
 
 // local vars /////////////////////////////////////////////////////////////
 
@@ -49,32 +51,37 @@ Standard dm01 memorymap
 #define VERBOSE 0
 #endif
 
-#define LOG(x) do { if (VERBOSE) logerror x; } while (0)
+#include "logmacro.h"
 
-const device_type BF_DM01 = &device_creator<bfmdm01_device>;
 
-bfmdm01_device::bfmdm01_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: device_t(mconfig, BF_DM01, "BFM Dotmatrix 01", tag, owner, clock, "bfm_dm01", __FILE__),
+DEFINE_DEVICE_TYPE(BFM_DM01, bfm_dm01_device, "bfm_dm01", "BFM Dotmatrix 01")
+
+
+bfm_dm01_device::bfm_dm01_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock) :
+	device_t(mconfig, BFM_DM01, tag, owner, clock),
+	m_matrixcpu(*this, "matrix"),
 	m_data_avail(0),
 	m_control(0),
 	m_xcounter(0),
 	m_busy(0),
 	m_comdata(0),
+	m_dotmatrix(*this, "dotmatrix%u", 0U),
 	m_busy_cb(*this)
 {
 	for (auto & elem : m_segbuffer)
-	elem = 0;
+		elem = 0;
 
 	for (auto & elem : m_scanline)
-	elem = 0;
+		elem = 0;
 }
 
 //-------------------------------------------------
 //  device_start - device-specific startup
 //-------------------------------------------------
 
-void bfmdm01_device::device_start()
+void bfm_dm01_device::device_start()
 {
+	m_dotmatrix.resolve();
 	m_busy_cb.resolve_safe();
 
 	save_item(NAME(m_data_avail));
@@ -83,18 +90,18 @@ void bfmdm01_device::device_start()
 	save_item(NAME(m_busy));
 	save_item(NAME(m_comdata));
 
-	for (int i = 0; i < 65; i++)
-	save_item(NAME(m_segbuffer), i);
+	save_item(NAME(m_segbuffer));
 
-	for (int i = 0; i < DM_BYTESPERROW; i++)
-	save_item(NAME(m_scanline), i);
+	save_item(NAME(m_scanline));
 }
+
+
 
 //-------------------------------------------------
 //  device_reset - device-specific reset
 //-------------------------------------------------
 
-void bfmdm01_device::device_reset()
+void bfm_dm01_device::device_reset()
 {
 	m_busy     = 0;
 	m_control  = 0;
@@ -106,7 +113,7 @@ void bfmdm01_device::device_reset()
 
 ///////////////////////////////////////////////////////////////////////////
 
-int bfmdm01_device::read_data(void)
+int bfm_dm01_device::read_data()
 {
 	int data = m_comdata;
 
@@ -117,14 +124,14 @@ int bfmdm01_device::read_data(void)
 
 ///////////////////////////////////////////////////////////////////////////
 
-READ8_MEMBER( bfmdm01_device::control_r )
+uint8_t bfm_dm01_device::control_r()
 {
 	return 0;
 }
 
 ///////////////////////////////////////////////////////////////////////////
 
-WRITE8_MEMBER( bfmdm01_device::control_w )
+void bfm_dm01_device::control_w(uint8_t data)
 {
 	int changed = m_control ^ data;
 
@@ -151,21 +158,23 @@ WRITE8_MEMBER( bfmdm01_device::control_w )
 
 ///////////////////////////////////////////////////////////////////////////
 
-READ8_MEMBER( bfmdm01_device::mux_r )
+uint8_t bfm_dm01_device::mux_r()
 {
 	return 0;
 }
 
 ///////////////////////////////////////////////////////////////////////////
 
-WRITE8_MEMBER( bfmdm01_device::mux_w )
+void bfm_dm01_device::mux_w(uint8_t data)
 {
-	if ( m_xcounter < DM_BYTESPERROW )
+	g_profiler.start(PROFILER_USER2);
+
+	if (m_xcounter < BYTES_PER_ROW)
 	{
 		m_scanline[m_xcounter] = data;
 		m_xcounter++;
 	}
-	if ( m_xcounter == 9 )
+	if (m_xcounter == 9)
 	{
 		int row = ((0xFF^data) & 0x7C) >> 2;    // 7C = 000001111100
 		m_scanline[8] &= 0x80;//filter all other bits
@@ -173,9 +182,9 @@ WRITE8_MEMBER( bfmdm01_device::mux_w )
 		{
 			int p = 0;
 
-			while ( p < (DM_BYTESPERROW) )
+			while ( p < (BYTES_PER_ROW) )
 			{
-				UINT8 d = m_scanline[p];
+				uint8_t d = m_scanline[p];
 
 				for (int bitpos=0; bitpos <8; bitpos++)
 				{
@@ -188,17 +197,19 @@ WRITE8_MEMBER( bfmdm01_device::mux_w )
 				p++;
 			}
 
-			for (int pos=0;pos<65;pos++)
+			for (int pos = 0; pos < 65; pos++)
 			{
-				output_set_indexed_value("dotmatrix", pos +(65*row), m_segbuffer[(pos)]);
+				m_dotmatrix[pos + (65 * row)] = m_segbuffer[pos];
 			}
 		}
 	}
+
+	g_profiler.stop();
 }
 
 ///////////////////////////////////////////////////////////////////////////
 
-READ8_MEMBER( bfmdm01_device::comm_r )
+uint8_t bfm_dm01_device::comm_r()
 {
 	int result = 0;
 
@@ -219,47 +230,61 @@ READ8_MEMBER( bfmdm01_device::comm_r )
 
 ///////////////////////////////////////////////////////////////////////////
 
-WRITE8_MEMBER( bfmdm01_device::comm_w )
+void bfm_dm01_device::comm_w(uint8_t data)
 {
 }
 ///////////////////////////////////////////////////////////////////////////
 
-READ8_MEMBER( bfmdm01_device::unknown_r )
+uint8_t bfm_dm01_device::unknown_r()
 {
 	return 0;
 }
 
 ///////////////////////////////////////////////////////////////////////////
 
-WRITE8_MEMBER( bfmdm01_device::unknown_w )
+void bfm_dm01_device::unknown_w(uint8_t data)
 {
-	space.machine().device("matrix")->execute().set_input_line(INPUT_LINE_NMI, CLEAR_LINE ); //?
+	m_matrixcpu->set_input_line(INPUT_LINE_NMI, CLEAR_LINE); //?
 }
 
 ///////////////////////////////////////////////////////////////////////////
 
-ADDRESS_MAP_START( bfm_dm01_memmap, AS_PROGRAM, 8, bfmdm01_device )
-	AM_RANGE(0x0000, 0x1fff) AM_RAM                             // 8k RAM
-	AM_RANGE(0x2000, 0x2000) AM_DEVREADWRITE("dm01", bfmdm01_device, control_r, control_w)  // control reg
-	AM_RANGE(0x2800, 0x2800) AM_DEVREADWRITE("dm01", bfmdm01_device, mux_r, mux_w)           // mux
-	AM_RANGE(0x3000, 0x3000) AM_DEVREADWRITE("dm01", bfmdm01_device, comm_r, comm_w)     //
-	AM_RANGE(0x3800, 0x3800) AM_DEVREADWRITE("dm01", bfmdm01_device, unknown_r, unknown_w)   // ???
-	AM_RANGE(0x4000, 0xFfff) AM_ROM                             // 48k  ROM
-ADDRESS_MAP_END
+void bfm_dm01_device::bfm_dm01_memmap(address_map &map)
+{
+	map(0x0000, 0x1fff).ram();                             // 8k RAM
+	map(0x2000, 0x2000).rw(FUNC(bfm_dm01_device::control_r), FUNC(bfm_dm01_device::control_w));  // control reg
+	map(0x2800, 0x2800).rw(FUNC(bfm_dm01_device::mux_r), FUNC(bfm_dm01_device::mux_w));           // mux
+	map(0x3000, 0x3000).rw(FUNC(bfm_dm01_device::comm_r), FUNC(bfm_dm01_device::comm_w));     //
+	map(0x3800, 0x3800).rw(FUNC(bfm_dm01_device::unknown_r), FUNC(bfm_dm01_device::unknown_w));   // ???
+	map(0x4000, 0xFfff).rom();                             // 48k  ROM
+}
+
+
+INTERRUPT_GEN_MEMBER( bfm_dm01_device::nmi_line_assert )
+{
+	m_matrixcpu->set_input_line(INPUT_LINE_NMI, ASSERT_LINE);
+}
+
+void bfm_dm01_device::device_add_mconfig(machine_config &config)
+{
+	MC6809(config, m_matrixcpu, 8000000); // MC68B09CP (clock unknown)
+	m_matrixcpu->set_addrmap(AS_PROGRAM, &bfm_dm01_device::bfm_dm01_memmap);
+	m_matrixcpu->set_periodic_int(FUNC(bfm_dm01_device::nmi_line_assert), attotime::from_hz(1500));          /* generate 1500 NMI's per second ?? what is the exact freq?? */
+}
 
 ///////////////////////////////////////////////////////////////////////////
 
-void bfmdm01_device::writedata(UINT8 data)
+void bfm_dm01_device::writedata(uint8_t data)
 {
 	m_comdata = data;
 	m_data_avail = 1;
 
 	//pulse IRQ line
-	machine().device("matrix")->execute().set_input_line(M6809_IRQ_LINE, HOLD_LINE ); // trigger IRQ
+	m_matrixcpu->set_input_line(M6809_IRQ_LINE, HOLD_LINE ); // trigger IRQ
 }
 
 ///////////////////////////////////////////////////////////////////////////
-int bfmdm01_device::busy(void)
+int bfm_dm01_device::busy(void)
 {
 	return m_data_avail;
 }

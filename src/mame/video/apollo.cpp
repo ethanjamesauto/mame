@@ -13,12 +13,18 @@
  *
  */
 
+#include "emu.h"
+
 #define VERBOSE 0
 
 #include "includes/apollo.h"
-#include "rendlay.h"
+
+#include "emupal.h"
+#include "screen.h"
+
 #include "apollo.lh"
 #include "apollo_15i.lh"
+
 
 /***************************************************************************
  TYPE DEFINITIONS
@@ -123,7 +129,7 @@ void apollo_graphics_15i::bt458::reset()
 	m_control_test_register = 0;
 }
 
-void apollo_graphics_15i::bt458::write(UINT8 data, UINT8 c10)
+void apollo_graphics_15i::bt458::write(uint8_t data, uint8_t c10)
 {
 	MLOG1(("writing Bt458 data=%02x C1,C0=%d", data, c10));
 	switch (c10)
@@ -196,9 +202,9 @@ void apollo_graphics_15i::bt458::write(UINT8 data, UINT8 c10)
 	}
 }
 
-UINT8 apollo_graphics_15i::bt458::read(UINT8 c10)
+uint8_t apollo_graphics_15i::bt458::read(uint8_t c10)
 {
-	UINT8 data = 0xff;
+	uint8_t data = 0xff;
 
 	switch (c10)
 	{
@@ -240,7 +246,7 @@ UINT8 apollo_graphics_15i::bt458::read(UINT8 c10)
 			break;
 		case 0x07:
 			{
-				UINT32 rgb = m_color_palette_RAM[0];
+				uint32_t rgb = m_color_palette_RAM[0];
 				switch (m_control_test_register & 0x0f)
 				{
 				case 0x01: data = 0x01 | ((rgb >> 16) & 0xf0); break;
@@ -267,7 +273,7 @@ UINT8 apollo_graphics_15i::bt458::read(UINT8 c10)
 	return data;
 }
 
-UINT32 apollo_graphics_15i::bt458::get_rgb(UINT8 index)
+uint32_t apollo_graphics_15i::bt458::get_rgb(uint8_t index)
 {
 	return m_color_palette_RAM[index];
 }
@@ -276,19 +282,19 @@ UINT32 apollo_graphics_15i::bt458::get_rgb(UINT8 index)
  Monochrome Controller Registers at 0x5d800 - 0x5dc07
  ***************************************************************************/
 
-const char *apollo_graphics_15i::cr_text(offs_t offset, UINT8 data, UINT8 rw)
+const char *apollo_graphics_15i::cr_text(offs_t offset, uint8_t data, uint8_t rw)
 {
-	static const char *cr0[8] =
+	static char const *const cr0[8] =
 	{ "cr0 mode=0 CPU dest BLT", "cr0 mode=1 Alternating BLT",
 			"cr0 mode=2 Vector mode", "cr0 mode=3 CPU Source BLT",
 			"cr0 mode=4 Double access BLT ", "cr0 mode=5 ???",
 			"cr0 mode=6 ???", "cr0 mode=7 Normal" };
 
-	static const char *cr2[4] =
+	static char const *const cr2[4] =
 			{ "cr2 Constant access", "cr2 Pixel access", "cr2 ???",
 					"cr2 Plane access" };
 
-	static const char *cr2b[4] =
+	static char const *const cr2b[4] =
 	{ "cr2b Constant access", "cr2b Pixel access", "cr2b ???",
 			"cr2b Plane access" };
 
@@ -538,7 +544,7 @@ void apollo_graphics_15i::increment_p_clock()
 				// Note: must NOT reset m_data_clock in increment_p_clock !
 //              int pixel_addr = m_data_clock * 32;
 
-				UINT16 pixel = m_image_memory[pixel_addr / 16] & (0x8000 >> (pixel_addr % 16));
+				uint16_t pixel = m_image_memory[pixel_addr / 16] & (0x8000 >> (pixel_addr % 16));
 
 				pixel = (pixel ? 1 : 0) ^ ((m_cr1 & CR1_INV) ? 0 : 1);
 
@@ -574,14 +580,14 @@ void apollo_graphics_15i::increment_p_clock()
 	}
 }
 
-void apollo_graphics_15i::set_cr1(UINT8 data)
+void apollo_graphics_15i::set_cr1(uint8_t data)
 {
-	UINT8 diffs = m_cr1 ^ data;
+	uint8_t diffs = m_cr1 ^ data;
 	m_cr1 = data;
 
-	UINT8 dp_clock = (diffs & CR1_DP_CK) && (m_cr1 & CR1_DP_CK) == 0;
-	UINT8 dh_clock = (diffs & CR1_DH_CK) && (m_cr1 & CR1_DH_CK) == 0;
-	UINT8 dv_clock = m_n_planes == 1 ? 0 : ((diffs & CR1_DV_CK) && (m_cr1 & CR1_DV_CK) == 0);
+	uint8_t dp_clock = (diffs & CR1_DP_CK) && (m_cr1 & CR1_DP_CK) == 0;
+	uint8_t dh_clock = (diffs & CR1_DH_CK) && (m_cr1 & CR1_DH_CK) == 0;
+	uint8_t dv_clock = m_n_planes == 1 ? 0 : ((diffs & CR1_DV_CK) && (m_cr1 & CR1_DV_CK) == 0);
 
 	if ((m_cr1 & CR1_RESET) == 0)
 	{
@@ -652,13 +658,13 @@ void apollo_graphics_15i::set_cr1(UINT8 data)
 	}
 }
 
-void apollo_graphics_15i::set_cr3a(UINT8 data)
+void apollo_graphics_15i::set_cr3a(uint8_t data)
 {
 	m_cr3a = data;
 	if ((data & 0x80) == 0)
 	{
 		int shift = (data & 0x0f) >> 1;
-		UINT8 bit_mask = 1 << shift;
+		uint8_t bit_mask = 1 << shift;
 		if (data & 0x01)
 		{
 			set_cr1(m_cr1 | bit_mask);
@@ -670,13 +676,13 @@ void apollo_graphics_15i::set_cr3a(UINT8 data)
 	}
 }
 
-void apollo_graphics_15i::set_cr3b(UINT8 data)
+void apollo_graphics_15i::set_cr3b(uint8_t data)
 {
 	m_cr3b = data;
 	if ((data & 0x80) == 0)
 	{
 		int shift = (data & 0x0f) >> 1;
-		UINT8 bit_mask = 1 << shift;
+		uint8_t bit_mask = 1 << shift;
 		if (data & 0x01)
 		{
 			set_lut_cr(m_lut_control | bit_mask);
@@ -688,9 +694,9 @@ void apollo_graphics_15i::set_cr3b(UINT8 data)
 	}
 }
 
-void apollo_graphics_15i::set_lut_cr(UINT8 data)
+void apollo_graphics_15i::set_lut_cr(uint8_t data)
 {
-	UINT8 diffs = m_lut_control ^ data;
+	uint8_t diffs = m_lut_control ^ data;
 	m_lut_control = data;
 
 	if ((diffs & LUT_CPAL_CS) && (data & LUT_CPAL_CS) != 0)
@@ -721,9 +727,9 @@ void apollo_graphics_15i::set_lut_cr(UINT8 data)
 	}
 }
 
-READ8_MEMBER( apollo_graphics_15i::apollo_mcr_r )
+uint8_t apollo_graphics_15i::apollo_mcr_r(offs_t offset)
 {
-	UINT8 data;
+	uint8_t data;
 	switch (offset & 0x407)
 	{
 	case 0:
@@ -755,7 +761,7 @@ READ8_MEMBER( apollo_graphics_15i::apollo_mcr_r )
 	}
 
 	// omit excessive logging
-	static UINT8 status0 = 0xff;
+	static uint8_t status0 = 0xff;
 	if ((offset != 1) && (offset != 0 || data != status0))
 	{
 		if (offset == 0)
@@ -766,7 +772,7 @@ READ8_MEMBER( apollo_graphics_15i::apollo_mcr_r )
 	return data;
 }
 
-WRITE8_MEMBER( apollo_graphics_15i::apollo_mcr_w )
+void apollo_graphics_15i::apollo_mcr_w(offs_t offset, uint8_t data)
 {
 	MLOG1(("writing Graphics Controller at offset %03x = %02x (%s)", offset, data, cr_text(offset, data, 0)));
 	switch (offset & 0x407)
@@ -818,8 +824,8 @@ WRITE8_MEMBER( apollo_graphics_15i::apollo_mcr_w )
 
 void apollo_graphics_15i::set_status_rmw()
 {
-	UINT8 plane, d_plane_bit;
-	UINT32 rop_reg;
+	uint8_t plane, d_plane_bit;
+	uint32_t rop_reg;
 
 	m_sr &= ~SR_R_M_W;
 	rop_reg = m_rop_register;
@@ -845,9 +851,9 @@ void apollo_graphics_15i::set_status_rmw()
 	}
 }
 
-UINT16 apollo_graphics_15i::rop(UINT16 dest_data, UINT16 src_data, UINT8 plane)
+uint16_t apollo_graphics_15i::rop(uint16_t dest_data, uint16_t src_data, uint8_t plane)
 {
-	UINT16 src_data1 = src_data;
+	uint16_t src_data1 = src_data;
 	if (m_cr1 & CR1_ROP_EN)
 	{
 		switch ((m_rop_register >> (plane * 4)) & 0x0f)
@@ -905,7 +911,7 @@ UINT16 apollo_graphics_15i::rop(UINT16 dest_data, UINT16 src_data, UINT8 plane)
 	return src_data;
 }
 
-void apollo_graphics_15i::set_source_data(UINT32 offset)
+void apollo_graphics_15i::set_source_data(uint32_t offset)
 {
 	if (m_n_planes == 1 || (m_cr1 & CR1_AD_BIT))
 	{
@@ -915,7 +921,7 @@ void apollo_graphics_15i::set_source_data(UINT32 offset)
 	}
 	else
 	{
-		UINT8 plane;
+		uint8_t plane;
 		for (plane = 0; plane < m_n_planes; plane++)
 		{
 			m_guard_latch[plane] <<= 16;
@@ -925,9 +931,9 @@ void apollo_graphics_15i::set_source_data(UINT32 offset)
 	}
 }
 
-UINT32 apollo_graphics_15i::get_source_data(UINT8 plane)
+uint32_t apollo_graphics_15i::get_source_data(uint8_t plane)
 {
-	UINT32 src_data;
+	uint32_t src_data;
 
 	if (m_n_planes == 1 || (m_cr1 & CR1_AD_BIT))
 	{
@@ -964,11 +970,11 @@ UINT32 apollo_graphics_15i::get_source_data(UINT8 plane)
 	return src_data;
 }
 
-void apollo_graphics_15i::blt(UINT32 dest_addr, UINT16 mem_mask)
+void apollo_graphics_15i::blt(uint32_t dest_addr, uint16_t mem_mask)
 {
-	UINT16 src_data, dest_data;
-	UINT8 d_plane_bit;
-	UINT8 plane;
+	uint16_t src_data, dest_data;
+	uint8_t d_plane_bit;
+	uint8_t plane;
 
 	d_plane_bit = 0x01;
 	for (plane = 0; plane < m_n_planes; plane++)
@@ -992,10 +998,10 @@ void apollo_graphics_15i::blt(UINT32 dest_addr, UINT16 mem_mask)
  Color graphics memory space at A0000 - BFFFF
  ***************************************************************************/
 
-READ16_MEMBER( apollo_graphics_15i::apollo_mem_r )
+uint16_t apollo_graphics_15i::apollo_mem_r(offs_t offset, uint16_t mem_mask)
 {
-	UINT16 data;
-	UINT32 src_addr;
+	uint16_t data;
+	uint32_t src_addr;
 
 	if (offset >= m_image_memory_size)
 	{
@@ -1031,10 +1037,10 @@ READ16_MEMBER( apollo_graphics_15i::apollo_mem_r )
 	return data;
 }
 
-WRITE16_MEMBER( apollo_graphics_15i::apollo_mem_w )
+void apollo_graphics_15i::apollo_mem_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
-	UINT32 dest_addr;
-	UINT32 src_addr;
+	uint32_t dest_addr;
+	uint32_t src_addr;
 
 	if (offset >= m_image_memory_size)
 	{
@@ -1149,9 +1155,9 @@ WRITE16_MEMBER( apollo_graphics_15i::apollo_mem_w )
  Color Screen
  ***************************************************************************/
 
-READ8_MEMBER( apollo_graphics_15i::apollo_ccr_r )
+uint8_t apollo_graphics_15i::apollo_ccr_r(offs_t offset)
 {
-	UINT8 data;
+	uint8_t data;
 
 	if (m_n_planes == 4)
 	{
@@ -1164,7 +1170,7 @@ READ8_MEMBER( apollo_graphics_15i::apollo_ccr_r )
 			data = m_ad_result;
 			break;
 		default:
-			return apollo_mcr_r(space, offset, mem_mask);
+			return apollo_mcr_r(offset);
 		}
 	}
 	else if (m_n_planes == 8)
@@ -1223,7 +1229,7 @@ READ8_MEMBER( apollo_graphics_15i::apollo_ccr_r )
 			data = m_cr3b;
 			break;
 		default:
-			return apollo_mcr_r(space, offset, mem_mask);
+			return apollo_mcr_r(offset);
 		}
 	}
 	else
@@ -1232,7 +1238,7 @@ READ8_MEMBER( apollo_graphics_15i::apollo_ccr_r )
 	}
 
 	// omit excessive logging
-	static UINT8 status1 = 0xff;
+	static uint8_t status1 = 0xff;
 	if ((offset != 1) && (offset != 0 || data != status1))
 	{
 		if (offset == 0)
@@ -1243,17 +1249,17 @@ READ8_MEMBER( apollo_graphics_15i::apollo_ccr_r )
 	return data;
 }
 
-UINT8 apollo_graphics_15i::get_pixel(UINT32 offset, UINT16 mask)
+uint8_t apollo_graphics_15i::get_pixel(uint32_t offset, uint16_t mask)
 {
-	UINT8 data = 0;
-	UINT16 *source_ptr = m_image_memory.get() + offset;
+	uint8_t data = 0;
+	uint16_t *source_ptr = m_image_memory.get() + offset;
 
 	if (m_n_planes == 4)
 	{
-		UINT16 data0 = source_ptr[0];
-		UINT16 data1 = source_ptr[m_image_plane_size];
-		UINT16 data2 = source_ptr[m_image_plane_size * 2];
-		UINT16 data3 = source_ptr[m_image_plane_size * 3];
+		uint16_t data0 = source_ptr[0];
+		uint16_t data1 = source_ptr[m_image_plane_size];
+		uint16_t data2 = source_ptr[m_image_plane_size * 2];
+		uint16_t data3 = source_ptr[m_image_plane_size * 3];
 
 		data = (data0 & mask) ? 1 : 0;
 		data |= (data1 & mask) ? 2 : 0;
@@ -1262,14 +1268,14 @@ UINT8 apollo_graphics_15i::get_pixel(UINT32 offset, UINT16 mask)
 	}
 	else if (m_n_planes == 8)
 	{
-		UINT16 data0 = source_ptr[0];
-		UINT16 data1 = source_ptr[m_image_plane_size];
-		UINT16 data2 = source_ptr[m_image_plane_size * 2];
-		UINT16 data3 = source_ptr[m_image_plane_size * 3];
-		UINT16 data4 = source_ptr[m_image_plane_size * 4];
-		UINT16 data5 = source_ptr[m_image_plane_size * 5];
-		UINT16 data6 = source_ptr[m_image_plane_size * 6];
-		UINT16 data7 = source_ptr[m_image_plane_size * 7];
+		uint16_t data0 = source_ptr[0];
+		uint16_t data1 = source_ptr[m_image_plane_size];
+		uint16_t data2 = source_ptr[m_image_plane_size * 2];
+		uint16_t data3 = source_ptr[m_image_plane_size * 3];
+		uint16_t data4 = source_ptr[m_image_plane_size * 4];
+		uint16_t data5 = source_ptr[m_image_plane_size * 5];
+		uint16_t data6 = source_ptr[m_image_plane_size * 6];
+		uint16_t data7 = source_ptr[m_image_plane_size * 7];
 
 		data = (data0 & mask) ? 1 : 0;
 		data |= (data1 & mask) ? 2 : 0;
@@ -1286,16 +1292,16 @@ UINT8 apollo_graphics_15i::get_pixel(UINT32 offset, UINT16 mask)
 
 // read the 4-plane ADC value for data
 
-UINT8 apollo_graphics_15i::c4p_read_adc(UINT8 data)
+uint8_t apollo_graphics_15i::c4p_read_adc(uint8_t data)
 {
-	UINT8 value = 0;
+	uint8_t value = 0;
 
 	if ((data & 0x0c) == 0x04)
 	{
-		UINT8 red, green, blue;
-		UINT8 pixel = get_pixel((m_v_clock * m_buffer_width / 16) + m_h_clock,
+		uint8_t red, green, blue;
+		uint8_t pixel = get_pixel((m_v_clock * m_buffer_width / 16) + m_h_clock,
 				0x8000);
-		UINT32 rgb = m_color_lookup_table[pixel];
+		uint32_t rgb = m_color_lookup_table[pixel];
 
 		if ((m_sr & SR_BLANK) != 0)
 		{
@@ -1340,15 +1346,15 @@ UINT8 apollo_graphics_15i::c4p_read_adc(UINT8 data)
 
 // read the 8-plane ADC value for data
 
-UINT8 apollo_graphics_15i::c8p_read_adc(UINT8 data)
+uint8_t apollo_graphics_15i::c8p_read_adc(uint8_t data)
 {
-	UINT8 value = 0;
+	uint8_t value = 0;
 
 	if ((data & 0x0c) == 0x04)
 	{
-		UINT8 red, green, blue;
-		UINT8 pixel = get_pixel((m_v_clock * m_buffer_width / 16) + m_h_clock, 0x8000);
-		UINT32 rgb = m_bt458->get_rgb(pixel);
+		uint8_t red, green, blue;
+		uint8_t pixel = get_pixel((m_v_clock * m_buffer_width / 16) + m_h_clock, 0x8000);
+		uint32_t rgb = m_bt458->get_rgb(pixel);
 
 		if ((m_sr & SR_BLANK) != 0)
 		{
@@ -1391,9 +1397,9 @@ UINT8 apollo_graphics_15i::c8p_read_adc(UINT8 data)
 	return value;
 }
 
-WRITE8_MEMBER( apollo_graphics_15i::apollo_ccr_w )
+void apollo_graphics_15i::apollo_ccr_w(offs_t offset, uint8_t data)
 {
-	static const UINT8 rgb_value[16] =
+	static const uint8_t rgb_value[16] =
 	{ 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb,
 			0xcc, 0xdd, 0xee, 0xff };
 
@@ -1432,7 +1438,7 @@ WRITE8_MEMBER( apollo_graphics_15i::apollo_ccr_w )
 			m_sr |= SR_DONE;
 			break;
 		default:
-			apollo_mcr_w(space, offset, data, mem_mask);
+			apollo_mcr_w(offset, data);
 			return;
 		}
 	}
@@ -1462,11 +1468,12 @@ WRITE8_MEMBER( apollo_graphics_15i::apollo_ccr_w )
 		case 0x401:
 			// LUT data register
 			m_lut_data = data;
-			if ((m_lut_control & LUT_R_W) == 1)
+			if ((m_lut_control & LUT_R_W) == LUT_R_W)
 			{
 				MLOG1(("apollo_graphics_15i::apollo_ccr_w: writing LUT data register with RW = 1 in LUT Control register"));
 			}
-			else if ((m_lut_control & LUT_AD_CS) == 0)
+
+			if ((m_lut_control & LUT_AD_CS) == 0)
 			{
 				m_ad_result = c8p_read_adc(data);
 				m_ad_pending = 1;
@@ -1506,7 +1513,7 @@ WRITE8_MEMBER( apollo_graphics_15i::apollo_ccr_w )
 			set_cr3b(data);
 			break;
 		default:
-			apollo_mcr_w(space, offset, data, mem_mask);
+			apollo_mcr_w(offset, data);
 			return;
 		}
 	}
@@ -1514,11 +1521,11 @@ WRITE8_MEMBER( apollo_graphics_15i::apollo_ccr_w )
 	MLOG1(("writing Color Graphics Controller at offset %03x = %02x (%s)", offset, data, cr_text(offset, data, 0)));
 }
 
-READ16_MEMBER( apollo_graphics_15i::apollo_cgm_r )
+uint16_t apollo_graphics_15i::apollo_cgm_r(offs_t offset, uint16_t mem_mask)
 {
 	if (!is_mono())
 	{
-		return apollo_mem_r(space, offset, mem_mask);
+		return apollo_mem_r(offset, mem_mask);
 	}
 	else
 	{
@@ -1526,11 +1533,11 @@ READ16_MEMBER( apollo_graphics_15i::apollo_cgm_r )
 	}
 }
 
-WRITE16_MEMBER( apollo_graphics_15i::apollo_cgm_w )
+void apollo_graphics_15i::apollo_cgm_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	if (!is_mono())
 	{
-		apollo_mem_w(space, offset, data, mem_mask);
+		apollo_mem_w(offset, data, mem_mask);
 	}
 }
 
@@ -1538,7 +1545,7 @@ WRITE16_MEMBER( apollo_graphics_15i::apollo_cgm_w )
  VIDEO HARDWARE
  ***************************************************************************/
 
-UINT32 apollo_graphics_15i::screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
+uint32_t apollo_graphics_15i::screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
 {
 	int has_changed = 0;
 
@@ -1555,24 +1562,22 @@ UINT32 apollo_graphics_15i::screen_update(screen_device &screen, bitmap_rgb32 &b
 
 void apollo_graphics_15i::screen_update1(bitmap_rgb32 &bitmap, const rectangle &cliprect)
 {
-	UINT16 *source_ptr = m_image_memory.get();
-	int x, y;
-	UINT16 data, mask;
-	UINT16 inverse = (m_cr1 & CR1_INV) ? 0xffff : 0;
+	uint16_t const *source_ptr = m_image_memory.get();
+	uint16_t const inverse = (m_cr1 & CR1_INV) ? 0xffff : 0;
 
 	MLOG1(("screen_update1: size=%0x rowpixels=%d", m_image_memory_size, bitmap.rowpixels()));
 
 	if ((m_cr1 & CR1_DISP_EN) == 0)
 	{
 		// display is disabled
-		for (y = 0; y < m_height; y++)
+		for (int y = 0; y < m_height; y++)
 		{
 			int dest = 0;
-			for (x = 0; x < m_width; x += 16)
+			for (int x = 0; x < m_width; x += 16)
 			{
-				for (mask = 0x8000; mask; mask >>= 1)
+				for (uint16_t mask = 0x8000; mask; mask >>= 1)
 				{
-					bitmap.pix32(y, dest++) = 0;
+					bitmap.pix(y, dest++) = 0;
 				}
 			}
 			source_ptr += (m_buffer_width - m_width) / 16;
@@ -1580,23 +1585,24 @@ void apollo_graphics_15i::screen_update1(bitmap_rgb32 &bitmap, const rectangle &
 	}
 	else if (m_n_planes == 4)
 	{
-		for (y = 0; y < m_height; y++)
+		for (int y = 0; y < m_height; y++)
 		{
 			int dest = 0;
-			for (x = 0; x < m_width; x += 16)
+			for (int x = 0; x < m_width; x += 16)
 			{
-				UINT16 data0 = source_ptr[0];
-				UINT16 data1 = source_ptr[m_image_plane_size];
-				UINT16 data2 = source_ptr[m_image_plane_size * 2];
-				UINT16 data3 = source_ptr[m_image_plane_size * 3];
+				uint16_t data0 = source_ptr[0];
+				uint16_t data1 = source_ptr[m_image_plane_size];
+				uint16_t data2 = source_ptr[m_image_plane_size * 2];
+				uint16_t data3 = source_ptr[m_image_plane_size * 3];
 				source_ptr++;
-				for (mask = 0x8000; mask; mask >>= 1)
+				for (uint16_t mask = 0x8000; mask; mask >>= 1)
 				{
+					uint16_t data;
 					data = (data0 & mask) ? 1 : 0;
 					data |= (data1 & mask) ? 2 : 0;
 					data |= (data2 & mask) ? 4 : 0;
 					data |= (data3 & mask) ? 8 : 0;
-					bitmap.pix32(y, dest++) = m_color_lookup_table[data];
+					bitmap.pix(y, dest++) = m_color_lookup_table[data];
 				}
 			}
 			source_ptr += (m_buffer_width - m_width) / 16;
@@ -1604,22 +1610,23 @@ void apollo_graphics_15i::screen_update1(bitmap_rgb32 &bitmap, const rectangle &
 	}
 	else if (m_n_planes == 8)
 	{
-		for (y = 0; y < m_height; y++)
+		for (int y = 0; y < m_height; y++)
 		{
 			int dest = 0;
-			for (x = 0; x < m_width; x += 16)
+			for (int x = 0; x < m_width; x += 16)
 			{
-				UINT16 data0 = source_ptr[0];
-				UINT16 data1 = source_ptr[m_image_plane_size];
-				UINT16 data2 = source_ptr[m_image_plane_size * 2];
-				UINT16 data3 = source_ptr[m_image_plane_size * 3];
-				UINT16 data4 = source_ptr[m_image_plane_size * 4];
-				UINT16 data5 = source_ptr[m_image_plane_size * 5];
-				UINT16 data6 = source_ptr[m_image_plane_size * 6];
-				UINT16 data7 = source_ptr[m_image_plane_size * 7];
+				uint16_t data0 = source_ptr[0];
+				uint16_t data1 = source_ptr[m_image_plane_size];
+				uint16_t data2 = source_ptr[m_image_plane_size * 2];
+				uint16_t data3 = source_ptr[m_image_plane_size * 3];
+				uint16_t data4 = source_ptr[m_image_plane_size * 4];
+				uint16_t data5 = source_ptr[m_image_plane_size * 5];
+				uint16_t data6 = source_ptr[m_image_plane_size * 6];
+				uint16_t data7 = source_ptr[m_image_plane_size * 7];
 				source_ptr++;
-				for (mask = 0x8000; mask; mask >>= 1)
+				for (uint16_t mask = 0x8000; mask; mask >>= 1)
 				{
+					uint16_t data;
 					data = (data0 & mask) ? 1 : 0;
 					data |= (data1 & mask) ? 2 : 0;
 					data |= (data2 & mask) ? 4 : 0;
@@ -1628,7 +1635,7 @@ void apollo_graphics_15i::screen_update1(bitmap_rgb32 &bitmap, const rectangle &
 					data |= (data5 & mask) ? 0x20 : 0;
 					data |= (data6 & mask) ? 0x40 : 0;
 					data |= (data7 & mask) ? 0x80 : 0;
-					bitmap.pix32(y, dest++) = m_bt458->get_rgb(data);
+					bitmap.pix(y, dest++) = m_bt458->get_rgb(data);
 				}
 			}
 			source_ptr += (m_buffer_width - m_width) / 16;
@@ -1636,15 +1643,15 @@ void apollo_graphics_15i::screen_update1(bitmap_rgb32 &bitmap, const rectangle &
 	}
 	else // m_n_planes == 1
 	{
-		for (y = 0; y < m_height; y++)
+		for (int y = 0; y < m_height; y++)
 		{
 			int dest = 0;
-			for (x = 0; x < m_width; x += 16)
+			for (int x = 0; x < m_width; x += 16)
 			{
-				data = *source_ptr++ ^ inverse;
-				for (mask = 0x8000; mask; mask >>= 1)
+				uint16_t const data = *source_ptr++ ^ inverse;
+				for (uint16_t mask = 0x8000; mask; mask >>= 1)
 				{
-					bitmap.pix32(y, dest++) = data & mask ? 0 : 0x00ffffff;
+					bitmap.pix(y, dest++) = data & mask ? 0 : 0x00ffffff;
 				}
 			}
 			source_ptr += (m_buffer_width - m_width) / 16;
@@ -1697,8 +1704,7 @@ void apollo_graphics_15i::register_vblank_callback()
 	MLOG1(("register_vblank_callback"));
 
 	/* register for VBLANK callbacks */
-	screen_device *screen = (screen_device *)machine().device(VIDEO_SCREEN_TAG);
-	screen->register_vblank_callback(vblank_state_delegate(FUNC(apollo_graphics_15i::vblank_state_changed),this));
+	m_screen->register_vblank_callback(vblank_state_delegate(&apollo_graphics_15i::vblank_state_changed,this));
 }
 
 
@@ -1706,46 +1712,29 @@ void apollo_graphics_15i::register_vblank_callback()
  MACHINE DRIVERS
  ***************************************************************************/
 
-MACHINE_CONFIG_FRAGMENT( apollo_graphics )
-	MCFG_DEFAULT_LAYOUT( layout_apollo_15i )
-	MCFG_SCREEN_ADD(VIDEO_SCREEN_TAG, RASTER)
-	MCFG_SCREEN_VIDEO_ATTRIBUTES(VIDEO_UPDATE_AFTER_VBLANK)
-	MCFG_SCREEN_REFRESH_RATE(76)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(657))
-	MCFG_SCREEN_SIZE(1024, 800)
-	MCFG_SCREEN_VISIBLE_AREA(0, 1023, 0, 799)
-	MCFG_SCREEN_UPDATE_DEVICE(APOLLO_SCREEN_TAG, apollo_graphics_15i, screen_update)
-MACHINE_CONFIG_END
+void apollo_graphics_15i::device_add_mconfig(machine_config &config)
+{
+	config.set_default_layout(layout_apollo_15i);
+	SCREEN(config, m_screen, SCREEN_TYPE_RASTER);
+	m_screen->set_video_attributes(VIDEO_UPDATE_AFTER_VBLANK);
+	m_screen->set_raw(68000000, 1346, 0, 1024, 841, 0, 800);
+	m_screen->set_screen_update(FUNC(apollo_graphics_15i::screen_update));
+}
 
-const device_type APOLLO_GRAPHICS = &device_creator<apollo_graphics_15i> ;
+DEFINE_DEVICE_TYPE(APOLLO_GRAPHICS, apollo_graphics_15i, "apollo_graphics_15i", "Apollo Screen")
 
-apollo_graphics_15i::apollo_graphics_15i(const machine_config &mconfig,const char *tag, device_t *owner, UINT32 clock) :
-	device_t(mconfig, APOLLO_GRAPHICS, "Apollo Screen", tag, owner, clock,"apollo_graphics_15i", __FILE__),
-	m_lut_fifo(nullptr),
-	m_bt458(nullptr)
+apollo_graphics_15i::apollo_graphics_15i(const machine_config &mconfig,const char *tag, device_t *owner, uint32_t clock) :
+	apollo_graphics_15i(mconfig, APOLLO_GRAPHICS, tag, owner, clock)
 {
 }
 
-apollo_graphics_15i::apollo_graphics_15i(const machine_config &mconfig,const char *tag, device_t *owner, UINT32 clock, device_type type,const char *name, const char *shortname, const char *source) :
-	device_t(mconfig, type, name, tag, owner, clock, shortname, source),
-	m_lut_fifo(nullptr),
-	m_bt458(nullptr)
+apollo_graphics_15i::apollo_graphics_15i(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock) :
+	device_t(mconfig, type, tag, owner, clock),
+	m_screen(*this, VIDEO_SCREEN_TAG)
 {
 }
 
 apollo_graphics_15i::~apollo_graphics_15i()
-{
-	if (m_lut_fifo) global_free(m_lut_fifo);
-	if (m_bt458) global_free(m_bt458);
-}
-
-//-------------------------------------------------
-//  device_config_complete - perform any
-//  operations now that the configuration is
-//  complete
-//-------------------------------------------------
-
-void apollo_graphics_15i::device_config_complete()
 {
 }
 
@@ -1801,8 +1790,8 @@ void apollo_graphics_15i::device_start()
 
 	memset(m_color_lookup_table, 0, sizeof(m_color_lookup_table));
 
-	m_lut_fifo = nullptr;
-	m_bt458 = nullptr;
+	m_lut_fifo.reset();
+	m_bt458.reset();
 }
 
 //-------------------------------------------------
@@ -1855,12 +1844,9 @@ void apollo_graphics_15i::device_reset()
 			m_buffer_width = 1024;
 			m_buffer_height = 1024;
 
-			if (m_lut_fifo) global_free(m_lut_fifo);
-			if (m_bt458) global_free(m_bt458);
+			m_lut_fifo = std::make_unique<lut_fifo>();
 
-			m_lut_fifo = global_alloc(lut_fifo);
-
-			m_bt458 = global_alloc(bt458(machine()));
+			m_bt458 = std::make_unique<bt458>(machine());
 			m_bt458->start();
 			m_bt458->reset();
 		}
@@ -1872,7 +1858,7 @@ void apollo_graphics_15i::device_reset()
 		m_image_plane_size = m_buffer_height * m_buffer_width / 16;
 		m_image_memory_size = m_image_plane_size * m_n_planes;
 		m_image_memory
-				= std::make_unique<UINT16[]>(m_image_memory_size);
+				= std::make_unique<uint16_t[]>(m_image_memory_size);
 		assert(m_image_memory != nullptr);
 
 		MLOG1(("device reset apollo graphics: buffer=%p size=%0x", (void *) m_image_memory.get(), m_image_memory_size));
@@ -1889,34 +1875,20 @@ void apollo_graphics_15i::device_reset()
 
 //-------------------------------------------------
 
-MACHINE_CONFIG_FRAGMENT( apollo_mono19i )
-	MCFG_DEFAULT_LAYOUT( layout_apollo )
-	MCFG_PALETTE_ADD_BLACK_AND_WHITE("palette")
-	MCFG_SCREEN_ADD(VIDEO_SCREEN_TAG, RASTER)
-	MCFG_SCREEN_VIDEO_ATTRIBUTES(VIDEO_UPDATE_AFTER_VBLANK)
-	MCFG_SCREEN_REFRESH_RATE(64)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(616))
-	MCFG_SCREEN_SIZE(1280, 1024)
-	MCFG_SCREEN_VISIBLE_AREA(0, 1279, 0, 1023)
-	MCFG_SCREEN_UPDATE_DEVICE(APOLLO_SCREEN_TAG, apollo_graphics_19i, screen_update)
-	MACHINE_CONFIG_END
-
-const device_type APOLLO_MONO19I = &device_creator<apollo_graphics_19i> ;
-
-apollo_graphics_19i::apollo_graphics_19i(const machine_config &mconfig,
-		const char *tag, device_t *owner, UINT32 clock) :
-	apollo_graphics_15i(mconfig, tag, owner, clock, APOLLO_MONO19I,
-			"Apollo 19\" Monochrome Screen", "apollo_graphics_19i", __FILE__)
+void apollo_graphics_19i::device_add_mconfig(machine_config &config)
 {
+	config.set_default_layout(layout_apollo);
+	PALETTE(config, "palette", palette_device::MONOCHROME);
+	SCREEN(config, m_screen, SCREEN_TYPE_RASTER);
+	m_screen->set_video_attributes(VIDEO_UPDATE_AFTER_VBLANK);
+	m_screen->set_raw(120000000, 1728, 0, 1280, 1066, 0, 1024);
+	m_screen->set_screen_update(FUNC(apollo_graphics_19i::screen_update));
 }
 
-//-------------------------------------------------
-//  device_config_complete - perform any
-//  operations now that the configuration is
-//  complete
-//-------------------------------------------------
+DEFINE_DEVICE_TYPE(APOLLO_MONO19I, apollo_graphics_19i, "apollo_graphics_19i", "Apollo 19\" Monochrome Screen")
 
-void apollo_graphics_19i::device_config_complete()
+apollo_graphics_19i::apollo_graphics_19i(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock) :
+	apollo_graphics_15i(mconfig, APOLLO_MONO19I, tag, owner, clock)
 {
 }
 
@@ -1957,11 +1929,11 @@ void apollo_graphics_19i::device_reset()
 }
 
 
-READ16_MEMBER( apollo_graphics_15i::apollo_mgm_r )
+uint16_t apollo_graphics_15i::apollo_mgm_r(offs_t offset, uint16_t mem_mask)
 {
 	if (is_mono())
 	{
-		return apollo_mem_r(space, offset, mem_mask);
+		return apollo_mem_r(offset, mem_mask);
 	}
 	else
 	{
@@ -1969,10 +1941,10 @@ READ16_MEMBER( apollo_graphics_15i::apollo_mgm_r )
 	}
 }
 
-WRITE16_MEMBER( apollo_graphics_15i::apollo_mgm_w )
+void apollo_graphics_15i::apollo_mgm_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	if (is_mono())
 	{
-		apollo_mem_w(space, offset, data, mem_mask);
+		apollo_mem_w(offset, data, mem_mask);
 	}
 }

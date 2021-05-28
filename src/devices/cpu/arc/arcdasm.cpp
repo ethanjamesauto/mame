@@ -7,18 +7,7 @@
 \*********************************/
 
 #include "emu.h"
-#include <stdarg.h>
-
-static char *output;
-
-static void ATTR_PRINTF(1,2) print(const char *fmt, ...)
-{
-	va_list vl;
-
-	va_start(vl, fmt);
-	vsprintf(output, fmt, vl);
-	va_end(vl);
-}
+#include "arcdasm.h"
 
 /*****************************************************************************/
 
@@ -26,7 +15,7 @@ static void ATTR_PRINTF(1,2) print(const char *fmt, ...)
 
 /*****************************************************************************/
 
-static const char *basic[0x20] =
+char const *const arc_disassembler::basic[0x20] =
 {
 	/* 00 */ "LD r+r",
 	/* 01 */ "LD r+o",
@@ -62,7 +51,7 @@ static const char *basic[0x20] =
 	/* 1f */ "MIN"
 };
 
-static const char *conditions[0x20] =
+char const *const arc_disassembler::conditions[0x20] =
 {
 	/* 00 */ "AL", // (aka RA         - Always)
 	/* 01 */ "EQ", // (aka Z          - Zero
@@ -98,7 +87,7 @@ static const char *conditions[0x20] =
 	/* 1f */ "0x1f Reserved"
 };
 
-static const char *delaytype[0x4] =
+char const *const arc_disassembler::delaytype[0x4] =
 {
 	"ND", // NO DELAY - execute next instruction only when NOT jumping
 	"D",  // always execute next instruction
@@ -106,7 +95,7 @@ static const char *delaytype[0x4] =
 	"Res!", // reserved / invalid
 };
 
-static const char *regnames[0x40] =
+char const *const arc_disassembler::regnames[0x40] =
 {
 	/* 0x00 */ "r00",
 	/* 0x01 */ "r01",
@@ -191,34 +180,34 @@ static const char *regnames[0x40] =
 #define ARC_REGOP_SHIMM     ((op & 0x000001ff) >> 0  ) // aka D
 
 
-CPU_DISASSEMBLE(arc)
+u32 arc_disassembler::opcode_alignment() const
 {
-	UINT32 op = oprom[0] | (oprom[1] << 8) | (oprom[2] << 16) | (oprom[3] << 24);
-	op = BIG_ENDIANIZE_INT32(op);
+	return 4;
+}
 
-	output = buffer;
+offs_t arc_disassembler::disassemble(std::ostream &stream, offs_t pc, const data_buffer &opcodes, const data_buffer &params)
+{
+	uint32_t op = opcodes.r32(pc);
 
-	UINT8 opcode = ARC_OPERATION;
+	uint8_t opcode = ARC_OPERATION;
 
 	switch (opcode)
 	{
 		case 0x04: // B
 		case 0x05: // BL
-		print("%s(%s)(%s) %08x", basic[opcode], conditions[ARC_CONDITION], delaytype[ARC_BRANCH_DELAY], (ARC_BRANCH_ADDR<<2)+pc+4);
+		util::stream_format(stream, "%s(%s)(%s) %08x", basic[opcode], conditions[ARC_CONDITION], delaytype[ARC_BRANCH_DELAY], (ARC_BRANCH_ADDR<<2)+pc+4);
 		break;
 
 		case 0x08: // ADD
 		// todo, short / long immediate formats
-		print("%s %s , %s , %s (%08x)", basic[opcode], regnames[ARC_REGOP_DEST], regnames[ARC_REGOP_OP1], regnames[ARC_REGOP_OP2], op &~ 0xfffffe00);
+		util::stream_format(stream, "%s %s , %s , %s (%08x)", basic[opcode], regnames[ARC_REGOP_DEST], regnames[ARC_REGOP_OP1], regnames[ARC_REGOP_OP2], op &~ 0xfffffe00);
 		break;
 
 
 		default:
-		print("%s (%08x)", basic[opcode], op &~ 0xf8000000);
+		util::stream_format(stream, "%s (%08x)", basic[opcode], op &~ 0xf8000000);
 		break;
 	}
 
-
-
-	return 4 | DASMFLAG_SUPPORTED;
+	return 4 | SUPPORTED;
 }

@@ -5,50 +5,42 @@
 
 */
 
-#ifndef __SEGAIC24_H
-#define __SEGAIC24_H
+#ifndef MAME_VIDEO_SEGAIC24_H
+#define MAME_VIDEO_SEGAIC24_H
 
-#define MCFG_S24TILE_DEVICE_ADD(_tag, tile_mask) \
-	MCFG_DEVICE_ADD(_tag, S24TILE, 0) \
-	segas24_tile::static_set_tile_mask(*device, tile_mask);
+#pragma once
 
-#define MCFG_S24SPRITE_DEVICE_ADD(_tag) \
-	MCFG_DEVICE_ADD(_tag, S24SPRITE, 0)
-
-#define MCFG_S24MIXER_DEVICE_ADD(_tag) \
-	MCFG_DEVICE_ADD(_tag, S24MIXER, 0)
+#include "tilemap.h"
 
 
-#define MCFG_S24TILE_DEVICE_GFXDECODE(_gfxtag) \
-	segas24_tile::static_set_gfxdecode_tag(*device, "^" _gfxtag);
-
-#define MCFG_S24TILE_DEVICE_PALETTE(_palette_tag) \
-	segas24_tile::static_set_palette_tag(*device, "^" _palette_tag);
-
-class segas24_tile : public device_t
+class segas24_tile_device : public device_t, public device_gfx_interface
 {
 	friend class segas24_tile_config;
 
 public:
-	segas24_tile(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	segas24_tile_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock, uint16_t _tile_mask)
+		: segas24_tile_device(mconfig, tag, owner, clock)
+	{
+		set_tile_mask(_tile_mask);
+	}
 
-	// static configuration
-	static void static_set_gfxdecode_tag(device_t &device, const char *tag);
-	static void static_set_palette_tag(device_t &device, const char *tag);
-	static void static_set_tile_mask(device_t &device, UINT16 tile_mask);
+	segas24_tile_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
-	DECLARE_READ16_MEMBER(tile_r);
-	DECLARE_WRITE16_MEMBER(tile_w);
-	DECLARE_READ16_MEMBER(char_r);
-	DECLARE_WRITE16_MEMBER(char_w);
+	// configuration
+	void set_tile_mask(uint16_t _tile_mask) { tile_mask = _tile_mask; }
 
-	DECLARE_READ32_MEMBER(tile32_r);
-	DECLARE_WRITE32_MEMBER(tile32_w);
-	DECLARE_READ32_MEMBER(char32_r);
-	DECLARE_WRITE32_MEMBER(char32_w);
+	uint16_t tile_r(offs_t offset);
+	void tile_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	uint16_t char_r(offs_t offset);
+	void char_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	void xhout_w(uint16_t data);
+	void xvout_w(uint16_t data);
 
 	void draw(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect, int layer, int pri, int flags);
 	void draw(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect, int layer, int pri, int flags);
+
+	auto xhout_write_callback() { return m_xhout_write_cb.bind(); }
+	auto xvout_write_callback() { return m_xvout_write_cb.bind(); }
 
 protected:
 	virtual void device_start() override;
@@ -58,15 +50,13 @@ private:
 		SYS24_TILES = 0x4000
 	};
 
-	std::unique_ptr<UINT16[]> char_ram;
-	std::unique_ptr<UINT16[]> tile_ram;
+	std::unique_ptr<uint16_t[]> char_ram;
+	std::unique_ptr<uint16_t[]> tile_ram;
 	int char_gfx_index;
 	tilemap_t *tile_layer[4];
-	UINT16 tile_mask;
+	uint16_t tile_mask;
 
 	static const gfx_layout char_layout;
-	required_device<gfxdecode_device> m_gfxdecode;
-	required_device<palette_device> m_palette;
 
 	void tile_info(int offset, tile_data &tileinfo, tilemap_memory_index tile_index);
 	TILE_GET_INFO_MEMBER(tile_info_0s);
@@ -74,24 +64,27 @@ private:
 	TILE_GET_INFO_MEMBER(tile_info_1s);
 	TILE_GET_INFO_MEMBER(tile_info_1w);
 
-	void draw_rect(screen_device &screen, bitmap_ind16 &bm, bitmap_ind8 &tm, bitmap_ind16 &dm, const UINT16 *mask,
-					UINT16 tpri, UINT8 lpri, int win, int sx, int sy, int xx1, int yy1, int xx2, int yy2);
-	void draw_rect(screen_device &screen, bitmap_ind16 &bm, bitmap_ind8 &tm, bitmap_rgb32 &dm, const UINT16 *mask,
-					UINT16 tpri, UINT8 lpri, int win, int sx, int sy, int xx1, int yy1, int xx2, int yy2);
+	void draw_rect(screen_device &screen, bitmap_ind16 &bm, bitmap_ind8 &tm, bitmap_ind16 &dm, const uint16_t *mask,
+					uint16_t tpri, uint8_t lpri, int win, int sx, int sy, int xx1, int yy1, int xx2, int yy2);
+	void draw_rect(screen_device &screen, bitmap_ind16 &bm, bitmap_ind8 &tm, bitmap_rgb32 &dm, const uint16_t *mask,
+					uint16_t tpri, uint8_t lpri, int win, int sx, int sy, int xx1, int yy1, int xx2, int yy2);
 
-	template<class _BitmapClass>
-	void draw_common(screen_device &screen, _BitmapClass &bitmap, const rectangle &cliprect, int layer, int pri, int flags);
+	template<class BitmapClass>
+	void draw_common(screen_device &screen, BitmapClass &bitmap, const rectangle &cliprect, int layer, int pri, int flags);
+
+	devcb_write16 m_xhout_write_cb;
+	devcb_write16 m_xvout_write_cb;
 };
 
-class segas24_sprite : public device_t
+class segas24_sprite_device : public device_t
 {
 	friend class segas24_sprite_config;
 
 public:
-	segas24_sprite(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	segas24_sprite_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
-	DECLARE_READ16_MEMBER(read);
-	DECLARE_WRITE16_MEMBER(write);
+	uint16_t read(offs_t offset);
+	void write(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
 
 	void draw(bitmap_ind16 &bitmap, const rectangle &cliprect, bitmap_ind8 &priority_bitmap, const int *spri);
 
@@ -99,31 +92,31 @@ protected:
 	virtual void device_start() override;
 
 private:
-	std::unique_ptr<UINT16[]> sprite_ram;
+	std::unique_ptr<uint16_t[]> sprite_ram;
 };
 
 
-class segas24_mixer : public device_t
+class segas24_mixer_device : public device_t
 {
 	friend class segas24_mixer_config;
 
 public:
-	segas24_mixer(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	segas24_mixer_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
-	DECLARE_READ16_MEMBER(read);
-	DECLARE_WRITE16_MEMBER(write);
+	uint16_t read(offs_t offset);
+	void write(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
 
-	UINT16 get_reg(int reg);
+	uint16_t get_reg(int reg);
 
 protected:
 	virtual void device_start() override;
 
 private:
-	UINT16 mixer_reg[16];
+	uint16_t mixer_reg[16];
 };
 
-extern const device_type S24TILE;
-extern const device_type S24SPRITE;
-extern const device_type S24MIXER;
+DECLARE_DEVICE_TYPE(S24TILE,   segas24_tile_device)
+DECLARE_DEVICE_TYPE(S24SPRITE, segas24_sprite_device)
+DECLARE_DEVICE_TYPE(S24MIXER,  segas24_mixer_device)
 
-#endif
+#endif // MAME_VIDEO_SEGAIC24_H

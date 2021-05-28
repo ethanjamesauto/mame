@@ -1,26 +1,16 @@
 // license:BSD-3-Clause
 // copyright-holders:Fabio Priuli,Acho A. Tang, R. Belmont
-#pragma once
-#ifndef __K052109_H__
-#define __K052109_H__
+#ifndef MAME_VIDEO_K052109_H
+#define MAME_VIDEO_K052109_H
 
-typedef device_delegate<void (int layer, int bank, int *code, int *color, int *flags, int *priority)> k052109_cb_delegate;
+#pragma once
+
+#include "tilemap.h"
+
 #define K052109_CB_MEMBER(_name)   void _name(int layer, int bank, int *code, int *color, int *flags, int *priority)
 
-#define MCFG_K052109_CB(_class, _method) \
-	k052109_device::set_k052109_callback(*device, k052109_cb_delegate(&_class::_method, #_class "::" #_method, downcast<_class *>(owner)));
 
-#define MCFG_K052109_CHARRAM(_ram) \
-	k052109_device::set_ram(*device, _ram);
-
-#define MCFG_K052109_SCREEN_TAG(_tag) \
-		k052109_device::set_screen_tag(*device, owner, _tag);
-
-#define MCFG_K052109_IRQ_HANDLER(_devcb) \
-	devcb = &k052109_device::set_irq_handler(*device, DEVCB_##_devcb);
-
-
-class k052109_device : public device_t, public device_gfx_interface
+class k052109_device : public device_t, public device_gfx_interface, public device_video_interface
 {
 	static const gfx_layout charlayout;
 	static const gfx_layout charlayout_ram;
@@ -28,15 +18,16 @@ class k052109_device : public device_t, public device_gfx_interface
 	DECLARE_GFXDECODE_MEMBER(gfxinfo_ram);
 
 public:
-	k052109_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	using tile_delegate = device_delegate<void (int layer, int bank, int *code, int *color, int *flags, int *priority)>;
+
+	k052109_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 	~k052109_device() {}
 
-	template<class _Object> static devcb_base &set_irq_handler(device_t &device, _Object object)
-			{ return downcast<k052109_device &>(device).m_irq_handler.set_callback(object); }
-
-	static void set_k052109_callback(device_t &device, k052109_cb_delegate callback) { downcast<k052109_device &>(device).m_k052109_cb = callback; }
-	static void set_ram(device_t &device, bool ram);
-	static void set_screen_tag(device_t &device, device_t *owner, const char *tag);
+	auto irq_handler() { return m_irq_handler.bind(); }
+	auto firq_handler() { return m_firq_handler.bind(); }
+	auto nmi_handler() { return m_nmi_handler.bind(); }
+	template <typename... T> void set_tile_callback(T &&... args) { m_k052109_cb.set(std::forward<T>(args)...); }
+	void set_char_ram(bool ram);
 
 	/*
 	The callback is passed:
@@ -53,55 +44,55 @@ public:
 	chip so it must not be set by the callback.
 	*/
 
-	DECLARE_READ8_MEMBER( read );
-	DECLARE_WRITE8_MEMBER( write );
-	DECLARE_READ16_MEMBER( word_r );
-	DECLARE_WRITE16_MEMBER( word_w );
-	DECLARE_READ16_MEMBER( lsb_r );
-	DECLARE_WRITE16_MEMBER( lsb_w );
+	u8 read(offs_t offset);
+	void write(offs_t offset, u8 data);
+	u16 word_r(offs_t offset);
+	void word_w(offs_t offset, u16 data, u16 mem_mask = ~0);
 
 	void set_rmrd_line(int state);
 	int get_rmrd_line();
 	void tilemap_update();
-	int is_irq_enabled();
+	int is_irq_enabled() { return m_irq_enabled; } // FIXME: remove
 	void tilemap_mark_dirty(int tmap_num);
-	void tilemap_draw(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect, int tmap_num, UINT32 flags, UINT8 priority);
+	void tilemap_draw(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect, int tmap_num, uint32_t flags, uint8_t priority);
 
 	void vblank_callback(screen_device &screen, bool state);
+
+	void set_xy_offset(int dx, int dy);
 
 protected:
 	// device-level overrides
 	virtual void device_start() override;
 	virtual void device_reset() override;
+	virtual void device_post_load() override;
 
 private:
 	// internal state
-	std::unique_ptr<UINT8[]>   m_ram;
-	UINT8    *m_videoram_F;
-	UINT8    *m_videoram_A;
-	UINT8    *m_videoram_B;
-	UINT8    *m_videoram2_F;
-	UINT8    *m_videoram2_A;
-	UINT8    *m_videoram2_B;
-	UINT8    *m_colorram_F;
-	UINT8    *m_colorram_A;
-	UINT8    *m_colorram_B;
+	std::unique_ptr<uint8_t[]>   m_ram;
+	uint8_t    *m_videoram_F;
+	uint8_t    *m_videoram_A;
+	uint8_t    *m_videoram_B;
+	uint8_t    *m_videoram2_F;
+	uint8_t    *m_videoram2_A;
+	uint8_t    *m_videoram2_B;
+	uint8_t    *m_colorram_F;
+	uint8_t    *m_colorram_A;
+	uint8_t    *m_colorram_B;
 
 	tilemap_t  *m_tilemap[3];
 	int      m_tileflip_enable;
-	UINT8    m_charrombank[4];
-	UINT8    m_charrombank_2[4];
-	UINT8    m_has_extra_video_ram;
-	INT32    m_rmrd_line;
-	UINT8    m_irq_enabled;
-	UINT8    m_romsubbank, m_scrollctrl;
+	uint8_t    m_charrombank[4];
+	uint8_t    m_charrombank_2[4];
+	uint8_t    m_has_extra_video_ram;
+	int32_t    m_rmrd_line;
+	uint8_t    m_irq_enabled;
+	uint8_t    m_romsubbank, m_scrollctrl;
 
-	UINT8 *m_char_rom;
-	UINT32 m_char_size;
+	int        m_dx, m_dy;
 
-	const char *m_screen_tag;
+	optional_region_ptr<uint8_t> m_char_rom;
 
-	k052109_cb_delegate m_k052109_cb;
+	tile_delegate m_k052109_cb;
 
 	devcb_write_line m_irq_handler;
 	devcb_write_line m_firq_handler;
@@ -111,10 +102,10 @@ private:
 	TILE_GET_INFO_MEMBER(get_tile_info1);
 	TILE_GET_INFO_MEMBER(get_tile_info2);
 
-	void get_tile_info( tile_data &tileinfo, int tile_index, int layer, UINT8 *cram, UINT8 *vram1, UINT8 *vram2 );
+	void get_tile_info( tile_data &tileinfo, int tile_index, int layer, uint8_t *cram, uint8_t *vram1, uint8_t *vram2 );
 	void tileflip_reset();
 };
 
-extern const device_type K052109;
+DECLARE_DEVICE_TYPE(K052109, k052109_device)
 
-#endif
+#endif // MAME_VIDEO_K052109_H

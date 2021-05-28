@@ -8,8 +8,9 @@
  *
  *****************************************************************************/
 #include "emu.h"
-#include "debugger.h"
 #include "i8008.h"
+#include "8008dasm.h"
+#include "debugger.h"
 
 //**************************************************************************
 //  MACROS
@@ -24,7 +25,7 @@
 //**************************************************************************
 
 // device type definition
-const device_type I8008 = &device_creator<i8008_device>;
+DEFINE_DEVICE_TYPE(I8008, i8008_device, "i8008", "Intel 8008")
 
 //**************************************************************************
 //  DEVICE INTERFACE
@@ -33,15 +34,13 @@ const device_type I8008 = &device_creator<i8008_device>;
 //-------------------------------------------------
 //  i8008_device - constructor
 //-------------------------------------------------
-i8008_device::i8008_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: cpu_device(mconfig, I8008, "i8008", tag, owner, clock, "i8008", __FILE__),
-		m_program_config("program", ENDIANNESS_LITTLE, 8, 14),
-		m_io_config("io", ENDIANNESS_LITTLE, 8, 8),
-		m_program(nullptr),
-		m_direct(nullptr)
+i8008_device::i8008_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: cpu_device(mconfig, I8008, tag, owner, clock)
+	, m_program_config("program", ENDIANNESS_LITTLE, 8, 14)
+	, m_io_config("io", ENDIANNESS_LITTLE, 8, 5)
 {
 	// set our instruction counter
-	m_icountptr = &m_icount;
+	set_icountptr(m_icount);
 }
 
 //-------------------------------------------------
@@ -51,9 +50,9 @@ i8008_device::i8008_device(const machine_config &mconfig, const char *tag, devic
 void i8008_device::device_start()
 {
 	// find address spaces
-	m_program = &space(AS_PROGRAM);
-	m_direct = &m_program->direct();
-	m_io = &space(AS_IO);
+	space(AS_PROGRAM).cache(m_cache);
+	space(AS_PROGRAM).specific(m_program);
+	space(AS_IO).specific(m_io);
 
 	// save state
 	save_item(NAME(m_PC));
@@ -83,6 +82,7 @@ void i8008_device::device_start()
 	// register our state for the debugger
 	state_add(I8008_PC,       "PC",       m_PC.w.l).mask(0x3fff);
 	state_add(STATE_GENPC,    "GENPC",    m_PC.w.l).mask(0x3fff).noshow();
+	state_add(STATE_GENPCBASE,"CURPC",    m_PC.w.l).mask(0x3fff).noshow();
 	state_add(STATE_GENFLAGS, "GENFLAGS", m_flags).mask(0x0f).callimport().callexport().noshow().formatstr("%4s");
 	state_add(I8008_A,        "A",        m_A);
 	state_add(I8008_B,        "B",        m_B);
@@ -92,9 +92,8 @@ void i8008_device::device_start()
 	state_add(I8008_H,        "H",        m_H);
 	state_add(I8008_L,        "L",        m_L);
 
-	std::string tempstr;
 	for (int addrnum = 0; addrnum < 8; addrnum++)
-		state_add(I8008_ADDR1 + addrnum, strformat(tempstr, "ADDR%d", addrnum + 1).c_str(), m_ADDR[addrnum].w.l).mask(0xfff);
+		state_add(I8008_ADDR1 + addrnum, string_format("ADDR%d", addrnum + 1).c_str(), m_ADDR[addrnum].w.l).mask(0xfff);
 
 	init_tables();
 }
@@ -102,7 +101,7 @@ void i8008_device::device_start()
 void i8008_device::init_tables (void)
 {
 	int i;
-	UINT8 p;
+	uint8_t p;
 	for (i = 0; i < 256; i++)
 	{
 		p = 0;
@@ -135,15 +134,16 @@ void i8008_device::device_reset()
 
 //-------------------------------------------------
 //  memory_space_config - return the configuration
-//  of the specified address space, or NULL if
+//  of the specified address space, or nullptr if
 //  the space doesn't exist
 //-------------------------------------------------
 
-const address_space_config *i8008_device::memory_space_config(address_spacenum spacenum) const
+device_memory_interface::space_config_vector i8008_device::memory_space_config() const
 {
-	return  (spacenum == AS_PROGRAM) ? &m_program_config :
-			(spacenum == AS_IO) ? &m_io_config :
-			nullptr;
+	return space_config_vector {
+		std::make_pair(AS_PROGRAM, &m_program_config),
+		std::make_pair(AS_IO,      &m_io_config)
+	};
 }
 
 //-------------------------------------------------
@@ -187,12 +187,12 @@ void i8008_device::state_export(const device_state_entry &entry)
 //  for the debugger
 //-------------------------------------------------
 
-void i8008_device::state_string_export(const device_state_entry &entry, std::string &str)
+void i8008_device::state_string_export(const device_state_entry &entry, std::string &str) const
 {
 	switch (entry.index())
 	{
 		case STATE_GENFLAGS:
-			strprintf(str, "%c%c%c%c",
+			str = string_format("%c%c%c%c",
 				m_CF ? 'C':'.',
 				m_ZF ? 'Z':'.',
 				m_SF ? 'S':'.',
@@ -202,34 +202,13 @@ void i8008_device::state_string_export(const device_state_entry &entry, std::str
 }
 
 //-------------------------------------------------
-//  disasm_min_opcode_bytes - return the length
-//  of the shortest instruction, in bytes
-//-------------------------------------------------
-
-UINT32 i8008_device::disasm_min_opcode_bytes() const
-{
-	return 1;
-}
-
-//-------------------------------------------------
-//  disasm_max_opcode_bytes - return the length
-//  of the longest instruction, in bytes
-//-------------------------------------------------
-
-UINT32 i8008_device::disasm_max_opcode_bytes() const
-{
-	return 3;
-}
-
-//-------------------------------------------------
-//  disasm_disassemble - call the disassembly
+//  disassemble - call the disassembly
 //  helper function
 //-------------------------------------------------
 
-offs_t i8008_device::disasm_disassemble(char *buffer, offs_t pc, const UINT8 *oprom, const UINT8 *opram, UINT32 options)
+std::unique_ptr<util::disasm_interface> i8008_device::create_disassembler()
 {
-	extern CPU_DISASSEMBLE( i8008 );
-	return CPU_DISASSEMBLE_NAME(i8008)(this, buffer, pc, oprom, opram, options);
+	return std::make_unique<i8008_disassembler>();
 }
 
 //**************************************************************************
@@ -241,7 +220,7 @@ offs_t i8008_device::disasm_disassemble(char *buffer, offs_t pc, const UINT8 *op
 //  cycles it takes for one instruction to execute
 //-------------------------------------------------
 
-UINT32 i8008_device::execute_min_cycles() const
+uint32_t i8008_device::execute_min_cycles() const noexcept
 {
 	return 8;
 }
@@ -251,7 +230,7 @@ UINT32 i8008_device::execute_min_cycles() const
 //  cycles it takes for one instruction to execute
 //-------------------------------------------------
 
-UINT32 i8008_device::execute_max_cycles() const
+uint32_t i8008_device::execute_max_cycles() const noexcept
 {
 	return 16;
 }
@@ -276,12 +255,12 @@ void i8008_device::execute_run()
 		if (m_irq_state != CLEAR_LINE) {
 			take_interrupt();
 		}
-		debugger_instruction_hook(this, m_PC.d);
+		debugger_instruction_hook(m_PC.d);
 		execute_one(rop());
 	} while (m_icount > 0);
 }
 
-inline void i8008_device::illegal(UINT8 opcode)
+inline void i8008_device::illegal(uint8_t opcode)
 {
 	if ((machine().debug_flags & DEBUG_FLAG_ENABLED) != 0)
 	{
@@ -302,7 +281,7 @@ void i8008_device::take_interrupt()
 
 inline void i8008_device::execute_one(int opcode)
 {
-	UINT16 tmp;
+	uint16_t tmp;
 
 	switch (opcode >> 6)
 	{
@@ -530,11 +509,11 @@ inline void i8008_device::execute_one(int opcode)
 							if (((opcode>>4)&3)==0) {
 								// INP
 								m_icount -= 8;
-								m_A = m_io->read_byte((opcode >> 1) & 0x1f);
+								m_A = m_io.read_byte((opcode >> 1) & 0x1f);
 							} else {
 								// OUT
 								m_icount -= 6;
-								m_io->write_byte((opcode >> 1) & 0x1f, m_A);
+								m_io.write_byte((opcode >> 1) & 0x1f, m_A);
 							}
 							break;
 					}
@@ -618,17 +597,17 @@ inline void i8008_device::pop_stack()
 	m_pc_pos = (m_pc_pos - 1) & 7;
 }
 
-inline UINT8 i8008_device::rop()
+inline uint8_t i8008_device::rop()
 {
-	UINT8 retVal = m_direct->read_byte(GET_PC.w.l);
+	uint8_t retVal = m_cache.read_byte(GET_PC.w.l);
 	GET_PC.w.l = (GET_PC.w.l + 1) & 0x3fff;
 	m_PC = GET_PC;
 	return retVal;
 }
 
-inline UINT8 i8008_device::get_reg(UINT8 reg)
+inline uint8_t i8008_device::get_reg(uint8_t reg)
 {
-	UINT8 retVal;
+	uint8_t retVal;
 	switch(reg) {
 		case 0 : retVal = m_A; break;
 		case 1 : retVal = m_B; break;
@@ -637,12 +616,12 @@ inline UINT8 i8008_device::get_reg(UINT8 reg)
 		case 4 : retVal = m_E; break;
 		case 5 : retVal = m_H; break;
 		case 6 : retVal = m_L; break;
-		default: retVal = m_program->read_byte((m_H << 8) + m_L); break;
+		default: retVal = m_program.read_byte((m_H << 8) + m_L); break;
 	}
 	return retVal;
 }
 
-inline void i8008_device::set_reg(UINT8 reg, UINT8 val)
+inline void i8008_device::set_reg(uint8_t reg, uint8_t val)
 {
 	switch(reg) {
 		case 0 : m_A = val; break;
@@ -652,29 +631,29 @@ inline void i8008_device::set_reg(UINT8 reg, UINT8 val)
 		case 4 : m_E = val; break;
 		case 5 : m_H = val; break;
 		case 6 : m_L = val; break;
-		default: m_program->write_byte((m_H << 8) + m_L, val); break;
+		default: m_program.write_byte((m_H << 8) + m_L, val); break;
 	}
 }
 
-inline UINT8 i8008_device::arg()
+inline uint8_t i8008_device::arg()
 {
-	UINT8 retVal = m_direct->read_byte(GET_PC.w.l);
+	uint8_t retVal = m_cache.read_byte(GET_PC.w.l);
 	GET_PC.w.l = (GET_PC.w.l + 1) & 0x3fff;
 	m_PC = GET_PC;
 	return retVal;
 }
 
-inline void i8008_device::update_flags(UINT8 val)
+inline void i8008_device::update_flags(uint8_t val)
 {
 	m_ZF = (val == 0) ? 1 : 0;
 	m_SF = (val & 0x80) ? 1 : 0;
 	m_PF = m_PARITY[val];
 }
 
-inline UINT8 i8008_device::do_condition(UINT8 val)
+inline uint8_t i8008_device::do_condition(uint8_t val)
 {
-	UINT8 v = (val >> 5) & 1;
-	UINT8 cond = 0;
+	uint8_t v = (val >> 5) & 1;
+	uint8_t cond = 0;
 	switch((val>> 3) & 0x03) {
 		case 0 :
 				if (m_CF==v) cond = 1;
@@ -692,9 +671,9 @@ inline UINT8 i8008_device::do_condition(UINT8 val)
 	return cond;
 }
 
-inline UINT16 i8008_device::get_addr()
+inline uint16_t i8008_device::get_addr()
 {
-	UINT8 lo = arg();
-	UINT8 hi = arg();
+	uint8_t lo = arg();
+	uint8_t hi = arg();
 	return ((hi & 0x3f) << 8) + lo;
 }

@@ -6,31 +6,48 @@
  *  Created on: 10/03/2014
  */
 
-#ifndef NSC810_H_
-#define NSC810_H_
+#ifndef MAME_MACHINE_NSC810_H
+#define MAME_MACHINE_NSC810_H
 
-#include "emu.h"
+#pragma once
+
 
 class nsc810_device :  public device_t
 {
 public:
 	// construction/destruction
-	nsc810_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	nsc810_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock, uint32_t clk0, uint32_t clk1)
+		: nsc810_device(mconfig, tag, owner, clock)
+	{
+		set_timer0_clock(clk0);
+		set_timer1_clock(clk1);
+	}
 
-	template<class _Object> static devcb_base &set_portA_read_callback(device_t &device, _Object object) { return downcast<nsc810_device &>(device).m_portA_r.set_callback(object); }
-	template<class _Object> static devcb_base &set_portB_read_callback(device_t &device, _Object object) { return downcast<nsc810_device &>(device).m_portB_r.set_callback(object); }
-	template<class _Object> static devcb_base &set_portC_read_callback(device_t &device, _Object object) { return downcast<nsc810_device &>(device).m_portC_r.set_callback(object); }
-	template<class _Object> static devcb_base &set_portA_write_callback(device_t &device, _Object object) { return downcast<nsc810_device &>(device).m_portA_w.set_callback(object); }
-	template<class _Object> static devcb_base &set_portB_write_callback(device_t &device, _Object object) { return downcast<nsc810_device &>(device).m_portB_w.set_callback(object); }
-	template<class _Object> static devcb_base &set_portC_write_callback(device_t &device, _Object object) { return downcast<nsc810_device &>(device).m_portC_w.set_callback(object); }
-	template<class _Object> static devcb_base &set_timer0_callback(device_t &device, _Object object) { return downcast<nsc810_device &>(device).m_timer0_out.set_callback(object); }
-	template<class _Object> static devcb_base &set_timer1_callback(device_t &device, _Object object) { return downcast<nsc810_device &>(device).m_timer1_out.set_callback(object); }
+	nsc810_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock, const XTAL &clk0, const XTAL &clk1)
+		: nsc810_device(mconfig, tag, owner, clock)
+	{
+		set_timer0_clock(clk0.value());
+		set_timer1_clock(clk1.value());
+	}
 
-	void set_timer0_clock(UINT32 clk) { m_timer0_clock = clk; }
-	void set_timer1_clock(UINT32 clk) { m_timer1_clock = clk; }
+	nsc810_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
-	DECLARE_READ8_MEMBER(read);
-	DECLARE_WRITE8_MEMBER(write);
+	auto portA_read_callback() { return m_portA_r.bind(); }
+	auto portB_read_callback() { return m_portB_r.bind(); }
+	auto portC_read_callback() { return m_portC_r.bind(); }
+	auto portA_write_callback() { return m_portA_w.bind(); }
+	auto portB_write_callback() { return m_portB_w.bind(); }
+	auto portC_write_callback() { return m_portC_w.bind(); }
+	auto timer0_callback() { return m_timer0_out.bind(); }
+	auto timer1_callback() { return m_timer1_out.bind(); }
+
+	void set_timer0_clock(uint32_t clk) { m_timer0_clock = clk; }
+	void set_timer0_clock(const XTAL &clk) { set_timer0_clock(clk.value()); }
+	void set_timer1_clock(uint32_t clk) { m_timer1_clock = clk; }
+	void set_timer1_clock(const XTAL &clk) { set_timer1_clock(clk.value()); }
+
+	uint8_t read(offs_t offset);
+	void write(offs_t offset, uint8_t data);
 
 protected:
 	virtual void device_start() override;
@@ -38,25 +55,25 @@ protected:
 	virtual void device_timer(emu_timer &timer, device_timer_id id, int param, void *ptr) override;
 
 private:
-	UINT8 m_portA_latch;
-	UINT8 m_portB_latch;
-	UINT8 m_portC_latch;
-	UINT8 m_ddrA;
-	UINT8 m_ddrB;
-	UINT8 m_ddrC;
-	UINT8 m_mode;
+	uint8_t m_portA_latch;
+	uint8_t m_portB_latch;
+	uint8_t m_portC_latch;
+	uint8_t m_ddrA;
+	uint8_t m_ddrB;
+	uint8_t m_ddrC;
+	uint8_t m_mode;
 	emu_timer* m_timer0;
 	emu_timer* m_timer1;
-	UINT8 m_timer0_mode;
-	UINT8 m_timer1_mode;
-	UINT16 m_timer0_counter;
-	UINT16 m_timer1_counter;
-	UINT16 m_timer0_base;
-	UINT16 m_timer1_base;
+	uint8_t m_timer0_mode;
+	uint8_t m_timer1_mode;
+	uint16_t m_timer0_counter;
+	uint16_t m_timer1_counter;
+	uint16_t m_timer0_base;
+	uint16_t m_timer1_base;
 	bool m_timer0_running;
 	bool m_timer1_running;
-	UINT32 m_timer0_clock;
-	UINT32 m_timer1_clock;
+	uint32_t m_timer0_clock;
+	uint32_t m_timer1_clock;
 	bool m_ramselect;
 
 	devcb_read8 m_portA_r;
@@ -68,8 +85,8 @@ private:
 	devcb_write_line m_timer0_out;
 	devcb_write_line m_timer1_out;
 
-	static const device_timer_id TIMER0_CLOCK = 0;
-	static const device_timer_id TIMER1_CLOCK = 1;
+	static constexpr device_timer_id TIMER0_CLOCK = 0;
+	static constexpr device_timer_id TIMER1_CLOCK = 1;
 
 	enum
 	{
@@ -99,37 +116,7 @@ private:
 	};
 };
 
-#define MCFG_NSC810_ADD(_tag, _t0clk, _t1clk) \
-	MCFG_DEVICE_ADD(_tag, NSC810, 0)           \
-	downcast<nsc810_device *>(device)->set_timer0_clock(_t0clk);   \
-	downcast<nsc810_device *>(device)->set_timer1_clock(_t1clk);
-
-#define MCFG_NSC810_PORTA_READ(_read) \
-	devcb = &nsc810_device::set_portA_read_callback(*device, DEVCB_##_read);
-
-#define MCFG_NSC810_PORTB_READ(_read) \
-	devcb = &nsc810_device::set_portB_read_callback(*device, DEVCB_##_read);
-
-#define MCFG_NSC810_PORTC_READ(_read) \
-	devcb = &nsc810_device::set_portC_read_callback(*device, DEVCB_##_read);
-
-#define MCFG_NSC810_PORTA_WRITE(_write) \
-	devcb = &nsc810_device::set_portA_write_callback(*device, DEVCB_##_write);
-
-#define MCFG_NSC810_PORTB_WRITE(_write) \
-	devcb = &nsc810_device::set_portB_write_callback(*device, DEVCB_##_write);
-
-#define MCFG_NSC810_PORTC_WRITE(_write) \
-	devcb = &nsc810_device::set_portC_write_callback(*device, DEVCB_##_write);
-
-#define MCFG_NSC810_TIMER0_OUT(_write) \
-	devcb = &nsc810_device::set_timer0_callback(*device, DEVCB_##_write);
-
-#define MCFG_NSC810_TIMER1_OUT(_write) \
-	devcb = &nsc810_device::set_timer1_callback(*device, DEVCB_##_write);
-
 // device type definition
-extern const device_type NSC810;
+DECLARE_DEVICE_TYPE(NSC810, nsc810_device)
 
-
-#endif /* NSC810_H_ */
+#endif // MAME_MACHINE_NSC810_H

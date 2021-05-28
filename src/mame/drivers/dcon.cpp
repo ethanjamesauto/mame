@@ -5,7 +5,7 @@
     D-Con                                   (c) 1992 Success
     SD Gundam Psycho Salamander no Kyoui    (c) 1991 Banpresto/Bandai
 
-    These games run on Seibu hardware.
+    These games run on Seibu hardware somewhat similar to Blood Bros.
 
     Emulation by Bryan McPhail, mish@tendril.co.uk
 
@@ -15,35 +15,56 @@
 ***************************************************************************/
 
 #include "emu.h"
+#include "includes/dcon.h"
+
 #include "cpu/m68000/m68000.h"
 #include "cpu/z80/z80.h"
-#include "audio/seibu.h"
-#include "includes/dcon.h"
+#include "sound/okim6295.h"
+#include "sound/ymopm.h"
+#include "sound/ymopl.h"
 #include "video/seibu_crtc.h"
+#include "screen.h"
+#include "speaker.h"
 
 
 /***************************************************************************/
 
-static ADDRESS_MAP_START( dcon_map, AS_PROGRAM, 16, dcon_state )
-	AM_RANGE(0x00000, 0x7ffff) AM_ROM
-	AM_RANGE(0x80000, 0x8bfff) AM_RAM
+u8 dcon_state::sdgndmps_sound_comms_r(offs_t offset)
+{
+	// Routine at 134C sends no sound commands if lowest bit is 0
+	if (offset == 5) // ($a000a)
+		return 1;
 
-	AM_RANGE(0x8c000, 0x8c7ff) AM_RAM_WRITE(background_w) AM_SHARE("back_data")
-	AM_RANGE(0x8c800, 0x8cfff) AM_RAM_WRITE(foreground_w) AM_SHARE("fore_data")
-	AM_RANGE(0x8d000, 0x8d7ff) AM_RAM_WRITE(midground_w) AM_SHARE("mid_data")
-	AM_RANGE(0x8d800, 0x8e7ff) AM_RAM_WRITE(text_w) AM_SHARE("textram")
-	AM_RANGE(0x8e800, 0x8f7ff) AM_RAM_DEVWRITE("palette", palette_device, write) AM_SHARE("palette")
-	AM_RANGE(0x8f800, 0x8ffff) AM_RAM AM_SHARE("spriteram")
-	AM_RANGE(0x9d000, 0x9d7ff) AM_WRITE(gfxbank_w)
+	return m_seibu_sound->main_r(offset);
+}
 
-	AM_RANGE(0xa0000, 0xa000d) AM_DEVREADWRITE("seibu_sound", seibu_sound_device, main_word_r, main_word_w)
-	AM_RANGE(0xc0000, 0xc004f) AM_DEVREADWRITE("crtc", seibu_crtc_device, read, write)
-	AM_RANGE(0xc0080, 0xc0081) AM_WRITENOP
-	AM_RANGE(0xc00c0, 0xc00c1) AM_WRITENOP
-	AM_RANGE(0xe0000, 0xe0001) AM_READ_PORT("DSW")
-	AM_RANGE(0xe0002, 0xe0003) AM_READ_PORT("P1_P2")
-	AM_RANGE(0xe0004, 0xe0005) AM_READ_PORT("SYSTEM")
-ADDRESS_MAP_END
+void dcon_state::dcon_map(address_map &map)
+{
+	map(0x00000, 0x7ffff).rom();
+	map(0x80000, 0x8bfff).ram();
+
+	map(0x8c000, 0x8c7ff).ram().w(FUNC(dcon_state::background_w)).share("back_data");
+	map(0x8c800, 0x8cfff).ram().w(FUNC(dcon_state::foreground_w)).share("fore_data");
+	map(0x8d000, 0x8d7ff).ram().w(FUNC(dcon_state::midground_w)).share("mid_data");
+	map(0x8d800, 0x8e7ff).ram().w(FUNC(dcon_state::text_w)).share("textram");
+	map(0x8e800, 0x8f7ff).ram().w(m_palette, FUNC(palette_device::write16)).share("palette");
+	map(0x8f800, 0x8ffff).ram().share("spriteram");
+	map(0x9d000, 0x9d7ff).w(FUNC(dcon_state::gfxbank_w));
+
+	map(0xa0000, 0xa000d).rw(m_seibu_sound, FUNC(seibu_sound_device::main_r), FUNC(seibu_sound_device::main_w)).umask16(0x00ff);
+	map(0xc0000, 0xc004f).rw("crtc", FUNC(seibu_crtc_device::read), FUNC(seibu_crtc_device::write));
+	map(0xc0080, 0xc0081).nopw();
+	map(0xc00c0, 0xc00c1).nopw();
+	map(0xe0000, 0xe0001).portr("DSW");
+	map(0xe0002, 0xe0003).portr("P1_P2");
+	map(0xe0004, 0xe0005).portr("SYSTEM");
+}
+
+void dcon_state::sdgndmps_map(address_map &map)
+{
+	dcon_map(map);
+	map(0xa0000, 0xa000d).r(FUNC(dcon_state::sdgndmps_sound_comms_r)).umask16(0x00ff);
+}
 
 /******************************************************************************/
 
@@ -148,7 +169,7 @@ static INPUT_PORTS_START( sdgndmps )
 	PORT_SERVICE_NO_TOGGLE( 0x0100, IP_ACTIVE_LOW )
 
 	PORT_START("DSW")
-	PORT_DIPNAME( 0x000f, 0x000f, DEF_STR( Coin_B ) )
+	PORT_DIPNAME( 0x000f, 0x000f, DEF_STR( Coin_B ) ) PORT_DIPLOCATION("SW2:1,2,3,4")
 	PORT_DIPSETTING(      0x0004, DEF_STR( 4C_1C ) )
 	PORT_DIPSETTING(      0x000a, DEF_STR( 3C_1C ) )
 	PORT_DIPSETTING(      0x0001, DEF_STR( 2C_1C ) )
@@ -165,7 +186,7 @@ static INPUT_PORTS_START( sdgndmps )
 	PORT_DIPSETTING(      0x000d, DEF_STR( 1C_5C ) )
 	PORT_DIPSETTING(      0x0005, DEF_STR( 1C_6C ) )
 	PORT_DIPSETTING(      0x0009, DEF_STR( 1C_7C ) )
-	PORT_DIPNAME( 0x00f0, 0x00f0, DEF_STR( Coin_A ) )
+	PORT_DIPNAME( 0x00f0, 0x00f0, DEF_STR( Coin_A ) ) PORT_DIPLOCATION("SW2:5,6,7,8")
 	PORT_DIPSETTING(      0x0040, DEF_STR( 4C_1C ) )
 	PORT_DIPSETTING(      0x00a0, DEF_STR( 3C_1C ) )
 	PORT_DIPSETTING(      0x0010, DEF_STR( 2C_1C ) )
@@ -182,29 +203,24 @@ static INPUT_PORTS_START( sdgndmps )
 	PORT_DIPSETTING(      0x0050, DEF_STR( 1C_6C ) )
 	PORT_DIPSETTING(      0x0090, DEF_STR( 1C_7C ) )
 	PORT_DIPSETTING(      0x0000, DEF_STR( Free_Play ) )
-	PORT_DIPNAME( 0x0300, 0x0300, DEF_STR( Lives ) )
+	PORT_DIPNAME( 0x0300, 0x0300, DEF_STR( Lives ) ) PORT_DIPLOCATION("SW1:1,2")
 	PORT_DIPSETTING(      0x0200, "2" )
 	PORT_DIPSETTING(      0x0300, "3" )
 	PORT_DIPSETTING(      0x0100, "4" )
 	PORT_DIPSETTING(      0x0000, "6" )
-	PORT_DIPNAME( 0x0400, 0x0400, DEF_STR( Unknown ) )
-	PORT_DIPSETTING(      0x0400, DEF_STR( Off ) )
-	PORT_DIPSETTING(      0x0000, DEF_STR( On ) )
-	PORT_DIPNAME( 0x0800, 0x0800, DEF_STR( Unknown ) )
-	PORT_DIPSETTING(      0x0800, DEF_STR( Off ) )
-	PORT_DIPSETTING(      0x0000, DEF_STR( On ) )
-	PORT_DIPNAME( 0x1000, 0x1000, DEF_STR( Unknown ) ) // plays a jingle at the game intro (why?)
+	PORT_DIPNAME( 0x0c00, 0x0c00, DEF_STR( Difficulty ) ) PORT_DIPLOCATION("SW1:3,4")
+	PORT_DIPSETTING(      0x0800, DEF_STR( Easy ) )
+	PORT_DIPSETTING(      0x0c00, DEF_STR( Normal ) )
+	PORT_DIPSETTING(      0x0400, DEF_STR( Difficult ) )
+	PORT_DIPSETTING(      0x0000, DEF_STR( Very_Difficult ) )
+	PORT_DIPNAME( 0x1000, 0x0000, DEF_STR( Demo_Sounds ) ) PORT_DIPLOCATION("SW1:5")
 	PORT_DIPSETTING(      0x1000, DEF_STR( Off ) )
 	PORT_DIPSETTING(      0x0000, DEF_STR( On ) )
-	PORT_DIPNAME( 0x2000, 0x0000, DEF_STR( Allow_Continue ) )
+	PORT_DIPNAME( 0x2000, 0x0000, DEF_STR( Allow_Continue ) ) PORT_DIPLOCATION("SW1:6")
 	PORT_DIPSETTING(      0x2000, DEF_STR( No ) )
 	PORT_DIPSETTING(      0x0000, DEF_STR( Yes ) )
-	PORT_DIPNAME( 0x4000, 0x4000, DEF_STR( Unknown ) )
-	PORT_DIPSETTING(      0x4000, DEF_STR( Off ) )
-	PORT_DIPSETTING(      0x0000, DEF_STR( On ) )
-	PORT_DIPNAME( 0x8000, 0x8000, DEF_STR( Unknown ) )
-	PORT_DIPSETTING(      0x8000, DEF_STR( Off ) )
-	PORT_DIPSETTING(      0x0000, DEF_STR( On ) )
+	PORT_DIPUNUSED_DIPLOC( 0x4000, 0x4000, "SW1:7" )
+	PORT_DIPUNUSED_DIPLOC( 0x8000, 0x8000, "SW1:8" )
 INPUT_PORTS_END
 
 
@@ -239,7 +255,7 @@ static const gfx_layout dcon_tilelayout =
 	1024
 };
 
-static GFXDECODE_START( dcon )
+static GFXDECODE_START( gfx_dcon )
 	GFXDECODE_ENTRY( "gfx1", 0, dcon_charlayout,    1024+768, 16 )
 	GFXDECODE_ENTRY( "gfx2", 0, dcon_tilelayout,    1024+0,   16 )
 	GFXDECODE_ENTRY( "gfx3", 0, dcon_tilelayout,    1024+512, 16 )
@@ -247,77 +263,108 @@ static GFXDECODE_START( dcon )
 	GFXDECODE_ENTRY( "gfx5", 0, dcon_tilelayout,           0, 64 )
 GFXDECODE_END
 
-WRITE16_MEMBER( dcon_state::layer_en_w )
+void dcon_state::layer_en_w(uint16_t data)
 {
 	m_layer_en = data;
 }
 
-WRITE16_MEMBER( dcon_state::layer_scroll_w )
+void dcon_state::layer_scroll_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	COMBINE_DATA(&m_scroll_ram[offset]);
 }
 
 /******************************************************************************/
 
-static MACHINE_CONFIG_START( dcon, dcon_state )
-
+void dcon_state::dcon(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", M68000, 10000000)
-	MCFG_CPU_PROGRAM_MAP(dcon_map)
-	MCFG_CPU_VBLANK_INT_DRIVER("screen", dcon_state,  irq4_line_hold)
+	M68000(config, m_maincpu, 10000000);
+	m_maincpu->set_addrmap(AS_PROGRAM, &dcon_state::dcon_map);
+	m_maincpu->set_vblank_int("screen", FUNC(dcon_state::irq4_line_hold));
 
-	SEIBU_SOUND_SYSTEM_CPU(4000000) /* Perhaps 14318180/4? */
+	z80_device &audiocpu(Z80(config, "audiocpu", 4000000)); /* Perhaps 14318180/4? */
+	audiocpu.set_addrmap(AS_PROGRAM, &dcon_state::seibu_sound_map);
+	audiocpu.set_irq_acknowledge_callback("seibu_sound", FUNC(seibu_sound_device::im0_vector_cb));
 
 	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_REFRESH_RATE(60)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(2500) /* not accurate */)
-	MCFG_SCREEN_SIZE(40*8, 32*8)
-	MCFG_SCREEN_VISIBLE_AREA(0*8, 40*8-1, 0*8, 28*8-1)
-	MCFG_SCREEN_UPDATE_DRIVER(dcon_state, screen_update_dcon)
-	MCFG_SCREEN_PALETTE("palette")
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_RASTER));
+	screen.set_refresh_hz(60);
+	screen.set_vblank_time(ATTOSECONDS_IN_USEC(2500)); /* not accurate */
+	screen.set_size(40*8, 32*8);
+	screen.set_visarea(0*8, 40*8-1, 0*8, 28*8-1);
+	screen.set_screen_update(FUNC(dcon_state::screen_update_dcon));
+	screen.set_palette(m_palette);
 
-	MCFG_DEVICE_ADD("crtc", SEIBU_CRTC, 0)
-	MCFG_SEIBU_CRTC_LAYER_EN_CB(WRITE16(dcon_state, layer_en_w))
-	MCFG_SEIBU_CRTC_LAYER_SCROLL_CB(WRITE16(dcon_state, layer_scroll_w))
+	seibu_crtc_device &crtc(SEIBU_CRTC(config, "crtc", 0));
+	crtc.layer_en_callback().set(FUNC(dcon_state::layer_en_w));
+	crtc.layer_scroll_callback().set(FUNC(dcon_state::layer_scroll_w));
 
-	MCFG_GFXDECODE_ADD("gfxdecode", "palette", dcon)
-	MCFG_PALETTE_ADD("palette", 2048)
-	MCFG_PALETTE_FORMAT(xBBBBBGGGGGRRRRR)
+	GFXDECODE(config, m_gfxdecode, m_palette, gfx_dcon);
+	PALETTE(config, m_palette).set_format(palette_device::xBGR_555, 2048);
 
 	/* sound hardware */
-	SEIBU_SOUND_SYSTEM_YM3812_INTERFACE(4000000,1320000)
-MACHINE_CONFIG_END
+	SPEAKER(config, "mono").front_center();
 
-static MACHINE_CONFIG_START( sdgndmps, dcon_state )
+	ym3812_device &ymsnd(YM3812(config, "ymsnd", 4000000));
+	ymsnd.irq_handler().set("seibu_sound", FUNC(seibu_sound_device::fm_irqhandler));
+	ymsnd.add_route(ALL_OUTPUTS, "mono", 1.0);
 
+	okim6295_device &oki(OKIM6295(config, "oki", 1320000, okim6295_device::PIN7_LOW));
+	oki.add_route(ALL_OUTPUTS, "mono", 0.40);
+
+	SEIBU_SOUND(config, m_seibu_sound, 0);
+	m_seibu_sound->int_callback().set_inputline("audiocpu", 0);
+	m_seibu_sound->set_rom_tag("audiocpu");
+	m_seibu_sound->set_rombank_tag("seibu_bank1");
+	m_seibu_sound->ym_read_callback().set("ymsnd", FUNC(ym3812_device::read));
+	m_seibu_sound->ym_write_callback().set("ymsnd", FUNC(ym3812_device::write));
+}
+
+void dcon_state::sdgndmps(machine_config &config) /* PCB number is PB91008 */
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", M68000, 10000000)
-	MCFG_CPU_PROGRAM_MAP(dcon_map)
-	MCFG_CPU_VBLANK_INT_DRIVER("screen", dcon_state,  irq4_line_hold)
+	M68000(config, m_maincpu, XTAL(20'000'000)/2);
+	m_maincpu->set_addrmap(AS_PROGRAM, &dcon_state::sdgndmps_map);
+	m_maincpu->set_vblank_int("screen", FUNC(dcon_state::irq4_line_hold));
 
-	SEIBU2_SOUND_SYSTEM_CPU(14318180/4)
+	z80_device &audiocpu(Z80(config, "audiocpu", XTAL(14'318'181)/4));
+	audiocpu.set_addrmap(AS_PROGRAM, &dcon_state::seibu_sound_map);
+	audiocpu.set_irq_acknowledge_callback("seibu_sound", FUNC(seibu_sound_device::im0_vector_cb));
 
 	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_REFRESH_RATE(60)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(2500) /* not accurate */)
-	MCFG_SCREEN_SIZE(40*8, 32*8)
-	MCFG_SCREEN_VISIBLE_AREA(0*8, 40*8-1, 2*8, 30*8-1)
-	MCFG_SCREEN_UPDATE_DRIVER(dcon_state, screen_update_sdgndmps)
-	MCFG_SCREEN_PALETTE("palette")
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_RASTER));
+	screen.set_refresh_hz(60);
+	screen.set_vblank_time(ATTOSECONDS_IN_USEC(2500)); /* not accurate */
+	screen.set_size(40*8, 32*8);
+	screen.set_visarea(0*8, 40*8-1, 2*8, 30*8-1);
+	screen.set_screen_update(FUNC(dcon_state::screen_update_sdgndmps));
+	screen.set_palette(m_palette);
 
-	MCFG_DEVICE_ADD("crtc", SEIBU_CRTC, 0)
-	MCFG_SEIBU_CRTC_LAYER_EN_CB(WRITE16(dcon_state, layer_en_w))
-	MCFG_SEIBU_CRTC_LAYER_SCROLL_CB(WRITE16(dcon_state, layer_scroll_w))
+	seibu_crtc_device &crtc(SEIBU_CRTC(config, "crtc", 0));
+	crtc.layer_en_callback().set(FUNC(dcon_state::layer_en_w));
+	crtc.layer_scroll_callback().set(FUNC(dcon_state::layer_scroll_w));
 
-	MCFG_GFXDECODE_ADD("gfxdecode", "palette", dcon)
-	MCFG_PALETTE_ADD("palette", 2048)
-	MCFG_PALETTE_FORMAT(xBBBBBGGGGGRRRRR)
+	GFXDECODE(config, m_gfxdecode, m_palette, gfx_dcon);
+	PALETTE(config, m_palette).set_format(palette_device::xBGR_555, 2048);
 
 	/* sound hardware */
-	SEIBU_SOUND_SYSTEM_YM2151_INTERFACE(14318180/4,1320000)
-MACHINE_CONFIG_END
+	SPEAKER(config, "mono").front_center();
+
+	ym2151_device &ymsnd(YM2151(config, "ymsnd", XTAL(14'318'181)/4));
+	ymsnd.irq_handler().set(m_seibu_sound, FUNC(seibu_sound_device::fm_irqhandler));
+	ymsnd.add_route(0, "mono", 0.50);
+	ymsnd.add_route(1, "mono", 0.50);
+
+	okim6295_device &oki(OKIM6295(config, "oki", XTAL(20'000'000)/16, okim6295_device::PIN7_LOW)); /* 1.25Mhz? unverified clock & divisor (was 1320000) */
+	oki.add_route(ALL_OUTPUTS, "mono", 0.40);
+
+	SEIBU_SOUND(config, m_seibu_sound, 0);
+	m_seibu_sound->int_callback().set_inputline("audiocpu", 0);
+	m_seibu_sound->set_rom_tag("audiocpu");
+	m_seibu_sound->set_rombank_tag("seibu_bank1");
+	m_seibu_sound->ym_read_callback().set("ymsnd", FUNC(ym2151_device::read));
+	m_seibu_sound->ym_write_callback().set("ymsnd", FUNC(ym2151_device::write));
+}
 
 /***************************************************************************/
 
@@ -393,17 +440,6 @@ ROM_START( sdgndmps )
 ROM_END
 
 /***************************************************************************/
-DRIVER_INIT_MEMBER(dcon_state,sdgndmps)
-{
-	UINT16 *RAM = (UINT16 *)memregion("maincpu")->base();
-	RAM[0x1356/2] = 0x4e71; /* beq -> nop */
-	RAM[0x1358/2] = 0x4e71;
 
-	RAM[0x4de/2]  = 0x4245; /* ROM checksum */
-	RAM[0x4e0/2]  = 0x4e71;
-	RAM[0x4e2/2]  = 0x4e71;
-}
-
-
-GAME( 1991, sdgndmps, 0, sdgndmps, sdgndmps, dcon_state, sdgndmps, ROT0, "Banpresto / Bandai", "SD Gundam Psycho Salamander no Kyoui", MACHINE_NO_COCKTAIL | MACHINE_SUPPORTS_SAVE )
-GAME( 1992, dcon,     0, dcon,     dcon, driver_device,     0,        ROT0, "Success",            "D-Con", MACHINE_NO_COCKTAIL | MACHINE_SUPPORTS_SAVE )
+GAME( 1991, sdgndmps, 0, sdgndmps, sdgndmps, dcon_state, empty_init, ROT0, "Banpresto / Bandai", "SD Gundam Psycho Salamander no Kyoui", MACHINE_NO_COCKTAIL | MACHINE_SUPPORTS_SAVE )
+GAME( 1992, dcon,     0, dcon,     dcon,     dcon_state, empty_init, ROT0, "Success",            "D-Con",                                MACHINE_NO_COCKTAIL | MACHINE_SUPPORTS_SAVE )

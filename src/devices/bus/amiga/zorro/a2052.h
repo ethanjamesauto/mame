@@ -8,15 +8,16 @@
 
 ***************************************************************************/
 
+#ifndef MAME_BUS_AMIGA_ZORRO_A2052_H
+#define MAME_BUS_AMIGA_ZORRO_A2052_H
+
 #pragma once
 
-#ifndef __A2052_H__
-#define __A2052_H__
-
-#include "emu.h"
 #include "zorro.h"
 #include "machine/autoconfig.h"
 
+
+namespace bus::amiga::zorro {
 
 //**************************************************************************
 //  TYPE DEFINITIONS
@@ -28,11 +29,11 @@ class a2052_device : public device_t, public device_zorro2_card_interface, publi
 {
 public:
 	// construction/destruction
-	a2052_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	a2052_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
 protected:
-	virtual ioport_constructor device_input_ports() const override;
-	virtual void device_start() override;
+	virtual ioport_constructor device_input_ports() const override ATTR_COLD;
+	virtual void device_start() override ATTR_COLD;
 
 	// device_zorro2_card_interface overrides
 	virtual DECLARE_WRITE_LINE_MEMBER( cfgin_w ) override;
@@ -42,10 +43,12 @@ protected:
 
 private:
 	required_ioport m_config;
-	std::vector<UINT16> m_ram;
+	std::vector<uint16_t> m_ram;
 };
 
-// device type definition
-extern const device_type A2052;
+} // namespace bus::amiga::zorro
 
-#endif
+// device type definition
+DECLARE_DEVICE_TYPE_NS(ZORRO_A2052, bus::amiga::zorro, a2052_device)
+
+#endif // MAME_BUS_AMIGA_ZORRO_A2052_H

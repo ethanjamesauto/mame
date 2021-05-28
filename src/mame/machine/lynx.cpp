@@ -7,6 +7,8 @@
 #include "emu.h"
 #include "includes/lynx.h"
 #include "cpu/m6502/m65sc02.h"
+
+#include "corestr.h"
 #include "render.h"
 
 #define PAD_UP      0x80
@@ -33,9 +35,9 @@ enum {
 	SHADOW
 };
 
-UINT8 lynx_state::lynx_read_ram(UINT16 address)
+uint8_t lynx_state::lynx_read_ram(uint16_t address)
 {
-	UINT8 result = 0x00;
+	uint8_t result = 0x00;
 	if (address <= 0xfbff)
 		result = m_mem_0000[address - 0x0000];
 	else if (address <= 0xfcff)
@@ -49,7 +51,7 @@ UINT8 lynx_state::lynx_read_ram(UINT16 address)
 	return result;
 }
 
-void lynx_state::lynx_write_ram(UINT16 address, UINT8 data)
+void lynx_state::lynx_write_ram(uint16_t address, uint8_t data)
 {
 	if (address <= 0xfbff)
 		m_mem_0000[address - 0x0000] = data;
@@ -91,13 +93,13 @@ The sprite types relate to specific hardware functions according to the followin
   0  0  0  0  0  0  0  1      exclusive-or the data
 */
 
-inline void lynx_state::lynx_plot_pixel(const int mode, const INT16 x, const int y, const int color)
+inline void lynx_state::lynx_plot_pixel(const int mode, const int16_t x, const int y, const int color)
 {
-	UINT8 back;
-	UINT16 screen;
-	UINT16 colbuf;
+	uint8_t back;
+	uint16_t screen;
+	uint16_t colbuf;
 
-	m_blitter.everon = TRUE;
+	m_blitter.everon = true;
 	screen = m_blitter.screen + y * 80 + x / 2;
 	colbuf = m_blitter.colbuf + y * 80 + x / 2;
 
@@ -371,7 +373,7 @@ void lynx_state::lynx_blit_do_work( const int y, const int xdir, const int bits_
 {
 	int next_line_addr,i,j;
 	int xi, bits, color;
-	UINT16 width_accum, buffer;
+	uint16_t width_accum, buffer;
 
 	next_line_addr = lynx_read_ram(m_blitter.bitmap); // offset to second sprite line
 	width_accum = (xdir == 1) ? m_blitter.width_offset : 0;
@@ -399,13 +401,13 @@ void lynx_state::lynx_blit_do_work( const int y, const int xdir, const int bits_
 	}
 }
 
-void lynx_state::lynx_blit_rle_do_work( const INT16 y, const int xdir, const int bits_per_pixel, const int mask )
+void lynx_state::lynx_blit_rle_do_work( const int16_t y, const int xdir, const int bits_per_pixel, const int mask )
 {
 	int i;
 	int xi;
 	int buffer, bits, j;
 	int literal_data, count, color;
-	UINT16 width_accum;
+	uint16_t width_accum;
 
 	width_accum = (xdir == 1) ? m_blitter.width_offset : 0;
 	for( bits = 0, j = 0, buffer = 0, xi = m_blitter.x_pos - m_blitter.xoff; ; )      /* through the rle entries */
@@ -486,12 +488,12 @@ void lynx_state::lynx_blit_rle_do_work( const INT16 y, const int xdir, const int
 void lynx_state::lynx_blit_lines()
 {
 	static const int lynx_color_masks[4] = { 0x01, 0x03, 0x07, 0x0f };
-	INT16 y;
+	int16_t y;
 	int i;
 	int ydir = 0, xdir = 0;
 	int flip = 0;
 
-	m_blitter.everon = FALSE;
+	m_blitter.everon = false;
 
 	switch (m_blitter.spr_ctl1 & 0x03)   /* Initial drawing direction */
 	{
@@ -567,10 +569,10 @@ void lynx_state::lynx_blit_lines()
 				else
 					lynx_blit_do_work(y, xdir, m_blitter.line_color + 1, lynx_color_masks[m_blitter.line_color]);
 			}
-			m_blitter.width += (INT16)m_blitter.stretch;
+			m_blitter.width += (int16_t)m_blitter.stretch;
 			if (m_blitter.vstretch) // doesn't seem to be used
 			{
-				m_blitter.height += (INT16)m_blitter.stretch;
+				m_blitter.height += (int16_t)m_blitter.stretch;
 				logerror("vertical stretch enabled");
 			}
 			m_blitter.tilt_accumulator += m_blitter.tilt;
@@ -598,7 +600,7 @@ void lynx_state::device_timer(emu_timer &timer, device_timer_id id, int param, v
 		lynx_uart_timer(ptr, param);
 		break;
 	default:
-		assert_always(FALSE, "Unknown id in lynx_state::device_timer");
+		throw emu_fatalerror("Unknown id in lynx_state::device_timer");
 	}
 }
 
@@ -684,8 +686,8 @@ TIMER_CALLBACK_MEMBER(lynx_state::lynx_blitter_timer)
 void lynx_state::lynx_blitter()
 {
 	static const int lynx_colors[4] = { 2, 4, 8, 16 };
-	UINT8 palette_offset;
-	UINT8 coldep;
+	uint8_t palette_offset;
+	uint8_t coldep;
 	int colors;
 
 	m_blitter.busy = 1; // blitter working
@@ -717,9 +719,11 @@ void lynx_state::lynx_blitter()
 				case 0x30: // width, height, tilt, stretch
 					m_blitter.tilt = lynx_read_ram(m_blitter.scb + SCB_TILT) | (lynx_read_ram(m_blitter.scb + SCB_TILT + 1) << 8);
 					m_blitter.memory_accesses+=2;
+					[[fallthrough]];
 				case 0x20: // width, height, stretch
 					m_blitter.stretch = lynx_read_ram(m_blitter.scb + SCB_STRETCH) | (lynx_read_ram(m_blitter.scb + SCB_STRETCH + 1) << 8);
 					m_blitter.memory_accesses+=2;
+					[[fallthrough]];
 				case 0x10: // width, height
 					m_blitter.width = lynx_read_ram(m_blitter.scb + SCB_SPRHSIZ) | (lynx_read_ram(m_blitter.scb + SCB_SPRHSIZ + 1) << 8);
 					m_blitter.height = lynx_read_ram(m_blitter.scb + SCB_SPRVSIZ) | (lynx_read_ram(m_blitter.scb + SCB_SPRVSIZ + 1) << 8);
@@ -808,9 +812,9 @@ notes on these errors available) */
 
 void lynx_state::lynx_divide()
 {
-	UINT32 left;
-	UINT16 right;
-	UINT32 res, mod;
+	uint32_t left;
+	uint16_t right;
+	uint32_t res, mod;
 	/*
 	Hardware divide:
 	            EFGH
@@ -823,10 +827,10 @@ void lynx_state::lynx_divide()
 	left = m_suzy.data[MATH_H] | (m_suzy.data[MATH_G] << 8) | (m_suzy.data[MATH_F] << 16) | (m_suzy.data[MATH_E] << 24);
 	right = m_suzy.data[MATH_P] | (m_suzy.data[MATH_N] << 8);
 
-	m_suzy.accumulate_overflow = FALSE;
+	m_suzy.accumulate_overflow = false;
 	if (right == 0)
 	{
-		m_suzy.accumulate_overflow = TRUE;  /* during divisions, this bit is used to detect denominator = 0 */
+		m_suzy.accumulate_overflow = true;  /* during divisions, this bit is used to detect denominator = 0 */
 		res = 0xffffffff;
 		mod = 0; //?
 	}
@@ -849,8 +853,8 @@ void lynx_state::lynx_divide()
 
 void lynx_state::lynx_multiply()
 {
-	UINT16 left, right;
-	UINT32 res, accu;
+	uint16_t left, right;
+	uint32_t res, accu;
 	/*
 	Hardware multiply:
 	              AB
@@ -859,7 +863,7 @@ void lynx_state::lynx_multiply()
 	            EFGH
 	Accumulate  JKLM
 	*/
-	m_suzy.accumulate_overflow = FALSE;
+	m_suzy.accumulate_overflow = false;
 
 	left = m_suzy.data[MATH_B] | (m_suzy.data[MATH_A] << 8);
 	right = m_suzy.data[MATH_D] | (m_suzy.data[MATH_C] << 8);
@@ -883,7 +887,7 @@ void lynx_state::lynx_multiply()
 		accu += res;
 
 		if (accu < res)
-			m_suzy.accumulate_overflow = TRUE;
+			m_suzy.accumulate_overflow = true;
 
 		m_suzy.data[MATH_M] = accu;
 		m_suzy.data[MATH_L] = accu >> 8;
@@ -892,9 +896,9 @@ void lynx_state::lynx_multiply()
 	}
 }
 
-READ8_MEMBER(lynx_state::suzy_read)
+uint8_t lynx_state::suzy_read(offs_t offset)
 {
-	UINT8 value = 0, input;
+	uint8_t value = 0, input;
 
 	switch (offset)
 	{
@@ -1020,7 +1024,7 @@ READ8_MEMBER(lynx_state::suzy_read)
 			break;
 		case RCART:
 			if (m_cart->exists())
-				value = m_cart->read_rom(space, (m_suzy.high * m_granularity) + m_suzy.low);
+				value = m_cart->read_rom((m_suzy.high * m_granularity) + m_suzy.low);
 			else
 				value = 0;
 			m_suzy.low = (m_suzy.low + 1) & (m_granularity - 1);
@@ -1042,7 +1046,7 @@ READ8_MEMBER(lynx_state::suzy_read)
 	return value;
 }
 
-WRITE8_MEMBER(lynx_state::suzy_write)
+void lynx_state::suzy_write(offs_t offset, uint8_t data)
 {
 	m_suzy.data[offset] = data;
 	//logerror("suzy write %.2x %.2x\n",offset,data);
@@ -1109,14 +1113,18 @@ WRITE8_MEMBER(lynx_state::suzy_write)
 			break;
 		case HPOSSTRTL:
 			m_blitter.x_pos = data;
+			[[fallthrough]]; // FIXME: really?
 		case HPOSSTRTH:
 			m_blitter.x_pos &= 0xff;
 			m_blitter.x_pos |= data<<8;
+			[[fallthrough]]; // FIXME: really?
 		case VPOSSTRTL:
 			m_blitter.y_pos = data;
+			[[fallthrough]]; // FIXME: really?
 		case VPOSSTRTH:
 			m_blitter.y_pos &= 0xff;
 			m_blitter.y_pos |= data<<8;
+			[[fallthrough]]; // FIXME: really?
 		case SPRHSIZL:
 			m_blitter.width = data;
 			break;
@@ -1180,14 +1188,14 @@ WRITE8_MEMBER(lynx_state::suzy_write)
 
 		/* Writing to M (0x6c) will also clear the accumulator overflow bit */
 		case MATH_M:
-			m_suzy.accumulate_overflow = FALSE;
+			m_suzy.accumulate_overflow = false;
 			break;
 		case MATH_C:
 			/* If we are going to perform a signed multiplication, we store the sign and convert the number
 			to an unsigned one */
 			if (m_suzy.signed_math)
 			{
-				UINT16 factor, temp;
+				uint16_t factor, temp;
 				factor = m_suzy.data[MATH_D] | (m_suzy.data[MATH_C] << 8);
 				if ((factor - 1) & 0x8000)      /* here we use -1 to cover the math bugs on the sign of 0 and 0x8000 */
 				{
@@ -1214,7 +1222,7 @@ WRITE8_MEMBER(lynx_state::suzy_write)
 		case MATH_A:
 			if (m_suzy.signed_math)
 			{
-				UINT16 factor, temp;
+				uint16_t factor, temp;
 				factor = m_suzy.data[MATH_B] | (m_suzy.data[MATH_A] << 8);
 				if ((factor - 1) & 0x8000)      /* here we use -1 to cover the math bugs on the sign of 0 and 0x8000 */
 				{
@@ -1299,36 +1307,33 @@ DISPCTL EQU $FD92       ; set to $D by INITMIKEY
 
 void lynx_state::lynx_draw_line()
 {
-	int x, y;
-	UINT16 j; // clipping needed!
-	UINT8 byte;
-	UINT16 *line;
-
+	pen_t const *const pen = m_palette->pens();
+	uint16_t j; // clipping needed!
 
 	// calculate y: first three lines are vblank,
-	y = 101-m_timer[2].counter;
+	int const y = 101-m_timer[2].counter;
 	// Documentation states lower two bits of buffer address are ignored (thus 0xfffc mask)
 	j = (m_mikey.disp_addr & 0xfffc) + y * 160 / 2;
 
 	if (m_mikey.data[0x92] & 0x02)
 	{
 		j -= 160 * 102 / 2 - 1;
-		line = &m_bitmap_temp.pix16(102 - 1 - y);
-		for (x = 160 - 2; x >= 0; j++, x -= 2)
+		uint32_t *const line = &m_bitmap_temp.pix(102 - 1 - y);
+		for (int x = 160 - 2; x >= 0; j++, x -= 2)
 		{
-			byte = lynx_read_ram(j);
-			line[x + 1] = m_lynx_palette[(byte >> 4) & 0x0f];
-			line[x + 0] = m_lynx_palette[(byte >> 0) & 0x0f];
+			uint8_t const byte = lynx_read_ram(j);
+			line[x + 1] = pen[(byte >> 4) & 0x0f];
+			line[x + 0] = pen[(byte >> 0) & 0x0f];
 		}
 	}
 	else
 	{
-		line = &m_bitmap_temp.pix16(y);
-		for (x = 0; x < 160; j++, x += 2)
+		uint32_t *const line = &m_bitmap_temp.pix(y);
+		for (int x = 0; x < 160; j++, x += 2)
 		{
-			byte = lynx_read_ram(j);
-			line[x + 0] = m_lynx_palette[(byte >> 4) & 0x0f];
-			line[x + 1] = m_lynx_palette[(byte >> 0) & 0x0f];
+			uint8_t const byte = lynx_read_ram(j);
+			line[x + 0] = pen[(byte >> 4) & 0x0f];
+			line[x + 1] = pen[(byte >> 0) & 0x0f];
 		}
 	}
 }
@@ -1394,7 +1399,7 @@ void lynx_state::lynx_timer_signal_irq(int which)
 {
 	if ((m_timer[which].cntrl1 & 0x80) && (which != 4)) // if interrupts are enabled and timer != 4
 	{
-		m_mikey.data[0x81] |= (1 << which); // set interupt poll register
+		m_mikey.data[0x81] |= (1 << which); // set interrupt poll register
 		m_maincpu->set_input_line(INPUT_LINE_HALT, CLEAR_LINE);
 		m_maincpu->set_input_line(M65SC02_IRQ_LINE, ASSERT_LINE);
 	}
@@ -1421,7 +1426,7 @@ void lynx_state::lynx_timer_signal_irq(int which)
 		lynx_timer_count_down(2);
 		break;
 	case 2:
-		copybitmap(m_bitmap, m_bitmap_temp, 0, 0, 0, 0, machine().first_screen()->cliprect());
+		copybitmap(m_bitmap, m_bitmap_temp, 0, 0, 0, 0, m_screen->cliprect());
 		lynx_timer_count_down(4);
 		break;
 	case 1:
@@ -1476,7 +1481,7 @@ void lynx_state::lynx_timer_count_down(int which)
 	}
 }
 
-UINT32 lynx_state::lynx_time_factor(int val)
+uint32_t lynx_state::lynx_time_factor(int val)
 {
 	switch(val)
 	{
@@ -1506,9 +1511,9 @@ TIMER_CALLBACK_MEMBER(lynx_state::lynx_timer_shot)
 	}
 }
 
-UINT8 lynx_state::lynx_timer_read(int which, int offset)
+uint8_t lynx_state::lynx_timer_read(int which, int offset)
 {
-	UINT8 value = 0;
+	uint8_t value = 0;
 
 	switch (offset)
 	{
@@ -1527,7 +1532,7 @@ UINT8 lynx_state::lynx_timer_read(int which, int offset)
 			{
 				if ( m_timer[which].timer_active )
 				{
-					value = (UINT8) (m_timer[which].timer->remaining().as_ticks(1000000>>(m_timer[which].cntrl1 & 0x07)));
+					value = (uint8_t) (m_timer[which].timer->remaining().as_ticks(1000000>>(m_timer[which].cntrl1 & 0x07)));
 					value -= value ? 1 : 0;
 				}
 			}
@@ -1541,14 +1546,14 @@ UINT8 lynx_state::lynx_timer_read(int which, int offset)
 	return value;
 }
 
-void lynx_state::lynx_timer_write(int which, int offset, UINT8 data)
+void lynx_state::lynx_timer_write(int which, int offset, uint8_t data)
 {
 	//logerror("timer %d write %x %.2x\n", which, offset, data);
 	attotime t;
 
 	if ( m_timer[which].timer_active && ((m_timer[which].cntrl1 & 0x07) != 0x07))
 	{
-		m_timer[which].counter = (UINT8) (m_timer[which].timer->remaining().as_ticks(1000000>>(m_timer[which].cntrl1 & 0x07)));
+		m_timer[which].counter = (uint8_t) (m_timer[which].timer->remaining().as_ticks(1000000>>(m_timer[which].cntrl1 & 0x07)));
 		m_timer[which].counter -= (m_timer[which].counter) ? 1 : 0;
 	}
 
@@ -1602,7 +1607,7 @@ void lynx_state::lynx_uart_reset()
 
 TIMER_CALLBACK_MEMBER(lynx_state::lynx_uart_loopback_timer)
 {
-	m_uart.received = FALSE;
+	m_uart.received = false;
 }
 
 TIMER_CALLBACK_MEMBER(lynx_state::lynx_uart_timer)
@@ -1610,13 +1615,13 @@ TIMER_CALLBACK_MEMBER(lynx_state::lynx_uart_timer)
 	if (m_uart.buffer_loaded)
 	{
 		m_uart.data_to_send = m_uart.buffer;
-		m_uart.buffer_loaded = FALSE;
+		m_uart.buffer_loaded = false;
 		timer_set(attotime::from_usec(11*16), TIMER_UART);
 	}
 	else
 	{
-		m_uart.sending = FALSE;
-		m_uart.received = TRUE;
+		m_uart.sending = false;
+		m_uart.received = true;
 		m_uart.data_received = m_uart.data_to_send;
 		timer_set(attotime::from_usec(11*16), TIMER_UART_LOOPBACK);
 		if (m_uart.serctl & 0x40)
@@ -1635,9 +1640,9 @@ TIMER_CALLBACK_MEMBER(lynx_state::lynx_uart_timer)
 	}
 }
 
-READ8_MEMBER(lynx_state::lynx_uart_r)
+uint8_t lynx_state::lynx_uart_r(offs_t offset)
 {
-	UINT8 value = 0x00;
+	uint8_t value = 0x00;
 	switch (offset)
 	{
 		case 0x8c:
@@ -1657,7 +1662,7 @@ READ8_MEMBER(lynx_state::lynx_uart_r)
 	return value;
 }
 
-WRITE8_MEMBER(lynx_state::lynx_uart_w)
+void lynx_state::lynx_uart_w(offs_t offset, uint8_t data)
 {
 	logerror("uart write %.2x %.2x\n", offset, data);
 	switch (offset)
@@ -1670,11 +1675,11 @@ WRITE8_MEMBER(lynx_state::lynx_uart_w)
 			if (m_uart.sending)
 			{
 				m_uart.buffer = data;
-				m_uart.buffer_loaded = TRUE;
+				m_uart.buffer_loaded = true;
 			}
 			else
 			{
-				m_uart.sending = TRUE;
+				m_uart.sending = true;
 				m_uart.data_to_send = data;
 				// timing not accurate, baude rate should be calculated from timer 4 backup value and clock rate
 				timer_set(attotime::from_usec(11*16), TIMER_UART);
@@ -1691,9 +1696,9 @@ WRITE8_MEMBER(lynx_state::lynx_uart_w)
 ****************************************/
 
 
-READ8_MEMBER(lynx_state::mikey_read)
+uint8_t lynx_state::mikey_read(offs_t offset)
 {
-	UINT8 direction, value = 0x00;
+	uint8_t direction, value = 0x00;
 
 	switch (offset)
 	{
@@ -1713,12 +1718,12 @@ READ8_MEMBER(lynx_state::mikey_read)
 	case 0x30: case 0x31: case 0x32: case 0x33: case 0x34: case 0x35: case 0x36: case 0x37:
 	case 0x38: case 0x39: case 0x3a: case 0x3b: case 0x3c: case 0x3d: case 0x3e: case 0x3f:
 	case 0x40: case 0x41: case 0x42: case 0x43: case 0x44: case 0x50:
-		value = m_sound->read(space, offset);
+		value = m_sound->read(offset);
 		break;
 
 	case 0x80:
 	case 0x81:
-		value = m_mikey.data[0x81]; // both registers access the same interupt status byte
+		value = m_mikey.data[0x81]; // both registers access the same interrupt status byte
 		// logerror( "mikey read %.2x %.2x\n", offset, value );
 		break;
 
@@ -1750,7 +1755,7 @@ READ8_MEMBER(lynx_state::mikey_read)
 
 	case 0x8c:
 	case 0x8d:
-		value = lynx_uart_r(space, offset, mem_mask);
+		value = lynx_uart_r(offset);
 		break;
 
 	default:
@@ -1760,7 +1765,7 @@ READ8_MEMBER(lynx_state::mikey_read)
 	return value;
 }
 
-WRITE8_MEMBER(lynx_state::mikey_write)
+void lynx_state::mikey_write(offs_t offset, uint8_t data)
 {
 	switch (offset)
 	{
@@ -1780,7 +1785,7 @@ WRITE8_MEMBER(lynx_state::mikey_write)
 	case 0x30: case 0x31: case 0x32: case 0x33: case 0x34: case 0x35: case 0x36: case 0x37:
 	case 0x38: case 0x39: case 0x3a: case 0x3b: case 0x3c: case 0x3d: case 0x3e: case 0x3f:
 	case 0x40: case 0x41: case 0x42: case 0x43: case 0x44: case 0x50:
-		m_sound->write(space, offset, data);
+		m_sound->write(offset, data);
 		return;
 
 	case 0x80:
@@ -1790,14 +1795,14 @@ WRITE8_MEMBER(lynx_state::mikey_write)
 			m_maincpu->set_input_line(M65SC02_IRQ_LINE, CLEAR_LINE);
 		break;
 
-	/* Is this correct? */ // Notes say writing to register will result in interupt being triggered.
+	/* Is this correct? */ // Notes say writing to register will result in interrupt being triggered.
 	case 0x81:
 		m_mikey.data[0x81] |= data;
 		if (data)
 		{
 			m_maincpu->set_input_line(INPUT_LINE_HALT, CLEAR_LINE);
 			m_maincpu->set_input_line(M65SC02_IRQ_LINE, ASSERT_LINE);
-			logerror("direct write to interupt register\n");
+			logerror("direct write to interrupt register\n");
 		}
 		break;
 
@@ -1822,7 +1827,7 @@ WRITE8_MEMBER(lynx_state::mikey_write)
 		break;
 
 	case 0x8c: case 0x8d:
-		lynx_uart_w(space, offset, data);
+		lynx_uart_w(offset, data);
 		break;
 
 	case 0xa0: case 0xa1: case 0xa2: case 0xa3: case 0xa4: case 0xa5: case 0xa6: case 0xa7:
@@ -1832,10 +1837,10 @@ WRITE8_MEMBER(lynx_state::mikey_write)
 		m_mikey.data[offset] = data;
 
 		/* RED = 0xb- & 0x0f, GREEN = 0xa- & 0x0f, BLUE = (0xb- & 0xf0) >> 4 */
-		m_lynx_palette[offset & 0x0f] = m_palette->pen(
-			((m_mikey.data[0xb0 + (offset & 0x0f)] & 0x0f)) |
-			((m_mikey.data[0xa0 + (offset & 0x0f)] & 0x0f) << 4) |
-			((m_mikey.data[0xb0 + (offset & 0x0f)] & 0xf0) << 4));
+		m_palette->set_pen_color(offset & 0x0f, rgb_t(
+			pal4bit(m_mikey.data[0xb0 | (offset & 0x0f)] & 0x0f),
+			pal4bit(m_mikey.data[0xa0 | (offset & 0x0f)] & 0x0f),
+			pal4bit((m_mikey.data[0xb0 | (offset & 0x0f)] & 0xf0) >> 4)));
 		break;
 
 	/* TODO: properly implement these writes */
@@ -1875,40 +1880,26 @@ WRITE8_MEMBER(lynx_state::mikey_write)
 
 ****************************************/
 
-READ8_MEMBER(lynx_state::lynx_memory_config_r)
+uint8_t lynx_state::lynx_memory_config_r()
 {
 	return m_memory_config;
 }
 
-WRITE8_MEMBER(lynx_state::lynx_memory_config_w)
+void lynx_state::lynx_memory_config_w(uint8_t data)
 {
 	/* bit 7: hispeed, uses page mode accesses (4 instead of 5 cycles )
 	 * when these are safe in the cpu */
 	m_memory_config = data;
 
-	if (data & 1)
-	{
-		space.install_readwrite_bank(0xfc00, 0xfcff, "bank1");
-		membank("bank1")->set_base(m_mem_fc00);
-	}
-	else
-		space.install_readwrite_handler(0xfc00, 0xfcff, read8_delegate(FUNC(lynx_state::suzy_read),this), write8_delegate(FUNC(lynx_state::suzy_write),this));
-
-	if (data & 2)
-	{
-		space.install_readwrite_bank(0xfd00, 0xfdff, "bank2");
-		membank("bank2")->set_base(m_mem_fd00);
-	}
-	else
-		space.install_readwrite_handler(0xfd00, 0xfdff, read8_delegate(FUNC(lynx_state::mikey_read),this), write8_delegate(FUNC(lynx_state::mikey_write),this));
-
-	membank("bank3")->set_entry((data & 4) ? 1 : 0);
-	membank("bank4")->set_entry((data & 8) ? 1 : 0);
+	m_bank_fc00->set_bank(BIT(data, 0));
+	m_bank_fd00->set_bank(BIT(data, 1));
+	m_bank_fe00->set_entry(BIT(data, 2));
+	m_bank_fffa->set_entry(BIT(data, 3));
 }
 
 void lynx_state::machine_reset()
 {
-	lynx_memory_config_w(m_maincpu->space(AS_PROGRAM), 0, 0);
+	lynx_memory_config_w(0);
 
 	m_maincpu->set_input_line(INPUT_LINE_HALT, CLEAR_LINE);
 	m_maincpu->set_input_line(M65SC02_IRQ_LINE, CLEAR_LINE);
@@ -1943,7 +1934,7 @@ void lynx_state::machine_reset()
 
 void lynx_state::lynx_postload()
 {
-	lynx_memory_config_w(m_maincpu->space(AS_PROGRAM), 0, m_memory_config);
+	lynx_memory_config_w(m_memory_config);
 }
 
 void lynx_state::machine_start()
@@ -1954,7 +1945,6 @@ void lynx_state::machine_start()
 	save_item(NAME(m_memory_config));
 	save_item(NAME(m_sign_AB));
 	save_item(NAME(m_sign_CD));
-	save_item(NAME(m_lynx_palette));
 	save_item(NAME(m_rotate));
 	// save blitter variables
 	save_item(NAME(m_blitter.screen));
@@ -2014,10 +2004,10 @@ void lynx_state::machine_start()
 
 	machine().save().register_postload(save_prepost_delegate(FUNC(lynx_state::lynx_postload), this));
 
-	membank("bank3")->configure_entry(0, memregion("maincpu")->base() + 0x0000);
-	membank("bank3")->configure_entry(1, m_mem_fe00);
-	membank("bank4")->configure_entry(0, memregion("maincpu")->base() + 0x01fa);
-	membank("bank4")->configure_entry(1, m_mem_fffa);
+	m_bank_fe00->configure_entry(0, memregion("maincpu")->base() + 0x0000);
+	m_bank_fe00->configure_entry(1, m_mem_fe00);
+	m_bank_fffa->configure_entry(0, memregion("maincpu")->base() + 0x01fa);
+	m_bank_fffa->configure_entry(1, m_mem_fffa);
 
 	for (int i = 0; i < NR_LYNX_TIMERS; i++)
 		lynx_timer_init(i);
@@ -2030,14 +2020,14 @@ void lynx_state::machine_start()
 
 ****************************************/
 
-int lynx_state::lynx_verify_cart (char *header, int kind)
+image_verify_result lynx_state::lynx_verify_cart(char *header, int kind)
 {
 	if (kind)
 	{
 		if (strncmp("BS93", &header[6], 4))
 		{
 			logerror("This is not a valid Lynx image\n");
-			return IMAGE_VERIFY_FAIL;
+			return image_verify_result::FAIL;
 		}
 	}
 	else
@@ -2051,26 +2041,25 @@ int lynx_state::lynx_verify_cart (char *header, int kind)
 			}
 			else
 				logerror("This is not a valid Lynx image\n");
-			return IMAGE_VERIFY_FAIL;
+			return image_verify_result::FAIL;
 		}
 	}
 
-	return IMAGE_VERIFY_PASS;
+	return image_verify_result::PASS;
 }
 
-DEVICE_IMAGE_LOAD_MEMBER( lynx_state, lynx_cart )
+DEVICE_IMAGE_LOAD_MEMBER(lynx_state::cart_load)
 {
 	/* Lynx carts have 19 address lines, the upper 8 used for bank select. The lower
 	11 bits are used to address data within the selected bank. Valid bank sizes are 256,
 	512, 1024 or 2048 bytes. Commercial roms use all 256 banks.*/
-	UINT32 size = m_cart->common_get_size("rom");
-	UINT16 gran = 0;
+	uint32_t size = m_cart->common_get_size("rom");
+	uint16_t gran = 0;
 
-	if (image.software_entry() == nullptr)
+	if (!image.loaded_through_softlist())
 	{
 		// check for lnx header
-		const char *filetype = image.filetype();
-		if (!core_stricmp(filetype, "lnx"))
+		if (image.is_filetype("lnx"))
 		{
 			// 64 byte header
 			// LYNX
@@ -2078,12 +2067,12 @@ DEVICE_IMAGE_LOAD_MEMBER( lynx_state, lynx_cart )
 			// 0 0 1 0
 			// 32 chars name
 			// 22 chars manufacturer
-			UINT8 header[0x40];
+			uint8_t header[0x40];
 			image.fread(header, 0x40);
 
 			// Check the image
-			if (lynx_verify_cart((char*)header, LYNX_CART) == IMAGE_VERIFY_FAIL)
-				return IMAGE_INIT_FAIL;
+			if (lynx_verify_cart((char*)header, LYNX_CART) != image_verify_result::PASS)
+				return image_init_result::FAIL;
 
 			/* 2008-10 FP: According to Handy source these should be page_size_bank0. Are we using
 			 it correctly in MESS? Moreover, the next two values should be page_size_bank1. We should
@@ -2099,12 +2088,11 @@ DEVICE_IMAGE_LOAD_MEMBER( lynx_state, lynx_cart )
 	m_cart->common_load_rom(m_cart->get_rom_base(), size, "rom");
 
 	// set-up granularity
-	if (image.software_entry() == nullptr)
+	if (!image.loaded_through_softlist())
 	{
-		const char *filetype = image.filetype();
-		if (!core_stricmp(filetype, "lnx"))     // from header
+		if (image.is_filetype("lnx"))     // from header
 			m_granularity = gran;
-		else if (!core_stricmp(filetype, "lyx"))
+		else if (image.is_filetype("lyx"))
 		{
 			/* 2008-10 FP: FIXME: .lyx file don't have an header, hence they miss "lynx_granularity"
 			(see above). What if bank 0 has to be loaded elsewhere? And what about bank 1?
@@ -2126,7 +2114,7 @@ DEVICE_IMAGE_LOAD_MEMBER( lynx_state, lynx_cart )
 	}
 
 	// set-up rotation from softlist
-	if (image.software_entry() != nullptr)
+	if (image.loaded_through_softlist())
 	{
 		const char *rotate = image.get_feature("rotation");
 		m_rotate = 0;
@@ -2140,5 +2128,5 @@ DEVICE_IMAGE_LOAD_MEMBER( lynx_state, lynx_cart )
 
 	}
 
-	return IMAGE_INIT_PASS;
+	return image_init_result::PASS;
 }

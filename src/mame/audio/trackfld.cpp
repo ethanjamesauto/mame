@@ -11,23 +11,14 @@
 
 
 
-const device_type TRACKFLD_AUDIO = &device_creator<trackfld_audio_device>;
+DEFINE_DEVICE_TYPE(TRACKFLD_AUDIO, trackfld_audio_device, "trackfld_audio", "Track And Field Audio")
 
-trackfld_audio_device::trackfld_audio_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: device_t(mconfig, TRACKFLD_AUDIO, "Track And Field Audio", tag, owner, clock, "trackfld_audio", __FILE__),
-		device_sound_interface(mconfig, *this),
-		m_last_addr(0),
-		m_last_irq(0)
-{
-}
-
-//-------------------------------------------------
-//  device_config_complete - perform any
-//  operations now that the configuration is
-//  complete
-//-------------------------------------------------
-
-void trackfld_audio_device::device_config_complete()
+trackfld_audio_device::trackfld_audio_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: device_t(mconfig, TRACKFLD_AUDIO, tag, owner, clock)
+	, m_audiocpu(*this, finder_base::DUMMY_TAG)
+	, m_vlm(*this, finder_base::DUMMY_TAG)
+	, m_last_addr(0)
+	, m_last_irq(0)
 {
 }
 
@@ -37,9 +28,6 @@ void trackfld_audio_device::device_config_complete()
 
 void trackfld_audio_device::device_start()
 {
-	m_audiocpu =machine().device<cpu_device>("audiocpu");
-	m_vlm = machine().device<vlm5030_device>("vlm");
-
 	/* sound */
 	save_item(NAME(m_last_addr));
 	save_item(NAME(m_last_irq));
@@ -66,19 +54,19 @@ void trackfld_audio_device::device_reset()
     the no of cycles by 4 to undo the 14.318/4 operation
 */
 
-READ8_MEMBER( trackfld_audio_device::trackfld_sh_timer_r )
+uint8_t trackfld_audio_device::trackfld_sh_timer_r()
 {
-	UINT32 clock = space.machine().device<cpu_device>("audiocpu")->total_cycles() / TIMER_RATE;
+	uint32_t clock = m_audiocpu->total_cycles() / TIMER_RATE;
 
 	return clock & 0xF;
 }
 
-READ8_MEMBER( trackfld_audio_device::trackfld_speech_r )
+uint8_t trackfld_audio_device::trackfld_speech_r()
 {
 	return m_vlm->bsy() ? 0x10 : 0;
 }
 
-WRITE8_MEMBER( trackfld_audio_device::trackfld_sound_w )
+void trackfld_audio_device::trackfld_sound_w(offs_t offset, uint8_t data)
 {
 	int changes = offset ^ m_last_addr;
 
@@ -97,9 +85,9 @@ WRITE8_MEMBER( trackfld_audio_device::trackfld_sound_w )
 	m_last_addr = offset;
 }
 
-READ8_MEMBER( trackfld_audio_device::hyperspt_sh_timer_r )
+uint8_t trackfld_audio_device::hyperspt_sh_timer_r()
 {
-	UINT32 clock = m_audiocpu->total_cycles() / TIMER_RATE;
+	uint32_t clock = m_audiocpu->total_cycles() / TIMER_RATE;
 
 	if (m_vlm != nullptr)
 		return (clock & 0x3) | (m_vlm->bsy() ? 0x04 : 0);
@@ -107,7 +95,7 @@ READ8_MEMBER( trackfld_audio_device::hyperspt_sh_timer_r )
 		return (clock & 0x3);
 }
 
-WRITE8_MEMBER( trackfld_audio_device::hyperspt_sound_w )
+void trackfld_audio_device::hyperspt_sound_w(offs_t offset, uint8_t data)
 {
 	int changes = offset ^ m_last_addr;
 
@@ -131,23 +119,13 @@ WRITE8_MEMBER( trackfld_audio_device::hyperspt_sound_w )
 
 
 
-WRITE8_MEMBER( trackfld_audio_device::konami_sh_irqtrigger_w )
+WRITE_LINE_MEMBER(trackfld_audio_device::sh_irqtrigger_w)
 {
-	if (m_last_irq == 0 && data)
+	if (m_last_irq == 0 && state)
 	{
 		/* setting bit 0 low then high triggers IRQ on the sound CPU */
-		m_audiocpu->set_input_line_and_vector(0, HOLD_LINE, 0xff);
+		m_audiocpu->set_input_line_and_vector(0, HOLD_LINE, 0xff); // Z80
 	}
 
-	m_last_irq = data;
-}
-
-//-------------------------------------------------
-//  sound_stream_update - handle a stream update
-//-------------------------------------------------
-
-void trackfld_audio_device::sound_stream_update(sound_stream &stream, stream_sample_t **inputs, stream_sample_t **outputs, int samples)
-{
-	// should never get here
-	fatalerror("sound_stream_update called; not applicable to legacy sound devices\n");
+	m_last_irq = state;
 }

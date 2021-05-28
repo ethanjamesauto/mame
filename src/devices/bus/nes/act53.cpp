@@ -29,13 +29,13 @@
 //  constructor
 //-------------------------------------------------
 
-const device_type NES_ACTION53 = &device_creator<nes_action53_device>;
+DEFINE_DEVICE_TYPE(NES_ACTION53, nes_action53_device, "nes_action53", "NES Cart Action 53 PCB")
 
 
-nes_action53_device::nes_action53_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-					: nes_nrom_device(mconfig, NES_ACTION53, "NES Cart Action 53 PCB", tag, owner, clock, "nes_action53", __FILE__),
-	m_sel(0)
-				{
+nes_action53_device::nes_action53_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: nes_nrom_device(mconfig, NES_ACTION53, tag, owner, clock)
+	, m_sel(0)
+{
 }
 
 
@@ -105,10 +105,10 @@ void nes_action53_device::pcb_reset()
 
 void nes_action53_device::update_prg()
 {
-	UINT8 prg_lo = 0, prg_hi = 0, helper = 0;
-	UINT8 out = (m_reg[3] & 0x3f) << 1;     // Outer PRG reg
-	UINT8 size = (m_reg[2] & 0x30) >> 4;    // Game size
-	UINT8 mask = (1 << (size + 1)) - 1;     // Bits to be taken from PRG reg
+	uint8_t prg_lo, prg_hi, helper;
+	uint8_t out = (m_reg[3] & 0x3f) << 1;     // Outer PRG reg
+	uint8_t size = (m_reg[2] & 0x30) >> 4;    // Game size
+	uint8_t mask = (1 << (size + 1)) - 1;     // Bits to be taken from PRG reg
 
 	if (!BIT(m_reg[2], 3))
 	{
@@ -158,7 +158,7 @@ void nes_action53_device::update_mirr()
 	}
 }
 
-WRITE8_MEMBER(nes_action53_device::write_l)
+void nes_action53_device::write_l(offs_t offset, uint8_t data)
 {
 	LOG_MMC(("action 53 write_l, offset: %04x, data: %02x\n", offset, data));
 	offset += 0x100;
@@ -167,7 +167,7 @@ WRITE8_MEMBER(nes_action53_device::write_l)
 }
 
 
-WRITE8_MEMBER(nes_action53_device::write_h)
+void nes_action53_device::write_h(offs_t offset, uint8_t data)
 {
 	LOG_MMC(("action 53 write_h, offset: %04x, data: %02x\n", offset, data));
 

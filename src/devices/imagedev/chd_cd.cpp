@@ -9,34 +9,25 @@
 *********************************************************************/
 
 #include "emu.h"
-#include "cdrom.h"
 #include "chd_cd.h"
 
-
-static OPTION_GUIDE_START(cd_option_guide)
-	OPTION_INT('K', "hunksize",         "Hunk Bytes")
-OPTION_GUIDE_END
-
-static const char cd_option_spec[] = "K512/1024/2048/[4096]";
+#include "cdrom.h"
+#include "romload.h"
 
 // device type definition
-const device_type CDROM = &device_creator<cdrom_image_device>;
+DEFINE_DEVICE_TYPE(CDROM, cdrom_image_device, "cdrom_image", "CD-ROM Image")
 
 //-------------------------------------------------
 //  cdrom_image_device - constructor
 //-------------------------------------------------
 
-cdrom_image_device::cdrom_image_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: device_t(mconfig, CDROM, "CD-ROM Image", tag, owner, clock, "cdrom_image", __FILE__),
-		device_image_interface(mconfig, *this),
-		m_cdrom_handle(nullptr),
-		m_extension_list(nullptr),
-		m_interface(nullptr)
+cdrom_image_device::cdrom_image_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: cdrom_image_device(mconfig, CDROM, tag, owner, clock)
 {
 }
 
-cdrom_image_device::cdrom_image_device(const machine_config &mconfig, device_type type, const char *name, const char *tag, device_t *owner, UINT32 clock, const char *shortname, const char *source)
-	: device_t(mconfig, type, name,  tag, owner, clock, shortname, source),
+cdrom_image_device::cdrom_image_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock)
+	: device_t(mconfig, type,  tag, owner, clock),
 		device_image_interface(mconfig, *this),
 		m_cdrom_handle(nullptr),
 		m_extension_list(nullptr),
@@ -61,15 +52,7 @@ void cdrom_image_device::device_config_complete()
 {
 	m_extension_list = "chd,cue,toc,nrg,gdi,iso,cdr";
 
-	m_formatlist.append(*global_alloc(image_device_format("chdcd", "CD-ROM drive", m_extension_list, cd_option_spec)));
-
-	// set brief and instance name
-	update_names();
-}
-
-const option_guide *cdrom_image_device::create_option_guide() const
-{
-	return cd_option_guide;
+	add_format("chdcd", "CD-ROM drive", m_extension_list, "");
 }
 
 //-------------------------------------------------
@@ -79,7 +62,7 @@ const option_guide *cdrom_image_device::create_option_guide() const
 void cdrom_image_device::device_start()
 {
 	// try to locate the CHD from a DISK_REGION
-	chd_file *chd = get_disk_handle( machine(), owner()->tag() );
+	chd_file *chd = machine().rom_load().get_disk_handle(owner()->tag() );
 	if( chd != nullptr )
 	{
 		m_cdrom_handle = cdrom_open( chd );
@@ -98,7 +81,7 @@ void cdrom_image_device::device_stop()
 		m_self_chd.close();
 }
 
-bool cdrom_image_device::call_load()
+image_init_result cdrom_image_device::call_load()
 {
 	chd_error   err = (chd_error)0;
 	chd_file    *chd = nullptr;
@@ -106,35 +89,35 @@ bool cdrom_image_device::call_load()
 	if (m_cdrom_handle)
 		cdrom_close(m_cdrom_handle);
 
-	if (software_entry() == nullptr)
+	if (!loaded_through_softlist())
 	{
-		if (strstr(m_image_name.c_str(), ".chd") && is_loaded()) {
-			err = m_self_chd.open( *image_core_file() );    /* CDs are never writeable */
+		if (is_filetype("chd") && is_loaded()) {
+			err = m_self_chd.open( image_core_file() );    /* CDs are never writeable */
 			if ( err )
 				goto error;
 			chd = &m_self_chd;
 		}
 	} else {
-		chd = get_disk_handle(device().machine(), device().subtag("cdrom").c_str());
+		chd = device().machine().rom_load().get_disk_handle(device().subtag("cdrom").c_str());
 	}
 
 	/* open the CHD file */
 	if (chd) {
 		m_cdrom_handle = cdrom_open( chd );
 	} else {
-		m_cdrom_handle = cdrom_open(m_image_name.c_str());
+		m_cdrom_handle = cdrom_open(filename());
 	}
 	if ( ! m_cdrom_handle )
 		goto error;
 
-	return IMAGE_INIT_PASS;
+	return image_init_result::PASS;
 
 error:
 	if ( chd && chd == &m_self_chd )
 		m_self_chd.close( );
 	if ( err )
 		seterror( IMAGE_ERROR_UNSPECIFIED, chd_file::error_string( err ) );
-	return IMAGE_INIT_FAIL;
+	return image_init_result::FAIL;
 }
 
 void cdrom_image_device::call_unload()

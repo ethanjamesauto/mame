@@ -20,7 +20,11 @@
 	#ifdef OSD_WINDOWS
 		#ifdef _MSC_VER
 			#include <windows.h>
-			#include "SDL1211_opengl.h"
+			#include "GL/GL.h"
+			#include "bgfx/3rdparty/khronos/gl/glext.h"
+			#ifndef USE_DISPATCH_GL
+			#include "bgfx/3rdparty/khronos/wgl/wglext.h"
+			#endif
 		#else
 			#include "GL/gl.h"
 			#include "GL/glext.h"
@@ -28,29 +32,18 @@
 			#include "GL/wglext.h"
 			#endif
 		#endif
+	#elif defined(OSD_MAC)
+		#include <OpenGL/gl.h>
+		#include <OpenGL/glext.h>
 	#else
-	#if (SDLMAME_SDL2)
 	#include <SDL2/SDL_version.h>
-	#else
-	#include <SDL/SDL_version.h>
-	#endif
 
 	#if (SDL_VERSION_ATLEAST(1,2,10))
 	#if defined(SDLMAME_WIN32)
 		// Avoid that winnt.h (included via sdl_opengl.h, windows.h, windef.h includes intrin.h
 		#define __INTRIN_H_
 	#endif
-	#if (SDLMAME_SDL2)
 	#include <SDL2/SDL_opengl.h>
-	#else
-	#include <SDL/SDL_opengl.h>
-	#endif
-	#else
-	/*
-	 * SDL 1.2.9 does not provide everything we need
-	 * We therefore distribute it ourselves
-	 */
-	#include "SDL1211_opengl.h"
 	#endif
 	#endif
 

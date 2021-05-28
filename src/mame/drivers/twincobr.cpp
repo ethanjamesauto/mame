@@ -65,7 +65,7 @@ TP-011 SUB
  |      2148 2148|
  |---------------|
 Notes:
-      T.T-2  - Custom chip (DIP40) marked 'TOAPLAN-02 M70H005'
+      T.T-2  - Custom chip (ULA, DIP40) marked 'TOAPLAN-02 M70H005'
       2016   - 2kx8 SRAM (DIP24)
       6264   - 8kx8 SRAM (DIP28)
       2148   - 1kx4 SRAM (DIP18)
@@ -119,8 +119,8 @@ Notes:
       5165   - 8kx8 SRAM (DIP28)
       74LS163- Synchronous 4-Bit Binary Counter logic chip. This chip is used to divide the 28MHz clock.
                28MHz input on pin 2, outputs: pin 11 1.75MHz, pin 12 3.5MHz, pin 13 7MHz, pin 14 14MHz
-      T.T-1  - Custom chip marked 'TOAPLAN GXL-01' (DIP40)
-      T.T-2  - Custom chip marked 'TOAPLAN-02 M70H005' (DIP40)
+      T.T-1  - Custom chip marked 'TOAPLAN GXL-01' (ULA, DIP40)
+      T.T-2  - Custom chip marked 'TOAPLAN-02 M70H005' (ULA, DIP40)
       7135   - Intersil ICL7135 DAC (DIP8)
       MB3730 - Fujitsu MB3730 14W BTL Audio Power Amplifier
       SW1/2  - 8-position DIP switch
@@ -347,8 +347,8 @@ Cobra Tiger
 01      0C   run self test, and report DSP ROM checksum     from 68K PC:23CA6
 02      07   control all enemy shots                        from 68K PC:23BFA
 04      0B   start the enemy helicopters                    from 68K PC:23C66
-05      08   check for colision with enemy fire ???         from 68K PC:23C20
-06      09   check for colision with enemy ???              from 68K PC:23C44
+05      08   check for collision with enemy fire ???        from 68K PC:23C20
+06      09   check for collision with enemy ???             from 68K PC:23C44
 07      01   control enemy helicopter shots                 from 68K PC:23AB2
 08      02   control all ground enemy shots
 0A      04   read hero position and send enemy to it ?      from 68K PC:23B58
@@ -378,88 +378,83 @@ Shark   Zame
 
 
 #include "emu.h"
-#include "cpu/z80/z80.h"
-#include "cpu/m68000/m68000.h"
-#include "cpu/tms32010/tms32010.h"
-#include "cpu/mcs48/mcs48.h"
-#include "includes/toaplipt.h"
 #include "includes/twincobr.h"
-#include "sound/3812intf.h"
+#include "includes/toaplipt.h"
 
+#include "cpu/m68000/m68000.h"
+#include "cpu/mcs48/mcs48.h"
+#include "cpu/z80/z80.h"
+#include "sound/ymopl.h"
+#include "speaker.h"
 
 
 
 /***************************** 68000 Memory Map *****************************/
 
-static ADDRESS_MAP_START( main_program_map, AS_PROGRAM, 16, twincobr_state )
-	AM_RANGE(0x000000, 0x02ffff) AM_ROM
-	AM_RANGE(0x030000, 0x033fff) AM_RAM     /* 68K and DSP shared RAM */
-	AM_RANGE(0x040000, 0x040fff) AM_RAM AM_SHARE("spriteram16")
-	AM_RANGE(0x050000, 0x050dff) AM_RAM_DEVWRITE("palette", palette_device, write) AM_SHARE("palette")
-	AM_RANGE(0x060000, 0x060001) AM_DEVWRITE8("crtc", mc6845_device, address_w, 0x00ff)
-	AM_RANGE(0x060002, 0x060003) AM_DEVWRITE8("crtc", mc6845_device, register_w, 0x00ff)
-	AM_RANGE(0x070000, 0x070003) AM_WRITE(twincobr_txscroll_w)  /* text layer scroll */
-	AM_RANGE(0x070004, 0x070005) AM_WRITE(twincobr_txoffs_w)    /* offset in text video RAM */
-	AM_RANGE(0x072000, 0x072003) AM_WRITE(twincobr_bgscroll_w)  /* bg layer scroll */
-	AM_RANGE(0x072004, 0x072005) AM_WRITE(twincobr_bgoffs_w)    /* offset in bg video RAM */
-	AM_RANGE(0x074000, 0x074003) AM_WRITE(twincobr_fgscroll_w)  /* fg layer scroll */
-	AM_RANGE(0x074004, 0x074005) AM_WRITE(twincobr_fgoffs_w)    /* offset in fg video RAM */
-	AM_RANGE(0x076000, 0x076003) AM_WRITE(twincobr_exscroll_w)  /* Spare layer scroll */
-	AM_RANGE(0x078000, 0x078001) AM_READ_PORT("DSWA")
-	AM_RANGE(0x078002, 0x078003) AM_READ_PORT("DSWB")
-	AM_RANGE(0x078004, 0x078005) AM_READ_PORT("P1")
-	AM_RANGE(0x078006, 0x078007) AM_READ_PORT("P2")
-	AM_RANGE(0x078008, 0x078009) AM_READ_PORT("VBLANK")         /* V-Blank & FShark Coin/Start */
-	AM_RANGE(0x07800a, 0x07800b) AM_WRITE(fshark_coin_dsp_w)    /* Flying Shark DSP Comms & coin stuff */
-	AM_RANGE(0x07800c, 0x07800d) AM_WRITE(twincobr_control_w)   /* Twin Cobra DSP Comms & system control */
-	AM_RANGE(0x07a000, 0x07afff) AM_READWRITE(twincobr_sharedram_r, twincobr_sharedram_w)   /* 16-bit on 68000 side, 8-bit on Z80 side */
-	AM_RANGE(0x07e000, 0x07e001) AM_READWRITE(twincobr_txram_r, twincobr_txram_w)   /* data for text video RAM */
-	AM_RANGE(0x07e002, 0x07e003) AM_READWRITE(twincobr_bgram_r, twincobr_bgram_w)   /* data for bg video RAM */
-	AM_RANGE(0x07e004, 0x07e005) AM_READWRITE(twincobr_fgram_r, twincobr_fgram_w)   /* data for fg video RAM */
-ADDRESS_MAP_END
+void twincobr_state::main_program_map(address_map &map)
+{
+	map(0x000000, 0x02ffff).rom();
+	map(0x030000, 0x033fff).ram();     /* 68K and DSP shared RAM */
+	map(0x040000, 0x040fff).ram().share("spriteram16");
+	map(0x050000, 0x050dff).ram().w(m_palette, FUNC(palette_device::write16)).share("palette");
+	map(0x060001, 0x060001).w("crtc", FUNC(mc6845_device::address_w));
+	map(0x060003, 0x060003).w("crtc", FUNC(mc6845_device::register_w));
+	map(0x070000, 0x070003).w(FUNC(twincobr_state::twincobr_txscroll_w));  /* text layer scroll */
+	map(0x070004, 0x070005).w(FUNC(twincobr_state::twincobr_txoffs_w));    /* offset in text video RAM */
+	map(0x072000, 0x072003).w(FUNC(twincobr_state::twincobr_bgscroll_w));  /* bg layer scroll */
+	map(0x072004, 0x072005).w(FUNC(twincobr_state::twincobr_bgoffs_w));    /* offset in bg video RAM */
+	map(0x074000, 0x074003).w(FUNC(twincobr_state::twincobr_fgscroll_w));  /* fg layer scroll */
+	map(0x074004, 0x074005).w(FUNC(twincobr_state::twincobr_fgoffs_w));    /* offset in fg video RAM */
+	map(0x076000, 0x076003).w(FUNC(twincobr_state::twincobr_exscroll_w));  /* Spare layer scroll */
+	map(0x078000, 0x078001).portr("DSWA");
+	map(0x078002, 0x078003).portr("DSWB");
+	map(0x078004, 0x078005).portr("P1");
+	map(0x078006, 0x078007).portr("P2");
+	map(0x078008, 0x078009).portr("VBLANK");         /* V-Blank & FShark Coin/Start */
+	map(0x07800b, 0x07800b).w(m_coinlatch, FUNC(ls259_device::write_nibble_d0)); /* Flying Shark DSP Comms & coin stuff */
+	map(0x07800d, 0x07800d).w(m_mainlatch, FUNC(ls259_device::write_nibble_d0)); /* Twin Cobra DSP Comms & system control */
+	map(0x07a000, 0x07afff).rw(FUNC(twincobr_state::twincobr_sharedram_r), FUNC(twincobr_state::twincobr_sharedram_w)).umask16(0x00ff);   /* 16-bit on 68000 side, 8-bit on Z80 side */
+	map(0x07e000, 0x07e001).rw(FUNC(twincobr_state::twincobr_txram_r), FUNC(twincobr_state::twincobr_txram_w));   /* data for text video RAM */
+	map(0x07e002, 0x07e003).rw(FUNC(twincobr_state::twincobr_bgram_r), FUNC(twincobr_state::twincobr_bgram_w));   /* data for bg video RAM */
+	map(0x07e004, 0x07e005).rw(FUNC(twincobr_state::twincobr_fgram_r), FUNC(twincobr_state::twincobr_fgram_w));   /* data for fg video RAM */
+}
 
 
 /***************************** Z80 Memory Map *******************************/
 
-static ADDRESS_MAP_START( sound_program_map, AS_PROGRAM, 8, twincobr_state )
-	AM_RANGE(0x0000, 0x7fff) AM_ROM
-	AM_RANGE(0x8000, 0x87ff) AM_RAM AM_SHARE("sharedram")
-ADDRESS_MAP_END
+void twincobr_state::sound_program_map(address_map &map)
+{
+	map(0x0000, 0x7fff).rom();
+	map(0x8000, 0x87ff).ram().share("sharedram");
+}
 
-static ADDRESS_MAP_START( sound_io_map, AS_IO, 8, twincobr_state )
-	ADDRESS_MAP_GLOBAL_MASK(0xff)
-	AM_RANGE(0x00, 0x01) AM_DEVREADWRITE("ymsnd", ym3812_device, read, write)
-	AM_RANGE(0x10, 0x10) AM_READ_PORT("SYSTEM")         /* Twin Cobra - Coin/Start */
-	AM_RANGE(0x20, 0x20) AM_WRITE(twincobr_coin_w)      /* Twin Cobra coin count-lockout */
-	AM_RANGE(0x40, 0x40) AM_READ_PORT("DSWA")
-	AM_RANGE(0x50, 0x50) AM_READ_PORT("DSWB")
-ADDRESS_MAP_END
+void twincobr_state::sound_io_map(address_map &map)
+{
+	map.global_mask(0xff);
+	map(0x00, 0x01).rw("ymsnd", FUNC(ym3812_device::read), FUNC(ym3812_device::write));
+	map(0x10, 0x10).portr("SYSTEM");         /* Twin Cobra - Coin/Start */
+	map(0x20, 0x20).w(m_coinlatch, FUNC(ls259_device::write_nibble_d0));      /* Twin Cobra coin count-lockout */
+	map(0x40, 0x40).portr("DSWA");
+	map(0x50, 0x50).portr("DSWB");
+}
 
 
 /***************************** TMS32010 Memory Map **************************/
 
-static ADDRESS_MAP_START( DSP_program_map, AS_PROGRAM, 16, twincobr_state )
-	AM_RANGE(0x000, 0x7ff) AM_ROM
-ADDRESS_MAP_END
+void twincobr_state::dsp_program_map(address_map &map)
+{
+	map(0x000, 0x7ff).rom();
+}
 
 	/* $000 - 08F  TMS32010 Internal Data RAM in Data Address Space */
 
-static ADDRESS_MAP_START( DSP_io_map, AS_IO, 16, twincobr_state )
-	AM_RANGE(0, 0) AM_WRITE(twincobr_dsp_addrsel_w)
-	AM_RANGE(1, 1) AM_READWRITE(twincobr_dsp_r, twincobr_dsp_w)
-	AM_RANGE(2, 2) AM_READWRITE(fsharkbt_dsp_r, fsharkbt_dsp_w)
-	AM_RANGE(3, 3) AM_WRITE(twincobr_dsp_bio_w)
-	AM_RANGE(TMS32010_BIO, TMS32010_BIO) AM_READ(twincobr_BIO_r)
-ADDRESS_MAP_END
-
-
-/******************* Flying Shark Bootleg i8741 Memory Map *******************/
-
-static ADDRESS_MAP_START( fsharkbt_i8741_io_map, AS_IO, 8, twincobr_state )
-	/* IO map unknown as program code isn't dumped */
-ADDRESS_MAP_END
-
-	/* $000 - 3fF  I8741 Internal Program ROM Address Space */
+void twincobr_state::dsp_io_map(address_map &map)
+{
+	map(0, 0).w(FUNC(twincobr_state::twincobr_dsp_addrsel_w));
+	map(1, 1).rw(FUNC(twincobr_state::twincobr_dsp_r), FUNC(twincobr_state::twincobr_dsp_w));
+	map(2, 2).rw(FUNC(twincobr_state::fsharkbt_dsp_r), FUNC(twincobr_state::fsharkbt_dsp_w));
+	map(3, 3).w(FUNC(twincobr_state::twincobr_dsp_bio_w));
+}
 
 
 /*****************************************************************************
@@ -614,6 +609,12 @@ static INPUT_PORTS_START( hishouza )
 
 	PORT_MODIFY("DSWA")
 	TOAPLAN_COINAGE_JAPAN_LOC(SW1)  /* table at 0x000316 (COIN1 AND COIN2) */
+
+	PORT_MODIFY("DSWB")
+	PORT_DIPNAME( 0x80, 0x00, DEF_STR( Allow_Continue ) ) PORT_DIPLOCATION("SW2:!8")
+	PORT_DIPSETTING(    0x00, DEF_STR( No ) )
+	PORT_DIPSETTING(    0x80, DEF_STR( Yes ) )
+
 INPUT_PORTS_END
 
 
@@ -625,8 +626,8 @@ static const gfx_layout charlayout =
 	RGN_FRAC(1,3),  /* 2048 characters */
 	3,              /* 3 bits per pixel */
 	{ RGN_FRAC(0,3), RGN_FRAC(1,3), RGN_FRAC(2,3) },
-	{ 0, 1, 2, 3, 4, 5, 6, 7 },
-	{ 0*8, 1*8, 2*8, 3*8, 4*8, 5*8, 6*8, 7*8 },
+	{ STEP8(0,1) },
+	{ STEP8(0,8) },
 	8*8             /* every char takes 8 consecutive bytes */
 };
 
@@ -636,84 +637,102 @@ static const gfx_layout tilelayout =
 	RGN_FRAC(1,4),  /* 4096/8192 tiles */
 	4,              /* 4 bits per pixel */
 	{ RGN_FRAC(0,4), RGN_FRAC(1,4), RGN_FRAC(2,4), RGN_FRAC(3,4) },
-	{ 0, 1, 2, 3, 4, 5, 6, 7 },
-	{ 0*8, 1*8, 2*8, 3*8, 4*8, 5*8, 6*8, 7*8 },
+	{ STEP8(0,1) },
+	{ STEP8(0,8) },
 	8*8             /* every tile takes 8 consecutive bytes */
 };
 
-static GFXDECODE_START( twincobr )
+static GFXDECODE_START( gfx_twincobr )
 	GFXDECODE_ENTRY( "gfx1", 0x00000, charlayout,   1536, 32 )  /* colors 1536-1791 */
 	GFXDECODE_ENTRY( "gfx2", 0x00000, tilelayout,   1280, 16 )  /* colors 1280-1535 */
 	GFXDECODE_ENTRY( "gfx3", 0x00000, tilelayout,   1024, 16 )  /* colors 1024-1079 */
 GFXDECODE_END
 
 
-static MACHINE_CONFIG_START( twincobr, twincobr_state )
-
+void twincobr_state::twincobr(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", M68000, XTAL_28MHz/4)       /* 7MHz - Main board Crystal is 28MHz */
-	MCFG_CPU_PROGRAM_MAP(main_program_map)
-	MCFG_CPU_VBLANK_INT_DRIVER("screen", twincobr_state,  twincobr_interrupt)
+	M68000(config, m_maincpu, XTAL(28'000'000) / 4);    /* 7MHz - Main board Crystal is 28MHz */
+	m_maincpu->set_addrmap(AS_PROGRAM, &twincobr_state::main_program_map);
 
-	MCFG_CPU_ADD("audiocpu", Z80, XTAL_28MHz/8)         /* 3.5MHz */
-	MCFG_CPU_PROGRAM_MAP(sound_program_map)
-	MCFG_CPU_IO_MAP(sound_io_map)
+	z80_device &audiocpu(Z80(config, "audiocpu", XTAL(28'000'000)/8));  /* 3.5MHz */
+	audiocpu.set_addrmap(AS_PROGRAM, &twincobr_state::sound_program_map);
+	audiocpu.set_addrmap(AS_IO, &twincobr_state::sound_io_map);
 
-	MCFG_CPU_ADD("dsp", TMS32010, XTAL_28MHz/2)         /* 14MHz CLKin */
-	MCFG_CPU_PROGRAM_MAP(DSP_program_map)
+	TMS32010(config, m_dsp, XTAL(28'000'000)/2);         /* 14MHz CLKin */
+	m_dsp->set_addrmap(AS_PROGRAM, &twincobr_state::dsp_program_map);
 	/* Data Map is internal to the CPU */
-	MCFG_CPU_IO_MAP(DSP_io_map)
+	m_dsp->set_addrmap(AS_IO, &twincobr_state::dsp_io_map);
+	m_dsp->bio().set(FUNC(twincobr_state::twincobr_bio_r));
 
-	MCFG_QUANTUM_TIME(attotime::from_hz(6000))
+	config.set_maximum_quantum(attotime::from_hz(6000));
 
-	MCFG_MACHINE_RESET_OVERRIDE(twincobr_state,twincobr)
+	LS259(config, m_mainlatch);
+	m_mainlatch->q_out_cb<2>().set(FUNC(twincobr_state::int_enable_w));
+	m_mainlatch->q_out_cb<3>().set(FUNC(twincobr_state::flipscreen_w));
+	m_mainlatch->q_out_cb<4>().set(FUNC(twincobr_state::bg_ram_bank_w));
+	m_mainlatch->q_out_cb<5>().set(FUNC(twincobr_state::fg_rom_bank_w));
+	m_mainlatch->q_out_cb<6>().set(FUNC(twincobr_state::dsp_int_w));
+	m_mainlatch->q_out_cb<7>().set(FUNC(twincobr_state::display_on_w));
+
+	LS259(config, m_coinlatch);
+	m_coinlatch->q_out_cb<4>().set(FUNC(twincobr_state::coin_counter_1_w));
+	m_coinlatch->q_out_cb<5>().set(FUNC(twincobr_state::coin_counter_2_w));
+	m_coinlatch->q_out_cb<6>().set(FUNC(twincobr_state::coin_lockout_1_w));
+	m_coinlatch->q_out_cb<7>().set(FUNC(twincobr_state::coin_lockout_2_w));
 
 	/* video hardware */
-	MCFG_MC6845_ADD("crtc", HD6845, "screen", XTAL_28MHz/8) /* 3.5MHz measured on CLKin */
-	MCFG_MC6845_SHOW_BORDER_AREA(false)
-	MCFG_MC6845_CHAR_WIDTH(2)
+	hd6845s_device &crtc(HD6845S(config, "crtc", XTAL(28'000'000)/8)); /* 3.5MHz measured on CLKin */
+	crtc.set_screen(m_screen);
+	crtc.set_show_border_area(false);
+	crtc.set_char_width(2);
 
-	MCFG_TOAPLAN_SCU_ADD("scu", "palette", 31, 15)
+	TOAPLAN_SCU(config, m_spritegen, 0);
+	m_spritegen->set_palette(m_palette);
+	m_spritegen->set_xoffsets(31, 15);
 
-	MCFG_BUFFERED_SPRITERAM16_ADD("spriteram16")
+	BUFFERED_SPRITERAM16(config, m_spriteram16);
 
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_VIDEO_ATTRIBUTES(VIDEO_UPDATE_BEFORE_VBLANK)
-	MCFG_SCREEN_RAW_PARAMS(XTAL_28MHz/4, 446, 0, 320, 286, 0, 240)
-	MCFG_SCREEN_UPDATE_DRIVER(twincobr_state, screen_update_toaplan0)
-	MCFG_SCREEN_VBLANK_DEVICE("spriteram16", buffered_spriteram16_device, vblank_copy_rising)
-	MCFG_SCREEN_PALETTE("palette")
+	SCREEN(config, m_screen, SCREEN_TYPE_RASTER);
+	m_screen->set_video_attributes(VIDEO_UPDATE_BEFORE_VBLANK);
+	m_screen->set_raw(28_MHz_XTAL/4, 446, 0, 320, 286, 0, 240);
+	m_screen->set_screen_update(FUNC(twincobr_state::screen_update));
+	m_screen->screen_vblank().set(m_spriteram16, FUNC(buffered_spriteram16_device::vblank_copy_rising));
+	m_screen->screen_vblank().append(FUNC(twincobr_state::twincobr_vblank_irq));
 
-	MCFG_GFXDECODE_ADD("gfxdecode", "palette", twincobr)
-	MCFG_PALETTE_ADD("palette", 1792)
-	MCFG_PALETTE_FORMAT(xBBBBBGGGGGRRRRR)
-
-	MCFG_VIDEO_START_OVERRIDE(twincobr_state,toaplan0)
+	GFXDECODE(config, m_gfxdecode, m_palette, gfx_twincobr);
+	PALETTE(config, m_palette).set_format(palette_device::xBGR_555, 1792);
 
 	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_MONO("mono")
+	SPEAKER(config, "mono").front_center();
 
-	MCFG_SOUND_ADD("ymsnd", YM3812, XTAL_28MHz/8)
-	MCFG_YM3812_IRQ_HANDLER(INPUTLINE("audiocpu", 0))
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 1.0)
-MACHINE_CONFIG_END
+	ym3812_device &ymsnd(YM3812(config, "ymsnd", XTAL(28'000'000) / 8));
+	ymsnd.irq_handler().set_inputline("audiocpu", 0);
+	ymsnd.add_route(ALL_OUTPUTS, "mono", 1.0);
+}
 
+void twincobr_state::twincobrw(machine_config &config)
+{
+	twincobr(config);
+	m_maincpu->set_clock(XTAL(10'000'000)); /* The export versions have a dedicated OSC for the M68000 on the top right of the board */
+}
 
-static MACHINE_CONFIG_DERIVED( fshark, twincobr )
-	MCFG_DEVICE_MODIFY("scu")
-	toaplan_scu_device::static_set_xoffsets(*device, 32, 14);
-MACHINE_CONFIG_END
+void twincobr_state::fshark(machine_config &config)
+{
+	twincobr(config);
+	m_mainlatch->q_out_cb<6>().set_nop();
+	m_coinlatch->q_out_cb<0>().set(FUNC(twincobr_state::dsp_int_w));
 
+	m_spritegen->set_xoffsets(32, 14);
+}
 
-static MACHINE_CONFIG_DERIVED( fsharkbt, fshark )
+void twincobr_state::fsharkbt(machine_config &config)
+{
+	fshark(config);
 
-	MCFG_CPU_ADD("mcu", I8741, XTAL_28MHz/16)
+	I8741A(config, "mcu", XTAL(28'000'000)/16).set_disable();  /* Internal program code is not dumped */
 	/* Program Map is internal to the CPU */
-	MCFG_CPU_IO_MAP(fsharkbt_i8741_io_map)
-	MCFG_DEVICE_DISABLE()       /* Internal program code is not dumped */
-MACHINE_CONFIG_END
-
-
+}
 
 
 /***************************************************************************
@@ -726,11 +745,11 @@ ROM_START( twincobr )
 	ROM_REGION( 0x30000, "maincpu", 0 ) /* Main 68K code */
 	ROM_LOAD16_BYTE( "b30_01.7j", 0x00000, 0x10000, CRC(07f64d13) SHA1(864ce0f9369c40c3ae792fc4ab2444a168214749) )
 	ROM_LOAD16_BYTE( "b30_03.7h", 0x00001, 0x10000, CRC(41be6978) SHA1(4784804b738a332c7f24a43bcbb7a1e607365735) )
-	ROM_LOAD16_BYTE( "tc15",      0x20000, 0x08000, CRC(3a646618) SHA1(fc1ed8f3c491f5cf16a17e5ce08c5d8f3ce03683) )
-	ROM_LOAD16_BYTE( "tc13",      0x20001, 0x08000, CRC(d7d1e317) SHA1(57b8433b1677a390a7c7e00a1464bb8ed9cbfc73) )
+	ROM_LOAD16_BYTE( "b30_26_ii.8j",      0x20000, 0x08000, CRC(3a646618) SHA1(fc1ed8f3c491f5cf16a17e5ce08c5d8f3ce03683) )
+	ROM_LOAD16_BYTE( "b30_27_ii.8h",      0x20001, 0x08000, CRC(d7d1e317) SHA1(57b8433b1677a390a7c7e00a1464bb8ed9cbfc73) )
 
 	ROM_REGION( 0x8000, "audiocpu", 0 )    /* Sound Z80 code */
-	ROM_LOAD( "tc12", 0x0000, 0x8000, CRC(e37b3c44) SHA1(5fed10b29c14e27aee0cd92ecde5c5cb422273b1) )  /* slightly different from the other two sets */
+	ROM_LOAD( "b30_05_ii.4f", 0x0000, 0x8000, CRC(e37b3c44) SHA1(5fed10b29c14e27aee0cd92ecde5c5cb422273b1) )  /* slightly different from the other two sets */
 
 	ROM_REGION( 0x2000, "dsp", 0 )  /* Co-Processor TMS320C10 MCU code */
 	ROM_LOAD16_BYTE( "dsp_22.bin",  0x0001, 0x0800, CRC(79389a71) SHA1(14ec4c1c9b06702319e89a7a250d0038393437f4) )
@@ -776,8 +795,8 @@ ROM_START( twincobru )
 	ROM_REGION( 0x30000, "maincpu", 0 ) /* Main 68K code */
 	ROM_LOAD16_BYTE( "b30_01.7j",   0x00000, 0x10000, CRC(07f64d13) SHA1(864ce0f9369c40c3ae792fc4ab2444a168214749) )
 	ROM_LOAD16_BYTE( "b30_03.7h",   0x00001, 0x10000, CRC(41be6978) SHA1(4784804b738a332c7f24a43bcbb7a1e607365735) )
-	ROM_LOAD16_BYTE( "b30_26-1.8j", 0x20000, 0x08000, CRC(bdd00ba4) SHA1(b76b22f03eb4b821a8c555edd9fcee814f2e66a7) )
-	ROM_LOAD16_BYTE( "b30_27-1.8h", 0x20001, 0x08000, CRC(ed600907) SHA1(e5964db9eab2c334940795d71cb90f6679490227) )
+	ROM_LOAD16_BYTE( "b30_26_i.8j", 0x20000, 0x08000, CRC(bdd00ba4) SHA1(b76b22f03eb4b821a8c555edd9fcee814f2e66a7) )
+	ROM_LOAD16_BYTE( "b30_27_i.8h", 0x20001, 0x08000, CRC(ed600907) SHA1(e5964db9eab2c334940795d71cb90f6679490227) )
 
 	ROM_REGION( 0x8000, "audiocpu", 0 )    /* Sound Z80 code */
 	ROM_LOAD( "b30_05.4f", 0x0000, 0x8000, CRC(1a8f1e10) SHA1(0c37a7a50b2523506ad77ac03ae752eb94092ff6) )
@@ -828,8 +847,7 @@ ROM_START( ktiger )
 	ROM_LOAD( "b30_05.4f", 0x0000, 0x8000, CRC(1a8f1e10) SHA1(0c37a7a50b2523506ad77ac03ae752eb94092ff6) )
 
 	ROM_REGION( 0x2000, "dsp", 0 )  /* Co-Processor TMS320C10 MCU code */
-	ROM_LOAD16_BYTE( "dsp-22", 0x0001, 0x0800, BAD_DUMP CRC(8a1d48d9) SHA1(f345c95a97adfbe89676f81ac83fbbec25703440) )
-	ROM_LOAD16_BYTE( "dsp-21", 0x0000, 0x0800, BAD_DUMP CRC(33d99bc2) SHA1(9372dcfc2313abc4835365ae99842f732329d4e6) )
+	ROM_LOAD( "d70015u_gxc-03_mcu_74002", 0x0000, 0x0c00, CRC(265b6f32) SHA1(1b548edeada4144baf732aba7e7013281c8e9608) ) // decapped, real label D70015U GXC-03 MCU ^ 74002
 
 	ROM_REGION( 0x0c000, "gfx1", 0 )    /* chars */
 	ROM_LOAD( "b30_08.8c", 0x00000, 0x04000, CRC(0a254133) SHA1(17e9cc5e36fb4696012d0f9229fa172034cd843a) )
@@ -863,6 +881,49 @@ ROM_START( ktiger )
 ROM_END
 
 ROM_START( fshark )
+	ROM_REGION( 0x30000, "maincpu", 0 ) /* Main 68K code */
+	ROM_LOAD16_BYTE( "b02_18-1.m8", 0x00000, 0x10000, CRC(04739e02) SHA1(8a14284adb0f0f33adf9affdec081c90de85d594) )
+	ROM_LOAD16_BYTE( "b02_17-1.p8", 0x00001, 0x10000, CRC(fd6ef7a8) SHA1(ddbc05ce694ab4d929f5f621d95800b612bc5f66) )
+
+	ROM_REGION( 0x8000, "audiocpu", 0 )    /* Sound Z80 code */
+	ROM_LOAD( "b02_16.l5", 0x0000, 0x8000, CRC(cdd1a153) SHA1(de9827a959039cf753ecac6756fb1925c37466d8) )
+
+	ROM_REGION( 0x2000, "dsp", 0 )  /* Co-Processor TMS320C10 MCU code */
+	ROM_LOAD( "d70012u_gxc-02_mcu_71001",  0x0000, 0x0c00, CRC(eee0ff59) SHA1(dad4570815ec444e34cc73f7cd90f9ca8f7b3eb8) ) // decapped, real label D70012U GXC-02 MCU ^ 71001
+
+	ROM_REGION( 0x0c000, "gfx1", 0 )    /* chars */
+	ROM_LOAD( "b02_07-1.h11", 0x00000, 0x04000, CRC(e669f80e) SHA1(05c1a4ff9adaa6c8035f38a76c5ee333fafba2bf) )
+	ROM_LOAD( "b02_06-1.h10", 0x04000, 0x04000, CRC(5e53ae47) SHA1(55bde4133deebb59a87d9b96c6d0fd7b4bbc0e02) )
+	ROM_LOAD( "b02_05-1.h8",  0x08000, 0x04000, CRC(a8b05bd0) SHA1(37317838ea57cb98cf9599cedf8e72bcae913d29) )
+
+	ROM_REGION( 0x20000, "gfx2", 0 )    /* fg tiles */
+	ROM_LOAD( "b02_12.h20", 0x00000, 0x08000, CRC(733b9997) SHA1(75e874a1d148fcc8fa09bb724ce8346565ace4e5) )
+	ROM_LOAD( "b02_15.h24", 0x08000, 0x08000, CRC(8b70ef32) SHA1(e1f988d650dce17e3bfbea12e5fddbb671df18d4) )
+	ROM_LOAD( "b02_14.h23", 0x10000, 0x08000, CRC(f711ba7d) SHA1(49644a264c09fc2d743e4f801b8b82e980f2def9) )
+	ROM_LOAD( "b02_13.h21", 0x18000, 0x08000, CRC(62532cd3) SHA1(df483db7604c0135130f92b08bad3fbffb4f5c47) )
+
+	ROM_REGION( 0x20000, "gfx3", 0 )    /* bg tiles */
+	ROM_LOAD( "b02_08.h13", 0x00000, 0x08000, CRC(ef0cf49c) SHA1(6fd5727462cd6c5dab4c5d780bd7504e48583894) )
+	ROM_LOAD( "b02_11.h18", 0x08000, 0x08000, CRC(f5799422) SHA1(3f79dd849db787695a587f0db19a6782153b5955) )
+	ROM_LOAD( "b02_10.h16", 0x10000, 0x08000, CRC(4bd099ff) SHA1(9326075f83549b0a9656f69bd4436fb1be2ac805) )
+	ROM_LOAD( "b02_09.h15", 0x18000, 0x08000, CRC(230f1582) SHA1(0fd4156a46ed64cb6e5c59b8836382dd86c229cf) )
+
+	ROM_REGION( 0x40000, "scu", 0 )    /* sprites */
+	ROM_LOAD( "b02_01.d15", 0x00000, 0x10000, CRC(2234b424) SHA1(bd6242b9dcdb0f582565df588106cd1ce2aad53b) )
+	ROM_LOAD( "b02_02.d16", 0x10000, 0x10000, CRC(30d4c9a8) SHA1(96ce4f41207c5487e801a8444030ec4dc7b58b23) )
+	ROM_LOAD( "b02_03.d17", 0x20000, 0x10000, CRC(64f3d88f) SHA1(d0155cfb0a8885d58e34141f9696b9aa208440ca) )
+	ROM_LOAD( "b02_04.d20", 0x30000, 0x10000, CRC(3b23a9fc) SHA1(2ac34445618e17371b5eed7eb6f43da4dbb99e28) )
+
+	ROM_REGION( 0x260, "proms", 0 ) /* nibble bproms, lo/hi order to be determined */
+	ROM_LOAD( "b02-20.b4",  0x000, 0x100, CRC(24e7d62f) SHA1(1c06a1ef1b6a722794ca1d5ee2c476ecaa5178a3) ) /* bprom type: 82s129AN - sprite priority control ?? */
+	ROM_LOAD( "b02-21.b5",  0x100, 0x100, CRC(a50cef09) SHA1(55cafb5b2551b80ae708e9b966cf37c70a16d310) ) /* bprom type: 82s129AN - sprite priority control ?? */
+	ROM_LOAD( "b02-19.b2",  0x200, 0x020, CRC(f72482db) SHA1(b0cb911f9c81f6088a5aa8760916ddae1f8534d7) ) /* bprom type: 82s123AN - sprite control ?? */
+	ROM_LOAD( "b02-22.c21", 0x220, 0x020, CRC(bc88cced) SHA1(5055362710c0f58823c05fb4c0e0eec638b91e3d) ) /* bprom type: 82s123AN - sprite attribute (flip/position) ?? */
+	ROM_LOAD( "b02-23.f28", 0x240, 0x020, CRC(4fb5df2a) SHA1(506ef2c8e4cf45c256d6831a0a5760732f2de422) ) /* bprom type: 82s123AN - tile to sprite priority ?? */
+ROM_END
+
+// the ROM contents of the bootleg are the same of the original, the difference is the TMS320C10 code which is in external PROMs instead of internal
+ROM_START( fsharkb )
 	ROM_REGION( 0x30000, "maincpu", 0 ) /* Main 68K code */
 	ROM_LOAD16_BYTE( "b02_18-1.m8", 0x00000, 0x10000, CRC(04739e02) SHA1(8a14284adb0f0f33adf9affdec081c90de85d594) )
 	ROM_LOAD16_BYTE( "b02_17-1.p8", 0x00001, 0x10000, CRC(fd6ef7a8) SHA1(ddbc05ce694ab4d929f5f621d95800b612bc5f66) )
@@ -920,14 +981,7 @@ ROM_START( skyshark )
 	ROM_LOAD( "b02_16.l5", 0x0000, 0x8000, CRC(cdd1a153) SHA1(de9827a959039cf753ecac6756fb1925c37466d8) )
 
 	ROM_REGION( 0x2000, "dsp", 0 )  /* Co-Processor TMS320C10 MCU code */
-	ROMX_LOAD( "82s137-1.mcu",  0x0000, 0x0400, CRC(cc5b3f53) SHA1(33589665ac995cc4645b56bbcd6d1c1cd5368f88), ROM_NIBBLE | ROM_SHIFT_NIBBLE_HI | ROM_SKIP(1) )
-	ROMX_LOAD( "82s137-2.mcu",  0x0000, 0x0400, CRC(47351d55) SHA1(826add3ea3987f2c9ba2d3fc69a4ad2d9b033c89), ROM_NIBBLE | ROM_SHIFT_NIBBLE_LO | ROM_SKIP(1) )
-	ROMX_LOAD( "82s137-3.mcu",  0x0001, 0x0400, CRC(70b537b9) SHA1(5211ec4605894727747dda66b70c9427652b16b4), ROM_NIBBLE | ROM_SHIFT_NIBBLE_HI | ROM_SKIP(1) )
-	ROMX_LOAD( "82s137-4.mcu",  0x0001, 0x0400, CRC(6edb2de8) SHA1(48459037c3b865f0c0d63a416fa71ba1119f7a09), ROM_NIBBLE | ROM_SHIFT_NIBBLE_LO | ROM_SKIP(1) )
-	ROMX_LOAD( "82s137-5.mcu",  0x0800, 0x0400, CRC(f35b978a) SHA1(90da4ab12126727cd9510fdfe4f626452116c543), ROM_NIBBLE | ROM_SHIFT_NIBBLE_HI | ROM_SKIP(1) )
-	ROMX_LOAD( "82s137-6.mcu",  0x0800, 0x0400, CRC(0459e51b) SHA1(b673f5e1fcf60c0ba668aeb98d545d17b988945d), ROM_NIBBLE | ROM_SHIFT_NIBBLE_LO | ROM_SKIP(1) )
-	ROMX_LOAD( "82s137-7.mcu",  0x0801, 0x0400, CRC(cbf3184b) SHA1(a3eafadc319183ed688dc081c4dfcbe8d476abea), ROM_NIBBLE | ROM_SHIFT_NIBBLE_HI | ROM_SKIP(1) )
-	ROMX_LOAD( "82s137-8.mcu",  0x0801, 0x0400, CRC(8246a05c) SHA1(2511fa99fbdd6c75281fa85ecca2a617d36eb360), ROM_NIBBLE | ROM_SHIFT_NIBBLE_LO | ROM_SKIP(1) )
+	ROM_LOAD( "d70012u_gxc-02_mcu_71001",  0x0000, 0x0c00, BAD_DUMP CRC(eee0ff59) SHA1(dad4570815ec444e34cc73f7cd90f9ca8f7b3eb8) ) // it should use undumped MCU 71400, but they are interchangeable
 
 	ROM_REGION( 0x0c000, "gfx1", 0 )    /* chars */
 	ROM_LOAD( "b02_7-2.h11", 0x00000, 0x04000, CRC(af48c4e6) SHA1(07e8bb6cb92f812990112063f87073df9a346ff4) )
@@ -969,14 +1023,7 @@ ROM_START( skysharka )
 	ROM_LOAD( "b02_16.l5", 0x0000, 0x8000, CRC(cdd1a153) SHA1(de9827a959039cf753ecac6756fb1925c37466d8) )
 
 	ROM_REGION( 0x2000, "dsp", 0 )  /* Co-Processor TMS320C10 MCU code */
-	ROMX_LOAD( "82s137-1.mcu",  0x0000, 0x0400, CRC(cc5b3f53) SHA1(33589665ac995cc4645b56bbcd6d1c1cd5368f88), ROM_NIBBLE | ROM_SHIFT_NIBBLE_HI | ROM_SKIP(1) )
-	ROMX_LOAD( "82s137-2.mcu",  0x0000, 0x0400, CRC(47351d55) SHA1(826add3ea3987f2c9ba2d3fc69a4ad2d9b033c89), ROM_NIBBLE | ROM_SHIFT_NIBBLE_LO | ROM_SKIP(1) )
-	ROMX_LOAD( "82s137-3.mcu",  0x0001, 0x0400, CRC(70b537b9) SHA1(5211ec4605894727747dda66b70c9427652b16b4), ROM_NIBBLE | ROM_SHIFT_NIBBLE_HI | ROM_SKIP(1) )
-	ROMX_LOAD( "82s137-4.mcu",  0x0001, 0x0400, CRC(6edb2de8) SHA1(48459037c3b865f0c0d63a416fa71ba1119f7a09), ROM_NIBBLE | ROM_SHIFT_NIBBLE_LO | ROM_SKIP(1) )
-	ROMX_LOAD( "82s137-5.mcu",  0x0800, 0x0400, CRC(f35b978a) SHA1(90da4ab12126727cd9510fdfe4f626452116c543), ROM_NIBBLE | ROM_SHIFT_NIBBLE_HI | ROM_SKIP(1) )
-	ROMX_LOAD( "82s137-6.mcu",  0x0800, 0x0400, CRC(0459e51b) SHA1(b673f5e1fcf60c0ba668aeb98d545d17b988945d), ROM_NIBBLE | ROM_SHIFT_NIBBLE_LO | ROM_SKIP(1) )
-	ROMX_LOAD( "82s137-7.mcu",  0x0801, 0x0400, CRC(cbf3184b) SHA1(a3eafadc319183ed688dc081c4dfcbe8d476abea), ROM_NIBBLE | ROM_SHIFT_NIBBLE_HI | ROM_SKIP(1) )
-	ROMX_LOAD( "82s137-8.mcu",  0x0801, 0x0400, CRC(8246a05c) SHA1(2511fa99fbdd6c75281fa85ecca2a617d36eb360), ROM_NIBBLE | ROM_SHIFT_NIBBLE_LO | ROM_SKIP(1) )
+	ROM_LOAD( "d70012u_gxc-02_mcu_71001",  0x0000, 0x0c00, BAD_DUMP CRC(eee0ff59) SHA1(dad4570815ec444e34cc73f7cd90f9ca8f7b3eb8) )  // it should use undumped MCU 71400, but they are interchangeable
 
 	ROM_REGION( 0x0c000, "gfx1", 0 )    /* chars */
 	ROM_LOAD( "b02_7-2.h11", 0x00000, 0x04000, CRC(af48c4e6) SHA1(07e8bb6cb92f812990112063f87073df9a346ff4) )
@@ -1010,6 +1057,49 @@ ROM_START( skysharka )
 ROM_END
 
 ROM_START( hishouza )
+	ROM_REGION( 0x30000, "maincpu", 0 ) /* Main 68K code */
+	ROM_LOAD16_BYTE( "b02_18.m8", 0x00000, 0x10000, CRC(4444bb94) SHA1(5ff955a5190d1b356187de105cfb8ea181fc1282) )
+	ROM_LOAD16_BYTE( "b02_17.p8", 0x00001, 0x10000, CRC(cdac7228) SHA1(6b0d67e4b0661a858653d2eabb8936af9148167e) )
+
+	ROM_REGION( 0x8000, "audiocpu", 0 )    /* Sound Z80 code */
+	ROM_LOAD( "b02_16.l5", 0x0000, 0x8000, CRC(cdd1a153) SHA1(de9827a959039cf753ecac6756fb1925c37466d8) )
+
+	ROM_REGION( 0x2000, "dsp", 0 )  /* Co-Processor TMS320C10 MCU code */
+	ROM_LOAD( "d70011u_gxc-01_mcu_64000",  0x0000, 0x0c00, CRC(1ca63774) SHA1(e534325af9433fb0e9ccdf82ee3a192d2459b18f) ) // decapped, real label D70011U GXC-01 MCU 64000
+
+	ROM_REGION( 0x0c000, "gfx1", 0 )    /* chars */
+	ROM_LOAD( "b02-07.h11", 0x00000, 0x04000, CRC(c13a775e) SHA1(b60d26126ec6ebc24a7ca87dd0234e4d9d3e78fc) )
+	ROM_LOAD( "b02-06.h10", 0x04000, 0x04000, CRC(ad5f1371) SHA1(feae9d7bb75bfab5353be4c5931d78a530bd9bcd) )
+	ROM_LOAD( "b02-05.h8",  0x08000, 0x04000, CRC(85a7bff6) SHA1(38cd89aa0800e3796f7ecac657d14119543057c2) )
+
+	ROM_REGION( 0x20000, "gfx2", 0 )    /* fg tiles */
+	ROM_LOAD( "b02_12.h20", 0x00000, 0x08000, CRC(733b9997) SHA1(75e874a1d148fcc8fa09bb724ce8346565ace4e5) )
+	ROM_LOAD( "b02_15.h24", 0x08000, 0x08000, CRC(8b70ef32) SHA1(e1f988d650dce17e3bfbea12e5fddbb671df18d4) )
+	ROM_LOAD( "b02_14.h23", 0x10000, 0x08000, CRC(f711ba7d) SHA1(49644a264c09fc2d743e4f801b8b82e980f2def9) )
+	ROM_LOAD( "b02_13.h21", 0x18000, 0x08000, CRC(62532cd3) SHA1(df483db7604c0135130f92b08bad3fbffb4f5c47) )
+
+	ROM_REGION( 0x20000, "gfx3", 0 )    /* bg tiles */
+	ROM_LOAD( "b02_08.h13", 0x00000, 0x08000, CRC(ef0cf49c) SHA1(6fd5727462cd6c5dab4c5d780bd7504e48583894) )
+	ROM_LOAD( "b02_11.h18", 0x08000, 0x08000, CRC(f5799422) SHA1(3f79dd849db787695a587f0db19a6782153b5955) )
+	ROM_LOAD( "b02_10.h16", 0x10000, 0x08000, CRC(4bd099ff) SHA1(9326075f83549b0a9656f69bd4436fb1be2ac805) )
+	ROM_LOAD( "b02_09.h15", 0x18000, 0x08000, CRC(230f1582) SHA1(0fd4156a46ed64cb6e5c59b8836382dd86c229cf) )
+
+	ROM_REGION( 0x40000, "scu", 0 )    /* sprites */
+	ROM_LOAD( "b02_01.d15", 0x00000, 0x10000, CRC(2234b424) SHA1(bd6242b9dcdb0f582565df588106cd1ce2aad53b) )
+	ROM_LOAD( "b02_02.d16", 0x10000, 0x10000, CRC(30d4c9a8) SHA1(96ce4f41207c5487e801a8444030ec4dc7b58b23) )
+	ROM_LOAD( "b02_03.d17", 0x20000, 0x10000, CRC(64f3d88f) SHA1(d0155cfb0a8885d58e34141f9696b9aa208440ca) )
+	ROM_LOAD( "b02_04.d20", 0x30000, 0x10000, CRC(3b23a9fc) SHA1(2ac34445618e17371b5eed7eb6f43da4dbb99e28) )
+
+	ROM_REGION( 0x260, "proms", 0 ) /* nibble bproms, lo/hi order to be determined */
+	ROM_LOAD( "b02-20.b4",  0x000, 0x100, CRC(24e7d62f) SHA1(1c06a1ef1b6a722794ca1d5ee2c476ecaa5178a3) ) /* bprom type: 82s129AN - sprite priority control ?? */
+	ROM_LOAD( "b02-21.b5",  0x100, 0x100, CRC(a50cef09) SHA1(55cafb5b2551b80ae708e9b966cf37c70a16d310) ) /* bprom type: 82s129AN - sprite priority control ?? */
+	ROM_LOAD( "b02-19.b2",  0x200, 0x020, CRC(f72482db) SHA1(b0cb911f9c81f6088a5aa8760916ddae1f8534d7) ) /* bprom type: 82s123AN - sprite control ?? */
+	ROM_LOAD( "b02-22.c21", 0x220, 0x020, CRC(bc88cced) SHA1(5055362710c0f58823c05fb4c0e0eec638b91e3d) ) /* bprom type: 82s123AN - sprite attribute (flip/position) ?? */
+	ROM_LOAD( "b02-23.f28", 0x240, 0x020, CRC(4fb5df2a) SHA1(506ef2c8e4cf45c256d6831a0a5760732f2de422) ) /* bprom type: 82s123AN - tile to sprite priority ?? */
+ROM_END
+
+// the ROM contents of the bootleg are the same of the original, the difference is the TMS320C10 code which is in external PROMs instead of internal
+ROM_START( hishouzab )
 	ROM_REGION( 0x30000, "maincpu", 0 ) /* Main 68K code */
 	ROM_LOAD16_BYTE( "b02_18.m8", 0x00000, 0x10000, CRC(4444bb94) SHA1(5ff955a5190d1b356187de105cfb8ea181fc1282) )
 	ROM_LOAD16_BYTE( "b02_17.p8", 0x00001, 0x10000, CRC(cdac7228) SHA1(6b0d67e4b0661a858653d2eabb8936af9148167e) )
@@ -1272,20 +1362,22 @@ ROM_START( gulfwar2a )
 	ROM_LOAD( "82s123.b24", 0x240, 0x020, CRC(4fb5df2a) SHA1(506ef2c8e4cf45c256d6831a0a5760732f2de422) )    /* tile to sprite priority ?? */
 ROM_END
 
-DRIVER_INIT_MEMBER(twincobr_state,twincobr)
+void twincobr_state::init_twincobr()
 {
-	twincobr_driver_savestate();
+	driver_savestate();
 }
 
 
-GAME( 1987, fshark,    0,        fshark,   fshark,    twincobr_state,  twincobr, ROT270, "Toaplan / Taito Corporation", "Flying Shark (World)", 0 )
-GAME( 1987, skyshark,  fshark,   fshark,   skyshark,  twincobr_state,  twincobr, ROT270, "Toaplan / Taito America Corporation (Romstar license)", "Sky Shark (US, set 1)", 0 )
-GAME( 1987, skysharka, fshark,   fshark,   skyshark,  twincobr_state,  twincobr, ROT270, "Toaplan / Taito America Corporation (Romstar license)", "Sky Shark (US, set 2)", 0 )
-GAME( 1987, hishouza,  fshark,   fshark,   hishouza,  twincobr_state,  twincobr, ROT270, "Toaplan / Taito Corporation", "Hishou Zame (Japan)", 0 )
-GAME( 1987, fsharkbt,  fshark,   fsharkbt, skyshark,  twincobr_state,  twincobr, ROT270, "bootleg", "Flying Shark (bootleg with 8741)", 0 )
-GAME( 1987, fnshark,   fshark,   fshark,   hishouza,  twincobr_state,  twincobr, ROT270, "bootleg", "Flyin' Shark (bootleg of Hishou Zame)", 0 )
-GAME( 1987, twincobr,  0,        twincobr, twincobr,  twincobr_state,  twincobr, ROT270, "Toaplan / Taito Corporation", "Twin Cobra (World)", 0 )
-GAME( 1987, twincobru, twincobr, twincobr, twincobru, twincobr_state,  twincobr, ROT270, "Toaplan / Taito America Corporation (Romstar license)", "Twin Cobra (US)", 0 )
-GAME( 1987, ktiger,    twincobr, twincobr, ktiger,    twincobr_state,  twincobr, ROT270, "Toaplan / Taito Corporation", "Kyukyoku Tiger (Japan)", 0 )
-GAME( 1991, gulfwar2,  0,        twincobr, gulfwar2,  twincobr_state,  twincobr, ROT270, "Comad", "Gulf War II (set 1)", 0 )
-GAME( 1991, gulfwar2a, gulfwar2, twincobr, gulfwar2,  twincobr_state,  twincobr, ROT270, "Comad", "Gulf War II (set 2)", 0 )
+GAME( 1987, fshark,    0,        fshark,    fshark,    twincobr_state, init_twincobr, ROT270, "Toaplan / Taito Corporation", "Flying Shark (World)", 0 )
+GAME( 1987, skyshark,  fshark,   fshark,    skyshark,  twincobr_state, init_twincobr, ROT270, "Toaplan / Taito America Corporation (Romstar license)", "Sky Shark (US, set 1)", 0 )
+GAME( 1987, skysharka, fshark,   fshark,    skyshark,  twincobr_state, init_twincobr, ROT270, "Toaplan / Taito America Corporation (Romstar license)", "Sky Shark (US, set 2)", 0 )
+GAME( 1987, hishouza,  fshark,   fshark,    hishouza,  twincobr_state, init_twincobr, ROT270, "Toaplan / Taito Corporation", "Hishou Zame (Japan)", 0 )
+GAME( 1987, fsharkb,   fshark,   fshark,    fshark,    twincobr_state, init_twincobr, ROT270, "bootleg", "Flying Shark (World, bootleg)", 0 )
+GAME( 1987, hishouzab, fshark,   fshark,    hishouza,  twincobr_state, init_twincobr, ROT270, "bootleg", "Hishou Zame (Japan, bootleg)", 0 )
+GAME( 1987, fsharkbt,  fshark,   fsharkbt,  skyshark,  twincobr_state, init_twincobr, ROT270, "bootleg", "Flying Shark (bootleg with 8741)", 0 )
+GAME( 1987, fnshark,   fshark,   fshark,    hishouza,  twincobr_state, init_twincobr, ROT270, "bootleg", "Flyin' Shark (bootleg of Hishou Zame)", 0 )
+GAME( 1987, twincobr,  0,        twincobrw, twincobr,  twincobr_state, init_twincobr, ROT270, "Toaplan / Taito Corporation", "Twin Cobra (World)", 0 )
+GAME( 1987, twincobru, twincobr, twincobrw, twincobru, twincobr_state, init_twincobr, ROT270, "Toaplan / Taito America Corporation (Romstar license)", "Twin Cobra (US)", 0 )
+GAME( 1987, ktiger,    twincobr, twincobr,  ktiger,    twincobr_state, init_twincobr, ROT270, "Toaplan / Taito Corporation", "Kyukyoku Tiger (Japan)", 0 )
+GAME( 1991, gulfwar2,  0,        twincobr,  gulfwar2,  twincobr_state, init_twincobr, ROT270, "Comad", "Gulf War II (set 1)", 0 )
+GAME( 1991, gulfwar2a, gulfwar2, twincobr,  gulfwar2,  twincobr_state, init_twincobr, ROT270, "Comad", "Gulf War II (set 2)", 0 )

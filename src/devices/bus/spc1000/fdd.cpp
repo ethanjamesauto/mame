@@ -14,17 +14,17 @@
     IMPLEMENTATION
 ***************************************************************************/
 
-READ8_MEMBER(spc1000_fdd_exp_device::i8255_c_r)
+uint8_t spc1000_fdd_exp_device::i8255_c_r()
 {
 	return m_i8255_0_pc >> 4;
 }
 
-WRITE8_MEMBER(spc1000_fdd_exp_device::i8255_b_w)
+void spc1000_fdd_exp_device::i8255_b_w(uint8_t data)
 {
 	m_i8255_portb = data;
 }
 
-WRITE8_MEMBER(spc1000_fdd_exp_device::i8255_c_w)
+void spc1000_fdd_exp_device::i8255_c_w(uint8_t data)
 {
 	m_i8255_1_pc = data;
 }
@@ -33,80 +33,84 @@ WRITE8_MEMBER(spc1000_fdd_exp_device::i8255_c_w)
 //  fdc interrupt
 //-------------------------------------------------
 
-READ8_MEMBER( spc1000_fdd_exp_device::tc_r )
+uint8_t spc1000_fdd_exp_device::tc_r()
 {
-	logerror("%s: tc_r\n", space.machine().describe_context());
+	if (!machine().side_effects_disabled())
+	{
+		logerror("%s: tc_r\n", machine().describe_context());
 
-	// toggle tc on read
-	m_fdc->tc_w(true);
-	m_timer_tc->adjust(attotime::zero);
+		// toggle tc on read
+		m_fdc->tc_w(true);
+		m_timer_tc->adjust(attotime::zero);
+	}
 
 	return 0xff;
 }
 
-WRITE8_MEMBER( spc1000_fdd_exp_device::control_w )
+void spc1000_fdd_exp_device::control_w(uint8_t data)
 {
-	logerror("%s: control_w(%02x)\n", space.machine().describe_context(), data);
+	logerror("%s: control_w(%02x)\n", machine().describe_context(), data);
 
 	// bit 0, motor on signal
-	if (m_fd0)
-		m_fd0->mon_w(!BIT(data, 0));
-	if (m_fd1)
-		m_fd1->mon_w(!BIT(data, 0));
+	for (auto &fd : m_fd)
+	{
+		floppy_image_device *img = fd->get_device();
+		if (img)
+			img->mon_w(!BIT(data, 0));
+	}
 }
 
-static ADDRESS_MAP_START( sd725_mem, AS_PROGRAM, 8, spc1000_fdd_exp_device )
-	ADDRESS_MAP_UNMAP_HIGH
-	AM_RANGE(0x0000, 0x1fff) AM_ROM
-	AM_RANGE(0x2000, 0xffff) AM_RAM
-ADDRESS_MAP_END
+void spc1000_fdd_exp_device::sd725_mem(address_map &map)
+{
+	map.unmap_value_high();
+	map(0x0000, 0x0fff).rom().region("fdccpu", 0);
+	map(0x4000, 0x7fff).ram(); // 16K dynamic RAM (2x TMS4416-15NL)
+}
 
-static ADDRESS_MAP_START( sd725_io, AS_IO, 8, spc1000_fdd_exp_device )
-	ADDRESS_MAP_UNMAP_HIGH
-	ADDRESS_MAP_GLOBAL_MASK(0xff)
-	AM_RANGE(0xf8, 0xf8) AM_READWRITE(tc_r, control_w) // (R) Terminal Count Port (W) Motor Control Port
-	AM_RANGE(0xfa, 0xfb) AM_DEVICE("upd765", upd765a_device, map)
-	AM_RANGE(0xfc, 0xff) AM_DEVREADWRITE("d8255_master", i8255_device, read, write)
-ADDRESS_MAP_END
+void spc1000_fdd_exp_device::sd725_io(address_map &map)
+{
+	map.unmap_value_high();
+	map.global_mask(0xff);
+	map(0xf8, 0xf8).rw(FUNC(spc1000_fdd_exp_device::tc_r), FUNC(spc1000_fdd_exp_device::control_w)); // (R) Terminal Count Port (W) Motor Control Port
+	map(0xfa, 0xfb).m("upd765", FUNC(upd765a_device::map));
+	map(0xfc, 0xff).rw("d8255_master", FUNC(i8255_device::read), FUNC(i8255_device::write));
+}
 
-static SLOT_INTERFACE_START( sd725_floppies )
-	SLOT_INTERFACE("sd320", EPSON_SD_320)
-SLOT_INTERFACE_END
+static void sd725_floppies(device_slot_interface &device)
+{
+	device.option_add("sd320", EPSON_SD_320);
+}
 
-static MACHINE_CONFIG_FRAGMENT(spc1000_fdd)
+//-------------------------------------------------
+//  device_add_mconfig
+//-------------------------------------------------
 
-	/* sub CPU(5 inch floppy drive) */
-	MCFG_CPU_ADD("fdccpu", Z80, XTAL_4MHz)       /* 4 MHz */
-	MCFG_CPU_PROGRAM_MAP(sd725_mem)
-	MCFG_CPU_IO_MAP(sd725_io)
+void spc1000_fdd_exp_device::device_add_mconfig(machine_config &config)
+{
+	// Z80A sub CPU (5 inch floppy drive)
+	Z80(config, m_cpu, 8_MHz_XTAL / 2);
+	m_cpu->set_addrmap(AS_PROGRAM, &spc1000_fdd_exp_device::sd725_mem);
+	m_cpu->set_addrmap(AS_IO, &spc1000_fdd_exp_device::sd725_io);
+	m_cpu->set_irq_acknowledge_callback(NAME([](device_t &, int) { return 0xcf; })); // vector to 0008 in IM 0
 
-	MCFG_DEVICE_ADD("d8255_master", I8255, 0)
-	MCFG_I8255_IN_PORTA_CB(DEVREAD8("d8255_master", i8255_device, pb_r))
-	MCFG_I8255_IN_PORTB_CB(DEVREAD8("d8255_master", i8255_device, pa_r))
-	MCFG_I8255_OUT_PORTB_CB(WRITE8(spc1000_fdd_exp_device, i8255_b_w))
-	MCFG_I8255_IN_PORTC_CB(READ8(spc1000_fdd_exp_device, i8255_c_r))
-	MCFG_I8255_OUT_PORTC_CB(WRITE8(spc1000_fdd_exp_device, i8255_c_w))
+	I8255(config, m_ppi);
+	m_ppi->in_pa_callback().set(m_ppi, FUNC(i8255_device::pb_r));
+	m_ppi->in_pb_callback().set(m_ppi, FUNC(i8255_device::pa_r));
+	m_ppi->out_pb_callback().set(FUNC(spc1000_fdd_exp_device::i8255_b_w));
+	m_ppi->in_pc_callback().set(FUNC(spc1000_fdd_exp_device::i8255_c_r));
+	m_ppi->out_pc_callback().set(FUNC(spc1000_fdd_exp_device::i8255_c_w));
 
 	// floppy disk controller
-	MCFG_UPD765A_ADD("upd765", true, true)
-	MCFG_UPD765_INTRQ_CALLBACK(INPUTLINE("fdccpu", INPUT_LINE_IRQ0))
+	UPD765A(config, m_fdc, 8_MHz_XTAL / 2, true, true);
+	m_fdc->intrq_wr_callback().set_inputline(m_cpu, INPUT_LINE_IRQ0);
 
 	// floppy drives
-	MCFG_FLOPPY_DRIVE_ADD("upd765:0", sd725_floppies, "sd320", floppy_image_device::default_floppy_formats)
-	MCFG_FLOPPY_DRIVE_ADD("upd765:1", sd725_floppies, "sd320", floppy_image_device::default_floppy_formats)
-MACHINE_CONFIG_END
-
-//-------------------------------------------------
-//  device_mconfig_additions
-//-------------------------------------------------
-
-machine_config_constructor spc1000_fdd_exp_device::device_mconfig_additions() const
-{
-	return MACHINE_CONFIG_NAME( spc1000_fdd );
+	FLOPPY_CONNECTOR(config, "upd765:0", sd725_floppies, "sd320", floppy_image_device::default_mfm_floppy_formats);
+	FLOPPY_CONNECTOR(config, "upd765:1", sd725_floppies, "sd320", floppy_image_device::default_mfm_floppy_formats);
 }
 
 ROM_START( spc1000_fdd )
-	ROM_REGION(0x10000, "fdccpu", 0)
+	ROM_REGION(0x1000, "fdccpu", 0)
 	ROM_LOAD("sd725a.bin", 0x0000, 0x1000, CRC(96ac2eb8) SHA1(8e9d8f63a7fb87af417e95603e71cf537a6e83f1))
 ROM_END
 
@@ -114,7 +118,7 @@ ROM_END
 //  device_rom_region
 //-------------------------------------------------
 
-const rom_entry *spc1000_fdd_exp_device::device_rom_region() const
+const tiny_rom_entry *spc1000_fdd_exp_device::device_rom_region() const
 {
 	return ROM_NAME( spc1000_fdd );
 }
@@ -124,7 +128,7 @@ const rom_entry *spc1000_fdd_exp_device::device_rom_region() const
 //  GLOBAL VARIABLES
 //**************************************************************************
 
-const device_type SPC1000_FDD_EXP = &device_creator<spc1000_fdd_exp_device>;
+DEFINE_DEVICE_TYPE(SPC1000_FDD_EXP, spc1000_fdd_exp_device, "spc1000_fdd_exp", "SPC1000 FDD expansion")
 
 //**************************************************************************
 //  LIVE DEVICE
@@ -134,13 +138,15 @@ const device_type SPC1000_FDD_EXP = &device_creator<spc1000_fdd_exp_device>;
 //  spc1000_fdd_exp_device - constructor
 //-------------------------------------------------
 
-spc1000_fdd_exp_device::spc1000_fdd_exp_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-		: device_t(mconfig, SPC1000_FDD_EXP, "SPC1000 FDD expansion", tag, owner, clock, "spc1000_fdd_exp", __FILE__),
-		device_spc1000_card_interface(mconfig, *this),
-		m_cpu(*this, "fdccpu"),
-		m_fdc(*this, "upd765"),
-		m_pio(*this, "d8255_master"), m_fd0(nullptr), m_fd1(nullptr), m_timer_tc(nullptr), m_i8255_0_pc(0), m_i8255_1_pc(0), m_i8255_portb(0)
-	{
+spc1000_fdd_exp_device::spc1000_fdd_exp_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock) :
+	device_t(mconfig, SPC1000_FDD_EXP, tag, owner, clock),
+	device_spc1000_card_interface(mconfig, *this),
+	m_cpu(*this, "fdccpu"),
+	m_fdc(*this, "upd765"),
+	m_ppi(*this, "d8255_master"),
+	m_fd(*this, "upd765:%u", 0U),
+	m_timer_tc(nullptr), m_i8255_0_pc(0), m_i8255_1_pc(0), m_i8255_portb(0)
+{
 }
 
 
@@ -150,11 +156,7 @@ spc1000_fdd_exp_device::spc1000_fdd_exp_device(const machine_config &mconfig, co
 
 void spc1000_fdd_exp_device::device_start()
 {
-	m_timer_tc = timer_alloc(TIMER_TC);
-	m_timer_tc->adjust(attotime::never);
-
-	m_fd0 = subdevice<floppy_connector>("upd765:0")->get_device();
-	m_fd1 = subdevice<floppy_connector>("upd765:1")->get_device();
+	m_timer_tc = machine().scheduler().timer_alloc(timer_expired_delegate(FUNC(spc1000_fdd_exp_device::tc_off), this));
 }
 
 //-------------------------------------------------
@@ -163,34 +165,25 @@ void spc1000_fdd_exp_device::device_start()
 
 void spc1000_fdd_exp_device::device_reset()
 {
-	m_cpu->set_input_line_vector(0, 0);
-
-	// enable rom (is this really needed? it does not seem necessary for FDD to work)
-	m_cpu->space(AS_PROGRAM).install_rom(0x0000, 0x0fff, 0, 0x2000, device().machine().root_device().memregion("fdccpu")->base());
 }
 
-void spc1000_fdd_exp_device::device_timer(emu_timer &timer, device_timer_id id, int param, void *ptr)
+TIMER_CALLBACK_MEMBER(spc1000_fdd_exp_device::tc_off)
 {
-	switch (id)
-	{
-		case TIMER_TC:
-			m_fdc->tc_w(false);
-			break;
-	}
+	m_fdc->tc_w(false);
 }
 
 /*-------------------------------------------------
     read
 -------------------------------------------------*/
 
-READ8_MEMBER(spc1000_fdd_exp_device::read)
+uint8_t spc1000_fdd_exp_device::read(offs_t offset)
 {
-	// this should be m_pio->read on the whole 0x00-0x03 range?
+	// this should be m_ppi->read on the whole 0x00-0x03 range?
 	if (offset >= 3)
 		return 0xff;
 	else
 	{
-		UINT8 data = 0;
+		uint8_t data = 0;
 		switch (offset)
 		{
 			case 1:
@@ -208,15 +201,15 @@ READ8_MEMBER(spc1000_fdd_exp_device::read)
 //  write
 //-------------------------------------------------
 
-WRITE8_MEMBER(spc1000_fdd_exp_device::write)
+void spc1000_fdd_exp_device::write(offs_t offset, uint8_t data)
 {
-	// this should be m_pio->write on the whole 0x00-0x03 range?
+	// this should be m_ppi->write on the whole 0x00-0x03 range?
 	if (offset < 3)
 	{
 		switch (offset)
 		{
 			case 0:
-				m_pio->write(space, 1, data);
+				m_ppi->write(1, data);
 				break;
 			case 2:
 				m_i8255_0_pc = data;

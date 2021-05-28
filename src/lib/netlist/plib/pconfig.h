@@ -1,201 +1,192 @@
-// license:GPL-2.0+
+// license:BSD-3-Clause
 // copyright-holders:Couriersud
-/*
- * pconfig.h
- *
- */
 
 #ifndef PCONFIG_H_
 #define PCONFIG_H_
 
-#ifndef PSTANDALONE
-	#define PSTANDALONE (0)
+///
+/// \file pconfig.h
+///
+
+/// \brief More accurate measurements the processor supports RDTSCP.
+///
+#ifndef PHAS_RDTSCP
+#define PHAS_RDTSCP (0)
 #endif
 
-//#define PHAS_INT128 (0)
-
-#ifndef PHAS_INT128
-#define PHAS_INT128 (0)
+/// \brief Use accurate timing measurements.
+///
+/// Only works if \ref PHAS_RDTSCP == 1
+///
+#ifndef PUSE_ACCURATE_STATS
+#define PUSE_ACCURATE_STATS (0)
 #endif
 
-#if (PHAS_INT128)
-typedef __uint128_t UINT128;
-typedef __int128_t INT128;
+/// \brief Add support for the __float128 floating point type.
+///
+#ifndef PUSE_FLOAT128
+#define PUSE_FLOAT128 (0)
 #endif
 
-
-#if !(PSTANDALONE)
-#include "osdcore.h"
-#include "eminline.h"
-
-#ifndef assert
-#define assert(x) do {} while (0)
+/// \brief Compile with support for OPENMP
+///
+/// OpenMP adds about 10% to 20% performance for analog netlists.
+///
+#ifndef PUSE_OPENMP
+#define PUSE_OPENMP              (1)
 #endif
 
-#include "delegate.h"
-
+/// \brief Use aligned optimizations.
+///
+/// Set this to one if you want to use aligned storage optimizations.
+///
+#ifndef PUSE_ALIGNED_OPTIMIZATIONS
+#if defined(__EMSCRIPTEN__)
+#define PUSE_ALIGNED_OPTIMIZATIONS (0)
 #else
-#include <stdint.h>
+#define PUSE_ALIGNED_OPTIMIZATIONS (1)
 #endif
-#include <cstddef>
-
-
-//============================================================
-//  Standard defines
-//============================================================
-
-// prevent implicit copying
-#define P_PREVENT_COPYING(_name)                \
-	private:                                    \
-		_name(const _name &);                   \
-		_name &operator=(const _name &);
-
-//============================================================
-//  Compiling standalone
-//============================================================
-
-#if !(PSTANDALONE)
-
-/* use MAME */
-#if (USE_DELEGATE_TYPE == DELEGATE_TYPE_INTERNAL)
-#define PHAS_PMF_INTERNAL 1
-#else
-#define PHAS_PMF_INTERNAL 0
 #endif
 
+/// \brief Use aligned allocations.
+///
+/// Set this to one if you want to use aligned storage optimizations.
+///
+/// Defaults to \ref PUSE_ALIGNED_OPTIMIZATIONS.
+///
+#define PUSE_ALIGNED_ALLOCATION (PUSE_ALIGNED_OPTIMIZATIONS)
+
+/// \brief Use aligned hints.
+///
+/// Some compilers support special functions to mark a pointer as being
+/// aligned. Set this to one if you want to use these functions.
+///
+/// Defaults to \ref PUSE_ALIGNED_OPTIMIZATIONS.
+///
+#define PUSE_ALIGNED_HINTS      (PUSE_ALIGNED_OPTIMIZATIONS)
+
+/// \brief Number of bytes for cache line alignment
+///
+#define PALIGN_CACHELINE        (64)
+
+/// \brief Number of bytes for vector alignment
+///
+#define PALIGN_VECTOROPT        (32)
+
+#define PALIGN_MIN_SIZE         (16)
+
+#if (PUSE_ALIGNED_OPTIMIZATIONS)
+#define PALIGNAS_CACHELINE()    PALIGNAS(PALIGN_CACHELINE)
+#define PALIGNAS_VECTOROPT()    PALIGNAS(PALIGN_VECTOROPT)
 #else
+#define PALIGNAS_CACHELINE()
+#define PALIGNAS_VECTOROPT()
+#endif
 
-/* determine PMF approach */
+// FIXME: Breaks mame build on windows mingw due to -Wattribute
+//        also triggers -Wattribute on ARM
+//        This is fixed on mingw version 10
+// FIXME: no error on cross-compile - need further checks
+#if defined(__GNUC__) && ((defined(_WIN32) && __GNUC__ < 10) || defined(__arm__) || defined(__ARMEL__))
+#define PALIGNAS(x)
+#else
+#define PALIGNAS(x) alignas(x)
+#endif
 
-#if defined(__GNUC__)
-	/* does not work in versions over 4.7.x of 32bit MINGW  */
-	#if defined(__MINGW32__) && !defined(__x86_64) && defined(__i386__) && ((__GNUC__ > 4) || ((__GNUC__ == 4) && (__GNUC_MINOR__ >= 7)))
-		#define PHAS_PMF_INTERNAL 1
-		#define MEMBER_ABI __thiscall
-	#elif defined(EMSCRIPTEN)
-		#define PHAS_PMF_INTERNAL 0
-	#elif defined(__arm__) || defined(__ARMEL__)
-		#define PHAS_PMF_INTERNAL 0
+/// \brief nvcc build flag.
+///
+/// Set this to 101 if you are building with NVIDIA nvcc 10.1
+///
+#ifndef NVCCBUILD
+#define NVCCBUILD (0)
+#endif
+
+// ============================================================
+//  Check for CPP Version
+//
+//   C++11:     __cplusplus is 201103L.
+//   C++14:     __cplusplus is 201402L.
+//   c++17/c++1z__cplusplus is 201703L.
+//
+//   VS2015 returns 199711L here. This is the bug filed in
+//   2012 which obviously never was picked up by MS:
+//   https://connect.microsoft.com/VisualStudio/feedback/details/763051/a-value-of-predefined-macro-cplusplus-is-still-199711l
+//
+//
+//============================================================
+
+
+#if (NVCCBUILD > 0)
+	#if NVCCBUILD == 101
+		#define NVCC_CONSTEXPR constexpr
 	#else
-		#define PHAS_PMF_INTERNAL 1
+		#define NVCC_CONSTEXPR constexpr
+	#endif
+	#if __cplusplus != 201402L
+		#error nvcc - use c++14 to compile
 	#endif
 #else
-#define USE_DELEGATE_TYPE PHAS_PMF_INTERNAL 0
-#endif
-
-#ifndef MEMBER_ABI
-	#define MEMBER_ABI
-#endif
-
-/* not supported in GCC prior to 4.4.x */
-/* ATTR_HOT and ATTR_COLD cause performance degration in 5.1 */
-//#define ATTR_HOT
-//#define ATTR_COLD
-#define ATTR_HOT               __attribute__((hot))
-#define ATTR_COLD              __attribute__((cold))
-
-#define RESTRICT                __restrict__
-#define EXPECTED(x)     (x)
-#define UNEXPECTED(x)   (x)
-#define ATTR_PRINTF(x,y)        __attribute__((format(printf, x, y)))
-#define ATTR_UNUSED             __attribute__((__unused__))
-
-/* 8-bit values */
-typedef unsigned char                       UINT8;
-typedef signed char                         INT8;
-
-/* 16-bit values */
-typedef unsigned short                      UINT16;
-typedef signed short                        INT16;
-
-/* 32-bit values */
-#ifndef _WINDOWS_H
-typedef unsigned int                        UINT32;
-typedef signed int                          INT32;
-#endif
-
-/* 64-bit values */
-#ifndef _WINDOWS_H
-#ifdef _MSC_VER
-typedef signed __int64                      INT64;
-typedef unsigned __int64                    UINT64;
-#else
-typedef uint64_t    UINT64;
-typedef int64_t      INT64;
-#endif
-#endif
-
-/* U64 and S64 are used to wrap long integer constants. */
-#if defined(__GNUC__) || defined(_MSC_VER)
-#define U64(val) val##ULL
-#define S64(val) val##LL
-#else
-#define U64(val) val
-#define S64(val) val
-#endif
-
-#endif
-
-/*
- * The following class was derived from the MAME delegate.h code.
- * It derives a pointer to a member function.
- */
-
-#if (PHAS_PMF_INTERNAL)
-class pmfp
-{
-public:
-	// construct from any member function pointer
-	class generic_class;
-	typedef void (*generic_function)();
-
-	#if (PSTANDALONE)
-	typedef std::size_t FPTR;
+	#define NVCC_CONSTEXPR constexpr
+	#if __cplusplus == 201103L
+		#error c++11 not supported - you need c++14
+	#elif __cplusplus == 201402L
+		// Ok
+	#elif __cplusplus == 201703L
+		// Ok
+	#elif defined(_MSC_VER)
+		// Ok
+	#else
+		#error "C++ version not supported"
 	#endif
-
-	template<typename _MemberFunctionType>
-	pmfp(_MemberFunctionType mfp)
-	: m_function(0), m_this_delta(0)
-	{
-		*reinterpret_cast<_MemberFunctionType *>(this) = mfp;
-	}
-
-	// binding helper
-	template<typename _FunctionType, typename _ObjectType>
-	_FunctionType update_after_bind(_ObjectType *object)
-	{
-		return reinterpret_cast<_FunctionType>(
-				convert_to_generic(reinterpret_cast<generic_class *>(object)));
-	}
-	template<typename _FunctionType, typename _MemberFunctionType, typename _ObjectType>
-	static _FunctionType get_mfp(_MemberFunctionType mfp, _ObjectType *object)
-	{
-		pmfp mfpo(mfp);
-		return mfpo.update_after_bind<_FunctionType>(object);
-	}
-
-private:
-	// extract the generic function and adjust the object pointer
-	generic_function convert_to_generic(generic_class * object) const
-	{
-		// apply the "this" delta to the object first
-		generic_class * o_p_delta = reinterpret_cast<generic_class *>(reinterpret_cast<UINT8 *>(object) + m_this_delta);
-
-		// if the low bit of the vtable index is clear, then it is just a raw function pointer
-		if (!(m_function & 1))
-			return reinterpret_cast<generic_function>(m_function);
-
-		// otherwise, it is the byte index into the vtable where the actual function lives
-		UINT8 *vtable_base = *reinterpret_cast<UINT8 **>(o_p_delta);
-		return *reinterpret_cast<generic_function *>(vtable_base + m_function - 1);
-	}
-
-	// actual state
-	FPTR                    m_function;         // first item can be one of two things:
-												//    if even, it's a pointer to the function
-												//    if odd, it's the byte offset into the vtable
-	int                     m_this_delta;       // delta to apply to the 'this' pointer
-};
 #endif
 
-#endif /* PCONFIG_H_ */
+
+#if (PUSE_FLOAT128)
+typedef __float128 FLOAT128;
+#endif
+
+//============================================================
+// Check for OpenMP
+//============================================================
+
+#if defined(OPENMP)
+#if ( OPENMP >= 200805 )
+#define PHAS_OPENMP (1)
+#else
+#define PHAS_OPENMP (0)
+#endif
+#elif defined(_OPENMP)
+#if ( _OPENMP >= 200805 )
+#define PHAS_OPENMP (1)
+#else
+#define PHAS_OPENMP (0)
+#endif
+#else
+#define PHAS_OPENMP (0)
+#endif
+
+
+//============================================================
+//  WARNINGS
+//============================================================
+
+#if (PUSE_OPENMP)
+#if (!(PHAS_OPENMP))
+//#error To use openmp compile and link with "-fopenmp"
+#undef PUSE_OPENMP
+#define PUSE_OPENMP (0)
+#endif
+#endif
+
+#if (PUSE_FLOAT128)
+#if defined(__has_include)
+#if !__has_include(<quadmath.h>)
+//#pragma message "disabling PUSE_FLOAT128 due to missing quadmath.h"
+#undef PUSE_FLOAT128
+#define PUSE_FLOAT128 (0)
+#endif
+#endif
+#endif
+
+
+#endif // PCONFIG_H_

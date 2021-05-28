@@ -6,20 +6,18 @@
 
 **********************************************************************/
 
+#include "emu.h"
 #include "includes/abc1600.h"
 #include "abc1600.lh"
 #include "render.h"
+
+//#define VERBOSE 1
+#include "logmacro.h"
 
 
 //**************************************************************************
 //  CONSTANTS / MACROS
 //**************************************************************************
-
-#define LOG 0
-
-
-#define SY6845E_TAG         "sy6845e"
-
 
 // video RAM
 #define VIDEORAM_SIZE       0x40000
@@ -43,45 +41,59 @@
 //  DEVICE DEFINITIONS
 //**************************************************************************
 
-const device_type ABC1600_MOVER = &device_creator<abc1600_mover_device>;
+DEFINE_DEVICE_TYPE(ABC1600_MOVER, abc1600_mover_device, "abc1600mover", "ABC 1600 Mover")
 
 
-DEVICE_ADDRESS_MAP_START( vram_map, 8, abc1600_mover_device )
-	AM_RANGE(0x00000, 0x7ffff) AM_READWRITE(video_ram_r, video_ram_w)
-ADDRESS_MAP_END
+void abc1600_mover_device::vram_map(address_map &map)
+{
+	map(0x00000, 0x7ffff).rw(FUNC(abc1600_mover_device::video_ram_r), FUNC(abc1600_mover_device::video_ram_w));
+}
 
-DEVICE_ADDRESS_MAP_START( crtc_map, 8, abc1600_mover_device )
-	AM_RANGE(0x00, 0x00) AM_MIRROR(0xfe) AM_DEVREADWRITE(SY6845E_TAG, mc6845_device, status_r, address_w)
-	AM_RANGE(0x01, 0x01) AM_MIRROR(0xfe) AM_DEVREADWRITE(SY6845E_TAG, mc6845_device, register_r, register_w)
-ADDRESS_MAP_END
+void abc1600_mover_device::crtc_map(address_map &map)
+{
+	map(0x00, 0x00).mirror(0xfe).rw(m_crtc, FUNC(mc6845_device::status_r), FUNC(mc6845_device::address_w));
+	map(0x01, 0x01).mirror(0xfe).rw(m_crtc, FUNC(mc6845_device::register_r), FUNC(mc6845_device::register_w));
+}
 
-DEVICE_ADDRESS_MAP_START( io_map, 8, abc1600_mover_device )
-	AM_RANGE(0x000, 0x000) AM_MIRROR(0xff) AM_READ(iord0_r)
-	AM_RANGE(0x000, 0x000) AM_MIRROR(0xf8) AM_WRITE(ldsx_hb_w)
-	AM_RANGE(0x001, 0x001) AM_MIRROR(0xf8) AM_WRITE(ldsx_lb_w)
-	AM_RANGE(0x002, 0x002) AM_MIRROR(0xf8) AM_WRITE(ldsy_hb_w)
-	AM_RANGE(0x003, 0x003) AM_MIRROR(0xf8) AM_WRITE(ldsy_lb_w)
-	AM_RANGE(0x004, 0x004) AM_MIRROR(0xf8) AM_WRITE(ldtx_hb_w)
-	AM_RANGE(0x005, 0x005) AM_MIRROR(0xf8) AM_WRITE(ldtx_lb_w)
-	AM_RANGE(0x006, 0x006) AM_MIRROR(0xf8) AM_WRITE(ldty_hb_w)
-	AM_RANGE(0x007, 0x007) AM_MIRROR(0xf8) AM_WRITE(ldty_lb_w)
-	AM_RANGE(0x100, 0x100) AM_MIRROR(0xf8) AM_WRITE(ldfx_hb_w)
-	AM_RANGE(0x101, 0x101) AM_MIRROR(0xf8) AM_WRITE(ldfx_lb_w)
-	AM_RANGE(0x102, 0x102) AM_MIRROR(0xf8) AM_WRITE(ldfy_hb_w)
-	AM_RANGE(0x103, 0x103) AM_MIRROR(0xf8) AM_WRITE(ldfy_lb_w)
-	AM_RANGE(0x105, 0x105) AM_MIRROR(0xf8) AM_WRITE(wrml_w)
-	AM_RANGE(0x107, 0x107) AM_MIRROR(0xf8) AM_WRITE(wrdl_w)
-	AM_RANGE(0x200, 0x200) AM_MIRROR(0xf8) AM_WRITE(wrmask_strobe_hb_w)
-	AM_RANGE(0x201, 0x201) AM_MIRROR(0xf8) AM_WRITE(wrmask_strobe_lb_w)
-	AM_RANGE(0x202, 0x202) AM_MIRROR(0xf8) AM_WRITE(enable_clocks_w)
-	AM_RANGE(0x203, 0x203) AM_MIRROR(0xf8) AM_WRITE(flag_strobe_w)
-	AM_RANGE(0x204, 0x204) AM_MIRROR(0xf8) AM_WRITE(endisp_w)
-ADDRESS_MAP_END
+void abc1600_mover_device::iowr0_map(address_map &map)
+{
+	map(0x00, 0x00).mirror(0xff).r(FUNC(abc1600_mover_device::iord0_r));
+	map(0x00, 0x00).mirror(0xf8).w(FUNC(abc1600_mover_device::ldsx_hb_w));
+	map(0x01, 0x01).mirror(0xf8).w(FUNC(abc1600_mover_device::ldsx_lb_w));
+	map(0x02, 0x02).mirror(0xf8).w(FUNC(abc1600_mover_device::ldsy_hb_w));
+	map(0x03, 0x03).mirror(0xf8).w(FUNC(abc1600_mover_device::ldsy_lb_w));
+	map(0x04, 0x04).mirror(0xf8).w(FUNC(abc1600_mover_device::ldtx_hb_w));
+	map(0x05, 0x05).mirror(0xf8).w(FUNC(abc1600_mover_device::ldtx_lb_w));
+	map(0x06, 0x06).mirror(0xf8).w(FUNC(abc1600_mover_device::ldty_hb_w));
+	map(0x07, 0x07).mirror(0xf8).w(FUNC(abc1600_mover_device::ldty_lb_w));
+}
+
+void abc1600_mover_device::iowr1_map(address_map &map)
+{
+	map(0x00, 0x00).mirror(0xff).nopr();
+	map(0x00, 0x00).mirror(0xf8).w(FUNC(abc1600_mover_device::ldfx_hb_w));
+	map(0x01, 0x01).mirror(0xf8).w(FUNC(abc1600_mover_device::ldfx_lb_w));
+	map(0x02, 0x02).mirror(0xf8).w(FUNC(abc1600_mover_device::ldfy_hb_w));
+	map(0x03, 0x03).mirror(0xf8).w(FUNC(abc1600_mover_device::ldfy_lb_w));
+	map(0x05, 0x05).mirror(0xf8).w(FUNC(abc1600_mover_device::wrml_w));
+	map(0x07, 0x07).mirror(0xf8).w(FUNC(abc1600_mover_device::wrdl_w));
+}
+
+void abc1600_mover_device::iowr2_map(address_map &map)
+{
+	map(0x00, 0x00).mirror(0xff).nopr();
+	map(0x00, 0x00).mirror(0xf8).w(FUNC(abc1600_mover_device::wrmask_strobe_hb_w));
+	map(0x01, 0x01).mirror(0xf8).w(FUNC(abc1600_mover_device::wrmask_strobe_lb_w));
+	map(0x02, 0x02).mirror(0xf8).w(FUNC(abc1600_mover_device::enable_clocks_w));
+	map(0x03, 0x03).mirror(0xf8).w(FUNC(abc1600_mover_device::flag_strobe_w));
+	map(0x04, 0x04).mirror(0xf8).w(FUNC(abc1600_mover_device::endisp_w));
+}
 
 
-static ADDRESS_MAP_START( mover_map, AS_0, 16, abc1600_mover_device )
-	AM_RANGE(0x00000, 0x7ffff) AM_RAM
-ADDRESS_MAP_END
+void abc1600_mover_device::mover_map(address_map &map)
+{
+	map(0x00000, 0x3ffff).ram();
+}
 
 
 //-------------------------------------------------
@@ -101,7 +113,7 @@ ROM_START( abc1600_mover )
 	ROM_LOAD16_BYTE( "drmskh 6490358-01.1l", 0x00, 0x20, CRC(a4a9a9dc) SHA1(d8575c0335d6021cbb5f7bcd298b41c35294a80a) )
 
 	ROM_REGION( 0x104, "plds", 0 )
-	ROM_LOAD( "drmsk 6490360-01.1m", 0x000, 0x104, CRC(5f7143c1) SHA1(1129917845f8e505998b15288f02bf907487e4ac) ) // mover word mixer @ 1m,1n,1t,2t
+	ROM_LOAD( "drmsk 6490360-01.1m", 0x000, 0x104, CRC(5f7143c1) SHA1(1129917845f8e505998b15288f02bf907487e4ac) ) // PAL16L8 mover word mixer @ 1m,1n,1t,2t
 ROM_END
 
 
@@ -109,7 +121,7 @@ ROM_END
 //  rom_region - device-specific ROM region
 //-------------------------------------------------
 
-const rom_entry *abc1600_mover_device::device_rom_region() const
+const tiny_rom_entry *abc1600_mover_device::device_rom_region() const
 {
 	return ROM_NAME( abc1600_mover );
 }
@@ -119,7 +131,7 @@ const rom_entry *abc1600_mover_device::device_rom_region() const
 //  mc6845
 //-------------------------------------------------
 
-inline UINT16 abc1600_mover_device::get_crtca(UINT16 ma, UINT8 ra, UINT8 column)
+inline uint16_t abc1600_mover_device::get_crtca(uint16_t ma, uint8_t ra, uint8_t column)
 {
 	/*
 
@@ -144,8 +156,8 @@ inline UINT16 abc1600_mover_device::get_crtca(UINT16 ma, UINT8 ra, UINT8 column)
 
 	*/
 
-	UINT8 cc = (ma & 0xff) + column;
-	UINT8 cr = ma >> 8;
+	uint8_t cc = (ma & 0xff) + column;
+	uint8_t cr = ma >> 8;
 
 	return (cr << 10) | ((ra & 0x0f) << 6) | ((cc << 1) & 0x3c);
 }
@@ -157,18 +169,18 @@ MC6845_UPDATE_ROW(abc1600_mover_device::crtc_update_row)
 
 	for (int column = 0; column < x_count; column += 2)
 	{
-		UINT16 dma = get_crtca(ma, ra, column);
+		uint16_t dma = get_crtca(ma, ra, column);
 
 		// data is read out of video RAM in nibble mode by strobing CAS 4 times
 		for (int cas = 0; cas < 4; cas++)
 		{
-			UINT16 data = read_videoram(dma + cas);
+			uint16_t data = read_videoram(dma + cas);
 
 			for (int bit = 0; bit < 16; bit++)
 			{
 				int color = ((BIT(data, 15) ^ PIX_POL) && !BLANK) && de;
 
-				bitmap.pix32(vbp + y, hbp + x++) = pen[color];
+				bitmap.pix(vbp + y, hbp + x++) = pen[color];
 
 				data <<= 1;
 			}
@@ -181,39 +193,26 @@ MC6845_ON_UPDATE_ADDR_CHANGED( abc1600_mover_device::crtc_update )
 }
 
 //-------------------------------------------------
-//  MACHINE_CONFIG_FRAGMENT( abc1600_mover )
+//  device_add_mconfig - add device configuration
 //-------------------------------------------------
 
-static MACHINE_CONFIG_FRAGMENT( abc1600_mover )
-	MCFG_DEFAULT_LAYOUT(layout_abc1600)
-
-	MCFG_SCREEN_ADD(SCREEN_TAG, RASTER)
-	MCFG_SCREEN_REFRESH_RATE(60)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(2500)) // not accurate
-	MCFG_SCREEN_UPDATE_DRIVER(abc1600_mover_device, screen_update)
-	MCFG_SCREEN_SIZE(958, 1067)
-	MCFG_SCREEN_VISIBLE_AREA(0, 958-1, 0, 1067-1)
-
-	MCFG_PALETTE_ADD_MONOCHROME_GREEN("palette")
-
-	MCFG_MC6845_ADD(SY6845E_TAG, SY6845E, SCREEN_TAG, XTAL_64MHz/32)
-	MCFG_MC6845_SHOW_BORDER_AREA(true)
-	MCFG_MC6845_CHAR_WIDTH(32)
-	MCFG_MC6845_UPDATE_ROW_CB(abc1600_mover_device, crtc_update_row)
-	MCFG_MC6845_ADDR_CHANGED_CB(abc1600_mover_device, crtc_update)
-MACHINE_CONFIG_END
-
-
-//-------------------------------------------------
-//  machine_config_additions - device-specific
-//  machine configurations
-//-------------------------------------------------
-
-machine_config_constructor abc1600_mover_device::device_mconfig_additions() const
+void abc1600_mover_device::device_add_mconfig(machine_config &config)
 {
-	return MACHINE_CONFIG_NAME( abc1600_mover );
-}
+	config.set_default_layout(layout_abc1600);
 
+	screen_device &screen(SCREEN(config, SCREEN_TAG, SCREEN_TYPE_RASTER, rgb_t::green()));
+	screen.set_screen_update(FUNC(abc1600_mover_device::screen_update));
+	screen.set_raw(XTAL(64'000'000), 0x3e0, 0, 0x300, 0x433, 0, 0x400);
+
+	PALETTE(config, m_palette, palette_device::MONOCHROME);
+
+	SY6845E(config, m_crtc, XTAL(64'000'000)/32);
+	m_crtc->set_screen(SCREEN_TAG);
+	m_crtc->set_show_border_area(true);
+	m_crtc->set_char_width(32);
+	m_crtc->set_update_row_callback(FUNC(abc1600_mover_device::crtc_update_row));
+	m_crtc->set_on_update_addr_change_callback(FUNC(abc1600_mover_device::crtc_update));
+}
 
 
 //**************************************************************************
@@ -224,11 +223,11 @@ machine_config_constructor abc1600_mover_device::device_mconfig_additions() cons
 //  abc1600_mover_device - constructor
 //-------------------------------------------------
 
-abc1600_mover_device::abc1600_mover_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock) :
-	device_t(mconfig, ABC1600_MOVER, "ABC 1600 Mover", tag, owner, clock, "abc1600mover", __FILE__),
+abc1600_mover_device::abc1600_mover_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock) :
+	device_t(mconfig, ABC1600_MOVER, tag, owner, clock),
 	device_memory_interface(mconfig, *this),
-	m_space_config("vram", ENDIANNESS_BIG, 16, 18, -1, *ADDRESS_MAP_NAME(mover_map)),
-	m_crtc(*this, SY6845E_TAG),
+	m_space_config("vram", ENDIANNESS_BIG, 16, 18, -1, address_map_constructor(FUNC(abc1600_mover_device::mover_map), this)),
+	m_crtc(*this, "sy6845e"),
 	m_palette(*this, "palette"),
 	m_wrmsk_rom(*this, "wrmsk"),
 	m_shinf_rom(*this, "shinf"),
@@ -288,9 +287,11 @@ void abc1600_mover_device::device_reset()
 //  any address spaces owned by this device
 //-------------------------------------------------
 
-const address_space_config *abc1600_mover_device::memory_space_config(address_spacenum spacenum) const
+device_memory_interface::space_config_vector abc1600_mover_device::memory_space_config() const
 {
-	return (spacenum == AS_0) ? &m_space_config : nullptr;
+	return space_config_vector {
+		std::make_pair(0, &m_space_config)
+	};
 }
 
 
@@ -298,7 +299,7 @@ const address_space_config *abc1600_mover_device::memory_space_config(address_sp
 //  read_videoram -
 //-------------------------------------------------
 
-inline UINT16 abc1600_mover_device::read_videoram(offs_t offset)
+inline uint16_t abc1600_mover_device::read_videoram(offs_t offset)
 {
 	return space().read_word((offset & VIDEORAM16_MASK) << 1);
 }
@@ -308,9 +309,9 @@ inline UINT16 abc1600_mover_device::read_videoram(offs_t offset)
 //  write_videoram -
 //-------------------------------------------------
 
-inline void abc1600_mover_device::write_videoram(offs_t offset, UINT16 data, UINT16 mask)
+inline void abc1600_mover_device::write_videoram(offs_t offset, uint16_t data, uint16_t mask)
 {
-	UINT16 old_data = read_videoram(offset);
+	uint16_t old_data = read_videoram(offset);
 
 	space().write_word((offset & VIDEORAM16_MASK) << 1, (data & mask) | (old_data & (mask ^ 0xffff)));
 }
@@ -320,10 +321,10 @@ inline void abc1600_mover_device::write_videoram(offs_t offset, UINT16 data, UIN
 //  video_ram_r -
 //-------------------------------------------------
 
-READ8_MEMBER( abc1600_mover_device::video_ram_r )
+uint8_t abc1600_mover_device::video_ram_r(offs_t offset)
 {
 	offs_t addr = (offset & VIDEORAM8_MASK) >> 1;
-	UINT8 data = 0;
+	uint8_t data = 0;
 
 	if (offset & 0x01)
 	{
@@ -342,7 +343,7 @@ READ8_MEMBER( abc1600_mover_device::video_ram_r )
 //  video_ram_w -
 //-------------------------------------------------
 
-WRITE8_MEMBER( abc1600_mover_device::video_ram_w )
+void abc1600_mover_device::video_ram_w(offs_t offset, uint8_t data)
 {
 	offs_t addr = (offset & VIDEORAM8_MASK) >> 1;
 
@@ -352,18 +353,18 @@ WRITE8_MEMBER( abc1600_mover_device::video_ram_w )
 		{
 			// WRPORT_LB
 			m_wrm = (m_wrm & 0xff00) | data;
-			if (LOG) logerror("WRM LB %02x -> %04x\n", data, m_wrm);
+			LOG("WRM LB %02x -> %04x\n", data, m_wrm);
 		}
 		else
 		{
 			// DATAPORT_LB
 			m_gmdi = (m_gmdi & 0xff00) | data;
-			if (LOG) logerror("GMDI LB %02x -> %04x\n", data, m_gmdi);
+			LOG("GMDI LB %02x -> %04x\n", data, m_gmdi);
 		}
 
 		write_videoram(addr, m_gmdi, m_wrm & 0x00ff);
 
-		if (LOG) logerror("Video RAM write LB to %05x : %04x\n", addr, read_videoram(addr));
+		LOG("Video RAM write LB to %05x : %04x\n", addr, read_videoram(addr));
 	}
 	else
 	{
@@ -371,18 +372,18 @@ WRITE8_MEMBER( abc1600_mover_device::video_ram_w )
 		{
 			// WRPORT_HB
 			m_wrm = (data << 8) | (m_wrm & 0xff);
-			if (LOG) logerror("WRM HB %02x -> %04x\n", data, m_wrm);
+			LOG("WRM HB %02x -> %04x\n", data, m_wrm);
 		}
 		else
 		{
 			// DATAPORT_HB
 			m_gmdi = (data << 8) | (m_gmdi & 0xff);
-			if (LOG) logerror("GMDI HB %02x -> %04x\n", data, m_gmdi);
+			LOG("GMDI HB %02x -> %04x\n", data, m_gmdi);
 		}
 
 		write_videoram(addr, m_gmdi, m_wrm & 0xff00);
 
-		if (LOG) logerror("Video RAM write HB to %05x : %04x\n", addr, read_videoram(addr));
+		LOG("Video RAM write HB to %05x : %04x\n", addr, read_videoram(addr));
 	}
 }
 
@@ -391,7 +392,7 @@ WRITE8_MEMBER( abc1600_mover_device::video_ram_w )
 //  iord0_r -
 //-------------------------------------------------
 
-READ8_MEMBER( abc1600_mover_device::iord0_r )
+uint8_t abc1600_mover_device::iord0_r()
 {
 	/*
 
@@ -408,7 +409,7 @@ READ8_MEMBER( abc1600_mover_device::iord0_r )
 
 	*/
 
-	UINT8 data = 0;
+	uint8_t data = 0;
 
 	// monitor orientation (portrait/landscape)
 	data |= machine().render().first_target()->view() << 1;
@@ -424,7 +425,7 @@ READ8_MEMBER( abc1600_mover_device::iord0_r )
 //  ldsx_hb_w -
 //-------------------------------------------------
 
-WRITE8_MEMBER( abc1600_mover_device::ldsx_hb_w )
+void abc1600_mover_device::ldsx_hb_w(uint8_t data)
 {
 	/*
 
@@ -441,7 +442,7 @@ WRITE8_MEMBER( abc1600_mover_device::ldsx_hb_w )
 
 	*/
 
-	if (LOG) logerror("%s LDSX HB: %02x\n", machine().describe_context(), data);
+	LOG("%s LDSX HB: %02x\n", machine().describe_context(), data);
 
 	m_xsize = ((data & 0x03) << 8) | (m_xsize & 0xff);
 	m_udy = BIT(data, 2);
@@ -453,7 +454,7 @@ WRITE8_MEMBER( abc1600_mover_device::ldsx_hb_w )
 //  ldsx_lb_w -
 //-------------------------------------------------
 
-WRITE8_MEMBER( abc1600_mover_device::ldsx_lb_w )
+void abc1600_mover_device::ldsx_lb_w(uint8_t data)
 {
 	/*
 
@@ -470,7 +471,7 @@ WRITE8_MEMBER( abc1600_mover_device::ldsx_lb_w )
 
 	*/
 
-	if (LOG) logerror("%s LDSX LB: %02x\n", machine().describe_context(), data);
+	LOG("%s LDSX LB: %02x\n", machine().describe_context(), data);
 
 	m_xsize = (m_xsize & 0x300) | data;
 }
@@ -480,7 +481,7 @@ WRITE8_MEMBER( abc1600_mover_device::ldsx_lb_w )
 //  ldsy_hb_w -
 //-------------------------------------------------
 
-WRITE8_MEMBER( abc1600_mover_device::ldsy_hb_w )
+void abc1600_mover_device::ldsy_hb_w(uint8_t data)
 {
 	/*
 
@@ -497,7 +498,7 @@ WRITE8_MEMBER( abc1600_mover_device::ldsy_hb_w )
 
 	*/
 
-	if (LOG) logerror("%s LDSY HB: %02x\n", machine().describe_context(), data);
+	LOG("%s LDSY HB: %02x\n", machine().describe_context(), data);
 
 	m_ysize = ((data & 0x0f) << 8) | (m_ysize & 0xff);
 }
@@ -507,7 +508,7 @@ WRITE8_MEMBER( abc1600_mover_device::ldsy_hb_w )
 //  ldsy_lb_w -
 //-------------------------------------------------
 
-WRITE8_MEMBER( abc1600_mover_device::ldsy_lb_w )
+void abc1600_mover_device::ldsy_lb_w(uint8_t data)
 {
 	/*
 
@@ -524,7 +525,7 @@ WRITE8_MEMBER( abc1600_mover_device::ldsy_lb_w )
 
 	*/
 
-	if (LOG) logerror("%s LDSY LB: %02x\n", machine().describe_context(), data);
+	LOG("%s LDSY LB: %02x\n", machine().describe_context(), data);
 
 	m_ysize = (m_ysize & 0xf00) | data;
 }
@@ -534,7 +535,7 @@ WRITE8_MEMBER( abc1600_mover_device::ldsy_lb_w )
 //  ldtx_hb_w -
 //-------------------------------------------------
 
-WRITE8_MEMBER( abc1600_mover_device::ldtx_hb_w )
+void abc1600_mover_device::ldtx_hb_w(uint8_t data)
 {
 	/*
 
@@ -551,7 +552,7 @@ WRITE8_MEMBER( abc1600_mover_device::ldtx_hb_w )
 
 	*/
 
-	if (LOG) logerror("%s LDTX HB: %02x\n", machine().describe_context(), data);
+	LOG("%s LDTX HB: %02x\n", machine().describe_context(), data);
 
 	m_xto = ((data & 0x03) << 8) | (m_xto & 0xff);
 	m_mta = (m_mta & 0x3ffcf) | ((data & 0x03) << 4);
@@ -562,7 +563,7 @@ WRITE8_MEMBER( abc1600_mover_device::ldtx_hb_w )
 //  ldtx_lb_w -
 //-------------------------------------------------
 
-WRITE8_MEMBER( abc1600_mover_device::ldtx_lb_w )
+void abc1600_mover_device::ldtx_lb_w(uint8_t data)
 {
 	/*
 
@@ -579,7 +580,7 @@ WRITE8_MEMBER( abc1600_mover_device::ldtx_lb_w )
 
 	*/
 
-	if (LOG) logerror("%s LDTX LB: %02x\n", machine().describe_context(), data);
+	LOG("%s LDTX LB: %02x\n", machine().describe_context(), data);
 
 	m_xto = (m_xto & 0x300) | data;
 	m_mta = (m_mta & 0x3fff0) | (data >> 4);
@@ -590,7 +591,7 @@ WRITE8_MEMBER( abc1600_mover_device::ldtx_lb_w )
 //  ldty_hb_w -
 //-------------------------------------------------
 
-WRITE8_MEMBER( abc1600_mover_device::ldty_hb_w )
+void abc1600_mover_device::ldty_hb_w(uint8_t data)
 {
 	/*
 
@@ -607,7 +608,7 @@ WRITE8_MEMBER( abc1600_mover_device::ldty_hb_w )
 
 	*/
 
-	if (LOG) logerror("%s LDTY HB: %02x\n", machine().describe_context(), data);
+	LOG("%s LDTY HB: %02x\n", machine().describe_context(), data);
 
 	if (L_P) return;
 
@@ -621,7 +622,7 @@ WRITE8_MEMBER( abc1600_mover_device::ldty_hb_w )
 //  ldty_lb_w -
 //-------------------------------------------------
 
-WRITE8_MEMBER( abc1600_mover_device::ldty_lb_w )
+void abc1600_mover_device::ldty_lb_w(uint8_t data)
 {
 	/*
 
@@ -638,7 +639,7 @@ WRITE8_MEMBER( abc1600_mover_device::ldty_lb_w )
 
 	*/
 
-	if (LOG) logerror("%s LDTY LB: %02x\n", machine().describe_context(), data);
+	LOG("%s LDTY LB: %02x\n", machine().describe_context(), data);
 
 	if (L_P) return;
 
@@ -652,7 +653,7 @@ WRITE8_MEMBER( abc1600_mover_device::ldty_lb_w )
 //  ldfx_hb_w -
 //-------------------------------------------------
 
-WRITE8_MEMBER( abc1600_mover_device::ldfx_hb_w )
+void abc1600_mover_device::ldfx_hb_w(uint8_t data)
 {
 	/*
 
@@ -669,7 +670,7 @@ WRITE8_MEMBER( abc1600_mover_device::ldfx_hb_w )
 
 	*/
 
-	if (LOG) logerror("%s LDFX HB: %02x\n", machine().describe_context(), data);
+	LOG("%s LDFX HB: %02x\n", machine().describe_context(), data);
 
 	m_xfrom = ((data & 0x03) << 8) | (m_xfrom & 0xff);
 	m_mfa = (m_mfa & 0x3ffcf) | ((data & 0x03) << 4);
@@ -680,7 +681,7 @@ WRITE8_MEMBER( abc1600_mover_device::ldfx_hb_w )
 //  ldfx_lb_w -
 //-------------------------------------------------
 
-WRITE8_MEMBER( abc1600_mover_device::ldfx_lb_w )
+void abc1600_mover_device::ldfx_lb_w(uint8_t data)
 {
 	/*
 
@@ -697,7 +698,7 @@ WRITE8_MEMBER( abc1600_mover_device::ldfx_lb_w )
 
 	*/
 
-	if (LOG) logerror("%s LDFX LB: %02x\n", machine().describe_context(), data);
+	LOG("%s LDFX LB: %02x\n", machine().describe_context(), data);
 
 	m_xfrom = (m_xfrom & 0x300) | data;
 	m_mfa = (m_mfa & 0x3fff0) | (data >> 4);
@@ -708,7 +709,7 @@ WRITE8_MEMBER( abc1600_mover_device::ldfx_lb_w )
 //  ldfy_hb_w -
 //-------------------------------------------------
 
-WRITE8_MEMBER( abc1600_mover_device::ldfy_hb_w )
+void abc1600_mover_device::ldfy_hb_w(uint8_t data)
 {
 	/*
 
@@ -725,7 +726,7 @@ WRITE8_MEMBER( abc1600_mover_device::ldfy_hb_w )
 
 	*/
 
-	if (LOG) logerror("%s LDFY HB: %02x\n", machine().describe_context(), data);
+	LOG("%s LDFY HB: %02x\n", machine().describe_context(), data);
 
 	m_mfa = ((data & 0x0f) << 14) | (m_mfa & 0x3fff);
 }
@@ -735,7 +736,7 @@ WRITE8_MEMBER( abc1600_mover_device::ldfy_hb_w )
 //  ldfy_lb_w -
 //-------------------------------------------------
 
-WRITE8_MEMBER( abc1600_mover_device::ldfy_lb_w )
+void abc1600_mover_device::ldfy_lb_w(uint8_t data)
 {
 	/*
 
@@ -752,7 +753,7 @@ WRITE8_MEMBER( abc1600_mover_device::ldfy_lb_w )
 
 	*/
 
-	if (LOG) logerror("%s LDFY LB: %02x\n", machine().describe_context(), data);
+	LOG("%s LDFY LB: %02x\n", machine().describe_context(), data);
 
 	m_mfa = (m_mfa & 0x3c03f) | (data << 6);
 
@@ -764,7 +765,7 @@ WRITE8_MEMBER( abc1600_mover_device::ldfy_lb_w )
 //  wrml_w -
 //-------------------------------------------------
 
-WRITE8_MEMBER( abc1600_mover_device::wrml_w )
+void abc1600_mover_device::wrml_w(offs_t offset, uint8_t data)
 {
 	/*
 
@@ -781,7 +782,7 @@ WRITE8_MEMBER( abc1600_mover_device::wrml_w )
 
 	*/
 
-	if (LOG) logerror("MS %u : %02x\n", (offset >> 4) & 0x0f, data);
+	LOG("MS %u : %02x\n", (offset >> 4) & 0x0f, data);
 
 	if (m_clocks_disabled)
 	{
@@ -794,7 +795,7 @@ WRITE8_MEMBER( abc1600_mover_device::wrml_w )
 //  wrdl_w -
 //-------------------------------------------------
 
-WRITE8_MEMBER( abc1600_mover_device::wrdl_w )
+void abc1600_mover_device::wrdl_w(offs_t offset, uint8_t data)
 {
 	/*
 
@@ -811,7 +812,7 @@ WRITE8_MEMBER( abc1600_mover_device::wrdl_w )
 
 	*/
 
-	if (LOG) logerror("WS %u : %02x\n", (offset >> 4) & 0x0f, data);
+	LOG("WS %u : %02x\n", (offset >> 4) & 0x0f, data);
 
 	if (m_clocks_disabled)
 	{
@@ -824,19 +825,19 @@ WRITE8_MEMBER( abc1600_mover_device::wrdl_w )
 //  wrmask_strobe_hb_w -
 //-------------------------------------------------
 
-WRITE8_MEMBER( abc1600_mover_device::wrmask_strobe_hb_w )
+void abc1600_mover_device::wrmask_strobe_hb_w(uint8_t data)
 {
 	if (REPLACE)
 	{
 		// DATAPORT_HB
 		m_gmdi = (data << 8) | (m_gmdi & 0xff);
-		if (LOG) logerror("GMDI HB %04x\n", m_gmdi);
+		LOG("GMDI HB %04x\n", m_gmdi);
 	}
 	else
 	{
 		// WRPORT_HB
 		m_wrm = (data << 8) | (m_wrm & 0xff);
-		if (LOG) logerror("WRM HB %04x\n", m_gmdi);
+		LOG("WRM HB %04x\n", m_gmdi);
 	}
 }
 
@@ -845,19 +846,19 @@ WRITE8_MEMBER( abc1600_mover_device::wrmask_strobe_hb_w )
 //  wrmask_strobe_lb_w -
 //-------------------------------------------------
 
-WRITE8_MEMBER( abc1600_mover_device::wrmask_strobe_lb_w )
+void abc1600_mover_device::wrmask_strobe_lb_w(uint8_t data)
 {
 	if (REPLACE)
 	{
 		// DATAPORT_LB
 		m_gmdi = (m_gmdi & 0xff00) | data;
-		if (LOG) logerror("GMDI LB %04x\n", m_gmdi);
+		LOG("GMDI LB %04x\n", m_gmdi);
 	}
 	else
 	{
 		// WRPORT_LB
 		m_wrm = (m_wrm & 0xff00) | data;
-		if (LOG) logerror("WRM LB %04x\n", m_gmdi);
+		LOG("WRM LB %04x\n", m_gmdi);
 	}
 }
 
@@ -866,9 +867,9 @@ WRITE8_MEMBER( abc1600_mover_device::wrmask_strobe_lb_w )
 //  enable_clocks_w -
 //-------------------------------------------------
 
-WRITE8_MEMBER( abc1600_mover_device::enable_clocks_w )
+void abc1600_mover_device::enable_clocks_w(uint8_t data)
 {
-	if (LOG) logerror("ENABLE CLOCKS\n");
+	LOG("ENABLE CLOCKS\n");
 	m_clocks_disabled = 0;
 }
 
@@ -877,7 +878,7 @@ WRITE8_MEMBER( abc1600_mover_device::enable_clocks_w )
 //  flag_strobe_w -
 //-------------------------------------------------
 
-WRITE8_MEMBER( abc1600_mover_device::flag_strobe_w )
+void abc1600_mover_device::flag_strobe_w(uint8_t data)
 {
 	/*
 
@@ -895,7 +896,7 @@ WRITE8_MEMBER( abc1600_mover_device::flag_strobe_w )
 	*/
 
 	m_flag = data;
-	if (LOG) logerror("FLAG %02x\n", m_flag);
+	LOG("FLAG %02x\n", m_flag);
 }
 
 
@@ -903,10 +904,10 @@ WRITE8_MEMBER( abc1600_mover_device::flag_strobe_w )
 //  endisp_w -
 //-------------------------------------------------
 
-WRITE8_MEMBER( abc1600_mover_device::endisp_w )
+void abc1600_mover_device::endisp_w(uint8_t data)
 {
 	m_endisp = 1;
-	if (LOG) logerror("ENDISP\n");
+	LOG("ENDISP\n");
 }
 
 
@@ -921,8 +922,8 @@ WRITE8_MEMBER( abc1600_mover_device::endisp_w )
 
 inline void abc1600_mover_device::clock_mfa_x()
 {
-	UINT16 mfa_y = m_mfa >> 6;
-	UINT8 mfa_x = m_mfa & 0x3f;
+	uint16_t mfa_y = m_mfa >> 6;
+	uint8_t mfa_x = m_mfa & 0x3f;
 
 	if (!HOLD_FX)
 	{
@@ -940,8 +941,8 @@ inline void abc1600_mover_device::clock_mfa_x()
 
 inline void abc1600_mover_device::clock_mfa_y()
 {
-	UINT16 mfa_y = m_mfa >> 6;
-	UINT8 mfa_x = m_mfa & 0x3f;
+	uint16_t mfa_y = m_mfa >> 6;
+	uint8_t mfa_x = m_mfa & 0x3f;
 
 	if (!HOLD_FY)
 	{
@@ -959,8 +960,8 @@ inline void abc1600_mover_device::clock_mfa_y()
 
 inline void abc1600_mover_device::clock_mta_x()
 {
-	UINT16 mta_y = m_mta >> 6;
-	UINT8 mta_x = m_mta & 0x3f;
+	uint16_t mta_y = m_mta >> 6;
+	uint8_t mta_x = m_mta & 0x3f;
 
 	mta_x += m_udx ? 1 : -1;
 	mta_x &= 0x3f;
@@ -975,8 +976,8 @@ inline void abc1600_mover_device::clock_mta_x()
 
 inline void abc1600_mover_device::clock_mta_y()
 {
-	UINT16 mta_y = m_mta >> 6;
-	UINT8 mta_x = m_mta & 0x3f;
+	uint16_t mta_y = m_mta >> 6;
+	uint8_t mta_x = m_mta & 0x3f;
 
 	mta_y += m_udy ? 1 : -1;
 	mta_y &= 0xfff;
@@ -991,8 +992,8 @@ inline void abc1600_mover_device::clock_mta_y()
 
 inline void abc1600_mover_device::load_mfa_x()
 {
-	UINT16 mfa_y = m_mfa >> 6;
-	UINT8 mfa_x = m_xfrom >> 4;
+	uint16_t mfa_y = m_mfa >> 6;
+	uint8_t mfa_x = m_xfrom >> 4;
 
 	m_mfa = (mfa_y << 6) | mfa_x;
 }
@@ -1004,8 +1005,8 @@ inline void abc1600_mover_device::load_mfa_x()
 
 inline void abc1600_mover_device::load_mta_x()
 {
-	UINT16 mta_y = m_mta >> 6;
-	UINT8 mta_x = m_xto >> 4;
+	uint16_t mta_y = m_mta >> 6;
+	uint8_t mta_x = m_xto >> 4;
 
 	m_mta = (mta_y << 6) | mta_x;
 }
@@ -1019,7 +1020,7 @@ inline void abc1600_mover_device::load_xy_reg()
 {
 	if (L_P) return;
 
-	UINT16 sum = m_xto + m_xsize;
+	uint16_t sum = m_xto + m_xsize;
 
 	m_xto = sum & 0x3ff;
 	m_yto = m_ty & 0xfff;
@@ -1033,8 +1034,8 @@ inline void abc1600_mover_device::load_xy_reg()
 
 inline void abc1600_mover_device::compare_mta_x()
 {
-	UINT8 mta_x_end = ((m_xto + m_xsize) >> 4) & 0x3f;
-	UINT8 mta_x = m_mta & 0x3f;
+	uint8_t mta_x_end = ((m_xto + m_xsize) >> 4) & 0x3f;
+	uint8_t mta_x = m_mta & 0x3f;
 
 	if (mta_x == mta_x_end)
 	{
@@ -1052,7 +1053,7 @@ inline void abc1600_mover_device::compare_mta_x()
 inline void abc1600_mover_device::compare_mta_y()
 {
 	int mta_y_end = (m_yto + m_ysize) & 0xfff;
-	UINT16 mta_y = m_mta >> 6;
+	uint16_t mta_y = m_mta >> 6;
 
 	if (mta_y == mta_y_end)
 	{
@@ -1083,8 +1084,8 @@ inline void abc1600_mover_device::get_shinf()
 
 	*/
 
-	UINT16 shinf_addr = (m_udx << 8) | ((m_xto & 0x0f) << 4) | (m_xfrom & 0x0f);
-	UINT8 shinf = m_shinf_rom[shinf_addr];
+	uint16_t shinf_addr = (m_udx << 8) | ((m_xto & 0x0f) << 4) | (m_xfrom & 0x0f);
+	uint8_t shinf = m_shinf_rom[shinf_addr];
 
 	m_sh = shinf & 0x0f;
 	m_hold_1w_cyk = BIT(shinf, 5);
@@ -1095,7 +1096,7 @@ inline void abc1600_mover_device::get_shinf()
 //  get_drmsk -
 //-------------------------------------------------
 
-inline UINT16 abc1600_mover_device::get_drmsk()
+inline uint16_t abc1600_mover_device::get_drmsk()
 {
 	/*
 
@@ -1109,7 +1110,7 @@ inline UINT16 abc1600_mover_device::get_drmsk()
 
 	*/
 
-	UINT16 drmsk_addr = (m_udx << 4) | (m_sh & 0x0f);
+	uint16_t drmsk_addr = (m_udx << 4) | (m_sh & 0x0f);
 	return m_drmsk_rom[drmsk_addr];
 }
 
@@ -1118,7 +1119,7 @@ inline UINT16 abc1600_mover_device::get_drmsk()
 //  get_wrmsk - get mover write mask
 //-------------------------------------------------
 
-inline UINT16 abc1600_mover_device::get_wrmsk()
+inline uint16_t abc1600_mover_device::get_wrmsk()
 {
 	/*
 
@@ -1139,7 +1140,7 @@ inline UINT16 abc1600_mover_device::get_wrmsk()
 
 	*/
 
-	UINT16 wrmsk_addr = (m_wrms1 << 11) | (m_wrms0 << 10) | ((!m_wrms1 && !m_wrms0) << 9) | (m_udx << 8) | ((m_xsize & 0x0f) << 4) | (m_xto & 0x0f);
+	uint16_t wrmsk_addr = (m_wrms1 << 11) | (m_wrms0 << 10) | ((!m_wrms1 && !m_wrms0) << 9) | (m_udx << 8) | ((m_xsize & 0x0f) << 4) | (m_xto & 0x0f);
 	return m_wrmsk_rom[wrmsk_addr] ^ 0xffff;
 }
 
@@ -1148,9 +1149,9 @@ inline UINT16 abc1600_mover_device::get_wrmsk()
 //  barrel_shift -
 //-------------------------------------------------
 
-inline UINT16 abc1600_mover_device::barrel_shift(UINT16 gmdr)
+inline uint16_t abc1600_mover_device::barrel_shift(uint16_t gmdr)
 {
-	UINT16 rot = gmdr;
+	uint16_t rot = gmdr;
 
 	for (int sh = 0; sh < m_sh; sh++)
 	{
@@ -1167,10 +1168,10 @@ inline UINT16 abc1600_mover_device::barrel_shift(UINT16 gmdr)
 //  word_mixer -
 //-------------------------------------------------
 
-inline UINT16 abc1600_mover_device::word_mixer(UINT16 rot)
+inline uint16_t abc1600_mover_device::word_mixer(uint16_t rot)
 {
-	UINT16 drmsk = get_drmsk();
-	UINT16 gmdi = (rot & drmsk) | (m_mdor & (drmsk ^ 0xffff));
+	uint16_t drmsk = get_drmsk();
+	uint16_t gmdi = (rot & drmsk) | (m_mdor & (drmsk ^ 0xffff));
 
 	if (COMP_MOVE)
 	{
@@ -1189,7 +1190,7 @@ inline UINT16 abc1600_mover_device::word_mixer(UINT16 rot)
 
 void abc1600_mover_device::mover()
 {
-	if (LOG) logerror("XFROM %u XSIZE %u YSIZE %u XTO %u YTO %u MFA %05x MTA %05x U/D*X %u U/D*Y %u\n", m_xfrom, m_xsize, m_ysize, m_xto, m_yto, m_mfa, m_mta, m_udx, m_udy);
+	LOG("XFROM %u XSIZE %u YSIZE %u XTO %u YTO %u MFA %05x MTA %05x U/D*X %u U/D*Y %u\n", m_xfrom, m_xsize, m_ysize, m_xto, m_yto, m_mfa, m_mta, m_udx, m_udy);
 
 	m_amm = 1;
 
@@ -1208,8 +1209,8 @@ void abc1600_mover_device::mover()
 		if (m_hold_1w_cyk)
 		{
 			// read one word in advance
-			UINT16 gmdr = read_videoram(m_mfa);
-			UINT16 rot = barrel_shift(gmdr);
+			uint16_t gmdr = read_videoram(m_mfa);
+			uint16_t rot = barrel_shift(gmdr);
 			word_mixer(rot);
 
 			clock_mfa_x();
@@ -1219,10 +1220,10 @@ void abc1600_mover_device::mover()
 		{
 			compare_mta_x();
 
-			UINT16 gmdr = read_videoram(m_mfa);
-			UINT16 rot = barrel_shift(gmdr);
-			UINT16 gmdi = word_mixer(rot);
-			UINT16 mask = get_wrmsk();
+			uint16_t gmdr = read_videoram(m_mfa);
+			uint16_t rot = barrel_shift(gmdr);
+			uint16_t gmdi = word_mixer(rot);
+			uint16_t mask = get_wrmsk();
 
 			write_videoram(m_mta, gmdi, mask);
 
@@ -1243,7 +1244,7 @@ void abc1600_mover_device::mover()
 	m_amm = 0;
 }
 
-UINT32 abc1600_mover_device::screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
+uint32_t abc1600_mover_device::screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
 {
 	if (m_endisp)
 	{
@@ -1252,7 +1253,7 @@ UINT32 abc1600_mover_device::screen_update(screen_device &screen, bitmap_rgb32 &
 	}
 	else
 	{
-		bitmap.fill(rgb_t::black, cliprect);
+		bitmap.fill(rgb_t::black(), cliprect);
 	}
 
 	return 0;

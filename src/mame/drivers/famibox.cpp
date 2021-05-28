@@ -21,7 +21,7 @@ case style and cartridge/case color:  (FamicomBox = Black, FamicomStation = Gray
 Specific Hardware information
 -----------------------------
 The unit had 3 controllers - 2 standard NES controllers and a NES Zapper light
-gun.  The cartridges are shaped and appear to be idential to NES 72-pin
+gun.  The cartridges are shaped and appear to be identical to NES 72-pin
 cartridges.  Unfortunately, it was made to play only the games specifically
 released for it.  Why?
 
@@ -33,22 +33,22 @@ released for it.  Why?
 
 Here's a list of some of the games known to have come with the FamicomBox:
 1943; Baseball; Bomber Man; Devil World; Donkey Kong; Donkey Kong Jr.; Duck Hunt;
-Excite Bike; F1 Race; Fighting Golf; Golf; Gradius; Hogan?s Alley; Ice Climbers;
-Ice Hockey; Knight Rider; Makaimura: Ghosts ?n Goblins; McKids; Mah-Jong; Mario Bros.;
-Mike Tyson?s Punch-Out!!; Ninja Ryukenden; Operation Wolf (?); Punch-Out!!; Rock Man;
-Rygar; Senjou no Ookami; Soccer League Winner?s Cup; Super Chinese 2; Super Mario Bros;
+Excite Bike; F1 Race; Fighting Golf; Golf; Gradius; Hogan's Alley; Ice Climbers;
+Ice Hockey; Knight Rider; Makaimura: Ghosts 'n Goblins; McKids; Mah-Jong; Mario Bros.;
+Mike Tyson's Punch-Out!!; Ninja Ryukenden; Operation Wolf (?); Punch-Out!!; Rock Man;
+Rygar; Senjou no Ookami; Soccer League Winner's Cup; Super Chinese 2; Super Mario Bros;
 Tag Team Pro Wrestling; Takahashi Meijin no Boukenjima; Tennis; Twin Bee;
 Volleyball; Wild Gunman; Wrecking Crew.
 
 Here's a list of some of the games known to have come with the FamicomStation:
 1943; Baseball; Donkey Kong; Duck Hunt; F1 Race; Golf; Kame no Ongaeshi:
 Urashima Densetsu; Mah-Jong; Mario Bros.; Night Raider; Senjou no Ookami;
-Soccer League Winner?s Cup; Super Chinese 2; Super Mario Bros; Tag Team Pro Wrestling;
+Soccer League Winner's Cup; Super Chinese 2; Super Mario Bros; Tag Team Pro Wrestling;
 Takahashi Meijin no Boukenjima; Tennis; Wild Gunman; Wrecking Crew.
 
 FamicomBox menu code maintains internal database of games (rom checksums and game names
-in ASCII). When checking game cartidges, it scans roms and tries to find matching game
-in its internal database. Additionaly, games having standard Nintendo header are accepted too.
+in ASCII). When checking game cartridges, it scans roms and tries to find matching game
+in its internal database. Additionally, games having standard Nintendo header are accepted too.
 Current selection of games in driver is based on menu internal database.
 
 Notes/ToDo:
@@ -62,9 +62,12 @@ Notes/ToDo:
 #include "emu.h"
 #include "video/ppu2c0x.h"
 #include "cpu/m6502/n2a03.h"
-#include "sound/dac.h"
 #include "debugger.h"
+#include "screen.h"
+#include "speaker.h"
 
+
+namespace {
 
 class famibox_state : public driver_device
 {
@@ -74,51 +77,53 @@ public:
 		m_maincpu(*this, "maincpu"),
 		m_ppu(*this, "ppu") { }
 
+	void famibox(machine_config &config);
 
-	required_device<cpu_device> m_maincpu;
-	required_device<ppu2c0x_device> m_ppu;
-
-	std::unique_ptr<UINT8[]> m_nt_ram;
-	UINT8* m_nt_page[4];
-
-	UINT32 m_in_0;
-	UINT32 m_in_1;
-	UINT32 m_in_0_shift;
-	UINT32 m_in_1_shift;
-
-	UINT8       m_exception_mask;
-	UINT8       m_exception_cause;
-
-	emu_timer*  m_attract_timer;
-	UINT8       m_attract_timer_period;
-
-	UINT32      m_coins;
-
-	emu_timer*  m_gameplay_timer;
-	UINT8       m_money_reg;
-
-	DECLARE_WRITE8_MEMBER(famibox_nt_w);
-	DECLARE_READ8_MEMBER(famibox_nt_r);
-	DECLARE_WRITE8_MEMBER(sprite_dma_w);
-	DECLARE_READ8_MEMBER(famibox_IN0_r);
-	DECLARE_WRITE8_MEMBER(famibox_IN0_w);
-	DECLARE_READ8_MEMBER(famibox_IN1_r);
-	DECLARE_READ8_MEMBER(famibox_system_r);
-	DECLARE_WRITE8_MEMBER(famibox_system_w);
-	DECLARE_CUSTOM_INPUT_MEMBER(famibox_coin_r);
+	DECLARE_READ_LINE_MEMBER(coin_r);
 	DECLARE_INPUT_CHANGED_MEMBER(famibox_keyswitch_changed);
 	DECLARE_INPUT_CHANGED_MEMBER(coin_inserted);
+
+protected:
 	virtual void machine_start() override;
 	virtual void machine_reset() override;
-	virtual void video_start() override;
-	DECLARE_PALETTE_INIT(famibox);
-	UINT32 screen_update_famibox(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
+
+private:
+	required_device<n2a03_device> m_maincpu;
+	required_device<ppu2c0x_device> m_ppu;
+
+	std::unique_ptr<uint8_t[]> m_nt_ram;
+	uint8_t* m_nt_page[4];
+
+	uint32_t m_in_0;
+	uint32_t m_in_1;
+	uint32_t m_in_0_shift;
+	uint32_t m_in_1_shift;
+
+	uint8_t       m_exception_mask;
+	uint8_t       m_exception_cause;
+
+	emu_timer*  m_attract_timer;
+	uint8_t       m_attract_timer_period;
+
+	uint32_t      m_coins;
+
+	emu_timer*  m_gameplay_timer;
+	uint8_t       m_money_reg;
+
+	void famibox_nt_w(offs_t offset, uint8_t data);
+	uint8_t famibox_nt_r(offs_t offset);
+	void sprite_dma_w(address_space &space, uint8_t data);
+	uint8_t famibox_IN0_r();
+	void famibox_IN0_w(uint8_t data);
+	uint8_t famibox_IN1_r();
+	uint8_t famibox_system_r(offs_t offset);
+	void famibox_system_w(offs_t offset, uint8_t data);
 	TIMER_CALLBACK_MEMBER(famicombox_attract_timer_callback);
 	TIMER_CALLBACK_MEMBER(famicombox_gameplay_timer_callback);
-	void set_mirroring(int mirroring);
-	void famicombox_bankswitch(UINT8 bank);
+	void famicombox_bankswitch(uint8_t bank);
 	void famicombox_reset();
-	void ppu_irq(int *ppu_regs);
+	void famibox_map(address_map &map);
+	void famibox_ppu_map(address_map &map);
 };
 
 /******************************************************
@@ -161,14 +166,14 @@ void famibox_state::set_mirroring(int mirroring)
 }
 #endif
 
-WRITE8_MEMBER(famibox_state::famibox_nt_w)
+void famibox_state::famibox_nt_w(offs_t offset, uint8_t data)
 {
 	int page = ((offset & 0xc00) >> 10);
 	m_nt_page[page][offset & 0x3ff] = data;
 }
 
 
-READ8_MEMBER(famibox_state::famibox_nt_r)
+uint8_t famibox_state::famibox_nt_r(offs_t offset)
 {
 	int page = ((offset & 0xc00) >> 10);
 	return m_nt_page[page][offset & 0x3ff];
@@ -180,7 +185,7 @@ READ8_MEMBER(famibox_state::famibox_nt_r)
 
 *******************************************************/
 
-WRITE8_MEMBER(famibox_state::sprite_dma_w)
+void famibox_state::sprite_dma_w(address_space &space, uint8_t data)
 {
 	int source = (data & 7);
 	m_ppu->spriteram_dma(space, source);
@@ -195,12 +200,12 @@ WRITE8_MEMBER(famibox_state::sprite_dma_w)
 *******************************************************/
 
 
-READ8_MEMBER(famibox_state::famibox_IN0_r)
+uint8_t famibox_state::famibox_IN0_r()
 {
 	return ((m_in_0 >> m_in_0_shift++) & 0x01) | 0x40;
 }
 
-WRITE8_MEMBER(famibox_state::famibox_IN0_w)
+void famibox_state::famibox_IN0_w(uint8_t data)
 {
 	if (data & 0x01)
 	{
@@ -214,7 +219,7 @@ WRITE8_MEMBER(famibox_state::famibox_IN0_w)
 	m_in_1 = ioport("P2")->read();
 }
 
-READ8_MEMBER(famibox_state::famibox_IN1_r)
+uint8_t famibox_state::famibox_IN1_r()
 {
 	return ((m_in_1 >> m_in_1_shift++) & 0x01) | 0x40;
 }
@@ -224,11 +229,11 @@ READ8_MEMBER(famibox_state::famibox_IN1_r)
    System
 
 *******************************************************/
-void famibox_state::famicombox_bankswitch(UINT8 bank)
+void famibox_state::famicombox_bankswitch(uint8_t bank)
 {
 	struct
 	{
-		UINT8 bank;
+		uint8_t bank;
 		const char* memory_region;
 		offs_t bank1_offset;
 		offs_t bank2_offset;
@@ -299,13 +304,13 @@ TIMER_CALLBACK_MEMBER(famibox_state::famicombox_gameplay_timer_callback)
 	}
 }
 
-READ8_MEMBER(famibox_state::famibox_system_r)
+uint8_t famibox_state::famibox_system_r(offs_t offset)
 {
 	switch( offset & 0x07 )
 	{
 		case 0: /* device which caused exception */
 			{
-				UINT8 ret = m_exception_cause;
+				uint8_t ret = m_exception_cause;
 				m_exception_cause = 0xff;
 				return ret;
 			}
@@ -321,7 +326,7 @@ READ8_MEMBER(famibox_state::famibox_system_r)
 	}
 }
 
-WRITE8_MEMBER(famibox_state::famibox_system_w)
+void famibox_state::famibox_system_w(offs_t offset, uint8_t data)
 {
 	switch( offset & 0x07 )
 	{
@@ -339,7 +344,7 @@ WRITE8_MEMBER(famibox_state::famibox_system_w)
 			{
 				if (m_attract_timer->start() != attotime::never)
 				{
-					m_attract_timer->adjust(attotime::from_seconds((INT32)((double)1.0/6.8274*m_attract_timer_period)), 0, attotime::never);
+					m_attract_timer->adjust(attotime::from_seconds((int32_t)((double)1.0/6.8274*m_attract_timer_period)), 0, attotime::never);
 				}
 			}
 			break;
@@ -374,17 +379,25 @@ WRITE8_MEMBER(famibox_state::famibox_system_w)
 *******************************************************/
 
 
-static ADDRESS_MAP_START( famibox_map, AS_PROGRAM, 8, famibox_state )
-	AM_RANGE(0x0000, 0x1fff) AM_RAM
-	AM_RANGE(0x2000, 0x3fff) AM_DEVREADWRITE("ppu", ppu2c0x_device, read, write)
-	AM_RANGE(0x4014, 0x4014) AM_WRITE(sprite_dma_w)
-	AM_RANGE(0x4016, 0x4016) AM_READWRITE(famibox_IN0_r, famibox_IN0_w) /* IN0 - input port 1 */
-	AM_RANGE(0x4017, 0x4017) AM_READ(famibox_IN1_r)     /* IN1 - input port 2 / PSG second control register */
-	AM_RANGE(0x5000, 0x5fff) AM_READWRITE(famibox_system_r, famibox_system_w)
-	AM_RANGE(0x6000, 0x7fff) AM_RAM
-	AM_RANGE(0x8000, 0xbfff) AM_ROMBANK("cpubank1")
-	AM_RANGE(0xc000, 0xffff) AM_ROMBANK("cpubank2")
-ADDRESS_MAP_END
+void famibox_state::famibox_map(address_map &map)
+{
+	map(0x0000, 0x1fff).ram();
+	map(0x2000, 0x3fff).rw(m_ppu, FUNC(ppu2c0x_device::read), FUNC(ppu2c0x_device::write));
+	map(0x4014, 0x4014).w(FUNC(famibox_state::sprite_dma_w));
+	map(0x4016, 0x4016).rw(FUNC(famibox_state::famibox_IN0_r), FUNC(famibox_state::famibox_IN0_w)); /* IN0 - input port 1 */
+	map(0x4017, 0x4017).r(FUNC(famibox_state::famibox_IN1_r));     /* IN1 - input port 2 / PSG second control register */
+	map(0x5000, 0x5fff).rw(FUNC(famibox_state::famibox_system_r), FUNC(famibox_state::famibox_system_w));
+	map(0x6000, 0x7fff).ram();
+	map(0x8000, 0xbfff).bankr("cpubank1");
+	map(0xc000, 0xffff).bankr("cpubank2");
+}
+
+void famibox_state::famibox_ppu_map(address_map &map)
+{
+	map(0x0000, 0x1fff).bankr("ppubank1");
+	map(0x2000, 0x3eff).rw(FUNC(famibox_state::famibox_nt_r), FUNC(famibox_state::famibox_nt_w));
+	map(0x3f00, 0x3fff).rw(m_ppu, FUNC(ppu2c0x_device::palette_read), FUNC(ppu2c0x_device::palette_write));
+}
 
 /******************************************************
 
@@ -419,7 +432,7 @@ INPUT_CHANGED_MEMBER(famibox_state::coin_inserted)
 	}
 }
 
-CUSTOM_INPUT_MEMBER(famibox_state::famibox_coin_r)
+READ_LINE_MEMBER(famibox_state::coin_r)
 {
 	return m_coins > 0;
 }
@@ -478,7 +491,7 @@ static INPUT_PORTS_START( famibox )
 	PORT_DIPSETTING(    0x08, "Key position 4" )
 	PORT_DIPSETTING(    0x10, "Key position 5" )
 	PORT_DIPSETTING(    0x20, "Key position 6" )
-	PORT_BIT( 0x40, IP_ACTIVE_HIGH, IPT_SPECIAL ) PORT_CUSTOM_MEMBER(DEVICE_SELF, famibox_state,famibox_coin_r, NULL)
+	PORT_BIT( 0x40, IP_ACTIVE_HIGH, IPT_CUSTOM ) PORT_READ_LINE_MEMBER(famibox_state, coin_r)
 
 	PORT_START("COIN")
 	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_COIN1 ) PORT_CHANGED_MEMBER(DEVICE_SELF, famibox_state,coin_inserted, 0)
@@ -491,31 +504,6 @@ INPUT_PORTS_END
 
 *******************************************************/
 
-PALETTE_INIT_MEMBER(famibox_state, famibox)
-{
-	m_ppu->init_palette(palette, 0);
-}
-
-void famibox_state::ppu_irq(int *ppu_regs)
-{
-	m_maincpu->set_input_line(INPUT_LINE_NMI, PULSE_LINE);
-}
-
-void famibox_state::video_start()
-{
-}
-
-UINT32 famibox_state::screen_update_famibox(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
-{
-	/* render the ppu */
-	m_ppu->render(bitmap, 0, 0, 0, 0);
-	return 0;
-}
-
-static GFXDECODE_START( famibox )
-	/* none, the ppu generates one */
-GFXDECODE_END
-
 void famibox_state::machine_reset()
 {
 	famicombox_bankswitch(0);
@@ -523,17 +511,13 @@ void famibox_state::machine_reset()
 
 void famibox_state::machine_start()
 {
-	m_nt_ram = std::make_unique<UINT8[]>(0x1000);
+	m_nt_ram = std::make_unique<uint8_t[]>(0x1000);
 	m_nt_page[0] = m_nt_ram.get();
 	m_nt_page[1] = m_nt_ram.get() + 0x400;
 	m_nt_page[2] = m_nt_ram.get() + 0x800;
 	m_nt_page[3] = m_nt_ram.get() + 0xc00;
 
-	m_ppu->space(AS_PROGRAM).install_readwrite_handler(0x2000, 0x3eff, read8_delegate(FUNC(famibox_state::famibox_nt_r), this), write8_delegate(FUNC(famibox_state::famibox_nt_w), this));
-	m_ppu->space(AS_PROGRAM).install_read_bank(0x0000, 0x1fff, "ppubank1");
-
 	famicombox_bankswitch(0);
-
 
 	m_attract_timer = machine().scheduler().timer_alloc(timer_expired_delegate(FUNC(famibox_state::famicombox_attract_timer_callback),this));
 	m_gameplay_timer = machine().scheduler().timer_alloc(timer_expired_delegate(FUNC(famibox_state::famicombox_gameplay_timer_callback),this));
@@ -544,30 +528,28 @@ void famibox_state::machine_start()
 	m_coins = 0;
 }
 
-static MACHINE_CONFIG_START( famibox, famibox_state )
+void famibox_state::famibox(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", N2A03, N2A03_DEFAULTCLOCK)
-	MCFG_CPU_PROGRAM_MAP(famibox_map)
+	N2A03(config, m_maincpu, NTSC_APU_CLOCK);
+	m_maincpu->set_addrmap(AS_PROGRAM, &famibox_state::famibox_map);
 
 	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_REFRESH_RATE(60)
-	MCFG_SCREEN_SIZE(32*8, 262)
-	MCFG_SCREEN_VISIBLE_AREA(0*8, 32*8-1, 0*8, 30*8-1)
-	MCFG_SCREEN_UPDATE_DRIVER(famibox_state, screen_update_famibox)
-	MCFG_SCREEN_PALETTE("palette")
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_RASTER));
+	screen.set_refresh_hz(60);
+	screen.set_size(32*8, 262);
+	screen.set_visarea(0*8, 32*8-1, 0*8, 30*8-1);
+	screen.set_screen_update("ppu", FUNC(ppu2c0x_device::screen_update));
 
-	MCFG_GFXDECODE_ADD("gfxdecode", "palette", famibox)
-	MCFG_PALETTE_ADD("palette", 8*4*16)
-	MCFG_PALETTE_INIT_OWNER(famibox_state, famibox)
-
-	MCFG_PPU2C04_ADD("ppu")
-	MCFG_PPU2C0X_CPU("maincpu")
-	MCFG_PPU2C0X_SET_NMI(famibox_state, ppu_irq)
+	PPU_2C02(config, m_ppu);
+	m_ppu->set_addrmap(0, &famibox_state::famibox_ppu_map);
+	m_ppu->set_cpu_tag(m_maincpu);
+	m_ppu->int_callback().set_inputline(m_maincpu, INPUT_LINE_NMI);
 
 	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_MONO("mono")
-MACHINE_CONFIG_END
+	SPEAKER(config, "mono").front_center();
+	m_maincpu->add_route(ALL_OUTPUTS, "mono", 0.50);
+}
 
 
 ROM_START(famibox)
@@ -607,4 +589,7 @@ ROM_START(famibox)
 
 ROM_END
 
-GAME( 1986,  famibox,      0,  famibox,  famibox, driver_device,  0, ROT0, "Nintendo", "FamicomBox", MACHINE_IMPERFECT_GRAPHICS | MACHINE_IMPERFECT_SOUND)
+} // Anonymous namespace
+
+
+GAME( 1986, famibox, 0, famibox, famibox, famibox_state, empty_init, ROT0, "Nintendo", "FamicomBox", MACHINE_IMPERFECT_GRAPHICS | MACHINE_IMPERFECT_SOUND)

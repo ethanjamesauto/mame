@@ -1,45 +1,49 @@
-// license:BSD-3-Clause
-// copyright-holders:Angelo Salese
+// license:<license_opt>
+// copyright-holders:<author_name>
 /***************************************************************************
 
-Template for skeleton device
+<device_longname>
 
 ***************************************************************************/
 
 #include "emu.h"
-#include "machine/xxx.h"
-
+#include "<device_classname>.h"
 
 
 //**************************************************************************
 //  GLOBAL VARIABLES
 //**************************************************************************
 
+
 // device type definition
-const device_type XXX = &device_creator<xxx_device>;
+DEFINE_DEVICE_TYPE(<device_typename>, <device_classname>_device, "<device_classname>", "<device_longname>")
 
 
 //**************************************************************************
 //  LIVE DEVICE
 //**************************************************************************
 
+
 //-------------------------------------------------
-//  xxx_device - constructor
+//  <device_classname>_device - constructor
 //-------------------------------------------------
 
-xxx_device::xxx_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: device_t(mconfig, XXX, "xxx_longname", tag, owner, clock, "xxx", __FILE__)
+
+<device_classname>_device::<device_classname>_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: device_t(mconfig, <device_typename>, tag, owner, clock)
 {
 }
 
 
 //-------------------------------------------------
-//  device_validity_check - perform validity checks
-//  on this device
+//  device_add_mconfig - device-specific machine
+//  configuration addiitons
 //-------------------------------------------------
 
-void xxx_device::device_validity_check(validity_checker &valid) const
+
+void <device_classname>_device::device_add_mconfig(machine_config &config)
 {
+	//DEVICE(config, ...);
 }
 
 
@@ -47,7 +51,8 @@ void xxx_device::device_validity_check(validity_checker &valid) const
 //  device_start - device-specific startup
 //-------------------------------------------------
 
-void xxx_device::device_start()
+
+void <device_classname>_device::device_start()
 {
 }
 
@@ -56,7 +61,8 @@ void xxx_device::device_start()
 //  device_reset - device-specific reset
 //-------------------------------------------------
 
-void xxx_device::device_reset()
+
+void <device_classname>_device::device_reset()
 {
 }
 
@@ -65,11 +71,13 @@ void xxx_device::device_reset()
 //  READ/WRITE HANDLERS
 //**************************************************************************
 
-READ8_MEMBER( xxx_device::read )
+
+uint8_t <device_classname>_device::read(address_space &space, offs_t offset, uint8_t mem_mask = ~0)
 {
 	return 0;
 }
 
-WRITE8_MEMBER( xxx_device::write )
+
+void <device_classname>_device::write(address_space &space, offs_t offset, uint8_t data, uint8_t mem_mask = ~0)
 {
 }

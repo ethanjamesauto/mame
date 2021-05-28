@@ -1,118 +1,143 @@
-// license:GPL-2.0+
+// license:BSD-3-Clause
 // copyright-holders:Couriersud
 /*
- * nld_7490.c
+ * nld_7490.cpp
+ *
+ *  DM7490: Decade Counters
+ *
+ *          +--------------+
+ *        B |1     ++    14| A
+ *      R01 |2           13| NC
+ *      R02 |3           12| QA
+ *       NC |4    7490   11| QD
+ *      VCC |5           10| GND
+ *      R91 |6            9| QB
+ *      R92 |7            8| QC
+ *          +--------------+
+ *
+ *          Counter Sequence
+ *
+ *          +-------++----+----+----+----+
+ *          | COUNT || QD | QC | QB | QA |
+ *          +=======++====+====+====+====+
+ *          |    0  ||  0 |  0 |  0 |  0 |
+ *          |    1  ||  0 |  0 |  0 |  1 |
+ *          |    2  ||  0 |  0 |  1 |  0 |
+ *          |    3  ||  0 |  0 |  1 |  1 |
+ *          |    4  ||  0 |  1 |  0 |  0 |
+ *          |    5  ||  0 |  1 |  0 |  1 |
+ *          |    6  ||  0 |  1 |  1 |  0 |
+ *          |    7  ||  0 |  1 |  1 |  1 |
+ *          |    8  ||  1 |  0 |  0 |  0 |
+ *          |    9  ||  1 |  0 |  0 |  1 |
+ *          +-------++----+----+----+----+
+ *
+ *          Note A Output QA is connected to input B for BCD count
+ *
+ *          Reset Count Function table
+ *
+ *          +-----+-----+-----+-----++----+----+----+----+
+ *          | R01 | R02 | R91 | R92 || QD | QC | QB | QA |
+ *          +=====+=====+=====+=====++====+====+====+====+
+ *          |  1  |  1  |  0  |  X  ||  0 |  0 |  0 |  0 |
+ *          |  1  |  1  |  X  |  0  ||  0 |  0 |  0 |  0 |
+ *          |  X  |  X  |  1  |  1  ||  1 |  0 |  0 |  1 |
+ *          |  X  |  0  |  X  |  0  ||       COUNT       |
+ *          |  0  |  X  |  0  |  X  ||       COUNT       |
+ *          |  0  |  X  |  X  |  0  ||       COUNT       |
+ *          |  X  |  0  |  0  |  X  ||       COUNT       |
+ *          +-----+-----+-----+-----++----+----+----+----+
+ *
+ *  Naming conventions follow National Semiconductor datasheet
  *
  */
 
-#include "nld_7490.h"
+#include "nl_base.h"
 
-NETLIB_NAMESPACE_DEVICES_START()
+namespace netlist::devices {
 
-NETLIB_START(7490)
-{
-	register_input("A", m_A);
-	register_input("B", m_B);
-	register_input("R1",  m_R1);
-	register_input("R2",  m_R2);
-	register_input("R91", m_R91);
-	register_input("R92", m_R92);
-
-	register_output("QA", m_Q[0]);
-	register_output("QB", m_Q[1]);
-	register_output("QC", m_Q[2]);
-	register_output("QD", m_Q[3]);
-
-	save(NLNAME(m_cnt));
-	save(NLNAME(m_last_A));
-	save(NLNAME(m_last_B));
-
-}
-
-NETLIB_RESET(7490)
-{
-	m_cnt = 0;
-	m_last_A = 0;
-	m_last_B = 0;
-}
-
-static const netlist_time delay[4] =
-{
-		NLTIME_FROM_NS(18),
-		NLTIME_FROM_NS(36) - NLTIME_FROM_NS(18),
-		NLTIME_FROM_NS(54) - NLTIME_FROM_NS(18),
-		NLTIME_FROM_NS(72) - NLTIME_FROM_NS(18)};
-
-NETLIB_UPDATE(7490)
-{
-	const netlist_sig_t new_A = INPLOGIC(m_A);
-	const netlist_sig_t new_B = INPLOGIC(m_B);
-
-	if (INPLOGIC(m_R91) & INPLOGIC(m_R92))
+	static constexpr const std::array<netlist_time, 4> delay =
 	{
-		m_cnt = 9;
-		update_outputs();
-	}
-	else if (INPLOGIC(m_R1) & INPLOGIC(m_R2))
+			NLTIME_FROM_NS(18),
+			NLTIME_FROM_NS(36) - NLTIME_FROM_NS(18),
+			NLTIME_FROM_NS(54) - NLTIME_FROM_NS(18),
+			NLTIME_FROM_NS(72) - NLTIME_FROM_NS(18)
+	};
+
+	NETLIB_OBJECT(7490)
 	{
-		m_cnt = 0;
-		update_outputs();
-	}
-	else
-	{
-		if (m_last_A && !new_A)  // High - Low
+		NETLIB_CONSTRUCTOR(7490)
+		, m_A(*this, "A", NETLIB_DELEGATE(inputs))
+		, m_B(*this, "B", NETLIB_DELEGATE(inputs))
+		, m_R1(*this, "R1", NETLIB_DELEGATE(inputs))
+		, m_R2(*this, "R2", NETLIB_DELEGATE(inputs))
+		, m_R91(*this, "R91", NETLIB_DELEGATE(inputs))
+		, m_R92(*this, "R92", NETLIB_DELEGATE(inputs))
+		, m_cnt(*this, "m_cnt", 0)
+		, m_last_A(*this, "m_last_A", 0)
+		, m_last_B(*this, "m_last_B", 0)
+		, m_Q(*this, {"QA", "QB", "QC", "QD"})
+		, m_power_pins(*this)
 		{
-			m_cnt ^= 1;
-			OUTLOGIC(m_Q[0], m_cnt & 1, delay[0]);
 		}
-		if (m_last_B && !new_B)  // High - Low
+
+	private:
+		NETLIB_HANDLERI(inputs)
 		{
-			m_cnt += 2;
-			if (m_cnt >= 10)
-				m_cnt &= 1; /* Output A is not reset! */
-			update_outputs();
+			const netlist_sig_t new_A = m_A();
+			const netlist_sig_t new_B = m_B();
+
+			if (m_R91() & m_R92())
+			{
+				m_cnt = 9;
+				m_Q.push(9, delay);
+			}
+			else if (m_R1() & m_R2())
+			{
+				m_cnt = 0;
+				m_Q.push(0, delay);
+			}
+			else
+			{
+				if (m_last_A && !new_A)  // High - Low
+				{
+					m_cnt ^= 1;
+					m_Q[0].push(m_cnt & 1, delay[0]);
+				}
+				if (m_last_B && !new_B)  // High - Low
+				{
+					m_cnt += 2;
+					if (m_cnt >= 10)
+						m_cnt &= 1; /* Output A is not reset! */
+					m_Q.push(m_cnt, delay);
+				}
+			}
+			m_last_A = new_A;
+			m_last_B = new_B;
 		}
-	}
-	m_last_A = new_A;
-	m_last_B = new_B;
-}
 
-NETLIB_FUNC_VOID(7490, update_outputs, (void))
-{
-	for (int i=0; i<4; i++)
-		OUTLOGIC(m_Q[i], (m_cnt >> i) & 1, delay[i]);
-}
+		NETLIB_RESETI()
+		{
+			m_cnt = 0;
+			m_last_A = 0;
+			m_last_B = 0;
+		}
 
-NETLIB_START(7490_dip)
-{
-	NETLIB_NAME(7490)::start();
-	register_subalias("1", m_B);
-	register_subalias("2", m_R1);
-	register_subalias("3", m_R2);
+		logic_input_t m_A;
+		logic_input_t m_B;
+		logic_input_t m_R1;
+		logic_input_t m_R2;
+		logic_input_t m_R91;
+		logic_input_t m_R92;
 
-	// register_subalias("4", ); --> NC
-	// register_subalias("5", ); --> VCC
-	register_subalias("6", m_R91);
-	register_subalias("7", m_R92);
+		state_var_u8 m_cnt;
+		state_var<netlist_sig_t> m_last_A;
+		state_var<netlist_sig_t> m_last_B;
 
-	register_subalias("8", m_Q[2]);
-	register_subalias("9", m_Q[1]);
-	// register_subalias("10", ); --> GND
-	register_subalias("11", m_Q[3]);
-	register_subalias("12", m_Q[0]);
-	// register_subalias("13", ); --> NC
-	register_subalias("14", m_A);
+		object_array_t<logic_output_t, 4> m_Q;
+		nld_power_pins m_power_pins;
+	};
 
-}
+	NETLIB_DEVICE_IMPL(7490,     "TTL_7490",        "+A,+B,+R1,+R2,+R91,+R92,@VCC,@GND")
 
-NETLIB_UPDATE(7490_dip)
-{
-	NETLIB_NAME(7490)::update();
-}
-
-NETLIB_RESET(7490_dip)
-{
-	NETLIB_NAME(7490)::reset();
-}
-
-NETLIB_NAMESPACE_DEVICES_END()
+} // namespace netlist::devices

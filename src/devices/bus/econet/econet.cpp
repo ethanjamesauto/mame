@@ -6,6 +6,7 @@
 
 **********************************************************************/
 
+#include "emu.h"
 #include "econet.h"
 
 
@@ -25,8 +26,8 @@ static const char *const SIGNAL_NAME[] = { "CLK", "DATA" };
 //  DEVICE DEFINITIONS
 //**************************************************************************
 
-const device_type ECONET = &device_creator<econet_device>;
-const device_type ECONET_SLOT = &device_creator<econet_slot_device>;
+DEFINE_DEVICE_TYPE(ECONET,      econet_device,      "econet",      "Econet")
+DEFINE_DEVICE_TYPE(ECONET_SLOT, econet_slot_device, "econet_slot", "Econet station")
 
 
 
@@ -39,7 +40,7 @@ const device_type ECONET_SLOT = &device_creator<econet_slot_device>;
 //-------------------------------------------------
 
 device_econet_interface::device_econet_interface(const machine_config &mconfig, device_t &device) :
-	device_slot_card_interface(mconfig, device), m_next(nullptr), m_econet(nullptr), m_address(0)
+	device_interface(device, "econet"), m_econet(nullptr), m_address(0), m_next(nullptr)
 {
 }
 
@@ -53,21 +54,11 @@ device_econet_interface::device_econet_interface(const machine_config &mconfig, 
 //  econet_slot_device - constructor
 //-------------------------------------------------
 
-econet_slot_device::econet_slot_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock) :
-	device_t(mconfig, ECONET_SLOT, "Econet station", tag, owner, clock, "econet_slot", __FILE__),
-	device_slot_interface(mconfig, *this), m_address(0), m_econet(nullptr)
+econet_slot_device::econet_slot_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock) :
+	device_t(mconfig, ECONET_SLOT, tag, owner, clock),
+	device_slot_interface(mconfig, *this),
+	m_address(0), m_econet(*this, finder_base::DUMMY_TAG)
 {
-}
-
-
-//-------------------------------------------------
-//  static_set_slot -
-//-------------------------------------------------
-
-void econet_slot_device::static_set_slot(device_t &device, int address)
-{
-	econet_slot_device &econet_card = dynamic_cast<econet_slot_device &>(device);
-	econet_card.m_address = address;
 }
 
 
@@ -77,7 +68,6 @@ void econet_slot_device::static_set_slot(device_t &device, int address)
 
 void econet_slot_device::device_start()
 {
-	m_econet = machine().device<econet_device>(ECONET_TAG);
 	device_econet_interface *dev = dynamic_cast<device_econet_interface *>(get_card_device());
 	if (dev) m_econet->add_device(get_card_device(), m_address);
 }
@@ -193,8 +183,8 @@ inline int econet_device::get_signal(int signal)
 //  econet_device - constructor
 //-------------------------------------------------
 
-econet_device::econet_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock) :
-	device_t(mconfig, ECONET, "Econet", tag, owner, clock, "econet", __FILE__),
+econet_device::econet_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock) :
+	device_t(mconfig, ECONET, tag, owner, clock),
 	m_write_clk(*this),
 	m_write_data(*this)
 {
@@ -233,7 +223,7 @@ void econet_device::device_stop()
 
 void econet_device::add_device(device_t *target, int address)
 {
-	auto entry = global_alloc(daisy_entry(target));
+	auto entry = new daisy_entry(target);
 
 	entry->m_interface->m_econet = this;
 	entry->m_interface->m_address = address;
@@ -264,7 +254,7 @@ econet_device::daisy_entry::daisy_entry(device_t *device) :
 //  clk_w -
 //-------------------------------------------------
 
-WRITE_LINE_MEMBER( econet_device::clk_w )
+WRITE_LINE_MEMBER( econet_device::host_clk_w )
 {
 	set_signal(this, CLK, state);
 }
@@ -274,7 +264,7 @@ WRITE_LINE_MEMBER( econet_device::clk_w )
 //  data_w -
 //-------------------------------------------------
 
-WRITE_LINE_MEMBER( econet_device::data_w )
+WRITE_LINE_MEMBER( econet_device::host_data_w )
 {
 	set_signal(this, DATA, state);
 }
@@ -307,7 +297,8 @@ void econet_device::data_w(device_t *device, int state)
 // slot devices
 #include "e01.h"
 
-SLOT_INTERFACE_START( econet_devices )
-	SLOT_INTERFACE("e01", E01)
-	SLOT_INTERFACE("e01s", E01S)
-SLOT_INTERFACE_END
+void econet_devices(device_slot_interface &device)
+{
+	device.option_add("e01",  ECONET_E01);
+	device.option_add("e01s", ECONET_E01S);
+}

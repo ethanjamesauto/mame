@@ -9,14 +9,11 @@
 
 #include "emu.h"
 #include "includes/mz700.h"
+
 #include "cpu/z80/z80.h"
-#include "machine/pit8253.h"
-#include "machine/i8255.h"
-#include "machine/z80pio.h"
 #include "machine/74145.h"
-#include "sound/speaker.h"
-#include "imagedev/cassette.h"
-#include "machine/ram.h"
+#include "screen.h"
+
 
 #ifndef VERBOSE
 #define VERBOSE 1
@@ -37,18 +34,18 @@
     INITIALIZATION
 ***************************************************************************/
 
-DRIVER_INIT_MEMBER(mz_state,mz700)
+void mz_state::init_mz700()
 {
-	m_mz700 = TRUE;
-	m_mz700_mode = TRUE;
+	m_mz700 = true;
+	m_mz700_mode = true;
 
-	m_videoram = std::make_unique<UINT8[]>(0x1000);
-	memset(m_videoram.get(), 0, sizeof(UINT8) * 0x1000);
+	m_videoram = std::make_unique<uint8_t[]>(0x1000);
+	memset(m_videoram.get(), 0, sizeof(uint8_t) * 0x1000);
 	m_colorram = m_videoram.get() + 0x800;
 
 	m_p_chargen = memregion("cgrom")->base();
-	UINT8 *rom = memregion("monitor")->base();
-	UINT8 *ram = m_ram->pointer();
+	uint8_t *rom = memregion("monitor")->base();
+	uint8_t *ram = m_ram->pointer();
 	membank("bankr0")->configure_entry(0, &ram[0]); // ram
 	membank("bankr0")->configure_entry(1, &rom[0]); // rom
 	membank("bankw0")->configure_entry(0, &ram[0]); // ram
@@ -56,25 +53,26 @@ DRIVER_INIT_MEMBER(mz_state,mz700)
 	membank("bankd")->configure_entry(1, m_videoram.get()); // vram
 }
 
-DRIVER_INIT_MEMBER(mz_state,mz800)
+void mz_state::init_mz800()
 {
-	m_mz700 = FALSE;
-	m_mz700_mode = true;//FALSE;
+	m_mz700 = false;
+	m_mz700_mode = true;//false;
 
 	/* video ram */
-	m_videoram = std::make_unique<UINT8[]>(0x4000);
-	memset(m_videoram.get(), 0, sizeof(UINT8) * 0x4000);
+	m_videoram = std::make_unique<uint8_t[]>(0x4000);
+	memset(m_videoram.get(), 0, sizeof(uint8_t) * 0x4000);
 	m_colorram = m_videoram.get() + 0x800;
 
 	/* character generator ram */
-	m_cgram = std::make_unique<UINT8[]>(0x1000);
-	memset(m_cgram.get(), 0, sizeof(UINT8) * 0x1000);
+	m_cgram = std::make_unique<uint8_t[]>(0x1000);
+	memset(m_cgram.get(), 0, sizeof(uint8_t) * 0x1000);
 
-	m_p_chargen = memregion("cgrom")->base();
-	if (!m_p_chargen)
+	if (memregion("cgrom"))
+		m_p_chargen = memregion("cgrom")->base();
+	else
 		m_p_chargen = m_cgram.get();
-	UINT8 *rom = memregion("monitor")->base();
-	UINT8 *ram = m_ram->pointer();
+	uint8_t *rom = memregion("monitor")->base();
+	uint8_t *ram = m_ram->pointer();
 	// configure banks (0 = RAM in all cases)
 	membank("bankr0")->configure_entry(0, &ram[0]); // ram
 	membank("bankr0")->configure_entry(1, &rom[0]); // rom
@@ -92,7 +90,11 @@ DRIVER_INIT_MEMBER(mz_state,mz800)
 void mz_state::machine_start()
 {
 	/* reset memory map to defaults */
-	mz700_bank_4_w(m_maincpu->space(AS_IO), 0, 0);
+	mz700_bank_4_w(0);
+
+	m_cursor_bit = 0;
+	m_speaker_level = 0;
+	m_prev_state = 0;
 }
 
 MACHINE_RESET_MEMBER( mz_state, mz700 )
@@ -120,20 +122,20 @@ MACHINE_RESET_MEMBER( mz_state, mz800 )
     MMIO
 ***************************************************************************/
 
-READ8_MEMBER(mz_state::mz700_e008_r)
+uint8_t mz_state::mz700_e008_r()
 {
-	UINT8 data = 0;
+	uint8_t data = 0;
 
 	data |= m_other_timer;
 	data |= ioport("JOY")->read();
-	data |= machine().first_screen()->hblank() << 7;
+	data |= m_screen->hblank() << 7;
 
 	LOG(1, "mz700_e008_r", ("%02X\n", data), machine());
 
 	return data;
 }
 
-WRITE8_MEMBER(mz_state::mz700_e008_w)
+void mz_state::mz700_e008_w(uint8_t data)
 {
 	m_pit->write_gate0(BIT(data, 0));
 }
@@ -143,7 +145,7 @@ WRITE8_MEMBER(mz_state::mz700_e008_w)
     BANK SWITCHING
 ***************************************************************************/
 
-READ8_MEMBER(mz_state::mz800_bank_0_r)
+uint8_t mz_state::mz800_bank_0_r()
 {
 	//address_space &spc = m_maincpu->space(AS_PROGRAM);
 
@@ -186,7 +188,7 @@ READ8_MEMBER(mz_state::mz800_bank_0_r)
 	return 0xff;
 }
 
-WRITE8_MEMBER(mz_state::mz700_bank_0_w)
+void mz_state::mz700_bank_0_w(uint8_t data)
 {
 	//address_space &spc = m_maincpu->space(AS_PROGRAM);
 
@@ -195,7 +197,7 @@ WRITE8_MEMBER(mz_state::mz700_bank_0_w)
 	membank("bankr0")->set_entry(0); // ram
 }
 
-WRITE8_MEMBER(mz_state::mz800_bank_0_w)
+void mz_state::mz800_bank_0_w(uint8_t data)
 {
 	//address_space &spc = m_maincpu->space(AS_PROGRAM);
 
@@ -205,7 +207,7 @@ WRITE8_MEMBER(mz_state::mz800_bank_0_w)
 	membank("bankr0")->set_entry(0); // ram
 }
 
-READ8_MEMBER(mz_state::mz800_bank_1_r)
+uint8_t mz_state::mz800_bank_1_r()
 {
 	//address_space &spc = m_maincpu->space(AS_PROGRAM);
 
@@ -232,7 +234,7 @@ READ8_MEMBER(mz_state::mz800_bank_1_r)
 	return 0xff;
 }
 
-WRITE8_MEMBER(mz_state::mz700_bank_1_w)
+void mz_state::mz700_bank_1_w(uint8_t data)
 {
 	//address_space &spc = m_maincpu->space(AS_PROGRAM);
 	membank("bankd")->set_entry(0); // ram
@@ -254,7 +256,7 @@ WRITE8_MEMBER(mz_state::mz700_bank_1_w)
 				//membank("bank7")->set_base(m_ram->pointer() + 0xd000);
 				m_bankf->set_bank(0); //ram
 			}
-			m_mz700_ram_vram = FALSE;
+			m_mz700_ram_vram = false;
 		}
 	}
 	else
@@ -265,12 +267,12 @@ WRITE8_MEMBER(mz_state::mz700_bank_1_w)
 			//spc.install_readwrite_bank(0xe000, 0xffff, "bank8");
 			//membank("bank8")->set_base(m_ram->pointer() + 0xe000);
 			m_bankf->set_bank(0); //ram
-			m_mz800_ram_monitor = FALSE;
+			m_mz800_ram_monitor = false;
 		}
 	}
 }
 
-WRITE8_MEMBER(mz_state::mz700_bank_2_w)
+void mz_state::mz700_bank_2_w(uint8_t data)
 {
 	//address_space &spc = m_maincpu->space(AS_PROGRAM);
 
@@ -281,7 +283,7 @@ WRITE8_MEMBER(mz_state::mz700_bank_2_w)
 
 }
 
-WRITE8_MEMBER(mz_state::mz700_bank_3_w)
+void mz_state::mz700_bank_3_w(uint8_t data)
 {
 	//address_space &spc = m_maincpu->space(AS_PROGRAM);
 
@@ -302,7 +304,7 @@ WRITE8_MEMBER(mz_state::mz700_bank_3_w)
 				//membank("bank9")->set_base(m_colorram);
 				membank("bankd")->set_entry(1);
 			}
-			m_mz700_ram_vram = TRUE;
+			m_mz700_ram_vram = true;
 
 			/* switch in memory mapped i/o devices */
 			if (m_mz700)
@@ -324,20 +326,20 @@ WRITE8_MEMBER(mz_state::mz700_bank_3_w)
 			//spc.nop_write(0xe000, 0xffff);
 			//membank("bank8")->set_base(memregion("monitor")->base() + 0x2000);
 			m_bankf->set_bank(1); // devices + rom
-			m_mz800_ram_monitor = TRUE;
+			m_mz800_ram_monitor = true;
 		}
 	}
 }
 
-WRITE8_MEMBER(mz_state::mz700_bank_4_w)
+void mz_state::mz700_bank_4_w(uint8_t data)
 {
 	//address_space &spc = m_maincpu->space(AS_PROGRAM);
 
 	if (m_mz700_mode)
 	{
-		m_mz700_ram_lock = FALSE;       /* reset lock */
-		mz700_bank_2_w(space, 0, 0);    /* switch in monitor rom */
-		mz700_bank_3_w(space, 0, 0);    /* switch in videoram, colorram, and mmio */
+		m_mz700_ram_lock = false;       /* reset lock */
+		mz700_bank_2_w(0);    /* switch in monitor rom */
+		mz700_bank_3_w(0);    /* switch in videoram, colorram, and mmio */
 
 		if (!m_mz700)
 		{
@@ -391,20 +393,20 @@ WRITE8_MEMBER(mz_state::mz700_bank_4_w)
 		//spc.nop_write(0xe000, 0xffff);
 		//membank("bank8")->set_base(memregion("monitor")->base() + 0x2000);
 		m_bankf->set_bank(1); // devices + rom
-		m_mz800_ram_monitor = TRUE;
+		m_mz800_ram_monitor = true;
 
-		m_mz800_ram_lock = FALSE; /* reset lock? */
+		m_mz800_ram_lock = false; /* reset lock? */
 	}
 }
 
-WRITE8_MEMBER(mz_state::mz700_bank_5_w)
+void mz_state::mz700_bank_5_w(uint8_t data)
 {
 	//address_space &spc = m_maincpu->space(AS_PROGRAM);
 
 	if (m_mz700_mode)
 	{
 		/* prevent access from 0xd000 to 0xffff */
-		m_mz700_ram_lock = TRUE;
+		m_mz700_ram_lock = true;
 		if (m_mz700)
 			m_banke->set_bank(2);
 		else
@@ -415,33 +417,33 @@ WRITE8_MEMBER(mz_state::mz700_bank_5_w)
 	else
 	{
 		/* prevent access from 0xe000 to 0xffff */
-		m_mz800_ram_lock = TRUE;
+		m_mz800_ram_lock = true;
 		//spc.nop_readwrite(0xe000, 0xffff);
 		m_bankf->set_bank(2);
 	}
 }
 
-WRITE8_MEMBER(mz_state::mz700_bank_6_w)
+void mz_state::mz700_bank_6_w(uint8_t data)
 {
 	if (m_mz700_mode)
 	{
-		m_mz700_ram_lock = FALSE;
+		m_mz700_ram_lock = false;
 
 		/* restore access */
 		if (m_mz700_ram_vram)
-			mz700_bank_3_w(space, 0, 0);
+			mz700_bank_3_w(0);
 		else
-			mz700_bank_1_w(space, 0, 0);
+			mz700_bank_1_w(0);
 	}
 	else
 	{
-		m_mz800_ram_lock = FALSE;
+		m_mz800_ram_lock = false;
 
 		/* restore access from 0xe000 to 0xffff */
 		if (m_mz800_ram_monitor)
-			mz700_bank_3_w(space, 0, 0);
+			mz700_bank_3_w(0);
 		else
-			mz700_bank_1_w(space, 0, 0);
+			mz700_bank_1_w(0);
 	}
 }
 
@@ -471,17 +473,15 @@ WRITE_LINE_MEMBER(mz_state::pit_irq_2)
     8255 PPI
 ***************************************************************************/
 
-READ8_MEMBER(mz_state::pio_port_b_r)
+uint8_t mz_state::pio_port_b_r()
 {
-	device_t *device = machine().device("ls145");
-	int key_line = dynamic_cast<ttl74145_device *>(device)->read();
+	const int key_line = m_ls145->read();
 	const char *const keynames[10] = { "ROW0", "ROW1", "ROW2", "ROW3", "ROW4", "ROW5", "ROW6", "ROW7", "ROW8", "ROW9" };
-	int i;
-	UINT8 res = 0;
+	uint8_t res = 0;
 
-	for(i=0;i<10;i++)
+	for (int i = 0; i < 10; i++)
 	{
-		if(key_line & (1 << i))
+		if (key_line & (1 << i))
 			res |= ioport(keynames[i])->read();
 	}
 
@@ -494,9 +494,9 @@ READ8_MEMBER(mz_state::pio_port_b_r)
  * bit 5 in     tape data (RDATA)
  * bit 4 in     motor (1 = on)
  */
-READ8_MEMBER(mz_state::pio_port_c_r)
+uint8_t mz_state::pio_port_c_r()
 {
-	UINT8 data = 0;
+	uint8_t data = 0;
 
 	/* note: this is actually connected to Q output of the motor-control flip-flop (see below) */
 	if ((m_cassette->get_state() & CASSETTE_MASK_UISTATE) != CASSETTE_STOPPED)
@@ -505,8 +505,8 @@ READ8_MEMBER(mz_state::pio_port_c_r)
 	if ((m_cassette)->input() > 0.0038)
 		data |= 0x20;       /* set the RDATA status */
 
-	data |= m_cursor_timer << 6;
-	data |= machine().first_screen()->vblank() << 7;
+	data |= m_cursor_bit << 6;
+	data |= m_screen->vblank() << 7;
 
 	LOG(2,"mz700_pio_port_c_r",("%02X\n", data),machine());
 
@@ -514,22 +514,19 @@ READ8_MEMBER(mz_state::pio_port_c_r)
 }
 
 
-WRITE8_MEMBER(mz_state::pio_port_a_w)
+void mz_state::pio_port_a_w(uint8_t data)
 {
-	device_t *device = machine().device("ls145");
-	timer_device *timer = machine().device<timer_device>("cursor");
-
 	LOG(2,"mz700_pio_port_a_w",("%02X\n", data),machine());
 
 	/* the ls145 is connected to PA0-PA3 */
-	dynamic_cast<ttl74145_device *>(device)->write(data & 0x0f);
+	m_ls145->write(data & 0x0f);
 
 	/* ne556 reset is connected to PA7 */
-	timer->enable(BIT(data, 7));
+	m_cursor_timer->enable(BIT(data, 7));
 }
 
 
-WRITE8_MEMBER(mz_state::pio_port_c_w)
+void mz_state::pio_port_c_w(uint8_t data)
 {
 	/*
 	 * bit 3 out    motor control (0 = on)
@@ -538,8 +535,8 @@ WRITE8_MEMBER(mz_state::pio_port_c_w)
 	 * bit 0 out    unused
 	 */
 
-//  UINT8 state = cassette_get_state(m_cassette);
-//  UINT8 action = ((~pio_port_c_output & 8) & (data & 8));     /* detect low-to-high transition */
+//  uint8_t state = cassette_get_state(m_cassette);
+//  uint8_t action = ((~pio_port_c_output & 8) & (data & 8));     /* detect low-to-high transition */
 
 	/* The motor control circuit consists of a resistor, capacitor, invertor, nand-gate, and D flip-flop.
 	    The sense input from the cassette player goes low whenever play, rewind or fast-forward is pressed.
@@ -569,8 +566,8 @@ WRITE8_MEMBER(mz_state::pio_port_c_w)
  *
  ******************************************************************************/
 
-//static UINT8 mz800_display_mode = 0;
-//static UINT8 mz800_port_e8 = 0;
+//static uint8_t mz800_display_mode = 0;
+//static uint8_t mz800_port_e8 = 0;
 
 
 /***************************************************************************
@@ -592,37 +589,37 @@ WRITE_LINE_MEMBER(mz_state::write_centronics_perror)
 	m_centronics_perror = state;
 }
 
-READ8_MEMBER(mz_state::mz800_z80pio_port_a_r)
+uint8_t mz_state::mz800_z80pio_port_a_r()
 {
-	UINT8 result = 0;
+	uint8_t result = 0;
 
 	result |= m_centronics_busy;
 	result |= m_centronics_perror << 1;
-	result |= machine().first_screen()->hblank() << 5;
+	result |= m_screen->hblank() << 5;
 
 	return result;
 }
 
-WRITE8_MEMBER(mz_state::mz800_z80pio_port_a_w)
+void mz_state::mz800_z80pio_port_a_w(uint8_t data)
 {
 	m_centronics->write_init(BIT(data, 6));
 	m_centronics->write_strobe(BIT(data, 7));
 }
 
 /* port CE */
-READ8_MEMBER(mz_state::mz800_crtc_r)
+uint8_t mz_state::mz800_crtc_r()
 {
-	UINT8 data = 0x00;
+	uint8_t data = 0x00;
 	LOG(1,"mz800_crtc_r",("%02X\n",data),machine());
 	return data;
 }
 
 
 /* port EA */
-READ8_MEMBER(mz_state::mz800_ramdisk_r)
+uint8_t mz_state::mz800_ramdisk_r()
 {
-	UINT8 *mem = memregion("user1")->base();
-	UINT8 data = mem[m_mz800_ramaddr];
+	uint8_t *mem = memregion("user1")->base();
+	uint8_t data = mem[m_mz800_ramaddr];
 	LOG(2,"mz800_ramdisk_r",("[%04X] -> %02X\n", m_mz800_ramaddr, data),machine());
 	if (m_mz800_ramaddr++ == 0)
 		LOG(1,"mz800_ramdisk_r",("address wrap 0000\n"),machine());
@@ -630,13 +627,13 @@ READ8_MEMBER(mz_state::mz800_ramdisk_r)
 }
 
 /* port CC */
-WRITE8_MEMBER(mz_state::mz800_write_format_w)
+void mz_state::mz800_write_format_w(uint8_t data)
 {
 	LOG(1,"mz800_write_format_w",("%02X\n", data),machine());
 }
 
 /* port CD */
-WRITE8_MEMBER(mz_state::mz800_read_format_w)
+void mz_state::mz800_read_format_w(uint8_t data)
 {
 	LOG(1,"mz800_read_format_w",("%02X\n", data),machine());
 }
@@ -647,7 +644,7 @@ WRITE8_MEMBER(mz_state::mz800_read_format_w)
  * bit 1    1: 4bpp/2bpp        0: 2bpp/1bpp
  * bit 0    ???
  */
-WRITE8_MEMBER(mz_state::mz800_display_mode_w)
+void mz_state::mz800_display_mode_w(uint8_t data)
 {
 	m_mz700_mode = BIT(data, 3);
 	m_hires_mode = BIT(data, 2);
@@ -663,15 +660,15 @@ WRITE8_MEMBER(mz_state::mz800_display_mode_w)
 }
 
 /* port CF */
-WRITE8_MEMBER(mz_state::mz800_scroll_border_w)
+void mz_state::mz800_scroll_border_w(uint8_t data)
 {
 	LOG(1,"mz800_scroll_border_w",("%02X\n", data),machine());
 }
 
 /* port EA */
-WRITE8_MEMBER(mz_state::mz800_ramdisk_w)
+void mz_state::mz800_ramdisk_w(uint8_t data)
 {
-	UINT8 *mem = memregion("user1")->base();
+	uint8_t *mem = memregion("user1")->base();
 	LOG(2,"mz800_ramdisk_w",("[%04X] <- %02X\n", m_mz800_ramaddr, data),machine());
 	mem[m_mz800_ramaddr] = data;
 	if (m_mz800_ramaddr++ == 0)
@@ -679,14 +676,14 @@ WRITE8_MEMBER(mz_state::mz800_ramdisk_w)
 }
 
 /* port EB */
-WRITE8_MEMBER(mz_state::mz800_ramaddr_w)
+void mz_state::mz800_ramaddr_w(uint8_t data)
 {
 	m_mz800_ramaddr = (m_maincpu->state_int(Z80_BC) & 0xff00) | (data & 0xff);
 	LOG(1,"mz800_ramaddr_w",("%04X\n", m_mz800_ramaddr),machine());
 }
 
 /* port F0 */
-WRITE8_MEMBER(mz_state::mz800_palette_w)
+void mz_state::mz800_palette_w(uint8_t data)
 {
 	if (data & 0x40)
 	{

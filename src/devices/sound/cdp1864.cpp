@@ -21,7 +21,9 @@
 
 */
 
+#include "emu.h"
 #include "cdp1864.h"
+#include "screen.h"
 
 
 
@@ -35,7 +37,7 @@
 #define CDP1864_CYCLES_DMA_ACTIVE   8*8
 #define CDP1864_CYCLES_DMA_WAIT     6*8
 
-const int cdp1864_device::bckgnd[] = { 2, 0, 4, 1 };
+constexpr int cdp1864_device::bckgnd[4];
 
 
 
@@ -44,7 +46,7 @@ const int cdp1864_device::bckgnd[] = { 2, 0, 4, 1 };
 //**************************************************************************
 
 // devices
-const device_type CDP1864 = &device_creator<cdp1864_device>;
+DEFINE_DEVICE_TYPE(CDP1864, cdp1864_device, "cdp1864", "RCA CDP1864")
 
 
 
@@ -56,15 +58,15 @@ const device_type CDP1864 = &device_creator<cdp1864_device>;
 //  cdp1864_device - constructor
 //-------------------------------------------------
 
-cdp1864_device::cdp1864_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: device_t(mconfig, CDP1864, "CDP1864", tag, owner, clock, "cdp1864", __FILE__),
+cdp1864_device::cdp1864_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: device_t(mconfig, CDP1864, tag, owner, clock),
 		device_sound_interface(mconfig, *this),
 		device_video_interface(mconfig, *this),
 		m_read_inlace(*this),
 		m_read_rdata(*this),
 		m_read_bdata(*this),
 		m_read_gdata(*this),
-		m_write_irq(*this),
+		m_write_int(*this),
 		m_write_dma_out(*this),
 		m_write_efx(*this),
 		m_write_hsync(*this),
@@ -79,6 +81,25 @@ cdp1864_device::cdp1864_device(const machine_config &mconfig, const char *tag, d
 
 
 //-------------------------------------------------
+//  device_config_complete - perform any
+//  operations now that the configuration is
+//  complete
+//-------------------------------------------------
+
+void cdp1864_device::device_config_complete()
+{
+	if (!has_screen())
+		return;
+
+	if (!screen().refresh_attoseconds())
+		screen().set_raw(clock(), SCREEN_WIDTH, HBLANK_END, HBLANK_START, TOTAL_SCANLINES, SCANLINE_VBLANK_END, SCANLINE_VBLANK_START);
+
+	if (!screen().has_screen_update())
+		screen().set_screen_update(*this, FUNC(cdp1864_device::screen_update));
+}
+
+
+//-------------------------------------------------
 //  device_start - device-specific startup
 //-------------------------------------------------
 
@@ -89,7 +110,7 @@ void cdp1864_device::device_start()
 	m_read_rdata.resolve_safe(0);
 	m_read_bdata.resolve_safe(0);
 	m_read_gdata.resolve_safe(0);
-	m_write_irq.resolve_safe();
+	m_write_int.resolve_safe();
 	m_write_dma_out.resolve_safe();
 	m_write_efx.resolve_safe();
 	m_write_hsync.resolve_safe();
@@ -98,7 +119,7 @@ void cdp1864_device::device_start()
 	initialize_palette();
 
 	// create sound stream
-	m_stream = machine().sound().stream_alloc(*this, 0, 1, machine().sample_rate());
+	m_stream = stream_alloc(0, 1, SAMPLE_RATE_OUTPUT_ADAPTIVE);
 
 	// allocate timers
 	m_int_timer = timer_alloc(TIMER_INT);
@@ -107,7 +128,7 @@ void cdp1864_device::device_start()
 	m_hsync_timer = timer_alloc(TIMER_HSYNC);
 
 	// find devices
-	m_screen->register_screen_bitmap(m_bitmap);
+	screen().register_screen_bitmap(m_bitmap);
 
 	// register for state saving
 	save_item(NAME(m_disp));
@@ -127,14 +148,14 @@ void cdp1864_device::device_start()
 
 void cdp1864_device::device_reset()
 {
-	m_int_timer->adjust(m_screen->time_until_pos(CDP1864_SCANLINE_INT_START, 0));
-	m_efx_timer->adjust(m_screen->time_until_pos(CDP1864_SCANLINE_EFX_TOP_START, 0));
+	m_int_timer->adjust(screen().time_until_pos(SCANLINE_INT_START, 0));
+	m_efx_timer->adjust(screen().time_until_pos(SCANLINE_EFX_TOP_START, 0));
 	m_dma_timer->adjust(clocks_to_attotime(CDP1864_CYCLES_DMA_START));
 
 	m_disp = 0;
 	m_dmaout = 0;
 
-	m_write_irq(CLEAR_LINE);
+	m_write_int(CLEAR_LINE);
 	m_write_dma_out(CLEAR_LINE);
 	m_write_efx(CLEAR_LINE);
 	m_write_hsync(CLEAR_LINE);
@@ -147,52 +168,52 @@ void cdp1864_device::device_reset()
 
 void cdp1864_device::device_timer(emu_timer &timer, device_timer_id id, int param, void *ptr)
 {
-	int scanline = m_screen->vpos();
+	int scanline = screen().vpos();
 
 	switch (id)
 	{
 	case TIMER_INT:
-		if (scanline == CDP1864_SCANLINE_INT_START)
+		if (scanline == SCANLINE_INT_START)
 		{
 			if (m_disp)
 			{
-				m_write_irq(ASSERT_LINE);
+				m_write_int(ASSERT_LINE);
 			}
 
-			m_int_timer->adjust(m_screen->time_until_pos( CDP1864_SCANLINE_INT_END, 0));
+			m_int_timer->adjust(screen().time_until_pos(SCANLINE_INT_END, 0));
 		}
 		else
 		{
 			if (m_disp)
 			{
-				m_write_irq(CLEAR_LINE);
+				m_write_int(CLEAR_LINE);
 			}
 
-			m_int_timer->adjust(m_screen->time_until_pos(CDP1864_SCANLINE_INT_START, 0));
+			m_int_timer->adjust(screen().time_until_pos(SCANLINE_INT_START, 0));
 		}
 		break;
 
 	case TIMER_EFX:
 		switch (scanline)
 		{
-		case CDP1864_SCANLINE_EFX_TOP_START:
+		case SCANLINE_EFX_TOP_START:
 			m_write_efx(ASSERT_LINE);
-			m_efx_timer->adjust(m_screen->time_until_pos(CDP1864_SCANLINE_EFX_TOP_END, 0));
+			m_efx_timer->adjust(screen().time_until_pos(SCANLINE_EFX_TOP_END, 0));
 			break;
 
-		case CDP1864_SCANLINE_EFX_TOP_END:
+		case SCANLINE_EFX_TOP_END:
 			m_write_efx(CLEAR_LINE);
-			m_efx_timer->adjust(m_screen->time_until_pos(CDP1864_SCANLINE_EFX_BOTTOM_START, 0));
+			m_efx_timer->adjust(screen().time_until_pos(SCANLINE_EFX_BOTTOM_START, 0));
 			break;
 
-		case CDP1864_SCANLINE_EFX_BOTTOM_START:
+		case SCANLINE_EFX_BOTTOM_START:
 			m_write_efx(ASSERT_LINE);
-			m_efx_timer->adjust(m_screen->time_until_pos(CDP1864_SCANLINE_EFX_BOTTOM_END, 0));
+			m_efx_timer->adjust(screen().time_until_pos(SCANLINE_EFX_BOTTOM_END, 0));
 			break;
 
-		case CDP1864_SCANLINE_EFX_BOTTOM_END:
+		case SCANLINE_EFX_BOTTOM_END:
 			m_write_efx(CLEAR_LINE);
-			m_efx_timer->adjust(m_screen->time_until_pos(CDP1864_SCANLINE_EFX_TOP_START, 0));
+			m_efx_timer->adjust(screen().time_until_pos(SCANLINE_EFX_TOP_START, 0));
 			break;
 		}
 		break;
@@ -202,7 +223,7 @@ void cdp1864_device::device_timer(emu_timer &timer, device_timer_id id, int para
 		{
 			if (m_disp)
 			{
-				if (scanline >= CDP1864_SCANLINE_DISPLAY_START && scanline < CDP1864_SCANLINE_DISPLAY_END)
+				if (scanline >= SCANLINE_DISPLAY_START && scanline < SCANLINE_DISPLAY_END)
 				{
 					m_write_dma_out(CLEAR_LINE);
 				}
@@ -216,7 +237,7 @@ void cdp1864_device::device_timer(emu_timer &timer, device_timer_id id, int para
 		{
 			if (m_disp)
 			{
-				if (scanline >= CDP1864_SCANLINE_DISPLAY_START && scanline < CDP1864_SCANLINE_DISPLAY_END)
+				if (scanline >= SCANLINE_DISPLAY_START && scanline < SCANLINE_DISPLAY_END)
 				{
 					m_write_dma_out(ASSERT_LINE);
 				}
@@ -236,36 +257,31 @@ void cdp1864_device::device_timer(emu_timer &timer, device_timer_id id, int para
 //  our sound stream
 //-------------------------------------------------
 
-void cdp1864_device::sound_stream_update(sound_stream &stream, stream_sample_t **inputs, stream_sample_t **outputs, int samples)
+void cdp1864_device::sound_stream_update(sound_stream &stream, std::vector<read_stream_view> const &inputs, std::vector<write_stream_view> &outputs)
 {
-	// reset the output stream
-	memset(outputs[0], 0, samples * sizeof(*outputs[0]));
-
-	INT16 signal = m_signal;
-	stream_sample_t *buffer = outputs[0];
-
-	memset( buffer, 0, samples * sizeof(*buffer) );
+	stream_buffer::sample_t signal = m_signal;
+	auto &buffer = outputs[0];
 
 	if (m_aoe)
 	{
 		double frequency = unscaled_clock() / 8 / 4 / (m_latch + 1) / 2;
-		int rate = machine().sample_rate() / 2;
+		int rate = buffer.sample_rate() / 2;
 
 		/* get progress through wave */
 		int incr = m_incr;
 
 		if (signal < 0)
 		{
-			signal = -0x7fff;
+			signal = -1.0;
 		}
 		else
 		{
-			signal = 0x7fff;
+			signal = 1.0;
 		}
 
-		while( samples-- > 0 )
+		for (int sampindex = 0; sampindex < buffer.samples(); sampindex++)
 		{
-			*buffer++ = signal;
+			buffer.put(sampindex, signal);
 			incr -= frequency;
 			while( incr < 0 )
 			{
@@ -278,6 +294,8 @@ void cdp1864_device::sound_stream_update(sound_stream &stream, stream_sample_t *
 		m_incr = incr;
 		m_signal = signal;
 	}
+	else
+		buffer.fill(0);
 }
 
 
@@ -285,7 +303,7 @@ void cdp1864_device::sound_stream_update(sound_stream &stream, stream_sample_t *
 //  dispon_r -
 //-------------------------------------------------
 
-READ8_MEMBER( cdp1864_device::dispon_r )
+uint8_t cdp1864_device::dispon_r()
 {
 	m_disp = 1;
 
@@ -297,11 +315,11 @@ READ8_MEMBER( cdp1864_device::dispon_r )
 //  dispoff_r -
 //-------------------------------------------------
 
-READ8_MEMBER( cdp1864_device::dispoff_r )
+uint8_t cdp1864_device::dispoff_r()
 {
 	m_disp = 0;
 
-	m_write_irq(CLEAR_LINE);
+	m_write_int(CLEAR_LINE);
 	m_write_dma_out(CLEAR_LINE);
 
 	return 0xff;
@@ -312,7 +330,7 @@ READ8_MEMBER( cdp1864_device::dispoff_r )
 //  step_bgcolor_w -
 //-------------------------------------------------
 
-WRITE8_MEMBER( cdp1864_device::step_bgcolor_w )
+void cdp1864_device::step_bgcolor_w(uint8_t data)
 {
 	m_disp = 1;
 
@@ -325,7 +343,7 @@ WRITE8_MEMBER( cdp1864_device::step_bgcolor_w )
 //  tone_latch_w -
 //-------------------------------------------------
 
-WRITE8_MEMBER( cdp1864_device::tone_latch_w )
+void cdp1864_device::tone_latch_w(uint8_t data)
 {
 	m_latch = data;
 }
@@ -335,13 +353,13 @@ WRITE8_MEMBER( cdp1864_device::tone_latch_w )
 //  dma_w -
 //-------------------------------------------------
 
-WRITE8_MEMBER( cdp1864_device::dma_w )
+void cdp1864_device::dma_w(uint8_t data)
 {
 	int rdata = 1, bdata = 1, gdata = 1;
-	int sx = m_screen->hpos() + 4;
-	int y = m_screen->vpos();
+	int sx = screen().hpos() + 4;
+	int y = screen().vpos();
 
-	if (!m_con)
+	if (m_con)
 	{
 		rdata = m_read_rdata();
 		bdata = m_read_bdata();
@@ -357,7 +375,7 @@ WRITE8_MEMBER( cdp1864_device::dma_w )
 			color = (gdata << 2) | (bdata << 1) | rdata;
 		}
 
-		m_bitmap.pix32(y, sx + x) = m_palette[color];
+		m_bitmap.pix(y, sx + x) = m_palette[color];
 
 		data <<= 1;
 	}
@@ -366,14 +384,16 @@ WRITE8_MEMBER( cdp1864_device::dma_w )
 
 //-------------------------------------------------
 //  con_w - color on write
+//  At start, color is disabled. If the CON
+//  pin is taken low (or pulsed low), color is
+//  enabled. It can only be disabled again by
+//  resetting the chip.
 //-------------------------------------------------
 
-WRITE_LINE_MEMBER( cdp1864_device::con_w )
+void cdp1864_device::con_w(int state)
 {
 	if (!state)
-	{
-		m_con = 0;
-	}
+		m_con = true;
 }
 
 
@@ -381,7 +401,7 @@ WRITE_LINE_MEMBER( cdp1864_device::con_w )
 //  aoe_w - audio output enable write
 //-------------------------------------------------
 
-WRITE_LINE_MEMBER( cdp1864_device::aoe_w )
+void cdp1864_device::aoe_w(int state)
 {
 	if (!state)
 	{
@@ -396,7 +416,7 @@ WRITE_LINE_MEMBER( cdp1864_device::aoe_w )
 //  evs_w - external vertical sync write
 //-------------------------------------------------
 
-WRITE_LINE_MEMBER( cdp1864_device::evs_w )
+void cdp1864_device::evs_w(int state)
 {
 }
 
@@ -405,7 +425,7 @@ WRITE_LINE_MEMBER( cdp1864_device::evs_w )
 //  update_screen -
 //-------------------------------------------------
 
-UINT32 cdp1864_device::screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
+uint32_t cdp1864_device::screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
 {
 	if (m_disp)
 	{
@@ -414,7 +434,7 @@ UINT32 cdp1864_device::screen_update(screen_device &screen, bitmap_rgb32 &bitmap
 	}
 	else
 	{
-		bitmap.fill(rgb_t::black, cliprect);
+		bitmap.fill(rgb_t::black(), cliprect);
 	}
 
 	return 0;
@@ -447,20 +467,20 @@ void cdp1864_device::initialize_palette()
 	for (int i = 0; i < 8; i++)
 	{
 		// foreground colors
-		UINT8 r = 0, g = 0, b = 0;
+		uint8_t r = 0, g = 0, b = 0;
 
-		if (m_chr_r != RES_INF) r = combine_1_weights(color_weights_r, BIT(i, 0));
-		if (m_chr_b != RES_INF) b = combine_1_weights(color_weights_b, BIT(i, 1));
-		if (m_chr_g != RES_INF) g = combine_1_weights(color_weights_g, BIT(i, 2));
+		if (m_chr_r != RES_INF) r = combine_weights(color_weights_r, BIT(i, 0));
+		if (m_chr_b != RES_INF) b = combine_weights(color_weights_b, BIT(i, 1));
+		if (m_chr_g != RES_INF) g = combine_weights(color_weights_g, BIT(i, 2));
 
 		m_palette[i] = rgb_t(r, g, b);
 
 		// background colors
 		r = 0, g = 0, b = 0;
 
-		if (m_chr_r != RES_INF) r = combine_1_weights(color_weights_bkg_r, BIT(i, 0));
-		if (m_chr_b != RES_INF) b = combine_1_weights(color_weights_bkg_b, BIT(i, 1));
-		if (m_chr_g != RES_INF) g = combine_1_weights(color_weights_bkg_g, BIT(i, 2));
+		if (m_chr_r != RES_INF) r = combine_weights(color_weights_bkg_r, BIT(i, 0));
+		if (m_chr_b != RES_INF) b = combine_weights(color_weights_bkg_b, BIT(i, 1));
+		if (m_chr_g != RES_INF) g = combine_weights(color_weights_bkg_g, BIT(i, 2));
 
 		m_palette[i + 8] = rgb_t(r, g, b);
 	}

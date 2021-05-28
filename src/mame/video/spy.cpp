@@ -1,7 +1,9 @@
 // license:BSD-3-Clause
 // copyright-holders:Nicola Salmoria
+
 #include "emu.h"
 #include "includes/spy.h"
+#include "screen.h"
 
 
 /***************************************************************************
@@ -46,7 +48,7 @@ K051960_CB_MEMBER(spy_state::sprite_callback)
 
 ***************************************************************************/
 
-UINT32 spy_state::screen_update_spy(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t spy_state::screen_update_spy(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	m_k052109->tilemap_update();
 

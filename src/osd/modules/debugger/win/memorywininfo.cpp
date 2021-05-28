@@ -6,6 +6,7 @@
 //
 //============================================================
 
+#include "emu.h"
 #include "memorywininfo.h"
 
 #include "debugviewinfo.h"
@@ -16,14 +17,14 @@
 
 
 memorywin_info::memorywin_info(debugger_windows_interface &debugger) :
-	editwin_info(debugger, false, "Memory", NULL),
-	m_combownd(NULL)
+	editwin_info(debugger, false, "Memory", nullptr),
+	m_combownd(nullptr)
 {
 	if (!window())
 		return;
 
-	m_views[0].reset(global_alloc(memoryview_info(debugger, *this, window())));
-	if ((m_views[0] == NULL) || !m_views[0]->is_valid())
+	m_views[0].reset(new memoryview_info(debugger, *this, window()));
+	if ((m_views[0] == nullptr) || !m_views[0]->is_valid())
 	{
 		m_views[0].reset();
 		return;
@@ -177,7 +178,7 @@ void memorywin_info::update_menu()
 {
 	editwin_info::update_menu();
 
-	memoryview_info *const memview = downcast<memoryview_info *>(m_views[0].get());
+	auto *const memview = downcast<memoryview_info *>(m_views[0].get());
 	HMENU const menu = GetMenu(window());
 	CheckMenuItem(menu, ID_1_BYTE_CHUNKS, MF_BYCOMMAND | (memview->data_format() == 1 ? MF_CHECKED : MF_UNCHECKED));
 	CheckMenuItem(menu, ID_2_BYTE_CHUNKS, MF_BYCOMMAND | (memview->data_format() == 2 ? MF_CHECKED : MF_UNCHECKED));
@@ -195,7 +196,7 @@ void memorywin_info::update_menu()
 
 bool memorywin_info::handle_command(WPARAM wparam, LPARAM lparam)
 {
-	memoryview_info *const memview = downcast<memoryview_info *>(m_views[0].get());
+	auto *const memview = downcast<memoryview_info *>(m_views[0].get());
 	switch (HIWORD(wparam))
 	{
 	// combo box selection changed
@@ -282,7 +283,7 @@ void memorywin_info::draw_contents(HDC dc)
 }
 
 
-void memorywin_info::process_string(char const *string)
+void memorywin_info::process_string(const std::string &string)
 {
 	// set the string to the memory view
 	downcast<memoryview_info *>(m_views[0].get())->set_expression(string);

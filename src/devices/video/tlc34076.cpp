@@ -35,26 +35,17 @@
 //**************************************************************************
 
 // device type definition
-const device_type TLC34076 = &device_creator<tlc34076_device>;
+DEFINE_DEVICE_TYPE(TLC34076, tlc34076_device, "tlc34076", "TI TLC34076 VIP")
 
 
 //-------------------------------------------------
 //  tlc34076_device - constructor
 //-------------------------------------------------
-tlc34076_device::tlc34076_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	:   device_t(mconfig, TLC34076, "TLC34076 VIP", tag, owner, clock, "tlc34076", __FILE__),
-		m_dacbits(6)
+tlc34076_device::tlc34076_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: device_t(mconfig, TLC34076, tag, owner, clock)
+	, device_palette_interface(mconfig, *this)
+	, m_dacbits(6)
 {
-}
-
-
-//-------------------------------------------------
-//  static_set_bits - set DAC resolution
-//-------------------------------------------------
-void tlc34076_device::static_set_bits(device_t &device, tlc34076_bits bits)
-{
-	tlc34076_device &tlc = downcast<tlc34076_device &>(device);
-	tlc.m_dacbits = bits;
 }
 
 
@@ -63,9 +54,18 @@ void tlc34076_device::static_set_bits(device_t &device, tlc34076_bits bits)
 //-------------------------------------------------
 void tlc34076_device::device_start()
 {
-	save_item(NAME(m_local_paletteram));
+	for (int i = 0; i < 3; i++)
+	{
+		m_local_paletteram[i] = make_unique_clear<uint8_t[]>(0x100);
+		save_pointer(NAME(m_local_paletteram[i]), 0x100, i);
+	}
+
+	std::fill(std::begin(m_regs), std::end(m_regs), 0);
+	std::fill(std::begin(m_palettedata), std::end(m_palettedata), 0);
+	m_readindex = 0;
+	m_writeindex = 0;
+
 	save_item(NAME(m_regs));
-	save_item(NAME(m_pens));
 
 	save_item(NAME(m_writeindex));
 	save_item(NAME(m_readindex));
@@ -86,6 +86,9 @@ void tlc34076_device::device_reset()
 	m_regs[PALETTE_PAGE]       = 0x00;
 	m_regs[TEST_REGISTER]      = 0x00;
 	m_regs[RESET_STATE]        = 0x00;
+
+	for (int i = 0; i < 0x100; i++)
+		update_pen(i);
 }
 
 
@@ -94,41 +97,34 @@ void tlc34076_device::device_reset()
 //**************************************************************************
 
 //-------------------------------------------------
-//  get_pens - retrieve current palette
+//  update_pen - update color in current palette
 //-------------------------------------------------
 
-const rgb_t *tlc34076_device::get_pens()
+void tlc34076_device::update_pen(uint8_t i)
 {
-	offs_t i;
+	int r, g, b;
 
-	for (i = 0; i < 0x100; i++)
+	if ((i & m_regs[PIXEL_READ_MASK]) == i)
 	{
-		int r, g, b;
+		r = m_local_paletteram[0][i];
+		g = m_local_paletteram[1][i];
+		b = m_local_paletteram[2][i];
 
-		if ((i & m_regs[PIXEL_READ_MASK]) == i)
+		if (m_dacbits == 6)
 		{
-			r = m_local_paletteram[3 * i + 0];
-			g = m_local_paletteram[3 * i + 1];
-			b = m_local_paletteram[3 * i + 2];
-
-			if (m_dacbits == 6)
-			{
-				r = pal6bit(r);
-				g = pal6bit(g);
-				b = pal6bit(b);
-			}
+			r = pal6bit(r);
+			g = pal6bit(g);
+			b = pal6bit(b);
 		}
-		else
-		{
-			r = 0;
-			g = 0;
-			b = 0;
-		}
-
-		m_pens[i] = rgb_t(r, g, b);
+	}
+	else
+	{
+		r = 0;
+		g = 0;
+		b = 0;
 	}
 
-	return m_pens;
+	set_pen_color(i, rgb_t(r, g, b));
 }
 
 
@@ -136,9 +132,9 @@ const rgb_t *tlc34076_device::get_pens()
 //  read - read access
 //-------------------------------------------------
 
-READ8_MEMBER( tlc34076_device::read )
+u8 tlc34076_device::read(offs_t offset)
 {
-	UINT8 result;
+	uint8_t result;
 
 	/* keep in range */
 	offset &= 0x0f;
@@ -150,9 +146,8 @@ READ8_MEMBER( tlc34076_device::read )
 		case PALETTE_DATA:
 			if (m_readindex == 0)
 			{
-				m_palettedata[0] = m_local_paletteram[3 * m_regs[PALETTE_READ_ADDR] + 0];
-				m_palettedata[1] = m_local_paletteram[3 * m_regs[PALETTE_READ_ADDR] + 1];
-				m_palettedata[2] = m_local_paletteram[3 * m_regs[PALETTE_READ_ADDR] + 2];
+				for (int i = 0; i < 3; i++)
+					m_palettedata[i] = m_local_paletteram[i][m_regs[PALETTE_READ_ADDR]];
 			}
 			result = m_palettedata[m_readindex++];
 			if (m_readindex == 3)
@@ -171,9 +166,9 @@ READ8_MEMBER( tlc34076_device::read )
 //  write - write access
 //-------------------------------------------------
 
-WRITE8_MEMBER( tlc34076_device::write )
+void tlc34076_device::write(offs_t offset, u8 data)
 {
-//  UINT8 oldval;
+//  uint8_t oldval;
 
 	/* keep in range */
 	offset &= 0x0f;
@@ -191,12 +186,19 @@ WRITE8_MEMBER( tlc34076_device::write )
 			m_palettedata[m_writeindex++] = data;
 			if (m_writeindex == 3)
 			{
-				m_local_paletteram[3 * m_regs[PALETTE_WRITE_ADDR] + 0] = m_palettedata[0];
-				m_local_paletteram[3 * m_regs[PALETTE_WRITE_ADDR] + 1] = m_palettedata[1];
-				m_local_paletteram[3 * m_regs[PALETTE_WRITE_ADDR] + 2] = m_palettedata[2];
+				for (int i = 0; i < 3; i++)
+					m_local_paletteram[i][m_regs[PALETTE_WRITE_ADDR]] = m_palettedata[i];
+
+				update_pen(m_regs[PALETTE_WRITE_ADDR]);
+
 				m_writeindex = 0;
 				m_regs[PALETTE_WRITE_ADDR]++;
 			}
+			break;
+
+		case PIXEL_READ_MASK:
+			for (int i = 0; i < 0x100; i++)
+				update_pen(i);
 			break;
 
 		case PALETTE_READ_ADDR:

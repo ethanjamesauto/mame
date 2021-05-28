@@ -1,5 +1,6 @@
 #!/bin/sh
-
+# license:BSD-3-Clause
+# copyright-holders:Carl
 NAME=$2
 OURUID=`id -u $NAME`
 HOSTIP=$4
@@ -21,9 +22,9 @@ ip tuntap del dev $TAP mode tap
 exit
 fi
 
-if [ "$#" != "5" ]
+if [ "$#" != "4" ]
 then
-echo "usage: mess-tap [-c] [-d] USER EMUADDR HOSTADDR MASK"
+echo "usage: mess-tap [-c] [-d] USER EMUADDR HOSTADDR"
 echo "-c        create interface"
 echo "-d        delete interface"
 echo "USER      user to own interface, required to delete"

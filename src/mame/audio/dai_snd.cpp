@@ -14,16 +14,16 @@
 #include "dai_snd.h"
 
 // device type definition
-const device_type DAI_SOUND = &device_creator<dai_sound_device>;
+DEFINE_DEVICE_TYPE(DAI_SOUND, dai_sound_device, "dai_sound", "DAI Custom Sound")
 
 
 //-------------------------------------------------
 //  dai_sound_device - constructor
 //-------------------------------------------------
 
-dai_sound_device::dai_sound_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: device_t(mconfig, DAI_SOUND, "DAI Audio Custom", tag, owner, clock, "dai_sound", __FILE__),
-		device_sound_interface(mconfig, *this)
+dai_sound_device::dai_sound_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: device_t(mconfig, DAI_SOUND, tag, owner, clock)
+	, device_sound_interface(mconfig, *this)
 {
 }
 
@@ -33,7 +33,7 @@ dai_sound_device::dai_sound_device(const machine_config &mconfig, const char *ta
 
 void dai_sound_device::device_start()
 {
-	m_mixer_channel = machine().sound().stream_alloc(*this, 0, 2, machine().sample_rate());
+	m_mixer_channel = stream_alloc(0, 2, machine().sample_rate());
 }
 
 //-------------------------------------------------
@@ -52,22 +52,22 @@ void dai_sound_device::device_reset()
 //  channels 0/1/2 volume table
 //-------------------------------------------------
 
-const UINT16 dai_sound_device::s_osc_volume_table[] = {
-						0,  500, 1000, 1500,
-					2000, 2500, 3000, 3500,
-					4000, 4500, 5000, 5500,
-					6000, 6500, 7000, 7500
+const uint16_t dai_sound_device::s_osc_volume_table[] = {
+	   0,  500, 1000, 1500,
+	2000, 2500, 3000, 3500,
+	4000, 4500, 5000, 5500,
+	6000, 6500, 7000, 7500
 };
 
 //-------------------------------------------------
 //  noise volume table
 //-------------------------------------------------
 
-const UINT16 dai_sound_device::s_noise_volume_table[] = {
-						0,    0,    0,    0,
-						0,    0,    0,    0,
-						500, 1000, 1500, 2000,
-					2500, 3000, 3500, 4000
+const uint16_t dai_sound_device::s_noise_volume_table[] = {
+	   0,    0,    0,    0,
+	   0,    0,    0,    0,
+	 500, 1000, 1500, 2000,
+	2500, 3000, 3500, 4000
 };
 
 
@@ -75,7 +75,7 @@ const UINT16 dai_sound_device::s_noise_volume_table[] = {
 //  set_volume
 //-------------------------------------------------
 
-WRITE8_MEMBER(dai_sound_device::set_volume)
+void dai_sound_device::set_volume(offs_t offset, uint8_t data)
 {
 	m_mixer_channel->update();
 
@@ -119,23 +119,23 @@ WRITE_LINE_MEMBER(dai_sound_device::set_input_ch2)
 //  our sound stream
 //-------------------------------------------------
 
-void dai_sound_device::sound_stream_update(sound_stream &stream, stream_sample_t **inputs, stream_sample_t **outputs, int samples)
+void dai_sound_device::sound_stream_update(sound_stream &stream, std::vector<read_stream_view> const &inputs, std::vector<write_stream_view> &outputs)
 {
-	stream_sample_t *sample_left = outputs[0];
-	stream_sample_t *sample_right = outputs[1];
+	auto &sample_left = outputs[0];
+	auto &sample_right = outputs[1];
 
-	INT16 channel_0_signal = m_dai_input[0] ? s_osc_volume_table[m_osc_volume[0]] : -s_osc_volume_table[m_osc_volume[0]];
-	INT16 channel_1_signal = m_dai_input[1] ? s_osc_volume_table[m_osc_volume[1]] : -s_osc_volume_table[m_osc_volume[1]];
-	INT16 channel_2_signal = m_dai_input[2] ? s_osc_volume_table[m_osc_volume[2]] : -s_osc_volume_table[m_osc_volume[2]];
+	int16_t channel_0_signal = m_dai_input[0] ? s_osc_volume_table[m_osc_volume[0]] : -s_osc_volume_table[m_osc_volume[0]];
+	int16_t channel_1_signal = m_dai_input[1] ? s_osc_volume_table[m_osc_volume[1]] : -s_osc_volume_table[m_osc_volume[1]];
+	int16_t channel_2_signal = m_dai_input[2] ? s_osc_volume_table[m_osc_volume[2]] : -s_osc_volume_table[m_osc_volume[2]];
 
-	while (samples--)
+	for (int sampindex = 0; sampindex < sample_left.samples(); sampindex++)
 	{
-		INT16 noise = machine().rand()&0x01 ? s_noise_volume_table[m_noise_volume] : -s_noise_volume_table[m_noise_volume];
+		int16_t noise = machine().rand()&0x01 ? s_noise_volume_table[m_noise_volume] : -s_noise_volume_table[m_noise_volume];
 
 		/* channel 0 + channel 1 + noise */
-		*sample_left++ = channel_0_signal + channel_1_signal + noise;
+		sample_left.put_int(sampindex, channel_0_signal + channel_1_signal + noise, 32768);
 
 		/* channel 1 + channel 2 + noise */
-		*sample_right++ = channel_1_signal + channel_2_signal + noise;
+		sample_right.put_int(sampindex, channel_1_signal + channel_2_signal + noise, 32768);
 	}
 }

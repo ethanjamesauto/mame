@@ -11,8 +11,8 @@
 #define ALTO2_ETHER_PACKET_SIZE 0400            //!< size of a packet in words
 
 #else   // ALTO2_DEFINE_CONSTANTS
-#ifndef _A2ETHER_H_
-#define _A2ETHER_H_
+#ifndef MAME_CPU_ALTO2_A2ETHER_H
+#define MAME_CPU_ALTO2_A2ETHER_H
 //! BUS source for ethernet task
 enum {
 	bs_ether_eidfct     = bs_task_3             //!< ethernet task: Ethernet input data function
@@ -37,9 +37,9 @@ enum {
 												//!< f2 (1111): undefined
 };
 
-UINT8* m_ether_a41;                             //!< BPROM; P3601-1; 256x4; enet.a41 "PE1"
-UINT8* m_ether_a42;                             //!< BPROM; P3601-1; 256x4; enet.a42 "PE2"
-UINT8* m_ether_a49;                             //!< BPROM; P3601-1; 265x4 enet.a49 "AFIFO"
+uint8_t* m_ether_a41;                             //!< BPROM; P3601-1; 256x4; enet.a41 "PE1"
+uint8_t* m_ether_a42;                             //!< BPROM; P3601-1; 256x4; enet.a42 "PE2"
+uint8_t* m_ether_a49;                             //!< BPROM; P3601-1; 265x4 enet.a49 "AFIFO"
 enum {
 	ether_a49_BE    = (1 << 0),                 //!< buffer empty
 	ether_a49_BNE   = (1 << 1),                 //!< buffer next empty
@@ -48,17 +48,17 @@ enum {
 };
 
 struct {
-	UINT32 serin;                               //!< serial input shift registers 74164 #37 and #33
-	UINT16 fifo[ALTO2_ETHER_FIFO_SIZE];         //!< FIFO buffer
-	UINT16 fifo_rd;                             //!< FIFO input pointer
-	UINT16 fifo_wr;                             //!< FIFO output pointer
-	UINT16 status;                              //!< status word
-	UINT16 rx_crc;                              //!< receiver CRC
-	UINT16 tx_crc;                              //!< transmitter CRC
-	UINT32 rx_count;                            //!< received words count
-	UINT32 tx_count;                            //!< transmitted words count
-	std::unique_ptr<UINT16[]> rx_packet;                          //!< buffer to collect received words
-	std::unique_ptr<UINT16[]> tx_packet;                          //!< buffer to collect transmitted words
+	uint32_t serin;                               //!< serial input shift registers 74164 #37 and #33
+	uint16_t fifo[ALTO2_ETHER_FIFO_SIZE];         //!< FIFO buffer
+	uint16_t fifo_rd;                             //!< FIFO input pointer
+	uint16_t fifo_wr;                             //!< FIFO output pointer
+	uint16_t status;                              //!< status word
+	uint16_t rx_crc;                              //!< receiver CRC
+	uint16_t tx_crc;                              //!< transmitter CRC
+	uint32_t rx_count;                            //!< received words count
+	uint32_t tx_count;                            //!< transmitted words count
+	std::unique_ptr<uint16_t[]> rx_packet;                          //!< buffer to collect received words
+	std::unique_ptr<uint16_t[]> tx_packet;                          //!< buffer to collect transmitted words
 	emu_timer* rx_timer;                        //!< receiver timer
 	emu_timer* tx_timer;                        //!< transmitter timer
 	jkff_t ff_10a;                              //!< JK flip-flop 10a IBUSY (Sheet 13)
@@ -112,5 +112,5 @@ void update_tclk(int tclk);                     //!< update all JK flip-flops fo
 void init_ether(int task = task_ether);         //!< initialize the ethernet task
 void exit_ether();                              //!< deinitialize the ethernet task
 void reset_ether();                             //!< reset the ethernet task
-#endif // _A2ETHER_H_
+#endif // MAME_CPU_ALTO2_A2ETHER_H
 #endif  // ALTO2_DEFINE_CONSTANTS

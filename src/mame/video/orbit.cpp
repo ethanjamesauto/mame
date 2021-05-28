@@ -1,4 +1,4 @@
-// license:???
+// license:BSD-3-Clause
 // copyright-holders:Stefan Jokisch
 /***************************************************************************
 
@@ -9,7 +9,7 @@ Atari Orbit video emulation
 #include "emu.h"
 #include "includes/orbit.h"
 
-WRITE8_MEMBER(orbit_state::orbit_playfield_w)
+void orbit_state::playfield_w(offs_t offset, uint8_t data)
 {
 	m_playfield_ram[offset] = data;
 	m_bg_tilemap->mark_tile_dirty(offset);
@@ -18,7 +18,7 @@ WRITE8_MEMBER(orbit_state::orbit_playfield_w)
 
 TILE_GET_INFO_MEMBER(orbit_state::get_tile_info)
 {
-	UINT8 code = m_playfield_ram[tile_index];
+	uint8_t code = m_playfield_ram[tile_index];
 	int flags = 0;
 
 	if (BIT(code, 6))
@@ -26,23 +26,21 @@ TILE_GET_INFO_MEMBER(orbit_state::get_tile_info)
 	if (m_flip_screen)
 		flags |= TILE_FLIPY;
 
-	SET_TILE_INFO_MEMBER(3, code & 0x3f, 0, flags);
+	tileinfo.set(3, code & 0x3f, 0, flags);
 }
 
 
 void orbit_state::video_start()
 {
-	m_bg_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(orbit_state::get_tile_info),this), TILEMAP_SCAN_ROWS, 16, 16, 32, 30);
+	m_bg_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(orbit_state::get_tile_info)), TILEMAP_SCAN_ROWS, 16, 16, 32, 30);
 }
 
 
-void orbit_state::draw_sprites( bitmap_ind16 &bitmap, const rectangle &cliprect )
+void orbit_state::draw_sprites(bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
-	const UINT8* p = m_sprite_ram;
+	const uint8_t* p = m_sprite_ram;
 
-	int i;
-
-	for (i = 0; i < 16; i++)
+	for (int i = 0; i < 16; i++)
 	{
 		int code = *p++;
 		int vpos = *p++;
@@ -77,7 +75,7 @@ void orbit_state::draw_sprites( bitmap_ind16 &bitmap, const rectangle &cliprect 
 }
 
 
-UINT32 orbit_state::screen_update_orbit(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t orbit_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	m_flip_screen = ioport("DSW2")->read() & 8;
 

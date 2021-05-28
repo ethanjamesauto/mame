@@ -12,8 +12,6 @@
 */
 
 #include "emu.h"
-#include "cpu/m68000/m68000.h"
-#include "machine/ram.h"
 #include "video/atarist.h"
 #include "includes/atarist.h"
 
@@ -134,8 +132,8 @@ inline pen_t st_state::shift_mode_2()
 
 void st_state::shifter_tick()
 {
-	int y = machine().first_screen()->vpos();
-	int x = machine().first_screen()->hpos();
+	int y = m_screen->vpos();
+	int x = m_screen->hpos();
 
 	pen_t pen;
 
@@ -158,7 +156,7 @@ void st_state::shifter_tick()
 		break;
 	}
 
-	m_bitmap.pix32(y, x) = pen;
+	m_bitmap.pix(y, x) = pen;
 }
 
 
@@ -169,7 +167,7 @@ void st_state::shifter_tick()
 inline void st_state::shifter_load()
 {
 	address_space &program = m_maincpu->space(AS_PROGRAM);
-	UINT16 data = program.read_word(m_shifter_ofs);
+	uint16_t data = program.read_word(m_shifter_ofs);
 
 	m_shifter_ir[m_shifter_bitplane] = data;
 	m_shifter_bitplane++;
@@ -191,10 +189,16 @@ inline void st_state::shifter_load()
 //  glue_tick -
 //-------------------------------------------------
 
+void st_state::draw_pixel(int x, int y, u32 pen)
+{
+	if(x < m_bitmap.width() && y < m_bitmap.height())
+		m_bitmap.pix(y, x) = pen;
+}
+
 void st_state::glue_tick()
 {
-	int y = machine().first_screen()->vpos();
-	int x = machine().first_screen()->hpos();
+	int y = m_screen->vpos();
+	int x = m_screen->hpos();
 
 	int v = (y >= m_shifter_y_start) && (y < m_shifter_y_end);
 	int h = (x >= m_shifter_x_start) && (x < m_shifter_x_end);
@@ -239,36 +243,36 @@ void st_state::glue_tick()
 	{
 	case 0:
 		pen = shift_mode_0();
-		m_bitmap.pix32(y, x) = pen;
-		m_bitmap.pix32(y, x+1) = pen;
+		draw_pixel(x, y, pen);
+		draw_pixel(x+1, y, pen);
 		pen = shift_mode_0();
-		m_bitmap.pix32(y, x+2) = pen;
-		m_bitmap.pix32(y, x+3) = pen;
+		draw_pixel(x+2, y, pen);
+		draw_pixel(x+3, y, pen);
 		pen = shift_mode_0();
-		m_bitmap.pix32(y, x+4) = pen;
-		m_bitmap.pix32(y, x+5) = pen;
+		draw_pixel(x+4, y, pen);
+		draw_pixel(x+5, y, pen);
 		pen = shift_mode_0();
-		m_bitmap.pix32(y, x+6) = pen;
-		m_bitmap.pix32(y, x+7) = pen;
+		draw_pixel(x+6, y, pen);
+		draw_pixel(x+7, y, pen);
 		break;
 
 	case 1:
 		pen = shift_mode_1();
-		m_bitmap.pix32(y, x) = pen;
+		draw_pixel(x, y, pen);
 		pen = shift_mode_1();
-		m_bitmap.pix32(y, x+1) = pen;
+		draw_pixel(x+1, y, pen);
 		pen = shift_mode_1();
-		m_bitmap.pix32(y, x+2) = pen;
+		draw_pixel(x+2, y, pen);
 		pen = shift_mode_1();
-		m_bitmap.pix32(y, x+3) = pen;
+		draw_pixel(x+3, y, pen);
 		pen = shift_mode_1();
-		m_bitmap.pix32(y, x+4) = pen;
+		draw_pixel(x+4, y, pen);
 		pen = shift_mode_1();
-		m_bitmap.pix32(y, x+5) = pen;
+		draw_pixel(x+5, y, pen);
 		pen = shift_mode_1();
-		m_bitmap.pix32(y, x+6) = pen;
+		draw_pixel(x+6, y, pen);
 		pen = shift_mode_1();
-		m_bitmap.pix32(y, x+7) = pen;
+		draw_pixel(x+7, y, pen);
 		break;
 
 	case 2:
@@ -313,9 +317,9 @@ void st_state::set_screen_parameters()
 //  shifter_base_r -
 //-------------------------------------------------
 
-READ8_MEMBER( st_state::shifter_base_r )
+uint8_t st_state::shifter_base_r(offs_t offset)
 {
-	UINT8 data = 0;
+	uint8_t data = 0;
 
 	switch (offset)
 	{
@@ -336,7 +340,7 @@ READ8_MEMBER( st_state::shifter_base_r )
 //  shifter_base_w -
 //-------------------------------------------------
 
-WRITE8_MEMBER( st_state::shifter_base_w )
+void st_state::shifter_base_w(offs_t offset, uint8_t data)
 {
 	switch (offset)
 	{
@@ -357,9 +361,9 @@ WRITE8_MEMBER( st_state::shifter_base_w )
 //  shifter_counter_r -
 //-------------------------------------------------
 
-READ8_MEMBER( st_state::shifter_counter_r )
+uint8_t st_state::shifter_counter_r(offs_t offset)
 {
-	UINT8 data = 0;
+	uint8_t data = 0;
 
 	switch (offset)
 	{
@@ -384,7 +388,7 @@ READ8_MEMBER( st_state::shifter_counter_r )
 //  shifter_sync_r -
 //-------------------------------------------------
 
-READ8_MEMBER( st_state::shifter_sync_r )
+uint8_t st_state::shifter_sync_r()
 {
 	return m_shifter_sync;
 }
@@ -394,7 +398,7 @@ READ8_MEMBER( st_state::shifter_sync_r )
 //  shifter_sync_w -
 //-------------------------------------------------
 
-WRITE8_MEMBER( st_state::shifter_sync_w )
+void st_state::shifter_sync_w(uint8_t data)
 {
 	m_shifter_sync = data;
 	logerror("SHIFTER Sync %x\n", m_shifter_sync);
@@ -406,7 +410,7 @@ WRITE8_MEMBER( st_state::shifter_sync_w )
 //  shifter_mode_r -
 //-------------------------------------------------
 
-READ8_MEMBER( st_state::shifter_mode_r )
+uint8_t st_state::shifter_mode_r()
 {
 	return m_shifter_mode;
 }
@@ -416,7 +420,7 @@ READ8_MEMBER( st_state::shifter_mode_r )
 //  shifter_mode_w -
 //-------------------------------------------------
 
-WRITE8_MEMBER( st_state::shifter_mode_w )
+void st_state::shifter_mode_w(uint8_t data)
 {
 	m_shifter_mode = data;
 	logerror("SHIFTER Mode %x\n", m_shifter_mode);
@@ -427,7 +431,7 @@ WRITE8_MEMBER( st_state::shifter_mode_w )
 //  shifter_palette_r -
 //-------------------------------------------------
 
-READ16_MEMBER( st_state::shifter_palette_r )
+uint16_t st_state::shifter_palette_r(offs_t offset)
 {
 	return m_shifter_palette[offset] | 0xf888;
 }
@@ -437,7 +441,7 @@ READ16_MEMBER( st_state::shifter_palette_r )
 //  shifter_palette_w -
 //-------------------------------------------------
 
-WRITE16_MEMBER( st_state::shifter_palette_w )
+void st_state::shifter_palette_w(offs_t offset, uint16_t data)
 {
 	m_shifter_palette[offset] = data;
 	//  logerror("SHIFTER Palette[%x] = %x\n", offset, data);
@@ -455,7 +459,7 @@ WRITE16_MEMBER( st_state::shifter_palette_w )
 //  shifter_base_low_r -
 //-------------------------------------------------
 
-READ8_MEMBER( ste_state::shifter_base_low_r )
+uint8_t ste_state::shifter_base_low_r()
 {
 	return m_shifter_base & 0xfe;
 }
@@ -465,7 +469,7 @@ READ8_MEMBER( ste_state::shifter_base_low_r )
 //  shifter_base_low_w -
 //-------------------------------------------------
 
-WRITE8_MEMBER( ste_state::shifter_base_low_w )
+void ste_state::shifter_base_low_w(uint8_t data)
 {
 	m_shifter_base = (m_shifter_base & 0x3fff00) | (data & 0xfe);
 	logerror("SHIFTER Video Base Address %06x\n", m_shifter_base);
@@ -476,9 +480,9 @@ WRITE8_MEMBER( ste_state::shifter_base_low_w )
 //  shifter_counter_r -
 //-------------------------------------------------
 
-READ8_MEMBER( ste_state::shifter_counter_r )
+uint8_t ste_state::shifter_counter_r(offs_t offset)
 {
-	UINT8 data = 0;
+	uint8_t data = 0;
 
 	switch (offset)
 	{
@@ -503,7 +507,7 @@ READ8_MEMBER( ste_state::shifter_counter_r )
 //  shifter_counter_w -
 //-------------------------------------------------
 
-WRITE8_MEMBER( ste_state::shifter_counter_w )
+void ste_state::shifter_counter_w(offs_t offset, uint8_t data)
 {
 	switch (offset)
 	{
@@ -529,7 +533,7 @@ WRITE8_MEMBER( ste_state::shifter_counter_w )
 //  shifter_palette_w -
 //-------------------------------------------------
 
-WRITE16_MEMBER( ste_state::shifter_palette_w )
+void ste_state::shifter_palette_w(offs_t offset, uint16_t data)
 {
 	int r = ((data >> 7) & 0x0e) | BIT(data, 11);
 	int g = ((data >> 3) & 0x0e) | BIT(data, 7);
@@ -546,7 +550,7 @@ WRITE16_MEMBER( ste_state::shifter_palette_w )
 //  shifter_lineofs_r -
 //-------------------------------------------------
 
-READ8_MEMBER( ste_state::shifter_lineofs_r )
+uint8_t ste_state::shifter_lineofs_r()
 {
 	return m_shifter_lineofs;
 }
@@ -556,7 +560,7 @@ READ8_MEMBER( ste_state::shifter_lineofs_r )
 //  shifter_lineofs_w -
 //-------------------------------------------------
 
-WRITE8_MEMBER( ste_state::shifter_lineofs_w )
+void ste_state::shifter_lineofs_w(uint8_t data)
 {
 	m_shifter_lineofs = data;
 	logerror("SHIFTER Line Offset %x\n", m_shifter_lineofs);
@@ -567,7 +571,7 @@ WRITE8_MEMBER( ste_state::shifter_lineofs_w )
 //  shifter_pixelofs_r -
 //-------------------------------------------------
 
-READ8_MEMBER( ste_state::shifter_pixelofs_r )
+uint8_t ste_state::shifter_pixelofs_r()
 {
 	return m_shifter_pixelofs;
 }
@@ -577,7 +581,7 @@ READ8_MEMBER( ste_state::shifter_pixelofs_r )
 //  shifter_pixelofs_w -
 //-------------------------------------------------
 
-WRITE8_MEMBER( ste_state::shifter_pixelofs_w )
+void ste_state::shifter_pixelofs_w(uint8_t data)
 {
 	m_shifter_pixelofs = data & 0x0f;
 	logerror("SHIFTER Pixel Offset %x\n", m_shifter_pixelofs);
@@ -596,7 +600,7 @@ WRITE8_MEMBER( ste_state::shifter_pixelofs_w )
 void st_state::blitter_source()
 {
 	address_space &program = m_maincpu->space(AS_PROGRAM);
-	UINT16 data = program.read_word(m_blitter_src);
+	uint16_t data = program.read_word(m_blitter_src);
 
 	if (m_blitter_src_inc_x < 0)
 	{
@@ -613,10 +617,10 @@ void st_state::blitter_source()
 //  blitter_hop -
 //-------------------------------------------------
 
-UINT16 st_state::blitter_hop()
+uint16_t st_state::blitter_hop()
 {
-	UINT16 source = m_blitter_srcbuf >> (m_blitter_skew & 0x0f);
-	UINT16 halftone = m_blitter_halftone[m_blitter_ctrl & 0x0f];
+	uint16_t source = m_blitter_srcbuf >> (m_blitter_skew & 0x0f);
+	uint16_t halftone = m_blitter_halftone[m_blitter_ctrl & 0x0f];
 
 	if (m_blitter_ctrl & ATARIST_BLITTER_CTRL_SMUDGE)
 	{
@@ -643,12 +647,12 @@ UINT16 st_state::blitter_hop()
 //  blitter_op -
 //-------------------------------------------------
 
-void st_state::blitter_op(UINT16 s, UINT32 dstaddr, UINT16 mask)
+void st_state::blitter_op(uint16_t s, uint32_t dstaddr, uint16_t mask)
 {
 	address_space &program = m_maincpu->space(AS_PROGRAM);
 
-	UINT16 d = program.read_word(dstaddr);
-	UINT16 result = 0;
+	uint16_t d = program.read_word(dstaddr);
+	uint16_t result = 0;
 
 	if (m_blitter_op & 0x08) result = (~s & ~d);
 	if (m_blitter_op & 0x04) result |= (~s & d);
@@ -727,7 +731,7 @@ void st_state::blitter_tick()
 //  blitter_halftone_r -
 //-------------------------------------------------
 
-READ16_MEMBER( st_state::blitter_halftone_r )
+uint16_t st_state::blitter_halftone_r(offs_t offset)
 {
 	return m_blitter_halftone[offset];
 }
@@ -737,7 +741,7 @@ READ16_MEMBER( st_state::blitter_halftone_r )
 //  blitter_src_inc_x_r -
 //-------------------------------------------------
 
-READ16_MEMBER( st_state::blitter_src_inc_x_r )
+uint16_t st_state::blitter_src_inc_x_r()
 {
 	return m_blitter_src_inc_x;
 }
@@ -747,7 +751,7 @@ READ16_MEMBER( st_state::blitter_src_inc_x_r )
 //  blitter_src_inc_y_r -
 //-------------------------------------------------
 
-READ16_MEMBER( st_state::blitter_src_inc_y_r )
+uint16_t st_state::blitter_src_inc_y_r()
 {
 	return m_blitter_src_inc_y;
 }
@@ -757,7 +761,7 @@ READ16_MEMBER( st_state::blitter_src_inc_y_r )
 //  blitter_src_r -
 //-------------------------------------------------
 
-READ16_MEMBER( st_state::blitter_src_r )
+uint16_t st_state::blitter_src_r(offs_t offset)
 {
 	switch (offset)
 	{
@@ -775,7 +779,7 @@ READ16_MEMBER( st_state::blitter_src_r )
 //  blitter_end_mask_r -
 //-------------------------------------------------
 
-READ16_MEMBER( st_state::blitter_end_mask_r )
+uint16_t st_state::blitter_end_mask_r(offs_t offset)
 {
 	switch (offset)
 	{
@@ -795,7 +799,7 @@ READ16_MEMBER( st_state::blitter_end_mask_r )
 //  blitter_dst_inc_x_r -
 //-------------------------------------------------
 
-READ16_MEMBER( st_state::blitter_dst_inc_x_r )
+uint16_t st_state::blitter_dst_inc_x_r()
 {
 	return m_blitter_dst_inc_x;
 }
@@ -805,7 +809,7 @@ READ16_MEMBER( st_state::blitter_dst_inc_x_r )
 //  blitter_dst_inc_y_r -
 //-------------------------------------------------
 
-READ16_MEMBER( st_state::blitter_dst_inc_y_r )
+uint16_t st_state::blitter_dst_inc_y_r()
 {
 	return m_blitter_dst_inc_y;
 }
@@ -815,7 +819,7 @@ READ16_MEMBER( st_state::blitter_dst_inc_y_r )
 //  blitter_dst_r -
 //-------------------------------------------------
 
-READ16_MEMBER( st_state::blitter_dst_r )
+uint16_t st_state::blitter_dst_r(offs_t offset)
 {
 	switch (offset)
 	{
@@ -833,7 +837,7 @@ READ16_MEMBER( st_state::blitter_dst_r )
 //  blitter_count_x_r -
 //-------------------------------------------------
 
-READ16_MEMBER( st_state::blitter_count_x_r )
+uint16_t st_state::blitter_count_x_r()
 {
 	return m_blitter_xcount;
 }
@@ -843,7 +847,7 @@ READ16_MEMBER( st_state::blitter_count_x_r )
 //  blitter_count_y_r -
 //-------------------------------------------------
 
-READ16_MEMBER( st_state::blitter_count_y_r )
+uint16_t st_state::blitter_count_y_r()
 {
 	return m_blitter_ycount;
 }
@@ -853,7 +857,7 @@ READ16_MEMBER( st_state::blitter_count_y_r )
 //  blitter_op_r -
 //-------------------------------------------------
 
-READ16_MEMBER( st_state::blitter_op_r )
+uint16_t st_state::blitter_op_r(offs_t offset, uint16_t mem_mask)
 {
 	if (ACCESSING_BITS_0_7)
 	{
@@ -870,7 +874,7 @@ READ16_MEMBER( st_state::blitter_op_r )
 //  blitter_ctrl_r -
 //-------------------------------------------------
 
-READ16_MEMBER( st_state::blitter_ctrl_r )
+uint16_t st_state::blitter_ctrl_r(offs_t offset, uint16_t mem_mask)
 {
 	if (ACCESSING_BITS_0_7)
 	{
@@ -887,7 +891,7 @@ READ16_MEMBER( st_state::blitter_ctrl_r )
 //  blitter_halftone_w -
 //-------------------------------------------------
 
-WRITE16_MEMBER( st_state::blitter_halftone_w )
+void st_state::blitter_halftone_w(offs_t offset, uint16_t data)
 {
 	m_blitter_halftone[offset] = data;
 }
@@ -897,7 +901,7 @@ WRITE16_MEMBER( st_state::blitter_halftone_w )
 //  blitter_src_inc_x_w -
 //-------------------------------------------------
 
-WRITE16_MEMBER( st_state::blitter_src_inc_x_w )
+void st_state::blitter_src_inc_x_w(uint16_t data)
 {
 	m_blitter_src_inc_x = data & 0xfffe;
 }
@@ -907,7 +911,7 @@ WRITE16_MEMBER( st_state::blitter_src_inc_x_w )
 //  blitter_src_inc_y_w -
 //-------------------------------------------------
 
-WRITE16_MEMBER( st_state::blitter_src_inc_y_w )
+void st_state::blitter_src_inc_y_w(uint16_t data)
 {
 	m_blitter_src_inc_y = data & 0xfffe;
 }
@@ -917,7 +921,7 @@ WRITE16_MEMBER( st_state::blitter_src_inc_y_w )
 //  blitter_src_w -
 //-------------------------------------------------
 
-WRITE16_MEMBER( st_state::blitter_src_w )
+void st_state::blitter_src_w(offs_t offset, uint16_t data)
 {
 	switch (offset)
 	{
@@ -936,7 +940,7 @@ WRITE16_MEMBER( st_state::blitter_src_w )
 //  blitter_end_mask_w -
 //-------------------------------------------------
 
-WRITE16_MEMBER( st_state::blitter_end_mask_w )
+void st_state::blitter_end_mask_w(offs_t offset, uint16_t data)
 {
 	switch (offset)
 	{
@@ -959,7 +963,7 @@ WRITE16_MEMBER( st_state::blitter_end_mask_w )
 //  blitter_dst_inc_x_w -
 //-------------------------------------------------
 
-WRITE16_MEMBER( st_state::blitter_dst_inc_x_w )
+void st_state::blitter_dst_inc_x_w(uint16_t data)
 {
 	m_blitter_dst_inc_x = data & 0xfffe;
 }
@@ -969,7 +973,7 @@ WRITE16_MEMBER( st_state::blitter_dst_inc_x_w )
 //  blitter_dst_inc_y_w -
 //-------------------------------------------------
 
-WRITE16_MEMBER( st_state::blitter_dst_inc_y_w )
+void st_state::blitter_dst_inc_y_w(uint16_t data)
 {
 	m_blitter_dst_inc_y = data & 0xfffe;
 }
@@ -979,7 +983,7 @@ WRITE16_MEMBER( st_state::blitter_dst_inc_y_w )
 //  blitter_dst_w -
 //-------------------------------------------------
 
-WRITE16_MEMBER( st_state::blitter_dst_w )
+void st_state::blitter_dst_w(offs_t offset, uint16_t data)
 {
 	switch (offset)
 	{
@@ -998,7 +1002,7 @@ WRITE16_MEMBER( st_state::blitter_dst_w )
 //  blitter_count_x_w -
 //-------------------------------------------------
 
-WRITE16_MEMBER( st_state::blitter_count_x_w )
+void st_state::blitter_count_x_w(uint16_t data)
 {
 	m_blitter_xcount = data;
 }
@@ -1008,7 +1012,7 @@ WRITE16_MEMBER( st_state::blitter_count_x_w )
 //  blitter_count_y_w -
 //-------------------------------------------------
 
-WRITE16_MEMBER( st_state::blitter_count_y_w )
+void st_state::blitter_count_y_w(uint16_t data)
 {
 	m_blitter_ycount = data;
 }
@@ -1018,7 +1022,7 @@ WRITE16_MEMBER( st_state::blitter_count_y_w )
 //  blitter_op_w -
 //-------------------------------------------------
 
-WRITE16_MEMBER( st_state::blitter_op_w )
+void st_state::blitter_op_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	if (ACCESSING_BITS_0_7)
 	{
@@ -1035,7 +1039,7 @@ WRITE16_MEMBER( st_state::blitter_op_w )
 //  blitter_ctrl_w -
 //-------------------------------------------------
 
-WRITE16_MEMBER( st_state::blitter_ctrl_w )
+void st_state::blitter_ctrl_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	if (ACCESSING_BITS_0_7)
 	{
@@ -1069,10 +1073,10 @@ void st_state::video_start()
 	m_shifter_timer = timer_alloc(TIMER_SHIFTER_TICK);
 	m_glue_timer = timer_alloc(TIMER_GLUE_TICK);
 
-//  m_shifter_timer->adjust(machine().first_screen()->time_until_pos(0), 0, attotime::from_hz(Y2/4)); // 125 ns
-	m_glue_timer->adjust(machine().first_screen()->time_until_pos(0), 0, attotime::from_hz(Y2/16)); // 500 ns
+//  m_shifter_timer->adjust(m_screen->time_until_pos(0), 0, attotime::from_hz(Y2/4)); // 125 ns
+	m_glue_timer->adjust(m_screen->time_until_pos(0), 0, attotime::from_hz(Y2/16)); // 500 ns
 
-	machine().first_screen()->register_screen_bitmap(m_bitmap);
+	m_screen->register_screen_bitmap(m_bitmap);
 
 	/* register for state saving */
 	save_item(NAME(m_shifter_base));
@@ -1124,7 +1128,7 @@ void stbook_state::video_start()
 }
 
 
-UINT32 st_state::screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
+uint32_t st_state::screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
 {
 	copybitmap(bitmap, m_bitmap, 0, 0, 0, 0, cliprect);
 	return 0;

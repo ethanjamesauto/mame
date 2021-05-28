@@ -1,4 +1,4 @@
-// license:GPL-2.0+
+// license:BSD-3-Clause
 // copyright-holders:Dirk Best
 /***************************************************************************
 
@@ -8,56 +8,41 @@
 
 ***************************************************************************/
 
+#ifndef MAME_VIDEO_I82730_H
+#define MAME_VIDEO_I82730_H
+
 #pragma once
-
-#ifndef __I82730_H__
-#define __I82730_H__
-
-#include "emu.h"
-
-
-//**************************************************************************
-//  INTERFACE CONFIGURATION MACROS
-//**************************************************************************
-
-#define MCFG_I82730_ADD(_tag, _cpu_tag, _clock) \
-	MCFG_DEVICE_ADD(_tag, I82730, _clock) \
-	i82730_device::set_cpu_tag(*device, owner, _cpu_tag);
-
-#define MCFG_I82730_SINT_HANDLER(_devcb) \
-	devcb = &i82730_device::set_sint_handler(*device, DEVCB_##_devcb);
-
-#define MCFG_I82730_UPDATE_ROW_CB(_class, _method) \
-	i82730_device::set_update_row_callback(*device, i82730_update_row_delegate(&_class::_method, #_class "::" #_method, downcast<_class *>(owner)));
-
 
 //**************************************************************************
 //  TYPE DEFINITIONS
 //**************************************************************************
 
-typedef device_delegate<void (bitmap_rgb32 &bitmap, UINT16 *data, UINT8 lc, UINT16 y, int x_count)> i82730_update_row_delegate;
-
 #define I82730_UPDATE_ROW(name) \
-	void name(bitmap_rgb32 &bitmap, UINT16 *data, UINT8 lc, UINT16 y, int x_count)
-
+	   void name(bitmap_rgb32 &bitmap, uint16_t *data, uint8_t lc, uint16_t y, int x_count)
 
 // ======================> i82730_device
 
 class i82730_device : public device_t, public device_video_interface
 {
 public:
+	typedef device_delegate<void (bitmap_rgb32 &bitmap, uint16_t *data, uint8_t lc, uint16_t y, int x_count)> update_row_delegate;
+
 	// construction/destruction
-	i82730_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	template <typename T>
+	i82730_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock, T &&cpu_tag)
+		: i82730_device(mconfig, tag, owner, clock)
+	{
+		m_cpu.set_tag(std::forward<T>(cpu_tag));
+	}
+	i82730_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
 	// callbacks
-	template<class _Object> static devcb_base &set_sint_handler(device_t &device, _Object object)
-		{ return downcast<i82730_device &>(device).m_sint_handler.set_callback(object); }
+	auto sint() { return m_sint_handler.bind(); }
 
 	// inline configuration
-	static void set_cpu_tag(device_t &device, device_t *owner, const char *tag);
-	static void set_update_row_callback(device_t &device, i82730_update_row_delegate callback) { downcast<i82730_device &>(device).m_update_row_cb = callback; }
+	template <typename... T> void set_update_row_callback(T &&... args) { m_update_row_cb.set(std::forward<T>(args)...); }
 
-	UINT32 screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect);
+	uint32_t screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect);
 
 	DECLARE_WRITE_LINE_MEMBER(ca_w);
 	DECLARE_WRITE_LINE_MEMBER(irst_w);
@@ -81,77 +66,147 @@ private:
 		VDIP = 0x100   // virtual display in progress
 	};
 
-	static const char* m_command_names[];
-
 	bool sysbus_16bit() { return BIT(m_sysbus, 0); }
 
-	UINT8 read_byte(offs_t address);
-	UINT16 read_word(offs_t address);
-	void write_byte(offs_t address, UINT8 data);
-	void write_word(offs_t address, UINT16 data);
+	uint8_t read_byte(offs_t address);
+	uint16_t read_word(offs_t address);
+	void write_byte(offs_t address, uint8_t data);
+	void write_word(offs_t address, uint16_t data);
 
 	void update_interrupts();
 	void mode_set();
 	void execute_command();
+
+	bool dscmd_endrow();
+	bool dscmd_eof();
+	bool dscmd_eol();
+	bool dscmd_fulrowdescrpt(uint8_t param);
+	bool dscmd_sl_scroll_strt(uint8_t param);
+	bool dscmd_sl_scroll_end(uint8_t param);
+	bool dscmd_tab_to(uint8_t param);
+	bool dscmd_max_dma_count(uint8_t param);
+	bool dscmd_endstrg();
+	bool dscmd_skip(uint8_t param);
+	bool dscmd_repeat(uint8_t param);
+	bool dscmd_sub_sup(uint8_t param);
+	bool dscmd_rpt_sub_sup(uint8_t param);
+	bool dscmd_set_gen_pur_attrib(uint8_t param);
+	bool dscmd_set_field_attrib();
+	bool dscmd_init_next_process();
+
+	bool execute_datastream_command(uint8_t command, uint8_t param);
+
 	void load_row();
+	void attention();
 
 	TIMER_CALLBACK_MEMBER(row_update);
 
 	devcb_write_line m_sint_handler;
-	i82730_update_row_delegate m_update_row_cb;
+	update_row_delegate m_update_row_cb;
 
-	const char *m_cpu_tag;
+	required_device<cpu_device> m_cpu;
 	address_space *m_program;
 
 	emu_timer *m_row_timer;
 
 	bitmap_rgb32 m_bitmap;
 
+	// internal registers
 	bool m_initialized;
 	bool m_mode_set;
-
 	int m_ca;
+	bool m_ca_latch;
 
-	// internal registers
-	UINT8 m_sysbus;
-	UINT32 m_ibp;
-	UINT32 m_cbp;
-	UINT16 m_intmask;
-	UINT16 m_status;
+	uint8_t m_sysbus;
+	uint32_t m_ibp; // intermediate block pointer
+	uint32_t m_cbp; // command block pointer
 
-	int m_list_switch;
-	int m_auto_line_feed;
-	UINT8 m_max_dma_count;
+	bool m_list_switch;
+	bool m_auto_line_feed;
+	uint8_t m_max_dma_count;
+	uint32_t m_lptr;
+	uint16_t m_status;
+	uint16_t m_intmask;
 
-	UINT32 m_lptr;
-	UINT32 m_sptr;
+	uint32_t m_sptr;
 
-	int m_dma_burst_space;
-	int m_dma_burst_length;
-
-	// display parameters
-	int m_hfldstrt;
-	int m_margin;
-	int m_lpr;
-	UINT16 m_field_attribute_mask;
-	int m_vsyncstp;
-	int m_vfldstrt;
-	int m_vfldstp;
-
-	int m_frame_int_count;
-
-	// row buffers
-	struct row_buffer
+	struct modeset
 	{
-		UINT16 data[200];
-		int count;
-	};
+		// horizontal modes
+		uint8_t burst_length;
+		uint8_t burst_space;
+		uint8_t line_length;
+		uint8_t hsyncstp;
+		uint8_t hfldstrt;
+		uint8_t hfldstp;
+		uint8_t hbrdstrt;
+		uint8_t hbrdstp;
+		uint8_t scroll_margin;
+		// char row characteristics
+		bool rvv_row;
+		bool blk_row;
+		bool dbl_hgt;
+		bool wdef;
+		uint8_t lpr;
+		uint8_t nrmstrt;
+		uint8_t nrmstp;
+		uint8_t supstrt;
+		uint8_t supstp;
+		uint8_t substrt;
+		uint8_t substp;
+		uint8_t cur1strt;
+		uint8_t cur1stp;
+		uint8_t cur2strt;
+		uint8_t cur2stp;
+		uint8_t u2_line_sel;
+		uint8_t u1_line_sel;
+		uint16_t field_attribute_mask;
+		// vertical modes
+		uint16_t frame_length;
+		uint16_t vsyncstp;
+		uint16_t vfldstrt;
+		uint16_t vfldstp;
+		// blink control
+		uint8_t duty_cyc_cursor;
+		uint8_t cursor_blink;
+		uint8_t frame_int_count;
+		uint8_t duty_cyc_char;
+		uint8_t char_blink;
+		bool ile;
+		bool rfe;
+		bool bpol;
+		bool bue;
+		bool cr2_cd;
+		bool cr1_cd;
+		bool cr2_be;
+		bool cr1_be;
+		// atrribute bit selects
+		uint8_t reverse_video;
+		uint8_t blinking_char;
+		bool cr2_rvv;
+		bool cr1_rvv;
+		bool cr2_oe;
+		bool cr1_oe;
+		uint8_t abs_line_count;
+		uint8_t invisible_char;
+		uint8_t underline2;
+		uint8_t underline1;
+	} m_mb;
 
-	row_buffer m_row[2];
-	int m_row_index;
+	uint16_t m_row_buffer[2][200];
+	uint16_t *m_row; // pointer to currently active row buffer
+	uint8_t m_dma_count;
+	uint8_t m_row_count; // maximum 200
+	int m_row_index; // 0 or 1
+
+	struct cursor
+	{
+		uint8_t x;
+		uint8_t y;
+	} m_cursor[2];
 };
 
 // device type definition
-extern const device_type I82730;
+DECLARE_DEVICE_TYPE(I82730, i82730_device)
 
-#endif // __I82730_H__
+#endif // MAME_VIDEO_I82730_H

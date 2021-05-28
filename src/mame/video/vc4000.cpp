@@ -1,6 +1,7 @@
 // license:GPL-2.0+
 // copyright-holders:Peter Trauner, Manfred Schneider, Robbbert
 // thanks-to:Manfred Schneider
+#include "emu.h"
 #include "includes/vc4000.h"
 
 
@@ -61,9 +62,9 @@ void vc4000_state::video_start()
 	m_bitmap = std::make_unique<bitmap_ind16>(m_screen->width(), m_screen->height());
 }
 
-inline UINT8 vc4000_state::vc4000_joystick_return_to_centre(UINT8 joy)
+inline uint8_t vc4000_state::vc4000_joystick_return_to_centre(uint8_t joy)
 {
-	UINT8 data;
+	uint8_t data;
 
 	if (joy > (STICKCENTRE+5))
 		data=joy-5;
@@ -76,9 +77,9 @@ inline UINT8 vc4000_state::vc4000_joystick_return_to_centre(UINT8 joy)
 	return data;
 }
 
-READ8_MEMBER( vc4000_state::vc4000_video_r )
+uint8_t vc4000_state::vc4000_video_r(offs_t offset)
 {
-	UINT8 data=0;
+	uint8_t data=0;
 	if (offset > 0xcf) offset &= 0xcf;  // c0-cf is mirrored at d0-df, e0-ef, f0-ff
 	switch (offset)
 	{
@@ -88,23 +89,23 @@ READ8_MEMBER( vc4000_state::vc4000_video_r )
 		if (m_video.sprites[3].finished)
 		{
 			data |= 1;
-			m_video.sprites[3].finished = FALSE;
+			m_video.sprites[3].finished = false;
 		}
 
 		if (m_video.sprites[2].finished)
 		{
 			data |= 2;
-			m_video.sprites[2].finished = FALSE;
+			m_video.sprites[2].finished = false;
 		}
 		if (m_video.sprites[1].finished)
 		{
 			data |= 4;
-			m_video.sprites[1].finished = FALSE;
+			m_video.sprites[1].finished = false;
 		}
 		if (m_video.sprites[0].finished)
 		{
 			data |= 8;
-			m_video.sprites[0].finished = FALSE;
+			m_video.sprites[0].finished = false;
 		}
 		break;
 
@@ -217,6 +218,7 @@ READ8_MEMBER( vc4000_state::vc4000_video_r )
 				case 0x20:
 					m_joy2_x+=5;
 					if (m_joy2_x > STICKHIGH) m_joy2_x=STICKHIGH;
+					break;
 				case 0x00:
 					m_joy2_x = vc4000_joystick_return_to_centre(m_joy2_x);
 					break;
@@ -287,7 +289,7 @@ READ8_MEMBER( vc4000_state::vc4000_video_r )
 	return data;
 }
 
-WRITE8_MEMBER( vc4000_state::vc4000_video_w )
+void vc4000_state::vc4000_video_w(offs_t offset, uint8_t data)
 {
 //  m_video.reg.data[offset]=data;
 	if (offset > 0xcf) offset &= 0xcf;  // c0-cf is mirrored at d0-df, e0-ef, f0-ff
@@ -348,9 +350,9 @@ WRITE8_MEMBER( vc4000_state::vc4000_video_w )
 }
 
 
-READ8_MEMBER( vc4000_state::vc4000_vsync_r )
+READ_LINE_MEMBER(vc4000_state::vc4000_vsync_r)
 {
-	return m_video.line >= VC4000_END_LINE ? 0x80 : 0;
+	return m_video.line >= VC4000_END_LINE ? ASSERT_LINE : CLEAR_LINE;
 }
 
 static const char led[20][12+1] =
@@ -380,34 +382,30 @@ static const char led[20][12+1] =
 
 void vc4000_state::vc4000_draw_digit(bitmap_ind16 &bitmap, int x, int y, int d, int line)
 {
-	static const int digit_to_segment[0x10]={
-	0x0fff, 0x007c, 0x17df, 0x15ff, 0x1c7d, 0x1df7, 0x1ff7, 0x007f, 0x1fff, 0x1dff
-	};
+	static const int digit_to_segment[0x10]={ 0x0fff, 0x007c, 0x17df, 0x15ff, 0x1c7d, 0x1df7, 0x1ff7, 0x007f, 0x1fff, 0x1dff };
 
-	int i=line,j;
+	int i=line;
 
-	for (j=0; j<sizeof(led[0])-1; j++)
+	for (int j=0; j<sizeof(led[0])-1; j++)
 	{
 		if (led[i][j] != ' ' && digit_to_segment[d]&(1<<(led[i][j]-'a')) )
-			bitmap.pix16(y+i, x+j) = ((m_video.reg.d.background>>4)&7)^7;
+			bitmap.pix(y+i, x+j) = ((m_video.reg.d.background>>4)&7)^7;
 	}
 }
 
-inline void vc4000_state::vc4000_collision_plot(UINT8 *collision, UINT8 data, UINT8 color, int scale)
+inline void vc4000_state::vc4000_collision_plot(uint8_t *collision, uint8_t data, uint8_t color, int scale)
 {
-	int i,j,m;
-
-	for (j=0,m=0x80; j<8; j++, m>>=1)
+	for (int j=0, m=0x80; j<8; j++, m>>=1)
 	{
 		if (data&m)
-			for (i=0; i<scale; i++, collision++) *collision|=color;
+			for (int i=0; i<scale; i++, collision++) *collision|=color;
 		else
 			collision+=scale;
 	}
 }
 
 
-void vc4000_state::vc4000_sprite_update(bitmap_ind16 &bitmap, UINT8 *collision, SPRITE *This)
+void vc4000_state::vc4000_sprite_update(bitmap_ind16 &bitmap, uint8_t *collision, SPRITE *This)
 {
 	int i,j,m;
 
@@ -416,10 +414,10 @@ void vc4000_state::vc4000_sprite_update(bitmap_ind16 &bitmap, UINT8 *collision, 
 		This->y=This->data->y1;
 		This->state=0;
 		This->delay=0;
-		This->finished=FALSE;
+		This->finished=false;
 	}
 
-	This->finished_now=FALSE;
+	This->finished_now=false;
 
 	if (m_video.line>VC4000_END_LINE) return;
 
@@ -428,7 +426,7 @@ void vc4000_state::vc4000_sprite_update(bitmap_ind16 &bitmap, UINT8 *collision, 
 	case 0:
 		if (m_video.line != This->y + 2) break;
 		This->state++;
-
+		[[fallthrough]];
 	case 1: case 2: case 3: case 4: case 5: case 6: case 7: case 8:case 9:case 10:
 
 		vc4000_collision_plot(collision+This->data->x1, This->data->bitmap[This->state-1],This->mask,This->size);
@@ -455,8 +453,8 @@ void vc4000_state::vc4000_sprite_update(bitmap_ind16 &bitmap, UINT8 *collision, 
 
 		if (This->state>10)
 		{
-			This->finished=TRUE;
-			This->finished_now=TRUE;
+			This->finished=true;
+			This->finished_now=true;
 		}
 
 		break;
@@ -473,7 +471,7 @@ void vc4000_state::vc4000_sprite_update(bitmap_ind16 &bitmap, UINT8 *collision, 
 
 		This->delay=0;
 		This->state++;
-
+		[[fallthrough]];
 	case 12:
 		if (This->y!=0)
 		{
@@ -481,7 +479,7 @@ void vc4000_state::vc4000_sprite_update(bitmap_ind16 &bitmap, UINT8 *collision, 
 			break;
 		}
 		This->state++;
-
+		[[fallthrough]];
 	case 13: case 14: case 15: case 16: case 17: case 18: case 19:case 20:case 21:case 22:
 
 		vc4000_collision_plot(collision+This->data->x2,This->data->bitmap[This->state-13],This->mask,This->size);
@@ -509,14 +507,14 @@ void vc4000_state::vc4000_sprite_update(bitmap_ind16 &bitmap, UINT8 *collision, 
 		This->delay=0;
 		This->state++;
 		if (This->state<23) break;
-		This->finished=TRUE;
-		This->finished_now=TRUE;
+		This->finished=true;
+		This->finished_now=true;
 		This->state=11;
 		break;
 	}
 }
 
-inline void vc4000_state::vc4000_draw_grid(UINT8 *collision)
+inline void vc4000_state::vc4000_draw_grid(uint8_t *collision)
 {
 	int width = m_screen->width();
 	int height = m_screen->height();
@@ -542,7 +540,8 @@ inline void vc4000_state::vc4000_draw_grid(UINT8 *collision)
 	}
 	switch (i&3) {
 	case 0:
-		if (k&1) w=8;break;
+		if (k&1) w=8;
+		break;
 	case 1:
 		if ((line%40)<=10) {
 			if (k&2) w=8;
@@ -573,10 +572,9 @@ inline void vc4000_state::vc4000_draw_grid(UINT8 *collision)
 
 INTERRUPT_GEN_MEMBER(vc4000_state::vc4000_video_line)
 {
-	int x,y,i;
-	UINT8 collision[400]={0}; // better alloca or gcc feature of non constant long automatic arrays
+	uint8_t collision[400]={0}; // better alloca or gcc feature of non constant long automatic arrays
 	const rectangle &visarea = m_screen->visible_area();
-	assert(ARRAY_LENGTH(collision) >= m_screen->width());
+	assert(std::size(collision) >= m_screen->width());
 
 	m_video.line++;
 	if (m_irq_pause) m_irq_pause++;
@@ -601,7 +599,7 @@ INTERRUPT_GEN_MEMBER(vc4000_state::vc4000_video_line)
 		vc4000_draw_grid(collision);
 
 		/* init object colours */
-		for (i=visarea.min_x; i<visarea.max_x; i++) m_objects[i]=8;
+		for (int i=visarea.min_x; i<visarea.max_x; i++) m_objects[i]=8;
 
 		/* calculate object colours and OR overlapping object colours */
 		vc4000_sprite_update(*m_bitmap, collision, &m_video.sprites[0]);
@@ -609,20 +607,20 @@ INTERRUPT_GEN_MEMBER(vc4000_state::vc4000_video_line)
 		vc4000_sprite_update(*m_bitmap, collision, &m_video.sprites[2]);
 		vc4000_sprite_update(*m_bitmap, collision, &m_video.sprites[3]);
 
-		for (i=visarea.min_x; i<visarea.max_x; i++)
+		for (int i=visarea.min_x; i<visarea.max_x; i++)
 		{
 			m_video.sprite_collision|=m_sprite_collision[collision[i]];
 			m_video.background_collision|=m_background_collision[collision[i]];
 			/* display final object colours */
 			if (m_objects[i] < 8)
-					m_bitmap->pix16(m_video.line, i) = m_objects[i];
+					m_bitmap->pix(m_video.line, i) = m_objects[i];
 		}
 
-		y = m_video.reg.d.score_control&1?200:20;
+		int y = m_video.reg.d.score_control&1?200:20;
 
 		if ((m_video.line>=y)&&(m_video.line<y+20))
 		{
-			x = 60;
+			int x = 60;
 			vc4000_draw_digit(*m_bitmap, x, y, m_video.reg.d.bcd[0]>>4, m_video.line-y);
 			vc4000_draw_digit(*m_bitmap, x+16, y, m_video.reg.d.bcd[0]&0xf, m_video.line-y);
 			if (m_video.reg.d.score_control&2)  x -= 16;
@@ -638,12 +636,12 @@ INTERRUPT_GEN_MEMBER(vc4000_state::vc4000_video_line)
 		(m_video.sprites[1].finished_now) |
 		(m_video.sprites[0].finished_now)) && (!m_irq_pause))
 		{
-			m_maincpu->set_input_line_and_vector(0, ASSERT_LINE, 3);
+			m_maincpu->set_input_line(0, ASSERT_LINE);
 			m_irq_pause=1;
 		}
 }
 
-UINT32 vc4000_state::screen_update_vc4000(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t vc4000_state::screen_update_vc4000(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	copybitmap(bitmap, *m_bitmap, 0, 0, 0, 0, cliprect);
 	return 0;

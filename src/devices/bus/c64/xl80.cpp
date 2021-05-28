@@ -36,7 +36,9 @@ Notes:
 
 */
 
+#include "emu.h"
 #include "xl80.h"
+#include "screen.h"
 
 
 
@@ -55,7 +57,7 @@ Notes:
 //  DEVICE DEFINITIONS
 //**************************************************************************
 
-const device_type C64_XL80 = &device_creator<c64_xl80_device>;
+DEFINE_DEVICE_TYPE(C64_XL80, c64_xl80_device, "c64_xl80", "C64 XL 80 cartridge")
 
 
 //-------------------------------------------------
@@ -72,7 +74,7 @@ ROM_END
 //  rom_region - device-specific ROM region
 //-------------------------------------------------
 
-const rom_entry *c64_xl80_device::device_rom_region() const
+const tiny_rom_entry *c64_xl80_device::device_rom_region() const
 {
 	return ROM_NAME( c64_xl80 );
 }
@@ -83,13 +85,13 @@ const rom_entry *c64_xl80_device::device_rom_region() const
 
 MC6845_UPDATE_ROW( c64_xl80_device::crtc_update_row )
 {
-	const pen_t *pen = m_palette->pens();
+	pen_t const *const pen = m_palette->pens();
 
 	for (int column = 0; column < x_count; column++)
 	{
-		UINT8 code = m_ram[((ma + column) & 0x7ff)];
-		UINT16 addr = (code << 3) | (ra & 0x07);
-		UINT8 data = m_char_rom->base()[addr & 0x7ff];
+		uint8_t const code = m_ram[((ma + column) & 0x7ff)];
+		uint16_t const addr = (code << 3) | (ra & 0x07);
+		uint8_t data = m_char_rom->base()[addr & 0x7ff];
 
 		if (column == cursor_x)
 		{
@@ -98,10 +100,10 @@ MC6845_UPDATE_ROW( c64_xl80_device::crtc_update_row )
 
 		for (int bit = 0; bit < 8; bit++)
 		{
-			int x = (column * 8) + bit;
-			int color = BIT(data, 7) && de;
+			int const x = (column * 8) + bit;
+			int const color = BIT(data, 7) && de;
 
-			bitmap.pix32(vbp + y, hbp + x) = pen[color];
+			bitmap.pix(vbp + y, hbp + x) = pen[color];
 
 			data <<= 1;
 		}
@@ -112,40 +114,31 @@ MC6845_UPDATE_ROW( c64_xl80_device::crtc_update_row )
 //  GFXDECODE( c64_xl80 )
 //-------------------------------------------------
 
-static GFXDECODE_START( c64_xl80 )
+static GFXDECODE_START( gfx_c64_xl80 )
 	GFXDECODE_ENTRY(HD46505SP_TAG, 0x0000, gfx_8x8x1, 0, 1)
 GFXDECODE_END
 
 
 //-------------------------------------------------
-//  MACHINE_CONFIG_FRAGMENT( c64_xl80 )
+//  device_add_mconfig - add device configuration
 //-------------------------------------------------
 
-static MACHINE_CONFIG_FRAGMENT( c64_xl80 )
-	MCFG_SCREEN_ADD(MC6845_SCREEN_TAG, RASTER)
-	MCFG_SCREEN_UPDATE_DEVICE(HD46505SP_TAG, h46505_device, screen_update)
-	MCFG_SCREEN_SIZE(80*8, 24*8)
-	MCFG_SCREEN_VISIBLE_AREA(0, 80*8-1, 0, 24*8-1)
-	MCFG_SCREEN_REFRESH_RATE(50)
-
-	MCFG_GFXDECODE_ADD("gfxdecode", "palette", c64_xl80)
-	MCFG_PALETTE_ADD_BLACK_AND_WHITE("palette")
-
-	MCFG_MC6845_ADD(HD46505SP_TAG, H46505, MC6845_SCREEN_TAG, XTAL_14_31818MHz / 8)
-	MCFG_MC6845_SHOW_BORDER_AREA(true)
-	MCFG_MC6845_CHAR_WIDTH(8)
-	MCFG_MC6845_UPDATE_ROW_CB(c64_xl80_device, crtc_update_row)
-MACHINE_CONFIG_END
-
-
-//-------------------------------------------------
-//  machine_config_additions - device-specific
-//  machine configurations
-//-------------------------------------------------
-
-machine_config_constructor c64_xl80_device::device_mconfig_additions() const
+void c64_xl80_device::device_add_mconfig(machine_config &config)
 {
-	return MACHINE_CONFIG_NAME( c64_xl80 );
+	screen_device &screen(SCREEN(config, MC6845_SCREEN_TAG, SCREEN_TYPE_RASTER, rgb_t::white()));
+	screen.set_screen_update(HD46505SP_TAG, FUNC(hd6845s_device::screen_update));
+	screen.set_size(80*8, 24*8);
+	screen.set_visarea(0, 80*8-1, 0, 24*8-1);
+	screen.set_refresh_hz(50);
+
+	GFXDECODE(config, "gfxdecode", m_palette, gfx_c64_xl80);
+	PALETTE(config, m_palette, palette_device::MONOCHROME);
+
+	HD6845S(config, m_crtc, XTAL(14'318'181) / 8);
+	m_crtc->set_screen(MC6845_SCREEN_TAG);
+	m_crtc->set_show_border_area(true);
+	m_crtc->set_char_width(8);
+	m_crtc->set_update_row_callback(FUNC(c64_xl80_device::crtc_update_row));
 }
 
 
@@ -158,13 +151,13 @@ machine_config_constructor c64_xl80_device::device_mconfig_additions() const
 //  c64_xl80_device - constructor
 //-------------------------------------------------
 
-c64_xl80_device::c64_xl80_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock) :
-	device_t(mconfig, C64_XL80, "XL 80", tag, owner, clock, "c64_xl80", __FILE__),
+c64_xl80_device::c64_xl80_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock) :
+	device_t(mconfig, C64_XL80, tag, owner, clock),
 	device_c64_expansion_card_interface(mconfig, *this),
 	m_crtc(*this, HD46505SP_TAG),
 	m_palette(*this, "palette"),
 	m_char_rom(*this, HD46505SP_TAG),
-	m_ram(*this, "ram")
+	m_ram(*this, "ram", RAM_SIZE, ENDIANNESS_LITTLE)
 {
 }
 
@@ -175,8 +168,6 @@ c64_xl80_device::c64_xl80_device(const machine_config &mconfig, const char *tag,
 
 void c64_xl80_device::device_start()
 {
-	// allocate memory
-	m_ram.allocate(RAM_SIZE);
 }
 
 
@@ -193,13 +184,13 @@ void c64_xl80_device::device_reset()
 //  c64_cd_r - cartridge data read
 //-------------------------------------------------
 
-UINT8 c64_xl80_device::c64_cd_r(address_space &space, offs_t offset, UINT8 data, int sphi2, int ba, int roml, int romh, int io1, int io2)
+uint8_t c64_xl80_device::c64_cd_r(offs_t offset, uint8_t data, int sphi2, int ba, int roml, int romh, int io1, int io2)
 {
 	if (!io2 && BIT(offset, 2))
 	{
 		if (offset & 0x01)
 		{
-			data = m_crtc->register_r(space, 0);
+			data = m_crtc->register_r();
 		}
 	}
 	else if (offset >= 0x8000 && offset < 0x9000)
@@ -219,7 +210,7 @@ UINT8 c64_xl80_device::c64_cd_r(address_space &space, offs_t offset, UINT8 data,
 //  c64_cd_w - cartridge data write
 //-------------------------------------------------
 
-void c64_xl80_device::c64_cd_w(address_space &space, offs_t offset, UINT8 data, int sphi2, int ba, int roml, int romh, int io1, int io2)
+void c64_xl80_device::c64_cd_w(offs_t offset, uint8_t data, int sphi2, int ba, int roml, int romh, int io1, int io2)
 {
 	if (offset >= 0x9800 && offset < 0xa000)
 	{
@@ -229,11 +220,11 @@ void c64_xl80_device::c64_cd_w(address_space &space, offs_t offset, UINT8 data, 
 	{
 		if (offset & 0x01)
 		{
-			m_crtc->register_w(space, 0, data);
+			m_crtc->register_w(data);
 		}
 		else
 		{
-			m_crtc->address_w(space, 0, data);
+			m_crtc->address_w(data);
 		}
 	}
 }

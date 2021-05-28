@@ -6,6 +6,7 @@
 
 **********************************************************************/
 
+#include "emu.h"
 #include "sandy_superdisk.h"
 
 
@@ -24,7 +25,7 @@
 //  DEVICE DEFINITIONS
 //**************************************************************************
 
-const device_type SANDY_SUPER_DISK = &device_creator<sandy_super_disk_t>;
+DEFINE_DEVICE_TYPE(SANDY_SUPER_DISK, sandy_super_disk_device, "ql_sdisk", "Sandy Super Disk")
 
 
 //-------------------------------------------------
@@ -41,7 +42,7 @@ ROM_END
 //  rom_region - device-specific ROM region
 //-------------------------------------------------
 
-const rom_entry *sandy_super_disk_t::device_rom_region() const
+const tiny_rom_entry *sandy_super_disk_device::device_rom_region() const
 {
 	return ROM_NAME( sandy_super_disk );
 }
@@ -51,25 +52,28 @@ const rom_entry *sandy_super_disk_t::device_rom_region() const
 //  SLOT_INTERFACE( sandy_super_disk_floppies )
 //-------------------------------------------------
 
-static SLOT_INTERFACE_START( sandy_super_disk_floppies )
-	SLOT_INTERFACE( "35dd", FLOPPY_35_DD )
-SLOT_INTERFACE_END
+static void sandy_super_disk_floppies(device_slot_interface &device)
+{
+	device.option_add("35dd", FLOPPY_35_DD);
+}
 
 
 //-------------------------------------------------
 //  FLOPPY_FORMATS( floppy_formats )
 //-------------------------------------------------
 
-FLOPPY_FORMATS_MEMBER( sandy_super_disk_t::floppy_formats )
-	FLOPPY_QL_FORMAT
-FLOPPY_FORMATS_END
+void sandy_super_disk_device::floppy_formats(format_registration &fr)
+{
+	fr.add_mfm_containers();
+	fr.add(FLOPPY_QL_FORMAT);
+}
 
 
 //-------------------------------------------------
 //  centronics
 //-------------------------------------------------
 
-WRITE_LINE_MEMBER( sandy_super_disk_t::busy_w )
+WRITE_LINE_MEMBER( sandy_super_disk_device::busy_w )
 {
 	m_busy = state;
 	check_interrupt();
@@ -77,28 +81,19 @@ WRITE_LINE_MEMBER( sandy_super_disk_t::busy_w )
 
 
 //-------------------------------------------------
-//  MACHINE_CONFIG_FRAGMENT( sandy_super_disk )
+//  device_add_mconfig - add device configuration
 //-------------------------------------------------
 
-static MACHINE_CONFIG_FRAGMENT( sandy_super_disk )
-	MCFG_DEVICE_ADD(WD1772_TAG, WD1772, 8000000)
-	MCFG_FLOPPY_DRIVE_ADD(WD1772_TAG":0", sandy_super_disk_floppies, "35dd", sandy_super_disk_t::floppy_formats)
-	MCFG_FLOPPY_DRIVE_ADD(WD1772_TAG":1", sandy_super_disk_floppies, nullptr, sandy_super_disk_t::floppy_formats)
-
-	MCFG_CENTRONICS_ADD(CENTRONICS_TAG, centronics_devices, "printer")
-	MCFG_CENTRONICS_BUSY_HANDLER(WRITELINE(sandy_super_disk_t, busy_w))
-	MCFG_CENTRONICS_OUTPUT_LATCH_ADD(TTL74273_TAG, CENTRONICS_TAG)
-MACHINE_CONFIG_END
-
-
-//-------------------------------------------------
-//  machine_config_additions - device-specific
-//  machine configurations
-//-------------------------------------------------
-
-machine_config_constructor sandy_super_disk_t::device_mconfig_additions() const
+void sandy_super_disk_device::device_add_mconfig(machine_config &config)
 {
-	return MACHINE_CONFIG_NAME( sandy_super_disk );
+	WD1772(config, m_fdc, 8000000);
+	FLOPPY_CONNECTOR(config, m_floppy0, sandy_super_disk_floppies, "35dd", sandy_super_disk_device::floppy_formats);
+	FLOPPY_CONNECTOR(config, m_floppy1, sandy_super_disk_floppies, nullptr, sandy_super_disk_device::floppy_formats);
+
+	CENTRONICS(config, m_centronics, centronics_devices, "printer");
+	m_centronics->ack_handler().set(FUNC(sandy_super_disk_device::busy_w));
+	OUTPUT_LATCH(config, m_latch);
+	m_centronics->set_output_latch(*m_latch);
 }
 
 
@@ -108,11 +103,11 @@ machine_config_constructor sandy_super_disk_t::device_mconfig_additions() const
 //**************************************************************************
 
 //-------------------------------------------------
-//  sandy_super_disk_t - constructor
+//  sandy_super_disk_device - constructor
 //-------------------------------------------------
 
-sandy_super_disk_t::sandy_super_disk_t(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock) :
-	device_t(mconfig, SANDY_SUPER_DISK, "Sandy Super Disk", tag, owner, clock, "ql_sdisk", __FILE__),
+sandy_super_disk_device::sandy_super_disk_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock) :
+	device_t(mconfig, SANDY_SUPER_DISK, tag, owner, clock),
 	device_ql_expansion_card_interface(mconfig, *this),
 	m_fdc(*this, WD1772_TAG),
 	m_floppy0(*this, WD1772_TAG":0"),
@@ -129,7 +124,7 @@ sandy_super_disk_t::sandy_super_disk_t(const machine_config &mconfig, const char
 //  device_start - device-specific startup
 //-------------------------------------------------
 
-void sandy_super_disk_t::device_start()
+void sandy_super_disk_device::device_start()
 {
 	// state saving
 	save_item(NAME(m_busy));
@@ -141,7 +136,7 @@ void sandy_super_disk_t::device_start()
 //  device_reset - device-specific reset
 //-------------------------------------------------
 
-void sandy_super_disk_t::device_reset()
+void sandy_super_disk_device::device_reset()
 {
 	m_fdc->reset();
 	m_fdc->set_floppy(nullptr);
@@ -156,7 +151,7 @@ void sandy_super_disk_t::device_reset()
 //  read -
 //-------------------------------------------------
 
-UINT8 sandy_super_disk_t::read(address_space &space, offs_t offset, UINT8 data)
+uint8_t sandy_super_disk_device::read(offs_t offset, uint8_t data)
 {
 	if ((offset & 0xf0000) == 0xc0000)
 	{
@@ -165,7 +160,7 @@ UINT8 sandy_super_disk_t::read(address_space &space, offs_t offset, UINT8 data)
 			switch ((offset >> 2) & 0x03)
 			{
 			case 0:
-				data = m_fdc->read(space, offset & 0x03);
+				data = m_fdc->read(offset & 0x03);
 				break;
 
 			case 3:
@@ -202,7 +197,7 @@ UINT8 sandy_super_disk_t::read(address_space &space, offs_t offset, UINT8 data)
 //  write -
 //-------------------------------------------------
 
-void sandy_super_disk_t::write(address_space &space, offs_t offset, UINT8 data)
+void sandy_super_disk_device::write(offs_t offset, uint8_t data)
 {
 	if ((offset & 0xf0000) == 0xc0000)
 	{
@@ -211,7 +206,7 @@ void sandy_super_disk_t::write(address_space &space, offs_t offset, UINT8 data)
 			switch ((offset >> 2) & 0x03)
 			{
 			case 0:
-				m_fdc->write(space, offset & 0x03, data);
+				m_fdc->write(offset & 0x03, data);
 				break;
 
 			case 1:
@@ -267,7 +262,7 @@ void sandy_super_disk_t::write(address_space &space, offs_t offset, UINT8 data)
 	}
 }
 
-void sandy_super_disk_t::check_interrupt()
+void sandy_super_disk_device::check_interrupt()
 {
 	int extint = m_fd6 && m_busy;
 

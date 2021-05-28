@@ -5,18 +5,17 @@
     Taito Crazy Balloon hardware
 
     To-Do:
-        * Video timing from schematics
-        * Watchdog length from schematics
-        * Interrupt timing from schematics
-        * DIP switches
         * Faithfully implement the custom chips
         * Coin counter and lock-out
 
 ***************************************************************************/
 
 #include "emu.h"
-#include "cpu/z80/z80.h"
 #include "includes/crbaloon.h"
+
+#include "cpu/z80/z80.h"
+#include "machine/watchdog.h"
+#include "screen.h"
 
 
 /*************************************
@@ -52,15 +51,15 @@ void crbaloon_state::pc3092_reset(void)
 
 void crbaloon_state::pc3092_update()
 {
-	flip_screen_set((m_pc3092_data[1] & 0x01) ? TRUE : FALSE);
+	flip_screen_set((m_pc3092_data[1] & 0x01) ? true : false);
 }
 
 
-WRITE8_MEMBER(crbaloon_state::pc3092_w)
+void crbaloon_state::pc3092_w(offs_t offset, uint8_t data)
 {
 	m_pc3092_data[offset] = data & 0x0f;
 
-	if (LOG_PC3092) logerror("%04X:  write PC3092 #%d = 0x%02x\n", space.device().safe_pc(), offset, m_pc3092_data[offset]);
+	if (LOG_PC3092) logerror("%04X:  write PC3092 #%d = 0x%02x\n", m_maincpu->pc(), offset, m_pc3092_data[offset]);
 
 	pc3092_update();
 }
@@ -68,7 +67,7 @@ WRITE8_MEMBER(crbaloon_state::pc3092_w)
 
 CUSTOM_INPUT_MEMBER(crbaloon_state::pc3092_r)
 {
-	UINT32 ret;
+	uint32_t ret;
 
 	/* enable coin & start input? Wild guess!!! */
 	if (m_pc3092_data[1] & 0x02)
@@ -112,12 +111,12 @@ void crbaloon_state::pc3259_update(void)
 }
 
 
-READ8_MEMBER(crbaloon_state::pc3259_r)
+uint8_t crbaloon_state::pc3259_r(offs_t offset)
 {
-	UINT8 ret = 0;
-	UINT8 reg = offset >> 2;
+	uint8_t ret = 0;
+	uint8_t reg = offset >> 2;
 
-	UINT16 collision_address = crbaloon_get_collision_address();
+	uint16_t collision_address = crbaloon_get_collision_address();
 	int collided = (collision_address != 0xffff);
 
 	switch (reg)
@@ -140,7 +139,7 @@ READ8_MEMBER(crbaloon_state::pc3259_r)
 		break;
 	}
 
-	if (LOG_PC3259) logerror("%04X:  read PC3259 #%d = 0x%02x\n", space.device().safe_pc(), reg, ret);
+	if (LOG_PC3259) logerror("%04X:  read PC3259 #%d = 0x%02x\n", m_maincpu->pc(), reg, ret);
 
 	return ret | (ioport("DSW1")->read() & 0xf0);
 }
@@ -153,31 +152,33 @@ READ8_MEMBER(crbaloon_state::pc3259_r)
  *
  *************************************/
 
-WRITE8_MEMBER(crbaloon_state::port_sound_w)
+void crbaloon_state::port_sound_w(uint8_t data)
 {
-	/* D0 - interrupt enable - also goes to PC3259 as /HTCTRL */
+	// D0 - interrupt enable - also goes to PC3259 as /HTCTRL
 	m_irq_mask = data & 0x01;
-	crbaloon_set_clear_collision_address((data & 0x01) ? TRUE : FALSE);
+	crbaloon_set_clear_collision_address(BIT(data, 0));
+	if (!m_irq_mask)
+		m_maincpu->set_input_line(INPUT_LINE_IRQ0, CLEAR_LINE);
 
-	/* D1 - SOUND STOP */
-	machine().sound().system_enable((data & 0x02) ? TRUE : FALSE);
+	// D1 - SOUND STOP
+	machine().sound().system_mute(!BIT(data, 1));
 
-	/* D2 - unlabeled - music enable */
-	crbaloon_audio_set_music_enable(space, 0, (data & 0x04) ? TRUE : FALSE);
+	// D2 - unlabeled - music enable
+	crbaloon_audio_set_music_enable(BIT(data, 2));
 
-	/* D3 - EXPLOSION */
-	crbaloon_audio_set_explosion_enable((data & 0x08) ? TRUE : FALSE);
+	// D3 - EXPLOSION
+	crbaloon_audio_set_explosion_enable(BIT(data, 3));
 
-	/* D4 - BREATH */
-	crbaloon_audio_set_breath_enable((data & 0x10) ? TRUE : FALSE);
+	// D4 - BREATH
+	crbaloon_audio_set_breath_enable(BIT(data, 4));
 
-	/* D5 - APPEAR */
-	crbaloon_audio_set_appear_enable((data & 0x20) ? TRUE : FALSE);
+	// D5 - APPEAR
+	crbaloon_audio_set_appear_enable(BIT(data, 5));
 
-	/* D6 - unlabeled - laugh enable */
-	crbaloon_audio_set_laugh_enable(space, 0, (data & 0x40) ? TRUE : FALSE);
+	// D6 - unlabeled - laugh enable
+	crbaloon_audio_set_laugh_enable(BIT(data, 6));
 
-	/* D7 - unlabeled - goes to PC3259 pin 16 */
+	// D7 - unlabeled - goes to PC3259 pin 16
 
 	pc3259_update();
 }
@@ -190,14 +191,15 @@ WRITE8_MEMBER(crbaloon_state::port_sound_w)
  *
  *************************************/
 
-static ADDRESS_MAP_START( main_map, AS_PROGRAM, 8, crbaloon_state )
-	ADDRESS_MAP_GLOBAL_MASK(0x7fff) /* A15 is not decoded */
-	AM_RANGE(0x0000, 0x3fff) AM_ROM     /* not fully populated */
-	AM_RANGE(0x4000, 0x43ff) AM_MIRROR(0x0400) AM_RAM
-	AM_RANGE(0x4800, 0x4bff) AM_MIRROR(0x0400) AM_RAM_WRITE(crbaloon_videoram_w) AM_SHARE("videoram")
-	AM_RANGE(0x5000, 0x53ff) AM_MIRROR(0x0400) AM_RAM_WRITE(crbaloon_colorram_w) AM_SHARE("colorram")
-	AM_RANGE(0x5800, 0x7fff) AM_NOP
-ADDRESS_MAP_END
+void crbaloon_state::main_map(address_map &map)
+{
+	map.global_mask(0x7fff); /* A15 is not decoded */
+	map(0x0000, 0x3fff).rom();     /* not fully populated */
+	map(0x4000, 0x43ff).mirror(0x0400).ram();
+	map(0x4800, 0x4bff).mirror(0x0400).ram().w(FUNC(crbaloon_state::crbaloon_videoram_w)).share("videoram");
+	map(0x5000, 0x53ff).mirror(0x0400).ram().w(FUNC(crbaloon_state::crbaloon_colorram_w)).share("colorram");
+	map(0x5800, 0x7fff).noprw();
+}
 
 
 
@@ -207,23 +209,24 @@ ADDRESS_MAP_END
  *
  *************************************/
 
-static ADDRESS_MAP_START( main_io_map, AS_IO, 8, crbaloon_state )
-	ADDRESS_MAP_GLOBAL_MASK(0xf)
-	AM_RANGE(0x00, 0x00) AM_MIRROR(0x0c) AM_READ_PORT("DSW0")
-	AM_RANGE(0x01, 0x01) AM_MIRROR(0x0c) AM_READ_PORT("IN0")
-	AM_RANGE(0x02, 0x02) AM_MIRROR(0x0c) AM_MASK(0x0c) AM_READ(pc3259_r)
-	AM_RANGE(0x03, 0x03) AM_MIRROR(0x0c) AM_READ_PORT("IN1")
+void crbaloon_state::main_io_map(address_map &map)
+{
+	map.global_mask(0xf);
+	map(0x00, 0x00).mirror(0x0c).portr("DSW0");
+	map(0x01, 0x01).mirror(0x0c).portr("IN0");
+	map(0x02, 0x02).select(0x0c).r(FUNC(crbaloon_state::pc3259_r));
+	map(0x03, 0x03).mirror(0x0c).portr("IN1");
 
-	AM_RANGE(0x00, 0x00) AM_WRITENOP    /* not connected */
-	AM_RANGE(0x01, 0x01) AM_WRITENOP /* watchdog */
-	AM_RANGE(0x02, 0x04) AM_WRITEONLY AM_SHARE("spriteram")
-	AM_RANGE(0x05, 0x05) AM_WRITE(crbaloon_audio_set_music_freq)
-	AM_RANGE(0x06, 0x06) AM_WRITE(port_sound_w)
-	AM_RANGE(0x07, 0x0b) AM_WRITE(pc3092_w) AM_SHARE("pc3092_data")
-	AM_RANGE(0x0c, 0x0c) AM_WRITENOP /* MSK - to PC3259 */
-	AM_RANGE(0x0d, 0x0d) AM_WRITENOP /* schematics has it in a box marked "NOT USE" */
-	AM_RANGE(0x0e, 0x0f) AM_WRITENOP
-ADDRESS_MAP_END
+	map(0x00, 0x00).nopw();    /* not connected */
+	map(0x01, 0x01).w("watchdog", FUNC(watchdog_timer_device::reset_w));
+	map(0x02, 0x04).writeonly().share("spriteram");
+	map(0x05, 0x05).w(FUNC(crbaloon_state::crbaloon_audio_set_music_freq));
+	map(0x06, 0x06).w(FUNC(crbaloon_state::port_sound_w));
+	map(0x07, 0x0b).w(FUNC(crbaloon_state::pc3092_w)).share("pc3092_data");
+	map(0x0c, 0x0c).nopw(); /* MSK - to PC3259 */
+	map(0x0d, 0x0d).nopw(); /* schematics has it in a box marked "NOT USE" */
+	map(0x0e, 0x0f).nopw();
+}
 
 
 
@@ -270,7 +273,7 @@ static INPUT_PORTS_START( crbaloon )
 	PORT_BIT( 0x80, IP_ACTIVE_LOW, IPT_JOYSTICK_RIGHT ) PORT_8WAY PORT_COCKTAIL
 
 	PORT_START("DSW1")
-	PORT_BIT( 0x0f, IP_ACTIVE_HIGH, IPT_SPECIAL )   /* PC3259 */
+	PORT_BIT( 0x0f, IP_ACTIVE_HIGH, IPT_CUSTOM )   /* PC3259 */
 	PORT_DIPNAME( 0x10, 0x10, "Invulnerability") PORT_DIPLOCATION("SW B:1")
 	PORT_DIPSETTING(    0x10, DEF_STR( Off ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
@@ -291,7 +294,7 @@ static INPUT_PORTS_START( crbaloon )
 	PORT_BIT( 0x02, IP_ACTIVE_LOW, IPT_BUTTON1 ) PORT_NAME("Name Reset")
 	PORT_BIT( 0x04, IP_ACTIVE_LOW, IPT_SERVICE1 )
 	PORT_BIT( 0x08, IP_ACTIVE_LOW, IPT_TILT )
-	PORT_BIT( 0xf0, IP_ACTIVE_HIGH, IPT_SPECIAL ) PORT_CUSTOM_MEMBER(DEVICE_SELF, crbaloon_state,pc3092_r, NULL)
+	PORT_BIT( 0xf0, IP_ACTIVE_HIGH, IPT_CUSTOM ) PORT_CUSTOM_MEMBER(crbaloon_state, pc3092_r)
 
 	PORT_START("PC3092")
 	PORT_BIT( 0x01, IP_ACTIVE_LOW, IPT_START1 )
@@ -321,7 +324,7 @@ static const gfx_layout charlayout =
 };
 
 
-static GFXDECODE_START( crbaloon )
+static GFXDECODE_START( gfx_crbaloon )
 	GFXDECODE_ENTRY( "gfx1", 0, charlayout, 0, 16 )
 GFXDECODE_END
 
@@ -335,11 +338,9 @@ GFXDECODE_END
 
 void crbaloon_state::machine_reset()
 {
-	address_space &space = m_maincpu->space(AS_IO);
-
 	pc3092_reset();
-	port_sound_w(space, 0, 0);
-	crbaloon_audio_set_music_freq(space, 0, 0);
+	port_sound_w(0);
+	crbaloon_audio_set_music_freq(0);
 }
 
 
@@ -350,40 +351,37 @@ void crbaloon_state::machine_reset()
  *
  *************************************/
 
-INTERRUPT_GEN_MEMBER(crbaloon_state::vblank_irq)
+WRITE_LINE_MEMBER(crbaloon_state::vbl_int_w)
 {
-	if(m_irq_mask)
-		device.execute().set_input_line(0, HOLD_LINE);
+	if (state && m_irq_mask)
+		m_maincpu->set_input_line(INPUT_LINE_IRQ0, ASSERT_LINE);
 }
 
 
-static MACHINE_CONFIG_START( crbaloon, crbaloon_state )
-
+void crbaloon_state::crbaloon(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", Z80, CRBALOON_MASTER_XTAL / 3)
-	MCFG_CPU_PROGRAM_MAP(main_map)
-	MCFG_CPU_IO_MAP(main_io_map)
-	MCFG_CPU_VBLANK_INT_DRIVER("screen", crbaloon_state,  vblank_irq)
+	Z80(config, m_maincpu, CRBALOON_MASTER_XTAL / 4); // CPU clock based on 1H?
+	m_maincpu->set_addrmap(AS_PROGRAM, &crbaloon_state::main_map);
+	m_maincpu->set_addrmap(AS_IO, &crbaloon_state::main_io_map);
 
+	WATCHDOG_TIMER(config, "watchdog").set_vblank_count("screen", 256);
+	// Reset pulse comes from last stage of 74LS393 (8J) driven by 2VBL
 
 	/* video hardware */
-	MCFG_GFXDECODE_ADD("gfxdecode", "palette", crbaloon)
-	MCFG_PALETTE_ADD("palette", 32)
-	MCFG_PALETTE_INIT_OWNER(crbaloon_state, crbaloon)
+	GFXDECODE(config, m_gfxdecode, "palette", gfx_crbaloon);
+	PALETTE(config, "palette", FUNC(crbaloon_state::crbaloon_palette), 32);
 
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_VIDEO_ATTRIBUTES(VIDEO_ALWAYS_UPDATE)
-	MCFG_SCREEN_REFRESH_RATE(60)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(0))
-	MCFG_SCREEN_SIZE(32*8, 32*8)
-	MCFG_SCREEN_VISIBLE_AREA(0*8, 32*8-1, 0*8, 28*8-1)
-	MCFG_SCREEN_UPDATE_DRIVER(crbaloon_state, screen_update_crbaloon)
-	MCFG_SCREEN_PALETTE("palette")
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_RASTER));
+	screen.set_video_attributes(VIDEO_ALWAYS_UPDATE);
+	screen.set_raw(CRBALOON_MASTER_XTAL / 2, 320, 0, 256, 262, 0, 224);
+	screen.set_screen_update(FUNC(crbaloon_state::screen_update_crbaloon));
+	screen.set_palette("palette");
+	screen.screen_vblank().set(FUNC(crbaloon_state::vbl_int_w));
 
 	/* audio hardware */
-	MCFG_FRAGMENT_ADD(crbaloon_audio)
-
-MACHINE_CONFIG_END
+	crbaloon_audio(config);
+}
 
 
 
@@ -434,5 +432,5 @@ ROM_END
  *
  *************************************/
 
-GAME( 1980, crbaloon, 0,        crbaloon, crbaloon, driver_device, 0, ROT90, "Taito Corporation", "Crazy Balloon (set 1)", MACHINE_IMPERFECT_SOUND | MACHINE_SUPPORTS_SAVE )
-GAME( 1980, crbaloon2,crbaloon, crbaloon, crbaloon, driver_device, 0, ROT90, "Taito Corporation", "Crazy Balloon (set 2)", MACHINE_IMPERFECT_SOUND | MACHINE_SUPPORTS_SAVE )
+GAME( 1980, crbaloon,  0,        crbaloon, crbaloon, crbaloon_state, empty_init, ROT90, "Taito Corporation", "Crazy Balloon (set 1)", MACHINE_IMPERFECT_SOUND | MACHINE_SUPPORTS_SAVE )
+GAME( 1980, crbaloon2, crbaloon, crbaloon, crbaloon, crbaloon_state, empty_init, ROT90, "Taito Corporation", "Crazy Balloon (set 2)", MACHINE_IMPERFECT_SOUND | MACHINE_SUPPORTS_SAVE )

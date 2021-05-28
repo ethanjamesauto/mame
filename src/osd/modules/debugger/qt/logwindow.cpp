@@ -1,6 +1,7 @@
 // license:BSD-3-Clause
 // copyright-holders:Andrew Gardner
-#define NO_MEM_TRACKING
+#include "emu.h"
+#include <QtWidgets/QVBoxLayout>
 
 #include "logwindow.h"
 
@@ -9,12 +10,12 @@
 #include "debug/dvdisasm.h"
 
 
-LogWindow::LogWindow(running_machine* machine, QWidget* parent) :
-	WindowQt(machine, NULL)
+LogWindow::LogWindow(running_machine &machine, QWidget *parent) :
+	WindowQt(machine, nullptr)
 {
 	setWindowTitle("Debug: Machine Log");
 
-	if (parent != NULL)
+	if (parent)
 	{
 		QPoint parentPos = parent->pos();
 		setGeometry(parentPos.x()+100, parentPos.y()+100, 800, 400);
@@ -23,12 +24,10 @@ LogWindow::LogWindow(running_machine* machine, QWidget* parent) :
 	//
 	// The main frame and its input and log widgets
 	//
-	QFrame* mainWindowFrame = new QFrame(this);
+	QFrame *mainWindowFrame = new QFrame(this);
 
 	// The main log view
-	m_logView = new DebuggerView(DVT_LOG,
-									m_machine,
-									this);
+	m_logView = new DebuggerView(DVT_LOG, m_machine, this);
 
 	// Layout
 	QVBoxLayout* vLayout = new QVBoxLayout(mainWindowFrame);
@@ -48,25 +47,25 @@ LogWindow::~LogWindow()
 //=========================================================================
 //  LogWindowQtConfig
 //=========================================================================
-void LogWindowQtConfig::buildFromQWidget(QWidget* widget)
+void LogWindowQtConfig::buildFromQWidget(QWidget *widget)
 {
 	WindowQtConfig::buildFromQWidget(widget);
 }
 
 
-void LogWindowQtConfig::applyToQWidget(QWidget* widget)
+void LogWindowQtConfig::applyToQWidget(QWidget *widget)
 {
 	WindowQtConfig::applyToQWidget(widget);
 }
 
 
-void LogWindowQtConfig::addToXmlDataNode(xml_data_node* node) const
+void LogWindowQtConfig::addToXmlDataNode(util::xml::data_node &node) const
 {
 	WindowQtConfig::addToXmlDataNode(node);
 }
 
 
-void LogWindowQtConfig::recoverFromXmlNode(xml_data_node* node)
+void LogWindowQtConfig::recoverFromXmlNode(util::xml::data_node const &node)
 {
 	WindowQtConfig::recoverFromXmlNode(node);
 }

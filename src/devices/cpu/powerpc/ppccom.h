@@ -7,13 +7,10 @@
     Common PowerPC definitions and functions
 
 ***************************************************************************/
+#ifndef MAME_CPU_POWERPC_PPCCOM_H
+#define MAME_CPU_POWERPC_PPCCOM_H
 
 #pragma once
-
-#ifndef __PPCCOM_H__
-#define __PPCCOM_H__
-
-#include "ppc.h"
 
 
 /***************************************************************************
@@ -305,17 +302,22 @@ enum
 /* Machine State Register bits - 603 */
 #define MSR603_TGPR         0x00020000  /* Temporary GPR Remapping */
 
+/* ESA Save and Restore Register bits - 602 */
+#define SPR602_ESASRR_EE    0x00000001  /* External Interrupt Enable */
+#define SPR602_ESASRR_SA    0x00000002  /* Supervisor access mode */
+#define SPR602_ESASRR_AP    0x00000004  /* Access privilege state */
+#define SPR602_ESASRR_PR    0x00000008  /* Privilege Level */
 
 /* DSISR bits for DSI/alignment exceptions */
-#define DSISR_DIRECT        0x00000001      /* DSI: direct-store exception? */
-#define DSISR_NOT_FOUND     0x00000002      /* DSI: not found in HTEG or DBAT */
-#define DSISR_PROTECTED     0x00000010      /* DSI: exception due to protection */
-#define DSISR_CACHE_ERROR   0x00000020      /* DSI: operation on incorrect cache type */
-#define DSISR_STORE         0x00000040      /* DSI: store (1) or load (0) */
-#define DSISR_DABR          0x00000200      /* DSI: DABR match occurred */
-#define DSISR_NO_SEGMENT    0x00000400      /* DSI: no segment match found (64-bit only) */
-#define DSISR_INVALID_ECWX  0x00000800      /* DSI: ECIWX or ECOWX used with EAR[E] = 0 */
-#define DSISR_INSTRUCTION   0xfffff000      /* align: instruction decoding bits */
+#define DSISR_DIRECT        0x80000000      /* DSI: direct-store error interrupt */
+#define DSISR_NOT_FOUND     0x40000000      /* DSI: not found in HTEG or DBAT */
+#define DSISR_PROTECTED     0x08000000      /* DSI: exception due to protection */
+#define DSISR_CACHE_ERROR   0x04000000      /* DSI: operation on incorrect cache type */
+#define DSISR_STORE         0x02000000      /* DSI: store (1) or load (0) */
+#define DSISR_DABR          0x00400000      /* DSI: DABR match occurred */
+#define DSISR_NO_SEGMENT    0x00200000      /* DSI: no segment match found (64-bit only) */
+#define DSISR_INVALID_ECWX  0x00100000      /* DSI: ECIWX or ECOWX used with EAR[E] = 0 */
+#define DSISR_INSTRUCTION   0x000fffff      /* align: instruction decoding bits FIXME: mask/shift depends on addressing mode */
 
 
 /* PowerPC 4XX IRQ bits */
@@ -429,11 +431,11 @@ enum
  * in with the passed value.
  */
 
-#define D_OP(op)            (UINT32)((op & 0x3f) << 26)
-#define D_XO(xo)            (UINT32)((xo & 0x3ff) << 1)
-#define D_RT(r)             (UINT32)((r & 0x1f) << (31 - 10))
-#define D_RA(r)             (UINT32)((r & 0x1f) << (31 - 15))
-#define D_UIMM(u)           (UINT32)(u & 0xffff)
+#define D_OP(op)            (uint32_t)((op & 0x3f) << 26)
+#define D_XO(xo)            (uint32_t)((xo & 0x3ff) << 1)
+#define D_RT(r)             (uint32_t)((r & 0x1f) << (31 - 10))
+#define D_RA(r)             (uint32_t)((r & 0x1f) << (31 - 15))
+#define D_UIMM(u)           (uint32_t)(u & 0xffff)
 
 /*
  * Macros to Get Field Values
@@ -475,6 +477,7 @@ enum
 #define G_TO(op)            ((op & M_TO) >> (31 - 10))
 #define G_XO(op)            ((op & M_XO) >> (31 - 30))
 
+extern offs_t ppc_dasm_one(std::ostream &stream, uint32_t pc, uint32_t op);
 
 
-#endif /* __PPCCOM_H__ */
+#endif // MAME_CPU_POWERPC_PPCCOM_H

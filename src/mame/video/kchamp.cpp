@@ -2,7 +2,7 @@
 // copyright-holders:Ernesto Corvi
 /***************************************************************************
 
-  video.c
+  kchamp.cpp
 
   Functions to emulate the video hardware of the machine.
 
@@ -12,36 +12,34 @@
 #include "includes/kchamp.h"
 
 
-PALETTE_INIT_MEMBER(kchamp_state, kchamp)
+void kchamp_state::kchamp_palette(palette_device &palette) const
 {
-	const UINT8 *color_prom = memregion("proms")->base();
-	int i, red, green, blue;
-
-	for (i = 0; i < palette.entries(); i++)
+	uint8_t const *const color_prom = memregion("proms")->base();
+	for (int i = 0; i < palette.entries(); i++)
 	{
-		red = color_prom[i];
-		green = color_prom[palette.entries() + i];
-		blue = color_prom[2 * palette.entries() + i];
+		int const red = color_prom[i];
+		int const green = color_prom[palette.entries() + i];
+		int const blue = color_prom[2 * palette.entries() + i];
 
 		palette.set_pen_color(i, pal4bit(red), pal4bit(green), pal4bit(blue));
 	}
 }
 
-WRITE8_MEMBER(kchamp_state::kchamp_videoram_w)
+void kchamp_state::kchamp_videoram_w(offs_t offset, uint8_t data)
 {
 	m_videoram[offset] = data;
 	m_bg_tilemap->mark_tile_dirty(offset);
 }
 
-WRITE8_MEMBER(kchamp_state::kchamp_colorram_w)
+void kchamp_state::kchamp_colorram_w(offs_t offset, uint8_t data)
 {
 	m_colorram[offset] = data;
 	m_bg_tilemap->mark_tile_dirty(offset);
 }
 
-WRITE8_MEMBER(kchamp_state::kchamp_flipscreen_w)
+WRITE_LINE_MEMBER(kchamp_state::flipscreen_w)
 {
-	flip_screen_set(data & 0x01);
+	flip_screen_set(state);
 }
 
 TILE_GET_INFO_MEMBER(kchamp_state::get_bg_tile_info)
@@ -49,12 +47,12 @@ TILE_GET_INFO_MEMBER(kchamp_state::get_bg_tile_info)
 	int code = m_videoram[tile_index] + ((m_colorram[tile_index] & 7) << 8);
 	int color = (m_colorram[tile_index] >> 3) & 0x1f;
 
-	SET_TILE_INFO_MEMBER(0, code, color, 0);
+	tileinfo.set(0, code, color, 0);
 }
 
 void kchamp_state::video_start()
 {
-	m_bg_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(kchamp_state::get_bg_tile_info),this), TILEMAP_SCAN_ROWS, 8, 8, 32, 32);
+	m_bg_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(kchamp_state::get_bg_tile_info)), TILEMAP_SCAN_ROWS, 8, 8, 32, 32);
 }
 
 /*
@@ -69,7 +67,7 @@ void kchamp_state::video_start()
 
 void kchamp_state::kchamp_draw_sprites( bitmap_ind16 &bitmap, const rectangle &cliprect )
 {
-	UINT8 *spriteram = m_spriteram;
+	uint8_t *spriteram = m_spriteram;
 	int offs;
 
 	for (offs = 0; offs < 0x100; offs += 4)
@@ -97,7 +95,7 @@ void kchamp_state::kchamp_draw_sprites( bitmap_ind16 &bitmap, const rectangle &c
 
 void kchamp_state::kchampvs_draw_sprites( bitmap_ind16 &bitmap, const rectangle &cliprect )
 {
-	UINT8 *spriteram = m_spriteram;
+	uint8_t *spriteram = m_spriteram;
 	int offs;
 
 	for (offs = 0; offs < 0x100; offs += 4)
@@ -124,14 +122,14 @@ void kchamp_state::kchampvs_draw_sprites( bitmap_ind16 &bitmap, const rectangle 
 }
 
 
-UINT32 kchamp_state::screen_update_kchamp(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t kchamp_state::screen_update_kchamp(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	m_bg_tilemap->draw(screen, bitmap, cliprect, 0, 0);
 	kchamp_draw_sprites(bitmap, cliprect);
 	return 0;
 }
 
-UINT32 kchamp_state::screen_update_kchampvs(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t kchamp_state::screen_update_kchampvs(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	m_bg_tilemap->draw(screen, bitmap, cliprect, 0, 0);
 	kchampvs_draw_sprites(bitmap, cliprect);

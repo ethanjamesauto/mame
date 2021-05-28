@@ -41,82 +41,78 @@
 
 ***************************************************************************/
 
-PALETTE_INIT_MEMBER(sonson_state, sonson)
+void sonson_state::sonson_palette(palette_device &palette) const
 {
-	const UINT8 *color_prom = memregion("proms")->base();
-	int i;
+	const uint8_t *color_prom = memregion("proms")->base();
 
-	/* create a lookup table for the palette */
-	for (i = 0; i < 0x20; i++)
+	// create a lookup table for the palette
+	for (int i = 0; i < 0x20; i++)
 	{
 		int bit0, bit1, bit2, bit3;
-		int r, g, b;
 
-		/* red component */
+		// red component
 		bit0 = (color_prom[i + 0x20] >> 0) & 0x01;
 		bit1 = (color_prom[i + 0x20] >> 1) & 0x01;
 		bit2 = (color_prom[i + 0x20] >> 2) & 0x01;
 		bit3 = (color_prom[i + 0x20] >> 3) & 0x01;
-		r = 0x0e * bit0 + 0x1f * bit1 + 0x43 * bit2 + 0x8f * bit3;
+		int const r = 0x0e * bit0 + 0x1f * bit1 + 0x43 * bit2 + 0x8f * bit3;
 
-		/* green component */
+		// green component
 		bit0 = (color_prom[i + 0x00] >> 4) & 0x01;
 		bit1 = (color_prom[i + 0x00] >> 5) & 0x01;
 		bit2 = (color_prom[i + 0x00] >> 6) & 0x01;
 		bit3 = (color_prom[i + 0x00] >> 7) & 0x01;
-		g = 0x0e * bit0 + 0x1f * bit1 + 0x43 * bit2 + 0x8f * bit3;
+		int const g = 0x0e * bit0 + 0x1f * bit1 + 0x43 * bit2 + 0x8f * bit3;
 
-		/* blue component */
+		// blue component
 		bit0 = (color_prom[i + 0x00] >> 0) & 0x01;
 		bit1 = (color_prom[i + 0x00] >> 1) & 0x01;
 		bit2 = (color_prom[i + 0x00] >> 2) & 0x01;
 		bit3 = (color_prom[i + 0x00] >> 3) & 0x01;
-		b = 0x0e * bit0 + 0x1f * bit1 + 0x43 * bit2 + 0x8f * bit3;
+		int const b = 0x0e * bit0 + 0x1f * bit1 + 0x43 * bit2 + 0x8f * bit3;
 
 		palette.set_indirect_color(i, rgb_t(r, g, b));
 	}
 
-	/* color_prom now points to the beginning of the lookup table */
+	// color_prom now points to the beginning of the lookup table
 	color_prom += 0x40;
 
-	/* characters use colors 0-0x0f */
-	for (i = 0; i < 0x100; i++)
+	// characters use colors 0-0x0f
+	for (int i = 0; i < 0x100; i++)
 	{
-		UINT8 ctabentry = color_prom[i] & 0x0f;
+		uint8_t const ctabentry = color_prom[i] & 0x0f;
 		palette.set_pen_indirect(i, ctabentry);
 	}
 
-	/* sprites use colors 0x10-0x1f */
-	for (i = 0x100; i < 0x200; i++)
+	// sprites use colors 0x10-0x1f
+	for (int i = 0x100; i < 0x200; i++)
 	{
-		UINT8 ctabentry = (color_prom[i] & 0x0f) | 0x10;
+		uint8_t const ctabentry = (color_prom[i] & 0x0f) | 0x10;
 		palette.set_pen_indirect(i, ctabentry);
 	}
 }
 
-WRITE8_MEMBER(sonson_state::sonson_videoram_w)
+void sonson_state::sonson_videoram_w(offs_t offset, uint8_t data)
 {
 	m_videoram[offset] = data;
 	m_bg_tilemap->mark_tile_dirty(offset);
 }
 
-WRITE8_MEMBER(sonson_state::sonson_colorram_w)
+void sonson_state::sonson_colorram_w(offs_t offset, uint8_t data)
 {
 	m_colorram[offset] = data;
 	m_bg_tilemap->mark_tile_dirty(offset);
 }
 
-WRITE8_MEMBER(sonson_state::sonson_scrollx_w)
+void sonson_state::sonson_scrollx_w(uint8_t data)
 {
-	int row;
-
-	for (row = 5; row < 32; row++)
+	for (int row = 5; row < 32; row++)
 		m_bg_tilemap->set_scrollx(row, data);
 }
 
-WRITE8_MEMBER(sonson_state::sonson_flipscreen_w)
+WRITE_LINE_MEMBER(sonson_state::flipscreen_w)
 {
-	flip_screen_set(~data & 0x01);
+	flip_screen_set(!state);
 }
 
 TILE_GET_INFO_MEMBER(sonson_state::get_bg_tile_info)
@@ -125,18 +121,18 @@ TILE_GET_INFO_MEMBER(sonson_state::get_bg_tile_info)
 	int code = m_videoram[tile_index] + 256 * (attr & 0x03);
 	int color = attr >> 2;
 
-	SET_TILE_INFO_MEMBER(0, code, color, 0);
+	tileinfo.set(0, code, color, 0);
 }
 
 void sonson_state::video_start()
 {
-	m_bg_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(sonson_state::get_bg_tile_info),this), TILEMAP_SCAN_ROWS, 8, 8, 32, 32);
+	m_bg_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(sonson_state::get_bg_tile_info)), TILEMAP_SCAN_ROWS, 8, 8, 32, 32);
 	m_bg_tilemap->set_scroll_rows(32);
 }
 
 void sonson_state::draw_sprites( bitmap_ind16 &bitmap, const rectangle &cliprect )
 {
-	UINT8 *spriteram = m_spriteram;
+	uint8_t *spriteram = m_spriteram;
 	int offs;
 
 	for (offs = m_spriteram.bytes() - 4; offs >= 0; offs -= 4)
@@ -168,7 +164,7 @@ void sonson_state::draw_sprites( bitmap_ind16 &bitmap, const rectangle &cliprect
 	}
 }
 
-UINT32 sonson_state::screen_update_sonson(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t sonson_state::screen_update_sonson(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	m_bg_tilemap->draw(screen, bitmap, cliprect, 0, 0);
 	draw_sprites(bitmap, cliprect);

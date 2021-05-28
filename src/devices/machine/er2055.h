@@ -6,21 +6,27 @@
 
     GI 512 bit electrically alterable read-only memory.
 
+****************************************************************************
+                            _____   _____
+                    D3   1 |*    \_/     | 22  D2
+                    D7   2 |             | 21  D1
+                    D6   3 |             | 20  D0
+                    D5   4 |             | 19  Vgi (GND)
+                    D4   5 |             | 18  CS2
+              Vss (+5V)  6 |   ER-2055   | 17  CS1
+                    A5   7 |             | 16  C2
+                    A4   8 |             | 15  C1
+                    A3   9 |             | 14  Vgg (-28V)
+                    A2  10 |             | 13  CLK
+                    A1  11 |_____________| 12  A0
+
 ***************************************************************************/
+
+#ifndef MAME_MACHINE_ER2055_H
+#define MAME_MACHINE_ER2055_H
 
 #pragma once
 
-#ifndef __ER2055_H__
-#define __ER2055_H__
-
-
-
-//**************************************************************************
-//  INTERFACE CONFIGURATION MACROS
-//**************************************************************************
-
-#define MCFG_ER2055_ADD(_tag) \
-	MCFG_DEVICE_ADD(_tag, ER2055, 0)
 
 
 //**************************************************************************
@@ -31,53 +37,52 @@
 // ======================> er2055_device
 
 class er2055_device :   public device_t,
-						public device_memory_interface,
 						public device_nvram_interface
 {
 public:
 	// construction/destruction
-	er2055_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	er2055_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock = 0);
 
 	// I/O operations
-	UINT8 data() const { return m_data; }
-	void set_address(UINT8 address) { m_address = address & 0x3f; }
-	void set_data(UINT8 data) { m_data = data; }
+	uint8_t data() const { return m_data; }
+	void set_address(uint8_t address) { m_address = address & 0x3f; }
+	void set_data(uint8_t data) { m_data = data; }
 
 	// control lines -- all lines are specified as active-high (even CS2)
-	void set_control(UINT8 cs1, UINT8 cs2, UINT8 c1, UINT8 c2, UINT8 ck);
+	void set_control(uint8_t cs1, uint8_t cs2, uint8_t c1, uint8_t c2);
+	DECLARE_WRITE_LINE_MEMBER(set_clk);
 
 protected:
 	// device-level overrides
 	virtual void device_start() override;
-
-	// device_memory_interface overrides
-	virtual const address_space_config *memory_space_config(address_spacenum spacenum = AS_0) const override;
 
 	// device_nvram_interface overrides
 	virtual void nvram_default() override;
 	virtual void nvram_read(emu_file &file) override;
 	virtual void nvram_write(emu_file &file) override;
 
-	static const int SIZE_DATA = 0x40;
+private:
+	void update_state();
 
-	static const UINT8 CK  = 0x01;
-	static const UINT8 C1  = 0x02;
-	static const UINT8 C2  = 0x04;
-	static const UINT8 CS1 = 0x08;
-	static const UINT8 CS2 = 0x10;
+	static constexpr int SIZE_DATA = 0x40;
 
-	// configuration state
-	address_space_config        m_space_config;
+	static constexpr uint8_t CK  = 0x01;
+	static constexpr uint8_t C1  = 0x02;
+	static constexpr uint8_t C2  = 0x04;
+	static constexpr uint8_t CS1 = 0x08;
+	static constexpr uint8_t CS2 = 0x10;
+
+	optional_region_ptr<uint8_t> m_default_data;
 
 	// internal state
-	UINT8       m_control_state;
-	UINT8       m_address;
-	UINT8       m_data;
+	uint8_t       m_control_state;
+	uint8_t       m_address;
+	uint8_t       m_data;
+	std::unique_ptr<uint8_t[]> m_rom_data;
 };
 
 
 // device type definition
-extern const device_type ER2055;
+DECLARE_DEVICE_TYPE(ER2055, er2055_device)
 
-
-#endif
+#endif // MAME_MACHINE_ER2055_H

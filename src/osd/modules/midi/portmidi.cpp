@@ -10,13 +10,8 @@
 
 #ifndef NO_USE_MIDI
 
-#ifndef USE_SYSTEM_PORTMIDI
-#include "portmidi/pm_common/portmidi.h"
-#else
 #include <portmidi.h>
-#endif
 #include "osdcore.h"
-#include "corealloc.h"
 #include "modules/osdmodule.h"
 #include "midi_module.h"
 
@@ -24,8 +19,7 @@ class pm_module : public osd_module, public midi_module
 {
 public:
 
-	pm_module()
-	: osd_module(OSD_MIDI_PROVIDER, "pm"), midi_module()
+	pm_module() : osd_module(OSD_MIDI_PROVIDER, "pm"), midi_module()
 	{
 	}
 	virtual ~pm_module() { }
@@ -33,8 +27,8 @@ public:
 	virtual int init(const osd_options &options)override;
 	virtual void exit()override;
 
-	virtual osd_midi_device *create_midi_device() override;
-	virtual void list_midi_devices(void) override;
+	virtual std::unique_ptr<osd_midi_device> create_midi_device() override;
+	virtual void list_midi_devices() override;
 };
 
 
@@ -52,21 +46,21 @@ public:
 	virtual bool open_output(const char *devname) override;
 	virtual void close() override;
 	virtual bool poll() override;
-	virtual int read(UINT8 *pOut) override;
-	virtual void write(UINT8 data) override;
+	virtual int read(uint8_t *pOut) override;
+	virtual void write(uint8_t data) override;
 
 private:
 	PortMidiStream *pmStream;
 	PmEvent rx_evBuf[RX_EVENT_BUF_SIZE];
-	UINT8 xmit_in[4]; // Pm_Messages mean we can at most have 3 residue bytes
+	uint8_t xmit_in[4]; // Pm_Messages mean we can at most have 3 residue bytes
 	int xmit_cnt;
-	UINT8 last_status;
+	uint8_t last_status;
 	bool rx_sysex;
 };
 
-osd_midi_device *pm_module::create_midi_device()
+std::unique_ptr<osd_midi_device> pm_module::create_midi_device()
 {
-	return global_alloc(osd_midi_device_pm());
+	return std::make_unique<osd_midi_device_pm>();
 }
 
 
@@ -81,7 +75,7 @@ void pm_module::exit()
 	Pm_Terminate();
 }
 
-void pm_module::list_midi_devices(void)
+void pm_module::list_midi_devices()
 {
 	int num_devs = Pm_CountDevices();
 	const PmDeviceInfo *pmInfo;
@@ -223,7 +217,7 @@ bool osd_midi_device_pm::poll()
 	return (chk == pmGotData) ? true : false;
 }
 
-int osd_midi_device_pm::read(UINT8 *pOut)
+int osd_midi_device_pm::read(uint8_t *pOut)
 {
 	int msgsRead = Pm_Read(pmStream, rx_evBuf, RX_EVENT_BUF_SIZE);
 	int bytesOut = 0;
@@ -235,18 +229,24 @@ int osd_midi_device_pm::read(UINT8 *pOut)
 
 	for (int msg = 0; msg < msgsRead; msg++)
 	{
-		UINT8 status = Pm_MessageStatus(rx_evBuf[msg].message);
+		uint8_t status = Pm_MessageStatus(rx_evBuf[msg].message);
 
 		if (rx_sysex)
 		{
 			if (status & 0x80)  // sys real-time imposing on us?
 			{
-				if ((status == 0xf2) || (status == 0xf3))
+				if (status == 0xf2)
 				{
 					*pOut++ = status;
 					*pOut++ = Pm_MessageData1(rx_evBuf[msg].message);
 					*pOut++ = Pm_MessageData2(rx_evBuf[msg].message);
 					bytesOut += 3;
+				}
+				else if (status == 0xf3)
+				{
+					*pOut++ = status;
+					*pOut++ = Pm_MessageData1(rx_evBuf[msg].message);
+					bytesOut += 2;
 				}
 				else
 				{
@@ -262,7 +262,7 @@ int osd_midi_device_pm::read(UINT8 *pOut)
 			{
 				for (int i = 0; i < 4; i++)
 				{
-					UINT8 byte = rx_evBuf[msg].message & 0xff;
+					uint8_t byte = rx_evBuf[msg].message & 0xff;
 					*pOut++ = byte;
 					bytesOut++;
 					if (byte == MIDI_EOX)
@@ -293,7 +293,7 @@ int osd_midi_device_pm::read(UINT8 *pOut)
 							*pOut++ = status;   // this should be OK: the shortest legal sysex is F0 tt dd F7, I believe
 							*pOut++ = (rx_evBuf[msg].message>>8) & 0xff;
 							*pOut++ = (rx_evBuf[msg].message>>16) & 0xff;
-							UINT8 last = *pOut++ = (rx_evBuf[msg].message>>24) & 0xff;
+							uint8_t last = *pOut++ = (rx_evBuf[msg].message>>24) & 0xff;
 							bytesOut += 4;
 							rx_sysex = (last != MIDI_EOX);
 							break;
@@ -306,14 +306,21 @@ int osd_midi_device_pm::read(UINT8 *pOut)
 							break;
 
 						case 2: // song pos
-						case 3: // song select
 							*pOut++ = status;
 							*pOut++ = Pm_MessageData1(rx_evBuf[msg].message);
 							*pOut++ = Pm_MessageData2(rx_evBuf[msg].message);
 							bytesOut += 3;
 							break;
 
+						case 3: // song select
+							*pOut++ = status;
+							*pOut++ = Pm_MessageData1(rx_evBuf[msg].message);
+							bytesOut += 2;
+							break;
+
 						default:    // all other defined Fx messages are 1 byte
+							*pOut++ = status;
+							bytesOut += 1;
 							break;
 					}
 					break;
@@ -331,7 +338,7 @@ int osd_midi_device_pm::read(UINT8 *pOut)
 	return bytesOut;
 }
 
-void osd_midi_device_pm::write(UINT8 data)
+void osd_midi_device_pm::write(uint8_t data)
 {
 	int bytes_needed = 0;
 	PmEvent ev;

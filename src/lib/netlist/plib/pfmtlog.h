@@ -1,292 +1,483 @@
-// license:GPL-2.0+
+// license:BSD-3-Clause
 // copyright-holders:Couriersud
-/*
- * pfmtlog.h
- */
 
-#ifndef _PFMT_H_
-#define _PFMT_H_
+///
+/// \file pfmtlog.h
+///
 
-//#include <cstdarg>
-//#include <cstddef>
+#ifndef PFMTLOG_H_
+#define PFMTLOG_H_
 
-#include "pconfig.h"
+#include "penum.h"
+#include "pgsl.h"
+#include "ppmf.h"
 #include "pstring.h"
 #include "ptypes.h"
 
-template <typename T>
-struct ptype_treats
-{
-};
+#include <limits>
+#include <locale>
+#include <sstream>
 
-template<>
-struct ptype_treats<char>
-{
-	static short cast(char x) { return x; }
-	static const bool is_signed = true;
-	static const char *size_specifier() { return "h"; }
-};
+#define PERRMSGV(name, narg, str) \
+	struct name : public plib::perrmsg \
+	{ \
+		template<typename... Args> explicit name(Args&&... args) \
+		: plib::perrmsg(str, std::forward<Args>(args)...) \
+		{ static_assert((narg) == sizeof...(args), "Argument count mismatch"); } \
+	};
 
-template<>
-struct ptype_treats<short>
-{
-	static short cast(short x) { return x; }
-	static const bool is_signed = true;
-	static const char *size_specifier() { return "h"; }
-};
+namespace plib {
 
-template<>
-struct ptype_treats<int>
-{
-	static int cast(int x) { return x; }
-	static const bool is_signed = true;
-	static const char *size_specifier() { return ""; }
-};
+	PENUM(plog_level,
+		DEBUG,
+		VERBOSE,
+		INFO,
+		WARNING,
+		ERROR,
+		FATAL)
 
-template<>
-struct ptype_treats<long>
-{
-	static long cast(long x) { return x; }
-	static const bool is_signed = true;
-	static const char *size_specifier() { return "l"; }
-};
-
-template<>
-struct ptype_treats<long long>
-{
-	static long long cast(long long x) { return x; }
-	static const bool is_signed = true;
-	static const char *size_specifier() { return "ll"; }
-};
-
-template<>
-struct ptype_treats<unsigned char>
-{
-	static unsigned short cast(unsigned char x) { return x; }
-	static const bool is_signed = false;
-	static const char *size_specifier() { return "h"; }
-};
-
-template<>
-struct ptype_treats<unsigned short>
-{
-	static unsigned short cast(unsigned short x) { return x; }
-	static const bool is_signed = false;
-	static const char *size_specifier() { return "h"; }
-};
-
-template<>
-struct ptype_treats<unsigned int>
-{
-	static unsigned int cast(unsigned int x) { return x; }
-	static const bool is_signed = false;
-	static const char *size_specifier() { return ""; }
-};
-
-template<>
-struct ptype_treats<unsigned long>
-{
-	static unsigned long cast(unsigned long x) { return x; }
-	static const bool is_signed = false;
-	static const char *size_specifier() { return "l"; }
-};
-
-template<>
-struct ptype_treats<unsigned long long>
-{
-	static unsigned long long cast(unsigned long long x) { return x; }
-	static const bool is_signed = false;
-	static const char *size_specifier() { return "ll"; }
-};
-
-template <typename P>
-class pformat_base
-{
-public:
-
-	virtual ~pformat_base() { }
-
-	ATTR_COLD P &operator ()(const double x, const char *f = "") { format_element(f, "", "f", x); return static_cast<P &>(*this); }
-	ATTR_COLD P &          e(const double x, const char *f = "") { format_element(f, "", "e", x); return static_cast<P &>(*this);  }
-	ATTR_COLD P &          g(const double x, const char *f = "") { format_element(f, "", "g", x); return static_cast<P &>(*this);  }
-
-	ATTR_COLD P &operator ()(const char *x, const char *f = "") { format_element(f, "", "s", x); return static_cast<P &>(*this);  }
-	ATTR_COLD P &operator ()(char *x, const char *f = "") { format_element(f, "", "s", x); return static_cast<P &>(*this);  }
-	ATTR_COLD P &operator ()(const void *x, const char *f = "") { format_element(f, "", "p", x); return static_cast<P &>(*this);  }
-	ATTR_COLD P &operator ()(const pstring &x, const char *f = "") { format_element(f, "", "s", x.cstr() ); return static_cast<P &>(*this);  }
-
-	template<typename T>
-	ATTR_COLD P &operator ()(const T x, const char *f = "")
+	template <typename T>
+	struct ptype_traits_base
 	{
-		if (ptype_treats<T>::is_signed)
-			format_element(f, ptype_treats<T>::size_specifier(), "d", ptype_treats<T>::cast(x));
-		else
-			format_element(f, ptype_treats<T>::size_specifier(), "u", ptype_treats<T>::cast(x));
-		return static_cast<P &>(*this);
-	}
+		static constexpr const bool is_signed = std::numeric_limits<T>::is_signed;
+		static char32_t fmt_spec() { return 'u'; }
+		static void streamify(std::ostream &s, const T &v)
+		{
+			s << v;
+		}
+	};
 
-	template<typename T>
-	ATTR_COLD P &x(const T x, const char *f = "")
+	#if (PUSE_FLOAT128)
+	template <>
+	struct ptype_traits_base<FLOAT128>
 	{
-		format_element(f, ptype_treats<T>::size_specifier(), "x", x);
-		return static_cast<P &>(*this);
-	}
+		// FIXME: need native support at some time
+		static constexpr const bool is_signed = true;
+		static char32_t fmt_spec() { return 'f'; }
+		static void streamify(std::ostream &s, const FLOAT128 &v)
+		{
+			s << narrow_cast<long double>(v);
+		}
+	};
+	#endif
 
-	template<typename T>
-	ATTR_COLD P &o(const T x, const char *f = "")
+	template <typename T>
+	struct ptype_traits;
+
+	template<>
+	struct ptype_traits<compile_info::int128_type>
 	{
-		format_element(f, ptype_treats<T>::size_specifier(), "o", x);
-		return static_cast<P &>(*this);
-	}
+		// FIXME: need native support at some time
+		static constexpr const bool is_signed = true;
+		static char32_t fmt_spec() { return 'd'; }
+		template <typename T, typename = std::enable_if_t<plib::is_arithmetic<T>::value>>
+		static void streamify(std::ostream &s, const T &v)
+		{
+			s << narrow_cast<long long>(v);
+		}
+	};
 
-protected:
-
-	virtual void format_element(const char *f, const char *l, const char *fmt_spec, ...) = 0;
-
-};
-
-class pfmt : public pformat_base<pfmt>
-{
-public:
-	pfmt(const pstring &fmt);
-	pfmt(const char *fmt);
-	virtual ~pfmt();
-
-	operator pstring() const { return m_str; }
-
-	const char *cstr() { return m_str; }
-
-
-protected:
-	void format_element(const char *f, const char *l, const char *fmt_spec, ...) override;
-
-private:
-
-	char *m_str;
-	char m_str_buf[256];
-	unsigned m_allocated;
-	unsigned m_arg;
-};
-
-P_ENUM(plog_level,
-	DEBUG,
-	INFO,
-	VERBOSE,
-	WARNING,
-	ERROR,
-	FATAL)
-
-class plog_dispatch_intf;
-
-template <bool build_enabled = true>
-class pfmt_writer_t
-{
-public:
-	pfmt_writer_t() : m_enabled(true)  { }
-	virtual ~pfmt_writer_t() { }
-
-	ATTR_COLD void operator ()(const char *fmt) const
+	template<>
+	struct ptype_traits<bool> : ptype_traits_base<bool>
 	{
-		if (build_enabled && m_enabled) vdowrite(fmt);
-	}
+	};
 
-	template<typename T1>
-	ATTR_COLD void operator ()(const char *fmt, const T1 &v1) const
+	template<>
+	struct ptype_traits<char> : ptype_traits_base<char>
 	{
-		if (build_enabled && m_enabled) vdowrite(pfmt(fmt)(v1));
-	}
+		static char32_t fmt_spec() { return is_signed ? 'd' : 'u'; }
+	};
 
-	template<typename T1, typename T2>
-	ATTR_COLD void operator ()(const char *fmt, const T1 &v1, const T2 &v2) const
+	template<>
+	struct ptype_traits<short> : ptype_traits_base<short>
 	{
-		if (build_enabled && m_enabled) vdowrite(pfmt(fmt)(v1)(v2));
-	}
+		static char32_t fmt_spec() { return 'd'; }
+	};
 
-	template<typename T1, typename T2, typename T3>
-	ATTR_COLD void operator ()(const char *fmt, const T1 &v1, const T2 &v2, const T3 &v3) const
+	template<>
+	struct ptype_traits<int> : ptype_traits_base<int>
 	{
-		if (build_enabled && m_enabled) vdowrite(pfmt(fmt)(v1)(v2)(v3));
-	}
+		static char32_t fmt_spec() { return 'd'; }
+	};
 
-	template<typename T1, typename T2, typename T3, typename T4>
-	ATTR_COLD void operator ()(const char *fmt, const T1 &v1, const T2 &v2, const T3 &v3, const T4 &v4) const
+	template<>
+	struct ptype_traits<long> : ptype_traits_base<long>
 	{
-		if (build_enabled && m_enabled) vdowrite(pfmt(fmt)(v1)(v2)(v3)(v4));
-	}
+		static char32_t fmt_spec() { return 'd'; }
+	};
 
-	template<typename T1, typename T2, typename T3, typename T4, typename T5>
-	ATTR_COLD void operator ()(const char *fmt, const T1 &v1, const T2 &v2, const T3 &v3, const T4 &v4, const T5 &v5) const
+	template<>
+	struct ptype_traits<long long> : ptype_traits_base<long long>
 	{
-		if (build_enabled && m_enabled) vdowrite(pfmt(fmt)(v1)(v2)(v3)(v4)(v5));
-	}
+		static char32_t fmt_spec() { return 'd'; }
+	};
 
-	void set_enabled(const bool v)
+	template<>
+	struct ptype_traits<signed char> : ptype_traits_base<signed char>
 	{
-		m_enabled = v;
-	}
+		static char32_t fmt_spec() { return 'd'; }
+	};
 
-	bool is_enabled() const { return m_enabled; }
+	template<>
+	struct ptype_traits<unsigned char> : ptype_traits_base<unsigned char>
+	{
+		static char32_t fmt_spec() { return 'u'; }
+	};
 
-protected:
-	virtual void vdowrite(const pstring &ls) const {}
+	template<>
+	struct ptype_traits<unsigned short> : ptype_traits_base<unsigned short>
+	{
+		static char32_t fmt_spec() { return 'u'; }
+	};
 
-private:
-	bool m_enabled;
+	template<>
+	struct ptype_traits<unsigned int> : ptype_traits_base<unsigned int>
+	{
+		static char32_t fmt_spec() { return 'u'; }
+	};
 
-};
+	template<>
+	struct ptype_traits<unsigned long> : ptype_traits_base<unsigned long>
+	{
+		static char32_t fmt_spec() { return 'u'; }
+	};
 
-template <plog_level::e L, bool build_enabled = true>
-class plog_channel : public pfmt_writer_t<build_enabled>
-{
-public:
-	plog_channel(plog_dispatch_intf *b) : pfmt_writer_t<build_enabled>(),  m_base(b) { }
-	virtual ~plog_channel() { }
+	template<>
+	struct ptype_traits<unsigned long long> : ptype_traits_base<unsigned long long>
+	{
+		static char32_t fmt_spec() { return 'u'; }
+	};
 
-protected:
-	virtual void vdowrite(const pstring &ls) const override;
+	template<>
+	struct ptype_traits<float> : ptype_traits_base<float>
+	{
+		static char32_t fmt_spec() { return 'f'; }
+	};
 
-private:
-	plog_dispatch_intf *m_base;
-};
+	template<>
+	struct ptype_traits<double> : ptype_traits_base<double>
+	{
+		static char32_t fmt_spec() { return 'f'; }
+	};
 
-class plog_dispatch_intf
-{
-	template<plog_level::e, bool> friend class plog_channel;
+	template<>
+	struct ptype_traits<long double> : ptype_traits_base<long double>
+	{
+		static char32_t fmt_spec() { return 'f'; }
+	};
 
-public:
-	virtual ~plog_dispatch_intf() { }
-protected:
-	virtual void vlog(const plog_level &l, const pstring &ls) const = 0;
-};
-
-template<bool debug_enabled>
-class plog_base
-{
-public:
-
-	plog_base(plog_dispatch_intf *proxy)
-	: debug(proxy),
-		info(proxy),
-		verbose(proxy),
-		warning(proxy),
-		error(proxy),
-		fatal(proxy)
-	{}
-	virtual ~plog_base() {};
-
-	plog_channel<plog_level::DEBUG, debug_enabled> debug;
-	plog_channel<plog_level::INFO> info;
-	plog_channel<plog_level::VERBOSE> verbose;
-	plog_channel<plog_level::WARNING> warning;
-	plog_channel<plog_level::ERROR> error;
-	plog_channel<plog_level::FATAL> fatal;
-};
+	#if (PUSE_FLOAT128)
+	template<>
+	struct ptype_traits<FLOAT128> : ptype_traits_base<FLOAT128>
+	{
+		static char32_t fmt_spec() { return 'f'; }
+	};
+	#endif
 
 
-template <plog_level::e L, bool build_enabled>
-void plog_channel<L, build_enabled>::vdowrite(const pstring &ls) const
-{
-	m_base->vlog(L, ls);
-}
+	template<>
+	struct ptype_traits<char *> : ptype_traits_base<char *>
+	{
+		static char32_t fmt_spec() { return 's'; }
+	};
 
-#endif /* _PSTRING_H_ */
+	template<>
+	struct ptype_traits<const char *> : ptype_traits_base<const char *>
+	{
+		static char32_t fmt_spec() { return 's'; }
+	};
+
+	template<>
+	struct ptype_traits<const char16_t *> : ptype_traits_base<const char16_t *>
+	{
+		static char32_t fmt_spec() { return 's'; }
+		static void streamify(std::ostream &s, const char16_t *v)
+		{
+			const putf16string su16(v);
+			s << putf8string(su16).c_str();
+		}
+	};
+
+	template<>
+	struct ptype_traits<const char32_t *> : ptype_traits_base<const char32_t *>
+	{
+		static char32_t fmt_spec() { return 's'; }
+		static void streamify(std::ostream &s, const char32_t *v)
+		{
+			const putf32string su32(v);
+			s << putf8string(su32).c_str();
+		}
+	};
+
+	template<>
+	struct ptype_traits<std::string> : ptype_traits_base<std::string>
+	{
+		static char32_t fmt_spec() { return 's'; }
+	};
+
+	template<>
+	struct ptype_traits<putf8string> : ptype_traits_base<putf8string>
+	{
+		static char32_t fmt_spec() { return 's'; }
+	};
+
+	template<>
+	struct ptype_traits<putf16string> : ptype_traits_base<putf16string>
+	{
+		static char32_t fmt_spec() { return 's'; }
+		static void streamify(std::ostream &s, const putf16string &v)
+		{
+			s << putf8string(v).c_str();
+		}
+	};
+
+	template<>
+	struct ptype_traits<const void *> : ptype_traits_base<const void *>
+	{
+		static char32_t fmt_spec() { return 'p'; }
+	};
+
+	class pfmt
+	{
+	public:
+		explicit pfmt(const pstring &fmt)
+		: m_str(fmt), m_locale(std::locale::classic()), m_arg(0)
+		{
+		}
+		explicit pfmt(const std::locale &loc, const pstring &fmt)
+		: m_str(fmt), m_locale(loc), m_arg(0)
+		{
+		}
+
+		PCOPYASSIGNMOVE(pfmt, default)
+
+		~pfmt() noexcept = default;
+
+		operator pstring() const { return m_str; }
+
+		template <typename T>
+		std::enable_if_t<plib::is_floating_point<T>::value, pfmt &>
+		f(const T &x) {return format_element('f', x);  }
+
+		template <typename T>
+		std::enable_if_t<plib::is_floating_point<T>::value, pfmt &>
+		e(const T &x) {return format_element('e', x);  }
+
+		template <typename T>
+		std::enable_if_t<plib::is_floating_point<T>::value, pfmt &>
+		g(const T &x) {return format_element('g', x);  }
+
+		pfmt &operator ()(const void *x) {return format_element('p', x);  }
+		pfmt &operator ()(const pstring &x) {return format_element('s', x.c_str() );  }
+
+		template<typename T>
+		pfmt &operator ()(const T &x)
+		{
+			return format_element(x);
+		}
+
+		template<typename T>
+		pfmt &operator ()(const T *x)
+		{
+			return format_element(x);
+		}
+
+		pfmt &operator ()()
+		{
+			return *this;
+		}
+
+		template<typename X, typename Y, typename... Args>
+		pfmt &operator()(X&& x, Y && y, Args&&... args)
+		{
+			return ((*this)(std::forward<X>(x)))(std::forward<Y>(y), std::forward<Args>(args)...);
+		}
+
+		template<typename T>
+		std::enable_if_t<plib::is_integral<T>::value, pfmt &>
+		x(const T &x)
+		{
+			return format_element('x', x);
+		}
+
+		template<typename T>
+		std::enable_if_t<plib::is_integral<T>::value, pfmt &>
+		o(const T &x)
+		{
+			return format_element('o', x);
+		}
+
+		friend std::ostream& operator<<(std::ostream &ostrm, const pfmt &fmt)
+		{
+			ostrm << putf8string(fmt.m_str);
+			return ostrm;
+		}
+
+	protected:
+
+		struct rtype
+		{
+			rtype() : ret(0), p(0), sl(0) {}
+			int ret;
+			pstring::size_type p;
+			pstring::size_type sl;
+		};
+		rtype setfmt(std::stringstream &strm, char32_t cfmt_spec);
+
+		template <typename T>
+		pfmt &format_element(T &&v)
+		{
+			return format_element(ptype_traits<typename std::decay<T>::type>::fmt_spec(), std::forward<T>(v));
+		}
+
+		template <typename T>
+		pfmt &format_element(const char32_t cfmt_spec, T &&v)
+		{
+			rtype ret;
+
+			m_arg++;
+
+			do {
+				std::stringstream strm;
+				strm.imbue(m_locale);
+				ret = setfmt(strm, cfmt_spec);
+				if (ret.ret>=0)
+				{
+					ptype_traits<typename std::decay<T>::type>::streamify(strm, std::forward<T>(v));
+					const pstring ps(putf8string(strm.str()));
+					m_str = m_str.substr(0, ret.p) + ps + m_str.substr(ret.p + ret.sl);
+				}
+			} while (ret.ret == 1);
+
+			return *this;
+		}
+
+
+	private:
+
+		pstring m_str;
+		std::locale m_locale;
+		unsigned m_arg;
+	};
+
+	template <class T, bool build_enabled = true>
+	class pfmt_writer_t
+	{
+	public:
+		explicit pfmt_writer_t() : m_enabled(true)  { }
+
+		PCOPYASSIGNMOVE(pfmt_writer_t, delete)
+
+		// runtime enable
+		template<bool enabled, typename... Args>
+		void log(const pstring & fmt, Args&&... args) const noexcept
+		{
+			if (build_enabled && enabled && m_enabled)
+			{
+				pfmt pf(fmt);
+				dynamic_cast<T &>(*this).vdowrite(xlog(pf, std::forward<Args>(args)...));
+			}
+		}
+
+		template<typename... Args>
+		void operator ()(const pstring &fmt, Args&&... args) const noexcept
+		{
+			if (build_enabled && m_enabled)
+			{
+				pfmt pf(fmt);
+				static_cast<const T &>(*this).vdowrite(xlog(pf, std::forward<Args>(args)...));
+			}
+		}
+
+		void set_enabled(const bool v)
+		{
+			m_enabled = v;
+		}
+
+		bool is_enabled() const { return m_enabled; }
+
+	protected:
+		~pfmt_writer_t() noexcept = default;
+
+	private:
+		pfmt &xlog(pfmt &fmt) const { return fmt; }
+
+		template<typename X, typename... Args>
+		pfmt &xlog(pfmt &fmt, X&& x, Args&&... args) const
+		{
+			return xlog(fmt(std::forward<X>(x)), std::forward<Args>(args)...);
+		}
+
+		bool m_enabled;
+
+	};
+
+	using plog_delegate = plib::pmfp<void, plog_level, const pstring &>;
+
+	template <plog_level::E L, bool build_enabled = true>
+	class plog_channel : public pfmt_writer_t<plog_channel<L, build_enabled>, build_enabled>
+	{
+		friend class pfmt_writer_t<plog_channel<L, build_enabled>, build_enabled>;
+	public:
+		explicit plog_channel(plog_delegate logger)
+		: pfmt_writer_t<plog_channel, build_enabled>()
+		, m_logger(logger) { }
+
+		PCOPYASSIGNMOVE(plog_channel, delete)
+
+		~plog_channel() noexcept = default;
+
+	protected:
+		void vdowrite(const pstring &ls) const noexcept
+		{
+			m_logger(L, ls);
+		}
+
+	private:
+		plog_delegate m_logger;
+	};
+
+	template<bool debug_enabled>
+	class plog_base
+	{
+	public:
+
+		explicit plog_base(plog_delegate logger)
+		: debug(logger),
+			info(logger),
+			verbose(logger),
+			warning(logger),
+			error(logger),
+			fatal(logger)
+		{}
+
+		PCOPYASSIGNMOVE(plog_base, delete)
+		virtual ~plog_base() noexcept = default;
+
+		plog_channel<plog_level::DEBUG, debug_enabled> debug;
+		plog_channel<plog_level::INFO> info;
+		plog_channel<plog_level::VERBOSE> verbose;
+		plog_channel<plog_level::WARNING> warning;
+		plog_channel<plog_level::ERROR> error;
+		plog_channel<plog_level::FATAL> fatal;
+	};
+
+	struct perrmsg
+	{
+		template<std::size_t N, typename... Args>
+		explicit perrmsg(const char (&fmt)[N], Args&&... args) // NOLINT(cppcoreguidelines-avoid-c-arrays, modernize-avoid-c-arrays)
+		: m_msg(plib::pfmt(fmt)(std::forward<Args>(args)...))
+		{ }
+		operator pstring const & () const noexcept { return m_msg; }
+		const pstring & operator ()() const noexcept { return m_msg; }
+	private:
+		pstring m_msg;
+	};
+
+
+} // namespace plib
+
+template<typename T>
+plib::pfmt& operator<<(plib::pfmt &p, T&& val) { return p(std::forward<T>(val)); }
+
+#endif // PFMT_LOG_H_

@@ -10,8 +10,11 @@
 ***************************************************************************/
 
 #include "emu.h"
-#include "machine/eepromser.h"
 #include "includes/gaelco2.h"
+
+#include "machine/eepromser.h"
+#include "chd.h"
+
 
 /***************************************************************************
 
@@ -19,15 +22,15 @@
 
 ***************************************************************************/
 
-void gaelco2_state::gaelco2_ROM16_split_gfx(const char *src_reg, const char *dst_reg, int start, int length, int dest1, int dest2)
+void gaelco2_state::ROM16_split_gfx(const char *src_reg, const char *dst_reg, int start, int length, int dest1, int dest2)
 {
 	int i;
 
 	/* get a pointer to the source data */
-	UINT8 *src = (UINT8 *)memregion(src_reg)->base();
+	uint8_t *src = (uint8_t *)memregion(src_reg)->base();
 
 	/* get a pointer to the destination data */
-	UINT8 *dst = (UINT8 *)memregion(dst_reg)->base();
+	uint8_t *dst = (uint8_t *)memregion(dst_reg)->base();
 
 	/* fill destination areas with the proper data */
 	for (i = 0; i < length/2; i++){
@@ -43,7 +46,7 @@ void gaelco2_state::gaelco2_ROM16_split_gfx(const char *src_reg, const char *dst
 
 ***************************************************************************/
 
-DRIVER_INIT_MEMBER(gaelco2_state,alighunt)
+void gaelco2_state::init_alighunt()
 {
 	/*
 	For "gfx2" we have this memory map:
@@ -64,20 +67,20 @@ DRIVER_INIT_MEMBER(gaelco2_state,alighunt)
 	*/
 
 	/* split ROM u48 */
-	gaelco2_ROM16_split_gfx("gfx2", "gfx1", 0x0000000, 0x0400000, 0x0000000, 0x0400000);
+	ROM16_split_gfx("gfx2", "gfx1", 0x0000000, 0x0400000, 0x0000000, 0x0400000);
 
 	/* split ROM u47 */
-	gaelco2_ROM16_split_gfx("gfx2", "gfx1", 0x0400000, 0x0400000, 0x0200000, 0x0600000);
+	ROM16_split_gfx("gfx2", "gfx1", 0x0400000, 0x0400000, 0x0200000, 0x0600000);
 
 	/* split ROM u50 */
-	gaelco2_ROM16_split_gfx("gfx2", "gfx1", 0x0800000, 0x0400000, 0x0800000, 0x0c00000);
+	ROM16_split_gfx("gfx2", "gfx1", 0x0800000, 0x0400000, 0x0800000, 0x0c00000);
 
 	/* split ROM u49 */
-	gaelco2_ROM16_split_gfx("gfx2", "gfx1", 0x0c00000, 0x0400000, 0x0a00000, 0x0e00000);
+	ROM16_split_gfx("gfx2", "gfx1", 0x0c00000, 0x0400000, 0x0a00000, 0x0e00000);
 }
 
 
-DRIVER_INIT_MEMBER(gaelco2_state,touchgo)
+void gaelco2_state::init_touchgo()
 {
 	/*
 	For "gfx2" we have this memory map:
@@ -95,17 +98,17 @@ DRIVER_INIT_MEMBER(gaelco2_state,touchgo)
 	*/
 
 	/* split ROM ic65 */
-	gaelco2_ROM16_split_gfx("gfx2", "gfx1", 0x0000000, 0x0400000, 0x0000000, 0x0400000);
+	ROM16_split_gfx("gfx2", "gfx1", 0x0000000, 0x0400000, 0x0000000, 0x0400000);
 
 	/* split ROM ic66 */
-	gaelco2_ROM16_split_gfx("gfx2", "gfx1", 0x0400000, 0x0200000, 0x0200000, 0x0600000);
+	ROM16_split_gfx("gfx2", "gfx1", 0x0400000, 0x0200000, 0x0200000, 0x0600000);
 
 	/* split ROM ic67 */
-	gaelco2_ROM16_split_gfx("gfx2", "gfx1", 0x0800000, 0x0400000, 0x0800000, 0x0c00000);
+	ROM16_split_gfx("gfx2", "gfx1", 0x0800000, 0x0400000, 0x0800000, 0x0c00000);
 }
 
 
-DRIVER_INIT_MEMBER(gaelco2_state,snowboar)
+void gaelco2_state::init_snowboara()
 {
 	/*
 	For "gfx2" we have this memory map:
@@ -123,14 +126,57 @@ DRIVER_INIT_MEMBER(gaelco2_state,snowboar)
 	*/
 
 	/* split ROM sb44 */
-	gaelco2_ROM16_split_gfx("gfx2", "gfx1", 0x0000000, 0x0400000, 0x0000000, 0x0400000);
+	ROM16_split_gfx("gfx2", "gfx1", 0x0000000, 0x0400000, 0x0000000, 0x0400000);
 
 	/* split ROM sb45 */
-	gaelco2_ROM16_split_gfx("gfx2", "gfx1", 0x0400000, 0x0400000, 0x0200000, 0x0600000);
+	ROM16_split_gfx("gfx2", "gfx1", 0x0400000, 0x0400000, 0x0200000, 0x0600000);
 
 	/* split ROM sb46 */
-	gaelco2_ROM16_split_gfx("gfx2", "gfx1", 0x0800000, 0x0400000, 0x0800000, 0x0c00000);
+	ROM16_split_gfx("gfx2", "gfx1", 0x0800000, 0x0400000, 0x0800000, 0x0c00000);
+	init_snowboar();
 }
+
+
+void gaelco2_state::init_wrally2()
+{
+	/*
+	For "gfx2" we have this memory map:
+	    0x0000000-0x03fffff ROM wr2_ic69.ic69
+	    0x0400000-0x05fffff ROM wr2_ic70.ic70
+
+	and we are going to construct this one for "gfx1":
+	    0x0000000-0x01fffff ROM wr2_ic69.ic69 even bytes
+	    0x0200000-0x03fffff ROM wr2_ic69.ic69 odd bytes
+	    0x0400000-0x04fffff ROM wr2_ic70.ic70 even bytes
+	    0x0600000-0x06fffff ROM wr2_ic70.ic70 odd bytes
+	*/
+
+	/* split ROM wr2_ic69.ic69 */
+	ROM16_split_gfx("gfx2", "gfx1", 0x0000000, 0x0400000, 0x0000000, 0x0200000);
+
+	/* split ROM wr2_ic70.ic70 */
+	ROM16_split_gfx("gfx2", "gfx1", 0x0400000, 0x0200000, 0x0400000, 0x0600000);
+}
+
+
+/***************************************************************************
+
+    MCU communication
+
+***************************************************************************/
+
+void gaelco2_state::shareram_w(offs_t offset, u8 data)
+{
+	// why isn't there address map functionality for this?
+	reinterpret_cast<u8 *>(m_shareram.target())[BYTE_XOR_BE(offset)] = data;
+}
+
+u8 gaelco2_state::shareram_r(offs_t offset)
+{
+	// why isn't there address map functionality for this?
+	return reinterpret_cast<u8 const *>(m_shareram.target())[BYTE_XOR_BE(offset)];
+}
+
 
 /***************************************************************************
 
@@ -138,37 +184,40 @@ DRIVER_INIT_MEMBER(gaelco2_state,snowboar)
 
 ***************************************************************************/
 
-WRITE16_MEMBER(gaelco2_state::gaelco2_coin_w)
+void gaelco2_state::wrally2_latch_w(offs_t offset, u16 data)
+{
+	m_mainlatch->write_bit(offset >> 2, BIT(data, 0));
+}
+
+WRITE_LINE_MEMBER(gaelco2_state::coin1_counter_w)
+{
+	machine().bookkeeping().coin_counter_w(0, state);
+}
+
+WRITE_LINE_MEMBER(gaelco2_state::coin2_counter_w)
+{
+	machine().bookkeeping().coin_counter_w(1, state);
+}
+
+WRITE_LINE_MEMBER(gaelco2_state::coin3_counter_w)
+{
+	machine().bookkeeping().coin_counter_w(2, state);
+}
+
+WRITE_LINE_MEMBER(gaelco2_state::coin4_counter_w)
+{
+	machine().bookkeeping().coin_counter_w(3, state);
+}
+
+void gaelco2_state::alighunt_coin_w(u16 data)
 {
 	/* Coin Lockouts */
-	coin_lockout_w(machine(), 0, ~data & 0x01);
-	coin_lockout_w(machine(), 1, ~data & 0x02);
+	machine().bookkeeping().coin_lockout_w(0, ~data & 0x01);
+	machine().bookkeeping().coin_lockout_w(1, ~data & 0x02);
 
 	/* Coin Counters */
-	coin_counter_w(machine(), 0, data & 0x04);
-	coin_counter_w(machine(), 1, data & 0x08);
-}
-
-WRITE16_MEMBER(gaelco2_state::gaelco2_coin2_w)
-{
-	/* coin counters */
-	coin_counter_w(machine(), offset & 0x01,  data & 0x01);
-}
-
-WRITE16_MEMBER(wrally2_state::wrally2_coin_w)
-{
-	/* coin counters */
-	coin_counter_w(machine(), (offset >> 3) & 0x01,  data & 0x01);
-}
-
-WRITE16_MEMBER(gaelco2_state::touchgo_coin_w)
-{
-	if ((offset >> 2) == 0){
-		coin_counter_w(machine(), 0, data & 0x01);
-		coin_counter_w(machine(), 1, data & 0x02);
-		coin_counter_w(machine(), 2, data & 0x04);
-		coin_counter_w(machine(), 3, data & 0x08);
-	}
+	machine().bookkeeping().coin_counter_w(0, data & 0x04);
+	machine().bookkeeping().coin_counter_w(1, data & 0x08);
 }
 
 /***************************************************************************
@@ -178,12 +227,12 @@ WRITE16_MEMBER(gaelco2_state::touchgo_coin_w)
 ***************************************************************************/
 
 
-DRIVER_INIT_MEMBER(bang_state,bang)
+void bang_state::init_bang()
 {
 	m_clr_gun_int = 0;
 }
 
-WRITE16_MEMBER(bang_state::bang_clr_gun_int_w)
+void bang_state::bang_clr_gun_int_w(u16 data)
 {
 	m_clr_gun_int = 1;
 }
@@ -203,108 +252,91 @@ TIMER_DEVICE_CALLBACK_MEMBER(bang_state::bang_irq)
 
 /***************************************************************************
 
-    World Rally 2 analog controls
-    - added by Mirko Mattioli <els@fastwebnet.it>
-    ---------------------------------------------------------------
-    WR2 pcb has two ADC, one for each player. The ADCs have in common
-    the clock signal line (adc_clk) and the chip enable signal line
-    (adc_cs) and, of course,  two different data out signal lines.
-    When "Pot Wheel" option is selected via dip-switch, then the gear
-    is enabled (low/high shifter); the gear is disabled in joy mode by
-    the CPU program code. No brakes are present in this game.
-    Analog controls routines come from modified code wrote by Aaron
-    Giles for gaelco3d driver.
-
-***************************************************************************/
-
-
-CUSTOM_INPUT_MEMBER(wrally2_state::wrally2_analog_bit_r)
-{
-	int which = (FPTR)param;
-	return (m_analog_ports[which] >> 7) & 0x01;
-}
-
-
-WRITE16_MEMBER(wrally2_state::wrally2_adc_clk)
-{
-	/* a zero/one combo is written here to clock the next analog port bit */
-	if (ACCESSING_BITS_0_7)
-	{
-		if (!(data & 0xff))
-		{
-			m_analog_ports[0] <<= 1;
-			m_analog_ports[1] <<= 1;
-		}
-	}
-	else
-		logerror("%06X:analog_port_clock_w(%02X) = %08X & %08X\n", space.device().safe_pc(), offset, data, mem_mask);
-}
-
-
-WRITE16_MEMBER(wrally2_state::wrally2_adc_cs)
-{
-	/* a zero is written here to read the analog ports, and a one is written when finished */
-	if (ACCESSING_BITS_0_7)
-	{
-		if (!(data & 0xff))
-		{
-			m_analog_ports[0] = m_analog0->read();
-			m_analog_ports[1] = m_analog1->read();
-		}
-	}
-	else
-		logerror("%06X:analog_port_latch_w(%02X) = %08X & %08X\n", space.device().safe_pc(), offset, data, mem_mask);
-}
-
-/***************************************************************************
-
-    EEPROM (93C66)
-
-***************************************************************************/
-
-WRITE16_MEMBER(gaelco2_state::gaelco2_eeprom_cs_w)
-{
-	/* bit 0 is CS (active low) */
-	m_eeprom->cs_write((data & 0x01) ? ASSERT_LINE : CLEAR_LINE);
-}
-
-WRITE16_MEMBER(gaelco2_state::gaelco2_eeprom_sk_w)
-{
-	/* bit 0 is SK (active high) */
-	m_eeprom->clk_write((data & 0x01) ? ASSERT_LINE : CLEAR_LINE);
-}
-
-WRITE16_MEMBER(gaelco2_state::gaelco2_eeprom_data_w)
-{
-	/* bit 0 is EEPROM data (DIN) */
-	m_eeprom->di_write(data & 0x01);
-}
-
-/***************************************************************************
-
     Protection
 
 ***************************************************************************/
 
-
-/*
-    The game writes 2 values and then reads from a memory address.
-    If the read value is wrong, the game can crash in some places.
-    If we always return 0, the game doesn't crash but you can't see
-    the full intro (because it expects 0xffff somewhere).
-
-    The protection handles sound, controls, gameplay and some sprites
-*/
-
-READ16_MEMBER(gaelco2_state::snowboar_protection_r)
+void gaelco2_state::init_snowboar()
 {
-	logerror("%06x: protection read from %04x\n", space.device().safe_pc(), offset*2);
-	return 0x0000;
+	save_item(NAME(m_snowboard_latch));
 }
 
-WRITE16_MEMBER(gaelco2_state::snowboar_protection_w)
+static u32 rol(u32 x, u8 c)
+{
+	return (x << c) | (x >> (32 - c));
+}
+
+static u16 get_lo(u32 x)
+{
+	return ((x & 0x00000010) <<  1) |
+			((x & 0x00000800) <<  3) |
+			((x & 0x40000000) >> 27) |
+			((x & 0x00000005) <<  6) |
+			((x & 0x00000008) <<  8) |
+			rol(x & 0x00800040, 9)   |
+			((x & 0x04000000) >> 16) |
+			((x & 0x00008000) >> 14) |
+			((x & 0x00002000) >> 11) |
+			((x & 0x00020000) >> 10) |
+			((x & 0x00100000) >>  8) |
+			((x & 0x00044000) >>  5) |
+			((x & 0x00000020) >>  1);
+}
+
+static u16 get_hi(u32 x)
+{
+	return ((x & 0x00001400) >>  0) |
+			((x & 0x10000000) >> 26) |
+			((x & 0x02000000) >> 24) |
+			((x & 0x08000000) >> 21) |
+			((x & 0x00000002) << 12) |
+			((x & 0x01000000) >> 19) |
+			((x & 0x20000000) >> 18) |
+			((x & 0x80000000) >> 16) |
+			((x & 0x00200000) >> 13) |
+			((x & 0x00010000) >> 12) |
+			((x & 0x00080000) >> 10) |
+			((x & 0x00000200) >>  9) |
+			((x & 0x00400000) >>  8) |
+			((x & 0x00000080) >>  4) |
+			((x & 0x00000100) >>  1);
+}
+
+static u16 get_out(u16 x)
+{
+	return ((x & 0xc840) <<  0) |
+			((x & 0x0080) <<  2) |
+			((x & 0x0004) <<  3) |
+			((x & 0x0008) <<  5) |
+			((x & 0x0010) <<  8) |
+			((x & 0x0002) <<  9) |
+			((x & 0x0001) << 13) |
+			((x & 0x0200) >>  9) |
+			((x & 0x1400) >>  8) |
+			((x & 0x0100) >>  7) |
+			((x & 0x2000) >>  6) |
+			((x & 0x0020) >>  2);
+}
+
+u16 mangle(u32 x)
+{
+	u16 a = get_lo(x);
+	u16 b = get_hi(x);
+	return get_out(((a ^ 0x0010) - (b ^ 0x0024)) ^ 0x5496);
+}
+
+u16 gaelco2_state::snowboar_protection_r()
+{
+	u16 ret = mangle(m_snowboard_latch);
+	ret = ((ret & 0xff00) >> 8) | ((ret & 0x00ff) << 8);
+	return ret;
+}
+
+void gaelco2_state::snowboar_protection_w(offs_t offset, u16 data, u16 mem_mask)
 {
 	COMBINE_DATA(&m_snowboar_protection[offset]);
-	logerror("%06x: protection write %04x to %04x\n", space.device().safe_pc(), data, offset*2);
 
+	m_snowboard_latch = (m_snowboard_latch << 16) | data;
+
+	logerror("%06x: protection write %04x to %04x\n", m_maincpu->pc(), data, offset*2);
 }

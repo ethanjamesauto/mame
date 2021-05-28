@@ -1,12 +1,14 @@
 // license:BSD-3-Clause
 // copyright-holders:R. Belmont, M. Burke
+#ifndef MAME_MACHINE_DEC_LK201_H
+#define MAME_MACHINE_DEC_LK201_H
+
 #pragma once
 
-#ifndef __LK201_H__
-#define __LK201_H__
-
-#include "emu.h"
 #include "sound/beep.h"
+
+#include "diserial.h"
+
 
 //**************************************************************************
 //  MACROS / CONSTANTS
@@ -17,21 +19,20 @@
 
 #define LK_CMD_DIS_KEYCLK       0x99    /* disable the keyclick */
 #define LK_CMD_ENB_KEYCLK       0x1b    /* enable the keyclick - 1st param: volume */
-//#define LK_CMD_DIS_CTLCLK       0xb9    /* disable the Ctrl keyclick */
-//#define LK_CMD_ENB_CTLCLK       0xbb    /* enable the Ctrl keyclick */
+#define LK_CMD_DIS_CTLCLK       0xb9    /* disable the Ctrl keyclick */
+#define LK_CMD_ENB_CTLCLK       0xbb    /* enable the Ctrl keyclick */
 #define LK_CMD_SOUND_CLK        0x9f    /* emit a keyclick  - 1st param: volume */
 #define LK_CMD_DIS_BELL         0xa1    /* disable the bell */
 #define LK_CMD_ENB_BELL         0x23    /* enable the bell - 1st param: volume */
 #define LK_CMD_BELL             0xa7    /* emit a bell - 1st param: volume */
 
-#define LK_CMD_POWER_UP         0xfd    /* init power-up sequence */
+// TCR - Timer Compare Register
+#define TCR_OCIE 0x40 // Bit 6 (output compare IRQ enable)
+#define TCR_OLVL 0x01 // Bit 1 (output level)
 
-//**************************************************************************
-//  INTERFACE CONFIGURATION MACROS
-//**************************************************************************
+// TSR - Timer Status Register
+#define TSR_OCFL 0x40 // TSR (68HC05 output compare flag)
 
-#define MCFG_LK201_TX_HANDLER(_cb) \
-	devcb = &lk201_device::set_tx_handler(*device, DEVCB_##_cb);
 
 //**************************************************************************
 //  TYPE DEFINITIONS
@@ -43,23 +44,26 @@ class lk201_device : public device_t, public device_serial_interface
 {
 public:
 	// construction/destruction
-	lk201_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	lk201_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock = 0);
 
-	DECLARE_READ8_MEMBER( ddr_r );
-	DECLARE_WRITE8_MEMBER( ddr_w );
-	DECLARE_READ8_MEMBER( ports_r );
-	DECLARE_WRITE8_MEMBER( ports_w );
-	DECLARE_READ8_MEMBER( sci_r );
-	DECLARE_WRITE8_MEMBER( sci_w );
-	DECLARE_READ8_MEMBER( spi_r );
-	DECLARE_WRITE8_MEMBER( spi_w );
+	uint8_t ddr_r(offs_t offset);
+	void ddr_w(offs_t offset, uint8_t data);
+	uint8_t ports_r(offs_t offset);
+	void ports_w(offs_t offset, uint8_t data);
+	uint8_t sci_r(offs_t offset);
+	void sci_w(offs_t offset, uint8_t data);
+	uint8_t spi_r(offs_t offset);
+	void spi_w(offs_t offset, uint8_t data);
+	uint8_t timer_r(offs_t offset);
+	void timer_w(offs_t offset, uint8_t data);
 
-	template<class _Object> static devcb_base &set_tx_handler(device_t &device, _Object wr) { return downcast<lk201_device &>(device).m_tx_handler.set_callback(wr); }
+	auto tx_handler() { return m_tx_handler.bind(); }
 
+	void lk201_map(address_map &map);
 protected:
 	// device-level overrides
-	virtual machine_config_constructor device_mconfig_additions() const override;
-	virtual const rom_entry *device_rom_region() const override;
+	virtual void device_add_mconfig(machine_config &config) override;
+	virtual const tiny_rom_entry *device_rom_region() const override;
 	virtual ioport_constructor device_input_ports() const override;
 	virtual void device_start() override;
 	virtual void device_reset() override;
@@ -71,47 +75,56 @@ protected:
 	virtual void tra_callback() override;    // Tx send bit
 
 private:
-	UINT8 ddrs[3];
-	UINT8 ports[3];
-	UINT8 led_data;
-	UINT8 kbd_data;
+	uint8_t ddrs[3];
+	uint8_t ports[3];
+	uint8_t led_data;
+	uint8_t kbd_data;
 
-	UINT8 sci_ctl2;
-	UINT8 sci_status;
-	//UINT8 sci_data;
+	union {
+		struct {
+			uint8_t tcr;
+			uint8_t tsr;
+			uint8_t icrh;
+			uint8_t icrl;
+			uint8_t ocrh;
+			uint8_t ocrl;
+			uint8_t crh;
+			uint8_t crl;
+			uint8_t acrh;
+			uint8_t acrl;
+		};
+		uint8_t regs[10];
+	} m_timer;
 
-	UINT8 spi_status;
-	UINT8 spi_data;
+	emu_timer *m_count;
+	emu_timer *m_beeper;
+
+	uint8_t sci_ctl2;
+	uint8_t sci_status;
+	//uint8_t sci_data;
+
+	uint8_t spi_status;
+	uint8_t spi_data;
 
 	required_device<cpu_device> m_maincpu;
 	required_device<beep_device> m_speaker;
 
-	required_ioport m_kbd0;
-	required_ioport m_kbd1;
-	required_ioport m_kbd2;
-	required_ioport m_kbd3;
-	required_ioport m_kbd4;
-	required_ioport m_kbd5;
-	required_ioport m_kbd6;
-	required_ioport m_kbd7;
-	required_ioport m_kbd8;
-	required_ioport m_kbd9;
-	required_ioport m_kbd10;
-	required_ioport m_kbd11;
-	required_ioport m_kbd12;
-	required_ioport m_kbd13;
-	required_ioport m_kbd14;
-	required_ioport m_kbd15;
-	required_ioport m_kbd16;
-	required_ioport m_kbd17;
+	required_ioport_array<18> m_kbd;
 
-	void send_port(address_space &space, UINT8 offset, UINT8 data);
+	output_finder<> m_led_wait;
+	output_finder<> m_led_compose;
+	output_finder<> m_led_lock;
+	output_finder<> m_led_hold;
+
+	void send_port(uint8_t offset, uint8_t data);
 	void update_interrupts();
+
+	int m_kbd_state;
 
 	devcb_write_line m_tx_handler;
 };
 
 // device type definition
-extern const device_type LK201;
+DECLARE_DEVICE_TYPE(LK201, lk201_device)
 
-#endif
+#endif // MAME_MACHINE_DEC_LK201_H

@@ -12,26 +12,28 @@
 
 ***************************************************************************/
 
-#ifndef __H8S2000_H__
-#define __H8S2000_H__
+#ifndef MAME_CPU_H8_H8S2000_H
+#define MAME_CPU_H8_H8S2000_H
+
+#pragma once
 
 #include "h8h.h"
+#include "h8_dtc.h"
 
 class h8s2000_device : public h8h_device {
-public:
-	h8s2000_device(const machine_config &mconfig, device_type type, const char *name, const char *tag, device_t *owner, UINT32 clock, const char *shortname, const char *source, address_map_delegate map_delegate);
-
 protected:
-	static const disasm_entry disasm_entries[];
+	h8s2000_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock, address_map_constructor map_delegate);
 
-	virtual offs_t disasm_disassemble(char *buffer, offs_t pc, const UINT8 *oprom, const UINT8 *opram, UINT32 options) override;
+	virtual std::unique_ptr<util::disasm_interface> create_disassembler() override;
 
 	virtual void do_exec_full() override;
 	virtual void do_exec_partial() override;
 
 #define O(o) void o ## _full(); void o ## _partial()
+	O(andc_imm8_exr);
 	O(ldc_imm8_exr); O(ldc_r8l_exr); O(ldc_w_abs16_exr); O(ldc_w_abs32_exr); O(ldc_w_r32d16h_exr); O(ldc_w_r32d32hh_exr); O(ldc_w_r32ih_exr); O(ldc_w_r32ph_exr);
 	O(ldm_l_spp_r32n2l); O(ldm_l_spp_r32n3l); O(ldm_l_spp_r32n4l);
+	O(orc_imm8_exr);
 	O(rotl_b_two_r8l); O(rotl_l_two_r32l); O(rotl_w_two_r16l);
 	O(rotr_b_two_r8l); O(rotr_l_two_r32l); O(rotr_w_two_r16l);
 	O(rotxl_b_two_r8l); O(rotxl_l_two_r32l); O(rotxl_w_two_r16l);
@@ -43,8 +45,12 @@ protected:
 	O(stc_exr_r8l);O(stc_w_exr_abs16); O(stc_w_exr_abs32); O(stc_w_exr_pr32h); O(stc_w_exr_r32d16h); O(stc_w_exr_r32d32hh); O(stc_w_exr_r32ih);
 	O(stm_l_r32n2l_psp); O(stm_l_r32n3l_psp); O(stm_l_r32n4l_psp);
 	O(tas_r32ih);
+	O(xorc_imm8_exr);
 
 	O(state_trace);
+	O(state_dtc);
+	O(state_dtc_vector);
+	O(state_dtc_writeback);
 #undef O
 };
 

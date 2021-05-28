@@ -1,18 +1,16 @@
-// license:???
-// copyright-holders:John Butler, Ed Mueller, Aaron Giles
+// license:BSD-3-Clause
+// copyright-holders:Aaron Giles, Zsolt Vasvari
+// thanks-to: John Butler, Ed Mueller
 /***************************************************************************
 
     Taito Qix hardware
 
-    driver by John Butler, Ed Mueller, Aaron Giles
-
 ***************************************************************************/
 
 #include "emu.h"
-#include "cpu/m6800/m6800.h"
-#include "cpu/m6805/m6805.h"
-#include "cpu/m6809/m6809.h"
 #include "includes/qix.h"
+
+#include "cpu/m6800/m6800.h"
 
 
 /*************************************
@@ -21,21 +19,30 @@
  *
  *************************************/
 
-void qix_state::machine_reset()
+void qixmcu_state::machine_start()
 {
+	qix_state::machine_start();
+
 	/* reset the coin counter register */
 	m_coinctrl = 0x00;
-}
 
-
-MACHINE_START_MEMBER(qix_state,qixmcu)
-{
 	/* set up save states */
-	save_item(NAME(m_68705_port_in));
+	save_item(NAME(m_68705_porta_out));
 	save_item(NAME(m_coinctrl));
 }
 
+void zookeep_state::machine_start()
+{
+	if (m_mcu)
+		qixmcu_state::machine_start();
+	else
+		qix_state::machine_start();
 
+	/* configure the banking */
+	m_vidbank->configure_entry(0, memregion("videocpu")->base() + 0xa000);
+	m_vidbank->configure_entry(1, memregion("videocpu")->base() + 0x10000);
+	m_vidbank->set_entry(0);
+}
 
 /*************************************
  *
@@ -56,11 +63,11 @@ WRITE_LINE_MEMBER(qix_state::qix_vsync_changed)
  *
  *************************************/
 
-WRITE8_MEMBER(qix_state::zookeep_bankswitch_w)
+void zookeep_state::bankswitch_w(uint8_t data)
 {
-	membank("bank1")->set_entry((data >> 2) & 1);
+	m_vidbank->set_entry(BIT(data, 2));
 	/* not necessary, but technically correct */
-	qix_palettebank_w(space, offset, data);
+	qix_palettebank_w(data);
 }
 
 
@@ -71,29 +78,31 @@ WRITE8_MEMBER(qix_state::zookeep_bankswitch_w)
  *
  *************************************/
 
-WRITE8_MEMBER(qix_state::qix_data_firq_w)
+void qix_state::qix_data_firq_w(uint8_t data)
 {
 	m_maincpu->set_input_line(M6809_FIRQ_LINE, ASSERT_LINE);
 }
 
 
-WRITE8_MEMBER(qix_state::qix_data_firq_ack_w)
+void qix_state::qix_data_firq_ack_w(uint8_t data)
 {
 	m_maincpu->set_input_line(M6809_FIRQ_LINE, CLEAR_LINE);
 }
 
 
-READ8_MEMBER(qix_state::qix_data_firq_r)
+uint8_t qix_state::qix_data_firq_r(address_space &space)
 {
-	m_maincpu->set_input_line(M6809_FIRQ_LINE, ASSERT_LINE);
-	return 0xff;
+	if (!machine().side_effects_disabled())
+		m_maincpu->set_input_line(M6809_FIRQ_LINE, ASSERT_LINE);
+	return space.unmap();
 }
 
 
-READ8_MEMBER(qix_state::qix_data_firq_ack_r)
+uint8_t qix_state::qix_data_firq_ack_r(address_space &space)
 {
-	m_maincpu->set_input_line(M6809_FIRQ_LINE, CLEAR_LINE);
-	return 0xff;
+	if (!machine().side_effects_disabled())
+		m_maincpu->set_input_line(M6809_FIRQ_LINE, CLEAR_LINE);
+	return space.unmap();
 }
 
 
@@ -104,29 +113,31 @@ READ8_MEMBER(qix_state::qix_data_firq_ack_r)
  *
  *************************************/
 
-WRITE8_MEMBER(qix_state::qix_video_firq_w)
+void qix_state::qix_video_firq_w(uint8_t data)
 {
 	m_videocpu->set_input_line(M6809_FIRQ_LINE, ASSERT_LINE);
 }
 
 
-WRITE8_MEMBER(qix_state::qix_video_firq_ack_w)
+void qix_state::qix_video_firq_ack_w(uint8_t data)
 {
 	m_videocpu->set_input_line(M6809_FIRQ_LINE, CLEAR_LINE);
 }
 
 
-READ8_MEMBER(qix_state::qix_video_firq_r)
+uint8_t qix_state::qix_video_firq_r(address_space &space)
 {
-	m_videocpu->set_input_line(M6809_FIRQ_LINE, ASSERT_LINE);
-	return 0xff;
+	if (!machine().side_effects_disabled())
+		m_videocpu->set_input_line(M6809_FIRQ_LINE, ASSERT_LINE);
+	return space.unmap();
 }
 
 
-READ8_MEMBER(qix_state::qix_video_firq_ack_r)
+uint8_t qix_state::qix_video_firq_ack_r(address_space &space)
 {
-	m_videocpu->set_input_line(M6809_FIRQ_LINE, CLEAR_LINE);
-	return 0xff;
+	if (!machine().side_effects_disabled())
+		m_videocpu->set_input_line(M6809_FIRQ_LINE, CLEAR_LINE);
+	return space.unmap();
 }
 
 
@@ -137,26 +148,25 @@ READ8_MEMBER(qix_state::qix_video_firq_ack_r)
  *
  *************************************/
 
-READ8_MEMBER(qix_state::qixmcu_coin_r)
+uint8_t qixmcu_state::coin_r()
 {
-	logerror("6809:qixmcu_coin_r = %02X\n", m_68705_port_out[0]);
-	return m_68705_port_out[0];
+	logerror("qixmcu_state, coin_r = %02X\n", m_68705_porta_out);
+	return m_68705_porta_out;
 }
 
 
-WRITE8_MEMBER(qix_state::qixmcu_coin_w)
+void qixmcu_state::coin_w(uint8_t data)
 {
-	logerror("6809:qixmcu_coin_w = %02X\n", data);
+	logerror("qixmcu_state, coin_w = %02X\n", data);
 	/* this is a callback called by pia6821_device::write(), so I don't need to synchronize */
 	/* the CPUs - they have already been synchronized by qix_pia_w() */
-	m_68705_port_in[0] = data;
+	m_mcu->pa_w(data);
 }
 
 
-WRITE8_MEMBER(qix_state::qixmcu_coinctrl_w)
+void qixmcu_state::coinctrl_w(uint8_t data)
 {
-	/* if (!(data & 0x04)) */
-	if (data & 0x04)
+	if (BIT(data, 2))
 	{
 		m_mcu->set_input_line(M68705_IRQ_LINE, ASSERT_LINE);
 		/* temporarily boost the interleave to sync things up */
@@ -164,12 +174,14 @@ WRITE8_MEMBER(qix_state::qixmcu_coinctrl_w)
 		machine().scheduler().boost_interleave(attotime::zero, attotime::from_usec(50));
 	}
 	else
+	{
 		m_mcu->set_input_line(M68705_IRQ_LINE, CLEAR_LINE);
+	}
 
 	/* this is a callback called by pia6821_device::write(), so I don't need to synchronize */
 	/* the CPUs - they have already been synchronized by qix_pia_w() */
 	m_coinctrl = data;
-	logerror("6809:qixmcu_coinctrl_w = %02X\n", data);
+	logerror("qixmcu_state, coinctrl_w = %02X\n", data);
 }
 
 
@@ -180,31 +192,15 @@ WRITE8_MEMBER(qix_state::qixmcu_coinctrl_w)
  *
  *************************************/
 
-READ8_MEMBER(qix_state::qix_68705_portA_r)
+uint8_t qixmcu_state::mcu_portb_r()
 {
-	UINT8 ddr = m_68705_ddr[0];
-	UINT8 out = m_68705_port_out[0];
-	UINT8 in = m_68705_port_in[0];
-	logerror("68705:portA_r = %02X (%02X)\n", (out & ddr) | (in & ~ddr), in);
-	return (out & ddr) | (in & ~ddr);
+	return (ioport("COIN")->read() & 0x0f) | ((ioport("COIN")->read() & 0x80) >> 3);
 }
 
 
-READ8_MEMBER(qix_state::qix_68705_portB_r)
+uint8_t qixmcu_state::mcu_portc_r()
 {
-	UINT8 ddr = m_68705_ddr[1];
-	UINT8 out = m_68705_port_out[1];
-	UINT8 in = (ioport("COIN")->read() & 0x0f) | ((ioport("COIN")->read() & 0x80) >> 3);
-	return (out & ddr) | (in & ~ddr);
-}
-
-
-READ8_MEMBER(qix_state::qix_68705_portC_r)
-{
-	UINT8 ddr = m_68705_ddr[2];
-	UINT8 out = m_68705_port_out[2];
-	UINT8 in = (m_coinctrl & 0x08) | ((ioport("COIN")->read() & 0x70) >> 4);
-	return (out & ddr) | (in & ~ddr);
+	return (m_coinctrl & 0x08) | ((ioport("COIN")->read() & 0x70) >> 4);
 }
 
 
@@ -215,24 +211,17 @@ READ8_MEMBER(qix_state::qix_68705_portC_r)
  *
  *************************************/
 
-WRITE8_MEMBER(qix_state::qix_68705_portA_w)
+void qixmcu_state::mcu_porta_w(uint8_t data)
 {
 	logerror("68705:portA_w = %02X\n", data);
-	m_68705_port_out[0] = data;
+	m_68705_porta_out = data;
 }
 
 
-WRITE8_MEMBER(qix_state::qix_68705_portB_w)
+void qixmcu_state::mcu_portb_w(uint8_t data)
 {
-	m_68705_port_out[1] = data;
-	coin_lockout_w(machine(), 0, (~data >> 6) & 1);
-	coin_counter_w(machine(), 0, (data >> 7) & 1);
-}
-
-
-WRITE8_MEMBER(qix_state::qix_68705_portC_w)
-{
-	m_68705_port_out[2] = data;
+	machine().bookkeeping().coin_lockout_w(0, (~data >> 6) & 1);
+	machine().bookkeeping().coin_counter_w(0, (data >> 7) & 1);
 }
 
 
@@ -245,11 +234,11 @@ WRITE8_MEMBER(qix_state::qix_68705_portC_w)
 
 TIMER_CALLBACK_MEMBER(qix_state::pia_w_callback)
 {
-	m_pia0->write(generic_space(), param >> 8, param & 0xff);
+	m_pia0->write(param >> 8, param & 0xff);
 }
 
 
-WRITE8_MEMBER(qix_state::qix_pia_w)
+void qix_state::qix_pia_w(offs_t offset, uint8_t data)
 {
 	/* make all the CPUs synchronize, and only AFTER that write the command to the PIA */
 	/* otherwise the 68705 will miss commands */
@@ -264,10 +253,10 @@ WRITE8_MEMBER(qix_state::qix_pia_w)
  *
  *************************************/
 
-WRITE8_MEMBER(qix_state::qix_coinctl_w)
+void qix_state::qix_coinctl_w(uint8_t data)
 {
-	coin_lockout_w(machine(), 0, (~data >> 2) & 1);
-	coin_counter_w(machine(), 0, (data >> 1) & 1);
+	machine().bookkeeping().coin_lockout_w(0, (~data >> 2) & 1);
+	machine().bookkeeping().coin_counter_w(0, (data >> 1) & 1);
 }
 
 
@@ -278,10 +267,10 @@ WRITE8_MEMBER(qix_state::qix_coinctl_w)
  *
  *************************************/
 
-WRITE8_MEMBER(qix_state::slither_76489_0_w)
+void qix_state::slither_76489_0_w(uint8_t data)
 {
 	/* write to the sound chip */
-	m_sn1->write(generic_space(), 0, data);
+	m_sn1->write(data);
 
 	/* clock the ready line going back into CB1 */
 	m_pia1->cb1_w(0);
@@ -289,10 +278,10 @@ WRITE8_MEMBER(qix_state::slither_76489_0_w)
 }
 
 
-WRITE8_MEMBER(qix_state::slither_76489_1_w)
+void qix_state::slither_76489_1_w(uint8_t data)
 {
 	/* write to the sound chip */
-	m_sn2->write(generic_space(), 0, data);
+	m_sn2->write(data);
 
 	/* clock the ready line going back into CB1 */
 	m_pia2->cb1_w(0);
@@ -307,13 +296,13 @@ WRITE8_MEMBER(qix_state::slither_76489_1_w)
  *
  *************************************/
 
-READ8_MEMBER(qix_state::slither_trak_lr_r)
+uint8_t qix_state::slither_trak_lr_r()
 {
 	return ioport(m_flip ? "AN3" : "AN1")->read();
 }
 
 
-READ8_MEMBER(qix_state::slither_trak_ud_r)
+uint8_t qix_state::slither_trak_ud_r()
 {
 	return ioport(m_flip ? "AN2" : "AN0")->read();
 }

@@ -20,14 +20,13 @@
  *
  *************************************/
 
-PALETTE_INIT_MEMBER(gridlee_state, gridlee)
+void gridlee_state::gridlee_palette(palette_device &palette) const
 {
-	const UINT8 *color_prom = memregion("proms")->base();
-	int i;
+	const uint8_t *color_prom = memregion("proms")->base();
 
-	for (i = 0; i < palette.entries(); i++)
+	for (int i = 0; i < palette.entries(); i++)
 	{
-		palette.set_pen_color(i,pal4bit(color_prom[0x0000]),pal4bit(color_prom[0x0800]),pal4bit(color_prom[0x1000]));
+		palette.set_pen_color(i, pal4bit(color_prom[0x0000]), pal4bit(color_prom[0x0800]), pal4bit(color_prom[0x1000]));
 		color_prom++;
 	}
 }
@@ -42,13 +41,10 @@ PALETTE_INIT_MEMBER(gridlee_state, gridlee)
 
 void gridlee_state::expand_pixels()
 {
-	UINT8 *videoram = m_videoram;
-	int offset = 0;
-
-	for(offset = 0; offset < 0x77ff; offset++)
+	for (int offset = 0; offset < 0x77ff; offset++)
 	{
-		m_local_videoram[offset * 2 + 0] = videoram[offset] >> 4;
-		m_local_videoram[offset * 2 + 1] = videoram[offset] & 15;
+		m_local_videoram[offset * 2 + 0] = m_videoram[offset] >> 4;
+		m_local_videoram[offset * 2 + 1] = m_videoram[offset] & 15;
 	}
 }
 
@@ -63,12 +59,12 @@ void gridlee_state::expand_pixels()
 void gridlee_state::video_start()
 {
 	/* allocate a local copy of video RAM */
-	m_local_videoram = make_unique_clear<UINT8[]>(256 * 256);
+	m_local_videoram = make_unique_clear<uint8_t[]>(256 * 256);
 
 	/* reset the palette */
 	m_palettebank_vis = 0;
 
-	save_pointer(NAME(m_local_videoram.get()), 256 * 256);
+	save_pointer(NAME(m_local_videoram), 256 * 256);
 	save_item(NAME(m_cocktail_flip));
 	save_item(NAME(m_palettebank_vis));
 	machine().save().register_postload(save_prepost_delegate(FUNC(gridlee_state::expand_pixels), this));
@@ -82,9 +78,9 @@ void gridlee_state::video_start()
  *
  *************************************/
 
-WRITE8_MEMBER(gridlee_state::gridlee_cocktail_flip_w)
+WRITE_LINE_MEMBER(gridlee_state::cocktail_flip_w)
 {
-	m_cocktail_flip = data & 1;
+	m_cocktail_flip = state;
 }
 
 
@@ -95,10 +91,9 @@ WRITE8_MEMBER(gridlee_state::gridlee_cocktail_flip_w)
  *
  *************************************/
 
-WRITE8_MEMBER(gridlee_state::gridlee_videoram_w)
+void gridlee_state::gridlee_videoram_w(offs_t offset, uint8_t data)
 {
-	UINT8 *videoram = m_videoram;
-	videoram[offset] = data;
+	m_videoram[offset] = data;
 
 	/* expand the two pixel values into two bytes */
 	m_local_videoram[offset * 2 + 0] = data >> 4;
@@ -113,7 +108,7 @@ WRITE8_MEMBER(gridlee_state::gridlee_videoram_w)
  *
  *************************************/
 
-WRITE8_MEMBER(gridlee_state::gridlee_palette_select_w)
+void gridlee_state::gridlee_palette_select_w(uint8_t data)
 {
 	/* update the scanline palette */
 	m_screen->update_partial(m_screen->vpos() - 1 + GRIDLEE_VBEND);
@@ -131,14 +126,12 @@ WRITE8_MEMBER(gridlee_state::gridlee_palette_select_w)
 /* all the GRIDLEE_VBEND adjustments are needed because the hardware has a separate counting chain
    to address the video memory instead of using the video chain directly */
 
-UINT32 gridlee_state::screen_update_gridlee(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t gridlee_state::screen_update_gridlee(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
-	const pen_t *pens = &m_palette->pen(m_palettebank_vis * 32);
-	UINT8 *gfx;
-	int x, y, i;
+	pen_t const *const pens = &m_palette->pen(m_palettebank_vis * 32);
 
 	/* draw scanlines from the VRAM directly */
-	for (y = cliprect.min_y; y <= cliprect.max_y; y++)
+	for (int y = cliprect.min_y; y <= cliprect.max_y; y++)
 	{
 		/* non-flipped: draw directly from the bitmap */
 		if (!m_cocktail_flip)
@@ -148,30 +141,28 @@ UINT32 gridlee_state::screen_update_gridlee(screen_device &screen, bitmap_ind16 
 		else
 		{
 			int srcy = GRIDLEE_VBSTART - 1 - y;
-			UINT8 temp[256];
-			int xx;
+			uint8_t temp[256];
 
-			for (xx = 0; xx < 256; xx++)
+			for (int xx = 0; xx < 256; xx++)
 				temp[xx] = m_local_videoram[srcy * 256 + 255 - xx];
 			draw_scanline8(bitmap, 0, y, 256, temp, pens + 16);
 		}
 	}
 
 	/* draw the sprite images */
-	gfx = memregion("gfx1")->base();
-	for (i = 0; i < 32; i++)
+	uint8_t const *const gfx = memregion("gfx1")->base();
+	for (int i = 0; i < 32; i++)
 	{
-		UINT8 *sprite = m_spriteram + i * 4;
-		UINT8 *src;
+		const uint8_t *sprite = m_spriteram + i * 4;
 		int image = sprite[0];
 		int ypos = sprite[2] + 17 + GRIDLEE_VBEND;
 		int xpos = sprite[3];
 
 		/* get a pointer to the source image */
-		src = &gfx[64 * image];
+		const uint8_t *src = &gfx[64 * image];
 
 		/* loop over y */
-		for (y = 0; y < 16; y++, ypos = (ypos + 1) & 255)
+		for (int y = 0; y < 16; y++, ypos = (ypos + 1) & 255)
 		{
 			int currxor = 0;
 
@@ -187,7 +178,7 @@ UINT32 gridlee_state::screen_update_gridlee(screen_device &screen, bitmap_ind16 
 				int currx = xpos;
 
 				/* loop over x */
-				for (x = 0; x < 4; x++)
+				for (int x = 0; x < 4; x++)
 				{
 					int ipixel = *src++;
 					int left = ipixel >> 4;
@@ -195,12 +186,12 @@ UINT32 gridlee_state::screen_update_gridlee(screen_device &screen, bitmap_ind16 
 
 					/* left pixel */
 					if (left && currx >= 0 && currx < 256)
-						bitmap.pix16(ypos, currx ^ currxor) = pens[left];
+						bitmap.pix(ypos, currx ^ currxor) = pens[left];
 					currx++;
 
 					/* right pixel */
 					if (right && currx >= 0 && currx < 256)
-						bitmap.pix16(ypos, currx ^ currxor) = pens[right];
+						bitmap.pix(ypos, currx ^ currxor) = pens[right];
 					currx++;
 				}
 			}

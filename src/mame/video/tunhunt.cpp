@@ -12,45 +12,7 @@
 
 /****************************************************************************************/
 
-/* Video Hardware Addresses */
-
-/* Square Generator (13 bytes each) */
-#define LINEV   0x1403  // LINES VERTICAL START
-#define LINEVS  0x1483  // LINES VERT STOP
-#define LINEH   0x1083  // LINES HORIZ START
-#define LINEC   0x1283  // LINE COLOR, 4 BITS D0-D3
-#define LINESH  0x1203  // LINES SLOPE 4 BITS D0-D3 (signed)
-/* LINESH was used for rotation effects in an older version of the game */
-
-/* Shell Object0 */
-#define SHEL0H  0x1800  // SHELL H POSITON (NORMAL SCREEN)
-#define SHL0V   0x1400  // SHELL V START(NORMAL SCREEN)
-#define SHL0VS  0x1480  // SHELL V STOP (NORMAL SCREEN)
-#define SHL0ST  0x1200  // SHELL VSTRETCH (LIKE MST OBJ STRECTH)
-#define SHL0PC  0x1280  // SHELL PICTURE CODE (D3-D0)
-
-/* Shell Object1 (see above) */
-#define SHEL1H  0x1A00
-#define SHL1V   0x1401
-#define SHL1VS  0x1481
-#define SHL1ST  0x1201
-#define SHL1PC  0x1281
-
-/* Motion Object RAM */
-#define MOBJV   0x1C00  // V POSITION (SCREEN ON SIDE)
-#define MOBVS   0x1482  // V STOP OF MOTION OBJECT (NORMAL SCREEN)
-#define MOBJH   0x1402  // H POSITON (SCREEN ON SIDE) (VSTART - NORMAL SCREEN)
-#define MOBST   0x1082  // STARTING LINE FOR RAM SCAN ON MOBJ
-#define VSTRLO  0x1202  // VERT (SCREEN ON SIDE) STRETCH MOJ OBJ
-#define MOTT    0x2C00  // MOTION OBJECT RAM (00-0F NOT USED, BYT CLEARED)
-#define MOBSC0  0x1080  // SCAN ROM START FOR MOBJ (unused?)
-#define MOBSC1  0x1081  // (unused?)
-
-
-
-/****************************************************************************************/
-
-WRITE8_MEMBER(tunhunt_state::videoram_w)
+void tunhunt_state::videoram_w(offs_t offset, uint8_t data)
 {
 	m_videoram[offset] = data;
 	m_fg_tilemap->mark_tile_dirty(offset);
@@ -63,7 +25,7 @@ TILE_GET_INFO_MEMBER(tunhunt_state::get_fg_tile_info)
 	int color = attr >> 6;
 	int flags = color ? TILE_FORCE_LAYER0 : 0;
 
-	SET_TILE_INFO_MEMBER(0, code, color, flags);
+	tileinfo.set(0, code, color, flags);
 }
 
 void tunhunt_state::video_start()
@@ -76,15 +38,37 @@ void tunhunt_state::video_start()
 
 	m_tmpbitmap.allocate(256, 64, m_screen->format());
 
-	m_fg_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(tunhunt_state::get_fg_tile_info),this), TILEMAP_SCAN_COLS, 8, 8, 32, 32);
+	m_fg_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(tunhunt_state::get_fg_tile_info)), TILEMAP_SCAN_COLS, 8, 8, 8, 32);
 
 	m_fg_tilemap->set_transparent_pen(0);
 	m_fg_tilemap->set_scrollx(0, 64);
 
 	save_item(NAME(m_control));
+	save_item(NAME(m_mobsc0));
+	save_item(NAME(m_mobsc1));
+	save_item(NAME(m_lineh));
+	save_item(NAME(m_shl0st));
+	save_item(NAME(m_shl1st));
+	save_item(NAME(m_vstrlo));
+	save_item(NAME(m_linesh));
+	save_item(NAME(m_shl0pc));
+	save_item(NAME(m_shl1pc));
+	save_item(NAME(m_linec));
+	save_item(NAME(m_shl0v));
+	save_item(NAME(m_shl1v));
+	save_item(NAME(m_mobjh));
+	save_item(NAME(m_linev));
+	save_item(NAME(m_shl0vs));
+	save_item(NAME(m_shl1vs));
+	save_item(NAME(m_mobvs));
+	save_item(NAME(m_linevs));
+	save_item(NAME(m_shel0h));
+	save_item(NAME(m_mobst));
+	save_item(NAME(m_shel1h));
+	save_item(NAME(m_mobjv));
 }
 
-PALETTE_INIT_MEMBER(tunhunt_state, tunhunt)
+void tunhunt_state::tunhunt_palette(palette_device &palette) const
 {
 	/* Tunnel Hunt uses a combination of color proms and palette RAM to specify a 16 color
 	 * palette.  Here, we manage only the mappings for alphanumeric characters and SHELL
@@ -102,20 +86,20 @@ PALETTE_INIT_MEMBER(tunhunt_state, tunhunt)
 	 */
 
 	/* alpha hilite#0 */
-	palette.set_pen_indirect(0x10, 0x0); /* background color#0 (transparent) */
-	palette.set_pen_indirect(0x11, 0x4); /* foreground color */
+	palette.set_pen_indirect(0x10, 0x0); // background color#0 (transparent)
+	palette.set_pen_indirect(0x11, 0x4); // foreground color
 
 	/* alpha hilite#1 */
-	palette.set_pen_indirect(0x12, 0x5); /* background color#1 */
-	palette.set_pen_indirect(0x13, 0x4); /* foreground color */
+	palette.set_pen_indirect(0x12, 0x5); // background color#1
+	palette.set_pen_indirect(0x13, 0x4); // foreground color
 
 	/* alpha hilite#2 */
-	palette.set_pen_indirect(0x14, 0x6); /* background color#2 */
-	palette.set_pen_indirect(0x15, 0x4); /* foreground color */
+	palette.set_pen_indirect(0x14, 0x6); // background color#2
+	palette.set_pen_indirect(0x15, 0x4); // foreground color
 
 	/* alpha hilite#3 */
-	palette.set_pen_indirect(0x16, 0xf); /* background color#3 */
-	palette.set_pen_indirect(0x17, 0x4); /* foreground color */
+	palette.set_pen_indirect(0x16, 0xf); // background color#3
+	palette.set_pen_indirect(0x17, 0x4); // foreground color
 
 	/* shell graphics; these are either 1bpp (2 banks) or 2bpp.  It isn't clear which.
 	 * In any event, the following pens are associated with the shell graphics:
@@ -151,7 +135,7 @@ void tunhunt_state::set_pens()
     0020:   00 f0 f0 f0 b0 b0 00 f0
             00 f0 f0 00 b0 00 f0 f0
 */
-	//const UINT8 *color_prom = memregion( "proms" )->base();
+	//const uint8_t *color_prom = memregion( "proms" )->base();
 	int color;
 	int shade;
 	int red,green,blue;
@@ -208,59 +192,53 @@ void tunhunt_state::draw_motion_object(bitmap_ind16 &bitmap, const rectangle &cl
  */
 
 	bitmap_ind16 &tmpbitmap = m_tmpbitmap;
-	//int skip = m_workram[MOBST];
-	int x0 = 255-m_workram[MOBJV];
-	int y0 = 255-m_workram[MOBJH];
-	int scalex,scaley;
-	int line,span;
-	int x,span_data;
-	int color;
-	int count;
-	const UINT8 *source;
+	//int skip = m_mobst;
+	const int x0 = 255 - m_mobjv;
+	const int y0 = 255 - m_mobjh;
 
-	for( line=0; line<64; line++ )
+	for (int line = 0; line < 64; line++)
 	{
-		x = 0;
-		source = &m_spriteram[line*0x10];
-		for( span=0; span<0x10; span++ )
+		int x = 0;
+		const uint8_t *const source = &m_spriteram[line * 0x10];
+		for (int span = 0; span < 0x10; span++)
 		{
-			span_data = source[span];
-			if( span_data == 0xff ) break;
-			color = ((span_data>>6)&0x3)^0x3;
-			count = (span_data&0x1f)+1;
-			while( count-- && x < 256 )
-				tmpbitmap.pix16(line, x++) = color;
+			const int span_data = source[span];
+			if (span_data == 0xff) break;
+			const int color = ((span_data >> 6) & 0x3) ^ 0x3;
+			int count = (span_data & 0x1f) + 1;
+			while (count-- && x < 256)
+				tmpbitmap.pix(line, x++) = color;
 		}
-		while( x<256 )
-			tmpbitmap.pix16(line, x++) = 0;
-	} /* next line */
+		while (x < 256)
+			tmpbitmap.pix(line, x++) = 0;
+	}
 
-	switch( m_workram[VSTRLO] )
+	int scaley;
+	switch (m_vstrlo)
 	{
 	case 0x01:
-		scaley = (1<<16)*0.33; /* seems correct */
+		scaley = (1 << 16) * 0.33; // seems correct
 		break;
 
 	case 0x02:
-		scaley = (1<<16)*0.50; /* seems correct */
+		scaley = (1 << 16) * 0.50; // seems correct
 		break;
 
 	default:
-		scaley = (1<<16)*m_workram[VSTRLO]/4; /* ??? */
+		scaley = (1 << 16) * m_vstrlo / 4; // ???
 		break;
 	}
-	scalex = (1<<16);
+	const int scalex = 1 << 16;
 
 	copyrozbitmap_trans(
-		bitmap,cliprect,tmpbitmap,
-		-x0*scalex,/* startx */
-		-y0*scaley,/* starty */
-		scalex,/* incxx */
-		0,0,/* incxy,incyx */
-		scaley,/* incyy */
-		0, /* no wraparound */
-		0
-	);
+			bitmap, cliprect, tmpbitmap,
+			-x0 * scalex, // startx
+			-y0 * scaley, // starty
+			scalex, // incxx
+			0, 0, // incxy, incyx
+			scaley, // incyy
+			false, // no wraparound
+			0);
 }
 
 void tunhunt_state::draw_box(bitmap_ind16 &bitmap, const rectangle &cliprect)
@@ -291,25 +269,25 @@ void tunhunt_state::draw_box(bitmap_ind16 &bitmap, const rectangle &cliprect)
 
 	for( y=0; y<256; y++ )
 	{
-		if (0xff-y >= cliprect.min_y && 0xff-y <= cliprect.max_y)
+		if (0xff-y >= cliprect.top() && 0xff-y <= cliprect.bottom())
 			for( x=0; x<256; x++ )
 			{
 				color = 0;
 				z = 0;
-				for( span=3; span<16; span++ )
+				for( span=0; span<13; span++ )
 				{
-					x0 = m_workram[span+0x1080];
-					y0 = m_workram[span+0x1480];
-					y1 = m_workram[span+0x1400];
+					x0 = m_lineh[span];
+					y0 = m_linevs[span];
+					y1 = m_linev[span];
 
 					if( y>=y0 && y<=y1 && x>=x0 && x0>=z )
 					{
-						color = m_workram[span+0x1280]&0xf;
+						color = m_linec[span]&0xf;
 						z = x0; /* give priority to rightmost spans */
 					}
 				}
-				if (x >= cliprect.min_x && x <= cliprect.max_x)
-					bitmap.pix16(0xff-y, x) = color;
+				if (x >= cliprect.left() && x <= cliprect.right())
+					bitmap.pix(0xff-y, x) = color;
 			}
 	}
 }
@@ -363,7 +341,7 @@ void tunhunt_state::draw_shell(bitmap_ind16 &bitmap,
 			255-hposition-16,vstart-32,0 );
 }
 
-UINT32 tunhunt_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t tunhunt_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	set_pens();
 
@@ -372,21 +350,25 @@ UINT32 tunhunt_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap,
 	draw_motion_object(bitmap, cliprect);
 
 	draw_shell(bitmap, cliprect,
-		m_workram[SHL0PC],  /* picture code */
-		m_workram[SHEL0H],  /* hposition */
-		m_workram[SHL0V],   /* vstart */
-		m_workram[SHL0VS],  /* vstop */
-		m_workram[SHL0ST],  /* vstretch */
+		m_shl0pc,  /* picture code */
+		m_shel0h,  /* hposition */
+		m_shl0v,   /* vstart */
+		m_shl0vs,  /* vstop */
+		m_shl0st,  /* vstretch */
 		m_control&0x08 ); /* hstretch */
 
 	draw_shell(bitmap, cliprect,
-		m_workram[SHL1PC],  /* picture code */
-		m_workram[SHEL1H],  /* hposition */
-		m_workram[SHL1V],   /* vstart */
-		m_workram[SHL1VS],  /* vstop */
-		m_workram[SHL1ST],  /* vstretch */
+		m_shl1pc,  /* picture code */
+		m_shel1h,  /* hposition */
+		m_shl1v,   /* vstart */
+		m_shl1vs,  /* vstop */
+		m_shl1st,  /* vstretch */
 		m_control&0x10 ); /* hstretch */
 
-	m_fg_tilemap->draw(screen, bitmap, cliprect, 0, 0);
+	rectangle cr = cliprect;
+	if( cr.min_x < 192 )
+		cr.min_x = 192;
+
+	m_fg_tilemap->draw(screen, bitmap, cr, 0, 0);
 	return 0;
 }

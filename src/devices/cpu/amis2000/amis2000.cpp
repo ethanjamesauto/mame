@@ -18,81 +18,94 @@
 
 */
 
+#include "emu.h"
 #include "amis2000.h"
+#include "amis2000d.h"
 #include "debugger.h"
 
 
 // S2000 is the most basic one, 64 nibbles internal RAM and 1KB internal ROM
 // S2150 increased RAM to 80 nibbles and ROM to 1.5KB
 // high-voltage output versions of these chips (S2000A and S2150A) are identical overall
-const device_type AMI_S2000 = &device_creator<amis2000_cpu_device>;
-const device_type AMI_S2150 = &device_creator<amis2150_cpu_device>;
+DEFINE_DEVICE_TYPE(AMI_S2000, amis2000_cpu_device, "amis2000", "AMI S2000")
+DEFINE_DEVICE_TYPE(AMI_S2150, amis2150_cpu_device, "amis2150", "AMI S2150")
 
 // S2152 is an extension to S2150, removing the K pins and adding a better timer
-const device_type AMI_S2152 = &device_creator<amis2152_cpu_device>;
+DEFINE_DEVICE_TYPE(AMI_S2152, amis2152_cpu_device, "amis2152", "AMI S2152")
 
 
 // internal memory maps
-static ADDRESS_MAP_START(program_1k, AS_PROGRAM, 8, amis2000_base_device)
-	AM_RANGE(0x0000, 0x03ff) AM_ROM
-ADDRESS_MAP_END
+void amis2000_base_device::program_1k(address_map &map)
+{
+	map(0x0000, 0x03ff).rom();
+}
 
-static ADDRESS_MAP_START(program_1_5k, AS_PROGRAM, 8, amis2000_base_device)
-	AM_RANGE(0x0000, 0x03ff) AM_ROM
-	AM_RANGE(0x0400, 0x05ff) AM_NOP // 0x00
-	AM_RANGE(0x0600, 0x07ff) AM_ROM
-ADDRESS_MAP_END
+void amis2000_base_device::program_1_5k(address_map &map)
+{
+	map(0x0000, 0x03ff).rom();
+	map(0x0400, 0x05ff).noprw(); // 0x00
+	map(0x0600, 0x07ff).rom();
+}
 
 
-static ADDRESS_MAP_START(data_64x4, AS_DATA, 8, amis2000_base_device)
-	AM_RANGE(0x00, 0x3f) AM_RAM
-ADDRESS_MAP_END
+void amis2000_base_device::data_64x4(address_map &map)
+{
+	map(0x00, 0x3f).ram();
+}
 
-static ADDRESS_MAP_START(data_80x4, AS_DATA, 8, amis2000_base_device)
-	AM_RANGE(0x00, 0x3f) AM_RAM
-	AM_RANGE(0x40, 0x4f) AM_RAM
-ADDRESS_MAP_END
+void amis2000_base_device::data_80x4(address_map &map)
+{
+	map(0x00, 0x3f).ram();
+	map(0x40, 0x4f).ram();
+}
 
 
 // device definitions
-amis2000_cpu_device::amis2000_cpu_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: amis2000_base_device(mconfig, AMI_S2000, "AMI S2000", tag, owner, clock, 2, 10, 3, 13, ADDRESS_MAP_NAME(program_1k), 6, ADDRESS_MAP_NAME(data_64x4), "amis2000", __FILE__)
+amis2000_cpu_device::amis2000_cpu_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock)
+	: amis2000_base_device(mconfig, AMI_S2000, tag, owner, clock, 2, 10, 3, 13, address_map_constructor(FUNC(amis2000_cpu_device::program_1k), this), 6, address_map_constructor(FUNC(amis2000_cpu_device::data_64x4), this))
 { }
 
-amis2150_cpu_device::amis2150_cpu_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: amis2000_base_device(mconfig, AMI_S2150, "AMI S2150", tag, owner, clock, 3, 11, 3, 13, ADDRESS_MAP_NAME(program_1_5k), 7, ADDRESS_MAP_NAME(data_80x4), "amis2150", __FILE__)
+amis2150_cpu_device::amis2150_cpu_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock)
+	: amis2000_base_device(mconfig, AMI_S2150, tag, owner, clock, 3, 11, 3, 13, address_map_constructor(FUNC(amis2150_cpu_device::program_1_5k), this), 7, address_map_constructor(FUNC(amis2150_cpu_device::data_80x4), this))
 { }
 
-amis2152_cpu_device::amis2152_cpu_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: amis2000_base_device(mconfig, AMI_S2152, "AMI S2152", tag, owner, clock, 3, 11, 3, 13, ADDRESS_MAP_NAME(program_1_5k), 7, ADDRESS_MAP_NAME(data_80x4), "amis2152", __FILE__)
+amis2152_cpu_device::amis2152_cpu_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock)
+	: amis2000_base_device(mconfig, AMI_S2152, tag, owner, clock, 3, 11, 3, 13, address_map_constructor(FUNC(amis2152_cpu_device::program_1_5k), this), 7, address_map_constructor(FUNC(amis2152_cpu_device::data_80x4), this))
 { }
 
+device_memory_interface::space_config_vector amis2000_base_device::memory_space_config() const
+{
+	return space_config_vector {
+		std::make_pair(AS_PROGRAM, &m_program_config),
+		std::make_pair(AS_DATA,    &m_data_config)
+	};
+}
 
 
-// disasm
-void amis2000_base_device::state_string_export(const device_state_entry &entry, std::string &str)
+//-------------------------------------------------
+//  state_string_export - export state as a string
+//  for the debugger
+//-------------------------------------------------
+
+void amis2000_base_device::state_string_export(const device_state_entry &entry, std::string &str) const
 {
 	switch (entry.index())
 	{
 		case STATE_GENFLAGS:
-			strprintf(str, "%c%c%c%c%c%c",
+			str = string_format("%c%c%c%c%c%c",
 				m_f & 0x20 ? '6':'.',
 				m_f & 0x10 ? '5':'.',
 				m_f & 0x08 ? '4':'.',
 				m_f & 0x04 ? '3':'.',
 				m_f & 0x02 ? '2':'.',
-				m_f & 0x01 ? '1':'.'
-			);
+				m_f & 0x01 ? '1':'.');
 			break;
-
-		default: break;
 	}
 }
 
-offs_t amis2000_base_device::disasm_disassemble(char *buffer, offs_t pc, const UINT8 *oprom, const UINT8 *opram, UINT32 options)
+std::unique_ptr<util::disasm_interface> amis2000_base_device::create_disassembler()
 {
-	extern CPU_DISASSEMBLE(amis2000);
-	return CPU_DISASSEMBLE_NAME(amis2000)(this, buffer, pc, oprom, opram, options);
+	return std::make_unique<amis2000_disassembler>();
 }
 
 
@@ -103,7 +116,7 @@ offs_t amis2000_base_device::disasm_disassemble(char *buffer, offs_t pc, const U
 
 enum
 {
-	S2000_PC=1, S2000_BL, S2000_BU,
+	S2000_PC = STATE_GENPC, S2000_BL = 0, S2000_BU,
 	S2000_ACC, S2000_E, S2000_CY
 };
 
@@ -170,10 +183,10 @@ void amis2000_base_device::device_start()
 	state_add(S2000_E,      "E",      m_e     ).formatstr("%01X");
 	state_add(S2000_CY,     "CY",     m_carry ).formatstr("%01X");
 
-	state_add(STATE_GENPC, "curpc", m_pc).formatstr("%04X").noshow();
-	state_add(STATE_GENFLAGS, "GENFLAGS", m_f).formatstr("%6s").noshow();
+	state_add(STATE_GENPCBASE, "CURPC", m_pc).noshow();
+	state_add(STATE_GENFLAGS, "CURFLAGS", m_f).formatstr("%6s").noshow();
 
-	m_icountptr = &m_icount;
+	set_icountptr(m_icount);
 }
 
 
@@ -237,7 +250,9 @@ void amis2000_base_device::execute_run()
 		// remember previous opcode
 		m_prev_op = m_op;
 
-		debugger_instruction_hook(this, m_pc);
+		// fetch next opcode
+		if (!m_skip)
+			debugger_instruction_hook(m_pc);
 		m_op = m_program->read_byte(m_pc);
 		m_pc = (m_pc + 1) & 0x1fff;
 

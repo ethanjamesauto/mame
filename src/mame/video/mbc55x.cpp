@@ -68,6 +68,9 @@ give the leftmost column of the rectangle, the next four give the next column, a
 
 *************************************************************************************************************/
 
+#include "emu.h"
+#include <functional>
+
 #include "includes/mbc55x.h"
 
 #define DEBUG_LINES     1
@@ -75,38 +78,29 @@ give the leftmost column of the rectangle, the next four give the next column, a
 
 #define DEBUG_SET(flags)    ((m_debug_video & (flags))==(flags))
 
-static void video_debug(running_machine &machine, int ref, int params, const char *param[])
+void mbc55x_state::video_debug(int ref, const std::vector<std::string> &params)
 {
-	mbc55x_state *mstate = machine.driver_data<mbc55x_state>();
-	if(params>0)
+	if (params.size() > 0)
 	{
 		int temp;
-		sscanf(param[0],"%d",&temp); mstate->m_debug_video = temp;;
+		sscanf(params[0].c_str(), "%d", &temp);
+		m_debug_video = temp;
 	}
 	else
 	{
-		debug_console_printf(machine,"Error usage : mbc55x_vid_debug <debuglevel>\n");
-		debug_console_printf(machine,"Current debuglevel=%02X\n",mstate->m_debug_video);
+		machine().debugger().console().printf("Error usage : mbc55x_vid_debug <debuglevel>\n");
+		machine().debugger().console().printf("Current debuglevel=%02X\n", m_debug_video);
 	}
 }
 
 MC6845_UPDATE_ROW( mbc55x_state::crtc_update_row )
 {
-	const rgb_t *palette = m_palette->palette()->entry_list_raw();
+	rgb_t const *const palette = m_palette->palette()->entry_list_raw();
 
-	UINT8   *ram    = &m_ram->pointer()[0];
-	UINT8   *red    = &m_video_mem[RED_PLANE_OFFSET];
-	UINT8   *blue   = &m_video_mem[BLUE_PLANE_OFFSET];
-	UINT8   *green;
-	int     offset;
-	UINT8   rpx,gpx,bpx;
-	UINT8   rb,gb,bb;
-
-	int     x_pos;
-	int     pixelno;
-	UINT8   bitno;
-	UINT8   shifts;
-	UINT8   colour;
+	uint8_t const *const ram = &m_ram->pointer()[0];
+	uint8_t const *const red = &m_video_mem[RED_PLANE_OFFSET];
+	uint8_t const *const blue = &m_video_mem[BLUE_PLANE_OFFSET];
+	uint8_t const *green;
 
 	switch(m_vram_page)
 	{
@@ -121,30 +115,30 @@ MC6845_UPDATE_ROW( mbc55x_state::crtc_update_row )
 	if(DEBUG_SET(DEBUG_LINES))
 		logerror("MC6845_UPDATE_ROW: ma=%d, ra=%d, y=%d, x_count=%d\n",ma,ra,y,x_count);
 
-	offset=((ma*4) + ra) % COLOUR_PLANE_SIZE;
+	int offset=((ma*4) + ra) % COLOUR_PLANE_SIZE;
 
 	if(DEBUG_SET(DEBUG_LINES))
 		logerror("offset=%05X\n",offset);
 
-	for(x_pos=0; x_pos<x_count; x_pos++)
+	for(int x_pos=0; x_pos<x_count; x_pos++)
 	{
-		UINT16 mem = (offset+(x_pos*4)) % COLOUR_PLANE_SIZE;
-		rpx=red[mem];
-		gpx=green[mem];
-		bpx=blue[mem];
+		uint16_t mem = (offset+(x_pos*4)) % COLOUR_PLANE_SIZE;
+		uint8_t rpx=red[mem];
+		uint8_t gpx=green[mem];
+		uint8_t bpx=blue[mem];
 
-		bitno=0x80;
-		shifts=7;
+		uint8_t bitno=0x80;
+		uint8_t shifts=7;
 
-		for(pixelno=0; pixelno<8; pixelno++)
+		for(int pixelno=0; pixelno<8; pixelno++)
 		{
-			rb=(rpx & bitno) >> shifts;
-			gb=(gpx & bitno) >> shifts;
-			bb=(bpx & bitno) >> shifts;
+			uint8_t rb=(rpx & bitno) >> shifts;
+			uint8_t gb=(gpx & bitno) >> shifts;
+			uint8_t bb=(bpx & bitno) >> shifts;
 
-			colour=(rb<<2) | (gb<<1) | (bb<<0);
+			uint8_t colour=(rb<<2) | (gb<<1) | (bb<<0);
 
-			bitmap.pix32(y, (x_pos*8)+pixelno)=palette[colour];
+			bitmap.pix(y, (x_pos*8)+pixelno)=palette[colour];
 			//logerror("set pixel (%d,%d)=%d\n",y, ((x_pos*8)+pixelno),colour);
 			bitno=bitno>>1;
 			shifts--;
@@ -160,6 +154,40 @@ WRITE_LINE_MEMBER( mbc55x_state::vid_vsync_changed )
 {
 }
 
+static constexpr rgb_t mbc55x_pens[SCREEN_NO_COLOURS]
+{
+	// normal brightness
+	{ 0x00, 0x00, 0x00 }, // black
+	{ 0x00, 0x00, 0x80 }, // blue
+	{ 0x00, 0x80, 0x00 }, // green
+	{ 0x00, 0x80, 0x80 }, // cyan
+	{ 0x80, 0x00, 0x00 }, // red
+	{ 0x80, 0x00, 0x80 }, // magenta
+	{ 0x80, 0x80, 0x00 }, // yellow
+	{ 0x80, 0x80, 0x80 }  // light grey
+};
+
+void mbc55x_state::mbc55x_palette(palette_device &palette) const
+{
+	logerror("initializing palette\n");
+
+	palette.set_pen_colors(0, mbc55x_pens);
+}
+
+/* Video ram page register */
+
+uint8_t mbc55x_state::vram_page_r()
+{
+	return m_vram_page;
+}
+
+void mbc55x_state::vram_page_w(uint8_t data)
+{
+	logerror("%s : set vram page to %02X\n", machine().describe_context(),data);
+
+	m_vram_page=data;
+}
+
 void mbc55x_state::video_start()
 {
 	m_debug_video=0;
@@ -168,7 +196,8 @@ void mbc55x_state::video_start()
 
 	if (machine().debug_flags & DEBUG_FLAG_ENABLED)
 	{
-		debug_console_register_command(machine(), "mbc55x_vid_debug", CMDFLAG_NONE, 0, 0, 1, video_debug);
+		using namespace std::placeholders;
+		machine().debugger().console().register_command("mbc55x_vid_debug", CMDFLAG_NONE, 0, 0, 1, std::bind(&mbc55x_state::video_debug, this, _1, _2));
 	}
 }
 
@@ -178,9 +207,4 @@ void mbc55x_state::video_reset()
 	memset(&m_video_mem,0,sizeof(m_video_mem));
 
 	logerror("Video reset\n");
-}
-
-void mbc55x_state::screen_eof_mbc55x(screen_device &screen, bool state)
-{
-//  logerror("screen_eof_mbc55x\n");
 }

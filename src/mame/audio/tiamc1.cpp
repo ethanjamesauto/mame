@@ -34,7 +34,7 @@
 ***************************************************************************/
 
 #include "emu.h"
-#include "includes/tiamc1.h"
+#include "audio/tiamc1.h"
 
 #define CLOCK_DIVIDER 16
 #define BUF_LEN 100000
@@ -46,7 +46,7 @@
 
 
 // device type definition
-const device_type TIAMC1 = &device_creator<tiamc1_sound_device>;
+DEFINE_DEVICE_TYPE(TIAMC1, tiamc1_sound_device, "tiamc1_sound", "TIA-MC1 Custom Sound")
 
 
 //**************************************************************************
@@ -57,8 +57,8 @@ const device_type TIAMC1 = &device_creator<tiamc1_sound_device>;
 //  tiamc1_sound_device - constructor
 //-------------------------------------------------
 
-tiamc1_sound_device::tiamc1_sound_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: device_t(mconfig, TIAMC1, "TIA-MC1 Audio Custom", tag, owner, clock, "tiamc1_sound", __FILE__),
+tiamc1_sound_device::tiamc1_sound_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: device_t(mconfig, TIAMC1, tag, owner, clock),
 		device_sound_interface(mconfig, *this),
 		m_channel(nullptr),
 		m_timer1_divider(0)
@@ -107,11 +107,11 @@ void tiamc1_sound_device::device_start()
 //  sound_stream_update - handle a stream update
 //-------------------------------------------------
 
-void tiamc1_sound_device::sound_stream_update(sound_stream &stream, stream_sample_t **inputs, stream_sample_t **outputs, int samples)
+void tiamc1_sound_device::sound_stream_update(sound_stream &stream, std::vector<read_stream_view> const &inputs, std::vector<write_stream_view> &outputs)
 {
 	int count, o0, o1, o2, len, orval = 0;
 
-	len = samples * CLOCK_DIVIDER;
+	len = outputs[0].samples() * CLOCK_DIVIDER;
 
 	for (count = 0; count < len; count++)
 	{
@@ -140,7 +140,7 @@ void tiamc1_sound_device::sound_stream_update(sound_stream &stream, stream_sampl
 
 		if ((count + 1) % CLOCK_DIVIDER == 0)
 		{
-			outputs[0][count / CLOCK_DIVIDER] = orval ? 0x2828 : 0;
+			outputs[0].put(count / CLOCK_DIVIDER, orval ? 0.3 : 0.0);
 			orval = 0;
 		}
 	}
@@ -194,7 +194,7 @@ void tiamc1_sound_device::timer8253_tick(struct timer8253struct *t, int chn)
 
 
 
-void tiamc1_sound_device::timer8253_wr(struct timer8253struct *t, int reg, UINT8 val)
+void tiamc1_sound_device::timer8253_wr(struct timer8253struct *t, int reg, uint8_t val)
 {
 	int chn;
 
@@ -307,7 +307,7 @@ void tiamc1_sound_device::timer8253_wr(struct timer8253struct *t, int reg, UINT8
 	}
 }
 
-void tiamc1_sound_device::timer8253_set_gate(struct timer8253struct *t, int chn, UINT8 gate)
+void tiamc1_sound_device::timer8253_set_gate(struct timer8253struct *t, int chn, uint8_t gate)
 {
 	t->channel[chn].gate = gate;
 }
@@ -321,17 +321,17 @@ char tiamc1_sound_device::timer8253_get_output(struct timer8253struct *t, int ch
 
 
 
-WRITE8_MEMBER( tiamc1_sound_device::tiamc1_timer0_w )
+void tiamc1_sound_device::tiamc1_timer0_w(offs_t offset, uint8_t data)
 {
 	timer8253_wr(&m_timer0, offset, data);
 }
 
-WRITE8_MEMBER( tiamc1_sound_device::tiamc1_timer1_w )
+void tiamc1_sound_device::tiamc1_timer1_w(offs_t offset, uint8_t data)
 {
 	timer8253_wr(&m_timer1, offset, data);
 }
 
-WRITE8_MEMBER( tiamc1_sound_device::tiamc1_timer1_gate_w )
+void tiamc1_sound_device::tiamc1_timer1_gate_w(uint8_t data)
 {
 	timer8253_set_gate(&m_timer1, 0, (data & 1) ? 1 : 0);
 	timer8253_set_gate(&m_timer1, 1, (data & 2) ? 1 : 0);

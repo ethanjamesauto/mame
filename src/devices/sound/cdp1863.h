@@ -17,22 +17,11 @@
 
 **********************************************************************/
 
+#ifndef MAME_SOUND_CDP1863_H
+#define MAME_SOUND_CDP1863_H
+
 #pragma once
 
-#ifndef __CDP1863__
-#define __CDP1863__
-
-#include "emu.h"
-
-
-
-//**************************************************************************
-//  INTERFACE CONFIGURATION MACROS
-//**************************************************************************
-
-#define MCFG_CDP1863_ADD(_tag, _clock, _clock2) \
-	MCFG_DEVICE_ADD(_tag, CDP1863, _clock) \
-	cdp1863_device::static_set_clock2(*device, _clock2);
 
 
 
@@ -47,15 +36,15 @@ class cdp1863_device :  public device_t,
 {
 public:
 	// construction/destruction
-	cdp1863_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	cdp1863_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
 	// inline configuration helpers
-	static void static_set_clock2(device_t &device, int clock2);
+	void set_clock2(int clock2) { m_clock2 = clock2; }
+	void set_clock2(const XTAL &xtal) { xtal.validate("selecting cdp1863 clock"); set_clock2(xtal.value()); }
 
-	DECLARE_WRITE8_MEMBER( str_w );
-	void str_w(UINT8 data);
+	void str_w(uint8_t data) { m_latch = data; }
 
-	DECLARE_WRITE_LINE_MEMBER( oe_w );
+	void oe_w(int state);
 
 	void set_clk1(int clock);
 	void set_clk2(int clock);
@@ -65,7 +54,7 @@ protected:
 	virtual void device_start() override;
 
 	// internal callbacks
-	virtual void sound_stream_update(sound_stream &stream, stream_sample_t **inputs, stream_sample_t **outputs, int samples) override;
+	virtual void sound_stream_update(sound_stream &stream, std::vector<read_stream_view> const &inputs, std::vector<write_stream_view> &outputs) override;
 
 private:
 	sound_stream *m_stream;
@@ -76,14 +65,12 @@ private:
 	// sound state
 	int m_oe;                       // output enable
 	int m_latch;                    // sound latch
-	INT16 m_signal;                 // current signal
+	stream_buffer::sample_t m_signal;// current signal
 	int m_incr;                     // initial wave state
 };
 
 
 // device type definition
-extern const device_type CDP1863;
+DECLARE_DEVICE_TYPE(CDP1863, cdp1863_device)
 
-
-
-#endif
+#endif // MAME_SOUND_CDP1863_H

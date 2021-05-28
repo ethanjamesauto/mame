@@ -6,19 +6,13 @@
 
 **********************************************************************/
 
-#pragma once
+#ifndef MAME_MACHINE_RX01_H
+#define MAME_MACHINE_RX01_H
 
-#ifndef __RX01__
-#define __RX01__
+#pragma once
 
 #include "imagedev/flopdrv.h"
 
-//**************************************************************************
-//  INTERFACE CONFIGURATION MACROS
-//**************************************************************************
-
-#define MCFG_RX01_ADD(_tag) \
-	MCFG_DEVICE_ADD(_tag, RX01, 0)
 
 //**************************************************************************
 //  TYPE DEFINITIONS
@@ -30,31 +24,35 @@ class rx01_device :  public device_t
 {
 public:
 	// construction/destruction
-	rx01_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	rx01_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
-	DECLARE_READ16_MEMBER( read );
-	DECLARE_WRITE16_MEMBER( write );
+	uint16_t read(offs_t offset);
+	void write(offs_t offset, uint16_t data);
 
-	// optional information overrides
-	virtual machine_config_constructor device_mconfig_additions() const override;
 protected:
 	// device-level overrides
 	virtual void device_start() override;
 	virtual void device_reset() override;
+	// optional information overrides
+	virtual void device_add_mconfig(machine_config &config) override;
+	virtual const tiny_rom_entry *device_rom_region() const override;
 
-	void command_write(UINT16 data);
-	UINT16 status_read();
+	void command_write(uint16_t data);
+	uint16_t status_read();
 
-	void data_write(UINT16 data);
-	UINT16 data_read();
+	void data_write(uint16_t data);
+	uint16_t data_read();
 
-	void service_command();
-	static TIMER_CALLBACK( command_execution_callback ) { reinterpret_cast<rx01_device *>(ptr)->service_command(); }
+	TIMER_CALLBACK_MEMBER(service_command);
 
 	void position_head();
 	void read_sector();
 	void write_sector(int ddam);
+
 private:
+	void firmware_map(address_map &map);
+	void secbuf_map(address_map &map);
+
 	enum rx01_state {
 		RX01_FILL,
 		RX01_EMPTY,
@@ -65,21 +63,21 @@ private:
 		RX01_INIT
 	};
 
-	legacy_floppy_image_device *m_image[2];
-	UINT8 m_buffer[128];
+	required_device_array<legacy_floppy_image_device, 2> m_image;
+	uint8_t m_buffer[128];
 	int m_buf_pos;
 
-	UINT16 m_rxcs; // Command and Status Register
-	UINT16 m_rxdb; // Data Buffer Register
-	UINT16 m_rxta; // RX Track Address
-	UINT16 m_rxsa; // RX Sector Address
-	UINT16 m_rxes; // RX Error and Status
+	uint16_t m_rxcs; // Command and Status Register
+	uint16_t m_rxdb; // Data Buffer Register
+	uint16_t m_rxta; // RX Track Address
+	uint16_t m_rxsa; // RX Sector Address
+	uint16_t m_rxes; // RX Error and Status
 	int m_unit;
 	int m_interrupt;
 	rx01_state m_state;
 };
 
 // device type definition
-extern const device_type RX01;
+DECLARE_DEVICE_TYPE(RX01, rx01_device)
 
-#endif
+#endif // MAME_MACHINE_RX01_H

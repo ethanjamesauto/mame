@@ -10,19 +10,11 @@
 
 ***************************************************************************/
 
-#include <stdio.h>
-#include <string.h>
-#include <ctype.h>
-#include <stdlib.h>
-#include <time.h>
-#include <assert.h>
-
-#include "corestr.h"
-
 #include "formats/a26_cas.h"
 #include "formats/ace_tap.h"
 #include "formats/adam_cas.h"
 #include "formats/apf_apt.h"
+#include "formats/atom_tap.h"
 #include "formats/cbm_tap.h"
 #include "formats/cgen_cas.h"
 #include "formats/coco_cas.h"
@@ -37,6 +29,7 @@
 #include "formats/mz_cas.h"
 #include "formats/orao_cas.h"
 #include "formats/oric_tap.h"
+#include "formats/p2000t_cas.h"
 #include "formats/p6001_cas.h"
 #include "formats/phc25_cas.h"
 #include "formats/pmd_cas.h"
@@ -59,16 +52,27 @@
 #include "formats/x1_tap.h"
 #include "formats/zx81_p.h"
 
+#include "corestr.h"
+
+#include <cassert>
+#include <cctype>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <ctime>
+
+
 struct SupportedCassetteFormats
 {
 	const char *name;
-	const struct CassetteFormat * const *formats;
+	const cassette_image::Format * const *formats;
 	const char *desc;
 };
 
 const struct SupportedCassetteFormats formats[] = {
 	{"a26", a26_cassette_formats               ,"Atari 2600 SuperCharger"},
 	{"apf", apf_cassette_formats               ,"APF Imagination Machine"},
+	{"atom", atom_cassette_formats             ,"Acorn Atom"},
 	{"bbc", bbc_cassette_formats               ,"Acorn BBC & Electron"},
 	{"cbm", cbm_cassette_formats               ,"Commodore 8-bit series"},
 	{"cdt", cdt_cassette_formats               ,"Amstrad CPC"},
@@ -88,6 +92,7 @@ const struct SupportedCassetteFormats formats[] = {
 	{"mz", mz700_cassette_formats              ,"Sharp MZ-700"},
 	{"orao", orao_cassette_formats             ,"PEL Varazdin Orao"},
 	{"oric", oric_cassette_formats             ,"Tangerine Oric"},
+	{"p2000t", p2000t_cassette_formats         ,"Philips P2000T"},
 	{"pc6001", pc6001_cassette_formats         ,"NEC PC-6001"},
 	{"phc25", phc25_cassette_formats           ,"Sanyo PHC-25"},
 	{"pmd85", pmd85_cassette_formats           ,"Tesla PMD-85"},
@@ -110,7 +115,6 @@ const struct SupportedCassetteFormats formats[] = {
 	{"trs80l2", trs80l2_cassette_formats       ,"TRS-80 Level 2"},
 	{"tvc64", tvc64_cassette_formats           ,"Videoton TVC 64"},
 	{"tzx", tzx_cassette_formats               ,"Sinclair ZX Spectrum"},
-	{"uef", uef_cassette_formats               ,"Acorn Electron"},
 	{"vg5k", vg5k_cassette_formats             ,"Philips VG 5000"},
 	{"vtech1", vtech1_cassette_formats         ,"Video Technology Laser 110-310"},
 	{"vtech2", vtech2_cassette_formats         ,"Video Technology Laser 350-700"},
@@ -125,19 +129,19 @@ const struct SupportedCassetteFormats formats[] = {
 };
 
 
-static const char *get_extension(const char *name)
+static std::string get_extension(const char *name)
 {
 	const char *s;
 	s = name;
 	if (s != nullptr)
 		s = strrchr(s, '.');
-	return s ? s+1 : nullptr;
+	return s ? std::string(s+1) : "";
 }
 
-static void display_usage(void)
+static void display_usage(const char *argv0)
 {
 	fprintf(stderr, "Usage: \n");
-	fprintf(stderr, "       castool.exe convert <format> <inputfile> <outputfile.wav>\n");
+	fprintf(stderr, "       %s convert <format> <inputfile> <outputfile.wav>\n", argv0);
 }
 
 static void display_formats(void)
@@ -156,8 +160,8 @@ int CLIB_DECL main(int argc, char *argv[])
 {
 	int i;
 	int found =0;
-	const struct CassetteFormat * const *selected_formats = nullptr;
-	cassette_image *cassette;
+	const cassette_image::Format * const *selected_formats = nullptr;
+	cassette_image::ptr cassette;
 	FILE *f;
 
 	if (argc > 1)
@@ -167,7 +171,7 @@ int CLIB_DECL main(int argc, char *argv[])
 			// convert command
 			if (argc!=5) {
 				fprintf(stderr, "Wrong parameter number.\n\n");
-				display_usage();
+				display_usage(argv[0]);
 				return -1;
 			} else {
 				for (i = 0; formats[i].name; i++) {
@@ -178,7 +182,7 @@ int CLIB_DECL main(int argc, char *argv[])
 				}
 				if (found==0) {
 					fprintf(stderr, "Wrong format name.\n\n");
-					display_usage();
+					display_usage(argv[0]);
 					fprintf(stderr, "\n");
 					display_formats();
 					return -1;
@@ -190,14 +194,14 @@ int CLIB_DECL main(int argc, char *argv[])
 					return -1;
 				}
 
-				if (cassette_open_choices(f, &stdio_ioprocs, get_extension(argv[3]), selected_formats, CASSETTE_FLAG_READONLY, &cassette))  {
+				if (cassette_image::open_choices(f, &stdio_ioprocs, get_extension(argv[3]), selected_formats, cassette_image::FLAG_READONLY, cassette) != cassette_image::error::SUCCESS)  {
 					fprintf(stderr, "Invalid format of input file.\n");
 					fclose(f);
 					return -1;
 				}
 
-				cassette_dump(cassette,argv[4]);
-				cassette_close(cassette);
+				cassette->dump(argv[4]);
+				cassette.reset();
 				fclose(f);
 				goto theend;
 			}
@@ -205,12 +209,12 @@ int CLIB_DECL main(int argc, char *argv[])
 	}
 
 	/* Usage */
-	fprintf(stderr, "castool - Generic cassette manipulation tool for use with MESS\n\n");
-	display_usage();
+	fprintf(stderr, "castool - Generic cassette manipulation tool for use with MAME\n\n");
+	display_usage(argv[0]);
 	fprintf(stderr, "\n");
 	display_formats();
 	fprintf(stderr, "\nExample usage:\n");
-	fprintf(stderr, "        castool.exe convert tzx game.tzx game.wav\n\n");
+	fprintf(stderr, "        %s convert tzx game.tzx game.wav\n\n", argv[0]);
 
 theend :
 	return 0;

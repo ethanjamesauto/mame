@@ -32,12 +32,15 @@
 
 #include "emu.h"
 #include "cpu/m6502/m6502.h"
+#include "imagedev/floppy.h"
 #include "machine/mos6530n.h"
 #include "machine/ram.h"
-#include "sound/speaker.h"
+#include "sound/spkrdev.h"
 
 #include "bus/generic/slot.h"
 #include "bus/generic/carts.h"
+
+#include "speaker.h"
 
 #include "beta.lh"
 
@@ -50,60 +53,66 @@
 class beta_state : public driver_device
 {
 public:
-	beta_state(const machine_config &mconfig, device_type type, const char *tag)
-		: driver_device(mconfig, type, tag),
+	beta_state(const machine_config &mconfig, device_type type, const char *tag) :
+		driver_device(mconfig, type, tag),
 		m_maincpu(*this, M6502_TAG),
 		m_speaker(*this, "speaker"),
 		m_eprom(*this, EPROM_TAG),
-		m_q6(*this, "Q6"),
-		m_q7(*this, "Q7"),
-		m_q8(*this, "Q8"),
-		m_q9(*this, "Q9")
+		m_q(*this, "Q%u", 6U),
+		m_digits(*this, "digit%u", 0U),
+		m_leds(*this, "led%u", 0U)
 	{ }
 
+	DECLARE_INPUT_CHANGED_MEMBER( trigger_reset );
+	void beta(machine_config &config);
+
+protected:
+	virtual void machine_start() override;
+
+	uint8_t riot_pa_r();
+	void riot_pa_w(uint8_t data);
+	uint8_t riot_pb_r();
+	void riot_pb_w(uint8_t data);
+
+	DECLARE_DEVICE_IMAGE_LOAD_MEMBER(load_beta_eprom);
+	DECLARE_DEVICE_IMAGE_UNLOAD_MEMBER(unload_beta_eprom);
+
+	TIMER_CALLBACK_MEMBER(led_refresh);
+
+	void beta_mem(address_map &map);
+
+private:
 	required_device<cpu_device> m_maincpu;
 	required_device<speaker_sound_device> m_speaker;
 	required_device<generic_slot_device> m_eprom;
-	required_ioport m_q6;
-	required_ioport m_q7;
-	required_ioport m_q8;
-	required_ioport m_q9;
-
-	virtual void machine_start() override;
-
-	DECLARE_READ8_MEMBER( riot_pa_r );
-	DECLARE_WRITE8_MEMBER( riot_pa_w );
-	DECLARE_READ8_MEMBER( riot_pb_r );
-	DECLARE_WRITE8_MEMBER( riot_pb_w );
-	DECLARE_INPUT_CHANGED_MEMBER( trigger_reset );
-
-	DECLARE_DEVICE_IMAGE_LOAD_MEMBER( beta_eprom );
-	DECLARE_DEVICE_IMAGE_UNLOAD_MEMBER( beta_eprom );
+	required_ioport_array<4> m_q;
+	output_finder<6> m_digits;
+	output_finder<2> m_leds;
 
 	/* EPROM state */
 	int m_eprom_oe;
 	int m_eprom_ce;
-	UINT16 m_eprom_addr;
-	UINT8 m_eprom_data;
-	UINT8 m_old_data;
-	dynamic_buffer m_eprom_rom;
+	uint16_t m_eprom_addr;
+	uint8_t m_eprom_data;
+	uint8_t m_old_data;
+	std::vector<uint8_t> m_eprom_rom;
 
 	/* display state */
-	UINT8 m_ls145_p;
-	UINT8 m_segment;
+	uint8_t m_ls145_p;
+	uint8_t m_segment;
 
 	emu_timer *m_led_refresh_timer;
-	TIMER_CALLBACK_MEMBER(led_refresh);
 };
 
 
 /* Memory Maps */
 
-static ADDRESS_MAP_START( beta_mem, AS_PROGRAM, 8, beta_state )
-	AM_RANGE(0x0000, 0x007f) AM_MIRROR(0x7f00) AM_DEVICE(M6532_TAG, mos6532_t, ram_map)
-	AM_RANGE(0x0080, 0x00ff) AM_MIRROR(0x7f00) AM_DEVICE(M6532_TAG, mos6532_t, io_map)
-	AM_RANGE(0x8000, 0x87ff) AM_MIRROR(0x7800) AM_ROM
-ADDRESS_MAP_END
+void beta_state::beta_mem(address_map &map)
+{
+	map(0x0000, 0x007f).mirror(0x7f00).m(M6532_TAG, FUNC(mos6532_new_device::ram_map));
+	map(0x0080, 0x00ff).mirror(0x7f00).m(M6532_TAG, FUNC(mos6532_new_device::io_map));
+	map(0x8000, 0x87ff).mirror(0x7800).rom();
+}
 
 /* Input Ports */
 
@@ -154,12 +163,10 @@ INPUT_PORTS_END
 TIMER_CALLBACK_MEMBER(beta_state::led_refresh)
 {
 	if (m_ls145_p < 6)
-	{
-		output_set_digit_value(m_ls145_p, m_segment);
-	}
+		m_digits[m_ls145_p] = m_segment;
 }
 
-READ8_MEMBER( beta_state::riot_pa_r )
+uint8_t beta_state::riot_pa_r()
 {
 	/*
 
@@ -176,14 +183,16 @@ READ8_MEMBER( beta_state::riot_pa_r )
 
 	*/
 
-	UINT8 data = 0xff;
+	uint8_t data = 0xff;
 
 	switch (m_ls145_p)
 	{
-	case 6: data &= m_q6->read(); break;
-	case 7: data &= m_q7->read(); break;
-	case 8: data &= m_q8->read(); break;
-	case 9: data &= m_q9->read(); break;
+	case 6:
+	case 7:
+	case 8:
+	case 9:
+		data &= m_q[m_ls145_p - 6]->read();
+		break;
 	default:
 		if (!m_eprom_oe && !m_eprom_ce)
 		{
@@ -195,7 +204,7 @@ READ8_MEMBER( beta_state::riot_pa_r )
 	return data;
 }
 
-WRITE8_MEMBER( beta_state::riot_pa_w )
+void beta_state::riot_pa_w(uint8_t data)
 {
 	/*
 
@@ -215,19 +224,19 @@ WRITE8_MEMBER( beta_state::riot_pa_w )
 //  logerror("PA %02x\n", data);
 
 	/* display */
-	m_segment = BITSWAP8(data, 7, 3, 4, 1, 0, 2, 5, 6) & 0x7f;
+	m_segment = bitswap<8>(data, 7, 3, 4, 1, 0, 2, 5, 6) & 0x7f;
 	m_led_refresh_timer->adjust(attotime::from_usec(70));
 
 	/* EPROM data */
 	m_eprom_data = data;
 }
 
-READ8_MEMBER( beta_state::riot_pb_r )
+uint8_t beta_state::riot_pb_r()
 {
 	return 0;
 }
 
-WRITE8_MEMBER( beta_state::riot_pb_w )
+void beta_state::riot_pb_w(uint8_t data)
 {
 	/*
 
@@ -253,10 +262,10 @@ WRITE8_MEMBER( beta_state::riot_pb_w )
 	m_speaker->level_w(!BIT(data, 4));
 
 	/* address led */
-	output_set_led_value(0, BIT(data, 5));
+	m_leds[0] = BIT(data, 5);
 
 	/* data led */
-	output_set_led_value(1, !BIT(data, 5));
+	m_leds[1] = !BIT(data, 5);
 
 	/* EPROM address shift */
 	if (!BIT(m_old_data, 5) && BIT(data, 5))
@@ -282,25 +291,25 @@ WRITE8_MEMBER( beta_state::riot_pb_w )
 
 /* EPROM socket */
 
-DEVICE_IMAGE_LOAD_MEMBER( beta_state, beta_eprom )
+DEVICE_IMAGE_LOAD_MEMBER(beta_state::load_beta_eprom)
 {
-	UINT32 size = m_eprom->common_get_size("rom");
+	uint32_t size = m_eprom->common_get_size("rom");
 
 	if (size != 0x800)
 	{
 		image.seterror(IMAGE_ERROR_UNSPECIFIED, "Unsupported cartridge size");
-		return IMAGE_INIT_FAIL;
+		return image_init_result::FAIL;
 	}
 
 	m_eprom->rom_alloc(size, GENERIC_ROM8_WIDTH, ENDIANNESS_LITTLE);
 	m_eprom->common_load_rom(m_eprom->get_rom_base(), size, "rom");
 
-	return IMAGE_INIT_PASS;
+	return image_init_result::PASS;
 }
 
-DEVICE_IMAGE_UNLOAD_MEMBER( beta_state, beta_eprom )
+DEVICE_IMAGE_UNLOAD_MEMBER(beta_state::unload_beta_eprom)
 {
-	if (image.software_entry() == nullptr)
+	if (!image.loaded_through_softlist())
 		image.fwrite(&m_eprom_rom[0], 0x800);
 }
 
@@ -308,6 +317,9 @@ DEVICE_IMAGE_UNLOAD_MEMBER( beta_state, beta_eprom )
 
 void beta_state::machine_start()
 {
+	m_digits.resolve();
+	m_leds.resolve();
+
 	m_led_refresh_timer = machine().scheduler().timer_alloc(timer_expired_delegate(FUNC(beta_state::led_refresh),this));
 
 	m_eprom_rom.resize(0x800);
@@ -333,37 +345,35 @@ void beta_state::machine_start()
 
 /* Machine Driver */
 
-static MACHINE_CONFIG_START( beta, beta_state )
+void beta_state::beta(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD(M6502_TAG, M6502, XTAL_4MHz/4)
-	MCFG_CPU_PROGRAM_MAP(beta_mem)
+	M6502(config, m_maincpu, XTAL(4'000'000)/4);
+	m_maincpu->set_addrmap(AS_PROGRAM, &beta_state::beta_mem);
 
 	/* video hardware */
-	MCFG_DEFAULT_LAYOUT( layout_beta )
+	config.set_default_layout(layout_beta);
 
 	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_MONO("mono")
-	MCFG_SOUND_ADD("speaker", SPEAKER_SOUND, 0)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.25)
+	SPEAKER(config, "mono").front_center();
+	SPEAKER_SOUND(config, m_speaker).add_route(ALL_OUTPUTS, "mono", 0.25);
 
 	/* devices */
-	MCFG_DEVICE_ADD(M6532_TAG, MOS6532n, XTAL_4MHz/4)
-	MCFG_MOS6530n_IN_PA_CB(READ8(beta_state, riot_pa_r))
-	MCFG_MOS6530n_OUT_PA_CB(WRITE8(beta_state, riot_pa_w))
-	MCFG_MOS6530n_IN_PB_CB(READ8(beta_state, riot_pb_r))
-	MCFG_MOS6530n_OUT_PB_CB(WRITE8(beta_state, riot_pb_w))
-	MCFG_MOS6530n_IRQ_CB(INPUTLINE(M6502_TAG, M6502_IRQ_LINE))
+	mos6532_new_device &m6532(MOS6532_NEW(config, M6532_TAG, XTAL(4'000'000)/4));
+	m6532.pa_rd_callback().set(FUNC(beta_state::riot_pa_r));
+	m6532.pa_wr_callback().set(FUNC(beta_state::riot_pa_w));
+	m6532.pb_rd_callback().set(FUNC(beta_state::riot_pb_r));
+	m6532.pb_wr_callback().set(FUNC(beta_state::riot_pb_w));
+	m6532.irq_wr_callback().set_inputline(m_maincpu, M6502_IRQ_LINE);
 
 	/* EPROM socket */
-	MCFG_GENERIC_CARTSLOT_ADD(EPROM_TAG, generic_plain_slot, nullptr)
-	MCFG_GENERIC_EXTENSIONS("bin,rom")
-	MCFG_GENERIC_LOAD(beta_state, beta_eprom)
-	MCFG_GENERIC_UNLOAD(beta_state, beta_eprom)
+	generic_cartslot_device &cartslot(GENERIC_CARTSLOT(config, EPROM_TAG, generic_plain_slot, nullptr, "bin,rom"));
+	cartslot.set_device_load(FUNC(beta_state::load_beta_eprom));
+	cartslot.set_device_unload(FUNC(beta_state::unload_beta_eprom));
 
 	/* internal ram */
-	MCFG_RAM_ADD(RAM_TAG)
-	MCFG_RAM_DEFAULT_SIZE("256")
-MACHINE_CONFIG_END
+	RAM(config, RAM_TAG).set_default_size("256");
+}
 
 /* ROMs */
 
@@ -374,5 +384,5 @@ ROM_END
 
 /* System Drivers */
 
-/*    YEAR  NAME    PARENT  COMPAT  MACHINE INPUT   INIT    COMPANY    FULLNAME    FLAGS */
-COMP( 1984, beta,   0,      0,      beta,   beta, driver_device,   0,    "Pitronics", "Beta", MACHINE_SUPPORTS_SAVE )
+//    YEAR  NAME  PARENT  COMPAT  MACHINE  INPUT  CLASS       INIT        COMPANY      FULLNAME  FLAGS
+COMP( 1984, beta, 0,      0,      beta,    beta,  beta_state, empty_init, "Pitronics", "Beta",   MACHINE_SUPPORTS_SAVE )

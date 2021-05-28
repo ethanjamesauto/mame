@@ -1,4 +1,4 @@
-// license:GPL-2.0+
+// license:BSD-3-Clause
 // copyright-holders:Dirk Best
 /***************************************************************************
 
@@ -8,9 +8,10 @@
 
 ***************************************************************************/
 
-#include "emu.h"
-#include "imageutl.h"
 #include "apridisk.h"
+
+#include "imageutl.h"
+
 
 apridisk_format::apridisk_format()
 {
@@ -31,9 +32,9 @@ const char *apridisk_format::extensions() const
 	return "dsk";
 }
 
-int apridisk_format::identify(io_generic *io, UINT32 form_factor)
+int apridisk_format::identify(io_generic *io, uint32_t form_factor, const std::vector<uint32_t> &variants)
 {
-	UINT8 header[APR_HEADER_SIZE];
+	uint8_t header[APR_HEADER_SIZE];
 	io_generic_read(io, header, 0, APR_HEADER_SIZE);
 
 	const char magic[] = "ACT Apricot disk image\x1a\x04";
@@ -44,39 +45,39 @@ int apridisk_format::identify(io_generic *io, UINT32 form_factor)
 		return 0;
 }
 
-bool apridisk_format::load(io_generic *io, UINT32 form_factor, floppy_image *image)
+bool apridisk_format::load(io_generic *io, uint32_t form_factor, const std::vector<uint32_t> &variants, floppy_image *image)
 {
 	desc_pc_sector sectors[80][2][18];
-	UINT8 sector_data[MAX_SECTORS * SECTOR_SIZE];
-	UINT8 *data_ptr = sector_data;
+	std::unique_ptr<uint8_t []> sector_data(new uint8_t [MAX_SECTORS * SECTOR_SIZE]);
+	uint8_t *data_ptr = sector_data.get();
 	int track_count = 0, head_count = 0, sector_count = 0;
 
-	UINT64 file_size = io_generic_size(io);
-	UINT64 file_offset = APR_HEADER_SIZE;
+	uint64_t file_size = io_generic_size(io);
+	uint64_t file_offset = APR_HEADER_SIZE;
 
 	while (file_offset < file_size)
 	{
 		// read sector header
-		UINT8 sector_header[16];
+		uint8_t sector_header[16];
 		io_generic_read(io, sector_header, file_offset, 16);
 
-		UINT32 type = pick_integer_le(&sector_header, 0, 4);
-		UINT16 compression = pick_integer_le(&sector_header, 4, 2);
-		UINT16 header_size = pick_integer_le(&sector_header, 6, 2);
-		UINT32 data_size = pick_integer_le(&sector_header, 8, 4);
+		uint32_t type = pick_integer_le(&sector_header, 0, 4);
+		uint16_t compression = pick_integer_le(&sector_header, 4, 2);
+		uint16_t header_size = pick_integer_le(&sector_header, 6, 2);
+		uint32_t data_size = pick_integer_le(&sector_header, 8, 4);
 
 		file_offset += header_size;
 
 		switch (type)
 		{
 		case APR_SECTOR:
-			UINT8 head = pick_integer_le(&sector_header, 12, 1);
-			UINT8 sector = pick_integer_le(&sector_header, 13, 1);
-			UINT8 track = (UINT8) pick_integer_le(&sector_header, 14, 2);
+			uint8_t head = pick_integer_le(&sector_header, 12, 1);
+			uint8_t sector = pick_integer_le(&sector_header, 13, 1);
+			uint8_t track = (uint8_t) pick_integer_le(&sector_header, 14, 2);
 
-			track_count = MAX(track_count, track);
-			head_count = MAX(head_count, head);
-			sector_count = MAX(sector_count, sector);
+			track_count = std::max(track_count, int(unsigned(track)));
+			head_count = std::max(head_count, int(unsigned(head)));
+			sector_count = std::max(sector_count, int(unsigned(sector)));
 
 			// build sector info
 			sectors[track][head][sector - 1].head = head;
@@ -92,12 +93,15 @@ bool apridisk_format::load(io_generic *io, UINT32 form_factor, floppy_image *ima
 			{
 			case APR_COMPRESSED:
 				{
-					UINT8 comp[3];
+					uint8_t comp[3];
 					io_generic_read(io, comp, file_offset, 3);
-					UINT16 length = pick_integer_le(comp, 0, 2);
+					uint16_t length = pick_integer_le(comp, 0, 2);
 
 					if (length != SECTOR_SIZE)
-						fatalerror("apridisk_format: Invalid compression length %04x\n", length);
+					{
+						osd_printf_error("apridisk_format: Invalid compression length %04x\n", length);
+						return false;
+					}
 
 					memset(data_ptr, comp[2], SECTOR_SIZE);
 				}
@@ -108,7 +112,8 @@ bool apridisk_format::load(io_generic *io, UINT32 form_factor, floppy_image *ima
 				break;
 
 			default:
-				fatalerror("apridisk_format: Invalid compression %04x\n", compression);
+				osd_printf_error("apridisk_format: Invalid compression %04x\n", compression);
+				return false;
 			}
 
 			sectors[track][head][sector - 1].data = data_ptr;
@@ -135,7 +140,7 @@ bool apridisk_format::load(io_generic *io, UINT32 form_factor, floppy_image *ima
 	return true;
 }
 
-bool apridisk_format::save(io_generic *io, floppy_image *image)
+bool apridisk_format::save(io_generic *io, const std::vector<uint32_t> &variants, floppy_image *image)
 {
 	return false;
 }

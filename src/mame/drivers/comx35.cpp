@@ -9,11 +9,17 @@
     - serial printer
     - thermal printer
 
+
+    Cassette: PSAVE works, and the result can be loaded into Emma02 emulator.
+              PLOAD works, but it may be necessary to unplug all slots to get
+              a reliable load. This is the same as real hardware.
+
 */
 
+#include "emu.h"
 #include "includes/comx35.h"
 #include "formats/imageutl.h"
-#include "softlist.h"
+#include "screen.h"
 
 /***************************************************************************
     PARAMETERS
@@ -38,34 +44,34 @@ enum
     image_fread_memory - read image to memory
 -------------------------------------------------*/
 
-void comx35_state::image_fread_memory(device_image_interface &image, UINT16 addr, UINT32 count)
+void comx35_state::image_fread_memory(device_image_interface &image, uint16_t addr, uint32_t count)
 {
-	UINT8 *ram = m_ram->pointer() + (addr - 0x4000);
+	uint8_t *ram = m_ram->pointer() + (addr - 0x4000);
 
 	image.fread(ram, count);
 }
 
 /*-------------------------------------------------
-    QUICKLOAD_LOAD_MEMBER( comx35_state, comx35_comx )
+    QUICKLOAD_LOAD_MEMBER( comx35_state, comx )
 -------------------------------------------------*/
 
-QUICKLOAD_LOAD_MEMBER( comx35_state, comx35_comx )
+QUICKLOAD_LOAD_MEMBER(comx35_state::quickload_cb)
 {
 	address_space &program = m_maincpu->space(AS_PROGRAM);
 
-	UINT8 header[16] = {0};
+	uint8_t header[16] = {0};
 	int size = image.length();
 
 	if (size > m_ram->size())
 	{
-		return IMAGE_INIT_FAIL;
+		return image_init_result::FAIL;
 	}
 
 	image.fread( header, 5);
 
 	if (header[1] != 'C' || header[2] != 'O' || header[3] != 'M' || header[4] != 'X' )
 	{
-		return IMAGE_INIT_FAIL;
+		return image_init_result::FAIL;
 	}
 
 	switch (header[0])
@@ -85,7 +91,7 @@ QUICKLOAD_LOAD_MEMBER( comx35_state, comx35_comx )
 
 		*/
 		{
-			UINT16 start_address, end_address, run_address;
+			uint16_t start_address, end_address, run_address;
 
 			image.fread(header, 6);
 
@@ -171,7 +177,7 @@ QUICKLOAD_LOAD_MEMBER( comx35_state, comx35_comx )
 
 		*/
 		{
-			UINT16 start_array, end_array, start_string, array_length;
+			uint16_t start_array, end_array, start_string, array_length;
 
 			image.fread(header, 2);
 
@@ -192,7 +198,7 @@ QUICKLOAD_LOAD_MEMBER( comx35_state, comx35_comx )
 		break;
 	}
 
-	return IMAGE_INIT_PASS;
+	return image_init_result::PASS;
 }
 
 //**************************************************************************
@@ -203,11 +209,11 @@ QUICKLOAD_LOAD_MEMBER( comx35_state, comx35_comx )
 //  mem_r - memory read
 //-------------------------------------------------
 
-READ8_MEMBER( comx35_state::mem_r )
+uint8_t comx35_state::mem_r(offs_t offset)
 {
 	int extrom = 1;
 
-	UINT8 data = m_exp->mrd_r(space, offset, &extrom);
+	uint8_t data = m_exp->mrd_r(offset, &extrom);
 
 	if (offset < 0x4000)
 	{
@@ -219,7 +225,7 @@ READ8_MEMBER( comx35_state::mem_r )
 	}
 	else if (offset >= 0xf400 && offset < 0xf800)
 	{
-		data = m_vis->char_ram_r(space, offset & 0x3ff);
+		data = m_vis->char_ram_r(offset & 0x3ff);
 	}
 
 	return data;
@@ -230,9 +236,9 @@ READ8_MEMBER( comx35_state::mem_r )
 //  mem_w - memory write
 //-------------------------------------------------
 
-WRITE8_MEMBER( comx35_state::mem_w )
+void comx35_state::mem_w(offs_t offset, uint8_t data)
 {
-	m_exp->mwr_w(space, offset, data);
+	m_exp->mwr_w(offset, data);
 
 	if (offset >= 0x4000 && offset < 0xc000)
 	{
@@ -240,11 +246,11 @@ WRITE8_MEMBER( comx35_state::mem_w )
 	}
 	else if (offset >= 0xf400 && offset < 0xf800)
 	{
-		m_vis->char_ram_w(space, offset & 0x3ff, data);
+		m_vis->char_ram_w(offset & 0x3ff, data);
 	}
 	else if (offset >= 0xf800)
 	{
-		m_vis->page_ram_w(space, offset & 0x3ff, data);
+		m_vis->page_ram_w(offset & 0x3ff, data);
 	}
 }
 
@@ -253,13 +259,13 @@ WRITE8_MEMBER( comx35_state::mem_w )
 //  io_r - I/O read
 //-------------------------------------------------
 
-READ8_MEMBER( comx35_state::io_r )
+uint8_t comx35_state::io_r(offs_t offset)
 {
-	UINT8 data = m_exp->io_r(space, offset);
+	uint8_t data = m_exp->io_r(offset);
 
 	if (offset == 3)
 	{
-		data = m_kbe->read(space, 0);
+		data = m_kbe->read();
 	}
 
 	return data;
@@ -270,13 +276,13 @@ READ8_MEMBER( comx35_state::io_r )
 //  io_w - I/O write
 //-------------------------------------------------
 
-WRITE8_MEMBER( comx35_state::io_w )
+void comx35_state::io_w(offs_t offset, uint8_t data)
 {
-	m_exp->io_w(space, offset, data);
+	m_exp->io_w(offset, data);
 
 	if (offset >= 3)
 	{
-		cdp1869_w(space, offset, data);
+		cdp1869_w(offset, data);
 	}
 }
 
@@ -290,20 +296,22 @@ WRITE8_MEMBER( comx35_state::io_w )
 //  ADDRESS_MAP( comx35_mem )
 //-------------------------------------------------
 
-static ADDRESS_MAP_START( comx35_mem, AS_PROGRAM, 8, comx35_state )
-	ADDRESS_MAP_UNMAP_HIGH
-	AM_RANGE(0x0000, 0xffff) AM_READWRITE(mem_r, mem_w)
-ADDRESS_MAP_END
+void comx35_state::comx35_mem(address_map &map)
+{
+	map.unmap_value_high();
+	map(0x0000, 0xffff).rw(FUNC(comx35_state::mem_r), FUNC(comx35_state::mem_w));
+}
 
 
 //-------------------------------------------------
 //  ADDRESS_MAP( comx35_io )
 //-------------------------------------------------
 
-static ADDRESS_MAP_START( comx35_io, AS_IO, 8, comx35_state )
-	ADDRESS_MAP_UNMAP_HIGH
-	AM_RANGE(0x00, 0x07) AM_READWRITE(io_r, io_w)
-ADDRESS_MAP_END
+void comx35_state::comx35_io(address_map &map)
+{
+	map.unmap_value_high();
+	map(0x00, 0x07).rw(FUNC(comx35_state::io_r), FUNC(comx35_state::io_w));
+}
 
 
 
@@ -337,7 +345,7 @@ static INPUT_PORTS_START( comx35 )
 	PORT_BIT( 0x10, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_CODE(KEYCODE_4) PORT_CHAR('4') PORT_CHAR('$')
 	PORT_BIT( 0x20, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_CODE(KEYCODE_5) PORT_CHAR('5') PORT_CHAR('%')
 	PORT_BIT( 0x40, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_CODE(KEYCODE_6) PORT_CHAR('6') PORT_CHAR('&')
-	PORT_BIT( 0x80, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_CODE(KEYCODE_7) PORT_CHAR('7') PORT_CHAR('?')
+	PORT_BIT( 0x80, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_CODE(KEYCODE_7) PORT_CHAR('7') PORT_CHAR(39)
 
 	PORT_START("D2")
 	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_CODE(KEYCODE_8) PORT_CHAR('8') PORT_CHAR('[')
@@ -383,11 +391,11 @@ static INPUT_PORTS_START( comx35 )
 	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_CODE(KEYCODE_X) PORT_CHAR('X')
 	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_CODE(KEYCODE_Y) PORT_CHAR('Y')
 	PORT_BIT( 0x04, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_CODE(KEYCODE_Z) PORT_CHAR('Z')
-	PORT_BIT( 0x08, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_CODE(KEYCODE_COLON) PORT_CHAR('+') PORT_CHAR('{')
-	PORT_BIT( 0x10, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_CODE(KEYCODE_QUOTE) PORT_CHAR('-') PORT_CHAR('|')
-	PORT_BIT( 0x20, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_CODE(KEYCODE_BACKSLASH) PORT_CHAR('*') PORT_CHAR('}')
-	PORT_BIT( 0x40, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_CODE(KEYCODE_SLASH) PORT_CHAR('/') PORT_CHAR('~')
-	PORT_BIT( 0x80, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_NAME("SPACE") PORT_CODE(KEYCODE_SPACE) PORT_CHAR(' ') PORT_CHAR(8)
+	PORT_BIT( 0x08, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_CODE(KEYCODE_COLON) PORT_CHAR('+')
+	PORT_BIT( 0x10, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_CODE(KEYCODE_QUOTE) PORT_CHAR('-')
+	PORT_BIT( 0x20, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_CODE(KEYCODE_BACKSLASH) PORT_CHAR('*')
+	PORT_BIT( 0x40, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_CODE(KEYCODE_SLASH) PORT_CHAR('/')
+	PORT_BIT( 0x80, IP_ACTIVE_HIGH, IPT_KEYBOARD ) PORT_NAME("SPACE") PORT_CODE(KEYCODE_SPACE) PORT_CHAR(' ')
 
 	PORT_START("D7")
 	PORT_BIT( 0xff, IP_ACTIVE_HIGH, IPT_UNUSED )
@@ -456,7 +464,7 @@ READ_LINE_MEMBER( comx35_state::ef2_r )
 
 READ_LINE_MEMBER( comx35_state::ef4_r )
 {
-	return m_exp->ef4_r(); // | (m_cassette->input() > 0.0f);
+	return m_exp->ef4_r() | ((m_cassette->input() > 0.0f) ? 1 : 0);
 }
 
 WRITE_LINE_MEMBER( comx35_state::q_w )
@@ -476,7 +484,7 @@ WRITE_LINE_MEMBER( comx35_state::q_w )
 	m_exp->q_w(state);
 }
 
-WRITE8_MEMBER( comx35_state::sc_w )
+void comx35_state::sc_w(uint8_t data)
 {
 	switch (data)
 	{
@@ -552,7 +560,7 @@ void comx35_state::device_timer(emu_timer &timer, device_timer_id id, int param,
 void comx35_state::machine_start()
 {
 	// clear the RAM since DOS card will go crazy if RAM is not all zeroes
-	UINT8 *ram = m_ram->pointer();
+	uint8_t *ram = m_ram->pointer();
 	memset(ram, 0, m_ram->size());
 
 	// register for state saving
@@ -588,103 +596,64 @@ void comx35_state::machine_reset()
 //**************************************************************************
 
 //-------------------------------------------------
-//  MACHINE_CONFIG( pal )
+//  machine_config( pal )
 //-------------------------------------------------
 
-static MACHINE_CONFIG_START( pal, comx35_state )
+void comx35_state::base(machine_config &config, const XTAL clock)
+{
 	// basic system hardware
-	MCFG_CPU_ADD(CDP1802_TAG, CDP1802, CDP1869_CPU_CLK_PAL)
-	MCFG_CPU_PROGRAM_MAP(comx35_mem)
-	MCFG_CPU_IO_MAP(comx35_io)
-	MCFG_COSMAC_WAIT_CALLBACK(VCC)
-	MCFG_COSMAC_CLEAR_CALLBACK(READLINE(comx35_state, clear_r))
-	MCFG_COSMAC_EF2_CALLBACK(READLINE(comx35_state, ef2_r))
-	MCFG_COSMAC_EF4_CALLBACK(READLINE(comx35_state, ef4_r))
-	MCFG_COSMAC_Q_CALLBACK(WRITELINE(comx35_state, q_w))
-	MCFG_COSMAC_SC_CALLBACK(WRITE8(comx35_state, sc_w))
-
-	// sound and video hardware
-	MCFG_FRAGMENT_ADD(comx35_pal_video)
+	CDP1802(config, m_maincpu, clock);
+	m_maincpu->set_addrmap(AS_PROGRAM, &comx35_state::comx35_mem);
+	m_maincpu->set_addrmap(AS_IO, &comx35_state::comx35_io);
+	m_maincpu->wait_cb().set_constant(1);
+	m_maincpu->clear_cb().set(FUNC(comx35_state::clear_r));
+	m_maincpu->ef2_cb().set(FUNC(comx35_state::ef2_r));
+	m_maincpu->ef4_cb().set(FUNC(comx35_state::ef4_r));
+	m_maincpu->q_cb().set(FUNC(comx35_state::q_w));
+	m_maincpu->sc_cb().set(FUNC(comx35_state::sc_w));
+	m_maincpu->sc_cb().append(EXPANSION_TAG, FUNC(comx_expansion_slot_device::sc_w));
+	m_maincpu->tpb_cb().set(EXPANSION_TAG, FUNC(comx_expansion_slot_device::tpb_w));
 
 	// peripheral hardware
-	MCFG_DEVICE_ADD(CDP1871_TAG, CDP1871, CDP1869_CPU_CLK_PAL/8)
-	MCFG_CDP1871_D1_CALLBACK(IOPORT("D1"))
-	MCFG_CDP1871_D2_CALLBACK(IOPORT("D2"))
-	MCFG_CDP1871_D3_CALLBACK(IOPORT("D3"))
-	MCFG_CDP1871_D4_CALLBACK(IOPORT("D4"))
-	MCFG_CDP1871_D5_CALLBACK(IOPORT("D5"))
-	MCFG_CDP1871_D6_CALLBACK(IOPORT("D6"))
-	MCFG_CDP1871_D7_CALLBACK(IOPORT("D7"))
-	MCFG_CDP1871_D8_CALLBACK(IOPORT("D8"))
-	MCFG_CDP1871_D9_CALLBACK(IOPORT("D9"))
-	MCFG_CDP1871_D10_CALLBACK(IOPORT("D10"))
-	MCFG_CDP1871_D11_CALLBACK(IOPORT("D11"))
-	MCFG_CDP1871_DA_CALLBACK(INPUTLINE(CDP1802_TAG, COSMAC_INPUT_LINE_EF3))
-	MCFG_QUICKLOAD_ADD("quickload", comx35_state, comx35_comx, "comx", 0)
-	MCFG_CASSETTE_ADD("cassette")
-	MCFG_CASSETTE_DEFAULT_STATE(CASSETTE_STOPPED | CASSETTE_MOTOR_ENABLED | CASSETTE_SPEAKER_ENABLED)
+	CDP1871(config, m_kbe, cdp1869_device::CPU_CLK_PAL/8);
+	m_kbe->d1_callback().set_ioport("D1");
+	m_kbe->d2_callback().set_ioport("D2");
+	m_kbe->d3_callback().set_ioport("D3");
+	m_kbe->d4_callback().set_ioport("D4");
+	m_kbe->d5_callback().set_ioport("D5");
+	m_kbe->d6_callback().set_ioport("D6");
+	m_kbe->d7_callback().set_ioport("D7");
+	m_kbe->d8_callback().set_ioport("D8");
+	m_kbe->d9_callback().set_ioport("D9");
+	m_kbe->d10_callback().set_ioport("D10");
+	m_kbe->d11_callback().set_ioport("D11");
+	m_kbe->da_callback().set_inputline(m_maincpu, COSMAC_INPUT_LINE_EF3);
+
+	QUICKLOAD(config, "quickload", "comx").set_load_callback(FUNC(comx35_state::quickload_cb));
+
+	CASSETTE(config, m_cassette).set_default_state(CASSETTE_STOPPED | CASSETTE_MOTOR_ENABLED | CASSETTE_SPEAKER_ENABLED);
 
 	// expansion bus
-	MCFG_COMX_EXPANSION_SLOT_ADD(EXPANSION_TAG, comx_expansion_cards, "eb")
-	MCFG_COMX_EXPANSION_SLOT_IRQ_CALLBACK(WRITELINE(comx35_state, irq_w))
+	COMX_EXPANSION_SLOT(config, m_exp, 0, comx_expansion_cards, "eb").irq_callback().set(FUNC(comx35_state::irq_w));
 
 	// internal ram
-	MCFG_RAM_ADD(RAM_TAG)
-	MCFG_RAM_DEFAULT_SIZE("32K")
+	RAM(config, m_ram).set_default_size("32K");
 
 	// software lists
-	MCFG_SOFTWARE_LIST_ADD("flop_list", "comx35_flop")
-MACHINE_CONFIG_END
+	SOFTWARE_LIST(config, "flop_list").set_original("comx35_flop");
+}
 
+void comx35_state::pal(machine_config &config)
+{
+	base(config, cdp1869_device::CPU_CLK_PAL);
+	comx35_pal_video(config);
+}
 
-//-------------------------------------------------
-//  MACHINE_CONFIG( ntsc )
-//-------------------------------------------------
-
-static MACHINE_CONFIG_START( ntsc, comx35_state )
-	// basic system hardware
-	MCFG_CPU_ADD(CDP1802_TAG, CDP1802, CDP1869_CPU_CLK_NTSC)
-	MCFG_CPU_PROGRAM_MAP(comx35_mem)
-	MCFG_CPU_IO_MAP(comx35_io)
-	MCFG_COSMAC_WAIT_CALLBACK(VCC)
-	MCFG_COSMAC_CLEAR_CALLBACK(READLINE(comx35_state, clear_r))
-	MCFG_COSMAC_EF2_CALLBACK(READLINE(comx35_state, ef2_r))
-	MCFG_COSMAC_EF4_CALLBACK(READLINE(comx35_state, ef4_r))
-	MCFG_COSMAC_Q_CALLBACK(WRITELINE(comx35_state, q_w))
-	MCFG_COSMAC_SC_CALLBACK(WRITE8(comx35_state, sc_w))
-
-	// sound and video hardware
-	MCFG_FRAGMENT_ADD(comx35_ntsc_video)
-
-	// peripheral hardware
-	MCFG_DEVICE_ADD(CDP1871_TAG, CDP1871, CDP1869_CPU_CLK_PAL/8)
-	MCFG_CDP1871_D1_CALLBACK(IOPORT("D1"))
-	MCFG_CDP1871_D2_CALLBACK(IOPORT("D2"))
-	MCFG_CDP1871_D3_CALLBACK(IOPORT("D3"))
-	MCFG_CDP1871_D4_CALLBACK(IOPORT("D4"))
-	MCFG_CDP1871_D5_CALLBACK(IOPORT("D5"))
-	MCFG_CDP1871_D6_CALLBACK(IOPORT("D6"))
-	MCFG_CDP1871_D7_CALLBACK(IOPORT("D7"))
-	MCFG_CDP1871_D8_CALLBACK(IOPORT("D8"))
-	MCFG_CDP1871_D9_CALLBACK(IOPORT("D9"))
-	MCFG_CDP1871_D10_CALLBACK(IOPORT("D10"))
-	MCFG_CDP1871_D11_CALLBACK(IOPORT("D11"))
-	MCFG_CDP1871_DA_CALLBACK(INPUTLINE(CDP1802_TAG, COSMAC_INPUT_LINE_EF3))
-	MCFG_QUICKLOAD_ADD("quickload", comx35_state, comx35_comx, "comx", 0)
-	MCFG_CASSETTE_ADD("cassette")
-	MCFG_CASSETTE_DEFAULT_STATE(CASSETTE_STOPPED | CASSETTE_MOTOR_ENABLED | CASSETTE_SPEAKER_ENABLED)
-
-	// expansion bus
-	MCFG_COMX_EXPANSION_SLOT_ADD(EXPANSION_TAG, comx_expansion_cards, "eb")
-	MCFG_COMX_EXPANSION_SLOT_IRQ_CALLBACK(WRITELINE(comx35_state, irq_w))
-
-	// internal ram
-	MCFG_RAM_ADD(RAM_TAG)
-	MCFG_RAM_DEFAULT_SIZE("32K")
-
-	// software lists
-	MCFG_SOFTWARE_LIST_ADD("flop_list", "comx35_flop")
-MACHINE_CONFIG_END
+void comx35_state::ntsc(machine_config &config)
+{
+	base(config, cdp1869_device::CPU_CLK_NTSC);
+	comx35_ntsc_video(config);
+}
 
 
 
@@ -700,9 +669,9 @@ ROM_START( comx35p )
 	ROM_REGION( 0x4000, CDP1802_TAG, 0 )
 	ROM_DEFAULT_BIOS( "basic100" )
 	ROM_SYSTEM_BIOS( 0, "basic100", "COMX BASIC V1.00" )
-	ROMX_LOAD( "comx_10.u21", 0x0000, 0x4000, CRC(68d0db2d) SHA1(062328361629019ceed9375afac18e2b7849ce47), ROM_BIOS(1) )
+	ROMX_LOAD( "comx_10.u21", 0x0000, 0x4000, CRC(68d0db2d) SHA1(062328361629019ceed9375afac18e2b7849ce47), ROM_BIOS(0) )
 	ROM_SYSTEM_BIOS( 1, "basic101", "COMX BASIC V1.01" )
-	ROMX_LOAD( "comx_11.u21", 0x0000, 0x4000, CRC(609d89cd) SHA1(799646810510d8236fbfafaff7a73d5170990f16), ROM_BIOS(2) )
+	ROMX_LOAD( "comx_11.u21", 0x0000, 0x4000, CRC(609d89cd) SHA1(799646810510d8236fbfafaff7a73d5170990f16), ROM_BIOS(1) )
 ROM_END
 
 
@@ -718,6 +687,6 @@ ROM_END
 //  SYSTEM DRIVERS
 //**************************************************************************
 
-//    YEAR  NAME        PARENT  COMPAT  MACHINE     INPUT     INIT  COMPANY                         FULLNAME            FLAGS
-COMP( 1983, comx35p,    0,      0,      pal,        comx35, driver_device,   0, "Comx World Operations Ltd",    "COMX 35 (PAL)",    MACHINE_IMPERFECT_SOUND )
-COMP( 1983, comx35n,    comx35p,0,      ntsc,       comx35, driver_device,   0, "Comx World Operations Ltd",    "COMX 35 (NTSC)",   MACHINE_IMPERFECT_SOUND )
+//    YEAR  NAME     PARENT   COMPAT  MACHINE  INPUT   CLASS         INIT        COMPANY                      FULLNAME          FLAGS
+COMP( 1983, comx35p, 0,       0,      pal,     comx35, comx35_state, empty_init, "Comx World Operations Ltd", "COMX 35 (PAL)",  MACHINE_IMPERFECT_SOUND )
+COMP( 1983, comx35n, comx35p, 0,      ntsc,    comx35, comx35_state, empty_init, "Comx World Operations Ltd", "COMX 35 (NTSC)", MACHINE_IMPERFECT_SOUND )

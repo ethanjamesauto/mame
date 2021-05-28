@@ -38,6 +38,8 @@
   ROMs:  1x (up to) 27C2000 or similar (sound).
          3x or 4x 27C4001 or similar (graphics).
 
+  RAMs:  3x 128K x 8-bit SRAM (TC551001, CXK581000BM, MX66C1024MC or similar).
+
   Connectors: 1x 28x2 edge connector.
               1x RS232 connector.
               1x 14 legs connector.
@@ -45,37 +47,48 @@
 
   Other: 1x battery.
          1x red led.
-         2x 8 DIP switches.
+         2x 8 DIP switches banks.
          2x trimmer.
 
 
 ************************************************************************/
 
-#define MAIN_CLOCK  XTAL_16MHz
-#define SND_CLOCK   XTAL_14_31818MHz
-
 #include "emu.h"
 #include "cpu/h8/h83337.h"
 #include "sound/upd7759.h"
+#include "emupal.h"
+#include "screen.h"
+#include "speaker.h"
+
+#define MAIN_CLOCK  XTAL(16'000'000)
+#define SND_CLOCK   XTAL(14'318'181)
 
 
 class itgambl2_state : public driver_device
 {
 public:
-	itgambl2_state(const machine_config &mconfig, device_type type, const char *tag)
-		: driver_device(mconfig, type, tag),
+	itgambl2_state(const machine_config &mconfig, device_type type, const char *tag) :
+		driver_device(mconfig, type, tag),
 		m_maincpu(*this, "maincpu"),
-		m_palette(*this, "palette")  { }
+		m_palette(*this, "palette")
+	{ }
 
+	void itgambl2(machine_config &config);
+
+protected:
+	virtual void machine_reset() override;
+	virtual void video_start() override;
+
+private:
+	required_device<cpu_device> m_maincpu;
+	required_device<palette_device> m_palette;
 	int m_test_x;
 	int m_test_y;
 	int m_start_offs;
-	virtual void machine_reset() override;
-	virtual void video_start() override;
-	DECLARE_PALETTE_INIT(itgambl2);
-	UINT32 screen_update_itgambl2(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect);
-	required_device<cpu_device> m_maincpu;
-	required_device<palette_device> m_palette;
+
+	void itgambl2_palette(palette_device &palette) const;
+	uint32_t screen_update_itgambl2(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect);
+	void itgambl2_map(address_map &map);
 };
 
 
@@ -91,10 +104,9 @@ void itgambl2_state::video_start()
 }
 
 /* (dirty) debug code for looking 8bpps blitter-based gfxs */
-UINT32 itgambl2_state::screen_update_itgambl2(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
+uint32_t itgambl2_state::screen_update_itgambl2(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
 {
-	int x,y,count;
-	const UINT8 *blit_ram = memregion("gfx1")->base();
+	const uint8_t *blit_ram = memregion("gfx1")->base();
 
 	if(machine().input().code_pressed(KEYCODE_Z))
 		m_test_x++;
@@ -120,22 +132,20 @@ UINT32 itgambl2_state::screen_update_itgambl2(screen_device &screen, bitmap_rgb3
 	if(machine().input().code_pressed(KEYCODE_R))
 		m_start_offs--;
 
-	popmessage("%d %d %04x",m_test_x,m_test_y,m_start_offs);
+	popmessage("%d %d %04x", m_test_x, m_test_y, m_start_offs);
 
 	bitmap.fill(m_palette->black_pen(), cliprect);
 
-	count = (m_start_offs);
+	int count = m_start_offs;
 
-	for(y=0;y<m_test_y;y++)
+	for(int y = 0; y < m_test_y; y++)
 	{
-		for(x=0;x<m_test_x;x++)
+		for(int x = 0; x < m_test_x; x++)
 		{
-			UINT32 color;
-
-			color = (blit_ram[count] & 0xff)>>0;
+			uint32_t const color = (blit_ram[count] & 0xff) >> 0;
 
 			if(cliprect.contains(x, y))
-				bitmap.pix32(y, x) = m_palette->pen(color);
+				bitmap.pix(y, x) = m_palette->pen(color);
 
 			count++;
 		}
@@ -149,9 +159,10 @@ UINT32 itgambl2_state::screen_update_itgambl2(screen_device &screen, bitmap_rgb3
 * Memory map information *
 *************************/
 
-static ADDRESS_MAP_START( itgambl2_map, AS_PROGRAM, 16, itgambl2_state )
-	AM_RANGE(0x000000, 0x3fff) AM_ROM
-ADDRESS_MAP_END
+void itgambl2_state::itgambl2_map(address_map &map)
+{
+	map(0x000000, 0x3fff).rom();
+}
 
 
 /*************************
@@ -219,7 +230,7 @@ static const gfx_layout gfxlayout_8x8x8 =
 {
 /* this is wrong and need to be fixed */
 
-	8,8,
+	8, 8,
 	RGN_FRAC(1,1),
 	8,
 	{ 0, 1, 2, 3, 4, 5, 6, 7 },
@@ -233,8 +244,8 @@ static const gfx_layout gfxlayout_8x8x8 =
 * Graphics Decode Information *
 ******************************/
 
-static GFXDECODE_START( itgambl2 )
-	GFXDECODE_ENTRY( "gfx1", 0, gfxlayout_8x8x8,   0, 16  )
+static GFXDECODE_START( gfx_itgambl2 )
+	GFXDECODE_ENTRY( "gfx1", 0, gfxlayout_8x8x8,  0, 16  )
 GFXDECODE_END
 
 
@@ -249,16 +260,14 @@ void itgambl2_state::machine_reset()
 }
 
 /* default 444 palette for debug purpose*/
-PALETTE_INIT_MEMBER(itgambl2_state, itgambl2)
+void itgambl2_state::itgambl2_palette(palette_device &palette) const
 {
-	int x,r,g,b;
-
-	for(x=0;x<0x100;x++)
+	for(int x = 0; x < 0x100; x++)
 	{
-		r = (x & 0xf)*0x10;
-		g = ((x & 0x3c)>>2)*0x10;
-		b = ((x & 0xf0)>>4)*0x10;
-		palette.set_pen_color(x,rgb_t(r,g,b));
+		int const r = (x & 0xf) * 0x10;
+		int const g = ((x & 0x3c) >> 2) * 0x10;
+		int const b = ((x & 0xf0) >> 4) * 0x10;
+		palette.set_pen_color(x, rgb_t(r, g, b));
 	}
 }
 
@@ -266,62 +275,56 @@ PALETTE_INIT_MEMBER(itgambl2_state, itgambl2)
 *     Machine Drivers     *
 **************************/
 
-static MACHINE_CONFIG_START( itgambl2, itgambl2_state )
+void itgambl2_state::itgambl2(machine_config &config)
+{
+	// basic machine hardware
+	H83337(config, m_maincpu, MAIN_CLOCK);
+	m_maincpu->set_addrmap(AS_PROGRAM, &itgambl2_state::itgambl2_map);
 
-	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", H83337, MAIN_CLOCK)
-	MCFG_CPU_PROGRAM_MAP(itgambl2_map)
+	// video hardware
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_RASTER));
+	screen.set_refresh_hz(60);
+	screen.set_vblank_time(ATTOSECONDS_IN_USEC(0));
+	screen.set_size(512, 256);
+	screen.set_visarea(0, 512-1, 0, 256-1);
+	screen.set_screen_update(FUNC(itgambl2_state::screen_update_itgambl2));
 
-	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_REFRESH_RATE(60)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(0))
-	MCFG_SCREEN_SIZE(512, 256)
-	MCFG_SCREEN_VISIBLE_AREA(0, 512-1, 0, 256-1)
-	MCFG_SCREEN_UPDATE_DRIVER(itgambl2_state, screen_update_itgambl2)
+	GFXDECODE(config, "gfxdecode", m_palette, gfx_itgambl2);
+	PALETTE(config, m_palette, FUNC(itgambl2_state::itgambl2_palette), 0x200);
 
-
-	MCFG_GFXDECODE_ADD("gfxdecode", "palette", itgambl2)
-	MCFG_PALETTE_ADD("palette", 0x200)
-	MCFG_PALETTE_INIT_OWNER(itgambl2_state, itgambl2)
-
-	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_MONO("mono")
-	MCFG_SOUND_ADD("upd", UPD7759, UPD7759_STANDARD_CLOCK)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.50)
-MACHINE_CONFIG_END
+	// sound hardware
+	SPEAKER(config, "mono").front_center();
+	UPD7759(config, "upd").add_route(ALL_OUTPUTS, "mono", 0.50);
+}
 
 
 /*************************
 *        Rom Load        *
 *************************/
 
-/* NtCash
+/*
+  NtCash
 
-CPU:
+  CPU:
+  1x HD64F3337CP16 (main)
+  2x ispLSI1032E-70JL (PLD)
+  1x NEC D7759GC (sound)
+  1x TDA2003 (audio amp)
+  1x oscillator 14.318180 MHz
+  1x oscillator 16.000 MHz
 
-1x HD64F3337CP16 (main)
-2x ispLSI1032E-70JL (PLD)
-1x NEC D7759GC (sound)
-1x TDA2003 (audio amp)
-1x oscillator 14.318180 MHz
-1x oscillator 16.000 MHz
+  ROMs:
+  1x M27C1001 (0)
+  4x M27C4001 (1, 2, 3, 4)
 
-ROMs:
-
-1x M27C1001 (0)
-4x M27C4001 (1, 2, 3, 4)
-
-Note:
-
-1x 28x2 edge connector
-1x RS232 connector
-1x 14 legs isp connector
-1x battery
-1x red led
-2x 8x2 switches dip
-2x trimmer
-
+  Note:
+  1x 28x2 edge connector
+  1x RS232 connector
+  1x 14 legs isp connector
+  1x battery
+  1x red led
+  2x 8 DIP switches banks
+  2x trimmer
 */
 
 ROM_START( ntcash )
@@ -339,32 +342,29 @@ ROM_START( ntcash )
 ROM_END
 
 
-/* Wizard (Ver 1.0)
+/*
+  Wizard (Ver 1.0)
 
-CPU:
+  CPU:
+  1x HD64F3337CP16 (main)
+  2x ispLSI1032E-70JL (PLD)
+  1x NEC D7759GC (sound)
+  1x TDA2003 (audio amp)
+  1x oscillator 14.318180 MHz
+  1x oscillator 16.000 MHz
 
-1x HD64F3337CP16 (main)
-2x ispLSI1032E-70JL (PLD)
-1x NEC D7759GC (sound)
-1x TDA2003 (audio amp)
-1x oscillator 14.318180 MHz
-1x oscillator 16.000 MHz
+  ROMs:
+  1x M27C1001 (0)
+  4x M27C4001 (1, 2, 3, 4)
 
-ROMs:
-
-1x M27C1001 (0)
-4x M27C4001 (1, 2, 3, 4)
-
-Note:
-
-1x 28x2 edge connector
-1x RS232 connector
-1x 14 legs isp connector
-1x battery
-1x red led
-2x 8x2 DIP switches
-2x trimmer
-
+  Note:
+  1x 28x2 edge connector
+  1x RS232 connector
+  1x 14 legs isp connector
+  1x battery
+  1x red led
+  2x 8 DIP switches banks
+  2x trimmer
 */
 
 ROM_START( wizard )
@@ -382,32 +382,30 @@ ROM_START( wizard )
 ROM_END
 
 
-/* Laser 2001 (Ver 1.2)
+/*
+  Laser 2001 (Ver 1.2)
 
-CPU:
+  CPU:
+  1x HD64F3337CP16 (main)
+  2x ispLSI1032E-70JL (PLD)
+  1x NEC D7759GC (sound)
+  1x TDA2003 (audio amp)
+  1x oscillator 14.318180 MHz
+  1x oscillator 16.000 MHz
 
-1x HD64F3337CP16 (main)
-2x ispLSI1032E-70JL (PLD)
-1x NEC D7759GC (sound)
-1x TDA2003 (audio amp)
-1x oscillator 14.318180 MHz
-1x oscillator 16.000 MHz
+  ROMs:
+  1x M27C1001 (0)
+  4x M27C4001 (1, 2, 3, 4)
 
-ROMs:
+  Note:
 
-1x M27C1001 (0)
-4x M27C4001 (1, 2, 3, 4)
-
-Note:
-
-1x 28x2 edge connector
-1x RS232 connector
-1x 14 legs isp connector
-1x battery
-1x red led
-2x 8x2 switches dip
-2x trimmer
-
+  1x 28x2 edge connector
+  1x RS232 connector
+  1x 14 legs isp connector
+  1x battery
+  1x red led
+  2x 8 DIP switches banks
+  2x trimmer
 */
 
 ROM_START( laser2k1 )
@@ -425,32 +423,30 @@ ROM_START( laser2k1 )
 ROM_END
 
 
-/* Magic Drink (Ver 1.2)
+/*
+  Magic Drink (Ver 1.2)
 
-CPU:
+  CPU:
+  1x HD64F3337CP16 (main)
+  2x ispLSI1032E-70JL (PLD)
+  1x NEC D7759GC (sound)
+  1x TDA2003 (audio amp)
+  1x oscillator 14.318180 MHz
+  1x oscillator 16.000 MHz
 
-1x HD64F3337CP16 (main)
-2x ispLSI1032E-70JL (PLD)
-1x NEC D7759GC (sound)
-1x TDA2003 (audio amp)
-1x oscillator 14.318180 MHz
-1x oscillator 16.000 MHz
+  ROMs:
+  1x 27C2000 (s)
+  3x M27C4001 (1, 2, 3)
 
-ROMs:
+  Note:
 
-1x 27C2000 (s)
-3x M27C4001 (1, 2, 3)
-
-Note:
-
-1x 28x2 edge connector
-1x RS232 connector
-1x 14 legs isp connector
-1x battery
-1x red led
-2x 8x2 switches dip
-2x trimmer
-
+  1x 28x2 edge connector
+  1x RS232 connector
+  1x 14 legs isp connector
+  1x battery
+  1x red led
+  2x 8 DIP switches banks
+  2x trimmer
 */
 
 ROM_START( mdrink )
@@ -467,42 +463,39 @@ ROM_START( mdrink )
 ROM_END
 
 
-/* Unknown... (Ver 1.2)
+/*
+  Unknown... (Ver 1.2)
 
-CPU
+  CPU
+  1x H8/3337-HDY1A3-64F3337F16 (main)
+  1x NEC D7759GC-0124XY007 (sound)
+  2x ispLSI1032E-70LJ-C110AA02 (main)
+  1x oscillator 14.318180 MHz
+  1x oscillator 16.000 MHz
 
-1x H8/3337-HDY1A3-64F3337F16 (main)
-1x NEC D7759GC-0124XY007 (sound)
-2x ispLSI1032E-70LJ-C110AA02 (main)
-1x oscillator 14.318180 MHz
-1x oscillator 16.000 MHz
+  ROMs
+  1x M27C1001 (0)
+  1x 27C4000 (1)
+  3x M27C4001 (2, 3, 4)
 
-ROMs
+  Note
+  1x 28x2 edge connector (not JAMMA)
+  1x RS232 connector
+  1x 14 legs connector
+  1x 34 legs connector
+  2x 8 DIP switches banks
+  1x battery
+  1x trimmer (volume)
+  1x trimmer (unknown)
 
-1x M27C1001 (0)
-1x 27C4000 (1)
-3x M27C4001 (2, 3, 4)
+  --------------------------
 
-Note
+  Silkscreened on PCB:
+  "CE Angelo Arena - Via Vighi, 26  40026 - Imola (BO)"
 
-1x 28x2 edge connector (not JAMMA)
-1x RS232 connector
-1x 14 legs connector
-1x 34 legs connector
-2x 8 DIP switches
-1x battery
-1x trimmer (volume)
-1x trimmer (unknown)
+  PCB n. 2-0276 TE04.01
 
---------------------------
-
-Silkscreened on PCB:
-"CE Angelo Arena - Via Vighi, 26  40026 - Imola (BO)"
-
-PCB n. 2-0276 TE04.01
-
-Formely named "videopoker1"
-
+  Formerly named "videopoker1"
 */
 
 ROM_START( te0144 )
@@ -519,40 +512,50 @@ ROM_START( te0144 )
 	ROM_LOAD( "pb0.bin", 0x00000, 0x20000, CRC(123ef964) SHA1(b36d91b58119c15211a54ff7d78c7137d638ea88) )
 ROM_END
 
+ROM_START( btorneo ) //  Silkscreened on PCB: "2-0250" (same as elvis set)
+	ROM_REGION( 0x1000000, "maincpu", 0 ) /* all the program code is in here */
+	ROM_LOAD( "a1-hd64f3337cp16.mcu", 0x00000, 0x4000, NO_DUMP )
 
-/* Carta Magica (Ver 1.8)
+	ROM_REGION( 0x200000, "gfx1", 0 )
+	ROM_LOAD( "bt01.bin", 0x000000, 0x80000, CRC(e95d4f0e) SHA1(0c1a3c5e26102215e806f351279c4ee7858bd152) )
+	ROM_LOAD( "bt02.bin", 0x080000, 0x80000, CRC(177424a0) SHA1(d395dfb7af3ef44c99623101377cae152b0dda37) )
+	ROM_LOAD( "bt03.bin", 0x100000, 0x80000, CRC(1984427e) SHA1(0200360f083019235f464ed9b96bf7f78a07df37) ) // same as the one in te0144 romset
+	ROM_LOAD( "bt04.bin", 0x180000, 0x80000, CRC(57de0f01) SHA1(b958497bdf890be4c8482c4c89c24fc9f02eebf9) )
 
-CPU:
+	ROM_REGION( 0x80000, "upd", 0 ) /* NEC D7759GC samples */
+	ROM_LOAD( "bt05.bin", 0x00000, 0x80000, CRC(1a399d20) SHA1(c21122275cf595493a101f3ad98aa9e839c82871) ) // 11xxxxxxxxxxxxxxxxx = 0xFF
+ROM_END
 
-1x H8/3337-HD64F3337CP16 (main)
-1x NEC D7759GC (sound)
-1x TDA2003 (sound)
-2x ispLSI1032E-70LJ-E011J02
-1x oscillator 14.318180 MHz
-1x oscillator 16.000 MHz
+/*
+  Carta Magica (Ver 1.8)
 
-ROMs:
+  CPU:
+  1x H8/3337-HD64F3337CP16 (main)
+  1x NEC D7759GC (sound)
+  1x TDA2003 (sound)
+  2x ispLSI1032E-70LJ-E011J02
+  1x oscillator 14.318180 MHz
+  1x oscillator 16.000 MHz
 
-1x 27C1001 or similar (0)
-3x 27C4001 or similar (1, 2, 3)
+  ROMs:
+  1x 27C1001 or similar (0)
+  3x 27C4001 or similar (1, 2, 3)
 
-Note:
+  Note:
+  1x 28x2 edge connector (not JAMMA).
+  1x RS232 connector.
+  1x 14 legs connector.
+  2x 8 DIP switches.
+  1x battery.
+  1x trimmer (volume).
+  1x trimmer (unknown).
 
-1x 28x2 edge connector (not JAMMA)
-1x RS232 connector
-1x 14 legs connector
-2x 8 DIP switches
-1x battery
-1x trimmer (volume)
-1x trimmer (unknown)
+  --------------------------
 
---------------------------
-
-Silkscreened on PCB:
-"SMS distribuzione"
-"Base 2 Synth Rev.1"
-"APM1"
-
+  Silkscreened on PCB:
+  "SMS distribuzione"
+  "Base 2 Synth Rev.1"
+  "APM1"
 */
 
 ROM_START( cmagica )
@@ -568,39 +571,70 @@ ROM_START( cmagica )
 	ROM_LOAD( "sound.bin", 0x00000, 0x20000, CRC(9dab99a6) SHA1(ce34056dd964be32359acd2e53a6101cb4d9ddff) )
 ROM_END
 
+/*
+  Magic Card (H8 hardware)
 
-/* Millennium Sun
+  English version of Carta Magica. Same title picture.
+  However, all the service/bookkeeping modes are in Italian.
 
-CPU:
+  This set have 4 different graphics:
 
-1x H8/3337-HD64F3337F16 (main)
-1x maybe NEC D7759GC (sound)
-1x TDA2003 (audio amp)
-2x ispLSI1032E-70LJ
-1x oscillator 14.318180 MHz
-1x oscillator 16.000 MHz
+  1) Normal Cards.
+  2) Naked Girls.
+  3) Chips.
+  4) Numbers.
 
-ROMs:
+  Hardware is similar to Carta Magica, but with different connectors:
 
-1x 27C1001 or similar (msg0)
-4x 27C4001 or similar (ep1, ep2, ep3)
+  1x 28x2 edge connector (not JAMMA).
+  1x RS232 connector.
+  1x 10 legs male connector.
+  1x 4 legs male connector.
+*/
 
-Note:
+ROM_START( mcard_h8 )
+	ROM_REGION( 0x1000000, "maincpu", 0 ) /* all the program code is in here */
+	ROM_LOAD( "cmcard_h8_hd64f3337cp16.mcu", 0x00000, 0x4000, NO_DUMP )
 
-1x 28x2 edge connector (not JAMMA)
-1x RS232 connector
-1x 14 legs connector
-1x 34 legs connector
-2x 8 DIP switches
-1x battery
-1x trimmer (volume)
-1x trimmer (unknown)
+	ROM_REGION( 0x180000, "gfx1", 0 )
+	ROM_LOAD( "m_card_ep_1.bin", 0x000000, 0x80000, CRC(f887f740) SHA1(d9a59ed753f3f61705658af1cac673c523ad2237) )
+	ROM_LOAD( "m_card_ep_2.bin", 0x080000, 0x80000, CRC(e5fa014c) SHA1(96fcdf6a15617dbf928f465e21df3638cbae26aa) )
+	ROM_LOAD( "m_card_ep_3.bin", 0x100000, 0x80000, CRC(cd6f22cf) SHA1(0b8f5d9ce4f9bb5b776beec38087494d1e4bae7e) )
 
---------------------------
+	ROM_REGION( 0x20000, "upd", 0 ) /* NEC D7759GC samples */
+	ROM_LOAD( "m_card_msg_0.bin", 0x00000, 0x20000, CRC(9dab99a6) SHA1(ce34056dd964be32359acd2e53a6101cb4d9ddff) )
+ROM_END
 
-Silkscreened on PCB:
-"BV 2-0257/A"
 
+/*
+  Millennium Sun.
+
+  CPU:
+  1x H8/3337-HD64F3337F16 (main)
+  1x maybe NEC D7759GC (sound)
+  1x TDA2003 (audio amp)
+  2x ispLSI1032E-70LJ
+  1x oscillator 14.318180 MHz
+  1x oscillator 16.000 MHz
+
+  ROMs:
+  1x 27C1001 or similar (msg0)
+  4x 27C4001 or similar (ep1, ep2, ep3)
+
+  Note:
+  1x 28x2 edge connector (not JAMMA).
+  1x RS232 connector.
+  1x 14 legs connector.
+  1x 34 legs connector.
+  2x 8 DIP switches banks.
+  1x battery.
+  1x trimmer (volume).
+  1x trimmer (unknown).
+
+  --------------------------
+
+  Silkscreened on PCB:
+  "BV 2-0257/A"
 */
 
 ROM_START( millsun )
@@ -618,38 +652,35 @@ ROM_START( millsun )
 ROM_END
 
 
-/* Super Space 2001
+/*
+  Super Space 2001.
 
-CPU:
+  CPU:
+  1x H8/3337-HD64F3337F16 (main)
+  1x maybe NEC D7759GC (sound)
+  1x TDA2003 (audio amp)
+  2x ispLSI1032E-70LJ
+  1x oscillator 14.318180 MHz
+  1x oscillator 16.000 MHz
 
-1x H8/3337-HD64F3337F16 (main)
-1x maybe NEC D7759GC (sound)
-1x TDA2003 (audio amp)
-2x ispLSI1032E-70LJ
-1x oscillator 14.318180 MHz
-1x oscillator 16.000 MHz
+  ROMs:
+  1x 27C1001 or similar (msg0)
+  4x 27C4001 or similar (ep1, ep2, ep3)
 
-ROMs:
+  Note:
+  1x 28x2 edge connector (not JAMMA).
+  1x RS232 connector.
+  1x 14 legs connector.
+  1x 34 legs connector.
+  2x 8 DIP switches banks.
+  1x battery.
+  1x trimmer (volume).
+  1x trimmer (unknown).
 
-1x 27C1001 or similar (msg0)
-4x 27C4001 or similar (ep1, ep2, ep3)
+  --------------------------
 
-Note:
-
-1x 28x2 edge connector (not JAMMA)
-1x RS232 connector
-1x 14 legs connector
-1x 34 legs connector
-2x 8 DIP switches
-1x battery
-1x trimmer (volume)
-1x trimmer (unknown)
-
---------------------------
-
-Silkscreened on PCB:
-"BV 2-0257/A"
-
+  Silkscreened on PCB:
+  "BV 2-0257/A"
 */
 
 ROM_START( sspac2k1 )
@@ -667,37 +698,34 @@ ROM_START( sspac2k1 )
 ROM_END
 
 
-/* Elvis?
+/*
+  Elvis?
 
-CPU:
+  CPU:
+  1x H8/3337-HD64F3337CP16
+  1x NEC D7759GC (sound)
+  1x TDA2003 (audio amp)
+  2x ispLSI1032E-70LJ
+  1x oscillator 14.318180 MHz
+  1x oscillator 16.000 MHz
 
-1x H8/3337-HD64F3337CP16
-1x NEC D7759GC (sound)
-1x TDA2003 (audio amp)
-2x ispLSI1032E-70LJ
-1x oscillator 14.318180 MHz
-1x oscillator 16.000 MHz
+  ROMs:
+  1x 27C1001 or similar (0)
+  3x 27C4001 or similar (1, 2, 3)
 
-ROMs:
+  Note:
+  1x 28x2 edge connector (not JAMMA)
+  1x RS232 connector
+  1x 14 legs connector
+  2x 8 DIP switches banks
+  1x battery
+  1x trimmer (volume)
+  1x trimmer (unknown)
 
-1x 27C1001 or similar (0)
-3x 27C4001 or similar (1, 2, 3)
+  --------------------------
 
-Note:
-
-1x 28x2 edge connector (not JAMMA)
-1x RS232 connector
-1x 14 legs connector
-2x 8 DIP switches
-1x battery
-1x trimmer (volume)
-1x trimmer (unknown)
-
---------------------------
-
-Silkscreened on PCB:
-"2-0250"
-
+  Silkscreened on PCB:
+  "2-0250"
 */
 
 ROM_START( elvis )
@@ -713,33 +741,35 @@ ROM_START( elvis )
 	ROM_LOAD( "0.bin", 0x00000, 0x20000, CRC(833c5be5) SHA1(89110cb52265ee5bfdf73c0af343b7ce2356e394) )
 ROM_END
 
-/* Triple Star 2000
+/*
+  Triple Star 2000.
 
-CPU:
-1x HD64F3337YCP16 (main)(not dumped)
-2x NEC D7759GC (speech synthesizer)
-1x TDA2003 (sound)
-1x oscillator 16.000000
-1x oscillator 14.318180
+  CPU:
+  1x HD64F3337YCP16 (main)(not dumped)
+  2x NEC D7759GC (speech synthesizer)
+  1x TDA2003 (sound)
+  1x oscillator 16.000000
+  1x oscillator 14.318180
 
-ROMs:
-1x M27C1001 (0)
-4x M27C4001 (1,2,3,4)
+  ROMs:
+  1x M27C1001 (0)
+  4x M27C4001 (1,2,3,4)
 
+  RAMs
+  3x TC551001
 
-RAMs
-3x TC551001
+  PLDs
+  2x ispLSI10032E-70LJ
 
-PLDs
-2x ispLSI10032E-70LJ
-Note    1x 28x2 edge connector
-1x 14 legs connector
-1x RS232 connector
-1x trimmer (volume)
-1x trimmer (unknown)
-1x red LED
-2x 8x2 switches DIP
-1x battery 3.6V
+  Other
+  1x 28x2 edge connector.
+  1x 14 legs connector.
+  1x RS232 connector.
+  1x trimmer (volume).
+  1x trimmer (unknown).
+  1x red LED.
+  2x 8 DIP switches banks.
+  1x battery 3.6V.
 */
 
 ROM_START( trstar2k )
@@ -756,11 +786,38 @@ ROM_START( trstar2k )
 	ROM_LOAD( "msg0.bin", 0x00000, 0x20000, CRC(b25e1c8a) SHA1(a211412c3354a9f1a9662445b4cc379dad27813b) )
 ROM_END
 
-/* Super Star
+/*
+  Super Star
 
-(no readme)
+  CPUs
+  1x HD64F3337YCP16   (32-bit Single-Chip Microcomputer - main) (not dumped)
+  1x NEC D7759GC      (ADPCM Speech Synthesizer LSIs - sound)
+  1x TDA2003          (Audio Amplifier - sound)
 
+  1x 16.000000 MHz. oscillator.
+  1x 14.318180 MHz. oscillator.
+
+  ROMs
+  1x 27010 (msg0)(dumped).
+  3x 27040 (ep1, ep2, ep3) (dumped).
+
+  RAMs
+  3x TC551001
+
+  PLDs
+  2x ispLSI10032E-70LJ (not dumped)
+
+  Others
+  1x 28x2 edge connector.
+  1x 14 legs connector.
+  1x RS232 connector.
+  1x trimmer (volume).
+  1x trimmer (unknown).
+  1x red LED.
+  2x 8 DIP switches banks.
+  1x battery 3.6V.
 */
+
 
 ROM_START( sstar )
 	ROM_REGION( 0x1000000, "maincpu", 0 ) /* all the program code is in here */
@@ -798,32 +855,35 @@ ROM_START( pirati )
 ROM_END
 
 /*
+  Magic Number
 
-Magic Number
+  CPUs
+  1x H8/3337    32-bit Single-Chip Microcomputer - main (internal ROM not dumped)
+  1x D7759      ADPCM Speech Synthesizer LSIs - sound
+  1x TDA2003    Audio Amplifier - sound
 
-CPUs
-1x   H8/3337             32-bit Single-Chip Microcomputer - main (internal ROM not dumped)
-1x  D7759                ADPCM Speech Synthesizer LSIs - sound
-1x  TDA2003              Audio Amplifier - sound
-1x  oscillator  14.31818MHz
-1x  oscillator  16.000
-ROMs
-3x  M27C4001    1,2,3   dumped
-1x  M27C1001    MSG     dumped
-RAMs
-3x  CXK581000BM-70LL
-PLDs
-2x  ispLSI1032E-70Lj        not dumped
-Others
+  1x 14.31818 MHz. oscillator.
+  1x 16.000 MHz. oscillator.
 
-1x 28x2 edge connector
-1x 7x2 legs ISP connector
-1x RS232 connector
-2x trimmer
-2x 8x2 switches DIP
-1x jumper
-1x red LED
-1x battery 3.6V
+  ROMs
+  3x M27C4001    (1, 2, 3)  (dumped).
+  1x M27C1001    (MSG)      (dumped).
+
+  RAMs
+  3x  CXK581000BM-70LL
+
+  PLDs
+  2x ispLSI1032E-70Lj       (not dumped).
+
+  Others
+  1x 28x2 edge connector.
+  1x 7x2 legs ISP connector.
+  1x RS232 connector.
+  2x trimmer.
+  2x 8 DIP switches banks.
+  1x jumper.
+  1x red LED.
+  1x battery 3.6V.
 */
 
 ROM_START( mnumitg )
@@ -840,33 +900,37 @@ ROM_START( mnumitg )
 ROM_END
 
 /*
+  Magic Class (Ver 2.2)
 
-CPUs
-1x   H8/3337            32-bit Single-Chip Microcomputer - main (internal ROM not dumped)
-1x  D7759               ADPCM Speech Synthesizer LSIs - sound
-1x  TDA2003             Audio Amplifier - sound
-1x  oscillator  14.31818MHz
-1x  oscillator  16.000
-ROMs
-3x  M27C4001    1,2,3   dumped
-1x  M27C1001    SND     dumped
-RAMs
-3x  MX66C1024MC-70
-PLDs
-2x  ispLSI1032E-70Lj    not dumped
-Others
+  CPUs
+  1x H8/3337    32-bit Single-Chip Microcomputer - main (internal ROM not dumped)
+  1x D7759      ADPCM Speech Synthesizer LSIs - sound
+  1x TDA2003    Audio Amplifier - sound
 
-1x 28x2 edge connector
-1x 17x2 legs ISP connector
-1x 7x2 legs ISP connector
-1x 10 legs connector
-1x 4 legs connector
-1x RS232 connector
-2x trimmer (unknown)
-2x 8x2 switches DIP
-1x jumper
-1x battery 3.6V
+  1x 14.31818 MHz. oscillator.
+  1x 16.000 MHz. oscillator.
 
+  ROMs
+  3x M27C4001    (1, 2, 3)  (dumped).
+  1x M27C1001    (SND)      (dumped).
+
+  RAMs
+  3x MX66C1024MC-70
+
+  PLDs
+  2x ispLSI1032E-70Lj    (not dumped).
+
+  Others
+  1x 28x2 edge connector.
+  1x 17x2 legs ISP connector.
+  1x 7x2 legs ISP connector.
+  1x 10 legs connector.
+  1x 4 legs connector.
+  1x RS232 connector.
+  2x trimmer (unknown).
+  2x 8 DIP switches banks.
+  1x jumper.
+  1x battery 3.6V.
 */
 
 ROM_START( mclass )
@@ -883,32 +947,36 @@ ROM_START( mclass )
 ROM_END
 
 /*
+  Euro Pass (Ver 1.1)
 
-CPUs
-1x  H8/3337             32-bit Single-Chip Microcomputer - main (internal ROM not dumped)
-1x  D7759               ADPCM Speech Synthesizer LSIs - sound
-1x  TDA2003             Audio Amplifier - sound
-1x  oscillator  14.31818MHz
-1x  oscillator  16.000
-ROMs
-3x  M27C4001    1,2,3   dumped
-1x  M27C1001    SND     dumped
-RAMs
-3x  V62C5181024L-35W
-PLDs
-2x  ispLSI1032E-70Lj    not dumped
-Others
+  CPUs
+  1x H8/3337    32-bit Single-Chip Microcomputer - main (internal ROM not dumped)
+  1x D7759      ADPCM Speech Synthesizer LSIs - sound
+  1x TDA2003    Audio Amplifier - sound
 
-1x 28x2 edge connector
-1x 7x2 legs ISP connector
-1x RS232 connector
-1x trimmer (unknown)
-1x trimmer (volume)
-2x 8x2 switches DIP
-1x jumper
-1x red LED
-1x battery 3.6V
+  1x 14.31818 MHz. oscillator.
+  1x 16.000 MHz. oscillator.
 
+  ROMs
+  3x M27C4001    (1, 2, 3)  (dumped).
+  1x M27C1001    (SND)      (dumped).
+
+  RAMs
+  3x V62C5181024L-35W
+
+  PLDs
+  2x ispLSI1032E-70Lj    (not dumped).
+
+  Others
+  1x 28x2 edge connector.
+  1x 7x2 legs ISP connector.
+  1x RS232 connector.
+  1x trimmer (unknown).
+  1x trimmer (volume).
+  2x 8 DIP switches banks.
+  1x jumper.
+  1x red LED.
+  1x battery 3.6V.
 */
 
 ROM_START( europass )
@@ -951,26 +1019,171 @@ ROM_START( unkh8gam )
 	ROM_LOAD( "30.bin", 0x00000, 0x20000, CRC(72e56518) SHA1(7afdd6434beeea22673228c2417e4dee253a42b5) )
 ROM_END
 
+/*
+  Euro Double Star Record (ver.1.2)
+
+  CPUs
+  1x HD64F3337YCP16   (32-bit Single-Chip Microcomputer - main) (not dumped)
+  1x NEC D7759GC      (ADPCM Speech Synthesizer LSIs - sound)
+  1x TDA2003          (Audio Amplifier - sound)
+
+  1x 16.000000 MHz. oscillator.
+  1x 14.318180 MHz. oscillator.
+
+  ROMs
+  1x 27010 (yellow, dumped)
+  3x 27040 (blue, red, green, dumped)
+
+  RAMs
+  3x MX6C1024MC-70
+
+  PLDs
+  2x ispLSI10032E-70LJ (not dumped)
+
+  Others
+  1x 28x2 edge connector.
+  1x 14 legs connector.
+  1x RS232 connector.
+  1x trimmer (volume).
+  1x trimmer (unknown).
+  1x red LED.
+  2x 8 DIP switches banks.
+  1x battery 3.6V.
+*/
+
+ROM_START( eurodsr )
+	ROM_REGION( 0x1000000, "maincpu", 0 ) /* all the program code is in here */
+	ROM_LOAD( "europass_hd64f3337cp16.mcu", 0x00000, 0x4000, NO_DUMP )
+
+	ROM_REGION( 0x180000, "gfx1", 0 )
+	ROM_LOAD( "red.bin",   0x000000, 0x80000, CRC(a8e57e99) SHA1(0b7ce23ec7892733efff5e41fc7ea22eda04416b) )
+	ROM_LOAD( "green.bin", 0x080000, 0x80000, CRC(62ebc05f) SHA1(d59298241c14b459f00b9d36e819a00a2c075e96) )
+	ROM_LOAD( "blue.bin",  0x100000, 0x80000, CRC(14a9b936) SHA1(8892b1e0dbf4c756b0e16c766fa10c4f17da9fd2) )
+
+	ROM_REGION( 0x20000, "upd", 0 ) /* NEC D7759GC samples */
+	ROM_LOAD( "yellow.bin", 0x00000, 0x20000, CRC(04f44a53) SHA1(0b27d1fe1992d1769abec2078defc30896c36bcb) )
+ROM_END
+
+
+/*
+  Grande Fratello (Ver 1.7)
+
+  CPUs
+
+  1x H8/3337 u1 32-bit Single-Chip Microcomputer - main (internal ROM not dumped)
+  1x D7759GC u25 ADPCM Speech Synthesizer LSIs - sound
+  1x TDA2003 u26 Audio Amplifier - sound
+  1x oscillator 14.31818MHz u30
+  1x oscillator 16.000MHz x1
+
+  ROMs
+  1x MX27C2000 0 dumped
+  4x M27C4001 1-4 dumped
+
+  RAMs
+  1x MX66C1024MC-70 u9,u10,u11
+
+  PLDs
+  1x ispLSI1032E-70LJ u2,u3 read protected
+
+  Others
+
+  1x 28x2 JAMMA edge connector (J1)
+  1x RS232 connector (J2)
+  1x 7x2 pins connector (J3)
+  1x 17x2 pins connector (J5)
+  2x trimmer (P1-A/S)(P2-VOL)
+  2x 8x2 switches DIP (SW1,SW2)
+  1x battery 3.6V (BT1)
+*/
+
+ROM_START( granfrat )
+	ROM_REGION( 0x1000000, "maincpu", 0 ) /* all the program code is in here */
+	ROM_LOAD( "granfrat_hd64f3337cp16.mcu", 0x00000, 0x4000, NO_DUMP )
+
+	ROM_REGION( 0x200000, "gfx1", 0 )
+	ROM_LOAD( "gra.frat.ep1.u4", 0x000000, 0x80000, CRC(e200dd23) SHA1(ffe9f6517a0b2de0863cefaf9696ca256ae8b555) )
+	ROM_LOAD( "gra.frat.ep2.u5", 0x080000, 0x80000, CRC(1b4861c2) SHA1(9b70d8bd8d682b754be4a90b01eea7bdf9d400e1) )
+	ROM_LOAD( "gra.frat.ep3.u6", 0x100000, 0x80000, CRC(37d63df2) SHA1(bcb5271d7c966087b3059c1c7cbefa68427e7e07) )
+	ROM_LOAD( "gra.frat.ep4.u7", 0x180000, 0x80000, CRC(a71a39a2) SHA1(2f53f30c415d2c6acf8201090b4cfab4b3e0f4d0) )
+
+	ROM_REGION( 0x40000, "upd", 0 ) /* NEC D7759GC samples */
+	ROM_LOAD( "gra.frat.msg0.u8", 0x00000, 0x40000, CRC(1c58d0e8) SHA1(69c125775f7b9a2e4db6aa942d8a7b099ea19c36) )
+ROM_END
+
+/*
+Top T. Cash
+
+CPUs
+1x  H8/3337             32-bit Single-Chip Microcomputer - main (internal ROM not dumped)
+1x  D7759           ADPCM Speech Synthesizer LSIs - sound
+1x  TDA2003             Audio Amplifier - sound
+1x  oscillator  14.318181MHz
+1x  oscillator  16.000MHz
+
+ROMs
+5x  M27C4001    0,1,2,3,4   dumped
+
+RAMs
+3x  YY628100BllG-70
+PLDs
+1x  ispLSI1032E-70LJ        read protected
+
+Others
+1x 28x2 JAMMA edge connector
+1x 14 pins flat cable connector
+1x 34 pins flat cable connector
+1x RS232 male connector
+2x trimmer (volume)
+2x 8 DIP switches banks
+1x battery 3.6V
+
+Notes
+
+PCB is marked: "VideoIdea - Via Turati,2 - 40026 Imola (BO)" and "2-0257/V" on component side
+PCB is marked: "TE 1100 CE" on solder side
+PCB is labeled: "BACCHI 1883 - 21/02/02 - Rip[] RiProg[X]" on component side
+*/
+
+ROM_START( toptcash )
+	ROM_REGION( 0x1000000, "maincpu", 0 ) /* all the program code is in here */
+	ROM_LOAD( "top t. cash_hd64f3337cp16.mcu", 0x00000, 0x4000, NO_DUMP )
+
+	ROM_REGION( 0x200000, "gfx1", 0 )
+	ROM_LOAD( "top t. cash ep1.bin", 0x000000, 0x80000, CRC(95f449e1) SHA1(97eecb438e6896085247b53bf7947b2b0054768f) )
+	ROM_LOAD( "top t. cash ep2.bin", 0x080000, 0x80000, CRC(a89a207d) SHA1(deac27e5dba1ae8e12db05d8383d9d961adcbcd9) )
+	ROM_LOAD( "top t. cash ep3.bin", 0x100000, 0x80000, CRC(ccf13921) SHA1(4bc7ff81aae1034549cd1a406e17ed097f2c2b47) )
+	ROM_LOAD( "top t. cash ep4.bin", 0x180000, 0x80000, CRC(8a229c4d) SHA1(9188d74595fea900fba4e176beed23cbbb5d89c4) )
+
+	ROM_REGION( 0x80000, "upd", 0 ) /* NEC D7759GC samples */
+	ROM_LOAD( "top t. cash msg0.bin", 0x00000, 0x80000, CRC(babe87c7) SHA1(7ed226224c03a094844e838aebaead67e9ae9a2d) ) // 1xxxxxxxxxxxxxxxxxx = 0x00
+ROM_END
+
 
 /*************************
 *      Game Drivers      *
 *************************/
 
-/*    YEAR  NAME      PARENT  MACHINE   INPUT     STATE          INIT ROT    COMPANY      FULLNAME                                FLAGS  */
-GAME( 1999, ntcash,   0,      itgambl2, itgambl2, driver_device, 0,   ROT0, "<unknown>", "NtCash",                                MACHINE_IS_SKELETON )
-GAME( 1999, wizard,   0,      itgambl2, itgambl2, driver_device, 0,   ROT0, "A.A.",      "Wizard (Ver 1.0)",                      MACHINE_IS_SKELETON )
-GAME( 200?, trstar2k, 0,      itgambl2, itgambl2, driver_device, 0,   ROT0, "A.M.",      "Triple Star 2000",                      MACHINE_IS_SKELETON )
-GAME( 2001, laser2k1, 0,      itgambl2, itgambl2, driver_device, 0,   ROT0, "<unknown>", "Laser 2001 (Ver 1.2)",                  MACHINE_IS_SKELETON )
-GAME( 2001, mdrink,   0,      itgambl2, itgambl2, driver_device, 0,   ROT0, "<unknown>", "Magic Drink (Ver 1.2)",                 MACHINE_IS_SKELETON )
-GAME( 2001, te0144,   0,      itgambl2, itgambl2, driver_device, 0,   ROT0, "<unknown>", "Puzzle Bobble (Italian Gambling Game)", MACHINE_IS_SKELETON )
-GAME( 200?, cmagica,  0,      itgambl2, itgambl2, driver_device, 0,   ROT0, "<unknown>", "Carta Magica (Ver 1.8)",                MACHINE_IS_SKELETON )
-GAME( 200?, millsun,  0,      itgambl2, itgambl2, driver_device, 0,   ROT0, "<unknown>", "Millennium Sun",                        MACHINE_IS_SKELETON )
-GAME( 200?, sspac2k1, 0,      itgambl2, itgambl2, driver_device, 0,   ROT0, "<unknown>", "Super Space 2001",                      MACHINE_IS_SKELETON )
-GAME( 200?, elvis,    0,      itgambl2, itgambl2, driver_device, 0,   ROT0, "<unknown>", "Elvis?",                                MACHINE_IS_SKELETON )
-GAME( 200?, sstar,    0,      itgambl2, itgambl2, driver_device, 0,   ROT0, "<unknown>", "Super Star",                            MACHINE_IS_SKELETON )
-GAME( 2001, pirati,   0,      itgambl2, itgambl2, driver_device, 0,   ROT0, "Cin",       "Pirati",                                MACHINE_IS_SKELETON )
-GAME( 200?, mnumitg,  0,      itgambl2, itgambl2, driver_device, 0,   ROT0, "<unknown>", "Magic Number (Italian Gambling Game, Ver 1.5)", MACHINE_IS_SKELETON )
-GAME( 200?, mclass,   0,      itgambl2, itgambl2, driver_device, 0,   ROT0, "<unknown>", "Magic Class (Ver 2.2)",                 MACHINE_IS_SKELETON )
-GAME( 200?, europass, 0,      itgambl2, itgambl2, driver_device, 0,   ROT0, "<unknown>", "Euro Pass (Ver 1.1)",                   MACHINE_IS_SKELETON )
-GAME( 200?, thedrink, 0,      itgambl2, itgambl2, driver_device, 0,   ROT0, "<unknown>", "The Drink",                             MACHINE_IS_SKELETON )
-GAME( 200?, unkh8gam, 0,      itgambl2, itgambl2, driver_device, 0,   ROT0, "<unknown>", "unknown H8 Italian Gambling game",      MACHINE_IS_SKELETON )
+//    YEAR  NAME      PARENT    MACHINE   INPUT     STATE           INIT        ROT   COMPANY      FULLNAME                                 FLAGS
+GAME( 1999, ntcash,   0,        itgambl2, itgambl2, itgambl2_state, empty_init, ROT0, "<unknown>", "NtCash",                                MACHINE_IS_SKELETON )
+GAME( 1999, wizard,   0,        itgambl2, itgambl2, itgambl2_state, empty_init, ROT0, "A.A.",      "Wizard (Ver 1.0)",                      MACHINE_IS_SKELETON )
+GAME( 200?, trstar2k, 0,        itgambl2, itgambl2, itgambl2_state, empty_init, ROT0, "A.M.",      "Triple Star 2000",                      MACHINE_IS_SKELETON )
+GAME( 2001, laser2k1, 0,        itgambl2, itgambl2, itgambl2_state, empty_init, ROT0, "<unknown>", "Laser 2001 (Ver 1.2)",                  MACHINE_IS_SKELETON )
+GAME( 2001, mdrink,   0,        itgambl2, itgambl2, itgambl2_state, empty_init, ROT0, "<unknown>", "Magic Drink (Ver 1.2)",                 MACHINE_IS_SKELETON )
+GAME( 2001, te0144,   0,        itgambl2, itgambl2, itgambl2_state, empty_init, ROT0, "<unknown>", "Puzzle Bobble (Italian gambling game)", MACHINE_IS_SKELETON )
+GAME( 200?, btorneo,  0,        itgambl2, itgambl2, itgambl2_state, empty_init, ROT0, "<unknown>", "Bubble Torneo",                         MACHINE_IS_SKELETON )
+GAME( 200?, cmagica,  0,        itgambl2, itgambl2, itgambl2_state, empty_init, ROT0, "<unknown>", "Carta Magica (Ver 1.8)",                MACHINE_IS_SKELETON )
+GAME( 200?, mcard_h8, cmagica,  itgambl2, itgambl2, itgambl2_state, empty_init, ROT0, "<unknown>", "Magic Card (H8, English)",              MACHINE_IS_SKELETON )
+GAME( 200?, millsun,  0,        itgambl2, itgambl2, itgambl2_state, empty_init, ROT0, "<unknown>", "Millennium Sun",                        MACHINE_IS_SKELETON )
+GAME( 200?, sspac2k1, 0,        itgambl2, itgambl2, itgambl2_state, empty_init, ROT0, "<unknown>", "Super Space 2001",                      MACHINE_IS_SKELETON )
+GAME( 200?, elvis,    0,        itgambl2, itgambl2, itgambl2_state, empty_init, ROT0, "<unknown>", "Elvis?",                                MACHINE_IS_SKELETON )
+GAME( 200?, sstar,    0,        itgambl2, itgambl2, itgambl2_state, empty_init, ROT0, "<unknown>", "Super Star",                            MACHINE_IS_SKELETON )
+GAME( 2001, pirati,   0,        itgambl2, itgambl2, itgambl2_state, empty_init, ROT0, "Cin",       "Pirati",                                MACHINE_IS_SKELETON )
+GAME( 200?, mnumitg,  0,        itgambl2, itgambl2, itgambl2_state, empty_init, ROT0, "<unknown>", "Magic Number (Italian gambling game, Ver 1.5)", MACHINE_IS_SKELETON )
+GAME( 200?, mclass,   0,        itgambl2, itgambl2, itgambl2_state, empty_init, ROT0, "<unknown>", "Magic Class (Ver 2.2)",                 MACHINE_IS_SKELETON )
+GAME( 200?, europass, 0,        itgambl2, itgambl2, itgambl2_state, empty_init, ROT0, "<unknown>", "Euro Pass (Ver 1.1)",                   MACHINE_IS_SKELETON )
+GAME( 200?, thedrink, 0,        itgambl2, itgambl2, itgambl2_state, empty_init, ROT0, "<unknown>", "The Drink",                             MACHINE_IS_SKELETON )
+GAME( 200?, unkh8gam, 0,        itgambl2, itgambl2, itgambl2_state, empty_init, ROT0, "<unknown>", "unknown H8 Italian gambling game",      MACHINE_IS_SKELETON )
+GAME( 200?, eurodsr,  0,        itgambl2, itgambl2, itgambl2_state, empty_init, ROT0, "<unknown>", "Euro Double Star Record (ver.1.2)",     MACHINE_IS_SKELETON )
+GAME( 200?, granfrat, 0,        itgambl2, itgambl2, itgambl2_state, empty_init, ROT0, "<unknown>", "Grande Fratello (Ver. 1.7)",            MACHINE_IS_SKELETON )
+GAME( 2002, toptcash, 0,        itgambl2, itgambl2, itgambl2_state, empty_init, ROT0, "VideoIdea", "Top T. Cash",                           MACHINE_IS_SKELETON )

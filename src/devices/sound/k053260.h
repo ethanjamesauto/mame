@@ -6,24 +6,12 @@
 
 *********************************************************/
 
+#ifndef MAME_SOUND_K053260_H
+#define MAME_SOUND_K053260_H
+
 #pragma once
 
-#ifndef __K053260_H__
-#define __K053260_H__
-
-
-//**************************************************************************
-//  INTERFACE CONFIGURATION MACROS
-//**************************************************************************
-
-#define MCFG_K053260_ADD(_tag, _clock) \
-	MCFG_DEVICE_ADD(_tag, K053260, _clock)
-#define MCFG_K053260_REPLACE(_tag, _clock) \
-	MCFG_DEVICE_REPLACE(_tag, K053260, _clock)
-
-#define MCFG_K053260_REGION(_tag) \
-	k053260_device::set_region_tag(*device, _tag);
-
+#include "dirom.h"
 
 //**************************************************************************
 //  TYPE DEFINITIONS
@@ -32,82 +20,93 @@
 // ======================> k053260_device
 
 class k053260_device : public device_t,
-						public device_sound_interface
+					   public device_sound_interface,
+					   public device_rom_interface<21>
 {
 public:
-	k053260_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
-	~k053260_device() { }
+	k053260_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
 
-	static void set_region_tag(device_t &device, const char *tag) { downcast<k053260_device &>(device).m_rgnoverride = tag; }
+	u8 main_read(offs_t offset);
+	void main_write(offs_t offset, u8 data);
+	u8 read(offs_t offset);
+	void write(offs_t offset, u8 data);
 
-	DECLARE_READ8_MEMBER( main_read );
-	DECLARE_WRITE8_MEMBER( main_write );
-	DECLARE_READ8_MEMBER( read );
-	DECLARE_WRITE8_MEMBER( write );
+	auto sh1_cb() { return m_sh1_cb.bind(); }
+	auto sh2_cb() { return m_sh2_cb.bind(); }
 
 protected:
 	// device-level overrides
 	virtual void device_start() override;
+	virtual void device_clock_changed() override;
 	virtual void device_reset() override;
+	virtual void device_timer(emu_timer &timer, device_timer_id id, int param, void *ptr) override;
 
 	// sound stream update overrides
-	virtual void sound_stream_update(sound_stream &stream, stream_sample_t **inputs, stream_sample_t **outputs, int samples) override;
+	virtual void sound_stream_update(sound_stream &stream, std::vector<read_stream_view> const &inputs, std::vector<write_stream_view> &outputs) override;
+
+	// device_rom_interface overrides
+	virtual void rom_bank_updated() override;
 
 private:
-	// configuration
-	const char *    m_rgnoverride;
+	// Pan multipliers
+	static const int pan_mul[8][2];
 
+	// Sample hold lines callbacks (often used for interrupts)
+	devcb_write_line m_sh1_cb;
+	devcb_write_line m_sh2_cb;
+
+	// configuration
 	sound_stream *  m_stream;
-	UINT8 *         m_rom;
-	UINT32          m_rom_size;
+	emu_timer   *m_timer;
 
 	// live state
-	UINT8           m_portdata[4];
-	UINT8           m_keyon;
-	UINT8           m_mode;
+	u8           m_portdata[4];
+	u8           m_keyon;
+	u8           m_mode;
+	int          m_timer_state;
 
 	// per voice state
 	class KDSC_Voice
 	{
 	public:
-		inline void voice_start(k053260_device &device, int index);
+		KDSC_Voice(k053260_device &device) : m_device(device), m_pan_volume{ 0, 0 } { }
+
+		inline void voice_start(int index);
 		inline void voice_reset();
-		inline void set_register(offs_t offset, UINT8 data);
-		inline void set_loop_kadpcm(UINT8 data);
-		inline void set_pan(UINT8 data);
+		inline void set_register(offs_t offset, u8 data);
+		inline void set_loop_kadpcm(u8 data);
+		inline void set_pan(u8 data);
 		inline void update_pan_volume();
 		inline void key_on();
 		inline void key_off();
-		inline void play(stream_sample_t *outputs);
+		inline void play(s32 *outputs);
 		inline bool playing() { return m_playing; }
-		inline UINT8 read_rom();
+		inline u8 read_rom(bool side_effects);
 
 	private:
 		// pointer to owning device
-		k053260_device *m_device;
+		k053260_device &m_device;
 
 		// live state
-		UINT32 m_position;
-		UINT16 m_pan_volume[2];
-		UINT16 m_counter;
-		INT8   m_output;
-		bool   m_playing;
+		u32  m_position = 0;
+		int  m_pan_volume[2];
+		u16  m_counter = 0;
+		s8   m_output = 0;
+		bool m_playing = false;
 
 		// per voice registers
-		UINT32 m_start;
-		UINT16 m_length;
-		UINT16 m_pitch;
-		UINT8  m_volume;
+		u32 m_start = 0;
+		u16 m_length = 0;
+		u16 m_pitch = 0;
+		u8  m_volume = 0;
 
 		// bit packed registers
-		UINT8  m_pan;
-		bool   m_loop;
-		bool   m_kadpcm;
+		u8   m_pan = 0;
+		bool m_loop = false;
+		bool m_kadpcm = false;
 	} m_voice[4];
-
-	friend class k053260_device::KDSC_Voice;
 };
 
-extern const device_type K053260;
+DECLARE_DEVICE_TYPE(K053260, k053260_device)
 
-#endif /* __K053260_H__ */
+#endif // MAME_SOUND_K053260_H

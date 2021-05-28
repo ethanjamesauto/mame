@@ -2,7 +2,7 @@
 // copyright-holders:Nathan Woods, Miodrag Milanovic
 /*********************************************************************
 
-    cassette.c
+    cassette.cpp
 
     Interface to the cassette image abstraction code
 
@@ -11,26 +11,25 @@
 #include "emu.h"
 #include "formats/imageutl.h"
 #include "cassette.h"
-#include "ui/ui.h"
-#include "image.h"
 
+#define LOG_WARN          (1U<<1)   // Warnings
+#define LOG_DETAIL        (1U<<2)   // Details
 
-#define ANIMATION_FPS       1
-#define ANIMATION_FRAMES    4
+#define VERBOSE ( LOG_WARN )
 
-#define VERBOSE             0
-#define LOG(x) do { if (VERBOSE) logerror x; } while (0)
+#include "logmacro.h"
 
 // device type definition
-const device_type CASSETTE = &device_creator<cassette_image_device>;
+DEFINE_DEVICE_TYPE(CASSETTE, cassette_image_device, "cassette_image", "Cassette")
 
 //-------------------------------------------------
 //  cassette_image_device - constructor
 //-------------------------------------------------
 
-cassette_image_device::cassette_image_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: device_t(mconfig, CASSETTE, "Cassette", tag, owner, clock, "cassette_image", __FILE__),
+cassette_image_device::cassette_image_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock) :
+	device_t(mconfig, CASSETTE, tag, owner, clock),
 	device_image_interface(mconfig, *this),
+	device_sound_interface(mconfig, *this),
 	m_cassette(nullptr),
 	m_state(CASSETTE_STOPPED),
 	m_position(0),
@@ -42,7 +41,8 @@ cassette_image_device::cassette_image_device(const machine_config &mconfig, cons
 	m_formats(cassette_default_formats),
 	m_create_opts(nullptr),
 	m_default_state(CASSETTE_PLAY),
-	m_interface(nullptr)
+	m_interface(nullptr),
+	m_stereo(false)
 {
 }
 
@@ -65,9 +65,6 @@ void cassette_image_device::device_config_complete()
 	m_extension_list[0] = '\0';
 	for (int i = 0; m_formats[i]; i++ )
 		image_specify_extension( m_extension_list, 256, m_formats[i]->extensions );
-
-	// set brief and instance name
-	update_names();
 }
 
 
@@ -75,44 +72,34 @@ void cassette_image_device::device_config_complete()
     cassette IO
 *********************************************************************/
 
-bool cassette_image_device::is_motor_on()
-{
-	if ((m_state & CASSETTE_MASK_UISTATE) == CASSETTE_STOPPED)
-		return FALSE;
-	if ((m_state & CASSETTE_MASK_MOTOR) != CASSETTE_MOTOR_ENABLED)
-		return FALSE;
-	return TRUE;
-}
-
-
-
 void cassette_image_device::update()
 {
-	double cur_time = device().machine().time().as_double();
+	double cur_time = machine().time().as_double();
 
-	if (is_motor_on())
+	if (!is_stopped() && motor_on())
 	{
 		double new_position = m_position + (cur_time - m_position_time)*m_speed*m_direction;
 
-		switch(m_state & CASSETTE_MASK_UISTATE) {
+		switch (int(m_state & CASSETTE_MASK_UISTATE)) // cast to int to suppress unhandled enum value warning
+		{
 		case CASSETTE_RECORD:
-			cassette_put_sample(m_cassette, m_channel, m_position, new_position - m_position, m_value);
+			m_cassette->put_sample(m_channel, m_position, new_position - m_position, m_value);
 			break;
 
 		case CASSETTE_PLAY:
-			if ( m_cassette )
+			if (m_cassette)
 			{
-				cassette_get_sample(m_cassette, m_channel, new_position, 0.0, &m_value);
-				/* See if reached end of tape */
+				m_cassette->get_sample(m_channel, new_position, 0.0, &m_value);
+				// See if reached end of tape
 				double length = get_length();
 				if (new_position > length)
 				{
-					m_state = (cassette_state)(( m_state & ~CASSETTE_MASK_UISTATE ) | CASSETTE_STOPPED);
+					m_state = (m_state & ~CASSETTE_MASK_UISTATE) | CASSETTE_STOPPED;
 					new_position = length;
 				}
 				else if (new_position < 0)
 				{
-					m_state = (cassette_state)(( m_state & ~CASSETTE_MASK_UISTATE ) | CASSETTE_STOPPED);
+					m_state = (m_state & ~CASSETTE_MASK_UISTATE) | CASSETTE_STOPPED;
 					new_position = 0;
 				}
 			}
@@ -128,8 +115,8 @@ void cassette_image_device::change_state(cassette_state state, cassette_state ma
 	cassette_state new_state;
 
 	new_state = m_state;
-	new_state = (cassette_state)(new_state & ~mask);
-	new_state = (cassette_state)(new_state | (state & mask));
+	new_state &= ~mask;
+	new_state |= (state & mask);
 
 	if (new_state != m_state)
 	{
@@ -142,14 +129,11 @@ void cassette_image_device::change_state(cassette_state state, cassette_state ma
 
 double cassette_image_device::input()
 {
-	INT32 sample;
-	double double_value;
-
 	update();
-	sample = m_value;
-	double_value = sample / ((double) 0x7FFFFFFF);
+	int32_t sample = m_value;
+	double double_value = sample / (double(0x7FFFFFFF));
 
-	LOG(("cassette_input(): time_index=%g value=%g\n", m_position, double_value));
+	LOGMASKED(LOG_DETAIL, "cassette_input(): time_index=%g value=%g\n", m_position, double_value);
 
 	return double_value;
 }
@@ -162,10 +146,10 @@ void cassette_image_device::output(double value)
 	{
 		update();
 
-		value = MIN(value, 1.0);
-		value = MAX(value, -1.0);
+		value = std::min(value, 1.0);
+		value = std::max(value, -1.0);
 
-		m_value = (INT32) (value * 0x7FFFFFFF);
+		m_value = int32_t(value * 0x7FFFFFFF);
 	}
 }
 
@@ -174,8 +158,8 @@ double cassette_image_device::get_position()
 {
 	double position = m_position;
 
-	if (is_motor_on())
-		position += (device().machine().time().as_double() - m_position_time)*m_speed*m_direction;
+	if (!is_stopped() && motor_on())
+		position += (machine().time().as_double() - m_position_time)*m_speed*m_direction;
 	return position;
 }
 
@@ -183,9 +167,7 @@ double cassette_image_device::get_position()
 
 double cassette_image_device::get_length()
 {
-	struct CassetteInfo info;
-
-	cassette_get_info(m_cassette, &info);
+	cassette_image::Info info = m_cassette->get_info();
 	return ((double) info.sample_count) / info.sample_frequency;
 }
 
@@ -212,11 +194,9 @@ void cassette_image_device::go_reverse()
 
 void cassette_image_device::seek(double time, int origin)
 {
-	double length;
-
 	update();
 
-	length = get_length();
+	double length = get_length();
 
 	switch(origin) {
 	case SEEK_SET:
@@ -253,57 +233,58 @@ void cassette_image_device::device_start()
 	m_cassette = nullptr;
 	m_state = m_default_state;
 	m_value = 0;
+
+	stream_alloc(0, m_stereo? 2:1, machine().sample_rate());
 }
 
-bool cassette_image_device::call_create(int format_type, option_resolution *format_options)
+image_init_result cassette_image_device::call_create(int format_type, util::option_resolution *format_options)
 {
-	return call_load();
+	return internal_load(true);
 }
 
-bool cassette_image_device::call_load()
+image_init_result cassette_image_device::call_load()
 {
-	casserr_t err;
-	int cassette_flags;
-	const char *extension;
-	int is_writable;
+	return internal_load(false);
+}
+
+image_init_result cassette_image_device::internal_load(bool is_create)
+{
+	cassette_image::error err;
 	device_image_interface *image = nullptr;
 	interface(image);
 
-	if ((has_been_created()) || (length() == 0))
+	if (is_create || (length()==0)) // empty existing images are fine to write over.
 	{
-		/* creating an image */
-		err = cassette_create((void *)image, &image_ioprocs, &wavfile_format, m_create_opts, CASSETTE_FLAG_READWRITE|CASSETTE_FLAG_SAVEONEXIT, &m_cassette);
-		if (err)
+		// creating an image
+		err = cassette_image::create((void *)image, &image_ioprocs, &cassette_image::wavfile_format, m_create_opts, cassette_image::FLAG_READWRITE|cassette_image::FLAG_SAVEONEXIT, m_cassette);
+		if (err != cassette_image::error::SUCCESS)
 			goto error;
 	}
 	else
 	{
-		/* opening an image */
+		// opening an image
+		bool retry;
 		do
 		{
-			is_writable = !is_readonly();
-			cassette_flags = is_writable ? (CASSETTE_FLAG_READWRITE|CASSETTE_FLAG_SAVEONEXIT) : CASSETTE_FLAG_READONLY;
-			std::string fname;
-			if (software_entry()==nullptr) {
-				extension = filetype();
-			} else {
-				fname = m_mame_file->filename();
-				int loc = fname.find_last_of('.');
-				if (loc!=-1) {
-					extension = fname.substr(loc + 1,fname.length()-loc).c_str();
-				} else {
-					extension = "";
-				}
-			}
-			err = cassette_open_choices((void *)image, &image_ioprocs, extension, m_formats, cassette_flags, &m_cassette);
+			// we probably don't want to retry...
+			retry = false;
 
-			/* this is kind of a hack */
-			if (err && is_writable)
+			// try opening the cassette
+			int cassette_flags = is_readonly()
+				? cassette_image::FLAG_READONLY
+				: (cassette_image::FLAG_READWRITE | cassette_image::FLAG_SAVEONEXIT);
+			err = cassette_image::open_choices((void *)image, &image_ioprocs, filetype(), m_formats, cassette_flags, m_cassette);
+
+			// special case - if we failed due to readwrite not being supported, make the image be read only and retry
+			if (err == cassette_image::error::READ_WRITE_UNSUPPORTED)
+			{
 				make_readonly();
+				retry = true;
+			}
 		}
-		while(err && is_writable);
+		while(retry);
 
-		if (err)
+		if (err != cassette_image::error::SUCCESS)
 			goto error;
 	}
 
@@ -312,29 +293,29 @@ bool cassette_image_device::call_load()
 
 	/* reset the position */
 	m_position = 0.0;
-	m_position_time = device().machine().time().as_double();
+	m_position_time = machine().time().as_double();
 
 	/* default channel to 0, speed multiplier to 1 */
 	m_channel = 0;
 	m_speed = 1;
 	m_direction = 1;
 
-	return IMAGE_INIT_PASS;
+	return image_init_result::PASS;
 
 error:
 	image_error_t imgerr = IMAGE_ERROR_UNSPECIFIED;
 	switch(err)
 	{
-		case CASSETTE_ERROR_INTERNAL:
+		case cassette_image::error::INTERNAL:
 			imgerr = IMAGE_ERROR_INTERNAL;
 			break;
-		case CASSETTE_ERROR_UNSUPPORTED:
+		case cassette_image::error::UNSUPPORTED:
 			imgerr = IMAGE_ERROR_UNSUPPORTED;
 			break;
-		case CASSETTE_ERROR_OUTOFMEMORY:
+		case cassette_image::error::OUT_OF_MEMORY:
 			imgerr = IMAGE_ERROR_OUTOFMEMORY;
 			break;
-		case CASSETTE_ERROR_INVALIDIMAGE:
+		case cassette_image::error::INVALID_IMAGE:
 			imgerr = IMAGE_ERROR_INVALIDIMAGE;
 			break;
 		default:
@@ -342,7 +323,7 @@ error:
 			break;
 	}
 	image->seterror(imgerr, "" );
-	return IMAGE_INIT_FAIL;
+	return image_init_result::FAIL;
 }
 
 
@@ -354,83 +335,95 @@ void cassette_image_device::call_unload()
 		update();
 
 	/* close out the cassette */
-	cassette_close(m_cassette);
-	m_cassette = nullptr;
+	m_cassette.reset();
 
 	/* set to default state, but only change the UI state */
 	change_state(CASSETTE_STOPPED, CASSETTE_MASK_UISTATE);
 }
 
 
+//-------------------------------------------------
+//  display a small tape animation, with the
+//  current position in the tape image
+//-------------------------------------------------
 
-/*
-    display a small tape icon, with the current position in the tape image
-*/
-void cassette_image_device::call_display()
+std::string cassette_image_device::call_display()
 {
-	char buf[65];
-	float x, y;
-	int n;
-	double position, length;
-	cassette_state uistate;
-	cassette_image_device *dev;
-	static const UINT8 shapes[8] = { 0x2d, 0x5c, 0x7c, 0x2f, 0x2d, 0x20, 0x20, 0x20 };
+	const int ANIMATION_FPS = 1;
 
-	/* abort if we should not be showing the image */
-	if (!exists())
-		return;
-	if (!is_motor_on())
-		return;
+	std::string result;
 
-	/* figure out where we are in the cassette */
-	position = get_position();
-	length = get_length();
-	uistate = (cassette_state)(get_state() & CASSETTE_MASK_UISTATE);
-
-	/* choose a location on the screen */
-	x = 0.2f;
-	y = 0.5f;
-
-	cassette_device_iterator iter(device().machine().root_device());
-	for (dev = iter.first(); dev != nullptr && strcmp( dev->tag(), device().tag() ); dev = iter.next())
-		y += 1;
-
-	y *= device().machine().ui().get_line_height() + 2.0f * UI_BOX_TB_BORDER;
-	/* choose which frame of the animation we are at */
-	n = ((int) position / ANIMATION_FPS) % ANIMATION_FRAMES;
-	/* Since you can have anything in a BDF file, we will use crude ascii characters instead */
-	snprintf(buf, ARRAY_LENGTH(buf), "%c%c %c %02d:%02d (%04d) [%02d:%02d (%04d)]",
-#if 0
-	/* THE ANIMATION HASN'T WORKED SINCE 0.114 - LEFT HERE FOR REFERENCE */
-	/* NEVER SEEN THE PLAY / RECORD ICONS */
-	/* character pairs 2-3, 4-5, 6-7, 8-9 form little tape cassette images */
-		n * 2 + 2,                              /* cassette icon left */
-		n * 2 + 3,                              /* cassette icon right */
-		(uistate == CASSETTE_PLAY) ? 16 : 14,   /* play or record icon */
-#else
-		shapes[n],                  /* cassette icon left */
-		shapes[n|4],                    /* cassette icon right */
-		(uistate == CASSETTE_PLAY) ? 0x50 : 0x52,   /* play (P) or record (R) */
-#endif
-		((int) position / 60),
-		((int) position % 60),
-		(int) position,
-		((int) length / 60),
-		((int) length % 60),
-		(int) length);
-
-	// draw the cassette
-	device().machine().ui().draw_text_box(&device().machine().render().ui_container(), buf, JUSTIFY_LEFT, x, y, UI_BACKGROUND_COLOR);
-
-	// make sure tape stops at end when playing
-	if ((m_state & CASSETTE_MASK_UISTATE) == CASSETTE_PLAY)
+	// only show the image when a cassette is loaded and the motor is on
+	if (exists() && !is_stopped() && motor_on())
 	{
-		if ( m_cassette )
+		static char const *const shapes[] = { u8"\u2500", u8"\u2572", u8"\u2502", u8"\u2571" };
+
+		// figure out where we are in the cassette
+		double position = get_position();
+		double length = get_length();
+		cassette_state uistate = get_state() & CASSETTE_MASK_UISTATE;
+
+		// choose which frame of the animation we are at
+		int n = (int(position) / ANIMATION_FPS) % std::size(shapes);
+
+		// play or record
+		const char *status_icon = (uistate == CASSETTE_PLAY)
+			? u8"\u25BA"
+			: u8"\u25CF";
+
+		// create information string
+		result = string_format("%s %s %02d:%02d (%04d) [%02d:%02d (%04d)]",
+			shapes[n],                  // animation
+			status_icon,                // play or record
+			((int)position / 60),
+			((int)position % 60),
+			(int)position,
+			((int)length / 60),
+			((int)length % 60),
+			(int)length);
+
+		// make sure tape stops at end when playing
+		if ((m_state & CASSETTE_MASK_UISTATE) == CASSETTE_PLAY)
 		{
-			if (position > length)
+			if (m_cassette)
 			{
-				m_state = (cassette_state)(( m_state & ~CASSETTE_MASK_UISTATE ) | CASSETTE_STOPPED);
+				if (get_position() > get_length())
+				{
+					m_state = ((m_state & ~CASSETTE_MASK_UISTATE) | CASSETTE_STOPPED);
+				}
 			}
 		}
+	}
+	return result;
+}
+
+//-------------------------------------------------
+//  Cassette sound
+//-------------------------------------------------
+
+void cassette_image_device::sound_stream_update(sound_stream &stream, std::vector<read_stream_view> const &inputs, std::vector<write_stream_view> &outputs)
+{
+	cassette_state state = get_state() & (CASSETTE_MASK_UISTATE | CASSETTE_MASK_MOTOR | CASSETTE_MASK_SPEAKER);
+
+	if (exists() && (state == (CASSETTE_PLAY | CASSETTE_MOTOR_ENABLED | CASSETTE_SPEAKER_ENABLED)))
+	{
+		cassette_image *cassette = get_image();
+		double time_index = get_position();
+		double duration = ((double) outputs[0].samples()) / outputs[0].sample_rate();
+
+		if (m_samples.size() < outputs[0].samples())
+			m_samples.resize(outputs[0].samples());
+
+		for (int ch = 0; ch < outputs.size(); ch++)
+		{
+			cassette->get_samples(0, time_index, duration, outputs[0].samples(), 2, &m_samples[0], cassette_image::WAVEFORM_16BIT);
+			for (int sampindex = 0; sampindex < outputs[ch].samples(); sampindex++)
+				outputs[ch].put_int(sampindex, m_samples[sampindex], 32768);
+		}
+	}
+	else
+	{
+		for (int ch = 0; ch < outputs.size(); ch++)
+			outputs[ch].fill(0);
 	}
 }

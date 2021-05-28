@@ -1,20 +1,9 @@
 // license:BSD-3-Clause
 // copyright-holders:Nicola Salmoria
+#ifndef MAME_SOUND_SNKWAVE_H
+#define MAME_SOUND_SNKWAVE_H
+
 #pragma once
-
-#ifndef __SNKWAVE_H__
-#define __SNKWAVE_H__
-
-#define SNKWAVE_WAVEFORM_LENGTH 16
-
-//**************************************************************************
-//  INTERFACE CONFIGURATION MACROS
-//**************************************************************************
-
-#define MCFG_SNKWAVE_ADD(_tag, _clock) \
-	MCFG_DEVICE_ADD(_tag, SNKWAVE, _clock)
-#define MCFG_SNKWAVE_REPLACE(_tag, _clock) \
-	MCFG_DEVICE_REPLACE(_tag, SNKWAVE, _clock)
 
 
 //**************************************************************************
@@ -28,37 +17,36 @@ class snkwave_device : public device_t,
 						public device_sound_interface
 {
 public:
-	snkwave_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
-	~snkwave_device() { }
+	snkwave_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
+
+	void snkwave_w(offs_t offset, uint8_t data);
 
 protected:
 	// device-level overrides
 	virtual void device_start() override;
 
 	// sound stream update overrides
-	virtual void sound_stream_update(sound_stream &stream, stream_sample_t **inputs, stream_sample_t **outputs, int samples) override;
-
-public:
-	DECLARE_WRITE8_MEMBER( snkwave_w );
+	virtual void sound_stream_update(sound_stream &stream, std::vector<read_stream_view> const &inputs, std::vector<write_stream_view> &outputs) override;
 
 private:
-	void update_waveform(unsigned int offset, UINT8 data);
+	static constexpr unsigned WAVEFORM_LENGTH = 16;
+	static constexpr unsigned CLOCK_SHIFT = 8;
 
-private:
+	void update_waveform(unsigned int offset, uint8_t data);
+
 	sound_stream *m_stream;
 	int m_external_clock;
 	int m_sample_rate;
 
 	// data about the sound system
-	UINT32 m_frequency;
-	UINT32 m_counter;
+	uint32_t m_frequency;
+	uint32_t m_counter;
 	int m_waveform_position;
 
 	// decoded waveform table
-	INT16 m_waveform[SNKWAVE_WAVEFORM_LENGTH];
+	int16_t m_waveform[WAVEFORM_LENGTH];
 };
 
-extern const device_type SNKWAVE;
+DECLARE_DEVICE_TYPE(SNKWAVE, snkwave_device)
 
-
-#endif /* __SNKWAVE_H__ */
+#endif // MAME_SOUND_SNKWAVE_H

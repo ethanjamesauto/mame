@@ -1,6 +1,6 @@
 /*
- * Copyright 2011-2015 Branimir Karadzic. All rights reserved.
- * License: http://www.opensource.org/licenses/BSD-2-Clause
+ * Copyright 2011-2019 Branimir Karadzic. All rights reserved.
+ * License: https://github.com/bkaradzic/bgfx#license-bsd-2-clause
  */
 
 #include "bgfx_p.h"
@@ -59,7 +59,7 @@ namespace bgfx { namespace gl
 	static HGLRC createContext(HDC _hdc)
 	{
 		PIXELFORMATDESCRIPTOR pfd;
-		memset(&pfd, 0, sizeof(pfd) );
+		bx::memSet(&pfd, 0, sizeof(pfd) );
 		pfd.nSize = sizeof(PIXELFORMATDESCRIPTOR);
 		pfd.nVersion = 1;
 		pfd.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER;
@@ -134,7 +134,7 @@ namespace bgfx { namespace gl
 			//
 			// An application can only set the pixel format of a window one time.
 			// Once a window's pixel format is set, it cannot be changed.
-			// MSDN: http://msdn.microsoft.com/en-us/library/windows/desktop/dd369049%28v=vs.85%29.aspx
+			// MSDN: https://web.archive.org/web/20190207230357/https://docs.microsoft.com/en-us/windows/desktop/api/wingdi/nf-wingdi-setpixelformat
 			HWND hwnd = CreateWindowA("STATIC"
 				, ""
 				, WS_POPUP|WS_DISABLED
@@ -245,7 +245,7 @@ namespace bgfx { namespace gl
 				BGFX_FATAL(NULL != m_context, Fatal::UnableToInitialize, "Failed to create context 0x%08x.", GetLastError() );
 
 				BX_STATIC_ASSERT(sizeof(contextAttrs) == sizeof(m_contextAttrs) );
-				memcpy(m_contextAttrs, contextAttrs, sizeof(contextAttrs) );
+				bx::memCopy(m_contextAttrs, contextAttrs, sizeof(contextAttrs) );
 			}
 
 			wglMakeCurrent(NULL, NULL);
@@ -268,6 +268,8 @@ namespace bgfx { namespace gl
 		}
 
 		import();
+
+		g_internalData.context = m_context;
 	}
 
 	void GlContext::destroy()
@@ -316,6 +318,7 @@ namespace bgfx { namespace gl
 	void GlContext::destroySwapChain(SwapChainGL*  _swapChain)
 	{
 		BX_DELETE(g_allocator, _swapChain);
+		wglMakeCurrent(m_hdc, m_context);
 	}
 
 	void GlContext::swap(SwapChainGL* _swapChain)

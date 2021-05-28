@@ -1,5 +1,5 @@
 /*
- * $Id: pa_win_wmme.c 1948 2015-01-21 06:52:11Z rbencina $
+ * $Id$
  * pa_win_wmme.c
  * Implementation of PortAudio for Windows MultiMedia Extensions (WMME)       
  *                                                                                         
@@ -2533,7 +2533,7 @@ static PaError OpenStream( struct PaUtilHostApiRepresentation *hostApi,
     {
         framesPerBufferProcessorCall = framesPerHostInputBuffer;
     }
-    else if( outputParameters )
+    else //if( outputParameters )
     {
         framesPerBufferProcessorCall = framesPerHostOutputBuffer;
     }

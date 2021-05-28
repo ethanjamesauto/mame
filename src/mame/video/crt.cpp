@@ -39,7 +39,7 @@ enum
 
 
 // device type definition
-const device_type CRT = &device_creator<crt_device>;
+DEFINE_DEVICE_TYPE(CRT, crt_device, "crt", "CRT Video")
 
 //**************************************************************************
 //  LIVE DEVICE
@@ -49,8 +49,8 @@ const device_type CRT = &device_creator<crt_device>;
 //  crt_device - constructor
 //-------------------------------------------------
 
-crt_device::crt_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: device_t(mconfig, CRT, "CRT Video", tag, owner, clock, "crt", __FILE__),
+crt_device::crt_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: device_t(mconfig, CRT, tag, owner, clock),
 		m_list(nullptr),
 		m_list_head(nullptr),
 		m_decay_counter(0),
@@ -70,7 +70,7 @@ crt_device::crt_device(const machine_config &mconfig, const char *tag, device_t 
 void crt_device::device_start()
 {
 	/* alloc the arrays */
-	m_list = auto_alloc_array(machine(), crt_point, m_window_width * m_window_height);
+	m_list = std::make_unique<crt_point[]>(m_window_width * m_window_height);
 	m_list_head = std::make_unique<int[]>(m_window_height);
 
 	/* fill with black and set up list as empty */
@@ -134,19 +134,16 @@ void crt_device::eof()
 //
 void crt_device::update(bitmap_ind16 &bitmap)
 {
-	int i, p_i;
-	int y;
-
 	//if (m_decay_counter)
 	{
 		/* some time has elapsed: let's update the screen */
-		for (y=0; y<m_window_height; y++)
+		for (int y=0; y<m_window_height; y++)
 		{
-			UINT16 *line = &bitmap.pix16(y+m_window_offset_y);
+			uint16_t *const line = &bitmap.pix(y+m_window_offset_y);
 
-			p_i = -1;
+			int p_i = -1;
 
-			for (i=m_list_head[y]; (i != -1); i=m_list[i].next)
+			for (int i=m_list_head[y]; (i != -1); i=m_list[i].next)
 			{
 				crt_point *node = &m_list[i];
 				int x = (i % m_window_width) + m_window_offset_x;

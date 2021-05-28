@@ -3,23 +3,48 @@
 /*
     Open questions:
 
-        - In f1en, the scrolling text in attract mode is very jumpy. Whatever
-          double buffering they are using seems to be out of sync with the sprite
-          rendering.
+    - In f1en, the scrolling text in attract mode is very jumpy. Whatever
+      double buffering they are using seems to be out of sync with the sprite
+      rendering.
 
-        - In radr, NBG1 should be opaque on select screen, and NBG3 should be
-          opaque while driving. How is this controlled?
+    - In radr, NBG1 should be opaque on select screen, and NBG3 should be
+      opaque while driving.
+      This is controlled by register $31ff8e (respectively $200 and $800),
+      likewise darkedge sets $800 on the first attract fight
+      (which has ugly black pens which should be white according to the ref).
+      harddunk sets $0f00 which completely breaks text display if current
+      hookup is enabled.
+      The theory is that opaque pens should go above background layer and
+      behind everything else like System 24.
 
-        - In radr, they use $1A0 as the X center for zooming; however, this
-          contradicts the theory that bit 9 is a sign bit. For now, the code
-          assumes that the X center has 10 bits of resolution.
+    - radr uses $1A0 as the X center for zooming; however, this
+      contradicts the theory that bit 9 is a sign bit. For now, the code
+      assumes that the X center has 10 bits of resolution.
 
-        - In svf (the field) and radr (on the field), they use tilemap-specific
-          flip in conjunction with rowscroll AND rowselect. According to Charles,
-          in this case, the rowselect lookups should be done in reverse order,
-          but this results in an incorrect display. For now, we assume there is
-          a bug in the procedure and implement it so that it looks correct.
+    - In svf (the field) and radr (on the field), they use tilemap-specific
+      flip in conjunction with rowscroll AND rowselect. According to Charles,
+      in this case, the rowselect lookups should be done in reverse order,
+      but this results in an incorrect display. For now, we assume there is
+      a bug in the procedure and implement it so that it looks correct.
 
+    - titlef NBG0 and NBG2 layers are currently hidden during gameplay.
+      It sets $31ff02 with either $7be0 and $2960 (and $31ff8e is $c00).
+      Game actually uses the "rowscroll/rowselect" tables for a line window
+      effect to draw the boxing ring over NBG0.
+      Same deal for ga2 when in stage 2 cave a wall torch is lit.
+
+    - harddunk draws solid white in attract mode when the players are presented.
+      NBG0 is set with $200 on center X/Y, same as above or perhaps missing
+      tilemap wraparound?
+
+    - Wrong priority cases (parenthesis for the level setup):
+      dbzvrvs: draws text layer ($e) behind sprite-based gauges ($f).
+      dbzvrvs: Sheng-Long speech balloon during Piccoro ending (fixme: check levels).
+      f1lap: attract mode ranking sprite-based text ($a) vs. road ($d)
+      f1lap: attract mode map display (after aforementioned), sprite-based turn names
+      ($a) are hidden by map ($d) again;
+      (Note: Theory about these being CPU core bug(s) is debunked by the fact that latter
+       sets up via immediate opcodes)
 
     Information extracted from below, and from Modeler:
 
@@ -48,8 +73,15 @@
                    ---- ---- ---- --1- : 1= X+Y flip for NBG1
                    ---- ---- ---- ---0 : 1= X+Y flip for NBG0
          $31FF02 : x--- ---- --x- ---- : Bitmap layer enable (?)
+                   -x-- ---- ---- ---- : 1= NBG3 page wrapping disable (clipping enable according to code?)
+                   --x- ---- ---- ---- : 1= NBG2 page wrapping disable
                    ---1 ---- ---- ---- : 1= NBG1 page wrapping disable
                    ---- 0--- ---- ---- : 1= NBG0 page wrapping disable
+                   ---- -x-- ---- ---- : 1= bitmap layer clipping mode (1=outside)
+                   ---- --x- ---- ---- : 1= NBG3 clipping mode (1=outside)
+                   ---- ---x ---- ---- : 1= NBG2 clipping mode (1=outside)
+                   ---- ---- x--- ---- : 1= NBG1 clipping mode (1=outside)
+                   ---- ---- -x-- ---- : 1= NBG0 clipping mode (1=outside)
                    ---- ---- --b- ---- : 1= Bitmap layer disable
                    ---- ---- ---t ---- : 1= Text layer disable
                    ---- ---- ---- 3--- : 1= NBG3 layer disable
@@ -142,12 +174,19 @@
                    ---- ---- ---- -1-- : 1= NBG1 layer disable
                    ---- ---- ---- --0- : 1= NBG0 layer disable
                    ---- ---- ---- ---t : 1= Text layer disable
+
+    reference
+    - arabfgt : https://www.youtube.com/watch?v=98QivDAGz3I
+    - darkedge : https://www.youtube.com/watch?v=riO1yb95z7s
+
 */
+
+
 
 #include "emu.h"
 #include "includes/segas32.h"
 
-
+#include <algorithm>
 
 /*************************************
  *
@@ -160,7 +199,6 @@
 #define PRINTF_MIXER_DATA       0
 #define SHOW_ALPHA              0
 #define LOG_SPRITES             0
-
 
 
 /*************************************
@@ -181,18 +219,7 @@
 #define MIXER_LAYER_MULTISPR    9
 #define MIXER_LAYER_MULTISPR_2  10
 
-#define TILEMAP_CACHE_SIZE      32
-
-
-
-/*************************************
- *
- *  Helper macros
- *
- *************************************/
-
-#define SWAP_HALVES(x)          NATIVE_ENDIAN_VALUE_LE_BE(x, ((x) >> 16) | ((x) << 16))
-
+static constexpr int TILEMAP_CACHE_SIZE = 32;
 
 
 /*************************************
@@ -208,26 +235,25 @@
  *
  *************************************/
 
-void segas32_state::common_start(int multi32)
+void segas32_state::device_start()
 {
-	if(!m_gfxdecode->started())
+	if (!m_gfxdecode->started())
 		throw device_missing_dependencies();
 
-	int tmap;
-
-	/* remember whether or not we are multi32 */
-	m_is_multi32 = multi32;
+	m_vblank_end_int_timer = machine().scheduler().timer_alloc(timer_expired_delegate(FUNC(segas32_state::end_of_vblank_int), this));
+	m_update_sprites_timer = machine().scheduler().timer_alloc(timer_expired_delegate(FUNC(segas32_state::update_sprites), this));
 
 	/* allocate a copy of spriteram in 32-bit format */
-	m_spriteram_32bit = std::make_unique<UINT32[]>(0x20000/4);
+	m_spriteram_32bit = std::make_unique<uint32_t[]>(0x20000/4);
 
 	/* allocate the tilemap cache */
+	m_tmap_cache = std::make_unique<cache_entry[]>(TILEMAP_CACHE_SIZE);
 	m_cache_head = nullptr;
-	for (tmap = 0; tmap < TILEMAP_CACHE_SIZE; tmap++)
+	for (int tmap = 0; tmap < TILEMAP_CACHE_SIZE; tmap++)
 	{
-		struct cache_entry *entry = auto_alloc(machine(), struct cache_entry);
+		cache_entry *entry = &m_tmap_cache[tmap];
 
-		entry->tmap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(segas32_state::get_tile_info),this), TILEMAP_SCAN_ROWS,  16,16, 32,16);
+		entry->tmap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(segas32_state::get_tile_info)), TILEMAP_SCAN_ROWS,  16,16, 32,16);
 		entry->page = 0xff;
 		entry->bank = 0;
 		entry->next = m_cache_head;
@@ -237,28 +263,55 @@ void segas32_state::common_start(int multi32)
 	}
 
 	/* allocate the bitmaps (a few extra for multi32) */
-	for (tmap = 0; tmap < 9 + 2 * multi32; tmap++)
+	for (int bmap = 0; bmap < 9 + (m_is_multi32 ? 2 : 0); bmap++)
 	{
-		m_layer_data[tmap].bitmap = auto_alloc(machine(), bitmap_ind16(416, 224));
-		m_layer_data[tmap].transparent = auto_alloc_array_clear(machine(), UINT8, 256);
+		m_layer_data[bmap].bitmap.allocate(416, 224);
+		m_layer_data[bmap].transparent = make_unique_clear<uint8_t[]>(256);
+		m_layer_data[bmap].num = bmap;
+
+		save_pointer(NAME(m_layer_data[bmap].transparent), 256, bmap);
 	}
 
 	/* allocate pre-rendered solid lines of 0's and ffff's */
-	m_solid_0000 = make_unique_clear<UINT16[]>(512);
-	m_solid_ffff = make_unique_clear<UINT16[],0xff>(512);
+	m_solid_0000 = make_unique_clear<uint16_t[]>(512);
+	m_solid_ffff = make_unique_clear<uint16_t[],0xff>(512);
 
-	memset(m_system32_videoram, 0x00, 0x20000);
+	/* allocate background color per line*/
+	m_prev_bgstartx = std::make_unique<int32_t[]>(512);
+	m_prev_bgendx = std::make_unique<int32_t[]>(512);
+	m_bgcolor_line = std::make_unique<int32_t[]>(512);
+	std::fill_n(&m_prev_bgstartx[0], 512, -1);
+	std::fill_n(&m_prev_bgendx[0], 512, -1);
+	std::fill_n(&m_bgcolor_line[0], 512, -1);
 
 	/* initialize videoram */
-	m_system32_videoram[0x1ff00/2] = 0x8000;
+	memset(m_videoram, 0x00, 0x20000);
+	m_videoram[0x1ff00/2] = 0x8000;
 
 	memset(m_mixer_control, 0xff, sizeof(m_mixer_control[0][0]) * 0x80 );
 
+	/* needs to be initialized to 0xff, otherwise f1en has bad sound (MT04531) */
+	if (m_soundram)
+		std::fill_n(&m_soundram[0], m_soundram.bytes() / sizeof(m_soundram[0]), 0xff);
 
+	/* save states */
+	save_item(NAME(m_v60_irq_control));
+	save_item(NAME(m_sound_irq_control));
+	save_item(NAME(m_sound_irq_input));
+	save_item(NAME(m_sound_dummy_value));
+	save_item(NAME(m_sound_bank));
 
+	save_item(NAME(m_mixer_control));
+	save_item(NAME(m_system32_displayenable));
+	save_item(NAME(m_system32_tilebank_external));
+	save_item(NAME(m_sprite_render_count));
+	save_item(NAME(m_sprite_control_latched));
+	save_item(NAME(m_sprite_control));
+	save_pointer(NAME(m_spriteram_32bit), 0x20000/4);
+	save_pointer(NAME(m_prev_bgstartx), 512);
+	save_pointer(NAME(m_prev_bgendx), 512);
+	save_pointer(NAME(m_bgcolor_line), 512);
 }
-
-
 
 
 /*************************************
@@ -296,152 +349,8 @@ void segas32_state::system32_set_vblank(int state)
 {
 	/* at the end of VBLANK is when automatic sprite rendering happens */
 	if (!state)
-		machine().scheduler().timer_set(attotime::from_usec(50), timer_expired_delegate(FUNC(segas32_state::update_sprites),this), 1);
+		m_update_sprites_timer->adjust(attotime::from_usec(50), 1);
 }
-
-
-
-/*************************************
- *
- *  Common palette handling
- *
- *************************************/
-
-inline UINT16 segas32_state::xBBBBBGGGGGRRRRR_to_xBGRBBBBGGGGRRRR(UINT16 value)
-{
-	int r = (value >> 0) & 0x1f;
-	int g = (value >> 5) & 0x1f;
-	int b = (value >> 10) & 0x1f;
-	value = (value & 0x8000) | ((b & 0x01) << 14) | ((g & 0x01) << 13) | ((r & 0x01) << 12);
-	value |= ((b & 0x1e) << 7) | ((g & 0x1e) << 3) | ((r & 0x1e) >> 1);
-	return value;
-}
-
-
-inline UINT16 segas32_state::xBGRBBBBGGGGRRRR_to_xBBBBBGGGGGRRRRR(UINT16 value)
-{
-	int r = ((value >> 12) & 0x01) | ((value << 1) & 0x1e);
-	int g = ((value >> 13) & 0x01) | ((value >> 3) & 0x1e);
-	int b = ((value >> 14) & 0x01) | ((value >> 7) & 0x1e);
-	return (value & 0x8000) | (b << 10) | (g << 5) | (r << 0);
-}
-
-
-inline void segas32_state::update_color(int offset, UINT16 data)
-{
-	/* note that since we use this RAM directly, we don't technically need */
-	/* to call palette_set_color() at all; however, it does give us that */
-	/* nice display when you hit F4, which is useful for debugging */
-
-	/* set the color */
-	m_palette->set_pen_color(offset, pal5bit(data >> 0), pal5bit(data >> 5), pal5bit(data >> 10));
-}
-
-
-inline UINT16 segas32_state::common_paletteram_r(address_space &space, int which, offs_t offset)
-{
-	int convert;
-
-	/* the lower half of palette RAM is formatted xBBBBBGGGGGRRRRR */
-	/* the upper half of palette RAM is formatted xBGRBBBBGGGGRRRR */
-	/* we store everything if the first format, and convert accesses to the other format */
-	/* on the fly */
-	convert = (offset & 0x4000);
-	offset &= 0x3fff;
-
-	if (!convert)
-		return m_system32_paletteram[which][offset];
-	else
-		return xBBBBBGGGGGRRRRR_to_xBGRBBBBGGGGRRRR(m_system32_paletteram[which][offset]);
-}
-
-
-void segas32_state::common_paletteram_w(address_space &space, int which, offs_t offset, UINT16 data, UINT16 mem_mask)
-{
-	UINT16 value;
-	int convert;
-
-	/* the lower half of palette RAM is formatted xBBBBBGGGGGRRRRR */
-	/* the upper half of palette RAM is formatted xBGRBBBBGGGGRRRR */
-	/* we store everything if the first format, and convert accesses to the other format */
-	/* on the fly */
-	convert = (offset & 0x4000);
-	offset &= 0x3fff;
-
-	/* read, modify, and write the new value, updating the palette */
-	value = m_system32_paletteram[which][offset];
-	if (convert) value = xBBBBBGGGGGRRRRR_to_xBGRBBBBGGGGRRRR(value);
-	COMBINE_DATA(&value);
-	if (convert) value = xBGRBBBBGGGGRRRR_to_xBBBBBGGGGGRRRRR(value);
-	m_system32_paletteram[which][offset] = value;
-	update_color(0x4000*which + offset, value);
-
-	/* if blending is enabled, writes go to both halves of palette RAM */
-	if (m_mixer_control[which][0x4e/2] & 0x0880)
-	{
-		offset ^= 0x2000;
-
-		/* read, modify, and write the new value, updating the palette */
-		value = m_system32_paletteram[which][offset];
-		if (convert) value = xBBBBBGGGGGRRRRR_to_xBGRBBBBGGGGRRRR(value);
-		COMBINE_DATA(&value);
-		if (convert) value = xBGRBBBBGGGGRRRR_to_xBBBBBGGGGGRRRRR(value);
-		m_system32_paletteram[which][offset] = value;
-		update_color(0x4000*which + offset, value);
-	}
-}
-
-
-
-/*************************************
- *
- *  Palette RAM access
- *
- *************************************/
-
-READ16_MEMBER(segas32_state::system32_paletteram_r)
-{
-	return common_paletteram_r(space, 0, offset);
-}
-
-
-WRITE16_MEMBER(segas32_state::system32_paletteram_w)
-{
-	common_paletteram_w(space, 0, offset, data, mem_mask);
-}
-
-
-READ32_MEMBER(segas32_state::multi32_paletteram_0_r)
-{
-	return common_paletteram_r(space, 0, offset*2+0) |
-			(common_paletteram_r(space, 0, offset*2+1) << 16);
-}
-
-
-WRITE32_MEMBER(segas32_state::multi32_paletteram_0_w)
-{
-	if (ACCESSING_BITS_0_15)
-		common_paletteram_w(space, 0, offset*2+0, data, mem_mask);
-	if (ACCESSING_BITS_16_31)
-		common_paletteram_w(space, 0, offset*2+1, data >> 16, mem_mask >> 16);
-}
-
-
-READ32_MEMBER(segas32_state::multi32_paletteram_1_r)
-{
-	return common_paletteram_r(space, 1, offset*2+0) |
-			(common_paletteram_r(space, 1, offset*2+1) << 16);
-}
-
-
-WRITE32_MEMBER(segas32_state::multi32_paletteram_1_w)
-{
-	if (ACCESSING_BITS_0_15)
-		common_paletteram_w(space, 1, offset*2+0, data, mem_mask);
-	if (ACCESSING_BITS_16_31)
-		common_paletteram_w(space, 1, offset*2+1, data >> 16, mem_mask >> 16);
-}
-
 
 
 /*************************************
@@ -450,22 +359,22 @@ WRITE32_MEMBER(segas32_state::multi32_paletteram_1_w)
  *
  *************************************/
 
-READ16_MEMBER(segas32_state::system32_videoram_r)
+uint16_t segas32_state::videoram_r(offs_t offset)
 {
-	return m_system32_videoram[offset];
+	return m_videoram[offset];
 }
 
 
-WRITE16_MEMBER(segas32_state::system32_videoram_w)
+void segas32_state::videoram_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
-	COMBINE_DATA(&m_system32_videoram[offset]);
+	COMBINE_DATA(&m_videoram[offset]);
 
 	/* if we are not in the control area, just update any affected tilemaps */
 	if (offset < 0x1ff00/2)
 	{
-		struct cache_entry *entry;
-		int page = offset / 0x200;
-		offset %= 0x200;
+		cache_entry *entry;
+		int page = offset >> 9;
+		offset &= 0x1ff;
 
 		/* scan the cache for a matching pages */
 		for (entry = m_cache_head; entry != nullptr; entry = entry->next)
@@ -475,30 +384,13 @@ WRITE16_MEMBER(segas32_state::system32_videoram_w)
 }
 
 
-READ32_MEMBER(segas32_state::multi32_videoram_r)
-{
-	return m_system32_videoram[offset*2+0] |
-			(m_system32_videoram[offset*2+1] << 16);
-}
-
-
-WRITE32_MEMBER(segas32_state::multi32_videoram_w)
-{
-	if (ACCESSING_BITS_0_15)
-		system32_videoram_w(space, offset*2+0, data, mem_mask);
-	if (ACCESSING_BITS_16_31)
-		system32_videoram_w(space, offset*2+1, data >> 16, mem_mask >> 16);
-}
-
-
-
 /*************************************
  *
  *  Sprite control registers
  *
  *************************************/
 
-READ16_MEMBER(segas32_state::system32_sprite_control_r)
+uint8_t segas32_state::sprite_control_r(offs_t offset)
 {
 	switch (offset)
 	{
@@ -506,7 +398,7 @@ READ16_MEMBER(segas32_state::system32_sprite_control_r)
 			/*  D1 : Seems to be '1' only during an erase in progress, this
 			         occurs very briefly though.
 			    D0 : Selected frame buffer (0= A, 1= B) */
-			return 0xfffc | (int)(&m_layer_data[MIXER_LAYER_SPRITES].bitmap < &m_layer_data[MIXER_LAYER_SPRITES_2].bitmap);
+			return 0xfc | (int)(m_layer_data[MIXER_LAYER_SPRITES].num < m_layer_data[MIXER_LAYER_SPRITES_2].num);
 
 		case 1:
 			/*  D1 : ?
@@ -520,64 +412,46 @@ READ16_MEMBER(segas32_state::system32_sprite_control_r)
 			    3 = Never occurs
 
 			    Condition 2 can occur during rendering or list processing. */
-			return 0xfffc | 1;
+			return 0xfc | 1;
 
 		case 2:
 			/*  D1 : 1= Vertical flip, 0= Normal orientation
 			    D0 : 1= Horizontal flip, 0= Normal orientation */
-			return 0xfffc | m_sprite_control_latched[2];
+			return 0xfc | m_sprite_control_latched[2];
 
 		case 3:
 			/*  D1 : 1= Manual mode, 0= Automatic mode
 			    D0 : 1= 30 Hz update, 0= 60 Hz update (automatic mode only) */
-			return 0xfffc | m_sprite_control_latched[3];
+			return 0xfc | m_sprite_control_latched[3];
 
 		case 4:
 			/*  D1 : ?
 			    D0 : ? */
-			return 0xfffc | m_sprite_control_latched[4];
+			return 0xfc | m_sprite_control_latched[4];
 
 		case 5:
 			/*  D1 : ?
 			    D0 : ? */
-			return 0xfffc | m_sprite_control_latched[5];
+			return 0xfc | m_sprite_control_latched[5];
 
 		case 6:
 			/*  D0 : 1= 416 pixels
 			         0= 320 pixels */
-			return 0xfffc | (m_sprite_control_latched[6] & 1);
+			return 0xfc | (m_sprite_control_latched[6] & 1);
 
 		case 7:
 			/*  D1 : ?
 			    D0 : ? */
-			return 0xfffc;
+			return 0xfc;
 	}
-	return 0xffff;
+	return 0xff;
 }
 
 
-WRITE16_MEMBER(segas32_state::system32_sprite_control_w)
+void segas32_state::sprite_control_w(offs_t offset, uint8_t data)
 {
-	if (ACCESSING_BITS_0_7)
-		m_sprite_control[offset & 7] = data;
+	m_sprite_control[offset & 7] = data;
 }
-
-
-READ32_MEMBER(segas32_state::multi32_sprite_control_r)
-{
-	return system32_sprite_control_r(space, offset*2+0, mem_mask) |
-			(system32_sprite_control_r(space, offset*2+1, mem_mask >> 16) << 16);
-}
-
-
-WRITE32_MEMBER(segas32_state::multi32_sprite_control_w)
-{
-	if (ACCESSING_BITS_0_15)
-		system32_sprite_control_w(space, offset*2+0, data, mem_mask);
-	if (ACCESSING_BITS_16_31)
-		system32_sprite_control_w(space, offset*2+1, data >> 16, mem_mask >> 16);
-}
-
 
 
 /*************************************
@@ -586,76 +460,21 @@ WRITE32_MEMBER(segas32_state::multi32_sprite_control_w)
  *
  *************************************/
 
-READ16_MEMBER(segas32_state::system32_spriteram_r)
+uint16_t segas32_state::spriteram_r(offs_t offset)
 {
-	return m_system32_spriteram[offset];
+	return m_spriteram[offset];
 }
 
 
-WRITE16_MEMBER(segas32_state::system32_spriteram_w)
+void segas32_state::spriteram_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
-	COMBINE_DATA(&m_system32_spriteram[offset]);
-	m_spriteram_32bit[offset/2] =
-		((m_system32_spriteram[offset |  1] >> 8 ) & 0x000000ff) |
-		((m_system32_spriteram[offset |  1] << 8 ) & 0x0000ff00) |
-		((m_system32_spriteram[offset & ~1] << 8 ) & 0x00ff0000) |
-		((m_system32_spriteram[offset & ~1] << 24) & 0xff000000);
+	COMBINE_DATA(&m_spriteram[offset]);
+	m_spriteram_32bit[offset>>1] =
+		((m_spriteram[offset |  1] >> 8 ) & 0x000000ff) |
+		((m_spriteram[offset |  1] << 8 ) & 0x0000ff00) |
+		((m_spriteram[offset & ~1] << 8 ) & 0x00ff0000) |
+		((m_spriteram[offset & ~1] << 24) & 0xff000000);
 }
-
-
-READ32_MEMBER(segas32_state::multi32_spriteram_r)
-{
-	return m_system32_spriteram[offset*2+0] |
-			(m_system32_spriteram[offset*2+1] << 16);
-}
-
-
-WRITE32_MEMBER(segas32_state::multi32_spriteram_w)
-{
-	data = SWAP_HALVES(data);
-	mem_mask = SWAP_HALVES(mem_mask);
-	COMBINE_DATA((UINT32 *)&m_system32_spriteram[offset*2]);
-	m_spriteram_32bit[offset/2] =
-		((m_system32_spriteram[offset |  1] >> 8 ) & 0x000000ff) |
-		((m_system32_spriteram[offset |  1] << 8 ) & 0x0000ff00) |
-		((m_system32_spriteram[offset & ~1] << 8 ) & 0x00ff0000) |
-		((m_system32_spriteram[offset & ~1] << 24) & 0xff000000);
-}
-
-
-
-/*************************************
- *
- *  Mixer control registers
- *
- *************************************/
-
-READ16_MEMBER(segas32_state::system32_mixer_r)
-{
-	return m_mixer_control[0][offset];
-}
-
-WRITE16_MEMBER(segas32_state::system32_mixer_w)
-{
-	COMBINE_DATA(&m_mixer_control[0][offset]);
-}
-
-
-WRITE32_MEMBER(segas32_state::multi32_mixer_0_w)
-{
-	data = SWAP_HALVES(data);
-	mem_mask = SWAP_HALVES(mem_mask);
-	COMBINE_DATA((UINT32 *)&m_mixer_control[0][offset*2]);
-}
-
-
-WRITE32_MEMBER(segas32_state::multi32_mixer_1_w)
-{
-	data = SWAP_HALVES(data);
-	mem_mask = SWAP_HALVES(mem_mask);
-	COMBINE_DATA((UINT32 *)&m_mixer_control[1][offset*2]);
-}
-
 
 
 /*************************************
@@ -666,7 +485,7 @@ WRITE32_MEMBER(segas32_state::multi32_mixer_1_w)
 
 tilemap_t *segas32_state::find_cache_entry(int page, int bank)
 {
-	struct segas32_state::cache_entry *entry, *prev;
+	segas32_state::cache_entry *entry, *prev;
 
 	/* scan the list for a matching entry */
 	prev = nullptr;
@@ -706,7 +525,6 @@ tilemap_t *segas32_state::find_cache_entry(int page, int bank)
 }
 
 
-
 /*************************************
  *
  *  Tilemap callback
@@ -715,11 +533,10 @@ tilemap_t *segas32_state::find_cache_entry(int page, int bank)
 
 TILE_GET_INFO_MEMBER(segas32_state::get_tile_info)
 {
-	struct segas32_state::cache_entry *entry = (struct segas32_state::cache_entry *)tilemap.user_data();
-	UINT16 data = m_system32_videoram[(entry->page & 0x7f) * 0x200 + tile_index];
-	SET_TILE_INFO_MEMBER(0, (entry->bank << 13) + (data & 0x1fff), (data >> 4) & 0x1ff, (data >> 14) & 3);
+	segas32_state::cache_entry *entry = (segas32_state::cache_entry *)tilemap.user_data();
+	uint16_t data = m_videoram[((entry->page & 0x7f) << 9) | tile_index];
+	tileinfo.set(0, (entry->bank << 13) | (data & 0x1fff), (data >> 4) & 0x1ff, (data >> 14) & 3);
 }
-
 
 
 /*************************************
@@ -728,9 +545,9 @@ TILE_GET_INFO_MEMBER(segas32_state::get_tile_info)
  *
  *************************************/
 
-int segas32_state::compute_clipping_extents(screen_device &screen, int enable, int clipout, int clipmask, const rectangle &cliprect, struct extents_list *list)
+int segas32_state::compute_clipping_extents(screen_device &screen, int enable, int clipout, int clipmask, const rectangle &cliprect, extents_list *list)
 {
-	int flip = (m_system32_videoram[0x1ff00/2] >> 9) & 1;
+	int flip = (m_videoram[0x1ff00/2] >> 9) & 1;
 	rectangle tempclip;
 	rectangle clips[5];
 	int sorted[5];
@@ -757,19 +574,19 @@ int segas32_state::compute_clipping_extents(screen_device &screen, int enable, i
 	{
 		if (!flip)
 		{
-			clips[i].min_x = m_system32_videoram[0x1ff60/2 + i * 4] & 0x1ff;
-			clips[i].min_y = m_system32_videoram[0x1ff62/2 + i * 4] & 0x0ff;
-			clips[i].max_x = (m_system32_videoram[0x1ff64/2 + i * 4] & 0x1ff) + 1;
-			clips[i].max_y = (m_system32_videoram[0x1ff66/2 + i * 4] & 0x0ff) + 1;
+			clips[i].min_x = m_videoram[0x1ff60/2 + i * 4] & 0x1ff;
+			clips[i].min_y = m_videoram[0x1ff62/2 + i * 4] & 0x0ff;
+			clips[i].max_x = (m_videoram[0x1ff64/2 + i * 4] & 0x1ff) + 1;
+			clips[i].max_y = (m_videoram[0x1ff66/2 + i * 4] & 0x0ff) + 1;
 		}
 		else
 		{
 			const rectangle &visarea = screen.visible_area();
 
-			clips[i].max_x = (visarea.max_x + 1) - (m_system32_videoram[0x1ff60/2 + i * 4] & 0x1ff);
-			clips[i].max_y = (visarea.max_y + 1) - (m_system32_videoram[0x1ff62/2 + i * 4] & 0x0ff);
-			clips[i].min_x = (visarea.max_x + 1) - ((m_system32_videoram[0x1ff64/2 + i * 4] & 0x1ff) + 1);
-			clips[i].min_y = (visarea.max_y + 1) - ((m_system32_videoram[0x1ff66/2 + i * 4] & 0x0ff) + 1);
+			clips[i].max_x = (visarea.max_x + 1) - (m_videoram[0x1ff60/2 + i * 4] & 0x1ff);
+			clips[i].max_y = (visarea.max_y + 1) - (m_videoram[0x1ff62/2 + i * 4] & 0x0ff);
+			clips[i].min_x = (visarea.max_x + 1) - ((m_videoram[0x1ff64/2 + i * 4] & 0x1ff) + 1);
+			clips[i].min_y = (visarea.max_y + 1) - ((m_videoram[0x1ff66/2 + i * 4] & 0x0ff) + 1);
 		}
 		clips[i] &= tempclip;
 		sorted[i] = i;
@@ -784,7 +601,7 @@ int segas32_state::compute_clipping_extents(screen_device &screen, int enable, i
 	for (i = 1; i < 32; i++)
 		if (i & clipmask)
 		{
-			UINT16 *extent = &list->extent[i][0];
+			uint16_t *extent = &list->extent[i][0];
 
 			/* start off with an entry at tempclip.min_x */
 			*extent++ = tempclip.min_x;
@@ -833,19 +650,19 @@ int segas32_state::compute_clipping_extents(screen_device &screen, int enable, i
 void segas32_state::compute_tilemap_flips(int bgnum, int &flipx, int &flipy)
 {
 	/* determine if we're flipped */
-	int global_flip = (m_system32_videoram[0x1ff00 / 2] >> 9)&1;
+	int global_flip = (m_videoram[0x1ff00 / 2] >> 9)&1;
 
 	flipx = global_flip;
 	flipy = global_flip;
 
-	int layer_flip = (m_system32_videoram[0x1ff00 / 2] >> bgnum) & 1;
+	int layer_flip = (m_videoram[0x1ff00 / 2] >> bgnum) & 1;
 
 	flipy ^= layer_flip;
 	flipx ^= layer_flip;
 
 	// this bit is set on Air Rescue (screen 2) title screen, during the Air Rescue introduction demo, and in f1en when you win a single player race
 	// it seems to prohibit (at least) the per-tilemap y flipping (maybe global y can override it)
-	if ((m_system32_videoram[0x1ff00 / 2] >> 8) & 1) flipy = 0;
+	if ((m_videoram[0x1ff00 / 2] >> 8) & 1) flipy = 0;
 }
 
 /*************************************
@@ -862,38 +679,31 @@ inline void segas32_state::get_tilemaps(int bgnum, tilemap_t **tilemaps)
 	if (m_is_multi32)
 		tilebank = (m_system32_tilebank_external >> (2*bgnum)) & 3;
 	else
-		tilebank = ((m_system32_tilebank_external & 1) << 1) | ((m_system32_videoram[0x1ff00/2] & 0x400) >> 10);
+		tilebank = ((m_system32_tilebank_external & 1) << 1) | ((m_videoram[0x1ff00/2] & 0x400) >> 10);
 
 	/* find the cache entries */
-	page = (m_system32_videoram[0x1ff40/2 + 2 * bgnum + 0] >> 0) & 0x7f;
+	page = (m_videoram[0x1ff40/2 + 2 * bgnum + 0] >> 0) & 0x7f;
 	tilemaps[0] = find_cache_entry(page, tilebank);
-	page = (m_system32_videoram[0x1ff40/2 + 2 * bgnum + 0] >> 8) & 0x7f;
+	page = (m_videoram[0x1ff40/2 + 2 * bgnum + 0] >> 8) & 0x7f;
 	tilemaps[1] = find_cache_entry(page, tilebank);
-	page = (m_system32_videoram[0x1ff40/2 + 2 * bgnum + 1] >> 0) & 0x7f;
+	page = (m_videoram[0x1ff40/2 + 2 * bgnum + 1] >> 0) & 0x7f;
 	tilemaps[2] = find_cache_entry(page, tilebank);
-	page = (m_system32_videoram[0x1ff40/2 + 2 * bgnum + 1] >> 8) & 0x7f;
+	page = (m_videoram[0x1ff40/2 + 2 * bgnum + 1] >> 8) & 0x7f;
 	tilemaps[3] = find_cache_entry(page, tilebank);
 }
 
 
-void segas32_state::update_tilemap_zoom(screen_device &screen, struct segas32_state::layer_info *layer, const rectangle &cliprect, int bgnum)
+void segas32_state::update_tilemap_zoom(screen_device &screen, segas32_state::layer_info &layer, const rectangle &cliprect, int bgnum)
 {
-	int clipenable, clipout, clips, clipdraw_start;
-	bitmap_ind16 &bitmap = *layer->bitmap;
-	struct extents_list clip_extents;
-	tilemap_t *tilemaps[4];
-	UINT32 srcx, srcx_start, srcy;
-	UINT32 srcxstep, srcystep;
-	int dstxstep, dstystep;
-	int opaque;
-	int x, y;
+	bitmap_ind16 &bitmap = layer.bitmap;
 
 	/* get the tilemaps */
+	tilemap_t *tilemaps[4];
 	get_tilemaps(bgnum, tilemaps);
 
 	/* configure the layer */
-	opaque = 0;
-//opaque = (m_system32_videoram[0x1ff8e/2] >> (8 + bgnum)) & 1;
+	int opaque = 0;
+//opaque = (m_videoram[0x1ff8e/2] >> (8 + bgnum)) & 1;
 //if (screen.machine().input().code_pressed(KEYCODE_Z) && bgnum == 0) opaque = 1;
 //if (screen.machine().input().code_pressed(KEYCODE_X) && bgnum == 1) opaque = 1;
 	int flipx, flipy;
@@ -902,15 +712,17 @@ void segas32_state::update_tilemap_zoom(screen_device &screen, struct segas32_st
 	compute_tilemap_flips(bgnum, flipx, flipy);
 
 	/* determine the clipping */
-	clipenable = (m_system32_videoram[0x1ff02/2] >> (11 + bgnum)) & 1;
-	clipout = (m_system32_videoram[0x1ff02/2] >> (6 + bgnum)) & 1;
-	clips = (m_system32_videoram[0x1ff06/2] >> (4 * bgnum)) & 0x0f;
-	clipdraw_start = compute_clipping_extents(screen, clipenable, clipout, clips, cliprect, &clip_extents);
+	int clipenable = (m_videoram[0x1ff02/2] >> (11 + bgnum)) & 1;
+	int clipout = (m_videoram[0x1ff02/2] >> (6 + bgnum)) & 1;
+	int clips = (m_videoram[0x1ff06/2] >> (4 * bgnum)) & 0x0f;
+	extents_list clip_extents;
+	int clipdraw_start = compute_clipping_extents(screen, clipenable, clipout, clips, cliprect, &clip_extents);
 
 	/* extract the X/Y step values (these are in destination space!) */
-	dstxstep = m_system32_videoram[0x1ff50/2 + 2 * bgnum] & 0xfff;
-	if (m_system32_videoram[0x1ff00/2] & 0x4000)
-		dstystep = m_system32_videoram[0x1ff52/2 + 2 * bgnum] & 0xfff;
+	int dstxstep = m_videoram[0x1ff50/2 + 2 * bgnum] & 0xfff;
+	int dstystep;
+	if (m_videoram[0x1ff00/2] & 0x4000)
+		dstystep = m_videoram[0x1ff52/2 + 2 * bgnum] & 0xfff;
 	else
 		dstystep = dstxstep;
 
@@ -921,18 +733,18 @@ void segas32_state::update_tilemap_zoom(screen_device &screen, struct segas32_st
 		dstystep = 0x80;
 
 	/* compute high-precision reciprocals (in 12.20 format) */
-	srcxstep = (0x200 << 20) / dstxstep;
-	srcystep = (0x200 << 20) / dstystep;
+	uint32_t srcxstep = (0x200 << 20) / dstxstep;
+	uint32_t srcystep = (0x200 << 20) / dstystep;
 
 	/* start with the fractional scroll offsets, in source coordinates */
-	srcx_start = (m_system32_videoram[0x1ff12/2 + 4 * bgnum] & 0x3ff) << 20;
-	srcx_start += (m_system32_videoram[0x1ff10/2 + 4 * bgnum] & 0xff00) << 4;
-	srcy = (m_system32_videoram[0x1ff16/2 + 4 * bgnum] & 0x1ff) << 20;
-	srcy += (m_system32_videoram[0x1ff14/2 + 4 * bgnum] & 0xfe00) << 4;
+	uint32_t srcx_start = (m_videoram[0x1ff12/2 + 4 * bgnum] & 0x3ff) << 20;
+	srcx_start += (m_videoram[0x1ff10/2 + 4 * bgnum] & 0xff00) << 4;
+	uint32_t srcy = (m_videoram[0x1ff16/2 + 4 * bgnum] & 0x1ff) << 20;
+	srcy += (m_videoram[0x1ff14/2 + 4 * bgnum] & 0xfe00) << 4;
 
 	/* then account for the destination center coordinates */
-	srcx_start -= ((INT16)(m_system32_videoram[0x1ff30/2 + 2 * bgnum] << 6) >> 6) * srcxstep;
-	srcy -= ((INT16)(m_system32_videoram[0x1ff32/2 + 2 * bgnum] << 7) >> 7) * srcystep;
+	srcx_start -= ((int16_t)(m_videoram[0x1ff30/2 + 2 * bgnum] << 6) >> 6) * srcxstep;
+	srcy -= ((int16_t)(m_videoram[0x1ff32/2 + 2 * bgnum] << 7) >> 7) * srcystep;
 
 	/* finally, account for destination top,left coordinates */
 	srcx_start += cliprect.min_x * srcxstep;
@@ -956,34 +768,32 @@ void segas32_state::update_tilemap_zoom(screen_device &screen, struct segas32_st
 	}
 
 	/* loop over the target rows */
-	for (y = cliprect.min_y; y <= cliprect.max_y; y++)
+	for (int y = cliprect.min_y; y <= cliprect.max_y; y++)
 	{
-		UINT16 *extents = &clip_extents.extent[clip_extents.scan_extent[y]][0];
-		UINT16 *dst = &bitmap.pix16(y);
+		uint16_t const *extents = &clip_extents.extent[clip_extents.scan_extent[y]][0];
+		uint16_t *const dst = &bitmap.pix(y);
 		int clipdraw = clipdraw_start;
 
 		/* optimize for the case where we are clipped out */
 		if (clipdraw || extents[1] <= cliprect.max_x)
 		{
 			int transparent = 0;
-			UINT16 *src[2];
 
 			/* look up the pages and get their source pixmaps */
-			bitmap_ind16 &tm0 = tilemaps[((srcy >> 27) & 2) + 0]->pixmap();
-			bitmap_ind16 &tm1 = tilemaps[((srcy >> 27) & 2) + 1]->pixmap();
-			src[0] = &tm0.pix16((srcy >> 20) & 0xff);
-			src[1] = &tm1.pix16((srcy >> 20) & 0xff);
+			bitmap_ind16 const &tm0 = tilemaps[((srcy >> 27) & 2) + 0]->pixmap();
+			bitmap_ind16 const &tm1 = tilemaps[((srcy >> 27) & 2) + 1]->pixmap();
+			uint16_t const *const src[2] = { &tm0.pix((srcy >> 20) & 0xff), &tm1.pix((srcy >> 20) & 0xff) };
 
 			/* loop over extents */
-			srcx = srcx_start;
+			uint32_t srcx = srcx_start;
 			while (1)
 			{
 				/* if we're drawing on this extent, draw it */
 				if (clipdraw)
 				{
-					for (x = extents[0]; x < extents[1]; x++)
+					for (int x = extents[0]; x < extents[1]; x++)
 					{
-						UINT16 pix = src[(srcx >> 29) & 1][(srcx >> 20) & 0x1ff];
+						uint16_t pix = src[(srcx >> 29) & 1][(srcx >> 20) & 0x1ff];
 						srcx += srcxstep;
 						if ((pix & 0x0f) == 0 && !opaque)
 							pix = 0, transparent++;
@@ -995,7 +805,7 @@ void segas32_state::update_tilemap_zoom(screen_device &screen, struct segas32_st
 				else
 				{
 					int pixels = extents[1] - extents[0];
-					memset(&dst[extents[0]], 0, pixels * sizeof(dst[0]));
+					std::fill_n(&dst[extents[0]], pixels, 0);
 					srcx += srcxstep * pixels;
 					transparent += pixels;
 				}
@@ -1009,10 +819,10 @@ void segas32_state::update_tilemap_zoom(screen_device &screen, struct segas32_st
 				extents++;
 			}
 
-			layer->transparent[y] = (transparent == cliprect.max_x - cliprect.min_x + 1);
+			layer.transparent[y] = (transparent == cliprect.max_x - cliprect.min_x + 1);
 		}
 		else
-			layer->transparent[y] = 1;
+			layer.transparent[y] = 1;
 
 		/* advance in Y */
 		srcy += srcystep;
@@ -1022,11 +832,10 @@ void segas32_state::update_tilemap_zoom(screen_device &screen, struct segas32_st
 #if 0
 	if (dstxstep != 0x200 || dstystep != 0x200)
 		popmessage("Zoom=%03X,%03X  Cent=%03X,%03X", dstxstep, dstystep,
-			m_system32_videoram[0x1ff30/2 + 2 * bgnum],
-			m_system32_videoram[0x1ff32/2 + 2 * bgnum]);
+			m_videoram[0x1ff30/2 + 2 * bgnum],
+			m_videoram[0x1ff32/2 + 2 * bgnum]);
 #endif
 }
-
 
 
 /*************************************
@@ -1036,25 +845,17 @@ void segas32_state::update_tilemap_zoom(screen_device &screen, struct segas32_st
  *************************************/
 
 
-void segas32_state::update_tilemap_rowscroll(screen_device &screen, struct segas32_state::layer_info *layer, const rectangle &cliprect, int bgnum)
+void segas32_state::update_tilemap_rowscroll(screen_device &screen, segas32_state::layer_info &layer, const rectangle &cliprect, int bgnum)
 {
-	int clipenable, clipout, clips, clipdraw_start;
-	bitmap_ind16 &bitmap = *layer->bitmap;
-	struct extents_list clip_extents;
-	tilemap_t *tilemaps[4];
-	int rowscroll, rowselect;
-	int xscroll, yscroll;
-	UINT16 *table;
-	int srcx, srcy;
-	int opaque;
-	int x, y;
+	bitmap_ind16 &bitmap = layer.bitmap;
 
 	/* get the tilemaps */
+	tilemap_t *tilemaps[4];
 	get_tilemaps(bgnum, tilemaps);
 
 	/* configure the layer */
-	opaque = 0;
-//opaque = (m_system32_videoram[0x1ff8e/2] >> (8 + bgnum)) & 1;
+	int opaque = 0;
+//opaque = (m_videoram[0x1ff8e/2] >> (8 + bgnum)) & 1;
 //if (screen.machine().input().code_pressed(KEYCODE_C) && bgnum == 2) opaque = 1;
 //if (screen.machine().input().code_pressed(KEYCODE_V) && bgnum == 3) opaque = 1;
 
@@ -1065,39 +866,40 @@ void segas32_state::update_tilemap_rowscroll(screen_device &screen, struct segas
 
 
 	/* determine the clipping */
-	clipenable = (m_system32_videoram[0x1ff02/2] >> (11 + bgnum)) & 1;
-	clipout = (m_system32_videoram[0x1ff02/2] >> (6 + bgnum)) & 1;
-	clips = (m_system32_videoram[0x1ff06/2] >> (4 * bgnum)) & 0x0f;
-	clipdraw_start = compute_clipping_extents(screen, clipenable, clipout, clips, cliprect, &clip_extents);
+	int clipenable = (m_videoram[0x1ff02/2] >> (11 + bgnum)) & 1;
+	int clipout = (m_videoram[0x1ff02/2] >> (6 + bgnum)) & 1;
+	int clips = (m_videoram[0x1ff06/2] >> (4 * bgnum)) & 0x0f;
+	extents_list clip_extents;
+	int clipdraw_start = compute_clipping_extents(screen, clipenable, clipout, clips, cliprect, &clip_extents);
 
 	/* determine if row scroll and/or row select is enabled */
-	rowscroll = (m_system32_videoram[0x1ff04/2] >> (bgnum - 2)) & 1;
-	rowselect = (m_system32_videoram[0x1ff04/2] >> bgnum) & 1;
-	if ((m_system32_videoram[0x1ff04/2] >> (bgnum + 2)) & 1)
+	int rowscroll = (m_videoram[0x1ff04/2] >> (bgnum - 2)) & 1;
+	int rowselect = (m_videoram[0x1ff04/2] >> bgnum) & 1;
+	if ((m_videoram[0x1ff04/2] >> (bgnum + 2)) & 1)
 		rowscroll = rowselect = 0;
 
 	/* get a pointer to the table */
-	table = &m_system32_videoram[(m_system32_videoram[0x1ff04/2] >> 10) * 0x400];
+	uint16_t const *const table = &m_videoram[(m_videoram[0x1ff04/2] >> 10) * 0x400];
 
 	/* start with screen-wide X and Y scrolls */
-	xscroll = (m_system32_videoram[0x1ff12/2 + 4 * bgnum] & 0x3ff) - (m_system32_videoram[0x1ff30/2 + 2 * bgnum] & 0x1ff);
-	yscroll = (m_system32_videoram[0x1ff16/2 + 4 * bgnum] & 0x1ff);
+	int xscroll = (m_videoram[0x1ff12/2 + 4 * bgnum] & 0x3ff) - (m_videoram[0x1ff30/2 + 2 * bgnum] & 0x1ff);
+	int yscroll = (m_videoram[0x1ff16/2 + 4 * bgnum] & 0x1ff);
 
 	/* render the tilemap into its bitmap */
-	for (y = cliprect.min_y; y <= cliprect.max_y; y++)
+	for (int y = cliprect.min_y; y <= cliprect.max_y; y++)
 	{
-		UINT16 *extents = &clip_extents.extent[clip_extents.scan_extent[y]][0];
-		UINT16 *dst = &bitmap.pix16(y);
+		uint16_t const *extents = &clip_extents.extent[clip_extents.scan_extent[y]][0];
+		uint16_t *const dst = &bitmap.pix(y);
 		int clipdraw = clipdraw_start;
 
 		/* optimize for the case where we are clipped out */
 		if (clipdraw || extents[1] <= cliprect.max_x)
 		{
 			int transparent = 0;
-			UINT16 *src[2];
 			int srcxstep;
 
 			/* if we're not flipped, things are straightforward */
+			int srcx;
 			if (!flipx)
 			{
 				srcx = cliprect.min_x + xscroll;
@@ -1109,6 +911,7 @@ void segas32_state::update_tilemap_rowscroll(screen_device &screen, struct segas
 				srcxstep = -1;
 			}
 
+			int srcy;
 			if (!flipy)
 			{
 				srcy = yscroll + y;
@@ -1127,10 +930,9 @@ void segas32_state::update_tilemap_rowscroll(screen_device &screen, struct segas
 
 
 			/* look up the pages and get their source pixmaps */
-			bitmap_ind16 &tm0 = tilemaps[((srcy >> 7) & 2) + 0]->pixmap();
-			bitmap_ind16 &tm1 = tilemaps[((srcy >> 7) & 2) + 1]->pixmap();
-			src[0] = &tm0.pix16(srcy & 0xff);
-			src[1] = &tm1.pix16(srcy & 0xff);
+			bitmap_ind16 const &tm0 = tilemaps[((srcy >> 7) & 2) + 0]->pixmap();
+			bitmap_ind16 const &tm1 = tilemaps[((srcy >> 7) & 2) + 1]->pixmap();
+			uint16_t const *const src[2] = { &tm0.pix(srcy & 0xff), &tm1.pix(srcy & 0xff) };
 
 			/* loop over extents */
 			while (1)
@@ -1138,9 +940,9 @@ void segas32_state::update_tilemap_rowscroll(screen_device &screen, struct segas
 				/* if we're drawing on this extent, draw it */
 				if (clipdraw)
 				{
-					for (x = extents[0]; x < extents[1]; x++, srcx += srcxstep)
+					for (int x = extents[0]; x < extents[1]; x++, srcx += srcxstep)
 					{
-						UINT16 pix = src[(srcx >> 9) & 1][srcx & 0x1ff];
+						uint16_t pix = src[(srcx >> 9) & 1][srcx & 0x1ff];
 						if ((pix & 0x0f) == 0 && !opaque)
 							pix = 0, transparent++;
 						dst[x] = pix;
@@ -1151,7 +953,7 @@ void segas32_state::update_tilemap_rowscroll(screen_device &screen, struct segas
 				else
 				{
 					int pixels = extents[1] - extents[0];
-					memset(&dst[extents[0]], 0, pixels * sizeof(dst[0]));
+					std::fill_n(&dst[extents[0]], pixels, 0);
 					srcx += srcxstep * pixels;
 					transparent += pixels;
 				}
@@ -1165,17 +967,17 @@ void segas32_state::update_tilemap_rowscroll(screen_device &screen, struct segas
 				extents++;
 			}
 
-			layer->transparent[y] = (transparent == cliprect.max_x - cliprect.min_x + 1);
+			layer.transparent[y] = (transparent == cliprect.max_x - cliprect.min_x + 1);
 		}
 		else
-			layer->transparent[y] = 1;
+			layer.transparent[y] = 1;
 	}
 
 	/* enable this code below to display scroll information */
 #if 0
 	if (rowscroll || rowselect)
 		popmessage("Scroll=%d Select=%d  Table@%06X",
-			rowscroll, rowselect, (m_system32_videoram[0x1ff04/2] >> 10) * 0x800);
+			rowscroll, rowselect, (m_videoram[0x1ff04/2] >> 10) * 0x800);
 #endif
 }
 
@@ -1187,88 +989,82 @@ void segas32_state::update_tilemap_rowscroll(screen_device &screen, struct segas
  *
  *************************************/
 
-void segas32_state::update_tilemap_text(screen_device &screen, struct segas32_state::layer_info *layer, const rectangle &cliprect)
+void segas32_state::update_tilemap_text(screen_device &screen, segas32_state::layer_info &layer, const rectangle &cliprect)
 {
-	bitmap_ind16 &bitmap = *layer->bitmap;
-	UINT16 *tilebase;
-	UINT16 *gfxbase;
-	int startx, starty;
-	int endx, endy;
-	int x, y, iy;
-	int flip;
+	bitmap_ind16 &bitmap = layer.bitmap;
 
 	/* determine if we're flipped */
-	flip = (m_system32_videoram[0x1ff00/2] >> 9) & 1;
+	int flip = (m_videoram[0x1ff00/2] >> 9) & 1;
 
 	/* determine the base of the tilemap and graphics data */
-	tilebase = &m_system32_videoram[((m_system32_videoram[0x1ff5c/2] >> 4) & 0x1f) * 0x800];
-	gfxbase = &m_system32_videoram[(m_system32_videoram[0x1ff5c/2] & 7) * 0x2000];
+	uint16_t const *const tilebase = &m_videoram[((m_videoram[0x1ff5c/2] >> 4) & 0x1f) * 0x800];
+	uint16_t const *const gfxbase = &m_videoram[(m_videoram[0x1ff5c/2] & 7) * 0x2000];
 
 	/* compute start/end tile numbers */
-	startx = cliprect.min_x / 8;
-	starty = cliprect.min_y / 8;
-	endx = cliprect.max_x / 8;
-	endy = cliprect.max_y / 8;
+	int startx = cliprect.min_x / 8;
+	int starty = cliprect.min_y / 8;
+	int endx = cliprect.max_x / 8;
+	int endy = cliprect.max_y / 8;
 
 	/* loop over tiles */
-	for (y = starty; y <= endy; y++)
-		for (x = startx; x <= endx; x++)
+	for (int y = starty; y <= endy; y++)
+		for (int x = startx; x <= endx; x++)
 		{
 			int tile = tilebase[y * 64 + x];
-			UINT16 *src = &gfxbase[(tile & 0x1ff) * 16];
+			uint16_t const *src = &gfxbase[(tile & 0x1ff) * 16];
 			int color = (tile & 0xfe00) >> 5;
 
 			/* non-flipped case */
 			if (!flip)
 			{
-				UINT16 *dst = &bitmap.pix16(y * 8, x * 8);
+				uint16_t *dst = &bitmap.pix(y * 8, x * 8);
 
 				/* loop over rows */
-				for (iy = 0; iy < 8; iy++)
+				for (int iy = 0; iy < 8; iy++)
 				{
 					int pixels = *src++;
 					int pix;
 
 					pix = (pixels >> 4) & 0x0f;
 					if (pix)
-						pix += color;
+						pix |= color;
 					dst[0] = pix;
 
 					pix = (pixels >> 0) & 0x0f;
 					if (pix)
-						pix += color;
+						pix |= color;
 					dst[1] = pix;
 
 					pix = (pixels >> 12) & 0x0f;
 					if (pix)
-						pix += color;
+						pix |= color;
 					dst[2] = pix;
 
 					pix = (pixels >> 8) & 0x0f;
 					if (pix)
-						pix += color;
+						pix |= color;
 					dst[3] = pix;
 
 					pixels = *src++;
 
 					pix = (pixels >> 4) & 0x0f;
 					if (pix)
-						pix += color;
+						pix |= color;
 					dst[4] = pix;
 
 					pix = (pixels >> 0) & 0x0f;
 					if (pix)
-						pix += color;
+						pix |= color;
 					dst[5] = pix;
 
 					pix = (pixels >> 12) & 0x0f;
 					if (pix)
-						pix += color;
+						pix |= color;
 					dst[6] = pix;
 
 					pix = (pixels >> 8) & 0x0f;
 					if (pix)
-						pix += color;
+						pix |= color;
 					dst[7] = pix;
 
 					dst += bitmap.rowpixels();
@@ -1282,54 +1078,54 @@ void segas32_state::update_tilemap_text(screen_device &screen, struct segas32_st
 
 				int effdstx = visarea.max_x - x * 8;
 				int effdsty = visarea.max_y - y * 8;
-				UINT16 *dst = &bitmap.pix16(effdsty, effdstx);
+				uint16_t *dst = &bitmap.pix(effdsty, effdstx);
 
 				/* loop over rows */
-				for (iy = 0; iy < 8; iy++)
+				for (int iy = 0; iy < 8; iy++)
 				{
 					int pixels = *src++;
 					int pix;
 
 					pix = (pixels >> 4) & 0x0f;
 					if (pix)
-						pix += color;
+						pix |= color;
 					dst[0] = pix;
 
 					pix = (pixels >> 0) & 0x0f;
 					if (pix)
-						pix += color;
+						pix |= color;
 					dst[-1] = pix;
 
 					pix = (pixels >> 12) & 0x0f;
 					if (pix)
-						pix += color;
+						pix |= color;
 					dst[-2] = pix;
 
 					pix = (pixels >> 8) & 0x0f;
 					if (pix)
-						pix += color;
+						pix |= color;
 					dst[-3] = pix;
 
 					pix = *src++;
 
 					pix = (pixels >> 4) & 0x0f;
 					if (pix)
-						pix += color;
+						pix |= color;
 					dst[-4] = pix;
 
 					pix = (pixels >> 0) & 0x0f;
 					if (pix)
-						pix += color;
+						pix |= color;
 					dst[-5] = pix;
 
 					pix = (pixels >> 12) & 0x0f;
 					if (pix)
-						pix += color;
+						pix |= color;
 					dst[-6] = pix;
 
 					pix = (pixels >> 8) & 0x0f;
 					if (pix)
-						pix += color;
+						pix |= color;
 					dst[-7] = pix;
 
 					dst -= bitmap.rowpixels();
@@ -1346,35 +1142,30 @@ void segas32_state::update_tilemap_text(screen_device &screen, struct segas32_st
  *
  *************************************/
 
-void segas32_state::update_bitmap(screen_device &screen, struct segas32_state::layer_info *layer, const rectangle &cliprect)
+void segas32_state::update_bitmap(screen_device &screen, segas32_state::layer_info &layer, const rectangle &cliprect)
 {
-	int clipenable, clipout, clips, clipdraw_start;
-	bitmap_ind16 &bitmap = *layer->bitmap;
-	struct extents_list clip_extents;
-	int xscroll, yscroll;
-	int color;
-	int x, y;
-	int bpp;
+	bitmap_ind16 &bitmap = layer.bitmap;
 
 	/* configure the layer */
-	bpp = (m_system32_videoram[0x1ff00/2] & 0x0800) ? 8 : 4;
+	int bpp = (m_videoram[0x1ff00/2] & 0x0800) ? 8 : 4;
 
 	/* determine the clipping */
-	clipenable = (m_system32_videoram[0x1ff02/2] >> 15) & 1;
-	clipout = (m_system32_videoram[0x1ff02/2] >> 10) & 1;
-	clips = 0x10;
-	clipdraw_start = compute_clipping_extents(screen, clipenable, clipout, clips, cliprect, &clip_extents);
+	int clipenable = (m_videoram[0x1ff02/2] >> 15) & 1;
+	int clipout = (m_videoram[0x1ff02/2] >> 10) & 1;
+	int clips = 0x10;
+	extents_list clip_extents;
+	int clipdraw_start = compute_clipping_extents(screen, clipenable, clipout, clips, cliprect, &clip_extents);
 
 	/* determine x/y scroll */
-	xscroll = m_system32_videoram[0x1ff88/2] & 0x1ff;
-	yscroll = m_system32_videoram[0x1ff8a/2] & 0x1ff;
-	color = (m_system32_videoram[0x1ff8c/2] << 4) & 0x1fff0 & ~((1 << bpp) - 1);
+	int xscroll = m_videoram[0x1ff88/2] & 0x1ff;
+	int yscroll = m_videoram[0x1ff8a/2] & 0x1ff;
+	int color = (m_videoram[0x1ff8c/2] << 4) & 0x1fff0 & ~((1 << bpp) - 1);
 
 	/* loop over target rows */
-	for (y = cliprect.min_y; y <= cliprect.max_y; y++)
+	for (int y = cliprect.min_y; y <= cliprect.max_y; y++)
 	{
-		UINT16 *extents = &clip_extents.extent[clip_extents.scan_extent[y]][0];
-		UINT16 *dst = &bitmap.pix16(y);
+		uint16_t const *extents = &clip_extents.extent[clip_extents.scan_extent[y]][0];
+		uint16_t *const dst = &bitmap.pix(y);
 		int clipdraw = clipdraw_start;
 
 		/* optimize for the case where we are clipped out */
@@ -1391,8 +1182,8 @@ void segas32_state::update_bitmap(screen_device &screen, struct segas32_state::l
 					/* 8bpp mode case */
 					if (bpp == 8)
 					{
-						UINT8 *src = (UINT8 *)&m_system32_videoram[512/2 * ((y + yscroll) & 0xff)];
-						for (x = extents[0]; x < extents[1]; x++)
+						uint8_t const *src = (uint8_t *)&m_videoram[512/2 * ((y + yscroll) & 0xff)];
+						for (int x = extents[0]; x < extents[1]; x++)
 						{
 							int effx = (x + xscroll) & 0x1ff;
 							int pix = src[BYTE_XOR_LE(effx)] + color;
@@ -1405,8 +1196,8 @@ void segas32_state::update_bitmap(screen_device &screen, struct segas32_state::l
 					/* 4bpp mode case */
 					else
 					{
-						UINT16 *src = &m_system32_videoram[512/4 * ((y + yscroll) & 0x1ff)];
-						for (x = extents[0]; x < extents[1]; x++)
+						uint16_t const *src = &m_videoram[512/4 * ((y + yscroll) & 0x1ff)];
+						for (int x = extents[0]; x < extents[1]; x++)
 						{
 							int effx = (x + xscroll) & 0x1ff;
 							int pix = ((src[effx / 4] >> (4 * (effx & 3))) & 0x0f) + color;
@@ -1421,7 +1212,7 @@ void segas32_state::update_bitmap(screen_device &screen, struct segas32_state::l
 				else
 				{
 					int pixels = extents[1] - extents[0];
-					memset(&dst[extents[0]], 0, pixels * sizeof(dst[0]));
+					std::fill_n(&dst[extents[0]], pixels, 0);
 					transparent += pixels;
 				}
 
@@ -1434,10 +1225,10 @@ void segas32_state::update_bitmap(screen_device &screen, struct segas32_state::l
 				extents++;
 			}
 
-			layer->transparent[y] = (transparent == cliprect.max_x - cliprect.min_x + 1);
+			layer.transparent[y] = (transparent == cliprect.max_x - cliprect.min_x + 1);
 		}
 		else
-			layer->transparent[y] = 1;
+			layer.transparent[y] = 1;
 	}
 }
 
@@ -1449,53 +1240,62 @@ void segas32_state::update_bitmap(screen_device &screen, struct segas32_state::l
  *
  *************************************/
 
-void segas32_state::update_background(struct segas32_state::layer_info *layer, const rectangle &cliprect)
+void segas32_state::update_background(segas32_state::layer_info &layer, const rectangle &cliprect)
 {
-	bitmap_ind16 &bitmap = *layer->bitmap;
-	int x, y;
+	bitmap_ind16 &bitmap = layer.bitmap;
 
-	for (y = cliprect.min_y; y <= cliprect.max_y; y++)
+	for (int y = cliprect.min_y; y <= cliprect.max_y; y++)
 	{
-		UINT16 *dst = &bitmap.pix16(y);
+		uint16_t *const dst = &bitmap.pix(y);
 		int color;
 
 		/* determine the color */
-		if (m_system32_videoram[0x1ff5e/2] & 0x8000)
-			color = (m_system32_videoram[0x1ff5e/2] & 0x1fff) + y;
+		if (m_videoram[0x1ff5e/2] & 0x8000)
+		{
+			// line color select (bank wraps at 511, confirmed by arabfgt and kokoroj2)
+			int yoffset = (m_videoram[0x1ff5e/2] + y) & 0x1ff;
+			color = (m_videoram[0x1ff5e/2] & 0x1e00) + yoffset;
+		}
 		else
-			color = m_system32_videoram[0x1ff5e/2] & 0x1e00;
+			color = m_videoram[0x1ff5e/2] & 0x1e00;
 
 		/* if the color doesn't match, fill */
-		if (dst[cliprect.min_x] != color)
-			for (x = cliprect.min_x; x <= cliprect.max_x; x++)
+		if ((m_bgcolor_line[y & 0x1ff] != color) || (m_prev_bgstartx[y & 0x1ff] != cliprect.min_x) || (m_prev_bgendx[y & 0x1ff] != cliprect.max_x))
+		{
+			for (int x = cliprect.min_x; x <= cliprect.max_x; x++)
 				dst[x] = color;
+
+			m_prev_bgstartx[y & 0x1ff] = cliprect.min_x;
+			m_prev_bgendx[y & 0x1ff] = cliprect.max_x;
+			m_bgcolor_line[y & 0x1ff] = color;
+		}
 	}
 }
 
 
-UINT8 segas32_state::update_tilemaps(screen_device &screen, const rectangle &cliprect)
+uint8_t segas32_state::update_tilemaps(screen_device &screen, const rectangle &cliprect)
 {
-	int enable0 = !(m_system32_videoram[0x1ff02/2] & 0x0001) && !(m_system32_videoram[0x1ff8e/2] & 0x0002);
-	int enable1 = !(m_system32_videoram[0x1ff02/2] & 0x0002) && !(m_system32_videoram[0x1ff8e/2] & 0x0004);
-	int enable2 = !(m_system32_videoram[0x1ff02/2] & 0x0004) && !(m_system32_videoram[0x1ff8e/2] & 0x0008) && !(m_system32_videoram[0x1ff00/2] & 0x1000);
-	int enable3 = !(m_system32_videoram[0x1ff02/2] & 0x0008) && !(m_system32_videoram[0x1ff8e/2] & 0x0010) && !(m_system32_videoram[0x1ff00/2] & 0x2000);
-	int enablet = !(m_system32_videoram[0x1ff02/2] & 0x0010) && !(m_system32_videoram[0x1ff8e/2] & 0x0001);
-	int enableb = !(m_system32_videoram[0x1ff02/2] & 0x0020) && !(m_system32_videoram[0x1ff8e/2] & 0x0020);
+	int enable0 = !(m_videoram[0x1ff02/2] & 0x0001) && !(m_videoram[0x1ff8e/2] & 0x0002);
+	int enable1 = !(m_videoram[0x1ff02/2] & 0x0002) && !(m_videoram[0x1ff8e/2] & 0x0004);
+	int enable2 = !(m_videoram[0x1ff02/2] & 0x0004) && !(m_videoram[0x1ff8e/2] & 0x0008) && !(m_videoram[0x1ff00/2] & 0x1000);
+	int enable3 = !(m_videoram[0x1ff02/2] & 0x0008) && !(m_videoram[0x1ff8e/2] & 0x0010) && !(m_videoram[0x1ff00/2] & 0x2000);
+	int enablet = !(m_videoram[0x1ff02/2] & 0x0010) && !(m_videoram[0x1ff8e/2] & 0x0001);
+	int enableb = !(m_videoram[0x1ff02/2] & 0x0020) && !(m_videoram[0x1ff8e/2] & 0x0020);
 
 	/* update any tilemaps */
 	if (enable0)
-		update_tilemap_zoom(screen, &m_layer_data[MIXER_LAYER_NBG0], cliprect, 0);
+		update_tilemap_zoom(screen, m_layer_data[MIXER_LAYER_NBG0], cliprect, 0);
 	if (enable1)
-		update_tilemap_zoom(screen, &m_layer_data[MIXER_LAYER_NBG1], cliprect, 1);
+		update_tilemap_zoom(screen, m_layer_data[MIXER_LAYER_NBG1], cliprect, 1);
 	if (enable2)
-		update_tilemap_rowscroll(screen, &m_layer_data[MIXER_LAYER_NBG2], cliprect, 2);
+		update_tilemap_rowscroll(screen, m_layer_data[MIXER_LAYER_NBG2], cliprect, 2);
 	if (enable3)
-		update_tilemap_rowscroll(screen, &m_layer_data[MIXER_LAYER_NBG3], cliprect, 3);
+		update_tilemap_rowscroll(screen, m_layer_data[MIXER_LAYER_NBG3], cliprect, 3);
 	if (enablet)
-		update_tilemap_text(screen, &m_layer_data[MIXER_LAYER_TEXT], cliprect);
+		update_tilemap_text(screen, m_layer_data[MIXER_LAYER_TEXT], cliprect);
 	if (enableb)
-		update_bitmap(screen, &m_layer_data[MIXER_LAYER_BITMAP], cliprect);
-	update_background(&m_layer_data[MIXER_LAYER_BACKGROUND], cliprect);
+		update_bitmap(screen, m_layer_data[MIXER_LAYER_BITMAP], cliprect);
+	update_background(m_layer_data[MIXER_LAYER_BACKGROUND], cliprect);
 
 	return (enablet << 0) | (enable0 << 1) | (enable1 << 2) | (enable2 << 3) | (enable3 << 4) | (enableb << 5);
 }
@@ -1511,28 +1311,27 @@ UINT8 segas32_state::update_tilemaps(screen_device &screen, const rectangle &cli
 void segas32_state::sprite_erase_buffer()
 {
 	/* erase the visible sprite buffer and clear the checksums */
-	m_layer_data[MIXER_LAYER_SPRITES].bitmap->fill(0xffff);
+	m_layer_data[MIXER_LAYER_SPRITES].bitmap.fill(0xffff);
 
 	/* for multi32, erase the other buffer as well */
 	if (m_is_multi32)
-		m_layer_data[MIXER_LAYER_MULTISPR].bitmap->fill(0xffff);
+		m_layer_data[MIXER_LAYER_MULTISPR].bitmap.fill(0xffff);
 }
 
 
 void segas32_state::sprite_swap_buffers()
 {
 	/* swap between the two sprite buffers */
-	struct segas32_state::layer_info temp;
-	temp = m_layer_data[MIXER_LAYER_SPRITES];
-	m_layer_data[MIXER_LAYER_SPRITES] = m_layer_data[MIXER_LAYER_SPRITES_2];
-	m_layer_data[MIXER_LAYER_SPRITES_2] = temp;
+	std::swap(m_layer_data[MIXER_LAYER_SPRITES].bitmap, m_layer_data[MIXER_LAYER_SPRITES_2].bitmap);
+	std::swap(m_layer_data[MIXER_LAYER_SPRITES].transparent, m_layer_data[MIXER_LAYER_SPRITES_2].transparent);
+	std::swap(m_layer_data[MIXER_LAYER_SPRITES].num, m_layer_data[MIXER_LAYER_SPRITES_2].num);
 
 	/* for multi32, swap the other buffer as well */
 	if (m_is_multi32)
 	{
-		temp = m_layer_data[MIXER_LAYER_MULTISPR];
-		m_layer_data[MIXER_LAYER_MULTISPR] = m_layer_data[MIXER_LAYER_MULTISPR_2];
-		m_layer_data[MIXER_LAYER_MULTISPR_2] = temp;
+		std::swap(m_layer_data[MIXER_LAYER_MULTISPR].bitmap, m_layer_data[MIXER_LAYER_MULTISPR_2].bitmap);
+		std::swap(m_layer_data[MIXER_LAYER_MULTISPR].transparent, m_layer_data[MIXER_LAYER_MULTISPR_2].transparent);
+		std::swap(m_layer_data[MIXER_LAYER_MULTISPR].num, m_layer_data[MIXER_LAYER_MULTISPR_2].num);
 	}
 
 	/* latch any pending info */
@@ -1637,7 +1436,7 @@ void segas32_state::sprite_swap_buffers()
 		}                                                                   \
 	}
 
-int segas32_state::draw_one_sprite(UINT16 *data, int xoffs, int yoffs, const rectangle &clipin, const rectangle &clipout)
+int segas32_state::draw_one_sprite(uint16_t const *data, int xoffs, int yoffs, const rectangle &clipin, const rectangle &clipout)
 {
 	static const int transparency_masks[4][4] =
 	{
@@ -1647,9 +1446,8 @@ int segas32_state::draw_one_sprite(UINT16 *data, int xoffs, int yoffs, const rec
 		{ 0x1fff, 0x0fff, 0x07ff, 0x03ff }
 	};
 
-	bitmap_ind16 &bitmap = *m_layer_data[(!m_is_multi32 || !(data[3] & 0x0800)) ? MIXER_LAYER_SPRITES_2 : MIXER_LAYER_MULTISPR_2].bitmap;
-	UINT8 numbanks = memregion("gfx2")->bytes() / 0x400000;
-	const UINT32 *spritebase = (const UINT32 *)memregion("gfx2")->base();
+	bitmap_ind16 &bitmap = m_layer_data[(!m_is_multi32 || !(data[3] & 0x0800)) ? MIXER_LAYER_SPRITES_2 : MIXER_LAYER_MULTISPR_2].bitmap;
+	uint8_t numbanks = m_sprite_region.length() >> 20;
 
 	int indirect = data[0] & 0x2000;
 	int indlocal = data[0] & 0x1000;
@@ -1670,16 +1468,16 @@ int segas32_state::draw_one_sprite(UINT16 *data, int xoffs, int yoffs, const rec
 					((data[3] & 0x0800) >> 11) | ((data[3] & 0x4000) >> 13);
 	int dsth     = data[2] & 0x3ff;
 	int dstw     = data[3] & 0x3ff;
-	int ypos     = (INT16)(data[4] << 4) >> 4;
-	int xpos     = (INT16)(data[5] << 4) >> 4;
-	UINT32 addr  = data[6] | ((data[2] & 0xf000) << 4);
+	int ypos     = (int16_t)(data[4] << 4) >> 4;
+	int xpos     = (int16_t)(data[5] << 4) >> 4;
+	uint32_t addr  = data[6] | ((data[2] & 0xf000) << 4);
 	int color    = 0x8000 | (data[7] & (bpp8 ? 0x7f00 : 0x7ff0));
 	int hzoom, vzoom;
 	int xdelta = 1, ydelta = 1;
-	int x, y, xtarget, ytarget, yacc = 0, pix, transmask;
-	const UINT32 *spritedata;
-	UINT32 addrmask, curaddr;
-	UINT16 indtable[16];
+	int xtarget, ytarget, yacc = 0, pix, transmask;
+	const uint32_t *spritedata;
+	uint32_t addrmask;
+	uint16_t indtable[16];
 
 	/* if hidden, or top greater than/equal to bottom, or invalid bank, punt */
 	if (srcw == 0 || srch == 0 || dstw == 0 || dsth == 0)
@@ -1693,8 +1491,8 @@ int segas32_state::draw_one_sprite(UINT16 *data, int xoffs, int yoffs, const rec
 	/* create the local palette for the indirect case */
 	if (indirect)
 	{
-		UINT16 *src = indlocal ? &data[8] : &m_system32_spriteram[8 * (data[7] & 0x1fff)];
-		for (x = 0; x < 16; x++)
+		uint16_t const *src = indlocal ? &data[8] : &m_spriteram[8 * (data[7] & 0x1fff)];
+		for (int x = 0; x < 16; x++)
 			indtable[x] = (src[x] & (bpp8 ? 0xfff0 : 0xffff)) | ((m_sprite_control_latched[0x0a/2] & 1) ? 0x8000 : 0x0000);
 	}
 
@@ -1708,7 +1506,7 @@ int segas32_state::draw_one_sprite(UINT16 *data, int xoffs, int yoffs, const rec
 	{
 		if (numbanks)
 			bank %= numbanks;
-		spritedata = spritebase + 0x100000 * bank;
+		spritedata = &m_sprite_region[bank << 20];
 		addrmask = 0xfffff;
 	}
 
@@ -1769,23 +1567,23 @@ int segas32_state::draw_one_sprite(UINT16 *data, int xoffs, int yoffs, const rec
 	}
 
 	/* loop from top to bottom */
-	for (y = ypos; y != ytarget; y += ydelta)
+	for (int y = ypos; y != ytarget; y += ydelta)
 	{
 		/* skip drawing if not within the inclusive cliprect */
 		if (y >= clipin.min_y && y <= clipin.max_y)
 		{
 			int do_clipout = (y >= clipout.min_y && y <= clipout.max_y);
-			UINT16 *dest = &bitmap.pix16(y);
+			uint16_t *const dest = &bitmap.pix(y);
 			int xacc = 0;
 
 			/* 4bpp case */
 			if (!bpp8)
 			{
 				/* start at the word before because we preincrement below */
-				curaddr = addr - 1;
-				for (x = xpos; x != xtarget; )
+				uint32_t curaddr = addr - 1;
+				for (int x = xpos; x != xtarget; )
 				{
-					UINT32 pixels = spritedata[++curaddr & addrmask];
+					uint32_t pixels = spritedata[++curaddr & addrmask];
 
 					/* draw four pixels */
 					pix = (pixels >> 28) & 0xf; while (xacc < 0x10000 && x != xtarget) { sprite_draw_pixel_16(transp)  x += xdelta; xacc += hzoom; } xacc -= 0x10000;
@@ -1807,10 +1605,10 @@ int segas32_state::draw_one_sprite(UINT16 *data, int xoffs, int yoffs, const rec
 			else
 			{
 				/* start at the word before because we preincrement below */
-				curaddr = addr - 1;
-				for (x = xpos; x != xtarget; )
+				uint32_t curaddr = addr - 1;
+				for (int x = xpos; x != xtarget; )
 				{
-					UINT32 pixels = spritedata[++curaddr & addrmask];
+					uint32_t pixels = spritedata[++curaddr & addrmask];
 
 					/* draw four pixels */
 					pix = (pixels >> 24) & 0xff; while (xacc < 0x10000 && x != xtarget) { sprite_draw_pixel_256(transp); x += xdelta; xacc += hzoom; } xacc -= 0x10000;
@@ -1844,7 +1642,6 @@ void segas32_state::sprite_render_list()
 	int xoffs = 0, yoffs = 0;
 	int numentries = 0;
 	int spritenum = 0;
-	UINT16 *sprite;
 
 	g_profiler.start(PROFILER_USER2);
 
@@ -1864,7 +1661,7 @@ void segas32_state::sprite_render_list()
 	while (numentries++ < 0x20000/16)
 	{
 		/* top two bits are a command */
-		sprite = &m_system32_spriteram[8 * (spritenum & 0x1fff)];
+		uint16_t const *const sprite = &m_spriteram[8 * (spritenum & 0x1fff)];
 		switch (sprite[0] >> 14)
 		{
 			/* command 0 = draw sprite */
@@ -1878,20 +1675,20 @@ void segas32_state::sprite_render_list()
 				/* set the inclusive cliprect */
 				if (sprite[0] & 0x1000)
 				{
-					clipin.min_y = (INT16)(sprite[0] << 4) >> 4;
-					clipin.max_y = (INT16)(sprite[1] << 4) >> 4;
-					clipin.min_x = (INT16)(sprite[2] << 4) >> 4;
-					clipin.max_x = (INT16)(sprite[3] << 4) >> 4;
+					clipin.min_y = (int16_t)(sprite[0] << 4) >> 4;
+					clipin.max_y = (int16_t)(sprite[1] << 4) >> 4;
+					clipin.min_x = (int16_t)(sprite[2] << 4) >> 4;
+					clipin.max_x = (int16_t)(sprite[3] << 4) >> 4;
 					clipin &= outerclip;
 				}
 
 				/* set the exclusive cliprect */
 				if (sprite[0] & 0x2000)
 				{
-					clipout.min_y = (INT16)(sprite[4] << 4) >> 4;
-					clipout.max_y = (INT16)(sprite[5] << 4) >> 4;
-					clipout.min_x = (INT16)(sprite[6] << 4) >> 4;
-					clipout.max_x = (INT16)(sprite[7] << 4) >> 4;
+					clipout.min_y = (int16_t)(sprite[4] << 4) >> 4;
+					clipout.max_y = (int16_t)(sprite[5] << 4) >> 4;
+					clipout.min_x = (int16_t)(sprite[6] << 4) >> 4;
+					clipout.max_x = (int16_t)(sprite[7] << 4) >> 4;
 				}
 
 				/* advance to the next entry */
@@ -1904,8 +1701,8 @@ void segas32_state::sprite_render_list()
 				/* set the global offset */
 				if (sprite[0] & 0x2000)
 				{
-					yoffs = (INT16)(sprite[1] << 4) >> 4;
-					xoffs = (INT16)(sprite[2] << 4) >> 4;
+					yoffs = (int16_t)(sprite[1] << 4) >> 4;
+					xoffs = (int16_t)(sprite[2] << 4) >> 4;
 				}
 				spritenum = sprite[0] & 0x1fff;
 				break;
@@ -1928,7 +1725,7 @@ void segas32_state::sprite_render_list()
  *
  *************************************/
 
-inline UINT8 segas32_state::compute_color_offsets(int which, int layerbit, int layerflag)
+inline uint8_t segas32_state::compute_color_offsets(int which, int layerbit, int layerflag)
 {
 	int mode = ((m_mixer_control[which][0x3e/2] & 0x8000) >> 14) | (layerbit & 1);
 
@@ -1948,7 +1745,7 @@ inline UINT8 segas32_state::compute_color_offsets(int which, int layerbit, int l
 	}
 }
 
-inline UINT16 segas32_state::compute_sprite_blend(UINT8 encoding)
+inline uint16_t segas32_state::compute_sprite_blend(uint8_t encoding)
 {
 	int value = encoding & 0xf;
 
@@ -1969,56 +1766,50 @@ inline UINT16 segas32_state::compute_sprite_blend(UINT8 encoding)
 	}
 }
 
-inline UINT16 *segas32_state::get_layer_scanline(int layer, int scanline)
+inline uint16_t *segas32_state::get_layer_scanline(int layer, int scanline)
 {
 	if (m_layer_data[layer].transparent[scanline])
 		return (layer == MIXER_LAYER_SPRITES) ? m_solid_ffff.get() : m_solid_0000.get();
-	return &m_layer_data[layer].bitmap->pix16(scanline);
+	return &m_layer_data[layer].bitmap.pix(scanline);
 }
 
-void segas32_state::mix_all_layers(int which, int xoffs, bitmap_rgb32 &bitmap, const rectangle &cliprect, UINT8 enablemask)
+void segas32_state::mix_all_layers(int which, int xoffs, bitmap_rgb32 &bitmap, const rectangle &cliprect, uint8_t enablemask)
 {
 	int blendenable = m_mixer_control[which][0x4e/2] & 0x0800;
 	int blendfactor = (m_mixer_control[which][0x4e/2] >> 8) & 7;
 	struct mixer_layer_info
 	{
-		UINT16      palbase;            /* palette base from control reg */
-		UINT16      sprblendmask;       /* mask of sprite priorities this layer blends with */
-		UINT8       blendmask;          /* mask of layers this layer blends with */
-		UINT8       index;              /* index of this layer (MIXER_LAYER_XXX) */
-		UINT8       effpri;             /* effective priority = (priority << 3) | layer_priority */
-		UINT8       mixshift;           /* shift from control reg */
-		UINT8       coloroffs;          /* color offset index */
+		uint16_t      palbase;            /* palette base from control reg */
+		uint16_t      sprblendmask;       /* mask of sprite priorities this layer blends with */
+		uint8_t       blendmask;          /* mask of layers this layer blends with */
+		uint8_t       index;              /* index of this layer (MIXER_LAYER_XXX) */
+		uint8_t       effpri;             /* effective priority = (priority << 3) | layer_priority */
+		uint8_t       mixshift;           /* shift from control reg */
+		uint8_t       coloroffs;          /* color offset index */
 	} layerorder[16][8], layersort[8];
-	struct layer_info temp_sprite_save = { nullptr };
-	UINT8 sprgroup_shift, sprgroup_mask, sprgroup_or;
-	int numlayers, laynum, groupnum;
-	int rgboffs[3][3];
-	int sprpixmask, sprshadowmask;
-	int sprx, spry, sprx_start;
-	int sprdx, sprdy;
-	int sprshadow;
-	int x, y, i;
 
 	/* if we are the second monitor on multi32, swap in the proper sprite bank */
 	if (which == 1)
 	{
-		temp_sprite_save = m_layer_data[MIXER_LAYER_SPRITES];
-		m_layer_data[MIXER_LAYER_SPRITES] = m_layer_data[MIXER_LAYER_MULTISPR];
+		std::swap(m_layer_data[MIXER_LAYER_SPRITES].bitmap, m_layer_data[MIXER_LAYER_MULTISPR].bitmap);
+		std::swap(m_layer_data[MIXER_LAYER_SPRITES].transparent, m_layer_data[MIXER_LAYER_MULTISPR].transparent);
+		std::swap(m_layer_data[MIXER_LAYER_SPRITES].num, m_layer_data[MIXER_LAYER_MULTISPR].num);
 	}
 
 	/* extract the RGB offsets */
-	rgboffs[0][0] = (INT8)(m_mixer_control[which][0x40/2] << 2) >> 2;
-	rgboffs[0][1] = (INT8)(m_mixer_control[which][0x42/2] << 2) >> 2;
-	rgboffs[0][2] = (INT8)(m_mixer_control[which][0x44/2] << 2) >> 2;
-	rgboffs[1][0] = (INT8)(m_mixer_control[which][0x46/2] << 2) >> 2;
-	rgboffs[1][1] = (INT8)(m_mixer_control[which][0x48/2] << 2) >> 2;
-	rgboffs[1][2] = (INT8)(m_mixer_control[which][0x4a/2] << 2) >> 2;
+	int rgboffs[3][3];
+	rgboffs[0][0] = (int8_t)(m_mixer_control[which][0x40/2] << 2) >> 2;
+	rgboffs[0][1] = (int8_t)(m_mixer_control[which][0x42/2] << 2) >> 2;
+	rgboffs[0][2] = (int8_t)(m_mixer_control[which][0x44/2] << 2) >> 2;
+	rgboffs[1][0] = (int8_t)(m_mixer_control[which][0x46/2] << 2) >> 2;
+	rgboffs[1][1] = (int8_t)(m_mixer_control[which][0x48/2] << 2) >> 2;
+	rgboffs[1][2] = (int8_t)(m_mixer_control[which][0x4a/2] << 2) >> 2;
 	rgboffs[2][0] = 0;
 	rgboffs[2][1] = 0;
 	rgboffs[2][2] = 0;
 
 	/* determine the sprite grouping parameters first */
+	uint8_t sprgroup_shift, sprgroup_mask, sprgroup_or;
 	switch (m_mixer_control[which][0x4c/2] & 0x0f)
 	{
 		default:
@@ -2042,13 +1833,13 @@ void segas32_state::mix_all_layers(int which, int xoffs, bitmap_rgb32 &bitmap, c
 		case 0xe:   sprgroup_shift = 11;    sprgroup_mask = 0x07;   sprgroup_or = 0x00; break;
 		case 0xf:   sprgroup_shift = 10;    sprgroup_mask = 0x0f;   sprgroup_or = 0x00; break;
 	}
-	sprshadowmask = (m_mixer_control[which][0x4c/2] & 0x04) ? 0x8000 : 0x0000;
-	sprpixmask = ((1 << sprgroup_shift) - 1) & 0x3fff;
-	sprshadow = 0x7ffe & sprpixmask;
+	int sprshadowmask = (m_mixer_control[which][0x4c/2] & 0x04) ? 0x8000 : 0x0000;
+	int sprpixmask = ((1 << sprgroup_shift) - 1) & 0x3fff;
+	int sprshadow = 0x7ffe & sprpixmask;
 
 	/* extract info about TEXT, NBG0-3, and BITMAP layers, which all follow the same pattern */
-	numlayers = 0;
-	for (laynum = MIXER_LAYER_TEXT; laynum <= MIXER_LAYER_BITMAP; laynum++)
+	int numlayers = 0;
+	for (int laynum = MIXER_LAYER_TEXT; laynum <= MIXER_LAYER_BITMAP; laynum++)
 	{
 		int priority = m_mixer_control[which][0x20/2 + laynum] & 0x0f;
 		if ((enablemask & (1 << laynum)) && priority != 0)
@@ -2075,17 +1866,17 @@ void segas32_state::mix_all_layers(int which, int xoffs, bitmap_rgb32 &bitmap, c
 	numlayers++;
 
 	/* now bubble sort the list by effective priority */
-	for (laynum = 0; laynum < numlayers; laynum++)
-		for (i = laynum + 1; i < numlayers; i++)
+	for (int laynum = 0; laynum < numlayers; laynum++)
+		for (int i = laynum + 1; i < numlayers; i++)
 			if (layersort[i].effpri > layersort[laynum].effpri)
 			{
-				struct mixer_layer_info temp = layersort[i];
+				mixer_layer_info temp = layersort[i];
 				layersort[i] = layersort[laynum];
 				layersort[laynum] = temp;
 			}
 
 	/* for each possible sprite group, insert the sprites into the list at the appropriate point */
-	for (groupnum = 0; groupnum <= sprgroup_mask; groupnum++)
+	for (int groupnum = 0; groupnum <= sprgroup_mask; groupnum++)
 	{
 		int effgroup = sprgroup_or | groupnum;
 		int priority = m_mixer_control[which][0x00/2 + effgroup] & 0x0f;
@@ -2094,7 +1885,7 @@ void segas32_state::mix_all_layers(int which, int xoffs, bitmap_rgb32 &bitmap, c
 		int dstnum = 0;
 
 		/* make a copy of the sorted list, finding a location for the sprite entry */
-		for (laynum = 0; laynum < numlayers; laynum++)
+		for (int laynum = 0; laynum < numlayers; laynum++)
 		{
 			if (effpri > layersort[laynum].effpri && sprindex == numlayers)
 				sprindex = dstnum++;
@@ -2116,7 +1907,7 @@ void segas32_state::mix_all_layers(int which, int xoffs, bitmap_rgb32 &bitmap, c
 /*
 {
     static const char *const layname[] = { "TEXT", "NBG0", "NBG1", "NBG2", "NBG3", "BITM", "SPRI", "LINE" };
-    for (groupnum = 0; groupnum <= sprgroup_mask; groupnum++)
+    for (int groupnum = 0; groupnum <= sprgroup_mask; groupnum++)
     {
         osd_printf_debug("%X: ", groupnum);
         for (i = 0; i <= numlayers; i++)
@@ -2127,6 +1918,7 @@ void segas32_state::mix_all_layers(int which, int xoffs, bitmap_rgb32 &bitmap, c
 
 	/* based on the sprite controller flip bits, the data is scanned to us in different */
 	/* directions; account for this */
+	int sprx_start, sprdx;
 	if (m_sprite_control_latched[0x04/2] & 1)
 	{
 		sprx_start = cliprect.max_x;
@@ -2138,6 +1930,7 @@ void segas32_state::mix_all_layers(int which, int xoffs, bitmap_rgb32 &bitmap, c
 		sprdx = 1;
 	}
 
+	int spry, sprdy;
 	if (m_sprite_control_latched[0x04/2] & 2)
 	{
 		spry = cliprect.max_y;
@@ -2150,10 +1943,10 @@ void segas32_state::mix_all_layers(int which, int xoffs, bitmap_rgb32 &bitmap, c
 	}
 
 	/* loop over rows */
-	for (y = cliprect.min_y; y <= cliprect.max_y; y++, spry += sprdy)
+	for (int y = cliprect.min_y; y <= cliprect.max_y; y++, spry += sprdy)
 	{
-		UINT32 *dest = &bitmap.pix32(y, xoffs);
-		UINT16 *layerbase[8];
+		uint32_t *const dest = &bitmap.pix(y, xoffs);
+		uint16_t *layerbase[8];
 
 		/* get the starting address for each layer */
 		layerbase[MIXER_LAYER_TEXT] = get_layer_scanline(MIXER_LAYER_TEXT, y);
@@ -2166,18 +1959,15 @@ void segas32_state::mix_all_layers(int which, int xoffs, bitmap_rgb32 &bitmap, c
 		layerbase[MIXER_LAYER_BACKGROUND] = get_layer_scanline(MIXER_LAYER_BACKGROUND, y);
 
 		/* loop over columns */
-		for (x = cliprect.min_x, sprx = sprx_start; x <= cliprect.max_x; x++, sprx += sprdx)
+		for (int x = cliprect.min_x, sprx = sprx_start; x <= cliprect.max_x; x++, sprx += sprdx)
 		{
-			struct mixer_layer_info *first;
-			int *rgbdelta;
-			int firstpix;
-			int sprpix, sprgroup;
-			int r, g, b;
+			mixer_layer_info const *first;
+			int laynum, firstpix;
 			int shadow = 0;
 
 			/* first grab the current sprite pixel and determine the group */
-			sprpix = layerbase[MIXER_LAYER_SPRITES][sprx];
-			sprgroup = (sprpix >> sprgroup_shift) & sprgroup_mask;
+			int sprpix = layerbase[MIXER_LAYER_SPRITES][sprx];
+			int sprgroup = (sprpix >> sprgroup_shift) & sprgroup_mask;
 
 			/* now scan the layers to find the topmost non-transparent pixel */
 			for (first = &layerorder[sprgroup][0]; ; first++)
@@ -2208,18 +1998,18 @@ void segas32_state::mix_all_layers(int which, int xoffs, bitmap_rgb32 &bitmap, c
 			}
 
 			/* adjust the first pixel */
-			firstpix = m_system32_paletteram[which][(first->palbase + ((firstpix >> first->mixshift) & 0xfff0) + (firstpix & 0x0f)) & 0x3fff];
+			firstpix = m_paletteram[which][(first->palbase + ((firstpix >> first->mixshift) & 0xfff0) + (firstpix & 0x0f)) & 0x3fff];
 
 			/* compute R, G, B */
-			rgbdelta = &rgboffs[first->coloroffs][0];
-			r = ((firstpix >>  0) & 0x1f) + rgbdelta[0];
-			g = ((firstpix >>  5) & 0x1f) + rgbdelta[1];
-			b = ((firstpix >> 10) & 0x1f) + rgbdelta[2];
+			int const *rgbdelta = &rgboffs[first->coloroffs][0];
+			int r = ((firstpix >>  0) & 0x1f) + rgbdelta[0];
+			int g = ((firstpix >>  5) & 0x1f) + rgbdelta[1];
+			int b = ((firstpix >> 10) & 0x1f) + rgbdelta[2];
 
 			/* if there are potential blends, keep looking */
 			if (first->blendmask != 0)
 			{
-				struct mixer_layer_info *second;
+				mixer_layer_info const *second;
 				int secondpix;
 
 				/* now scan the layers to find the topmost non-transparent pixel */
@@ -2255,7 +2045,7 @@ void segas32_state::mix_all_layers(int which, int xoffs, bitmap_rgb32 &bitmap, c
 					(laynum != MIXER_LAYER_SPRITES || (first->sprblendmask & (1 << sprgroup))))
 				{
 					/* adjust the second pixel */
-					secondpix = m_system32_paletteram[which][(second->palbase + ((secondpix >> second->mixshift) & 0xfff0) + (secondpix & 0x0f)) & 0x3fff];
+					secondpix = m_paletteram[which][(second->palbase + ((secondpix >> second->mixshift) & 0xfff0) + (secondpix & 0x0f)) & 0x3fff];
 
 					/* compute first RGB */
 					r *= 7 - blendfactor;
@@ -2306,7 +2096,11 @@ void segas32_state::mix_all_layers(int which, int xoffs, bitmap_rgb32 &bitmap, c
 
 	/* if we are the second monitor on multi32, swap back the sprite layer */
 	if (which == 1)
-		m_layer_data[MIXER_LAYER_SPRITES] = temp_sprite_save;
+	{
+		std::swap(m_layer_data[MIXER_LAYER_SPRITES].bitmap, m_layer_data[MIXER_LAYER_MULTISPR].bitmap);
+		std::swap(m_layer_data[MIXER_LAYER_SPRITES].transparent, m_layer_data[MIXER_LAYER_MULTISPR].transparent);
+		std::swap(m_layer_data[MIXER_LAYER_SPRITES].num, m_layer_data[MIXER_LAYER_MULTISPR].num);
+	}
 }
 
 
@@ -2322,7 +2116,7 @@ void segas32_state::print_mixer_data(int which)
 	if (++m_print_count > 60 * 5)
 	{
 		osd_printf_debug("\n");
-		osd_printf_debug("OP: %04X\n", m_system32_videoram[0x1ff8e/2]);
+		osd_printf_debug("OP: %04X\n", m_videoram[0x1ff8e/2]);
 		osd_printf_debug("SC: %04X %04X %04X %04X - %04X %04X %04X %04X\n",
 			m_sprite_control_latched[0x00],
 			m_sprite_control_latched[0x01],
@@ -2387,12 +2181,12 @@ void segas32_state::print_mixer_data(int which)
 	}
 }
 
-UINT32 segas32_state::screen_update_system32(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
+uint32_t segas32_state::screen_update_system32(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
 {
-	UINT8 enablemask;
+	uint8_t enablemask;
 
 	/* update the visible area */
-	if (m_system32_videoram[0x1ff00/2] & 0x8000)
+	if (m_videoram[0x1ff00/2] & 0x8000)
 		screen.set_visible_area(0, 52*8-1, 0, 28*8-1);
 	else
 		screen.set_visible_area(0, 40*8-1, 0, 28*8-1);
@@ -2432,7 +2226,7 @@ UINT32 segas32_state::screen_update_system32(screen_device &screen, bitmap_rgb32
 
 		for (y = visarea.min_y; y <= visarea.max_y; y++)
 		{
-			UINT16 *src = get_layer_scanline(MIXER_LAYER_SPRITES, y);
+			uint16_t *src = get_layer_scanline(MIXER_LAYER_SPRITES, y);
 			for (x = visarea.min_x; x <= visarea.max_x; x++)
 				fprintf(f, "%04X ", *src++);
 			fprintf(f, "\n");
@@ -2442,7 +2236,7 @@ UINT32 segas32_state::screen_update_system32(screen_device &screen, bitmap_rgb32
 		f = fopen("nbg0.txt", "w");
 		for (y = visarea.min_y; y <= visarea.max_y; y++)
 		{
-			UINT16 *src = get_layer_scanline(MIXER_LAYER_NBG0, y);
+			uint16_t *src = get_layer_scanline(MIXER_LAYER_NBG0, y);
 			for (x = visarea.min_x; x <= visarea.max_x; x++)
 				fprintf(f, "%04X ", *src++);
 			fprintf(f, "\n");
@@ -2452,7 +2246,7 @@ UINT32 segas32_state::screen_update_system32(screen_device &screen, bitmap_rgb32
 		f = fopen("nbg1.txt", "w");
 		for (y = visarea.min_y; y <= visarea.max_y; y++)
 		{
-			UINT16 *src = get_layer_scanline(MIXER_LAYER_NBG1, y);
+			uint16_t *src = get_layer_scanline(MIXER_LAYER_NBG1, y);
 			for (x = visarea.min_x; x <= visarea.max_x; x++)
 				fprintf(f, "%04X ", *src++);
 			fprintf(f, "\n");
@@ -2462,7 +2256,7 @@ UINT32 segas32_state::screen_update_system32(screen_device &screen, bitmap_rgb32
 		f = fopen("nbg2.txt", "w");
 		for (y = visarea.min_y; y <= visarea.max_y; y++)
 		{
-			UINT16 *src = get_layer_scanline(MIXER_LAYER_NBG2, y);
+			uint16_t *src = get_layer_scanline(MIXER_LAYER_NBG2, y);
 			for (x = visarea.min_x; x <= visarea.max_x; x++)
 				fprintf(f, "%04X ", *src++);
 			fprintf(f, "\n");
@@ -2472,7 +2266,7 @@ UINT32 segas32_state::screen_update_system32(screen_device &screen, bitmap_rgb32
 		f = fopen("nbg3.txt", "w");
 		for (y = visarea.min_y; y <= visarea.max_y; y++)
 		{
-			UINT16 *src = get_layer_scanline(MIXER_LAYER_NBG3, y);
+			uint16_t *src = get_layer_scanline(MIXER_LAYER_NBG3, y);
 			for (x = visarea.min_x; x <= visarea.max_x; x++)
 				fprintf(f, "%04X ", *src++);
 			fprintf(f, "\n");
@@ -2513,9 +2307,9 @@ UINT32 segas32_state::screen_update_system32(screen_device &screen, bitmap_rgb32
 //  if (showclip != -1)
 for (showclip = 0; showclip < 4; showclip++)
 	{
-		int flip = (m_system32_videoram[0x1ff00/2] >> 9) & 1;
-		int clips = (m_system32_videoram[0x1ff06/2] >> (4 * showclip)) & 0x0f;
-		if (((m_system32_videoram[0x1ff02/2] >> (11 + showclip)) & 1) && clips)
+		int flip = (m_videoram[0x1ff00/2] >> 9) & 1;
+		int clips = (m_videoram[0x1ff06/2] >> (4 * showclip)) & 0x0f;
+		if (((m_videoram[0x1ff02/2] >> (11 + showclip)) & 1) && clips)
 		{
 			int i, x, y;
 			for (i = 0; i < 4; i++)
@@ -2527,17 +2321,17 @@ for (showclip = 0; showclip < 4; showclip++)
 					pen_t white = get_white_pen(screen.machine());
 					if (!flip)
 					{
-						rect.min_x = m_system32_videoram[0x1ff60/2 + i * 4] & 0x1ff;
-						rect.min_y = m_system32_videoram[0x1ff62/2 + i * 4] & 0x0ff;
-						rect.max_x = (m_system32_videoram[0x1ff64/2 + i * 4] & 0x1ff) + 1;
-						rect.max_y = (m_system32_videoram[0x1ff66/2 + i * 4] & 0x0ff) + 1;
+						rect.min_x = m_videoram[0x1ff60/2 + i * 4] & 0x1ff;
+						rect.min_y = m_videoram[0x1ff62/2 + i * 4] & 0x0ff;
+						rect.max_x = (m_videoram[0x1ff64/2 + i * 4] & 0x1ff) + 1;
+						rect.max_y = (m_videoram[0x1ff66/2 + i * 4] & 0x0ff) + 1;
 					}
 					else
 					{
-						rect.max_x = (visarea.max_x + 1) - (m_system32_videoram[0x1ff60/2 + i * 4] & 0x1ff);
-						rect.max_y = (visarea.max_y + 1) - (m_system32_videoram[0x1ff62/2 + i * 4] & 0x0ff);
-						rect.min_x = (visarea.max_x + 1) - ((m_system32_videoram[0x1ff64/2 + i * 4] & 0x1ff) + 1);
-						rect.min_y = (visarea.max_y + 1) - ((m_system32_videoram[0x1ff66/2 + i * 4] & 0x0ff) + 1);
+						rect.max_x = (visarea.max_x + 1) - (m_videoram[0x1ff60/2 + i * 4] & 0x1ff);
+						rect.max_y = (visarea.max_y + 1) - (m_videoram[0x1ff62/2 + i * 4] & 0x0ff);
+						rect.min_x = (visarea.max_x + 1) - ((m_videoram[0x1ff64/2 + i * 4] & 0x1ff) + 1);
+						rect.min_y = (visarea.max_y + 1) - ((m_videoram[0x1ff66/2 + i * 4] & 0x0ff) + 1);
 					}
 					sect_rect(&rect, &screen.visible_area());
 
@@ -2565,12 +2359,12 @@ for (showclip = 0; showclip < 4; showclip++)
 }
 
 
-UINT32 segas32_state::multi32_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect, int index)
+uint32_t segas32_state::multi32_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect, int index)
 {
-	UINT8 enablemask;
+	uint8_t enablemask;
 
 	/* update the visible area */
-	if (m_system32_videoram[0x1ff00/2] & 0x8000)
+	if (m_videoram[0x1ff00/2] & 0x8000)
 		screen.set_visible_area(0, 52*8-1, 0, 28*8-1);
 	else
 		screen.set_visible_area(0, 40*8-1, 0, 28*8-1);
@@ -2615,7 +2409,7 @@ if (PRINTF_MIXER_DATA)
 
 		for (y = visarea.min_y; y <= visarea.max_y; y++)
 		{
-			UINT16 *src = get_layer_scanline(MIXER_LAYER_SPRITES, y);
+			uint16_t *src = get_layer_scanline(MIXER_LAYER_SPRITES, y);
 			for (x = visarea.min_x; x <= visarea.max_x; x++)
 				fprintf(f, "%04X ", *src++);
 			fprintf(f, "\n");
@@ -2626,8 +2420,8 @@ if (PRINTF_MIXER_DATA)
 	return 0;
 }
 
-UINT32 segas32_state::screen_update_multi32_left(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect){ return multi32_update(screen, bitmap, cliprect, 0); }
-UINT32 segas32_state::screen_update_multi32_right(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect){ return multi32_update(screen, bitmap, cliprect, 1); }
+uint32_t segas32_state::screen_update_multi32_left(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect){ return multi32_update(screen, bitmap, cliprect, 0); }
+uint32_t segas32_state::screen_update_multi32_right(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect){ return multi32_update(screen, bitmap, cliprect, 1); }
 
 /*
 
@@ -2790,5 +2584,35 @@ SC: 0003 0000 0000 0000 - 0001 0001 0000 0000
 00: 000E 0002 0005 000F - 0000 0000 0000 0000 - 0000 0000 0000 0000 - 0000 0000 0000 0000
 20: 007F 0366 0000 0364 - 0000 0070 0071 0070 - 0000 4000 4000 4000 - 4000 0000 0000 4000
 40: 0000 0000 0000 0000 - 0000 0000 9E05 0000 - 0000 0000 0000 0000 - 0000 0000 0000 0000
+
+back layer setups (register $31ff5e):
+alien3:   $0200
+arabfgt:  $8000-$81ff -- depending on the scene
+arescue:  $0200
+as1:      $0000
+brival:   $8000
+darkedge: $0200
+dbzvrvs:  $0200
+f1en:     $0000
+f1lap:    $0000
+ga2:      $0200
+harddunk: $8200
+holo:     $0200
+jpark:    $0200
+kokoroj:  $8000
+kokoroj2: $8000 --
+          $8000-$81fc (in steps of 4) -- on introduction/initials scenes
+orunners: $0200
+radm:     $0200
+radr:     $8200 -- gameplay
+          $0200 -- title screen
+scross:   $0200
+slipstrm: $0000
+sonic:    $0000 -- on sega logo/title screen
+          $0200 -- everything else
+spidman:  $0200
+svf:      $0201 -- on attract
+          $0200 -- on gameplay
+titlef:   $8200
 
 */

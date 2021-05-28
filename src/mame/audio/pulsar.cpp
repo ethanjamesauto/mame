@@ -53,14 +53,6 @@ static const char *const pulsar_sample_names[] =
 };
 
 
-MACHINE_CONFIG_FRAGMENT( pulsar_audio )
-	MCFG_SOUND_ADD("samples", SAMPLES, 0)
-	MCFG_SAMPLES_CHANNELS(12)
-	MCFG_SAMPLES_NAMES(pulsar_sample_names)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.5)
-MACHINE_CONFIG_END
-
-
 /* sample IDs - must match sample file name table above */
 enum
 {
@@ -79,12 +71,11 @@ enum
 };
 
 
-WRITE8_MEMBER( vicdual_state::pulsar_audio_1_w )
+void vicdual_state::pulsar_audio_1_w(uint8_t data)
 {
 	int bitsChanged;
 	//int bitsGoneHigh;
 	int bitsGoneLow;
-
 
 	bitsChanged  = m_port1State ^ data;
 	//bitsGoneHigh = bitsChanged & data;
@@ -129,19 +120,17 @@ WRITE8_MEMBER( vicdual_state::pulsar_audio_1_w )
 }
 
 
-WRITE8_MEMBER( vicdual_state::pulsar_audio_2_w )
+void vicdual_state::pulsar_audio_2_w(uint8_t data)
 {
-	static int port2State = 0;
 	int bitsChanged;
 	int bitsGoneHigh;
 	int bitsGoneLow;
 
-
-	bitsChanged  = port2State ^ data;
+	bitsChanged  = m_port2State ^ data;
 	bitsGoneHigh = bitsChanged & data;
 	bitsGoneLow  = bitsChanged & ~data;
 
-	port2State = data;
+	m_port2State = data;
 
 	if ( bitsGoneLow & OUT_PORT_2_SIZZLE )
 	{
@@ -179,4 +168,14 @@ WRITE8_MEMBER( vicdual_state::pulsar_audio_2_w )
 	{
 		STOP( m_samples, SND_MOVMAZE );
 	}
+}
+
+
+void vicdual_state::pulsar_audio(machine_config &config)
+{
+	/* samples */
+	SAMPLES(config, m_samples);
+	m_samples->set_channels(12);
+	m_samples->set_samples_names(pulsar_sample_names);
+	m_samples->add_route(ALL_OUTPUTS, "mono", 0.5);
 }

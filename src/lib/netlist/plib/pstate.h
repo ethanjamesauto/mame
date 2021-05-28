@@ -1,168 +1,227 @@
-// license:GPL-2.0+
+// license:BSD-3-Clause
 // copyright-holders:Couriersud
-/*
- * pstate.h
- *
- */
 
 #ifndef PSTATE_H_
 #define PSTATE_H_
 
-#include "plists.h"
+///
+/// \file pstate.h
+///
+
 #include "pstring.h"
+#include "ptypes.h"
+
+#include <array>
+#include <memory>
+#include <vector>
 
 // ----------------------------------------------------------------------------------------
 // state saving ...
 // ----------------------------------------------------------------------------------------
 
-#define PSTATE_INTERFACE_DECL()               \
-	template<typename C> ATTR_COLD void save(C &state, const pstring &stname); \
-	template<typename C, std::size_t N> ATTR_COLD void save(C (&state)[N], const pstring &stname); \
-	template<typename C> ATTR_COLD void save(C *state, const pstring &stname, const int count);
-
-#define PSTATE_INTERFACE(obj, manager, module)               \
-	template<typename C> ATTR_COLD void obj::save(C &state, const pstring &stname) \
-	{ manager->save_item(state, this, module + "." + stname); } \
-	template<typename C, std::size_t N> ATTR_COLD void obj::save(C (&state)[N], const pstring &stname) \
-	{ manager->save_state_ptr(module + "." + stname, pstate_datatype<C>::type, this, sizeof(state[0]), N, &(state[0]), false); } \
-	template<typename C> ATTR_COLD void obj::save(C *state, const pstring &stname, const int count) \
-	{ manager->save_state_ptr(module + "." + stname, pstate_datatype<C>::type, this, sizeof(C), count, state, false);   }
-
-enum pstate_data_type_e {
-	NOT_SUPPORTED,
-	DT_CUSTOM,
-	DT_DOUBLE,
-#if (PHAS_INT128)
-	DT_INT128,
-#endif
-	DT_INT64,
-	DT_INT16,
-	DT_INT8,
-	DT_INT,
-	DT_BOOLEAN,
-	DT_FLOAT
-};
-
-template<typename _ItemType> struct pstate_datatype
-{
-	static const pstate_data_type_e type = pstate_data_type_e(NOT_SUPPORTED);
-	static const bool is_ptr = false;
-};
-
-template<typename _ItemType> struct pstate_datatype<_ItemType *>
-{
-	static const pstate_data_type_e type = pstate_data_type_e(NOT_SUPPORTED);
-	static const bool is_ptr = true;
-};
-
-//template<typename _ItemType> struct type_checker<_ItemType*> { static const bool is_atom = false; static const bool is_pointer = true; };
-
-#define NETLIST_SAVE_TYPE(TYPE, TYPEDESC) \
-		template<> struct pstate_datatype<TYPE>{ static const pstate_data_type_e type = pstate_data_type_e(TYPEDESC); static const bool is_ptr = false;}; \
-		template<> struct pstate_datatype<TYPE *>{ static const pstate_data_type_e type = pstate_data_type_e(TYPEDESC); static const bool is_ptr = true;}
-
-NETLIST_SAVE_TYPE(char, DT_INT8);
-NETLIST_SAVE_TYPE(double, DT_DOUBLE);
-NETLIST_SAVE_TYPE(float, DT_FLOAT);
-NETLIST_SAVE_TYPE(INT8, DT_INT8);
-NETLIST_SAVE_TYPE(UINT8, DT_INT8);
-#if (PHAS_INT128)
-NETLIST_SAVE_TYPE(INT128, DT_INT128);
-NETLIST_SAVE_TYPE(UINT128, DT_INT128);
-#endif
-NETLIST_SAVE_TYPE(INT64, DT_INT64);
-NETLIST_SAVE_TYPE(UINT64, DT_INT64);
-NETLIST_SAVE_TYPE(bool, DT_BOOLEAN);
-NETLIST_SAVE_TYPE(UINT32, DT_INT);
-NETLIST_SAVE_TYPE(INT32, DT_INT);
-NETLIST_SAVE_TYPE(UINT16, DT_INT16);
-NETLIST_SAVE_TYPE(INT16, DT_INT16);
-//NETLIST_SAVE_TYPE(std::size_t, DT_INT64);
-
-class pstate_manager_t;
-
-class pstate_callback_t
+namespace plib {
+class state_manager_t
 {
 public:
-	typedef plist_t<pstate_callback_t *> list_t;
 
-	virtual ~pstate_callback_t() { };
+	struct datatype_t
+	{
+		datatype_t(std::size_t bsize, bool bintegral, bool bfloat)
+		: m_size(bsize), m_is_integral(bintegral), m_is_float(bfloat), m_is_custom(false)
+		{}
+		explicit datatype_t(bool bcustom)
+		: m_size(0), m_is_integral(false), m_is_float(false), m_is_custom(bcustom)
+		{}
 
-	virtual void register_state(pstate_manager_t &manager, const pstring &module) = 0;
-	virtual void on_pre_save() = 0;
-	virtual void on_post_load() = 0;
-protected:
-};
+		std::size_t size() const noexcept { return m_size; }
+		bool is_integral() const noexcept { return m_is_integral; }
+		bool is_float()    const noexcept { return m_is_float; }
+		bool is_custom()   const noexcept { return m_is_custom; }
 
-struct pstate_entry_t
-{
-	typedef plist_t<pstate_entry_t *> list_t;
-
-	pstate_entry_t(const pstring &stname, const pstate_data_type_e dt, const void *owner,
-			const int size, const int count, void *ptr, bool is_ptr)
-	: m_name(stname), m_dt(dt), m_owner(owner), m_callback(NULL), m_size(size), m_count(count), m_ptr(ptr), m_is_ptr(is_ptr) { }
-
-	pstate_entry_t(const pstring &stname, const void *owner, pstate_callback_t *callback)
-	: m_name(stname), m_dt(DT_CUSTOM), m_owner(owner), m_callback(callback), m_size(0), m_count(0), m_ptr(NULL), m_is_ptr(false) { }
-
-	~pstate_entry_t() { }
-
-	pstring m_name;
-	const pstate_data_type_e m_dt;
-	const void *m_owner;
-	pstate_callback_t *m_callback;
-	const int m_size;
-	const int m_count;
-	void *m_ptr;
-	bool m_is_ptr;
+	private:
+		std::size_t m_size;
+		bool m_is_integral;
+		bool m_is_float;
+		bool m_is_custom;
+	};
 
 	template<typename T>
-	T *resolved()
+	static datatype_t dtype()
 	{
-		if (m_is_ptr)
-			return *static_cast<T **>(m_ptr);
-		else
-			return static_cast<T *>(m_ptr);
-	}
-};
-
-class pstate_manager_t
-{
-public:
-
-	pstate_manager_t();
-	~pstate_manager_t();
-
-	template<typename C> ATTR_COLD void save_item(C &state, const void *owner, const pstring &stname)
-	{
-		save_state_ptr(stname, pstate_datatype<C>::type, owner, sizeof(C), 1, &state, pstate_datatype<C>::is_ptr);
+		return datatype_t(sizeof(T),
+				plib::is_integral<T>::value || std::is_enum<T>::value,
+				plib::is_floating_point<T>::value);
 	}
 
-	template<typename C, std::size_t N> ATTR_COLD void save_item(C (&state)[N], const void *owner, const pstring &stname)
+	struct callback_t
 	{
-		save_state_ptr(stname, pstate_datatype<C>::type, owner, sizeof(state[0]), N, &(state[0]), false);
+	public:
+		using list_t = std::vector<callback_t *>;
+
+		virtual void register_state(state_manager_t &manager, const pstring &module) = 0;
+		virtual void on_pre_save(state_manager_t &manager) = 0;
+		virtual void on_post_load(state_manager_t &manager) = 0;
+	protected:
+		callback_t() = default;
+		virtual ~callback_t() = default;
+		PCOPYASSIGNMOVE(callback_t, default)
+	};
+
+	struct entry_t
+	{
+		using list_t = std::vector<entry_t>;
+
+		entry_t(const pstring &stname, const datatype_t &dt, const void *owner,
+				const std::size_t count, void *ptr)
+		: m_name(stname), m_dt(dt), m_owner(owner), m_callback(nullptr), m_count(count), m_ptr(ptr) { }
+
+		entry_t(const pstring &stname, const void *owner, callback_t *callback)
+		: m_name(stname), m_dt(datatype_t(true)), m_owner(owner), m_callback(callback), m_count(0), m_ptr(nullptr) { }
+
+		pstring name() const noexcept { return m_name; }
+		datatype_t dt() const noexcept { return m_dt; }
+		const void * owner() const noexcept { return m_owner; }
+		callback_t * callback() const noexcept { return m_callback; }
+		std::size_t count() const noexcept { return m_count; }
+		void * ptr() const noexcept { return m_ptr; }
+
+	private:
+		pstring             m_name;
+		datatype_t          m_dt;
+		const void *        m_owner;
+		callback_t *        m_callback;
+		std::size_t         m_count;
+		void *              m_ptr;
+	};
+
+	state_manager_t() = default;
+
+	struct saver_t
+	{
+		saver_t(state_manager_t &sm, const void *owner, const pstring &membername)
+		: m_sm(sm)
+		, m_owner(owner)
+		, m_membername(membername)
+		{ }
+
+		template <typename XS>
+		void save_item(XS &xstate, const pstring &itemname)
+		{
+			m_sm.save_item(m_owner, xstate, m_membername + "." + itemname);
+		}
+
+		state_manager_t &m_sm;
+		const void * m_owner;
+		const pstring m_membername;
+	};
+
+	template<typename C>
+	void save_item(const void *owner, C &state, const pstring &stname)
+	{
+		save_item_dispatch(owner, state, stname);
 	}
 
-	template<typename C> ATTR_COLD void save_item(C *state, const void *owner, const pstring &stname, const int count)
+	template<typename C, std::size_t N>
+	void save_item(const void *owner, C (&state)[N], const pstring &stname) // NOLINT(cppcoreguidelines-avoid-c-arrays, modernize-avoid-c-arrays)
 	{
-		save_state_ptr(stname, pstate_datatype<C>::type, owner, sizeof(C), count, state, false);
+		save_state_ptr(owner, stname, dtype<C>(), N, &(state[0]));
 	}
 
-	ATTR_COLD void pre_save();
-	ATTR_COLD void post_load();
-	ATTR_COLD void remove_save_items(const void *owner);
+	template<typename C>
+	void save_item(const void *owner, C *state, const pstring &stname, const std::size_t count)
+	{
+		save_state_ptr(owner, stname, dtype<C>(), count, state);
+	}
 
-	const pstate_entry_t::list_t &save_list() const { return m_save; }
+	template<typename C, typename A>
+	void save_item(const void *owner, std::vector<C, A> &v, const pstring &stname)
+	{
+		save_state_ptr(owner, stname, dtype<C>(), v.size(), v.data());
+	}
 
-	ATTR_COLD void save_state_ptr(const pstring &stname, const pstate_data_type_e, const void *owner, const int size, const int count, void *ptr, bool is_ptr);
+	template<typename C, std::size_t N>
+	void save_item(const void *owner, std::array<C, N> &a, const pstring &stname)
+	{
+		save_state_ptr(owner, stname, dtype<C>(), N, a.data());
+	}
+
+	void save_state_ptr(const void *owner, const pstring &stname, const datatype_t &dt, const std::size_t count, void *ptr)
+	{
+		m_save.emplace_back(stname, dt, owner, count, ptr);
+	}
+
+	void pre_save()
+	{
+		for (auto & s : m_custom)
+			s.callback()->on_pre_save(*this);
+	}
+
+	void post_load()
+	{
+		for (auto & s : m_custom)
+			s.callback()->on_post_load(*this);
+	}
+
+	void remove_save_items(const void *owner)
+	{
+		auto i = m_save.end();
+		while (i != m_save.begin())
+		{
+			i--;
+			if (i->owner() == owner)
+				i = m_save.erase(i);
+		}
+		i = m_custom.end();
+		while (i > m_custom.begin())
+		{
+			i--;
+			if (i->owner() == owner)
+				i = m_custom.erase(i);
+		}
+	}
+
+	std::vector<const entry_t *> save_list() const
+	{
+		std::vector<const entry_t *> ret;
+		for (const auto &i : m_save)
+			ret.push_back(&i);
+		return ret;
+	}
 
 protected:
 
 private:
-	pstate_entry_t::list_t m_save;
+
+	template<typename C>
+	std::enable_if_t<plib::is_integral<C>::value || std::is_enum<C>::value
+			|| plib::is_floating_point<C>::value>
+	save_item_dispatch(const void *owner, C &state, const pstring &stname)
+	{
+		save_state_ptr( owner, stname, dtype<C>(), 1, &state);
+	}
+
+	template<typename C>
+	std::enable_if_t<!(plib::is_integral<C>::value || std::is_enum<C>::value
+			|| plib::is_floating_point<C>::value)>
+	save_item_dispatch(const void *owner, C &state, const pstring &stname)
+	{
+		saver_t sav(*this, owner, stname);
+		state.save_state(sav);
+	}
+
+	entry_t::list_t m_save;
+	entry_t::list_t m_custom;
+
 };
 
-template<> ATTR_COLD void pstate_manager_t::save_item(pstate_callback_t &state, const void *owner, const pstring &stname);
+template<>
+inline void state_manager_t::save_item(const void *owner, callback_t &state, const pstring &stname)
+{
+	m_custom.emplace_back(stname, owner, &state);
+	state.register_state(*this, stname);
+}
 
 
-#endif /* PSTATE_H_ */
+} // namespace plib
+
+#endif // PSTATE_H_

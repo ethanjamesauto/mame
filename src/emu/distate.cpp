@@ -2,7 +2,7 @@
 // copyright-holders:Aaron Giles
 /***************************************************************************
 
-    distate.c
+    distate.cpp
 
     Device state interfaces.
 
@@ -15,28 +15,28 @@
 //  GLOBAL VARIABLES
 //**************************************************************************
 
-const UINT64 device_state_entry::k_decimal_divisor[] =
+const u64 device_state_entry::k_decimal_divisor[] =
 {
-	1,
-	10,
-	100,
-	1000,
-	10000,
-	100000,
-	1000000,
-	10000000,
-	100000000,
-	1000000000,
-	U64(10000000000),
-	U64(100000000000),
-	U64(1000000000000),
-	U64(10000000000000),
-	U64(100000000000000),
-	U64(1000000000000000),
-	U64(10000000000000000),
-	U64(100000000000000000),
-	U64(1000000000000000000),
-	U64(10000000000000000000)
+	1U,
+	10U,
+	100U,
+	1000U,
+	10000U,
+	100000U,
+	1000000U,
+	10000000U,
+	100000000U,
+	1000000000U,
+	10000000000U,
+	100000000000U,
+	1000000000000U,
+	10000000000000U,
+	100000000000000U,
+	1000000000000000U,
+	10000000000000000U,
+	100000000000000000U,
+	1000000000000000000U,
+	10000000000000000000U
 };
 
 
@@ -49,38 +49,22 @@ const UINT64 device_state_entry::k_decimal_divisor[] =
 //  device_state_entry - constructor
 //-------------------------------------------------
 
-device_state_entry::device_state_entry(int index, const char *symbol, void *dataptr, UINT8 size, device_state_interface *dev)
+device_state_entry::device_state_entry(int index, const char *symbol, u8 size, u64 sizemask, u8 flags, device_state_interface *dev)
 	: m_device_state(dev),
-		m_next(nullptr),
 		m_index(index),
-		m_dataptr(dataptr),
-		m_datamask(0),
+		m_datamask(sizemask),
 		m_datasize(size),
-		m_flags(0),
+		m_flags(flags),
 		m_symbol(symbol),
-		m_default_format(true),
-		m_sizemask(0)
+		m_default_format(true)
 {
-	// convert the size to a mask
-	assert(size == 1 || size == 2 || size == 4 || size == 8);
-	if (size == 1)
-		m_sizemask = 0xff;
-	else if (size == 2)
-		m_sizemask = 0xffff;
-	else if (size == 4)
-		m_sizemask = 0xffffffff;
-	else
-		m_sizemask = ~U64(0);
+	assert(size == 1 || size == 2 || size == 4 || size == 8 || (flags & DSF_FLOATING_POINT) != 0);
 
-	// default the data mask to the same
-	m_datamask = m_sizemask;
 	format_from_mask();
 
 	// override well-known symbols
-	if (index == STATE_GENPC)
+	if (index == STATE_GENPCBASE)
 		m_symbol.assign("CURPC");
-	else if (index == STATE_GENPCBASE)
-		m_symbol.assign("CURPCBASE");
 	else if (index == STATE_GENSP)
 		m_symbol.assign("CURSP");
 	else if (index == STATE_GENFLAGS)
@@ -89,15 +73,21 @@ device_state_entry::device_state_entry(int index, const char *symbol, void *data
 
 device_state_entry::device_state_entry(int index, device_state_interface *dev)
 	: m_device_state(dev),
-		m_next(nullptr),
 		m_index(index),
-		m_dataptr(nullptr),
 		m_datamask(0),
 		m_datasize(0),
-		m_flags(DSF_DIVIDER),
+		m_flags(DSF_DIVIDER | DSF_READONLY),
 		m_symbol(),
-		m_default_format(true),
-		m_sizemask(0)
+		m_default_format(true)
+{
+}
+
+
+//-------------------------------------------------
+//  device_state_entry - destructor
+//-------------------------------------------------
+
+device_state_entry::~device_state_entry()
 {
 }
 
@@ -111,10 +101,9 @@ device_state_entry &device_state_entry::formatstr(const char *_format)
 	m_format.assign(_format);
 	m_default_format = false;
 
-	// set the DSF_CUSTOM_STRING flag by formatting with a NULL string
+	// set the DSF_CUSTOM_STRING flag by formatting with a nullptr string
 	m_flags &= ~DSF_CUSTOM_STRING;
-	std::string dummy;
-	format(dummy, nullptr);
+	format(nullptr);
 
 	return *this;
 }
@@ -131,31 +120,81 @@ void device_state_entry::format_from_mask()
 	if (!m_default_format)
 		return;
 
+	if (is_float())
+	{
+		m_format = "%12s";
+		return;
+	}
+
 	// make up a format based on the mask
+	if (m_datamask == 0)
+		throw emu_fatalerror("%s state entry requires a nonzero mask\n", m_symbol);
 	int width = 0;
-	for (UINT64 tempmask = m_datamask; tempmask != 0; tempmask >>= 4)
+	for (u64 tempmask = m_datamask; tempmask != 0; tempmask >>= 4)
 		width++;
-	strprintf(m_format,"%%0%dX", width);
+	m_format = string_format("%%0%dX", width);
 }
 
 
 //-------------------------------------------------
-//  value - return the current value as a UINT64
+//  value - return the current value as a u64
 //-------------------------------------------------
 
-UINT64 device_state_entry::value() const
+u64 device_state_entry::value() const
 {
+	// call the exporter before we do anything
+	if ((m_flags & DSF_EXPORT) != 0)
+		m_device_state->state_export(*this);
+
 	// pick up the value
-	UINT64 result;
-	switch (m_datasize)
-	{
-		default:
-		case 1: result = *m_dataptr.u8;     break;
-		case 2: result = *m_dataptr.u16;    break;
-		case 4: result = *m_dataptr.u32;    break;
-		case 8: result = *m_dataptr.u64;    break;
-	}
-	return result & m_datamask;
+	return entry_value() & m_datamask;
+}
+
+
+//-------------------------------------------------
+//  dvalue - return the current value as a double
+//-------------------------------------------------
+
+double device_state_entry::dvalue() const
+{
+	// call the exporter before we do anything
+	if ((m_flags & DSF_EXPORT) != 0)
+		m_device_state->state_export(*this);
+
+	// pick up the value
+	return entry_dvalue();
+}
+
+
+//-------------------------------------------------
+//  entry_baseptr - return a pointer to where the
+//  data lives (if applicable)
+//-------------------------------------------------
+
+void *device_state_entry::entry_baseptr() const
+{
+	return nullptr;
+}
+
+
+//-------------------------------------------------
+//  entry_value - return the current value as a u64
+//-------------------------------------------------
+
+u64 device_state_entry::entry_value() const
+{
+	return 0;
+}
+
+
+//-------------------------------------------------
+//  entry_dvalue - return the current value as a
+//  double
+//-------------------------------------------------
+
+double device_state_entry::entry_dvalue() const
+{
+	return 0.0;
 }
 
 
@@ -164,9 +203,10 @@ UINT64 device_state_entry::value() const
 //  pieces of indexed state as a string
 //-------------------------------------------------
 
-std::string &device_state_entry::format(std::string &dest, const char *string, bool maxout) const
+std::string device_state_entry::format(const char *string, bool maxout) const
 {
-	UINT64 result = value();
+	std::string dest;
+	u64 result = entry_value() & m_datamask;
 
 	// parse the format
 	bool leadzero = false;
@@ -291,18 +331,18 @@ std::string &device_state_entry::format(std::string &dest, const char *string, b
 					width--;
 				}
 				// fall through to unsigned case
-
+				[[fallthrough]];
 			// u outputs as unsigned decimal
 			case 'u':
 				if (width == 0)
 					throw emu_fatalerror("Width required for %%u formats\n");
 				hitnonzero = false;
-				while (leadzero && width > ARRAY_LENGTH(k_decimal_divisor))
+				while (leadzero && width > std::size(k_decimal_divisor))
 				{
 					dest.append(" ");
 					width--;
 				}
-				for (int digitnum = ARRAY_LENGTH(k_decimal_divisor) - 1; digitnum >= 0; digitnum--)
+				for (int digitnum = std::size(k_decimal_divisor) - 1; digitnum >= 0; digitnum--)
 				{
 					int digit = (result >= k_decimal_divisor[digitnum]) ? (result / k_decimal_divisor[digitnum]) % 10 : 0;
 					if (digit != 0)
@@ -348,11 +388,44 @@ std::string &device_state_entry::format(std::string &dest, const char *string, b
 
 
 //-------------------------------------------------
-//  set_value - set the value from a UINT64
+//  to_string - return the value of the given
+//  piece of indexed state as a string
 //-------------------------------------------------
 
-void device_state_entry::set_value(UINT64 value) const
+std::string device_state_entry::to_string() const
 {
+	// get the custom string if needed
+	std::string custom;
+	if ((m_flags & DSF_CUSTOM_STRING) != 0)
+		m_device_state->state_string_export(*this, custom);
+	else if ((m_flags & DSF_FLOATING_POINT) != 0)
+		custom = string_format("%-12G", entry_dvalue());
+
+	// ask the entry to format itself
+	return format(custom.c_str());
+}
+
+
+//-------------------------------------------------
+//  max_length - return the maximum length of the
+//  given state as a string
+//-------------------------------------------------
+
+int device_state_entry::max_length() const
+{
+	// ask the entry to format itself maximally
+	return format("", true).length();
+}
+
+
+//-------------------------------------------------
+//  set_value - set the value from a u64
+//-------------------------------------------------
+
+void device_state_entry::set_value(u64 value) const
+{
+	assert((m_flags & DSF_READONLY) == 0);
+
 	// apply the mask
 	value &= m_datamask;
 
@@ -361,24 +434,47 @@ void device_state_entry::set_value(UINT64 value) const
 		value |= ~m_datamask;
 
 	// store the value
-	switch (m_datasize)
-	{
-		default:
-		case 1: *m_dataptr.u8 = value;      break;
-		case 2: *m_dataptr.u16 = value;     break;
-		case 4: *m_dataptr.u32 = value;     break;
-		case 8: *m_dataptr.u64 = value;     break;
-	}
+	entry_set_value(value);
+
+	// call the importer to finish up
+	if ((m_flags & DSF_IMPORT) != 0)
+		m_device_state->state_import(*this);
 }
 
 
 //-------------------------------------------------
-//  set_value - set the value from a string
+//  set_dvalue - set the value from a double
 //-------------------------------------------------
 
-void device_state_entry::set_value(const char *string) const
+void device_state_entry::set_dvalue(double value) const
 {
-	// not implemented
+	assert((m_flags & DSF_READONLY) == 0);
+
+	// store the value
+	entry_set_dvalue(value);
+
+	// call the importer to finish up
+	if ((m_flags & DSF_IMPORT) != 0)
+		m_device_state->state_import(*this);
+}
+
+
+//-------------------------------------------------
+//  entry_set_value - set the value from a u64
+//-------------------------------------------------
+
+void device_state_entry::entry_set_value(u64 value) const
+{
+}
+
+
+//-------------------------------------------------
+//  entry_set_dvalue - set the value from a double
+//-------------------------------------------------
+
+void device_state_entry::entry_set_dvalue(double value) const
+{
+	set_value(u64(value));
 }
 
 
@@ -397,7 +493,7 @@ device_state_interface::device_state_interface(const machine_config &mconfig, de
 	memset(m_fast_state, 0, sizeof(m_fast_state));
 
 	// configure the fast accessor
-	device.m_state = this;
+	device.interfaces().m_state = this;
 }
 
 
@@ -411,147 +507,22 @@ device_state_interface::~device_state_interface()
 
 
 //-------------------------------------------------
-//  state_int - return the value of the given piece
-//  of indexed state as a UINT64
+//  state_add - add a new piece of indexed state
 //-------------------------------------------------
 
-UINT64 device_state_interface::state_int(int index)
+device_state_entry &device_state_interface::state_add(std::unique_ptr<device_state_entry> &&entry)
 {
-	// NULL or out-of-range entry returns 0
-	const device_state_entry *entry = state_find_entry(index);
-	if (entry == nullptr)
-		return 0;
-
-	// call the exporter before we do anything
-	if (entry->needs_export())
-		state_export(*entry);
-
-	// pick up the value
-	return entry->value();
-}
-
-
-//-------------------------------------------------
-//  state_string - return the value of the given
-//  pieces of indexed state as a string
-//-------------------------------------------------
-
-std::string &device_state_interface::state_string(int index, std::string &dest)
-{
-	// NULL or out-of-range entry returns bogus string
-	const device_state_entry *entry = state_find_entry(index);
-	if (entry == nullptr)
-		return dest.assign("???");
-
-	// get the custom string if needed
-	std::string custom;
-	if (entry->needs_custom_string())
-		state_string_export(*entry, custom);
-
-	// ask the entry to format itself
-	return entry->format(dest, custom.c_str());
-}
-
-
-//-------------------------------------------------
-//  state_string_max_length - return the maximum
-//  length of the given state string
-//-------------------------------------------------
-
-int device_state_interface::state_string_max_length(int index)
-{
-	// NULL or out-of-range entry returns bogus string
-	const device_state_entry *entry = state_find_entry(index);
-	if (entry == nullptr)
-		return 3;
-
-	// ask the entry to format itself maximally
-	std::string tempstring;
-	return entry->format(tempstring, "", true).length();
-}
-
-
-//-------------------------------------------------
-//  set_state_int - set the value of the given
-//  piece of indexed state from a UINT64
-//-------------------------------------------------
-
-void device_state_interface::set_state_int(int index, UINT64 value)
-{
-	// NULL or out-of-range entry is a no-op
-	const device_state_entry *entry = state_find_entry(index);
-	if (entry == nullptr)
-		return;
-
-	// set the value
-	entry->set_value(value);
-
-	// call the importer to finish up
-	if (entry->needs_import())
-		state_import(*entry);
-}
-
-
-//-------------------------------------------------
-//  set_state - set the value of the given piece
-//  of indexed state from a string
-//-------------------------------------------------
-
-void device_state_interface::set_state_string(int index, const char *string)
-{
-	// NULL or out-of-range entry is a no-op
-	const device_state_entry *entry = state_find_entry(index);
-	if (entry == nullptr)
-		return;
-
-	// set the value
-	entry->set_value(string);
-
-	// call the importer to finish up
-	if (entry->needs_import())
-		state_import(*entry);
-}
-
-
-//-------------------------------------------------
-//  state_add - return the value of the given
-//  pieces of indexed state as a UINT64
-//-------------------------------------------------
-
-device_state_entry &device_state_interface::state_add(int index, const char *symbol, void *data, UINT8 size)
-{
-	// assert validity of incoming parameters
-	assert(size == 1 || size == 2 || size == 4 || size == 8);
-	assert(symbol != nullptr);
-
-	// allocate new entry
-	auto entry = global_alloc(device_state_entry(index, symbol, data, size, this));
-
 	// append to the end of the list
-	m_state_list.append(*entry);
+	m_state_list.push_back(std::move(entry));
+	device_state_entry &new_entry = *m_state_list.back();
 
 	// set the fast entry if applicable
-	if (index >= FAST_STATE_MIN && index <= FAST_STATE_MAX)
-		m_fast_state[index - FAST_STATE_MIN] = entry;
+	if (new_entry.index() >= FAST_STATE_MIN && new_entry.index() <= FAST_STATE_MAX && !new_entry.divider())
+		m_fast_state[new_entry.index() - FAST_STATE_MIN] = &new_entry;
 
-	return *entry;
+	return new_entry;
 }
 
-//-------------------------------------------------
-//  state_add_divider - add a simple divider
-//  entry
-//-------------------------------------------------
-
-device_state_entry &device_state_interface::state_add_divider(int index)
-{
-	// allocate new entry
-	auto entry = global_alloc(device_state_entry(index, this));
-
-	// append to the end of the list
-	m_state_list.append(*entry);
-
-	return *entry;
-}
 
 //-------------------------------------------------
 //  state_import - called after new state is
@@ -591,7 +562,7 @@ void device_state_interface::state_string_import(const device_state_entry &entry
 //  written to perform any post-processing
 //-------------------------------------------------
 
-void device_state_interface::state_string_export(const device_state_entry &entry, std::string &str)
+void device_state_interface::state_string_export(const device_state_entry &entry, std::string &str) const
 {
 	// do nothing by default
 }
@@ -605,27 +576,6 @@ void device_state_interface::state_string_export(const device_state_entry &entry
 void device_state_interface::interface_post_start()
 {
 	// make sure we got something during startup
-	if (m_state_list.count() == 0)
-		throw emu_fatalerror("No state registered for device '%s' that supports it!", m_device.tag());
-}
-
-
-//-------------------------------------------------
-//  state_find_entry - return a pointer to the
-//  state entry for the given index
-//-------------------------------------------------
-
-const device_state_entry *device_state_interface::state_find_entry(int index)
-{
-	// use fast lookup if possible
-	if (index >= FAST_STATE_MIN && index <= FAST_STATE_MAX)
-		return m_fast_state[index - FAST_STATE_MIN];
-
-	// otherwise, scan the first
-	for (const device_state_entry *entry = m_state_list.first(); entry != nullptr; entry = entry->m_next)
-		if (entry->m_index == index)
-			return entry;
-
-	// handle failure by returning NULL
-	return nullptr;
+	if (m_state_list.size() == 0)
+		throw emu_fatalerror("No state registered for device '%s' that supports it!", device().tag());
 }

@@ -1,50 +1,44 @@
 // license:BSD-3-Clause
 // copyright-holders:Bryan McPhail, David Haywood
-/* MXC06 */
+#ifndef MAME_VIDEO_DECMXC06_H
+#define MAME_VIDEO_DECMXC06_H
 
+#pragma once
 
-class deco_mxc06_device : public device_t,
-								public device_video_interface
+#include "screen.h"
+
+class deco_mxc06_device : public device_t, public device_video_interface
 {
 public:
-	deco_mxc06_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	typedef device_delegate<void (u32 &colour, u32 &pri_mask)> colpri_cb_delegate;
 
-	// static configuration
-	static void static_set_gfxdecode_tag(device_t &device, const char *tag);
-	static void static_set_palette_tag(device_t &device, const char *tag);
-	static void set_gfx_region(device_t &device, int region);
-	static void set_ram_size(device_t &device, int size)
-	{
-		deco_mxc06_device &dev = downcast<deco_mxc06_device &>(device);
-		dev.m_ramsize = size;
-	}
+	deco_mxc06_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
+	// configuration
+	template <typename... T> void set_colpri_callback(T &&... args) { m_colpri_cb.set(std::forward<T>(args)...); }
 
-	void set_gfxregion(int region) { m_gfxregion = region; };
-	void draw_sprites( bitmap_ind16 &bitmap, const rectangle &cliprect, UINT16* spriteram16, int pri_mask, int pri_val, int col_mask );
-	void draw_sprites_bootleg( bitmap_ind16 &bitmap, const rectangle &cliprect, UINT16* spriteram, int pri_mask, int pri_val, int col_mask );
-	void set_pri_type( int type ) { m_priority_type = type; }
+	void draw_sprites(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect, gfx_element *gfx, u16* spriteram, int size);
+	void draw_sprites_bootleg(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect, gfx_element *gfx, u16* spriteram, int size);
+	void set_flip_screen(bool flip) { m_flip_screen = flip; }
 
 protected:
 	virtual void device_start() override;
 	virtual void device_reset() override;
 
-	UINT8 m_gfxregion;
-	int m_priority_type; // just so we can support the existing drivers without converting everything to pdrawgfx just yet
-	int m_ramsize;
-
 private:
-	required_device<gfxdecode_device> m_gfxdecode;
-	required_device<palette_device> m_palette;
+	struct sprite_t
+	{
+		int height = 0;
+		u32 code[8] = { 0, 0, 0, 0, 0, 0, 0, 0 }, colour = 0;
+		int x[8] = { 0, 0, 0, 0, 0, 0, 0, 0 }, y[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+		bool flipx = false, flipy = false;
+		u32 pri_mask = 0;
+	};
+	colpri_cb_delegate m_colpri_cb;
+	bool m_flip_screen;
+	std::unique_ptr<struct sprite_t[]> m_spritelist;
 };
 
-extern const device_type DECO_MXC06;
+DECLARE_DEVICE_TYPE(DECO_MXC06, deco_mxc06_device)
 
-#define MCFG_DECO_MXC06_GFXDECODE(_gfxtag) \
-	deco_mxc06_device::static_set_gfxdecode_tag(*device, "^" _gfxtag);
-
-#define MCFG_DECO_MXC06_PALETTE(_palette_tag) \
-	deco_mxc06_device::static_set_palette_tag(*device, "^" _palette_tag);
-
-#define MCFG_DECO_MXC06_RAMSIZE(_size) \
-	deco_mxc06_device::set_ram_size(*device, _size);
+#endif // MAME_VIDEO_DECMXC06_H

@@ -16,16 +16,16 @@
 
 
 // device type definition
-const device_type SOCRATES_SOUND = &device_creator<socrates_snd_device>;
+DEFINE_DEVICE_TYPE(SOCRATES_SOUND, socrates_snd_device, "socrates_snd", "Socrates Sound")
 
 
 //-------------------------------------------------
 //  socrates_snd_device - constructor
 //-------------------------------------------------
 
-socrates_snd_device::socrates_snd_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: device_t(mconfig, SOCRATES_SOUND, "Socrates Sound", tag, owner, clock, "socrates_snd", __FILE__),
-	device_sound_interface(mconfig, *this)
+socrates_snd_device::socrates_snd_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: device_t(mconfig, SOCRATES_SOUND, tag, owner, clock)
+	, device_sound_interface(mconfig, *this)
 {
 }
 
@@ -43,7 +43,7 @@ void socrates_snd_device::device_start()
 	m_DAC_output = 0x00; /* output */
 	m_state[0] = m_state[1] = m_state[2] = 0;
 	m_accum[0] = m_accum[1] = m_accum[2] = 0xFF;
-	m_stream = machine().sound().stream_alloc(*this, 0, 1, clock() ? clock() : machine().sample_rate());
+	m_stream = stream_alloc(0, 1, clock() ? clock() : machine().sample_rate());
 }
 
 
@@ -51,17 +51,17 @@ void socrates_snd_device::device_start()
 //  sound_stream_update - handle a stream update
 //-------------------------------------------------
 
-void socrates_snd_device::sound_stream_update(sound_stream &stream, stream_sample_t **inputs, stream_sample_t **outputs, int samples)
+void socrates_snd_device::sound_stream_update(sound_stream &stream, std::vector<read_stream_view> const &inputs, std::vector<write_stream_view> &outputs)
 {
-	for (int i = 0; i < samples; i++)
+	for (int i = 0; i < outputs[0].samples(); i++)
 	{
 		snd_clock();
-		outputs[0][i] = ((int)m_DAC_output<<4);
+		outputs[0].put_int(i, (int)m_DAC_output, 32768 >> 4);
 	}
 }
 
 
-const UINT8 socrates_snd_device::s_volumeLUT[16] =
+const uint8_t socrates_snd_device::s_volumeLUT[16] =
 {
 0, 61, 100, 132, 158, 183, 201, 218,
 233, 242, 253, 255, 250, 240, 224, 211

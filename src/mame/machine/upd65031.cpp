@@ -22,11 +22,12 @@
 *********************************************************************/
 
 
+#include "emu.h"
 #include "upd65031.h"
 
 
 // device type definition
-const device_type UPD65031 = &device_creator<upd65031_device>;
+DEFINE_DEVICE_TYPE(UPD65031, upd65031_device, "upd65031", "NEC uPD65031")
 
 
 //**************************************************************************
@@ -195,12 +196,14 @@ inline void upd65031_device::set_mode(int mode)
 //  upd65031_device - constructor
 //-------------------------------------------------
 
-upd65031_device::upd65031_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: device_t(mconfig, UPD65031, "NEC uPD65031", tag, owner, clock, "upd65031", __FILE__),
+upd65031_device::upd65031_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock) :
+	device_t(mconfig, UPD65031, tag, owner, clock),
 	m_read_kb(*this),
 	m_write_int(*this),
 	m_write_nmi(*this),
-	m_write_spkr(*this)
+	m_write_spkr(*this),
+	m_screen_update_cb(*this),
+	m_out_mem_cb(*this)
 {
 }
 
@@ -218,8 +221,8 @@ void upd65031_device::device_start()
 	m_write_spkr.resolve_safe();
 
 	// bind delegates
-	m_screen_update_cb.bind_relative_to(*owner());
-	m_out_mem_cb.bind_relative_to(*owner());
+	m_screen_update_cb.resolve();
+	m_out_mem_cb.resolve();
 
 	// allocate timers
 	m_rtc_timer = timer_alloc(TIMER_RTC);
@@ -386,7 +389,7 @@ void upd65031_device::device_timer(emu_timer &timer, device_timer_id id, int par
 //  screen_update
 //-------------------------------------------------
 
-UINT32 upd65031_device::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t upd65031_device::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	if (!m_screen_update_cb.isnull() && (m_com & COM_LCDON))
 		m_screen_update_cb(bitmap, m_lcd_regs[4], m_lcd_regs[2], m_lcd_regs[3], m_lcd_regs[0], m_lcd_regs[1], m_flash);
@@ -400,9 +403,9 @@ UINT32 upd65031_device::screen_update(screen_device &screen, bitmap_ind16 &bitma
 //  read -
 //-------------------------------------------------
 
-READ8_MEMBER( upd65031_device::read )
+uint8_t upd65031_device::read(offs_t offset)
 {
-	UINT8 port = offset & 0xff;
+	uint8_t port = offset & 0xff;
 
 	switch (port)
 	{
@@ -419,7 +422,7 @@ READ8_MEMBER( upd65031_device::read )
 				if (LOG) logerror("uPD65031 '%s': entering snooze!\n", tag());
 			}
 
-			UINT8 data = m_read_kb(offset>>8);
+			uint8_t data = m_read_kb(offset>>8);
 
 			if (LOG) logerror("uPD65031 '%s': key r %02x: %02x\n", tag(), offset>>8, data);
 
@@ -466,9 +469,9 @@ READ8_MEMBER( upd65031_device::read )
 //  write -
 //-------------------------------------------------
 
-WRITE8_MEMBER( upd65031_device::write )
+void upd65031_device::write(offs_t offset, uint8_t data)
 {
-	UINT8 port = offset & 0xff;
+	uint8_t port = offset & 0xff;
 
 	switch (port)
 	{

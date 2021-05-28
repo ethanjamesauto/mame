@@ -12,20 +12,15 @@
 /***************************************************************************
 Sound handlers
 ***************************************************************************/
-WRITE8_MEMBER(bsktball_state::bsktball_bounce_w)
+void bsktball_state::bsktball_bounce_w(uint8_t data)
 {
-	m_discrete->write(space, BSKTBALL_CROWD_DATA, data & 0x0f);  // Crowd
-	m_discrete->write(space, BSKTBALL_BOUNCE_EN, data & 0x10);   // Bounce
+	m_discrete->write(BSKTBALL_CROWD_DATA, data & 0x0f);  // Crowd
+	m_discrete->write(BSKTBALL_BOUNCE_EN, data & 0x10);   // Bounce
 }
 
-WRITE8_MEMBER(bsktball_state::bsktball_note_w)
+void bsktball_state::bsktball_note_w(uint8_t data)
 {
-	m_discrete->write(space, BSKTBALL_NOTE_DATA, data);  // Note
-}
-
-WRITE8_MEMBER(bsktball_state::bsktball_noise_reset_w)
-{
-	m_discrete->write(space, BSKTBALL_NOISE_EN, offset & 0x01);
+	m_discrete->write(BSKTBALL_NOTE_DATA, data);  // Note
 }
 
 
@@ -91,7 +86,7 @@ static const discrete_mixer_desc bsktball_mixer =
 #define BSKTBALL_NOTE_SND       NODE_12
 #define BSKTBALL_CROWD_SND      NODE_13
 
-DISCRETE_SOUND_START(bsktball)
+DISCRETE_SOUND_START(bsktball_discrete)
 	/************************************************/
 	/* Input register mapping for bsktball          */
 	/************************************************/

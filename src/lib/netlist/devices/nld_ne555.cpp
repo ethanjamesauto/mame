@@ -1,129 +1,163 @@
-// license:GPL-2.0+
+// license:BSD-3-Clause
 // copyright-holders:Couriersud
-/*
- * nld_NE555.c
- *
- */
 
-#include <solver/nld_solver.h>
-#include "nld_ne555.h"
-#include "nl_setup.h"
+
+#include "analog/nlid_twoterm.h"
+#include "solver/nld_solver.h"
+
+#include "plib/pmath.h"
 
 #define R_OFF (1E20)
-#define R_ON (25)   // Datasheet states a maximum discharge of 200mA, R = 5V / 0.2
+#define R_ON  (1)
 
-NETLIB_NAMESPACE_DEVICES_START()
+namespace netlist::devices {
 
-inline nl_double NETLIB_NAME(NE555)::clamp(const nl_double v, const nl_double a, const nl_double b)
-{
-	nl_double ret = v;
-	nl_double vcc = TERMANALOG(m_R1.m_P);
-
-	if (ret >  vcc - a)
-		ret = vcc - a;
-	if (ret < b)
-		ret = b;
-	return ret;
-}
-
-NETLIB_START(NE555)
-{
-	register_sub("R1", m_R1);
-	register_sub("R2", m_R2);
-	register_sub("R3", m_R3);
-	register_sub("RDIS", m_RDIS);
-
-	register_subalias("GND",  m_R3.m_N);    // Pin 1
-	register_input("TRIG",    m_TRIG);      // Pin 2
-	register_output("OUT",    m_OUT);       // Pin 3
-	register_input("RESET",   m_RESET);     // Pin 4
-	register_subalias("CONT", m_R1.m_N);    // Pin 5
-	register_input("THRESH",  m_THRES);     // Pin 6
-	register_subalias("DISCH", m_RDIS.m_P); // Pin 7
-	register_subalias("VCC",  m_R1.m_P);    // Pin 8
-
-	connect_late(m_R1.m_N, m_R2.m_P);
-	connect_late(m_R2.m_N, m_R3.m_P);
-	connect_late(m_RDIS.m_N, m_R3.m_N);
-
-	save(NLNAME(m_last_out));
-	save(NLNAME(m_ff));
-}
-
-NETLIB_RESET(NE555)
-{
-	m_R1.do_reset();
-	m_R2.do_reset();
-	m_R3.do_reset();
-	m_RDIS.do_reset();
-
-	m_R1.set_R(5000);
-	m_R2.set_R(5000);
-	m_R3.set_R(5000);
-	m_RDIS.set_R(R_OFF);
-
-	m_last_out = true;
-}
-
-NETLIB_UPDATE(NE555)
-{
-	// FIXME: assumes GND is connected to 0V.
-
-	nl_double vt = clamp(TERMANALOG(m_R2.m_P), 0.7, 1.4);
-	bool bthresh = (INPANALOG(m_THRES) > vt);
-	bool btrig = (INPANALOG(m_TRIG) > clamp(TERMANALOG(m_R2.m_N), 0.7, 1.4));
-
-	if (!btrig)
+	NETLIB_OBJECT(NE555)
 	{
-		m_ff = true;
-	}
-	else if (bthresh)
-	{
-		m_ff = false;
-	}
+		NETLIB_CONSTRUCTOR(NE555)
+		, m_R1(*this, "R1")
+		, m_R2(*this, "R2")
+		, m_R3(*this, "R3")
+		, m_ROUT(*this, "ROUT")
+		, m_RDIS(*this, "RDIS")
+		, m_RESET(*this, "RESET", NETLIB_DELEGATE(inputs))     // Pin 4
+		, m_THRES(*this, "THRESH", NETLIB_DELEGATE(inputs))    // Pin 6
+		, m_TRIG(*this, "TRIG", NETLIB_DELEGATE(inputs))       // Pin 2
+		, m_OUT(*this, "_OUT")        // to Pin 3 via ROUT
+		, m_last_out(*this, "m_last_out", false)
+		, m_ff(*this, "m_ff", false)
+		, m_last_reset(*this, "m_last_reset", false)
+		, m_overshoot(*this, "m_overshoot", 0.0)
+		, m_undershoot(*this, "m_undershoot", 0.0)
+		, m_ovlimit(0.0)
+		{
+			register_subalias("GND",  "R3.2");    // Pin 1
+			register_subalias("CONT", "R1.2");    // Pin 5
+			register_subalias("DISCH", "RDIS.1"); // Pin 7
+			register_subalias("VCC",  "R1.1");    // Pin 8
+			register_subalias("OUT",  "ROUT.1");  // Pin 3
 
-	bool out = (!INPLOGIC(m_RESET) ? false : m_ff);
+			connect("R1.2", "R2.1");
+			connect("R2.2", "R3.1");
+			connect("RDIS.2", "R3.2");
+			connect("_OUT", "ROUT.2");
+		}
 
-	if (m_last_out && !out)
-	{
-		m_RDIS.update_dev();
-		OUTANALOG(m_OUT, TERMANALOG(m_R3.m_N));
-		m_RDIS.set_R(R_ON);
-	}
-	else if (!m_last_out && out)
-	{
-		m_RDIS.update_dev();
-		// FIXME: Should be delayed by 100ns
-		OUTANALOG(m_OUT, TERMANALOG(m_R1.m_P));
-		m_RDIS.set_R(R_OFF);
-	}
-	m_last_out = out;
-}
+		NETLIB_RESETI()
+		{
+			/* FIXME make resistances a parameter, properly model other variants */
+			m_R1.set_R(nlconst::magic(5000));
+			m_R2.set_R(nlconst::magic(5000));
+			m_R3.set_R(nlconst::magic(5000));
+			m_ROUT.set_R(nlconst::magic(20));
+			m_RDIS.set_R(nlconst::magic(R_OFF));
 
+			m_last_out = true;
+			// Check for astable setup, usually TRIG AND THRES connected. Enable
+			// overshoot compensation in this case.
+			if (m_TRIG.net() == m_THRES.net())
+				m_ovlimit = nlconst::magic(0.5);
+		}
 
-NETLIB_START(NE555_dip)
-{
-	NETLIB_NAME(NE555)::start();
+	private:
+		NETLIB_HANDLERI(inputs)
+		{
+			// FIXME: assumes GND is connected to 0V.
 
-	register_subalias("1",  m_R3.m_N);      // Pin 1
-	register_subalias("2",    m_TRIG);      // Pin 2
-	register_subalias("3",    m_OUT);       // Pin 3
-	register_subalias("4",   m_RESET);      // Pin 4
-	register_subalias("5", m_R1.m_N);       // Pin 5
-	register_subalias("6",  m_THRES);       // Pin 6
-	register_subalias("7", m_RDIS.m_P);     // Pin 7
-	register_subalias("8",  m_R1.m_P);      // Pin 8
+			const auto reset = m_RESET();
 
-}
+			const nl_fptype vthresh = clamp_hl(m_R2.P()(), nlconst::magic(0.7), nlconst::magic(1.4));
+			const nl_fptype vtrig = clamp_hl(m_R2.N()(), nlconst::magic(0.7), nlconst::magic(1.4));
 
-NETLIB_UPDATE(NE555_dip)
-{
-	NETLIB_NAME(NE555)::update();
-}
+			// avoid artificial oscillation due to overshoot compensation when
+			// the control input is used.
+			const auto ovlimit = std::min(m_ovlimit, std::max(0.0, (vthresh - vtrig) / 3.0));
 
-NETLIB_RESET(NE555_dip)
-{
-	NETLIB_NAME(NE555)::reset();
-}
+			if (!reset && m_last_reset)
+			{
+				m_ff = false;
+			}
+			else
+			{
+#if (NL_USE_BACKWARD_EULER)
+				const bool bthresh = (m_THRES() + m_overshoot > vthresh);
+				const bool btrig = (m_TRIG() - m_overshoot > vtrig);
+#else
+				const bool bthresh = (m_THRES() + m_overshoot > vthresh);
+				const bool btrig = (m_TRIG() - m_undershoot > vtrig);
+#endif
+				if (!btrig)
+					m_ff = true;
+				else if (bthresh)
+				{
+					m_ff = false;
+				}
+			}
 
-NETLIB_NAMESPACE_DEVICES_END()
+			const bool out = (!reset ? false : m_ff);
+
+			if (m_last_out && !out)
+			{
+#if (NL_USE_BACKWARD_EULER)
+				m_overshoot += ((m_THRES() - vthresh)) * 2.0;
+#else
+				m_overshoot += ((m_THRES() - vthresh));
+#endif
+				m_overshoot = plib::clamp(m_overshoot(), nlconst::zero(), ovlimit);
+				//if (this->name() == "IC6_2")
+				//  printf("%f %s %f %f %f\n", exec().time().as_double(), this->name().c_str(), m_overshoot(), m_R2.P()(), m_THRES());
+				m_RDIS.change_state([this]()
+					{
+						m_RDIS.set_R(nlconst::magic(R_ON));
+					});
+				m_OUT.push(m_R3.N()());
+			}
+			else if (!m_last_out && out)
+			{
+#if (NL_USE_BACKWARD_EULER)
+				m_overshoot += (vtrig - m_TRIG()) * 2.0;
+				m_overshoot = plib::clamp(m_overshoot(), nlconst::zero(), ovlimit);
+#else
+				m_undershoot += (vtrig - m_TRIG());
+				m_undershoot = plib::clamp(m_undershoot(), nlconst::zero(), ovlimit);
+#endif
+				m_RDIS.change_state([this]()
+					{
+						m_RDIS.set_R(nlconst::magic(R_OFF));
+					});
+				// FIXME: Should be delayed by 100ns
+				m_OUT.push(m_R1.P()());
+			}
+			m_last_reset = reset;
+			m_last_out = out;
+		}
+		analog::NETLIB_SUB(R_base) m_R1;
+		analog::NETLIB_SUB(R_base) m_R2;
+		analog::NETLIB_SUB(R_base) m_R3;
+		analog::NETLIB_SUB(R_base) m_ROUT;
+		analog::NETLIB_SUB(R_base) m_RDIS;
+
+		logic_input_t m_RESET;
+		analog_input_t m_THRES;
+		analog_input_t m_TRIG;
+		analog_output_t m_OUT;
+
+		state_var<bool> m_last_out;
+		state_var<bool> m_ff;
+		state_var<bool> m_last_reset;
+		state_var<nl_fptype> m_overshoot;
+		state_var<nl_fptype> m_undershoot;
+		nl_fptype m_ovlimit;
+
+		nl_fptype clamp_hl(const nl_fptype v, const nl_fptype a, const nl_fptype b) noexcept
+		{
+			const nl_fptype vcc = m_R1.P()();
+			return plib::clamp(v, b, vcc - a);
+		}
+	};
+
+	NETLIB_DEVICE_IMPL(NE555,     "NE555", "")
+
+	NETLIB_DEVICE_IMPL_ALIAS(MC1455P, NE555,     "MC1455P", "")
+
+} // namespace netlist::devices

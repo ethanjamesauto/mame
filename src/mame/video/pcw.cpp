@@ -2,7 +2,7 @@
 // copyright-holders:Kevin Thacker
 /***************************************************************************
 
-  pcw.c
+  pcw.cpp
 
   Functions to emulate the video hardware of the Amstrad PCW.
 
@@ -12,9 +12,20 @@
 #include "includes/pcw.h"
 #include "machine/ram.h"
 
-inline void pcw_state::pcw_plot_pixel(bitmap_ind16 &bitmap, int x, int y, UINT32 color)
+#define LOG_PALETTE  (1U <<  1) // LOGs what palette is choosen
+#define LOG_VOFF     (1U <<  2) // LOGs when video is OFF
+
+//#define VERBOSE (LOG_PALETTE)
+//#define LOG_OUTPUT_FUNC printf
+
+#include "logmacro.h"
+
+#define LOGPALETTE(...) LOGMASKED(LOG_PALETTE, __VA_ARGS__)
+#define LOGVOFF(...)    LOGMASKED(LOG_VOFF,    __VA_ARGS__)
+
+inline void pcw_state::pcw_plot_pixel(bitmap_ind16 &bitmap, int x, int y, uint32_t color)
 {
-	bitmap.pix16(y, x) = (UINT16)color;
+	bitmap.pix(y, x) = (uint16_t)color;
 }
 
 /***************************************************************************
@@ -27,28 +38,48 @@ void pcw_state::video_start()
 
 	m_prn_output = std::make_unique<bitmap_ind16>(PCW_PRINTER_WIDTH,PCW_PRINTER_HEIGHT);
 	m_prn_output->fill(1, rect);
+
+	m_roller_ram_addr = 0;
 }
 
-#if 0
-/* two colours */
-static const unsigned short pcw_colour_table[PCW_NUM_COLOURS] =
-{
-	0, 1
-};
-#endif
-
-/* black/white */
-static const rgb_t pcw_palette[PCW_NUM_COLOURS] =
+/* black/white printer */
+static const rgb_t pcw_printer_palette[PCW_NUM_COLOURS] =
 {
 	rgb_t(0x000, 0x000, 0x000),
 	rgb_t(0x0ff, 0x0ff, 0x0ff)
 };
 
+/* black/white */
+static const rgb_t pcw_9xxx_palette[PCW_NUM_COLOURS] =
+{
+	rgb_t(0x000, 0x000, 0x000),
+	rgb_t(0x0ff, 0x0ff, 0x0ff)
+};
+
+/* black/green */
+static const rgb_t pcw_8xxx_palette[PCW_NUM_COLOURS] =
+{
+	rgb_t(0x000, 0x000, 0x000),
+	rgb_t(0x04a, 0x0ff, 0x000)
+};
 
 /* Initialise the palette */
-PALETTE_INIT_MEMBER(pcw_state, pcw)
+void pcw_state::set_8xxx_palette(palette_device &palette) const
 {
-	palette.set_pen_colors(0, pcw_palette, ARRAY_LENGTH(pcw_palette));
+	LOGPALETTE("Choosing green on white palette for CRT\n");
+	palette.set_pen_colors(0, pcw_8xxx_palette);
+}
+
+void pcw_state::set_9xxx_palette(palette_device &palette) const
+{
+	LOGPALETTE("Choosing black on white palette for CRT\n");
+	palette.set_pen_colors(0, pcw_9xxx_palette);
+}
+
+void pcw_state::set_printer_palette(palette_device &palette) const
+{
+	LOGPALETTE("Choosing black on white palette for printer\n");
+	palette.set_pen_colors(0, pcw_printer_palette);
 }
 
 /***************************************************************************
@@ -56,7 +87,7 @@ PALETTE_INIT_MEMBER(pcw_state, pcw)
   Do NOT call osd_update_display() from this function,
   it will be called by the main emulation engine.
 ***************************************************************************/
-UINT32 pcw_state::screen_update_pcw(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t pcw_state::screen_update_pcw(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	int x,y,b;
 	unsigned short roller_ram_offs;
@@ -94,12 +125,17 @@ UINT32 pcw_state::screen_update_pcw(screen_device &screen, bitmap_ind16 &bitmap,
 			unsigned short line_data;
 			unsigned char *line_ptr;
 
+			// The PCWs are reportedly slowed 15% by the video circuits inserting WAIT states while accessing the vram
+			// steal clock cycles from the CPU: (4.000.000 * 0.15) / 50Hz / 256 scanlines == ~47 (46.88)
+			m_maincpu->adjust_icount(-47);
+
 			x = PCW_BORDER_WIDTH;
 
 			roller_ram_ptr = m_ram->pointer() + m_roller_ram_addr + roller_ram_offs;
 
 			/* get line address */
-			/* b16-14 control which bank the line is to be found in, b13-3 the address in the bank (in 16-byte units), and b2-0 the offset. Thus a roller RAM address bbbxxxxxxxxxxxyyy indicates bank bbb, address 00xxxxxxxxxxx0yyy. */
+			/* b16-14 control which bank the line is to be found in, b13-3 the address in the bank (in 16-byte units),
+			   and b2-0 the offset. Thus a roller RAM address bbbxxxxxxxxxxxyyy indicates bank bbb, address 00xxxxxxxxxxx0yyy. */
 			line_data = ((unsigned char *)roller_ram_ptr)[0] | (((unsigned char *)roller_ram_ptr)[1]<<8);
 
 			/* calculate address of pixel data */
@@ -162,26 +198,27 @@ UINT32 pcw_state::screen_update_pcw(screen_device &screen, bitmap_ind16 &bitmap,
 	}
 	else
 	{
+		LOGVOFF("Video not enabled\n");
 		/* not video - render whole lot in pen 0 */
 		rectangle rect(0, PCW_SCREEN_WIDTH, 0, PCW_SCREEN_HEIGHT);
-		bitmap.fill(pen0, rect);
+		bitmap.fill(pen1, rect);
 	}
 	return 0;
 }
 
-UINT32 pcw_state::screen_update_pcw_printer(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t pcw_state::screen_update_pcw_printer(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	// printer output
-	INT32 feed;
+	int32_t feed;
 	rectangle rect(0, PCW_PRINTER_WIDTH - 1, 0, PCW_PRINTER_HEIGHT - 1);
 	feed = -(m_paper_feed / 2);
 	copyscrollbitmap(bitmap,*m_prn_output,0,nullptr,1,&feed,rect);
-	bitmap.pix16(PCW_PRINTER_HEIGHT-1, m_printer_headpos) = 0;
-	bitmap.pix16(PCW_PRINTER_HEIGHT-2, m_printer_headpos) = 0;
-	bitmap.pix16(PCW_PRINTER_HEIGHT-3, m_printer_headpos) = 0;
-	bitmap.pix16(PCW_PRINTER_HEIGHT-1, m_printer_headpos-1) = 0;
-	bitmap.pix16(PCW_PRINTER_HEIGHT-2, m_printer_headpos-1) = 0;
-	bitmap.pix16(PCW_PRINTER_HEIGHT-1, m_printer_headpos+1) = 0;
-	bitmap.pix16(PCW_PRINTER_HEIGHT-2, m_printer_headpos+1) = 0;
+	bitmap.pix(PCW_PRINTER_HEIGHT-1, m_printer_headpos) = 0;
+	bitmap.pix(PCW_PRINTER_HEIGHT-2, m_printer_headpos) = 0;
+	bitmap.pix(PCW_PRINTER_HEIGHT-3, m_printer_headpos) = 0;
+	bitmap.pix(PCW_PRINTER_HEIGHT-1, m_printer_headpos-1) = 0;
+	bitmap.pix(PCW_PRINTER_HEIGHT-2, m_printer_headpos-1) = 0;
+	bitmap.pix(PCW_PRINTER_HEIGHT-1, m_printer_headpos+1) = 0;
+	bitmap.pix(PCW_PRINTER_HEIGHT-2, m_printer_headpos+1) = 0;
 	return 0;
 }

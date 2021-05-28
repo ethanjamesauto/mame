@@ -6,7 +6,10 @@
 
 *********************************************************************/
 
+#include "emu.h"
 #include "v1050kb.h"
+
+#include "speaker.h"
 
 
 
@@ -23,7 +26,7 @@
 //  DEVICE DEFINITIONS
 //**************************************************************************
 
-const device_type V1050_KEYBOARD = &device_creator<v1050_keyboard_device>;
+DEFINE_DEVICE_TYPE(V1050_KEYBOARD, v1050_keyboard_device, "v1050kb", "Visual 1050 Keyboard")
 
 
 //-------------------------------------------------
@@ -41,24 +44,14 @@ ROM_END
 //  rom_region - device-specific ROM region
 //-------------------------------------------------
 
-const rom_entry *v1050_keyboard_device::device_rom_region() const
+const tiny_rom_entry *v1050_keyboard_device::device_rom_region() const
 {
 	return ROM_NAME( v1050_keyboard );
 }
 
 
 //-------------------------------------------------
-//  ADDRESS_MAP( kb_io )
-//-------------------------------------------------
-
-static ADDRESS_MAP_START( v1050_keyboard_io, AS_IO, 8, v1050_keyboard_device )
-	AM_RANGE(MCS48_PORT_P1, MCS48_PORT_P1) AM_READWRITE(kb_p1_r, kb_p1_w)
-	AM_RANGE(MCS48_PORT_P2, MCS48_PORT_P2) AM_WRITE(kb_p2_w)
-ADDRESS_MAP_END
-
-
-//-------------------------------------------------
-//  DISCRETE_SOUND_START( v1050kb )
+//  DISCRETE_SOUND_START( v1050kb_discrete )
 //-------------------------------------------------
 
 static const discrete_555_desc v1050_ne555 =
@@ -68,7 +61,7 @@ static const discrete_555_desc v1050_ne555 =
 	DEFAULT_555_VALUES
 };
 
-static DISCRETE_SOUND_START( v1050kb )
+static DISCRETE_SOUND_START( v1050kb_discrete )
 	DISCRETE_INPUT_LOGIC(NODE_01)
 	DISCRETE_555_ASTABLE(NODE_02, NODE_01, (int) RES_K(68) /* can't read on schematic */ , (int) RES_K(3), (int) CAP_N(10), &v1050_ne555)
 	DISCRETE_OUTPUT(NODE_02, 5000)
@@ -76,30 +69,20 @@ DISCRETE_SOUND_END
 
 
 //-------------------------------------------------
-//  MACHINE_DRIVER( v1050_keyboard )
+//  device_add_mconfig - add device configuration
 //-------------------------------------------------
 
-static MACHINE_CONFIG_FRAGMENT( v1050_keyboard )
-	MCFG_CPU_ADD(I8049_TAG, I8049, XTAL_4_608MHz)
-	MCFG_CPU_IO_MAP(v1050_keyboard_io)
-	MCFG_DEVICE_DISABLE() // TODO
+void v1050_keyboard_device::device_add_mconfig(machine_config &config)
+{
+	I8049(config, m_maincpu, XTAL(4'608'000));
+	m_maincpu->p1_in_cb().set(FUNC(v1050_keyboard_device::kb_p1_r));
+	m_maincpu->p1_out_cb().set(FUNC(v1050_keyboard_device::kb_p1_w));
+	m_maincpu->p2_out_cb().set(FUNC(v1050_keyboard_device::kb_p2_w));
+	m_maincpu->set_disable(); // TODO
 
 	// discrete sound
-	MCFG_SPEAKER_STANDARD_MONO("mono")
-	MCFG_SOUND_ADD(DISCRETE_TAG, DISCRETE, 0)
-	MCFG_DISCRETE_INTF(v1050kb)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.80)
-MACHINE_CONFIG_END
-
-
-//-------------------------------------------------
-//  machine_config_additions - device-specific
-//  machine configurations
-//-------------------------------------------------
-
-machine_config_constructor v1050_keyboard_device::device_mconfig_additions() const
-{
-	return MACHINE_CONFIG_NAME( v1050_keyboard );
+	SPEAKER(config, "mono").front_center();
+	DISCRETE(config, m_discrete, v1050kb_discrete).add_route(ALL_OUTPUTS, "mono", 0.80);
 }
 
 
@@ -125,7 +108,7 @@ INPUT_PORTS_START( v1050_keyboard )
 	PORT_BIT( 0x08, IP_ACTIVE_LOW, IPT_UNUSED )
 	PORT_BIT( 0x10, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_NAME("Keypad - DelLn") PORT_CODE(KEYCODE_MINUS_PAD) PORT_CHAR(UCHAR_MAMEKEY(MINUS_PAD))
 	PORT_BIT( 0x20, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_NAME("Keypad 9 End") PORT_CODE(KEYCODE_9_PAD) PORT_CHAR(UCHAR_MAMEKEY(9_PAD))
-	PORT_BIT( 0x40, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_NAME("Keypad , DelWd")
+	PORT_BIT( 0x40, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_NAME("Keypad , DelWd") PORT_CODE(KEYCODE_PLUS_PAD) PORT_CHAR(UCHAR_MAMEKEY(COMMA_PAD))
 	PORT_BIT( 0x80, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_NAME("Keypad . Wd\xE2\x86\x92") PORT_CODE(KEYCODE_DEL_PAD) PORT_CHAR(UCHAR_MAMEKEY(DEL_PAD))
 
 	PORT_START("Y2")
@@ -208,7 +191,7 @@ INPUT_PORTS_START( v1050_keyboard )
 	PORT_BIT( 0x40, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_Q) PORT_CHAR('q') PORT_CHAR('Q')
 	PORT_BIT( 0x80, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_5) PORT_CHAR('5') PORT_CHAR('%')
 
-	PORT_START("YA")
+	PORT_START("Y10")
 	PORT_BIT( 0x01, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_TILDE) PORT_CHAR('~') PORT_CHAR('\'')
 	PORT_BIT( 0x02, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_9) PORT_CHAR('0') PORT_CHAR(')')
 	PORT_BIT( 0x04, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_0) PORT_CHAR('9') PORT_CHAR('(')
@@ -218,7 +201,7 @@ INPUT_PORTS_START( v1050_keyboard )
 	PORT_BIT( 0x40, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_8) PORT_CHAR('8') PORT_CHAR('*')
 	PORT_BIT( 0x80, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_7) PORT_CHAR('7') PORT_CHAR('&')
 
-	PORT_START("YB")
+	PORT_START("Y11")
 	PORT_BIT( 0x01, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_COMMA) PORT_CHAR(',') PORT_CHAR('<')
 	PORT_BIT( 0x02, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_COLON) PORT_CHAR(';') PORT_CHAR(':')
 	PORT_BIT( 0x04, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_QUOTE) PORT_CHAR('\'') PORT_CHAR('"')
@@ -301,24 +284,14 @@ ioport_constructor v1050_keyboard_device::device_input_ports() const
 //  v1050_keyboard_device - constructor
 //-------------------------------------------------
 
-v1050_keyboard_device::v1050_keyboard_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: device_t(mconfig, V1050_KEYBOARD, "Visual 1050 Keyboard", tag, owner, clock, "v1050kb", __FILE__),
-		m_maincpu(*this, I8049_TAG),
-		m_discrete(*this, DISCRETE_TAG),
-		m_y0(*this, "Y0"),
-		m_y1(*this, "Y1"),
-		m_y2(*this, "Y2"),
-		m_y3(*this, "Y3"),
-		m_y4(*this, "Y4"),
-		m_y5(*this, "Y5"),
-		m_y6(*this, "Y6"),
-		m_y7(*this, "Y7"),
-		m_y8(*this, "Y8"),
-		m_y9(*this, "Y9"),
-		m_ya(*this, "YA"),
-		m_yb(*this, "YB"),
-		m_out_tx_handler(*this),
-		m_y(0)
+v1050_keyboard_device::v1050_keyboard_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock) :
+	device_t(mconfig, V1050_KEYBOARD, tag, owner, clock),
+	m_maincpu(*this, I8049_TAG),
+	m_discrete(*this, DISCRETE_TAG),
+	m_y(*this, "Y%u", 0),
+	m_out_tx_handler(*this),
+	m_led(*this, "led0"),
+	m_keylatch(0)
 {
 }
 
@@ -329,8 +302,9 @@ v1050_keyboard_device::v1050_keyboard_device(const machine_config &mconfig, cons
 
 void v1050_keyboard_device::device_start()
 {
+	m_led.resolve();
 	// state saving
-	save_item(NAME(m_y));
+	save_item(NAME(m_keylatch));
 }
 
 
@@ -359,24 +333,13 @@ WRITE_LINE_MEMBER( v1050_keyboard_device::si_w )
 //  kb_p1_r -
 //-------------------------------------------------
 
-READ8_MEMBER( v1050_keyboard_device::kb_p1_r )
+uint8_t v1050_keyboard_device::kb_p1_r()
 {
-	UINT8 data = 0xff;
+	uint8_t data = 0xff;
 
-	switch (m_y)
+	if (m_keylatch < 12)
 	{
-		case 0: data &= m_y0->read(); break;
-		case 1: data &= m_y1->read(); break;
-		case 2: data &= m_y2->read(); break;
-		case 3: data &= m_y3->read(); break;
-		case 4: data &= m_y4->read(); break;
-		case 5: data &= m_y5->read(); break;
-		case 6: data &= m_y6->read(); break;
-		case 7: data &= m_y7->read(); break;
-		case 8: data &= m_y8->read(); break;
-		case 9: data &= m_y9->read(); break;
-		case 0xa: data &= m_ya->read(); break;
-		case 0xb: data &= m_yb->read(); break;
+		data &= m_y[m_keylatch]->read();
 	}
 
 	return data;
@@ -387,9 +350,9 @@ READ8_MEMBER( v1050_keyboard_device::kb_p1_r )
 //  kb_p1_w -
 //-------------------------------------------------
 
-WRITE8_MEMBER( v1050_keyboard_device::kb_p1_w )
+void v1050_keyboard_device::kb_p1_w(uint8_t data)
 {
-	m_y = data & 0x0f;
+	m_keylatch = data & 0x0f;
 }
 
 
@@ -397,7 +360,7 @@ WRITE8_MEMBER( v1050_keyboard_device::kb_p1_w )
 //  kb_p2_w -
 //-------------------------------------------------
 
-WRITE8_MEMBER( v1050_keyboard_device::kb_p2_w )
+void v1050_keyboard_device::kb_p2_w(uint8_t data)
 {
 	/*
 
@@ -415,10 +378,10 @@ WRITE8_MEMBER( v1050_keyboard_device::kb_p2_w )
 	*/
 
 	// led output
-	output_set_led_value(0, BIT(data, 5));
+	m_led = BIT(data, 5);
 
 	// speaker output
-	m_discrete->write(space, NODE_01, BIT(data, 6));
+	m_discrete->write(NODE_01, BIT(data, 6));
 
 	// serial output
 	m_out_tx_handler(BIT(data, 7));

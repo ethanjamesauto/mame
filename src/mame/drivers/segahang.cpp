@@ -17,13 +17,14 @@
 
 #include "emu.h"
 #include "includes/segahang.h"
-#include "machine/segaic16.h"
+#include "includes/segaipt.h"
+
 #include "machine/fd1089.h"
 #include "machine/fd1094.h"
-#include "sound/2203intf.h"
-#include "sound/2151intf.h"
 #include "sound/segapcm.h"
-#include "includes/segaipt.h"
+#include "sound/ymopm.h"
+#include "sound/ymopn.h"
+#include "speaker.h"
 
 
 
@@ -31,9 +32,9 @@
 //  CONSTANTS
 //**************************************************************************
 
-const UINT32 MASTER_CLOCK_25MHz = 25174800;
-const UINT32 MASTER_CLOCK_10MHz = 10000000;
-const UINT32 MASTER_CLOCK_8MHz = 8000000;
+const uint32_t MASTER_CLOCK_25MHz = 25174800;
+const uint32_t MASTER_CLOCK_10MHz = 10000000;
+const uint32_t MASTER_CLOCK_8MHz = 8000000;
 
 //**************************************************************************
 //  PPI READ/WRITE CALLBACKS
@@ -44,13 +45,14 @@ const UINT32 MASTER_CLOCK_8MHz = 8000000;
 //  display enable, lamps, and coin counters
 //-------------------------------------------------
 
-WRITE8_MEMBER( segahang_state::video_lamps_w )
+void segahang_state::video_lamps_w(uint8_t data)
 {
 	//
 	//  Main PPI port B
 	//
 	//  D7 : FLIPC (1= flip screen, 0= normal orientation)
 	//  D6 : SHADE0 (1= highlight, 0= shadow)
+	//  D5 : Z80 /RESET
 	//  D4 : /KILL (1= screen on, 0= screen off)
 	//  D3 : LAMP2
 	//  D2 : LAMP1
@@ -65,16 +67,19 @@ WRITE8_MEMBER( segahang_state::video_lamps_w )
 	// bit 6: shadow/highlight control
 	m_shadow = ~data & 0x40;
 
+	// bit 5: Z80 RESET line
+	m_soundcpu->set_input_line(INPUT_LINE_RESET, (data & 0x20) ? CLEAR_LINE : ASSERT_LINE);
+
 	// bit 4: enable display
 	m_segaic16vid->set_display_enable(data & 0x10);
 
 	// bits 2 & 3: control the lamps
-	set_led_status(machine(), 1, data & 0x08);
-	set_led_status(machine(), 0, data & 0x04);
+	m_lamps[1] = BIT(data, 3);
+	m_lamps[0] = BIT(data, 2);
 
 	// bits 0 & 1: update coin counters
-	coin_counter_w(machine(), 1, data & 0x02);
-	coin_counter_w(machine(), 0, data & 0x01);
+	machine().bookkeeping().coin_counter_w(1, data & 0x02);
+	machine().bookkeeping().coin_counter_w(0, data & 0x01);
 }
 
 
@@ -83,7 +88,7 @@ WRITE8_MEMBER( segahang_state::video_lamps_w )
 //  tilemap control and global sound mute
 //-------------------------------------------------
 
-WRITE8_MEMBER( segahang_state::tilemap_sound_w )
+void segahang_state::tilemap_sound_w(uint8_t data)
 {
 	//
 	//  Main PPI port C
@@ -106,7 +111,7 @@ WRITE8_MEMBER( segahang_state::tilemap_sound_w )
 	m_segaic16vid->tilemap_set_rowscroll(0, ~data & 0x02);
 
 	// bit 0: sound mute
-	machine().sound().system_enable(data & 0x01);
+	machine().sound().system_mute(!BIT(data, 0));
 }
 
 
@@ -115,7 +120,7 @@ WRITE8_MEMBER( segahang_state::tilemap_sound_w )
 //  selects
 //-------------------------------------------------
 
-WRITE8_MEMBER( segahang_state::sub_control_adc_w )
+void segahang_state::sub_control_adc_w(uint8_t data)
 {
 	//
 	//  Sub PPI port A
@@ -140,7 +145,7 @@ WRITE8_MEMBER( segahang_state::sub_control_adc_w )
 //  adc_status_r - get ADC status
 //-------------------------------------------------
 
-READ8_MEMBER( segahang_state::adc_status_r )
+uint8_t segahang_state::adc_status_r()
 {
 	//
 	// D7 = 0 (left open)
@@ -148,7 +153,7 @@ READ8_MEMBER( segahang_state::adc_status_r )
 	// D5 = 0 (left open)
 	// D4 = 0 (left open)
 	//
-	return 0x00;
+	return m_adc->intr_r() << 6;
 }
 
 
@@ -158,123 +163,48 @@ READ8_MEMBER( segahang_state::adc_status_r )
 //**************************************************************************
 
 //-------------------------------------------------
-//  hangon_io_r - I/O handler for Hang-On boards
+//  hangon_inputs_r - input port selector for
+//  Hang-On boards
 //-------------------------------------------------
 
-READ16_MEMBER( segahang_state::hangon_io_r )
+uint8_t segahang_state::hangon_inputs_r(offs_t offset)
 {
-	switch (offset & 0x3020/2)
-	{
-		case 0x0000/2: // PPI @ 4B
-			return m_i8255_1->read(space, offset & 3);
-
-		case 0x1000/2: // Input ports and DIP switches
-		{
-			static const char *const sysports[] = { "SERVICE", "COINAGE", "DSW", "UNKNOWN" };
-			return ioport(sysports[offset & 3])->read();
-		}
-
-		case 0x3000/2: // PPI @ 4C
-			return m_i8255_2->read(space, offset & 3);
-
-		case 0x3020/2: // ADC0804 data output
-		{
-			static const char *const adcports[] = { "ADC0", "ADC1", "ADC2", "ADC3" };
-			return read_safe(ioport(adcports[m_adc_select]), 0);
-		}
-	}
-
-	//logerror("%06X:hangon_io_r - unknown read access to address %04X\n", m_maincpu->pc(), offset * 2);
-	return open_bus_r(space, 0, mem_mask);
+	static const char *const sysports[] = { "SERVICE", "COINAGE", "DSW", "UNKNOWN" };
+	return ioport(sysports[offset & 3])->read();
 }
 
 
 //-------------------------------------------------
-//  hangon_io_w - I/O handler for Hang-On boards
+//  sharrier_inputs_r - input port selector for
+//  Space Harrier boards
 //-------------------------------------------------
 
-WRITE16_MEMBER( segahang_state::hangon_io_w )
+uint8_t segahang_state::sharrier_inputs_r(offs_t offset)
 {
-	if (ACCESSING_BITS_0_7)
-		switch (offset & 0x3020/2)
-		{
-			case 0x0000/2: // PPI @ 4B
-				// the port C handshaking signals control the Z80 NMI,
-				// so we have to sync whenever we access this PPI
-				synchronize(TID_PPI_WRITE, ((offset & 3) << 8) | (data & 0xff));
-				return;
-
-			case 0x3000/2: // PPI @ 4C
-				m_i8255_2->write(space, offset & 3, data & 0xff);
-				return;
-
-			case 0x3020/2: // ADC0804
-				return;
-		}
-
-	//logerror("%06X:hangon_io_w - unknown write access to address %04X = %04X & %04X\n", m_maincpu->pc(), offset * 2, data, mem_mask);
+	static const char *const sysports[] = { "SERVICE", "UNKNOWN", "COINAGE", "DSW" };
+	return ioport(sysports[offset & 3])->read();
 }
 
 
 //-------------------------------------------------
-//  sharrier_io_r - I/O handler for Space Harrier
-//  boards
+//  sync_ppi_w - helper for writes to the PPI @ 4B
 //-------------------------------------------------
 
-READ16_MEMBER( segahang_state::sharrier_io_r )
+void segahang_state::sync_ppi_w(offs_t offset, uint8_t data)
 {
-	switch (offset & 0x0030/2)
-	{
-		case 0x0000/2:
-			return m_i8255_1->read(space, offset & 3);
-
-		case 0x0010/2: // Input ports and DIP switches
-		{
-			static const char *const sysports[] = { "SERVICE", "UNKNOWN", "COINAGE", "DSW" };
-			return ioport(sysports[offset & 3])->read();
-		}
-
-		case 0x0020/2: // PPI @ 4C
-			if (offset == 2) return 0;
-			return m_i8255_2->read(space, offset & 3);
-
-		case 0x0030/2: // ADC0804 data output
-		{
-			static const char *const adcports[] = { "ADC0", "ADC1", "ADC2", "ADC3" };
-			return read_safe(ioport(adcports[m_adc_select]), 0);
-		}
-	}
-
-	//logerror("%06X:sharrier_io_r - unknown read access to address %04X\n", m_maincpu->pc(), offset * 2);
-	return open_bus_r(space, 0, mem_mask);
+	// the port C handshaking signals control the Z80 NMI,
+	// so we have to sync whenever we access this PPI
+	synchronize(TID_PPI_WRITE, ((offset & 3) << 8) | data);
 }
 
 
 //-------------------------------------------------
-//  sharrier_io_w - I/O handler for Space Harrier
-//  boards
+//  analog_r - read multiplexed analog ports
 //-------------------------------------------------
 
-WRITE16_MEMBER( segahang_state::sharrier_io_w )
+uint8_t segahang_state::analog_r()
 {
-	if (ACCESSING_BITS_0_7)
-		switch (offset & 0x0030/2)
-		{
-			case 0x0000/2:
-				// the port C handshaking signals control the Z80 NMI,
-				// so we have to sync whenever we access this PPI
-				synchronize(TID_PPI_WRITE, ((offset & 3) << 8) | (data & 0xff));
-				return;
-
-			case 0x0020/2: // PPI @ 4C
-				m_i8255_2->write(space, offset & 3, data & 0xff);
-				return;
-
-			case 0x0030/2: // ADC0804
-				return;
-		}
-
-	//logerror("%06X:sharrier_io_w - unknown write access to address %04X = %04X & %04X\n", m_maincpu->pc(), offset * 2, data, mem_mask);
+	return m_adc_ports[m_adc_select].read_safe(0);
 }
 
 
@@ -302,23 +232,12 @@ TIMER_DEVICE_CALLBACK_MEMBER(segahang_state::hangon_irq)
 //  sound_data_r - read data from the sound latch
 //-------------------------------------------------
 
-READ8_MEMBER( segahang_state::sound_data_r )
+uint8_t segahang_state::sound_data_r()
 {
 	// assert ACK
 	m_i8255_1->pc6_w(CLEAR_LINE);
-	return soundlatch_read();
+	return m_soundlatch->read();
 }
-
-
-//-------------------------------------------------
-//  sound_irq - signal an IRQ to the sound CPU
-//-------------------------------------------------
-
-WRITE_LINE_MEMBER( segahang_state::sound_irq )
-{
-	m_soundcpu->set_input_line(0, state ? ASSERT_LINE : CLEAR_LINE);
-}
-
 
 
 //**************************************************************************
@@ -378,7 +297,7 @@ void segahang_state::device_timer(emu_timer &timer, device_timer_id id, int para
 
 		// synchronize writes to the 8255 PPI
 		case TID_PPI_WRITE:
-			m_i8255_1->write(m_maincpu->space(AS_PROGRAM), param >> 8, param & 0xff);
+			m_i8255_1->write(param >> 8, param & 0xff);
 			break;
 	}
 }
@@ -399,11 +318,11 @@ void segahang_state::sharrier_i8751_sim()
 	// signal a VBLANK to the main CPU
 	m_maincpu->set_input_line(4, HOLD_LINE);
 
-	// clear add lifes protection flag
-	m_workram[0x0f0/2] = 0;
+	// disable timer-based protection
+	m_workram[0x090/2] = 1;
 
 	// read I/O ports
-	m_workram[0x492/2] = (ioport("ADC0")->read() << 8) | ioport("ADC1")->read();
+	m_workram[0x492/2] = (m_adc_ports[0]->read() << 8) | m_adc_ports[1]->read();
 }
 
 
@@ -412,37 +331,46 @@ void segahang_state::sharrier_i8751_sim()
 //  MAIN CPU ADDRESS MAPS
 //**************************************************************************
 
-static ADDRESS_MAP_START( hangon_map, AS_PROGRAM, 16, segahang_state )
-	ADDRESS_MAP_UNMAP_HIGH
-	AM_RANGE(0x000000, 0x03ffff) AM_ROM
-	AM_RANGE(0x20c000, 0x20ffff) AM_RAM AM_SHARE("workram")
-	AM_RANGE(0x400000, 0x403fff) AM_DEVREADWRITE("segaic16vid", segaic16_video_device, tileram_r, tileram_w) AM_SHARE("tileram")
-	AM_RANGE(0x410000, 0x410fff) AM_DEVREADWRITE("segaic16vid", segaic16_video_device, textram_r, textram_w) AM_SHARE("textram")
-	AM_RANGE(0x600000, 0x6007ff) AM_RAM AM_SHARE("sprites")
-	AM_RANGE(0xa00000, 0xa00fff) AM_RAM_WRITE(paletteram_w) AM_SHARE("paletteram")
-	AM_RANGE(0xc00000, 0xc3ffff) AM_ROM AM_REGION("subcpu", 0)
-	AM_RANGE(0xc68000, 0xc68fff) AM_RAM AM_SHARE("roadram")
-	AM_RANGE(0xc7c000, 0xc7ffff) AM_RAM AM_SHARE("subram")
-	AM_RANGE(0xe00000, 0xffffff) AM_READWRITE(hangon_io_r, hangon_io_w)
-ADDRESS_MAP_END
+void segahang_state::hangon_map(address_map &map)
+{
+	map.unmap_value_high();
+	map(0x000000, 0x03ffff).rom();
+	map(0x20c000, 0x20ffff).ram().share("workram");
+	map(0x400000, 0x403fff).rw(m_segaic16vid, FUNC(segaic16_video_device::tileram_r), FUNC(segaic16_video_device::tileram_w)).share("tileram");
+	map(0x410000, 0x410fff).rw(m_segaic16vid, FUNC(segaic16_video_device::textram_r), FUNC(segaic16_video_device::textram_w)).share("textram");
+	map(0x600000, 0x6007ff).ram().share("sprites");
+	map(0xa00000, 0xa00fff).ram().w(FUNC(segahang_state::hangon_paletteram_w)).share("paletteram");
+	map(0xc00000, 0xc3ffff).rom().region("subcpu", 0);
+	map(0xc68000, 0xc68fff).ram().share("segaic16road:roadram");
+	map(0xc7c000, 0xc7ffff).ram().share("subram");
+	map(0xe00000, 0xe00007).mirror(0x1fcfd8).r(m_i8255_1, FUNC(i8255_device::read)).w(FUNC(segahang_state::sync_ppi_w)).umask16(0x00ff);
+	map(0xe01000, 0xe01007).mirror(0x1fcfd8).r(FUNC(segahang_state::hangon_inputs_r)).umask16(0x00ff);
+	map(0xe03000, 0xe03007).mirror(0x1fcfd8).rw(m_i8255_2, FUNC(i8255_device::read), FUNC(i8255_device::write)).umask16(0x00ff);
+	map(0xe03021, 0xe03021).mirror(0x1fcfde).rw(m_adc, FUNC(adc0804_device::read), FUNC(adc0804_device::write));
+}
 
-static ADDRESS_MAP_START( decrypted_opcodes_map, AS_DECRYPTED_OPCODES, 16, segahang_state )
-	ADDRESS_MAP_UNMAP_HIGH
-	AM_RANGE(0x000000, 0x03ffff) AM_ROM AM_SHARE("decrypted_opcodes")
-ADDRESS_MAP_END
+void segahang_state::decrypted_opcodes_map(address_map &map)
+{
+	map.unmap_value_high();
+	map(0x000000, 0x03ffff).rom().share("decrypted_opcodes");
+}
 
-static ADDRESS_MAP_START( sharrier_map, AS_PROGRAM, 16, segahang_state )
-	ADDRESS_MAP_UNMAP_HIGH
-	AM_RANGE(0x000000, 0x03ffff) AM_ROM
-	AM_RANGE(0x040000, 0x043fff) AM_RAM AM_SHARE("workram")
-	AM_RANGE(0x100000, 0x107fff) AM_DEVREADWRITE("segaic16vid", segaic16_video_device, tileram_r, tileram_w) AM_SHARE("tileram")
-	AM_RANGE(0x108000, 0x108fff) AM_DEVREADWRITE("segaic16vid", segaic16_video_device, textram_r, textram_w) AM_SHARE("textram")
-	AM_RANGE(0x110000, 0x110fff) AM_RAM_WRITE(paletteram_w) AM_SHARE("paletteram")
-	AM_RANGE(0x124000, 0x127fff) AM_RAM AM_SHARE("subram")
-	AM_RANGE(0x130000, 0x130fff) AM_RAM AM_SHARE("sprites")
-	AM_RANGE(0x140000, 0x14ffff) AM_READWRITE(sharrier_io_r, sharrier_io_w)
-	AM_RANGE(0xc68000, 0xc68fff) AM_RAM AM_SHARE("roadram")
-ADDRESS_MAP_END
+void segahang_state::sharrier_map(address_map &map)
+{
+	map.unmap_value_high();
+	map(0x000000, 0x03ffff).rom();
+	map(0x040000, 0x043fff).ram().share("workram");
+	map(0x100000, 0x107fff).rw(m_segaic16vid, FUNC(segaic16_video_device::tileram_r), FUNC(segaic16_video_device::tileram_w)).share("tileram");
+	map(0x108000, 0x108fff).rw(m_segaic16vid, FUNC(segaic16_video_device::textram_r), FUNC(segaic16_video_device::textram_w)).share("textram");
+	map(0x110000, 0x110fff).ram().w(FUNC(segahang_state::paletteram_w)).share("paletteram");
+	map(0x124000, 0x127fff).ram().share("subram");
+	map(0x130000, 0x130fff).ram().share("sprites");
+	map(0x140000, 0x140007).mirror(0xffc8).r(m_i8255_1, FUNC(i8255_device::read)).w(FUNC(segahang_state::sync_ppi_w)).umask16(0x00ff);
+	map(0x140010, 0x140017).mirror(0xffc8).r(FUNC(segahang_state::sharrier_inputs_r)).umask16(0x00ff);
+	map(0x140020, 0x140027).mirror(0xffc8).rw(m_i8255_2, FUNC(i8255_device::read), FUNC(i8255_device::write)).umask16(0x00ff);
+	map(0x140031, 0x140031).mirror(0xffce).rw(m_adc, FUNC(adc0804_device::read), FUNC(adc0804_device::write));
+	map(0xc68000, 0xc68fff).ram().share("segaic16road:roadram");
+}
 
 
 
@@ -451,57 +379,64 @@ ADDRESS_MAP_END
 //**************************************************************************
 
 	// On Super Hang On there is a memory mapper, like the System16 one, todo: emulate it!
-static ADDRESS_MAP_START( sub_map, AS_PROGRAM, 16, segahang_state )
-	ADDRESS_MAP_UNMAP_HIGH
-	ADDRESS_MAP_GLOBAL_MASK(0x7ffff)
-	AM_RANGE(0x000000, 0x03ffff) AM_ROM
-	AM_RANGE(0x068000, 0x068fff) AM_RAM AM_SHARE("roadram")
-	AM_RANGE(0x07c000, 0x07ffff) AM_RAM AM_SHARE("subram")
-ADDRESS_MAP_END
+void segahang_state::sub_map(address_map &map)
+{
+	map.unmap_value_high();
+	map.global_mask(0x7ffff);
+	map(0x000000, 0x03ffff).rom();
+	map(0x068000, 0x068fff).ram().share("segaic16road:roadram");
+	map(0x07c000, 0x07ffff).ram().share("subram");
+}
 
-static ADDRESS_MAP_START( fd1094_decrypted_opcodes_map, AS_DECRYPTED_OPCODES, 16, segahang_state )
-	AM_RANGE(0x00000, 0xfffff) AM_ROMBANK("fd1094_decrypted_opcodes")
-ADDRESS_MAP_END
+void segahang_state::fd1094_decrypted_opcodes_map(address_map &map)
+{
+	map(0x00000, 0xfffff).bankr("fd1094_decrypted_opcodes");
+}
 
 //**************************************************************************
 //  SOUND CPU ADDRESS MAPS
 //**************************************************************************
 
-static ADDRESS_MAP_START( sound_map_2203, AS_PROGRAM, 8, segahang_state )
-	ADDRESS_MAP_UNMAP_HIGH
-	AM_RANGE(0x0000, 0x7fff) AM_ROM
-	AM_RANGE(0xc000, 0xc7ff) AM_MIRROR(0x0800) AM_RAM
-	AM_RANGE(0xd000, 0xd001) AM_MIRROR(0x0ffe) AM_DEVREADWRITE("ymsnd", ym2203_device, read, write)
-	AM_RANGE(0xe000, 0xe0ff) AM_MIRROR(0x0f00) AM_DEVREADWRITE("pcm", segapcm_device, sega_pcm_r, sega_pcm_w)
-ADDRESS_MAP_END
+void segahang_state::sound_map_2203(address_map &map)
+{
+	map.unmap_value_high();
+	map(0x0000, 0x7fff).rom();
+	map(0xc000, 0xc7ff).mirror(0x0800).ram();
+	map(0xd000, 0xd001).mirror(0x0ffe).rw("ymsnd", FUNC(ym2203_device::read), FUNC(ym2203_device::write));
+	map(0xe000, 0xe0ff).mirror(0x0f00).rw("pcm", FUNC(segapcm_device::read), FUNC(segapcm_device::write));
+}
 
-static ADDRESS_MAP_START( sound_portmap_2203, AS_IO, 8, segahang_state )
-	ADDRESS_MAP_UNMAP_HIGH
-	ADDRESS_MAP_GLOBAL_MASK(0xff)
-	AM_RANGE(0x40, 0x40) AM_MIRROR(0x3f) AM_READ(sound_data_r)
-ADDRESS_MAP_END
+void segahang_state::sound_portmap_2203(address_map &map)
+{
+	map.unmap_value_high();
+	map.global_mask(0xff);
+	map(0x40, 0x40).mirror(0x3f).r(FUNC(segahang_state::sound_data_r));
+}
 
-static ADDRESS_MAP_START( sound_map_2151, AS_PROGRAM, 8, segahang_state )
-	ADDRESS_MAP_UNMAP_HIGH
-	AM_RANGE(0x0000, 0x7fff) AM_ROM
-	AM_RANGE(0xf000, 0xf0ff) AM_MIRROR(0x700) AM_DEVREADWRITE("pcm", segapcm_device, sega_pcm_r, sega_pcm_w)
-	AM_RANGE(0xf800, 0xffff) AM_RAM
-ADDRESS_MAP_END
+void segahang_state::sound_map_2151(address_map &map)
+{
+	map.unmap_value_high();
+	map(0x0000, 0x7fff).rom();
+	map(0xf000, 0xf0ff).mirror(0x700).rw("pcm", FUNC(segapcm_device::read), FUNC(segapcm_device::write));
+	map(0xf800, 0xffff).ram();
+}
 
-static ADDRESS_MAP_START( sound_portmap_2151, AS_IO, 8, segahang_state )
-	ADDRESS_MAP_UNMAP_HIGH
-	ADDRESS_MAP_GLOBAL_MASK(0xff)
-	AM_RANGE(0x00, 0x01) AM_MIRROR(0x3e) AM_DEVREADWRITE("ymsnd", ym2151_device, read, write)
-	AM_RANGE(0x40, 0x40) AM_MIRROR(0x3f) AM_READ(sound_data_r)
-ADDRESS_MAP_END
+void segahang_state::sound_portmap_2151(address_map &map)
+{
+	map.unmap_value_high();
+	map.global_mask(0xff);
+	map(0x00, 0x01).mirror(0x3e).rw("ymsnd", FUNC(ym2151_device::read), FUNC(ym2151_device::write));
+	map(0x40, 0x40).mirror(0x3f).r(FUNC(segahang_state::sound_data_r));
+}
 
-static ADDRESS_MAP_START( sound_portmap_2203x2, AS_IO, 8, segahang_state )
-	ADDRESS_MAP_UNMAP_HIGH
-	ADDRESS_MAP_GLOBAL_MASK(0xff)
-	AM_RANGE(0x00, 0x01) AM_MIRROR(0x3e) AM_DEVREADWRITE("ym1", ym2203_device, read, write)
-	AM_RANGE(0x40, 0x40) AM_MIRROR(0x3f) AM_READ(sound_data_r)
-	AM_RANGE(0xc0, 0xc1) AM_MIRROR(0x3e) AM_DEVREADWRITE("ym2", ym2203_device, read, write)
-ADDRESS_MAP_END
+void segahang_state::sound_portmap_2203x2(address_map &map)
+{
+	map.unmap_value_high();
+	map.global_mask(0xff);
+	map(0x00, 0x01).mirror(0x3e).rw("ym1", FUNC(ym2203_device::read), FUNC(ym2203_device::write));
+	map(0x40, 0x40).mirror(0x3f).r(FUNC(segahang_state::sound_data_r));
+	map(0xc0, 0xc1).mirror(0x3e).rw("ym2", FUNC(ym2203_device::read), FUNC(ym2203_device::write));
+}
 
 
 
@@ -509,8 +444,9 @@ ADDRESS_MAP_END
 //  I8751 MCU ADDRESS MAPS
 //**************************************************************************
 
-static ADDRESS_MAP_START( mcu_io_map, AS_IO, 8, segahang_state )
-ADDRESS_MAP_END
+void segahang_state::mcu_io_map(address_map &map)
+{
+}
 
 
 
@@ -752,7 +688,7 @@ INPUT_PORTS_END
 //  GRAPHICS DECODING
 //**************************************************************************
 
-static GFXDECODE_START( segahang )
+static GFXDECODE_START( gfx_segahang )
 	GFXDECODE_ENTRY( "gfx1", 0, gfx_8x8x3_planar, 0, 1024 )
 GFXDECODE_END
 
@@ -762,239 +698,256 @@ GFXDECODE_END
 //  GENERIC MACHINE DRIVERS
 //**************************************************************************
 
-static MACHINE_CONFIG_START( shared_base, segahang_state )
-
+void segahang_state::shared_base(machine_config &config)
+{
 	// basic machine hardware
-	MCFG_CPU_ADD("maincpu", M68000, MASTER_CLOCK_25MHz/4)
-	MCFG_CPU_PROGRAM_MAP(hangon_map)
-	MCFG_DEVICE_VBLANK_INT_DRIVER("screen", segahang_state, irq4_line_hold)
+	M68000(config, m_maincpu, MASTER_CLOCK_25MHz/4);
+	m_maincpu->set_addrmap(AS_PROGRAM, &segahang_state::hangon_map);
+	m_maincpu->set_vblank_int("screen", FUNC(segahang_state::irq4_line_hold));
 
-	MCFG_CPU_ADD("subcpu", M68000, MASTER_CLOCK_25MHz/4)
-	MCFG_CPU_PROGRAM_MAP(sub_map)
+	M68000(config, m_subcpu, MASTER_CLOCK_25MHz/4);
+	m_subcpu->set_addrmap(AS_PROGRAM, &segahang_state::sub_map);
 
-	MCFG_QUANTUM_TIME(attotime::from_hz(6000))
+	config.set_maximum_quantum(attotime::from_hz(6000));
 
-	MCFG_DEVICE_ADD("i8255_1", I8255, 0)
-	MCFG_I8255_OUT_PORTA_CB(WRITE8(driver_device, soundlatch_byte_w))
-	MCFG_I8255_OUT_PORTB_CB(WRITE8(segahang_state, video_lamps_w))
-	MCFG_I8255_OUT_PORTC_CB(WRITE8(segahang_state, tilemap_sound_w))
+	I8255(config, m_i8255_1);
+	m_i8255_1->out_pa_callback().set("soundlatch", FUNC(generic_latch_8_device::write));
+	m_i8255_1->out_pb_callback().set(FUNC(segahang_state::video_lamps_w));
+	m_i8255_1->out_pc_callback().set(FUNC(segahang_state::tilemap_sound_w));
 
-	MCFG_DEVICE_ADD("i8255_2", I8255, 0)
-	MCFG_I8255_OUT_PORTA_CB(WRITE8(segahang_state, sub_control_adc_w))
-	MCFG_I8255_IN_PORTC_CB(READ8(segahang_state, adc_status_r))
+	I8255(config, m_i8255_2);
+	m_i8255_2->out_pa_callback().set(FUNC(segahang_state::sub_control_adc_w));
+	m_i8255_2->in_pc_callback().set(FUNC(segahang_state::adc_status_r));
 
-	MCFG_SEGAIC16VID_ADD("segaic16vid")
-	MCFG_SEGAIC16VID_GFXDECODE("gfxdecode")
-	MCFG_SEGAIC16_ROAD_ADD("segaic16road")
+	ADC0804(config, m_adc, MASTER_CLOCK_25MHz/4/6);
+	m_adc->vin_callback().set(FUNC(segahang_state::analog_r));
+
+	SEGAIC16VID(config, m_segaic16vid, 0, "gfxdecode");
+	SEGAIC16_ROAD(config, m_segaic16road, 0);
 
 	// video hardware
-	MCFG_GFXDECODE_ADD("gfxdecode", "palette", segahang)
-	MCFG_PALETTE_ADD("palette", 2048*3)
+	GFXDECODE(config, "gfxdecode", m_palette, gfx_segahang);
+	PALETTE(config, m_palette).set_entries(2048*3);
 
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_RAW_PARAMS(MASTER_CLOCK_25MHz/4, 400, 0, 320, 262, 0, 224)
-	MCFG_SCREEN_UPDATE_DRIVER(segahang_state, screen_update)
-	MCFG_SCREEN_PALETTE("palette")
-MACHINE_CONFIG_END
+	SCREEN(config, m_screen, SCREEN_TYPE_RASTER);
+	m_screen->set_raw(MASTER_CLOCK_25MHz/4, 400, 0, 320, 262, 0, 224);
+	m_screen->set_screen_update(FUNC(segahang_state::screen_update));
+	m_screen->set_palette(m_palette);
 
+	GENERIC_LATCH_8(config, m_soundlatch);
+}
 
-static MACHINE_CONFIG_DERIVED( hangon_base, shared_base )
+void segahang_state::hangon_base(machine_config &config)
+{
+	shared_base(config);
 	// video hardware
-	MCFG_SEGA_HANGON_SPRITES_ADD("sprites")
-MACHINE_CONFIG_END
+	SEGA_HANGON_SPRITES(config, m_sprites, 0);
+}
 
-
-static MACHINE_CONFIG_DERIVED( sharrier_base, shared_base )
+void segahang_state::sharrier_base(machine_config &config)
+{
+	shared_base(config);
 
 	// basic machine hardware
-	MCFG_CPU_MODIFY("maincpu")
-	MCFG_CPU_CLOCK(MASTER_CLOCK_10MHz)
-	MCFG_CPU_PROGRAM_MAP(sharrier_map)
+	m_maincpu->set_clock(MASTER_CLOCK_10MHz);
+	m_maincpu->set_addrmap(AS_PROGRAM, &segahang_state::sharrier_map);
 
-	MCFG_CPU_MODIFY("subcpu")
-	MCFG_CPU_CLOCK(MASTER_CLOCK_10MHz)
+	m_subcpu->set_clock(MASTER_CLOCK_10MHz);
 
 	// video hardware
-	MCFG_SEGA_SHARRIER_SPRITES_ADD("sprites")
-MACHINE_CONFIG_END
+	SEGA_SHARRIER_SPRITES(config, m_sprites, 0);
+	m_palette->set_entries(2048*2);
+}
 
-
-static MACHINE_CONFIG_DERIVED( enduror_base, sharrier_base )
-
-	// basic machine hardware
-	MCFG_CPU_REPLACE("maincpu", FD1089B, MASTER_CLOCK_10MHz)
-	MCFG_CPU_PROGRAM_MAP(sharrier_map)
-	MCFG_DEVICE_VBLANK_INT_DRIVER("screen", segahang_state, irq4_line_hold)
-MACHINE_CONFIG_END
-
-static MACHINE_CONFIG_DERIVED( endurord_base, sharrier_base )
+void segahang_state::enduror_base(machine_config &config)
+{
+	sharrier_base(config);
 
 	// basic machine hardware
-	MCFG_CPU_REPLACE("maincpu", M68000, MASTER_CLOCK_10MHz)
-	MCFG_CPU_PROGRAM_MAP(sharrier_map)
-	MCFG_DEVICE_VBLANK_INT_DRIVER("screen", segahang_state, irq4_line_hold)
-MACHINE_CONFIG_END
+	FD1089B(config.replace(), m_maincpu, MASTER_CLOCK_10MHz);
+	m_maincpu->set_addrmap(AS_PROGRAM, &segahang_state::sharrier_map);
+	m_maincpu->set_vblank_int("screen", FUNC(segahang_state::irq4_line_hold));
+}
 
-static MACHINE_CONFIG_FRAGMENT( sound_board_2203 )
+void segahang_state::endurord_base(machine_config &config)
+{
+	sharrier_base(config);
 
 	// basic machine hardware
-	MCFG_CPU_ADD("soundcpu", Z80, MASTER_CLOCK_8MHz/2)
-	MCFG_CPU_PROGRAM_MAP(sound_map_2203)
-	MCFG_CPU_IO_MAP(sound_portmap_2203)
+	M68000(config.replace(), m_maincpu, MASTER_CLOCK_10MHz);
+	m_maincpu->set_addrmap(AS_PROGRAM, &segahang_state::sharrier_map);
+	m_maincpu->set_vblank_int("screen", FUNC(segahang_state::irq4_line_hold));
+}
+
+void segahang_state::sound_board_2203(machine_config &config)
+{
+	// basic machine hardware
+	Z80(config, m_soundcpu, MASTER_CLOCK_8MHz/2);
+	m_soundcpu->set_addrmap(AS_PROGRAM, &segahang_state::sound_map_2203);
+	m_soundcpu->set_addrmap(AS_IO, &segahang_state::sound_portmap_2203);
 
 	// sound hardware
-	MCFG_SPEAKER_STANDARD_STEREO("lspeaker", "rspeaker")
+	SPEAKER(config, "lspeaker").front_left();
+	SPEAKER(config, "rspeaker").front_right();
 
-	MCFG_SOUND_ADD("ymsnd", YM2203, MASTER_CLOCK_8MHz/2)
-	MCFG_YM2203_IRQ_HANDLER(WRITELINE(segahang_state, sound_irq))
-	MCFG_SOUND_ROUTE(0, "lspeaker",  0.13)
-	MCFG_SOUND_ROUTE(0, "rspeaker", 0.13)
-	MCFG_SOUND_ROUTE(1, "lspeaker",  0.13)
-	MCFG_SOUND_ROUTE(1, "rspeaker", 0.13)
-	MCFG_SOUND_ROUTE(2, "lspeaker",  0.13)
-	MCFG_SOUND_ROUTE(2, "rspeaker", 0.13)
-	MCFG_SOUND_ROUTE(3, "lspeaker",  0.37)
-	MCFG_SOUND_ROUTE(3, "rspeaker", 0.37)
+	ym2203_device &ymsnd(YM2203(config, "ymsnd", MASTER_CLOCK_8MHz/2));
+	ymsnd.irq_handler().set_inputline("soundcpu", 0);
+	ymsnd.add_route(0, "lspeaker",  0.13);
+	ymsnd.add_route(0, "rspeaker", 0.13);
+	ymsnd.add_route(1, "lspeaker",  0.13);
+	ymsnd.add_route(1, "rspeaker", 0.13);
+	ymsnd.add_route(2, "lspeaker",  0.13);
+	ymsnd.add_route(2, "rspeaker", 0.13);
+	ymsnd.add_route(3, "lspeaker",  0.37);
+	ymsnd.add_route(3, "rspeaker", 0.37);
 
-	MCFG_SEGAPCM_ADD("pcm", MASTER_CLOCK_8MHz)
-	MCFG_SEGAPCM_BANK(BANK_512)
-	MCFG_SOUND_ROUTE(0, "lspeaker", 1.0)
-	MCFG_SOUND_ROUTE(1, "rspeaker", 1.0)
-MACHINE_CONFIG_END
+	segapcm_device &pcm(SEGAPCM(config, "pcm", MASTER_CLOCK_8MHz));
+	pcm.set_bank(segapcm_device::BANK_512);
+	pcm.add_route(0, "lspeaker", 1.0);
+	pcm.add_route(1, "rspeaker", 1.0);
+}
 
-
-static MACHINE_CONFIG_FRAGMENT( sound_board_2203x2 )
-
+void segahang_state::sound_board_2203x2(machine_config &config)
+{
 	// basic machine hardware
-	MCFG_CPU_ADD("soundcpu", Z80, MASTER_CLOCK_8MHz/2)
-	MCFG_CPU_PROGRAM_MAP(sound_map_2151)
-	MCFG_CPU_IO_MAP(sound_portmap_2203x2)
+	Z80(config, m_soundcpu, MASTER_CLOCK_8MHz/2);
+	m_soundcpu->set_addrmap(AS_PROGRAM, &segahang_state::sound_map_2151);
+	m_soundcpu->set_addrmap(AS_IO, &segahang_state::sound_portmap_2203x2);
 
 	// sound hardware
-	MCFG_SPEAKER_STANDARD_STEREO("lspeaker", "rspeaker")
+	SPEAKER(config, "lspeaker").front_left();
+	SPEAKER(config, "rspeaker").front_right();
 
-	MCFG_SOUND_ADD("ym1", YM2203, MASTER_CLOCK_8MHz/2)
-	MCFG_YM2203_IRQ_HANDLER(WRITELINE(segahang_state, sound_irq))
-	MCFG_SOUND_ROUTE(0, "lspeaker",  0.13)
-	MCFG_SOUND_ROUTE(0, "rspeaker", 0.13)
-	MCFG_SOUND_ROUTE(1, "lspeaker",  0.13)
-	MCFG_SOUND_ROUTE(1, "rspeaker", 0.13)
-	MCFG_SOUND_ROUTE(2, "lspeaker",  0.13)
-	MCFG_SOUND_ROUTE(2, "rspeaker", 0.13)
-	MCFG_SOUND_ROUTE(3, "lspeaker",  0.37)
-	MCFG_SOUND_ROUTE(3, "rspeaker", 0.37)
+	ym2203_device &ym1(YM2203(config, "ym1", MASTER_CLOCK_8MHz/2));
+	ym1.irq_handler().set_inputline("soundcpu", 0);
+	ym1.add_route(0, "lspeaker",  0.13);
+	ym1.add_route(0, "rspeaker", 0.13);
+	ym1.add_route(1, "lspeaker",  0.13);
+	ym1.add_route(1, "rspeaker", 0.13);
+	ym1.add_route(2, "lspeaker",  0.13);
+	ym1.add_route(2, "rspeaker", 0.13);
+	ym1.add_route(3, "lspeaker",  0.37);
+	ym1.add_route(3, "rspeaker", 0.37);
 
-	MCFG_SOUND_ADD("ym2", YM2203, MASTER_CLOCK_8MHz/2)
-	MCFG_SOUND_ROUTE(0, "lspeaker",  0.13)
-	MCFG_SOUND_ROUTE(0, "rspeaker", 0.13)
-	MCFG_SOUND_ROUTE(1, "lspeaker",  0.13)
-	MCFG_SOUND_ROUTE(1, "rspeaker", 0.13)
-	MCFG_SOUND_ROUTE(2, "lspeaker",  0.13)
-	MCFG_SOUND_ROUTE(2, "rspeaker", 0.13)
-	MCFG_SOUND_ROUTE(3, "lspeaker",  0.37)
-	MCFG_SOUND_ROUTE(3, "rspeaker", 0.37)
+	ym2203_device &ym2(YM2203(config, "ym2", MASTER_CLOCK_8MHz/2));
+	ym2.add_route(0, "lspeaker",  0.13);
+	ym2.add_route(0, "rspeaker", 0.13);
+	ym2.add_route(1, "lspeaker",  0.13);
+	ym2.add_route(1, "rspeaker", 0.13);
+	ym2.add_route(2, "lspeaker",  0.13);
+	ym2.add_route(2, "rspeaker", 0.13);
+	ym2.add_route(3, "lspeaker",  0.37);
+	ym2.add_route(3, "rspeaker", 0.37);
 
-	MCFG_SEGAPCM_ADD("pcm", MASTER_CLOCK_8MHz/2)
-	MCFG_SEGAPCM_BANK(BANK_512)
-	MCFG_SOUND_ROUTE(0, "lspeaker", 1.0)
-	MCFG_SOUND_ROUTE(1, "rspeaker", 1.0)
-MACHINE_CONFIG_END
+	segapcm_device &pcm(SEGAPCM(config, "pcm", MASTER_CLOCK_8MHz/2));
+	pcm.set_bank(segapcm_device::BANK_512);
+	pcm.add_route(0, "lspeaker", 1.0);
+	pcm.add_route(1, "rspeaker", 1.0);
+}
 
-
-static MACHINE_CONFIG_FRAGMENT( sound_board_2151 )
-
+void segahang_state::sound_board_2151(machine_config &config)
+{
 	// basic machine hardware
-	MCFG_CPU_ADD("soundcpu", Z80, MASTER_CLOCK_8MHz/2)
-	MCFG_CPU_PROGRAM_MAP(sound_map_2151)
-	MCFG_CPU_IO_MAP(sound_portmap_2151)
+	Z80(config, m_soundcpu, MASTER_CLOCK_8MHz/2);
+	m_soundcpu->set_addrmap(AS_PROGRAM, &segahang_state::sound_map_2151);
+	m_soundcpu->set_addrmap(AS_IO, &segahang_state::sound_portmap_2151);
 
 	// sound hardware
-	MCFG_SPEAKER_STANDARD_STEREO("lspeaker", "rspeaker")
+	SPEAKER(config, "lspeaker").front_left();
+	SPEAKER(config, "rspeaker").front_right();
 
-	MCFG_YM2151_ADD("ymsnd", MASTER_CLOCK_8MHz/2)
-	MCFG_YM2151_IRQ_HANDLER(INPUTLINE("soundcpu", 0))
-	MCFG_SOUND_ROUTE(0, "lspeaker", 0.43)
-	MCFG_SOUND_ROUTE(1, "rspeaker", 0.43)
+	ym2151_device &ymsnd(YM2151(config, "ymsnd", MASTER_CLOCK_8MHz/2));
+	ymsnd.irq_handler().set_inputline(m_soundcpu, 0);
+	ymsnd.add_route(0, "lspeaker", 0.43);
+	ymsnd.add_route(1, "rspeaker", 0.43);
 
-	MCFG_SEGAPCM_ADD("pcm", MASTER_CLOCK_8MHz/2)
-	MCFG_SEGAPCM_BANK(BANK_512)
-	MCFG_SOUND_ROUTE(0, "lspeaker", 1.0)
-	MCFG_SOUND_ROUTE(1, "rspeaker", 1.0)
-MACHINE_CONFIG_END
-
+	segapcm_device &pcm(SEGAPCM(config, "pcm", MASTER_CLOCK_8MHz/2));
+	pcm.set_bank(segapcm_device::BANK_512);
+	pcm.add_route(0, "lspeaker", 1.0);
+	pcm.add_route(1, "rspeaker", 1.0);
+}
 
 
 //**************************************************************************
 //  SPECIFIC MACHINE DRIVERS
 //**************************************************************************
 
-static MACHINE_CONFIG_DERIVED( hangon, hangon_base )
-	MCFG_FRAGMENT_ADD(sound_board_2203)
-MACHINE_CONFIG_END
+void segahang_state::hangon(machine_config &config)
+{
+	hangon_base(config);
+	sound_board_2203(config);
+}
 
-
-static MACHINE_CONFIG_DERIVED( shangupb, hangon_base )
-	MCFG_FRAGMENT_ADD(sound_board_2151)
+void segahang_state::shangupb(machine_config &config)
+{
+	hangon_base(config);
+	sound_board_2151(config);
 
 	// not sure about these speeds, but at 6MHz, the road is not updated fast enough
-	MCFG_CPU_MODIFY("maincpu")
-	MCFG_CPU_CLOCK(10000000)
-	MCFG_CPU_MODIFY("subcpu")
-	MCFG_CPU_CLOCK(10000000)
-MACHINE_CONFIG_END
+	m_maincpu->set_clock(10000000);
+	m_subcpu->set_clock(10000000);
+}
 
+void segahang_state::shangonro(machine_config &config)
+{
+	shangupb(config);
+	FD1094(config.replace(), m_subcpu, 10000000);
+	m_subcpu->set_addrmap(AS_PROGRAM, &segahang_state::sub_map);
+	m_subcpu->set_addrmap(AS_OPCODES, &segahang_state::fd1094_decrypted_opcodes_map);
+}
 
-static MACHINE_CONFIG_DERIVED( shangonro, shangupb )
-	MCFG_CPU_REPLACE("subcpu", FD1094, 10000000)
-	MCFG_CPU_PROGRAM_MAP(sub_map)
-	MCFG_CPU_DECRYPTED_OPCODES_MAP(fd1094_decrypted_opcodes_map)
-MACHINE_CONFIG_END
+void segahang_state::sharrier(machine_config &config)
+{
+	sharrier_base(config);
+	sound_board_2203(config);
 
+	m_maincpu->set_vblank_int("screen", FUNC(segahang_state::i8751_main_cpu_vblank));
 
-static MACHINE_CONFIG_DERIVED( sharrier, sharrier_base )
-	MCFG_FRAGMENT_ADD(sound_board_2203)
+	I8751(config, m_mcu, 8000000);
+	m_mcu->set_addrmap(AS_IO, &segahang_state::mcu_io_map);
 
-	MCFG_CPU_MODIFY("maincpu")
-	MCFG_DEVICE_VBLANK_INT_DRIVER("screen", segahang_state, i8751_main_cpu_vblank)
+	m_screen->screen_vblank().set_inputline("mcu", INPUT_LINE_IRQ0);
+}
 
-	MCFG_CPU_ADD("mcu", I8751, 8000000)
-	MCFG_CPU_IO_MAP(mcu_io_map)
-	MCFG_DEVICE_VBLANK_INT_DRIVER("screen", segahang_state, irq0_line_pulse)
-MACHINE_CONFIG_END
+void segahang_state::enduror(machine_config &config)
+{
+	enduror_base(config);
+	sound_board_2151(config);
+}
 
+void segahang_state::enduror1(machine_config &config)
+{
+	enduror_base(config);
+	sound_board_2203(config);
+}
 
-static MACHINE_CONFIG_DERIVED( enduror, enduror_base )
-	MCFG_FRAGMENT_ADD(sound_board_2151)
-MACHINE_CONFIG_END
+void segahang_state::endurord(machine_config &config)
+{
+	endurord_base(config);
+	sound_board_2151(config);
+}
 
+void segahang_state::enduror1d(machine_config &config)
+{
+	endurord_base(config);
+	sound_board_2203(config);
+}
 
-static MACHINE_CONFIG_DERIVED( enduror1, enduror_base )
-	MCFG_FRAGMENT_ADD(sound_board_2203)
-MACHINE_CONFIG_END
+void segahang_state::endurobl(machine_config &config)
+{
+	sharrier_base(config);
+	m_maincpu->set_addrmap(AS_OPCODES, &segahang_state::decrypted_opcodes_map);
 
-static MACHINE_CONFIG_DERIVED( endurord, endurord_base )
-	MCFG_FRAGMENT_ADD(sound_board_2151)
-MACHINE_CONFIG_END
+	sound_board_2203(config);
+}
 
+void segahang_state::endurob2(machine_config &config)
+{
+	sharrier_base(config);
+	m_maincpu->set_addrmap(AS_OPCODES, &segahang_state::decrypted_opcodes_map);
 
-static MACHINE_CONFIG_DERIVED( enduror1d, endurord_base )
-	MCFG_FRAGMENT_ADD(sound_board_2203)
-MACHINE_CONFIG_END
-
-static MACHINE_CONFIG_DERIVED( endurobl, sharrier_base )
-	MCFG_CPU_MODIFY("maincpu")
-	MCFG_CPU_DECRYPTED_OPCODES_MAP(decrypted_opcodes_map)
-
-	MCFG_FRAGMENT_ADD(sound_board_2203)
-MACHINE_CONFIG_END
-
-
-static MACHINE_CONFIG_DERIVED( endurob2, sharrier_base )
-	MCFG_CPU_MODIFY("maincpu")
-	MCFG_CPU_DECRYPTED_OPCODES_MAP(decrypted_opcodes_map)
-
-	MCFG_FRAGMENT_ADD(sound_board_2203x2)
-MACHINE_CONFIG_END
+	sound_board_2203x2(config);
+}
 
 
 
@@ -1006,13 +959,17 @@ MACHINE_CONFIG_END
 //*************************************************************************************************************************
 //*************************************************************************************************************************
 //*************************************************************************************************************************
-//  Hang On (Rev A)
-//  CPU: 68000 (317-????)
+//  Hang On (Rev A) (stickered "834-5667-01 // HANG ON // REV. A")
+//  CPU: 68000 (317-????, HD68000P8)
 //
 //   ASSY CPU BD 834-5704-01
 //   ASSY CONTROL BD 834-5668
 //   ASSY ROM BD 834-5669
-//   ASSY SOUND BD 834-5670
+//   ASSY SOUND BD 834-5670-01 (stickered 834-5706-01 HANG ON)
+//
+// PCBs also found stickered as:
+//   834-5667-01 HANG ON REV.A
+//   (FOR SIT-DOWN UP-RIGHT)
 //
 ROM_START( hangon )
 	ROM_REGION( 0x40000, "maincpu", 0 ) // 68000 code
@@ -1046,7 +1003,7 @@ ROM_START( hangon )
 	ROM_LOAD16_BYTE( "epr-6845.ic18", 0x060001, 0x8000, CRC(ba08c9b8) SHA1(65ceaefa18999c468b38576c29101674d1f63e5f) )
 	ROM_LOAD16_BYTE( "epr-6846.ic25", 0x060000, 0x8000, CRC(f21e57a3) SHA1(92ce0723e722f446c0cef9e23080a008aa9752e7) )
 
-	ROM_REGION( 0x8000, "gfx3", 0 ) // road gfx
+	ROM_REGION( 0x8000, "segaic16road", 0 ) // road gfx
 	ROM_LOAD( "epr-6840.ic108", 0x0000, 0x8000, CRC(581230e3) SHA1(954eab35059322a12a197bba04bf85f816132f20) )
 
 	ROM_REGION( 0x10000, "soundcpu", 0 ) // sound CPU
@@ -1058,6 +1015,11 @@ ROM_START( hangon )
 
 	ROM_REGION( 0x2000, "sprites:zoom", 0 ) // zoom table
 	ROM_LOAD( "epr-6844.ic123", 0x0000, 0x2000, CRC(e3ec7bd6) SHA1(feec0fe664e16fac0fde61cf64b401b9b0575323) )
+
+	ROM_REGION( 0x300, "plds", 0 )
+	ROM_LOAD( "315-5118.bin", 0x000, 0x08f, CRC(51d448a2) SHA1(0a1018cc1d4c6dc87625d59539d257e01c9dc872) )
+	ROM_LOAD( "315-5119.bin", 0x100, 0x08f, CRC(a37f00e1) SHA1(129b10f6cb48e1a1fefd69009380516cf2c677b5) )
+	ROM_LOAD( "315-5120.bin", 0x200, 0x08f, CRC(ba5f92ec) SHA1(74e1fb137ac2ab6dbdad2e8111c27b836e2ff14b) )
 ROM_END
 
 //*************************************************************************************************************************
@@ -1067,7 +1029,7 @@ ROM_END
 //   ASSY CPU BD 834-5704-01
 //   ASSY CONTROL BD 834-5668
 //   ASSY ROM BD 834-5669
-//   ASSY SOUND BD 834-5670
+//   ASSY SOUND BD 834-5670-01 (stickered 834-5706-01 HANG ON)
 //
 ROM_START( hangon1 )
 	ROM_REGION( 0x40000, "maincpu", 0 ) // 68000 code
@@ -1101,7 +1063,7 @@ ROM_START( hangon1 )
 	ROM_LOAD16_BYTE( "epr-6845.ic18", 0x060001, 0x8000, CRC(ba08c9b8) SHA1(65ceaefa18999c468b38576c29101674d1f63e5f) )
 	ROM_LOAD16_BYTE( "epr-6846.ic25", 0x060000, 0x8000, CRC(f21e57a3) SHA1(92ce0723e722f446c0cef9e23080a008aa9752e7) )
 
-	ROM_REGION( 0x8000, "gfx3", 0 ) // road gfx
+	ROM_REGION( 0x8000, "segaic16road", 0 ) // road gfx
 	ROM_LOAD( "epr-6840.ic108", 0x0000, 0x8000, CRC(581230e3) SHA1(954eab35059322a12a197bba04bf85f816132f20) )
 
 	ROM_REGION( 0x10000, "soundcpu", 0 ) // sound CPU
@@ -1113,29 +1075,37 @@ ROM_START( hangon1 )
 
 	ROM_REGION( 0x2000, "sprites:zoom", 0 ) // zoom table
 	ROM_LOAD( "epr-6844.ic123", 0x0000, 0x2000, CRC(e3ec7bd6) SHA1(feec0fe664e16fac0fde61cf64b401b9b0575323) )
+
+	ROM_REGION( 0x300, "plds", 0 )
+	ROM_LOAD( "315-5118.bin", 0x000, 0x08f, CRC(51d448a2) SHA1(0a1018cc1d4c6dc87625d59539d257e01c9dc872) )
+	ROM_LOAD( "315-5119.bin", 0x100, 0x08f, CRC(a37f00e1) SHA1(129b10f6cb48e1a1fefd69009380516cf2c677b5) )
+	ROM_LOAD( "315-5120.bin", 0x200, 0x08f, CRC(ba5f92ec) SHA1(74e1fb137ac2ab6dbdad2e8111c27b836e2ff14b) )
 ROM_END
 
 //*************************************************************************************************************************
 //  Hang On (Ride-On version)
 //  CPU: HD68000P8 (no custom Sega label)
 //
-//   ASSY CPU BD 834-5704, and stickers 834-5667 and REV A
+//   ASSY CPU BD 834-5704
 //   ASSY CONTROL BD 834-5668
 //   ASSY ROM BD 834-5669
-//   ASSY SOUND BD 834-5670
+//   ASSY SOUND BD 834-5670-01 (stickered 834-5706-01 HANG ON)
 //
-//   ROM & SOUND boards were missing, but Manual No. 420-5244 2nd Printing confirms they are the same with the same data / roms.
+// PCBs also found stickered as:
+//   834-5667 HANG ON REV.A
 //
-ROM_START( hangon2 ) // no labels on the main CPU roms just a black sticker, likely the result of repair job in 1995
+//   ROM & SOUND boards were missing, but Manual No. 420-5244 2nd Printing confirms they are the same with the same data / ROMs.
+//
+ROM_START( hangon2 )
 	ROM_REGION( 0x40000, "maincpu", 0 ) // 68000 code
-	ROM_LOAD16_BYTE( "epr-6851a__(needs_verification).ic22", 0x000000, 0x8000, CRC(1e4d2217) SHA1(197d8939b7c9eea0496aecac55cce3dec51be042) ) // as per the manual
-	ROM_LOAD16_BYTE( "epr-6849a__(needs_verification).ic8",  0x000001, 0x8000, CRC(3793e50e) SHA1(ffcad02696ca6d67f6bd5001a0d4aa41e23e21bd) ) // as per the manual
-	ROM_LOAD16_BYTE( "epr-6850a__(needs_verification).ic20", 0x010000, 0x8000, CRC(5d715e3b) SHA1(88554d05e157b1276ba56b80d808fddedc9d71c5) ) // as per the manual
-	ROM_LOAD16_BYTE( "epr-6848a__(needs_verification).ic6",  0x010001, 0x8000, CRC(f1439a30) SHA1(5d496f80c2fda29eb71c29a050f17ecef4543052) ) // as per the manual
+	ROM_LOAD16_BYTE( "epr-6851a.ic22", 0x000000, 0x8000, CRC(1e4d2217) SHA1(197d8939b7c9eea0496aecac55cce3dec51be042) )
+	ROM_LOAD16_BYTE( "epr-6849a.ic8",  0x000001, 0x8000, CRC(3793e50e) SHA1(ffcad02696ca6d67f6bd5001a0d4aa41e23e21bd) )
+	ROM_LOAD16_BYTE( "epr-6850a.ic20", 0x010000, 0x8000, CRC(5d715e3b) SHA1(88554d05e157b1276ba56b80d808fddedc9d71c5) )
+	ROM_LOAD16_BYTE( "epr-6848a.ic6",  0x010001, 0x8000, CRC(f1439a30) SHA1(5d496f80c2fda29eb71c29a050f17ecef4543052) )
 
 	ROM_REGION( 0x40000, "subcpu", 0 ) // second 68000 CPU
-	ROM_LOAD16_BYTE( "epr-6838.ic63", 0x0000, 0x8000, CRC(2747b794) SHA1(06d296837f03f5dfb2d9d7e3001070b81391247f) )
-	ROM_LOAD16_BYTE( "epr-6839.ic51", 0x0001, 0x8000, CRC(73e9fa6e) SHA1(280c685698509a29bc7d1dd1d955ade4b6eac356) )
+	ROM_LOAD16_BYTE( "epr-6839.ic63", 0x0000, 0x8000, CRC(2747b794) SHA1(06d296837f03f5dfb2d9d7e3001070b81391247f) )
+	ROM_LOAD16_BYTE( "epr-6838.ic51", 0x0001, 0x8000, CRC(73e9fa6e) SHA1(280c685698509a29bc7d1dd1d955ade4b6eac356) )
 
 	ROM_REGION( 0x18000, "gfx1", 0 ) // tiles
 	ROM_LOAD( "epr-6841.ic38", 0x00000, 0x08000, CRC(54d295dc) SHA1(ad8cdb281032a2f931c2abbeb966998944683dc3) )
@@ -1165,12 +1135,82 @@ ROM_START( hangon2 ) // no labels on the main CPU roms just a black sticker, lik
 	ROM_LOAD( "epr-6831.ic5", 0x00000, 0x8000, CRC(cfef5481) SHA1(c04b302fee58f0e59a097b2be2b61e5d03df7c91) )
 	ROM_LOAD( "epr-6832.ic6", 0x08000, 0x8000, CRC(4165aea5) SHA1(be05c6d295807af2f396a1ff72d5a3d2a1e6054d) )
 
-	ROM_REGION( 0x8000, "gfx3", 0 ) // road gfx
+	ROM_REGION( 0x8000, "segaic16road", 0 ) // road gfx
 	ROM_LOAD( "epr-6840.ic108", 0x0000, 0x8000, CRC(581230e3) SHA1(954eab35059322a12a197bba04bf85f816132f20) )
 
 	ROM_REGION( 0x2000, "sprites:zoom", 0 ) // zoom table
 	ROM_LOAD( "epr-6844.ic119", 0x0000, 0x2000, CRC(e3ec7bd6) SHA1(feec0fe664e16fac0fde61cf64b401b9b0575323) )
+
+	ROM_REGION( 0x300, "plds", 0 )
+	ROM_LOAD( "315-5118.bin", 0x000, 0x08f, CRC(51d448a2) SHA1(0a1018cc1d4c6dc87625d59539d257e01c9dc872) )
+	ROM_LOAD( "315-5119.bin", 0x100, 0x08f, CRC(a37f00e1) SHA1(129b10f6cb48e1a1fefd69009380516cf2c677b5) )
+	ROM_LOAD( "315-5120.bin", 0x200, 0x08f, CRC(ba5f92ec) SHA1(74e1fb137ac2ab6dbdad2e8111c27b836e2ff14b) )
 ROM_END
+
+//*************************************************************************************************************************
+//  # VF #
+//  Hang On spanish bootleg.
+//  Some customs were replaced with logic components.
+//
+ROM_START( hangonvf )
+	ROM_REGION( 0x40000, "maincpu", 0 ) // 68000 code
+	ROM_LOAD16_BYTE( "9.3n", 0x000000, 0x8000, CRC(20b1c2b0) SHA1(01b4f5105e2bbeb6ec6dbd18bfb728e3a973e0ca) )
+	ROM_LOAD16_BYTE( "11.1n",  0x000001, 0x8000, CRC(7d9db1bf) SHA1(952ee3e7a0d57ec1bb3385e0e6675890b8378d31) )
+	ROM_LOAD16_BYTE( "8.3k", 0x010000, 0x8000, CRC(fea12367) SHA1(9a1ce5863c562160b657ad948812b43f42d7d0cc) )
+	ROM_LOAD16_BYTE( "10.1k",  0x010001, 0x8000, CRC(ac883240) SHA1(f943341ae13e062f3d12c6221180086ce8bdb8c4) )
+
+	ROM_REGION( 0x40000, "subcpu", 0 ) // second 68000 CPU
+	ROM_LOAD16_BYTE( "6.6l", 0x0000, 0x8000, CRC(1c95013e) SHA1(8344ac953477279c2c701f984d98292a21dd2f7d) )
+	ROM_LOAD16_BYTE( "7.5l", 0x0001, 0x8000, CRC(6ca30d69) SHA1(ed933351883ebf6d9ef9428a81d09749b609cd60) )
+
+	ROM_REGION( 0x18000, "gfx1", 0 ) // tiles
+	ROM_LOAD( "2.3j", 0x00000, 0x08000, CRC(255a3a58) SHA1(980372ab94949d1476282c83af0a08cc0555f1cd) )
+	ROM_LOAD( "3.2j", 0x08000, 0x08000, CRC(88b9ffd9) SHA1(7ecfab266f05d5f919806f195fb2572f220fdf68) )
+	ROM_LOAD( "4.1j",  0x10000, 0x08000, CRC(18882328) SHA1(737c025701877845fad63af145506a57c775f8e0) )
+
+	ROM_REGION16_BE( 0x80000, "sprites", 0 ) // sprites
+	ROM_LOAD16_BYTE( "19.5b", 0x000001, 0x8000, CRC(469dad07) SHA1(6d01c0b3506e28832928ad74d518577ff5be323b) )
+	ROM_LOAD16_BYTE( "25.6b", 0x000000, 0x8000, CRC(87cbc6de) SHA1(b64652e062e1b88c6f6ae8dd2ffe4533bb27ba45) )
+	ROM_LOAD16_BYTE( "18.5c", 0x010001, 0x8000, CRC(15792969) SHA1(b061dbf24e8b511116446794753c8b0cc49e2149) )
+	ROM_LOAD16_BYTE( "24.6c", 0x010000, 0x8000, CRC(e9718de5) SHA1(30e3a7d5b33504da03c5780b4a946b977e46098a) )
+	ROM_LOAD16_BYTE( "17.5d", 0x020001, 0x8000, CRC(49422691) SHA1(caee2a4a3f4587ae27dec330214edaa1229012af) )
+	ROM_LOAD16_BYTE( "23.6d", 0x020000, 0x8000, CRC(701deaa4) SHA1(053032ef886b85a4cb4753d17b3c27d228695157) )
+	ROM_LOAD16_BYTE( "16.5e", 0x030001, 0x8000, CRC(f003a000) SHA1(da7fc41d3116ebb108effcd9ffa86e873e8ff6e7) )
+	ROM_LOAD16_BYTE( "22.6e", 0x030000, 0x8000, CRC(08b007e2) SHA1(db63d38472c8df13f0bbabb20b6e33c9c6c46664) )
+	ROM_LOAD16_BYTE( "15.5f", 0x040001, 0x8000, CRC(7fa1bfb6) SHA1(a27b54c93613372f59050f0b2182d2984a8d2efe) )
+	ROM_LOAD16_BYTE( "21.6f", 0x040000, 0x8000, CRC(8e880c93) SHA1(8c55deec065daf09a5d1c1c1f3f3f7bc1aeaf563) )
+	ROM_LOAD16_BYTE( "14.5h", 0x050001, 0x8000, CRC(47e63dd1) SHA1(40fb4400e1e8c8193c69154c5c08a9a69a8bca0d) )
+	ROM_LOAD16_BYTE( "20.6h", 0x050000, 0x8000, CRC(33d1aa6e) SHA1(1bd78d442cce2a39f1186b142d8a24bce286ad64) )
+	ROM_LOAD16_BYTE( "12.3f", 0x060001, 0x8000, CRC(22fc088e) SHA1(d84570a802e696b67a587bee154620d97d75a7aa) )
+	ROM_LOAD16_BYTE( "13.4f", 0x060000, 0x8000, CRC(032738ba) SHA1(6b8e7e229d04f852e72acfdfa8721b4b22681208) )
+
+	ROM_REGION( 0x8000, "segaic16road", 0 ) // road gfx
+	ROM_LOAD( "5.9r", 0x0000, 0x8000, CRC(581230e3) SHA1(954eab35059322a12a197bba04bf85f816132f20) )
+
+	ROM_REGION( 0x10000, "soundcpu", 0 ) // sound CPU
+	ROM_LOAD( "28.12h", 0x00000, 0x4000, CRC(3b942f5f) SHA1(4384b5c090954e69de561dde0ef32104aa11399a) )
+
+	ROM_REGION( 0x10000, "pcm", 0 ) // Sega PCM sound data
+	ROM_LOAD( "26.1e", 0x00000, 0x8000, CRC(cfef5481) SHA1(c04b302fee58f0e59a097b2be2b61e5d03df7c91) )
+	ROM_LOAD( "27.1g", 0x08000, 0x8000, CRC(4165aea5) SHA1(be05c6d295807af2f396a1ff72d5a3d2a1e6054d) )
+
+	ROM_REGION( 0x2000, "sprites:zoom", 0 ) // zoom table
+	ROM_LOAD( "1.9d", 0x0000, 0x2000, CRC(e3ec7bd6) SHA1(feec0fe664e16fac0fde61cf64b401b9b0575323) )
+
+	ROM_REGION( 0x1400, "plds", 0 )
+	ROM_LOAD( "a_pal16r4a.9e",     0x0000, 0x0104, NO_DUMP )
+	ROM_LOAD( "b_pls153an.9f",     0x0200, 0x00eb, NO_DUMP )
+	ROM_LOAD( "c_pal16r6a.7m",     0x0400, 0x0104, NO_DUMP )
+	ROM_LOAD( "d_pal16r6a.7r",     0x0600, 0x0104, NO_DUMP )
+	ROM_LOAD( "e_pal16r6a.7s",     0x0800, 0x0104, NO_DUMP )
+	ROM_LOAD( "f_pls153n.6s",      0x0a00, 0x00eb, NO_DUMP )
+	ROM_LOAD( "g_pal16l8a.3r",     0x0c00, 0x0104, NO_DUMP )
+	// no PLD marked 'H'
+	ROM_LOAD( "i_pls153n_snd.6f",  0x0e00, 0x00eb, NO_DUMP )
+	ROM_LOAD( "j_pal16l8a_db.bin", 0x1000, 0x0104, NO_DUMP )
+	ROM_LOAD( "k_pal16r4a_db.bin", 0x1200, 0x0104, NO_DUMP )
+ROM_END
+
 
 //*************************************************************************************************************************
 //*************************************************************************************************************************
@@ -1210,7 +1250,7 @@ ROM_START( shangonro )
 
 	ROM_REGION16_BE( 0x00e0000, "sprites", 0 ) // sprites
 	ROM_LOAD16_BYTE( "epr-10675.22", 0x000001, 0x010000, CRC(d6ac012b) SHA1(305023b1a0a9d84cfc081ffc2ad7578b53d562f2) )
-	ROM_LOAD16_BYTE( "epr-10682.11", 0x000000, 0x010000, CRC(d9d83250) SHA1(f8ca3197edcdf53643a5b335c3c044ddc1310cd4) )
+	ROM_LOAD16_BYTE( "epr-10682.13", 0x000000, 0x010000, CRC(d9d83250) SHA1(f8ca3197edcdf53643a5b335c3c044ddc1310cd4) )
 	ROM_LOAD16_BYTE( "epr-10676.21", 0x020001, 0x010000, CRC(25ebf2c5) SHA1(abcf673ae4e280417dd9f46d18c0ec7c0e4802ae) )
 	ROM_LOAD16_BYTE( "epr-10683.12", 0x020000, 0x010000, CRC(6365d2e9) SHA1(688e2ba194e859f86cd3486c2575ebae257e975a) )
 	ROM_LOAD16_BYTE( "epr-10677.20", 0x040001, 0x010000, CRC(8a57b8d6) SHA1(df1a31559dd2d1e7c2c9d800bf97526bdf3e84e6) )
@@ -1224,7 +1264,61 @@ ROM_START( shangonro )
 	ROM_LOAD16_BYTE( "epr-10681.16", 0x0c0001, 0x010000, CRC(b176ea72) SHA1(7ec0eb0f13398d014c2e235773ded00351edb3e2) )
 	ROM_LOAD16_BYTE( "epr-10688.7",  0x0c0000, 0x010000, CRC(42fcd51d) SHA1(0eacb3527dc21746e5b901fcac83f2764a0f9e2c) )
 
-	ROM_REGION( 0x8000, "gfx3", 0 ) // road gfx
+	ROM_REGION( 0x8000, "segaic16road", 0 ) // road gfx
+	ROM_LOAD( "epr-10866.108", 0x0000, 0x08000, CRC(1bbe4fc8) SHA1(30f7f301e4d10d3b254d12bf3d32e5371661a566) )
+
+	ROM_REGION( 0x10000, "soundcpu", 0 ) // sound CPU
+	ROM_LOAD( "epr-10834a.52", 0x0000, 0x08000, CRC(83347dc0) SHA1(079bb750edd6372750a207764e8c84bb6abf2f79) )
+
+	ROM_REGION( 0x20000, "pcm", 0 ) // Sega PCM sound data
+	ROM_LOAD( "epr-10835.55", 0x00000, 0x10000, CRC(da08ca2b) SHA1(2c94c127efd66f6cf86b25e2653637818a99aed1) )
+	ROM_LOAD( "epr-10836.56", 0x10000, 0x10000, CRC(8b10e601) SHA1(75e9bcdd3f096be9bed672d61064b9240690deec) )
+
+	ROM_REGION( 0x2000, "sprites:zoom", 0 ) // zoom table
+	ROM_LOAD( "epr-6844.119", 0x0000, 0x2000, CRC(e3ec7bd6) SHA1(feec0fe664e16fac0fde61cf64b401b9b0575323) )
+ROM_END
+
+
+ROM_START( shangonho )
+	ROM_REGION( 0x40000, "maincpu", 0 ) // 68000 code
+	ROM_LOAD16_BYTE( "epr-10865.ic22", 0x00000, 0x08000, CRC(98e861dd) SHA1(f2059f4559893d38d7d781c8599aeb7a5074eec0) )
+	ROM_LOAD16_BYTE( "epr-10862.ic8",  0x00001, 0x08000, CRC(d6f058c7) SHA1(72f25455ed619d988bcceb1cfe39a7e06722c9dc) )
+	ROM_LOAD16_BYTE( "epr-10864.ic20", 0x10000, 0x08000, CRC(b3048f44) SHA1(8e559df140f1ddf307d8430c7976ecbbe8907260) )
+	ROM_LOAD16_BYTE( "epr-10861.ic6",  0x10001, 0x08000, CRC(0a131e14) SHA1(088a7ff479462a6a5aa1e096805fc50883a1c245) )
+	ROM_LOAD16_BYTE( "epr-10863.ic18", 0x20000, 0x08000, CRC(12ee8716) SHA1(8e798d23d22f85cd046641184d104c17b27995b2) )
+	ROM_LOAD16_BYTE( "epr-10860.ic4",  0x20001, 0x08000, CRC(155e0cfd) SHA1(e51734351c887fe3920c881f57abdfbb7d075f57) )
+
+	ROM_REGION( 0x40000, "subcpu", 0 ) // second 68000 CPU (encrypted FD1094)
+	ROM_LOAD16_BYTE( "epr-10859.ic31", 0x000001, 0x10000, CRC(a22bc1a2) SHA1(74b535fb72228807aafe835bfb69e97f58bda12d) )
+	ROM_LOAD16_BYTE( "epr-10857.ic25", 0x000000, 0x10000, CRC(064827a3) SHA1(c72cb799b4535f9faa7f3d37bc4d0763f52f5361) )
+	ROM_LOAD16_BYTE( "epr-10858.ic30", 0x020001, 0x10000, CRC(8f8f4af0) SHA1(1dac21b7df6ec6874d36a07e30de7129b7f7f33a) )
+	ROM_LOAD16_BYTE( "epr-10856.ic24", 0x020000, 0x10000, CRC(000ad595) SHA1(eb80e798159c09bc5142a7ea8b9b0f895976b0d4) )
+
+	ROM_REGION( 0x2000, "subcpu:key", 0 ) // FD1094 decryption key
+	ROM_LOAD( "317-0039.key", 0x0000, 0x2000, CRC(97b05dd6) SHA1(c16033021a0fbc8d9759c40deab41d58babdaf90) )
+
+	ROM_REGION( 0x18000, "gfx1", 0 ) // tiles
+	ROM_LOAD( "epr-10652.38", 0x00000, 0x08000, CRC(260286f9) SHA1(dc7c8d2c6ef924a937328685eed19bda1c8b1819) )
+	ROM_LOAD( "epr-10651.23", 0x08000, 0x08000, CRC(c609ee7b) SHA1(c6dacf81cbfe7e5df1f9a967cf571be1dcf1c429) )
+	ROM_LOAD( "epr-10650.7",  0x10000, 0x08000, CRC(b236a403) SHA1(af02b8122794c083a66f2ab35d2c73b84b2df0be) )
+
+	ROM_REGION16_BE( 0x00e0000, "sprites", 0 ) // sprites
+	ROM_LOAD16_BYTE( "epr-10675.22", 0x000001, 0x010000, CRC(d6ac012b) SHA1(305023b1a0a9d84cfc081ffc2ad7578b53d562f2) )
+	ROM_LOAD16_BYTE( "epr-10682.13", 0x000000, 0x010000, CRC(d9d83250) SHA1(f8ca3197edcdf53643a5b335c3c044ddc1310cd4) )
+	ROM_LOAD16_BYTE( "epr-10676.21", 0x020001, 0x010000, CRC(25ebf2c5) SHA1(abcf673ae4e280417dd9f46d18c0ec7c0e4802ae) )
+	ROM_LOAD16_BYTE( "epr-10683.12", 0x020000, 0x010000, CRC(6365d2e9) SHA1(688e2ba194e859f86cd3486c2575ebae257e975a) )
+	ROM_LOAD16_BYTE( "epr-10677.20", 0x040001, 0x010000, CRC(8a57b8d6) SHA1(df1a31559dd2d1e7c2c9d800bf97526bdf3e84e6) )
+	ROM_LOAD16_BYTE( "epr-10684.11", 0x040000, 0x010000, CRC(3aff8910) SHA1(4b41a49a7f02363424e814b37edce9a7a44a112e) )
+	ROM_LOAD16_BYTE( "epr-10678.19", 0x060001, 0x010000, CRC(af473098) SHA1(a2afaba1cbf672949dc50e407b46d7e9ae183774) )
+	ROM_LOAD16_BYTE( "epr-10685.10", 0x060000, 0x010000, CRC(80bafeef) SHA1(f01bcf65485e60f34e533295a896fca0b92e5b14) )
+	ROM_LOAD16_BYTE( "epr-10679.18", 0x080001, 0x010000, CRC(03bc4878) SHA1(548fc58bcc620204e30fa12fa4c4f0a3f6a1e4c0) )
+	ROM_LOAD16_BYTE( "epr-10686.9",  0x080000, 0x010000, CRC(274b734e) SHA1(906fa528659bc17c9b4744cec52f7096711adce8) )
+	ROM_LOAD16_BYTE( "epr-10680.17", 0x0a0001, 0x010000, CRC(9f0677ed) SHA1(5964642b70bfad418da44f2d91476f887b021f74) )
+	ROM_LOAD16_BYTE( "epr-10687.8",  0x0a0000, 0x010000, CRC(508a4701) SHA1(d17aea2aadc2e2cd65d81bf91feb3ef6923d5c0b) )
+	ROM_LOAD16_BYTE( "epr-10681.16", 0x0c0001, 0x010000, CRC(b176ea72) SHA1(7ec0eb0f13398d014c2e235773ded00351edb3e2) )
+	ROM_LOAD16_BYTE( "epr-10688.7",  0x0c0000, 0x010000, CRC(42fcd51d) SHA1(0eacb3527dc21746e5b901fcac83f2764a0f9e2c) )
+
+	ROM_REGION( 0x8000, "segaic16road", 0 ) // road gfx
 	ROM_LOAD( "epr-10866.108", 0x0000, 0x08000, CRC(1bbe4fc8) SHA1(30f7f301e4d10d3b254d12bf3d32e5371661a566) )
 
 	ROM_REGION( 0x10000, "soundcpu", 0 ) // sound CPU
@@ -1276,7 +1370,7 @@ ROM_START( shangonrb )
 	ROM_LOAD16_BYTE( "epr-10681.16", 0x0c0001, 0x010000, CRC(b176ea72) SHA1(7ec0eb0f13398d014c2e235773ded00351edb3e2) )
 	ROM_LOAD16_BYTE( "epr-10688.7",  0x0c0000, 0x010000, CRC(42fcd51d) SHA1(0eacb3527dc21746e5b901fcac83f2764a0f9e2c) )
 
-	ROM_REGION( 0x8000, "gfx3", 0 ) // road gfx
+	ROM_REGION( 0x8000, "segaic16road", 0 ) // road gfx
 	ROM_LOAD( "epr-10866.108", 0x0000, 0x08000, CRC(1bbe4fc8) SHA1(30f7f301e4d10d3b254d12bf3d32e5371661a566) )
 
 	ROM_REGION( 0x10000, "soundcpu", 0 ) // sound CPU
@@ -1290,6 +1384,57 @@ ROM_START( shangonrb )
 	ROM_LOAD( "epr-6844.119", 0x0000, 0x2000, CRC(e3ec7bd6) SHA1(feec0fe664e16fac0fde61cf64b401b9b0575323) )
 ROM_END
 
+//*************************************************************************************************************************
+//  Super Hang On Beta bootleg
+//  Has Beta 1987 copyright but is otherwise identical to the bootleg above
+//
+ROM_START( shangonrb2 )
+	ROM_REGION( 0x40000, "maincpu", 0 ) // 68000 code
+	ROM_LOAD16_BYTE( "sho-philco-s-30-r9-10.bin",  0x000000, 0x10000, CRC(eccf7004) SHA1(5f2b9b75995b9360be8b05f9d123823f6e85dc2b) )
+	ROM_LOAD16_BYTE( "sho-philco-s-32-r12-13.bin", 0x000001, 0x10000, CRC(90613f42) SHA1(f54b5e079ceaa3863df7bda6b14ec68afa63f7f5) )
+	ROM_LOAD16_BYTE( "sho-philco-s-29-l9-10.bin",  0x020000, 0x08000, CRC(12ee8716) SHA1(8e798d23d22f85cd046641184d104c17b27995b2) )
+	ROM_LOAD16_BYTE( "sho-philco-s-31-l12-13.bin", 0x020001, 0x08000, CRC(155e0cfd) SHA1(e51734351c887fe3920c881f57abdfbb7d075f57) )
+
+	ROM_REGION( 0x40000, "subcpu", 0 ) // second 68000 CPU
+	ROM_LOAD16_BYTE( "sho-philco-s-9-h4.bin", 0x00000, 0x10000, CRC(070c8059) SHA1(a18c5e9473b6634f6e7165300e39029335b41ba3) )
+	ROM_LOAD16_BYTE( "sho-philco-s-5-g4.bin", 0x00001, 0x10000, CRC(9916c54b) SHA1(41a7c5a9bdb1e3feae8fadf1ac5f51fab6376157) )
+	ROM_LOAD16_BYTE( "sho-philco-s-8-h3.bin", 0x20000, 0x10000, CRC(000ad595) SHA1(eb80e798159c09bc5142a7ea8b9b0f895976b0d4) )
+	ROM_LOAD16_BYTE( "sho-philco-s-4-g3.bin", 0x20001, 0x10000, CRC(8f8f4af0) SHA1(1dac21b7df6ec6874d36a07e30de7129b7f7f33a) )
+
+	ROM_REGION( 0x18000, "gfx1", 0 ) // tiles
+	ROM_LOAD( "sho-philco-s-23-n-p8.bin",  0x00000, 0x08000, CRC(260286f9) SHA1(dc7c8d2c6ef924a937328685eed19bda1c8b1819) )
+	ROM_LOAD( "sho-philco-s-24-n-p9.bin",  0x08000, 0x08000, CRC(c609ee7b) SHA1(c6dacf81cbfe7e5df1f9a967cf571be1dcf1c429) )
+	ROM_LOAD( "sho-philco-s-25-n-p10.bin", 0x10000, 0x08000, CRC(b236a403) SHA1(af02b8122794c083a66f2ab35d2c73b84b2df0be) )
+
+	ROM_REGION16_BE( 0x00e0000, "sprites", 0 ) // sprites
+	ROM_LOAD16_BYTE( "sho-philco-s-21-m6.bin", 0x000001, 0x010000, CRC(d6ac012b) SHA1(305023b1a0a9d84cfc081ffc2ad7578b53d562f2) )
+	ROM_LOAD16_BYTE( "sho-philco-s-15-l6.bin", 0x000000, 0x010000, CRC(d9d83250) SHA1(f8ca3197edcdf53643a5b335c3c044ddc1310cd4) )
+	ROM_LOAD16_BYTE( "sho-philco-s-20-m5.bin", 0x020001, 0x010000, CRC(eef23b3d) SHA1(2416fa9991afbdddf25d469082e53858289550db) )
+	ROM_LOAD16_BYTE( "sho-philco-s-14-l5.bin", 0x020000, 0x010000, CRC(0f26d131) SHA1(0d8b6eb8b8aae0aa8f0fa0c31dc91ad0e610be3e) )
+	ROM_LOAD16_BYTE( "sho-philco-s-19-m4.bin", 0x040001, 0x010000, CRC(8a57b8d6) SHA1(df1a31559dd2d1e7c2c9d800bf97526bdf3e84e6) )
+	ROM_LOAD16_BYTE( "sho-philco-s-13-l4.bin", 0x040000, 0x010000, CRC(3aff8910) SHA1(4b41a49a7f02363424e814b37edce9a7a44a112e) )
+	ROM_LOAD16_BYTE( "sho-philco-s-18-m3.bin", 0x060001, 0x010000, CRC(af473098) SHA1(a2afaba1cbf672949dc50e407b46d7e9ae183774) )
+	ROM_LOAD16_BYTE( "sho-philco-s-12-l3.bin", 0x060000, 0x010000, CRC(80bafeef) SHA1(f01bcf65485e60f34e533295a896fca0b92e5b14) )
+	ROM_LOAD16_BYTE( "sho-philco-s-17-m2.bin", 0x080001, 0x010000, CRC(03bc4878) SHA1(548fc58bcc620204e30fa12fa4c4f0a3f6a1e4c0) )
+	ROM_LOAD16_BYTE( "sho-philco-s-11-l2.bin", 0x080000, 0x010000, CRC(274b734e) SHA1(906fa528659bc17c9b4744cec52f7096711adce8) )
+	ROM_LOAD16_BYTE( "sho-philco-s-16-m1.bin", 0x0a0001, 0x010000, CRC(9f0677ed) SHA1(5964642b70bfad418da44f2d91476f887b021f74) )
+	ROM_LOAD16_BYTE( "sho-philco-s-10-l1.bin", 0x0a0000, 0x010000, CRC(508a4701) SHA1(d17aea2aadc2e2cd65d81bf91feb3ef6923d5c0b) )
+	ROM_LOAD16_BYTE( "sho-philco-s-7-h2.bin",  0x0c0001, 0x010000, CRC(b176ea72) SHA1(7ec0eb0f13398d014c2e235773ded00351edb3e2) )
+	ROM_LOAD16_BYTE( "sho-philco-s-6-h1.bin",  0x0c0000, 0x010000, CRC(42fcd51d) SHA1(0eacb3527dc21746e5b901fcac83f2764a0f9e2c) )
+
+	ROM_REGION( 0x8000, "segaic16road", 0 ) // road gfx
+	ROM_LOAD( "sho-philco-s-26-t1.bin", 0x0000, 0x08000, CRC(1bbe4fc8) SHA1(30f7f301e4d10d3b254d12bf3d32e5371661a566) )
+
+	ROM_REGION( 0x10000, "soundcpu", 0 ) // sound CPU
+	ROM_LOAD( "sho-philco-s-3-g12.bin", 0x0000, 0x08000, CRC(83347dc0) SHA1(079bb750edd6372750a207764e8c84bb6abf2f79) )
+
+	ROM_REGION( 0x20000, "pcm", 0 ) // Sega PCM sound data
+	ROM_LOAD( "sho-philco-s-2-a16.bin", 0x00000, 0x10000, CRC(da08ca2b) SHA1(2c94c127efd66f6cf86b25e2653637818a99aed1) )
+	ROM_LOAD( "sho-philco-s-1-a14.bin", 0x10000, 0x10000, CRC(8b10e601) SHA1(75e9bcdd3f096be9bed672d61064b9240690deec) )
+
+	ROM_REGION( 0x2000, "sprites:zoom", 0 ) // zoom table
+	ROM_LOAD( "sho-philco-s-22-c-d2.bin", 0x0000, 0x2000, CRC(e3ec7bd6) SHA1(feec0fe664e16fac0fde61cf64b401b9b0575323) )
+ROM_END
 
 //*************************************************************************************************************************
 //*************************************************************************************************************************
@@ -1356,7 +1501,7 @@ ROM_START( sharrier )
 	ROM_LOAD32_BYTE( "epr-7207.ic11", 0xe0002, 0x8000, CRC(a2c07741) SHA1(747c029ab399c4110dbe360b8913f5c2e57c87cc) )
 	ROM_LOAD32_BYTE( "epr-7199.ic1",  0xe0003, 0x8000, CRC(b191e22f) SHA1(406c7f4eed0b8fe93fa0bef370e496894f4d46a4) )
 
-	ROM_REGION( 0x8000, "gfx3", 0 ) // road gfx
+	ROM_REGION( 0x8000, "segaic16road", 0 ) // road gfx
 	ROM_LOAD( "epr-7181.ic2", 0x0000, 0x8000, CRC(b4740419) SHA1(8ece2dc85692e32d0ba0b427c260c3d10ac0b7cc) )
 
 	ROM_REGION( 0x10000, "soundcpu", 0 ) // sound CPU
@@ -1437,7 +1582,7 @@ ROM_START( sharrier1 )
 	ROM_LOAD32_BYTE( "epr-7207.ic11", 0xe0002, 0x8000, CRC(a2c07741) SHA1(747c029ab399c4110dbe360b8913f5c2e57c87cc) )
 	ROM_LOAD32_BYTE( "epr-7199.ic1",  0xe0003, 0x8000, CRC(b191e22f) SHA1(406c7f4eed0b8fe93fa0bef370e496894f4d46a4) )
 
-	ROM_REGION( 0x8000, "gfx3", 0 ) // road gfx
+	ROM_REGION( 0x8000, "segaic16road", 0 ) // road gfx
 	ROM_LOAD( "epr-7181.ic2", 0x0000, 0x8000, CRC(b4740419) SHA1(8ece2dc85692e32d0ba0b427c260c3d10ac0b7cc) )
 
 	ROM_REGION( 0x10000, "soundcpu", 0 ) // sound CPU
@@ -1463,10 +1608,16 @@ ROM_END
 //  CPU: FD1089B (317-0013A)
 //  YM2151 sound board
 //
+//  ASSY CPU BD 837-6000 ENDURO RACER
 //   ASSY CPU BD 837-6001-01
 //   ASSY CONTROL BD 837-6002-01
 //   ASSY ROM BD 837-6004-01
-//   ASSY SOUND BD 837-6003-01? (not verified)
+//  ASSY SOUND BD 834-6003 ENDURO RACER  (production sticker:  860715.0509E)
+//   ASSY SOUND BD 837-6005
+//
+//   Missing dumps from the ASSY SOUND BD:
+//    315-5205   - silckscreened CK2605 (DIP20) at IC67 (8J)
+//    315-5206   - silckscreened 82S153 (DIP20) at IC38 (5E)
 //
 ROM_START( enduror )
 	ROM_REGION( 0x40000, "maincpu", 0 ) // 68000 code
@@ -1490,7 +1641,7 @@ ROM_START( enduror )
 	ROM_LOAD32_BYTE( "epr-7678.ic36", 0x00000, 0x8000, CRC(9fb5e656) SHA1(264b0ad017eb0fc7e0b542e6dd160ba964c100fd) )
 	ROM_LOAD32_BYTE( "epr-7670.ic28", 0x00001, 0x8000, CRC(dbbe2f6e) SHA1(310797a61f91d6866e728e0da3b30828e06d1b52) )
 	ROM_LOAD32_BYTE( "epr-7662.ic18", 0x00002, 0x8000, CRC(cb0c13c5) SHA1(856d1234fd8f8146e20fe6c65c0a535b7b7512cd) )
-	ROM_LOAD32_BYTE( "epr-7654.1c8",  0x00003, 0x8000, CRC(2db6520d) SHA1(d16739e84316b4bd26963b729208169bbf01f499) )
+	ROM_LOAD32_BYTE( "epr-7654.ic8",  0x00003, 0x8000, CRC(2db6520d) SHA1(d16739e84316b4bd26963b729208169bbf01f499) )
 	ROM_LOAD32_BYTE( "epr-7677.ic35", 0x20000, 0x8000, CRC(7764765b) SHA1(62543130816c084d292f229a15b3ce1305c99bb3) )
 	ROM_LOAD32_BYTE( "epr-7669.ic27", 0x20001, 0x8000, CRC(f9525faa) SHA1(fbe2f67a9baee069dbca26a669d0a263bcca0d09) )
 	ROM_LOAD32_BYTE( "epr-7661.ic17", 0x20002, 0x8000, CRC(fe93a79b) SHA1(591025a371a451c9cddc8c7480c9841a18bb9a7f) )
@@ -1520,23 +1671,172 @@ ROM_START( enduror )
 	ROM_LOAD32_BYTE( "epr-7655.ic11", 0xe0002, 0x8000, CRC(3433fe7b) SHA1(636449a0707d6629bf6ea503cfb52ad24af1c017) )
 	ROM_LOAD32_BYTE( "epr-7647.ic1",  0xe0003, 0x8000, CRC(2e7fbec0) SHA1(a59ec5fc3341833671fb948cd21b47f3a49db538) )
 
-	ROM_REGION( 0x8000, "gfx3", 0 ) // road gfx
+	ROM_REGION( 0x8000, "segaic16road", 0 ) // road gfx
 	ROM_LOAD( "epr-7633.ic1", 0x0000, 0x8000, CRC(6f146210) SHA1(2f58f0c3563b434ed02700b9ca1545a696a5716e) )
 
 	ROM_REGION( 0x10000, "soundcpu", 0 ) // sound CPU
-	ROM_LOAD( "epr-7682.rom", 0x00000, 0x8000, CRC(c4efbf48) SHA1(2bcbc4757d98f291fcaec467abc36158b3f59be3) )
+	ROM_LOAD( "epr-7682.ic58", 0x00000, 0x8000, CRC(c4efbf48) SHA1(2bcbc4757d98f291fcaec467abc36158b3f59be3) )
 
 	ROM_REGION( 0x20000, "pcm", 0 ) // Sega PCM sound data
-	ROM_LOAD( "epr-7681.rom", 0x00000, 0x8000, CRC(bc0c4d12) SHA1(3de71bde4c23e3c31984f20fc4bc7e221354c56f) )
-	ROM_LOAD( "epr-7680.rom", 0x10000, 0x8000, CRC(627b3c8c) SHA1(806fe7dce619ad19c09178061be4607d2beba14d) )
+	ROM_LOAD( "epr-7681.ic8", 0x00000, 0x8000, CRC(bc0c4d12) SHA1(3de71bde4c23e3c31984f20fc4bc7e221354c56f) )
+	ROM_LOAD( "epr-7680.ic7", 0x10000, 0x8000, CRC(627b3c8c) SHA1(806fe7dce619ad19c09178061be4607d2beba14d) )
 
 	ROM_REGION( 0x2000, "sprites:zoom", 0 ) // zoom table
 	ROM_LOAD( "epr-6844.ic123", 0x0000, 0x2000, CRC(e3ec7bd6) SHA1(feec0fe664e16fac0fde61cf64b401b9b0575323) )
 
 	ROM_REGION( 0x2000, "maincpu:key", 0 ) // decryption key
-	ROM_LOAD( "317-0013a.key", 0x0000, 0x2000, CRC(295e6737) SHA1(2eff36f1f24db1154cf970d4c9fd481ae4f9a57c) )
+	ROM_LOAD( "317-0013a.key", 0x0000, 0x2000, CRC(a965b2da) SHA1(046f800f258163b6935f4f75326d9dc225b27dde) )
 ROM_END
 
+//*************************************************************************************************************************
+//  Enduro Racer
+//  CPU: FD1089B (317-0013A)
+//  YM2151 sound board
+//
+//  ASSY CPU BD 837-6000 ENDURO RACER
+//   ASSY CPU BD 837-6001-01
+//   ASSY CONTROL BD 837-6002-01
+//   ASSY ROM BD 837-6004-02 (with jumpers J2, J3, J7 & J8 made)
+//  ASSY SOUND BD 834-6003 ENDURO RACER  (production sticker:  860715.0509E)
+//   ASSY SOUND BD 837-6005
+//
+//   Missing dumps from the ASSY SOUND BD:
+//    315-5205   - silckscreened CK2605 (DIP20) at IC67 (8J)
+//    315-5206   - silckscreened 82S153 (DIP20) at IC38 (5E)
+//
+ROM_START( endurora )
+	ROM_REGION( 0x40000, "maincpu", 0 ) // 68000 code
+	ROM_LOAD16_BYTE( "epr-7640a.ic97", 0x00000, 0x8000, CRC(1d1dc5d4) SHA1(8e7ae5abd23e949de5d5e1772f90e53d05c866ec) )
+	ROM_LOAD16_BYTE( "epr-7636a.ic84", 0x00001, 0x8000, CRC(84131639) SHA1(04981464577d2604eec36c14c5de9c91604ae501) )
+	ROM_LOAD16_BYTE( "epr-7641.ic98",  0x10000, 0x8000, CRC(2503ae7c) SHA1(27009d5b47dc207145048edfcc1ac8ffda5f0b78) )
+	ROM_LOAD16_BYTE( "epr-7637.ic85",  0x10001, 0x8000, CRC(82a27a8c) SHA1(4b182d8c23454aed7d786c9824932957319b6eff) )
+	ROM_LOAD16_BYTE( "epr-7642.ic99",  0x20000, 0x8000, CRC(1c453bea) SHA1(c6e606cdcb1690de05ef5283b48a8a61b2e0ad51) )
+	ROM_LOAD16_BYTE( "epr-7638.ic86",  0x20001, 0x8000, CRC(70544779) SHA1(e6403edd7fc0ad5d447c25be5d7f10889aa109ff) )
+
+	ROM_REGION( 0x40000, "subcpu", 0 ) // second 68000 CPU
+	ROM_LOAD16_BYTE("epr-7634a.ic54", 0x0000, 0x8000, CRC(aec83731) SHA1(3fe2d0f1a8806b850836741d664c07754a701459) )
+	ROM_LOAD16_BYTE("epr-7635a.ic67", 0x0001, 0x8000, CRC(b2fce96f) SHA1(9d6c1a7c2bdbf86430b849a5f6c6fdb5595dc91c) )
+
+	ROM_REGION( 0x18000, "gfx1", 0 ) // tiles
+	ROM_LOAD( "epr-7644.ic31", 0x00000, 0x08000, CRC(e7a4ff90) SHA1(06d18470019041e32be9a969870cd995de626cd6) )
+	ROM_LOAD( "epr-7645.ic46", 0x08000, 0x08000, CRC(4caa0095) SHA1(a24c741cdca0542e462f17ff94f132c62710e198) )
+	ROM_LOAD( "epr-7646.ic60", 0x10000, 0x08000, CRC(7e432683) SHA1(c8249b23fce77eb456166161c2d9aa34309efe31) )
+
+	ROM_REGION32_LE( 0x100000, "sprites", 0 ) // sprites - ASSY ROM BD 837-6004-02 with jumpers J2, J3, J7 & J8 made
+	ROM_LOAD32_BYTE( "mpr-10146.ic36", 0x00000, 0x20000, CRC(85564401) SHA1(aca73ee936d623de2103f843bd916909e4d0ec7b) ) // all MPR-101xx here are 28 pin Fujitsu MB831000 mask ROMs
+	ROM_LOAD32_BYTE( "mpr-10144.ic28", 0x00001, 0x20000, CRC(03569803) SHA1(cad6d5e2dcb785eece2c82e13105378c9857745e) )
+	ROM_LOAD32_BYTE( "mpr-10142.ic18", 0x00002, 0x20000, CRC(4a72251b) SHA1(2de25051d7858b817e290b0806792980a889eb16) )
+	ROM_LOAD32_BYTE( "mpr-10140.ic8",  0x00003, 0x20000, CRC(68ff1691) SHA1(82343227b730ac3a66aac9c362f29dd0dcdb46f8) )
+	ROM_LOAD32_BYTE( "mpr-10145.ic32", 0x80000, 0x20000, CRC(3e64eec0) SHA1(272fd2f318db67368b3d13cacc47f9d32c9bdcaa) )
+	ROM_LOAD32_BYTE( "mpr-10143.ic24", 0x80001, 0x20000, CRC(bdad5fd2) SHA1(914e74fc1ab4c3e7418f2c95305f3bebab8476be) )
+	ROM_LOAD32_BYTE( "mpr-10141.ic14", 0x80002, 0x20000, CRC(560360b9) SHA1(ddae8cc2c5a35540d4a115313049b30f5d2ebeae) )
+	ROM_LOAD32_BYTE( "mpr-10139.ic4",  0x80003, 0x20000, CRC(863c7d9e) SHA1(a77648beeed180b3f00d66ba91b20459e32025fe) )
+
+	ROM_REGION( 0x8000, "segaic16road", 0 ) // road gfx
+	ROM_LOAD( "epr-7633.ic1", 0x0000, 0x8000, CRC(6f146210) SHA1(2f58f0c3563b434ed02700b9ca1545a696a5716e) )
+
+	ROM_REGION( 0x10000, "soundcpu", 0 ) // sound CPU
+	ROM_LOAD( "epr-7682.ic58", 0x00000, 0x8000, CRC(c4efbf48) SHA1(2bcbc4757d98f291fcaec467abc36158b3f59be3) )
+
+	ROM_REGION( 0x20000, "pcm", 0 ) // Sega PCM sound data
+	ROM_LOAD( "epr-7681.ic8", 0x00000, 0x8000, CRC(bc0c4d12) SHA1(3de71bde4c23e3c31984f20fc4bc7e221354c56f) )
+	ROM_LOAD( "epr-7680.ic7", 0x10000, 0x8000, CRC(627b3c8c) SHA1(806fe7dce619ad19c09178061be4607d2beba14d) )
+
+	ROM_REGION( 0x2000, "sprites:zoom", 0 ) // zoom table
+	ROM_LOAD( "epr-6844.ic123", 0x0000, 0x2000, CRC(e3ec7bd6) SHA1(feec0fe664e16fac0fde61cf64b401b9b0575323) )
+
+	ROM_REGION( 0x2000, "maincpu:key", 0 ) // decryption key
+	ROM_LOAD( "317-0013a.key", 0x0000, 0x2000, CRC(a965b2da) SHA1(046f800f258163b6935f4f75326d9dc225b27dde) )
+ROM_END
+
+//*************************************************************************************************************************
+//  Enduro Racer
+//  CPU: FD1089B (317-0013A)
+//  YM2151 sound board
+//
+//  ASSY CPU BD 837-6000 ENDURO RACER
+//   ASSY CPU BD 837-6001-01
+//   ASSY CONTROL BD 837-6002-01
+//   ASSY ROM BD 837-6004-01
+//  ASSY SOUND BD 834-6003 ENDURO RACER  (production sticker:  860715.0509E)
+//   ASSY SOUND BD 837-6005
+//
+//   Missing dumps from the ASSY SOUND BD:
+//    315-5205   - silckscreened CK2605 (DIP20) at IC67 (8J)
+//    315-5206   - silckscreened 82S153 (DIP20) at IC38 (5E)
+//
+ROM_START( endurorb )
+	ROM_REGION( 0x40000, "maincpu", 0 ) // 68000 code
+	ROM_LOAD16_BYTE( "epr-7640.ic97", 0x00000, 0x8000, CRC(193a495b) SHA1(6418959cddf2678ddfccf67a29440a896e427cdc) )
+	ROM_LOAD16_BYTE( "epr-7636.ic84", 0x00001, 0x8000, CRC(d8cedbbe) SHA1(e9f96251732e19651789a93c0cf2349d4f038157) )
+	ROM_LOAD16_BYTE( "epr-7641.ic98", 0x10000, 0x8000, CRC(2503ae7c) SHA1(27009d5b47dc207145048edfcc1ac8ffda5f0b78) )
+	ROM_LOAD16_BYTE( "epr-7637.ic85", 0x10001, 0x8000, CRC(82a27a8c) SHA1(4b182d8c23454aed7d786c9824932957319b6eff) )
+	ROM_LOAD16_BYTE( "epr-7642.ic99", 0x20000, 0x8000, CRC(1c453bea) SHA1(c6e606cdcb1690de05ef5283b48a8a61b2e0ad51) )
+	ROM_LOAD16_BYTE( "epr-7638.ic86", 0x20001, 0x8000, CRC(70544779) SHA1(e6403edd7fc0ad5d447c25be5d7f10889aa109ff) )
+
+	ROM_REGION( 0x40000, "subcpu", 0 ) // second 68000 CPU
+	ROM_LOAD16_BYTE("epr-7634.ic54", 0x0000, 0x8000, CRC(3e07fd32) SHA1(7acb9e9712ecfe928c421c84dece783e75077746) )
+	ROM_LOAD16_BYTE("epr-7635.ic67", 0x0001, 0x8000, CRC(22f762ab) SHA1(70fa87da76c714db7213c42128a0b6a27644a1d4) )
+
+	ROM_REGION( 0x18000, "gfx1", 0 ) // tiles
+	ROM_LOAD( "epr-7644.ic31", 0x00000, 0x08000, CRC(e7a4ff90) SHA1(06d18470019041e32be9a969870cd995de626cd6) )
+	ROM_LOAD( "epr-7645.ic46", 0x08000, 0x08000, CRC(4caa0095) SHA1(a24c741cdca0542e462f17ff94f132c62710e198) )
+	ROM_LOAD( "epr-7646.ic60", 0x10000, 0x08000, CRC(7e432683) SHA1(c8249b23fce77eb456166161c2d9aa34309efe31) )
+
+	ROM_REGION32_LE( 0x100000, "sprites", 0 ) // sprites
+	ROM_LOAD32_BYTE( "epr-7678.ic36", 0x00000, 0x8000, CRC(9fb5e656) SHA1(264b0ad017eb0fc7e0b542e6dd160ba964c100fd) )
+	ROM_LOAD32_BYTE( "epr-7670.ic28", 0x00001, 0x8000, CRC(dbbe2f6e) SHA1(310797a61f91d6866e728e0da3b30828e06d1b52) )
+	ROM_LOAD32_BYTE( "epr-7662.ic18", 0x00002, 0x8000, CRC(cb0c13c5) SHA1(856d1234fd8f8146e20fe6c65c0a535b7b7512cd) )
+	ROM_LOAD32_BYTE( "epr-7654.ic8",  0x00003, 0x8000, CRC(2db6520d) SHA1(d16739e84316b4bd26963b729208169bbf01f499) )
+	ROM_LOAD32_BYTE( "epr-7677.ic35", 0x20000, 0x8000, CRC(7764765b) SHA1(62543130816c084d292f229a15b3ce1305c99bb3) )
+	ROM_LOAD32_BYTE( "epr-7669.ic27", 0x20001, 0x8000, CRC(f9525faa) SHA1(fbe2f67a9baee069dbca26a669d0a263bcca0d09) )
+	ROM_LOAD32_BYTE( "epr-7661.ic17", 0x20002, 0x8000, CRC(fe93a79b) SHA1(591025a371a451c9cddc8c7480c9841a18bb9a7f) )
+	ROM_LOAD32_BYTE( "epr-7653.ic7",  0x20003, 0x8000, CRC(46a52114) SHA1(d646ab03c1985953401619457d03072833edc6c7) )
+	ROM_LOAD32_BYTE( "epr-7676.ic34", 0x40000, 0x8000, CRC(2e42e0d4) SHA1(508f6f89e681b59272884ba129a5c6ffa1b6ba05) )
+	ROM_LOAD32_BYTE( "epr-7668.ic26", 0x40001, 0x8000, CRC(e115ce33) SHA1(1af591bc1567b89d0de399e4a02d896fba938bab) )
+	ROM_LOAD32_BYTE( "epr-7660.ic16", 0x40002, 0x8000, CRC(86dfbb68) SHA1(a05ac16fbe3aaf34dd46229d4b71fc1f72a3a556) )
+	ROM_LOAD32_BYTE( "epr-7652.ic6",  0x40003, 0x8000, CRC(2880cfdb) SHA1(94b78d78d82c324ca108970d8689f1d6b2ca8a24) )
+	ROM_LOAD32_BYTE( "epr-7675.ic33", 0x60000, 0x8000, CRC(05cd2d61) SHA1(51688a5a9bc4da3f88ce162ff30affe8c6d3d0c8) )
+	ROM_LOAD32_BYTE( "epr-7667.ic25", 0x60001, 0x8000, CRC(923bde9d) SHA1(7722a7fdbf45f862f1011d1afae8dedd5885bf52) )
+	ROM_LOAD32_BYTE( "epr-7659.ic15", 0x60002, 0x8000, CRC(629dc8ce) SHA1(4af2a53678890b02922dee54f7cd3c5550001572) )
+	ROM_LOAD32_BYTE( "epr-7651.ic5",  0x60003, 0x8000, CRC(d7902bad) SHA1(f4872d1a42dcf7d5dbdbc1233606a706b39478d7) )
+	ROM_LOAD32_BYTE( "epr-7674.ic32", 0x80000, 0x8000, CRC(1a129acf) SHA1(ebaa60ccedc95c58af3ce99105b924b303827f6e) )
+	ROM_LOAD32_BYTE( "epr-7666.ic24", 0x80001, 0x8000, CRC(23697257) SHA1(19453b14e8e6789e4c48a80d1b83dbaf37fbdceb) )
+	ROM_LOAD32_BYTE( "epr-7658.ic14", 0x80002, 0x8000, CRC(1677f24f) SHA1(4786996cc8a04344e82ec9be7c4e7c8a005914a3) )
+	ROM_LOAD32_BYTE( "epr-7650.ic4",  0x80003, 0x8000, CRC(642635ec) SHA1(e42bbae178e9a139325633e8c85a606c91e39e36) )
+	ROM_LOAD32_BYTE( "epr-7673.ic31", 0xa0000, 0x8000, CRC(82602394) SHA1(d714f397f33a52429f394fc4c403d39be7911ccf) )
+	ROM_LOAD32_BYTE( "epr-7665.ic23", 0xa0001, 0x8000, CRC(12d77607) SHA1(5b5d25646336a8ceae449d5b7a6b70372d81dd8b) )
+	ROM_LOAD32_BYTE( "epr-7657.ic13", 0xa0002, 0x8000, CRC(8158839c) SHA1(f22081caf11d6b57488c969b5935cd4686e11197) )
+	ROM_LOAD32_BYTE( "epr-7649.ic3",  0xa0003, 0x8000, CRC(4edba14c) SHA1(db0aab94de50f8f9501b7afd2fff70fb0a6b2b36) )
+	ROM_LOAD32_BYTE( "epr-7672.ic30", 0xc0000, 0x8000, CRC(d11452f7) SHA1(f68183053005a26c0014050592bad6d63325895e) )
+	ROM_LOAD32_BYTE( "epr-7664.ic22", 0xc0001, 0x8000, CRC(0df2cfad) SHA1(d62d12922be921967da37fbc624aaed72c4a2a98) )
+	ROM_LOAD32_BYTE( "epr-7656.ic12", 0xc0002, 0x8000, CRC(6c741272) SHA1(ccaedda1436ddc339377e610d51e13726bb6c7eb) )
+	ROM_LOAD32_BYTE( "epr-7648.ic2",  0xc0003, 0x8000, CRC(983ea830) SHA1(9629476a300ba711893775ca94dce81a00afd246) )
+	ROM_LOAD32_BYTE( "epr-7671.ic29", 0xe0000, 0x8000, CRC(b0c7fdc6) SHA1(c9e0993fed36526e0e46ab2da9413af24b96cae8) )
+	ROM_LOAD32_BYTE( "epr-7663.ic21", 0xe0001, 0x8000, CRC(2b0b8f08) SHA1(14aa1e6866f1c23c9ff271e8f216f6ecc21601ab) )
+	ROM_LOAD32_BYTE( "epr-7655.ic11", 0xe0002, 0x8000, CRC(3433fe7b) SHA1(636449a0707d6629bf6ea503cfb52ad24af1c017) )
+	ROM_LOAD32_BYTE( "epr-7647.ic1",  0xe0003, 0x8000, CRC(2e7fbec0) SHA1(a59ec5fc3341833671fb948cd21b47f3a49db538) )
+
+	ROM_REGION( 0x8000, "segaic16road", 0 ) // road gfx
+	ROM_LOAD( "epr-7633.ic1", 0x0000, 0x8000, CRC(6f146210) SHA1(2f58f0c3563b434ed02700b9ca1545a696a5716e) )
+
+	ROM_REGION( 0x10000, "soundcpu", 0 ) // sound CPU
+	ROM_LOAD( "epr-7682.ic58", 0x00000, 0x8000, CRC(c4efbf48) SHA1(2bcbc4757d98f291fcaec467abc36158b3f59be3) )
+
+	ROM_REGION( 0x20000, "pcm", 0 ) // Sega PCM sound data
+	ROM_LOAD( "epr-7681.ic8", 0x00000, 0x8000, CRC(bc0c4d12) SHA1(3de71bde4c23e3c31984f20fc4bc7e221354c56f) )
+	ROM_LOAD( "epr-7680.ic7", 0x10000, 0x8000, CRC(627b3c8c) SHA1(806fe7dce619ad19c09178061be4607d2beba14d) )
+
+	ROM_REGION( 0x2000, "sprites:zoom", 0 ) // zoom table
+	ROM_LOAD( "epr-6844.ic123", 0x0000, 0x2000, CRC(e3ec7bd6) SHA1(feec0fe664e16fac0fde61cf64b401b9b0575323) )
+
+	ROM_REGION( 0x2000, "maincpu:key", 0 ) // decryption key
+	ROM_LOAD( "317-0013a.key", 0x0000, 0x2000, CRC(a965b2da) SHA1(046f800f258163b6935f4f75326d9dc225b27dde) )
+ROM_END
+
+//*************************************************************************************************************************
+//  Decrypted Enduro Racer 317-0013A (YM2151 based) set
+//
 ROM_START( endurord )
 	ROM_REGION( 0x40000, "maincpu", 0 ) // 68000 code
 	ROM_LOAD16_BYTE( "bootleg_epr-7640a.ic97", 0x00000, 0x8000, CRC(f52fd496) SHA1(a23d0ac897a65b7688cce701b43b23d873c6c82f) )
@@ -1559,7 +1859,7 @@ ROM_START( endurord )
 	ROM_LOAD32_BYTE( "epr-7678.ic36", 0x00000, 0x8000, CRC(9fb5e656) SHA1(264b0ad017eb0fc7e0b542e6dd160ba964c100fd) )
 	ROM_LOAD32_BYTE( "epr-7670.ic28", 0x00001, 0x8000, CRC(dbbe2f6e) SHA1(310797a61f91d6866e728e0da3b30828e06d1b52) )
 	ROM_LOAD32_BYTE( "epr-7662.ic18", 0x00002, 0x8000, CRC(cb0c13c5) SHA1(856d1234fd8f8146e20fe6c65c0a535b7b7512cd) )
-	ROM_LOAD32_BYTE( "epr-7654.1c8",  0x00003, 0x8000, CRC(2db6520d) SHA1(d16739e84316b4bd26963b729208169bbf01f499) )
+	ROM_LOAD32_BYTE( "epr-7654.ic8",  0x00003, 0x8000, CRC(2db6520d) SHA1(d16739e84316b4bd26963b729208169bbf01f499) )
 	ROM_LOAD32_BYTE( "epr-7677.ic35", 0x20000, 0x8000, CRC(7764765b) SHA1(62543130816c084d292f229a15b3ce1305c99bb3) )
 	ROM_LOAD32_BYTE( "epr-7669.ic27", 0x20001, 0x8000, CRC(f9525faa) SHA1(fbe2f67a9baee069dbca26a669d0a263bcca0d09) )
 	ROM_LOAD32_BYTE( "epr-7661.ic17", 0x20002, 0x8000, CRC(fe93a79b) SHA1(591025a371a451c9cddc8c7480c9841a18bb9a7f) )
@@ -1589,15 +1889,15 @@ ROM_START( endurord )
 	ROM_LOAD32_BYTE( "epr-7655.ic11", 0xe0002, 0x8000, CRC(3433fe7b) SHA1(636449a0707d6629bf6ea503cfb52ad24af1c017) )
 	ROM_LOAD32_BYTE( "epr-7647.ic1",  0xe0003, 0x8000, CRC(2e7fbec0) SHA1(a59ec5fc3341833671fb948cd21b47f3a49db538) )
 
-	ROM_REGION( 0x8000, "gfx3", 0 ) // road gfx
+	ROM_REGION( 0x8000, "segaic16road", 0 ) // road gfx
 	ROM_LOAD( "epr-7633.ic1", 0x0000, 0x8000, CRC(6f146210) SHA1(2f58f0c3563b434ed02700b9ca1545a696a5716e) )
 
 	ROM_REGION( 0x10000, "soundcpu", 0 ) // sound CPU
-	ROM_LOAD( "epr-7682.rom", 0x00000, 0x8000, CRC(c4efbf48) SHA1(2bcbc4757d98f291fcaec467abc36158b3f59be3) )
+	ROM_LOAD( "epr-7682.ic58", 0x00000, 0x8000, CRC(c4efbf48) SHA1(2bcbc4757d98f291fcaec467abc36158b3f59be3) )
 
 	ROM_REGION( 0x20000, "pcm", 0 ) // Sega PCM sound data
-	ROM_LOAD( "epr-7681.rom", 0x00000, 0x8000, CRC(bc0c4d12) SHA1(3de71bde4c23e3c31984f20fc4bc7e221354c56f) )
-	ROM_LOAD( "epr-7680.rom", 0x10000, 0x8000, CRC(627b3c8c) SHA1(806fe7dce619ad19c09178061be4607d2beba14d) )
+	ROM_LOAD( "epr-7681.ic8", 0x00000, 0x8000, CRC(bc0c4d12) SHA1(3de71bde4c23e3c31984f20fc4bc7e221354c56f) )
+	ROM_LOAD( "epr-7680.ic7", 0x10000, 0x8000, CRC(627b3c8c) SHA1(806fe7dce619ad19c09178061be4607d2beba14d) )
 
 	ROM_REGION( 0x2000, "sprites:zoom", 0 ) // zoom table
 	ROM_LOAD( "epr-6844.ic123", 0x0000, 0x2000, CRC(e3ec7bd6) SHA1(feec0fe664e16fac0fde61cf64b401b9b0575323) )
@@ -1635,7 +1935,7 @@ ROM_START( enduror1 )
 	ROM_LOAD32_BYTE( "epr-7678.ic36", 0x00000, 0x8000, CRC(9fb5e656) SHA1(264b0ad017eb0fc7e0b542e6dd160ba964c100fd) )
 	ROM_LOAD32_BYTE( "epr-7670.ic28", 0x00001, 0x8000, CRC(dbbe2f6e) SHA1(310797a61f91d6866e728e0da3b30828e06d1b52) )
 	ROM_LOAD32_BYTE( "epr-7662.ic18", 0x00002, 0x8000, CRC(cb0c13c5) SHA1(856d1234fd8f8146e20fe6c65c0a535b7b7512cd) )
-	ROM_LOAD32_BYTE( "epr-7654.1c8",  0x00003, 0x8000, CRC(2db6520d) SHA1(d16739e84316b4bd26963b729208169bbf01f499) )
+	ROM_LOAD32_BYTE( "epr-7654.ic8",  0x00003, 0x8000, CRC(2db6520d) SHA1(d16739e84316b4bd26963b729208169bbf01f499) )
 	ROM_LOAD32_BYTE( "epr-7677.ic35", 0x20000, 0x8000, CRC(7764765b) SHA1(62543130816c084d292f229a15b3ce1305c99bb3) )
 	ROM_LOAD32_BYTE( "epr-7669.ic27", 0x20001, 0x8000, CRC(f9525faa) SHA1(fbe2f67a9baee069dbca26a669d0a263bcca0d09) )
 	ROM_LOAD32_BYTE( "epr-7661.ic17", 0x20002, 0x8000, CRC(fe93a79b) SHA1(591025a371a451c9cddc8c7480c9841a18bb9a7f) )
@@ -1665,7 +1965,7 @@ ROM_START( enduror1 )
 	ROM_LOAD32_BYTE( "epr-7655.ic11", 0xe0002, 0x8000, CRC(3433fe7b) SHA1(636449a0707d6629bf6ea503cfb52ad24af1c017) )
 	ROM_LOAD32_BYTE( "epr-7647.ic1",  0xe0003, 0x8000, CRC(2e7fbec0) SHA1(a59ec5fc3341833671fb948cd21b47f3a49db538) )
 
-	ROM_REGION( 0x8000, "gfx3", 0 ) // road gfx
+	ROM_REGION( 0x8000, "segaic16road", 0 ) // road gfx
 	ROM_LOAD( "epr-7633.ic1", 0x0000, 0x8000, CRC(6f146210) SHA1(2f58f0c3563b434ed02700b9ca1545a696a5716e) )
 
 	ROM_REGION( 0x10000, "soundcpu", 0 ) // sound CPU
@@ -1680,9 +1980,12 @@ ROM_START( enduror1 )
 	ROM_LOAD( "epr-6844.ic123", 0x0000, 0x2000, CRC(e3ec7bd6) SHA1(feec0fe664e16fac0fde61cf64b401b9b0575323) )
 
 	ROM_REGION( 0x2000, "maincpu:key", 0 ) // decryption key
-	ROM_LOAD( "317-0013a.key", 0x0000, 0x2000, CRC(295e6737) SHA1(2eff36f1f24db1154cf970d4c9fd481ae4f9a57c) )
+	ROM_LOAD( "317-0013a.key", 0x0000, 0x2000, CRC(a965b2da) SHA1(046f800f258163b6935f4f75326d9dc225b27dde) )
 ROM_END
 
+//*************************************************************************************************************************
+//  Decrypted Enduro Racer 317-0013A (YM2203 based) set
+//
 ROM_START( enduror1d )
 	ROM_REGION( 0x40000, "maincpu", 0 ) // 68000 code
 	ROM_LOAD16_BYTE( "bootleg_epr-7630.ic97", 0x00000, 0x8000, CRC(b041e995) SHA1(b3ece0cc0538700052b0b1c693f38210d2121e3d) )
@@ -1705,7 +2008,7 @@ ROM_START( enduror1d )
 	ROM_LOAD32_BYTE( "epr-7678.ic36", 0x00000, 0x8000, CRC(9fb5e656) SHA1(264b0ad017eb0fc7e0b542e6dd160ba964c100fd) )
 	ROM_LOAD32_BYTE( "epr-7670.ic28", 0x00001, 0x8000, CRC(dbbe2f6e) SHA1(310797a61f91d6866e728e0da3b30828e06d1b52) )
 	ROM_LOAD32_BYTE( "epr-7662.ic18", 0x00002, 0x8000, CRC(cb0c13c5) SHA1(856d1234fd8f8146e20fe6c65c0a535b7b7512cd) )
-	ROM_LOAD32_BYTE( "epr-7654.1c8",  0x00003, 0x8000, CRC(2db6520d) SHA1(d16739e84316b4bd26963b729208169bbf01f499) )
+	ROM_LOAD32_BYTE( "epr-7654.ic8",  0x00003, 0x8000, CRC(2db6520d) SHA1(d16739e84316b4bd26963b729208169bbf01f499) )
 	ROM_LOAD32_BYTE( "epr-7677.ic35", 0x20000, 0x8000, CRC(7764765b) SHA1(62543130816c084d292f229a15b3ce1305c99bb3) )
 	ROM_LOAD32_BYTE( "epr-7669.ic27", 0x20001, 0x8000, CRC(f9525faa) SHA1(fbe2f67a9baee069dbca26a669d0a263bcca0d09) )
 	ROM_LOAD32_BYTE( "epr-7661.ic17", 0x20002, 0x8000, CRC(fe93a79b) SHA1(591025a371a451c9cddc8c7480c9841a18bb9a7f) )
@@ -1735,7 +2038,7 @@ ROM_START( enduror1d )
 	ROM_LOAD32_BYTE( "epr-7655.ic11", 0xe0002, 0x8000, CRC(3433fe7b) SHA1(636449a0707d6629bf6ea503cfb52ad24af1c017) )
 	ROM_LOAD32_BYTE( "epr-7647.ic1",  0xe0003, 0x8000, CRC(2e7fbec0) SHA1(a59ec5fc3341833671fb948cd21b47f3a49db538) )
 
-	ROM_REGION( 0x8000, "gfx3", 0 ) // road gfx
+	ROM_REGION( 0x8000, "segaic16road", 0 ) // road gfx
 	ROM_LOAD( "epr-7633.ic1", 0x0000, 0x8000, CRC(6f146210) SHA1(2f58f0c3563b434ed02700b9ca1545a696a5716e) )
 
 	ROM_REGION( 0x10000, "soundcpu", 0 ) // sound CPU
@@ -1759,7 +2062,7 @@ ROM_START( endurobl )
 	ROM_REGION( 0x40000, "maincpu", 0 ) // 68000 code
 	ROM_LOAD16_BYTE( "7.13j", 0x030000, 0x08000, CRC(f1d6b4b7) SHA1(32bd966191cbb36d1e60ed1a06d4caa023dd6b88) )
 	ROM_CONTINUE(             0x000000, 0x08000 )
-	ROM_LOAD16_BYTE( "4.13h", 0x030001, 0x08000, CRC(43bff873) SHA1(04e906c1965a6211fb8e13987db52f1f99cc0203) ) // rom de-coded
+	ROM_LOAD16_BYTE( "4.13h", 0x030001, 0x08000, CRC(43bff873) SHA1(04e906c1965a6211fb8e13987db52f1f99cc0203) ) // ROM decoded
 	ROM_CONTINUE(             0x000001, 0x08000 )       // data de-coded
 	ROM_LOAD16_BYTE( "8.14j", 0x010000, 0x08000, CRC(2153154a) SHA1(145d8ed59812d26ca412a01ae77cd7872adaba5a) )
 	ROM_LOAD16_BYTE( "5.14h", 0x010001, 0x08000, CRC(0a97992c) SHA1(7a6fc8c575637107ed07a30f6f0f8cb8877cbb43) )
@@ -1779,7 +2082,7 @@ ROM_START( endurobl )
 	ROM_LOAD32_BYTE( "epr-7678.ic36", 0x00000, 0x8000, CRC(9fb5e656) SHA1(264b0ad017eb0fc7e0b542e6dd160ba964c100fd) )
 	ROM_LOAD32_BYTE( "epr-7670.ic28", 0x00001, 0x8000, CRC(dbbe2f6e) SHA1(310797a61f91d6866e728e0da3b30828e06d1b52) )
 	ROM_LOAD32_BYTE( "epr-7662.ic18", 0x00002, 0x8000, CRC(cb0c13c5) SHA1(856d1234fd8f8146e20fe6c65c0a535b7b7512cd) )
-	ROM_LOAD32_BYTE( "epr-7654.1c8",  0x00003, 0x8000, CRC(2db6520d) SHA1(d16739e84316b4bd26963b729208169bbf01f499) )
+	ROM_LOAD32_BYTE( "epr-7654.ic8",  0x00003, 0x8000, CRC(2db6520d) SHA1(d16739e84316b4bd26963b729208169bbf01f499) )
 	ROM_LOAD32_BYTE( "epr-7677.ic35", 0x20000, 0x8000, CRC(7764765b) SHA1(62543130816c084d292f229a15b3ce1305c99bb3) )
 	ROM_LOAD32_BYTE( "epr-7669.ic27", 0x20001, 0x8000, CRC(f9525faa) SHA1(fbe2f67a9baee069dbca26a669d0a263bcca0d09) )
 	ROM_LOAD32_BYTE( "epr-7661.ic17", 0x20002, 0x8000, CRC(fe93a79b) SHA1(591025a371a451c9cddc8c7480c9841a18bb9a7f) )
@@ -1809,7 +2112,7 @@ ROM_START( endurobl )
 	ROM_LOAD32_BYTE( "epr-7655.ic11", 0xe0002, 0x8000, CRC(3433fe7b) SHA1(636449a0707d6629bf6ea503cfb52ad24af1c017) )
 	ROM_LOAD32_BYTE( "epr-7647.ic1",  0xe0003, 0x8000, CRC(2e7fbec0) SHA1(a59ec5fc3341833671fb948cd21b47f3a49db538) )
 
-	ROM_REGION( 0x8000, "gfx3", 0 ) // road gfx
+	ROM_REGION( 0x8000, "segaic16road", 0 ) // road gfx
 	ROM_LOAD( "epr-7633.ic1", 0x0000, 0x8000, CRC(6f146210) SHA1(2f58f0c3563b434ed02700b9ca1545a696a5716e) )
 
 	ROM_REGION( 0x10000, "soundcpu", 0 ) // sound CPU
@@ -1831,7 +2134,7 @@ ROM_END
 //
 ROM_START( endurob2 )
 	ROM_REGION( 0x040000, "maincpu", 0 ) // 68000 code
-	// the program roms should be twice the size
+	// the program ROMs should be twice the size
 	ROM_LOAD16_BYTE( "enduro.a07", 0x000000, 0x08000, BAD_DUMP CRC(259069bc) SHA1(42fa47ce4a29294f9eff3eddbba6c305d750aaa5) )
 //  ROM_CONTINUE(                  0x030000, 0x08000 )
 	ROM_LOAD16_BYTE( "enduro.a04", 0x000001, 0x08000, BAD_DUMP CRC(f584fbd9) SHA1(6c9ddcd1d9cf95c6250b705b27865644da45d197) )
@@ -1854,7 +2157,7 @@ ROM_START( endurob2 )
 	ROM_LOAD32_BYTE( "epr-7678.ic36", 0x00000, 0x8000, CRC(9fb5e656) SHA1(264b0ad017eb0fc7e0b542e6dd160ba964c100fd) )
 	ROM_LOAD32_BYTE( "epr-7670.ic28", 0x00001, 0x8000, CRC(dbbe2f6e) SHA1(310797a61f91d6866e728e0da3b30828e06d1b52) )
 	ROM_LOAD32_BYTE( "epr-7662.ic18", 0x00002, 0x8000, CRC(cb0c13c5) SHA1(856d1234fd8f8146e20fe6c65c0a535b7b7512cd) )
-	ROM_LOAD32_BYTE( "epr-7654.1c8",  0x00003, 0x8000, CRC(2db6520d) SHA1(d16739e84316b4bd26963b729208169bbf01f499) )
+	ROM_LOAD32_BYTE( "epr-7654.ic8",  0x00003, 0x8000, CRC(2db6520d) SHA1(d16739e84316b4bd26963b729208169bbf01f499) )
 	ROM_LOAD32_BYTE( "epr-7677.ic35", 0x20000, 0x8000, CRC(7764765b) SHA1(62543130816c084d292f229a15b3ce1305c99bb3) )
 	ROM_LOAD32_BYTE( "epr-7669.ic27", 0x20001, 0x8000, CRC(f9525faa) SHA1(fbe2f67a9baee069dbca26a669d0a263bcca0d09) )
 	ROM_LOAD32_BYTE( "enduro.a34",    0x20002, 0x8000, CRC(296454d8) SHA1(17e829a08606837d36006849edffe54c76c384d5) )
@@ -1884,15 +2187,15 @@ ROM_START( endurob2 )
 	ROM_LOAD32_BYTE( "epr-7655.ic11", 0xe0002, 0x8000, CRC(3433fe7b) SHA1(636449a0707d6629bf6ea503cfb52ad24af1c017) )
 	ROM_LOAD32_BYTE( "epr-7647.ic1",  0xe0003, 0x8000, CRC(2e7fbec0) SHA1(a59ec5fc3341833671fb948cd21b47f3a49db538) )
 
-	ROM_REGION( 0x8000, "gfx3", 0 ) // road gfx
+	ROM_REGION( 0x8000, "segaic16road", 0 ) // road gfx
 	ROM_LOAD( "epr-7633.ic1", 0x0000, 0x8000, CRC(6f146210) SHA1(2f58f0c3563b434ed02700b9ca1545a696a5716e) )
 
 	ROM_REGION( 0x10000, "soundcpu", 0 ) // sound CPU
 	ROM_LOAD( "enduro.a16", 0x00000, 0x8000, CRC(d2cb6eb5) SHA1(80c5fab16ec4ddfa67fae94808026b2e6285b7f1) )
 
 	ROM_REGION( 0x20000, "pcm", 0 ) // Sega PCM sound data
-	ROM_LOAD( "epr-7681.rom", 0x00000, 0x8000, CRC(bc0c4d12) SHA1(3de71bde4c23e3c31984f20fc4bc7e221354c56f) )
-	ROM_LOAD( "epr-7680.rom", 0x10000, 0x8000, CRC(627b3c8c) SHA1(806fe7dce619ad19c09178061be4607d2beba14d) )
+	ROM_LOAD( "epr-7681.ic8", 0x00000, 0x8000, CRC(bc0c4d12) SHA1(3de71bde4c23e3c31984f20fc4bc7e221354c56f) )
+	ROM_LOAD( "epr-7680.ic7", 0x10000, 0x8000, CRC(627b3c8c) SHA1(806fe7dce619ad19c09178061be4607d2beba14d) )
 
 	ROM_REGION( 0x2000, "sprites:zoom", 0 ) // zoom table
 	ROM_LOAD( "epr-6844.ic123", 0x0000, 0x2000, CRC(e3ec7bd6) SHA1(feec0fe664e16fac0fde61cf64b401b9b0575323) )
@@ -1908,11 +2211,8 @@ ROM_END
 //  init_generic - common initialization
 //-------------------------------------------------
 
-DRIVER_INIT_MEMBER(segahang_state,generic)
+void segahang_state::init_generic()
 {
-	// point globals to allocated memory regions
-	m_segaic16road->segaic16_roadram_0 = reinterpret_cast<UINT16 *>(memshare("roadram")->ptr());
-
 	// save states
 	save_item(NAME(m_adc_select));
 	save_item(NAME(m_shadow));
@@ -1923,34 +2223,34 @@ DRIVER_INIT_MEMBER(segahang_state,generic)
 //  init_* - game-specific initialization
 //-------------------------------------------------
 
-DRIVER_INIT_MEMBER(segahang_state,sharrier)
+void segahang_state::init_sharrier()
 {
-	DRIVER_INIT_CALL(generic);
+	init_generic();
 	m_sharrier_video = true;
-	m_i8751_vblank_hook = i8751_sim_delegate(FUNC(segahang_state::sharrier_i8751_sim), this);
+	m_i8751_vblank_hook = i8751_sim_delegate(&segahang_state::sharrier_i8751_sim, this);
 }
 
-DRIVER_INIT_MEMBER(segahang_state,enduror)
+void segahang_state::init_enduror()
 {
-	DRIVER_INIT_CALL(generic);
+	init_generic();
 	m_sharrier_video = true;
 }
 
-DRIVER_INIT_MEMBER(segahang_state,endurobl)
+void segahang_state::init_endurobl()
 {
-	DRIVER_INIT_CALL(enduror);
+	init_enduror();
 	// assemble decrypted half of ROM and register it
-	UINT16 *rom = reinterpret_cast<UINT16 *>(memregion("maincpu")->base());
-	memcpy(m_decrypted_opcodes + 0x00000/2, rom + 0x30000/2, 0x10000);
-	memcpy(m_decrypted_opcodes + 0x10000/2, rom + 0x10000/2, 0x20000);
+	uint16_t *rom = reinterpret_cast<uint16_t *>(memregion("maincpu")->base());
+	memcpy(&m_decrypted_opcodes[0x00000/2], rom + 0x30000/2, 0x10000);
+	memcpy(&m_decrypted_opcodes[0x10000/2], rom + 0x10000/2, 0x20000);
 }
 
-DRIVER_INIT_MEMBER(segahang_state,endurob2)
+void segahang_state::init_endurob2()
 {
-	DRIVER_INIT_CALL(enduror);
+	init_enduror();
 
 	// assemble decrypted half of ROM and register it
-	UINT16 *rom = reinterpret_cast<UINT16 *>(memregion("maincpu")->base());
+	uint16_t *rom = reinterpret_cast<uint16_t *>(memregion("maincpu")->base());
 	memcpy(m_decrypted_opcodes, rom, 0x30000);
 }
 
@@ -1960,22 +2260,27 @@ DRIVER_INIT_MEMBER(segahang_state,endurob2)
 //  GAME DRIVERS
 //**************************************************************************
 
-//    YEAR, NAME,      PARENT,   MACHINE,  INPUT,     INIT,                   MONITOR,COMPANY,FULLNAME,FLAGS
-GAME( 1985, hangon,    0,        hangon,   hangon,    segahang_state,generic, ROT0,   "Sega", "Hang-On (Rev A)", 0 )
-GAME( 1985, hangon1,   hangon,   hangon,   hangon,    segahang_state,generic, ROT0,   "Sega", "Hang-On", 0 )
-GAME( 1985, hangon2,   hangon,   hangon,   hangon2,   segahang_state,generic, ROT0,   "Sega", "Hang-On (ride-on)", 0 )
+//    YEAR, NAME,       PARENT,   MACHINE,  INPUT,     STATE           INIT,          ROT,   COMPANY,          FULLNAME,                                                              FLAGS
+GAME( 1985, hangon,     0,        hangon,   hangon,    segahang_state, init_generic,  ROT0,  "Sega",           "Hang-On (Rev A)",                                                     0 )
+GAME( 1985, hangon1,    hangon,   hangon,   hangon,    segahang_state, init_generic,  ROT0,  "Sega",           "Hang-On",                                                             0 )
+GAME( 1985, hangon2,    hangon,   hangon,   hangon2,   segahang_state, init_generic,  ROT0,  "Sega",           "Hang-On (Rev A, ride-on)",                                            0 )
+GAME( 1985, hangonvf,   hangon,   hangon,   hangon,    segahang_state, init_generic,  ROT0,  "bootleg",        "VF (bootleg of Hang-On)",                                             0 )
 
-GAME( 1987, shangonro, shangon,  shangonro,shangonro, segahang_state,generic, ROT0,   "Sega", "Super Hang-On (ride-on, Japan, FD1094 317-0038)", 0 )
-GAME( 1992, shangonrb, shangon,  shangupb, shangupb,  segahang_state,generic, ROT0,   "bootleg", "Super Hang-On (bootleg)", 0 )
+GAME( 1987, shangonro,  shangon,  shangonro,shangonro, segahang_state, init_generic,  ROT0,  "Sega",           "Super Hang-On (Hang-On conversion, ride-on, Japan, FD1094 317-0038)", 0 )
+GAME( 1987, shangonho,  shangon,  shangonro,shangupb,  segahang_state, init_generic,  ROT0,  "Sega",           "Super Hang-On (Hang-On conversion, Japan, FD1094 317-0039)",          0 )
+GAME( 1992, shangonrb,  shangon,  shangupb, shangupb,  segahang_state, init_generic,  ROT0,  "bootleg",        "Super Hang-On (Hang-On conversion, bootleg)",                         0 )
+GAME( 1987, shangonrb2, shangon,  shangupb, shangupb,  segahang_state, init_generic,  ROT0,  "bootleg (Beta)", "Super Hang-On (Hang-On conversion, Beta bootleg)",                    0 )
 
-GAME( 1985, sharrier,  0,        sharrier, sharrier,  segahang_state,sharrier,ROT0,   "Sega", "Space Harrier (Rev A, 8751 315-5163A)", 0 )
-GAME( 1985, sharrier1, sharrier, sharrier, sharrier,  segahang_state,sharrier,ROT0,   "Sega", "Space Harrier (8751 315-5163)", 0 )
+GAME( 1985, sharrier,   0,        sharrier, sharrier,  segahang_state, init_sharrier, ROT0,  "Sega",           "Space Harrier (Rev A, 8751 315-5163A)",                               0 )
+GAME( 1985, sharrier1,  sharrier, sharrier, sharrier,  segahang_state, init_sharrier, ROT0,  "Sega",           "Space Harrier (8751 315-5163)",                                       0 )
 
-GAME( 1986, enduror,   0,        enduror,  enduror,   segahang_state,enduror, ROT0,   "Sega", "Enduro Racer (YM2151) (FD1089B 317-0013A)", 0 )
-GAME( 1986, enduror1,  enduror,  enduror1, enduror,   segahang_state,enduror, ROT0,   "Sega", "Enduro Racer (YM2203) (FD1089B 317-0013A)", 0 )
-GAME( 1986, endurobl,  enduror,  endurobl, enduror,   segahang_state,endurobl,ROT0,   "bootleg", "Enduro Racer (bootleg set 1)", 0 )
-GAME( 1986, endurob2,  enduror,  endurob2, enduror,   segahang_state,endurob2,ROT0,   "bootleg", "Enduro Racer (bootleg set 2)", MACHINE_NOT_WORKING )
+GAME( 1986, enduror,    0,        enduror,  enduror,   segahang_state, init_enduror,  ROT0,  "Sega",           "Enduro Racer (Rev A, YM2151, FD1089B 317-0013A)",                     0 )
+GAME( 1986, endurora,   enduror,  enduror,  enduror,   segahang_state, init_enduror,  ROT0,  "Sega",           "Enduro Racer (Rev A, YM2151, mask ROM sprites, FD1089B 317-0013A)",   0 )
+GAME( 1986, endurorb,   enduror,  enduror,  enduror,   segahang_state, init_enduror,  ROT0,  "Sega",           "Enduro Racer (YM2151, FD1089B 317-0013A)",                            0 )
+GAME( 1986, enduror1,   enduror,  enduror1, enduror,   segahang_state, init_enduror,  ROT0,  "Sega",           "Enduro Racer (YM2203, FD1089B 317-0013A)",                            0 )
+GAME( 1986, endurobl,   enduror,  endurobl, enduror,   segahang_state, init_endurobl, ROT0,  "bootleg",        "Enduro Racer (bootleg set 1)",                                        0 )
+GAME( 1986, endurob2,   enduror,  endurob2, enduror,   segahang_state, init_endurob2, ROT0,  "bootleg",        "Enduro Racer (bootleg set 2)",                                        MACHINE_NOT_WORKING )
 
 
-GAME( 1986, endurord,  enduror,  endurord,  enduror,   segahang_state,enduror, ROT0,   "bootleg", "Enduro Racer (YM2151) (bootleg of FD1089B 317-0013A set)", 0 )
-GAME( 1986, enduror1d, enduror,  enduror1d, enduror,   segahang_state,enduror, ROT0,   "bootleg", "Enduro Racer (YM2203) (bootleg of FD1089B 317-0013A set)", 0 )
+GAME( 1986, endurord,   enduror,  endurord,  enduror,  segahang_state, init_enduror,  ROT0,  "bootleg",        "Enduro Racer (bootleg of Rev A, YM2151, FD1089B 317-0013A set)",      0 )
+GAME( 1986, enduror1d,  enduror,  enduror1d, enduror,  segahang_state, init_enduror,  ROT0,  "bootleg",        "Enduro Racer (bootleg of YM2203, FD1089B 317-0013A set)",             0 )

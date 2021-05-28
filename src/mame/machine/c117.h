@@ -1,21 +1,12 @@
 // license:BSD-3-Clause
 // copyright-holders:Alex W. Jackson
+#ifndef MAME_MACHINE_C117_H
+#define MAME_MACHINE_C117_H
 
 #pragma once
 
-#ifndef __C117_H__
-#define __C117_H__
 
-
-//**************************************************************************
-//  INTERFACE CONFIGURATION MACROS
-//**************************************************************************
-
-#define MCFG_CUS117_CPUS(_maincpu, _subcpu) \
-		namco_c117_device::set_cpu_tags(*device, _maincpu, _subcpu);
-
-#define MCFG_CUS117_SUBRES_CB(_devcb) \
-		devcb = &namco_c117_device::set_subres_cb(*device, DEVCB_##_devcb);
+#include "machine/watchdog.h"
 
 
 //***************************************************************************
@@ -28,19 +19,23 @@ class namco_c117_device :
 {
 public:
 	//construction/destruction
-	namco_c117_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	namco_c117_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
-	// static configuration
-	static void set_cpu_tags(device_t &device, const char *maintag, const char *subtag);
-	template<class _Object> static devcb_base &set_subres_cb(device_t &device, _Object object) { return downcast<namco_c117_device &>(device).m_subres_cb.set_callback(object); }
+	// configuration
+	template <typename T, typename U> void set_cpu_tags(T &&maintag, U &&subtag)
+	{
+		m_cpuexec[0].set_tag(std::forward<T>(maintag));
+		m_cpuexec[1].set_tag(std::forward<U>(subtag));
+	}
+	auto subres_cb() { return m_subres_cb.bind(); }
 
-	DECLARE_READ8_MEMBER(main_r);
-	DECLARE_READ8_MEMBER(sub_r);
-	DECLARE_WRITE8_MEMBER(main_w);
-	DECLARE_WRITE8_MEMBER(sub_w);
+	uint8_t main_r(offs_t offset);
+	uint8_t sub_r(offs_t offset);
+	void main_w(offs_t offset, uint8_t data);
+	void sub_w(offs_t offset, uint8_t data);
 
 	// FIXME: this doesn't belong here
-	DECLARE_WRITE8_MEMBER(sound_watchdog_w);
+	void sound_watchdog_w(uint8_t data);
 
 	offs_t remap(int whichcpu, offs_t offset) { return m_offsets[whichcpu][offset>>13] | (offset & 0x1fff); }
 
@@ -48,37 +43,36 @@ protected:
 	// device-level overrides
 	virtual void device_start() override;
 	virtual void device_reset() override;
+	virtual void device_add_mconfig(machine_config &config) override;
 
 	// device_memory_interface overrides
-	virtual const address_space_config *memory_space_config(address_spacenum spacenum = AS_0) const override { return (spacenum == AS_PROGRAM) ? &m_program_config : nullptr; }
+	virtual space_config_vector memory_space_config() const override;
 
 private:
 	// internal helpers
-	void register_w(int whichcpu, offs_t offset, UINT8 data);
-	void bankswitch(int whichcpu, int whichbank, int a0, UINT8 data);
+	void register_w(int whichcpu, offs_t offset, uint8_t data);
+	void bankswitch(int whichcpu, int whichbank, int a0, uint8_t data);
 	void kick_watchdog(int whichcpu);
 
 	// internal state
-	UINT32 m_offsets[2][8];
-	UINT8 m_subres, m_wdog;
+	uint32_t m_offsets[2][8];
+	uint8_t m_subres, m_wdog;
 
 	// callbacks
 	devcb_write_line           m_subres_cb;
 
 	// address space
 	const address_space_config m_program_config;
-	address_space *            m_program;
+	memory_access<23, 0, 0, ENDIANNESS_BIG>::specific m_program;
 
 	// cpu interfaces
-	device_execute_interface * m_cpuexec[2];
-	direct_read_data *         m_cpudirect[2];
+	required_device<cpu_device> m_cpuexec[2];
+	memory_access<23, 0, 0, ENDIANNESS_BIG>::cache m_cpucache[2];
 
-	// configuration
-	const char *               m_maincpu_tag;
-	const char *               m_subcpu_tag;
+	required_device<watchdog_timer_device> m_watchdog;
 };
 
 // device type definition
-extern const device_type NAMCO_C117;
+DECLARE_DEVICE_TYPE(NAMCO_C117, namco_c117_device)
 
-#endif
+#endif // MAME_MACHINE_C117_H

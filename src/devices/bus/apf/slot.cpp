@@ -7,7 +7,6 @@
 
  ***********************************************************************************************************/
 
-
 #include "emu.h"
 #include "slot.h"
 
@@ -15,7 +14,7 @@
 //  GLOBAL VARIABLES
 //**************************************************************************
 
-const device_type APF_CART_SLOT = &device_creator<apf_cart_slot_device>;
+DEFINE_DEVICE_TYPE(APF_CART_SLOT, apf_cart_slot_device, "apf_cart_slot", "APF Cartridge Slot")
 
 //**************************************************************************
 //    APF Cartridges Interface
@@ -25,10 +24,10 @@ const device_type APF_CART_SLOT = &device_creator<apf_cart_slot_device>;
 //  device_apf_cart_interface - constructor
 //-------------------------------------------------
 
-device_apf_cart_interface::device_apf_cart_interface(const machine_config &mconfig, device_t &device)
-	: device_slot_card_interface(mconfig, device),
-		m_rom(nullptr),
-		m_rom_size(0)
+device_apf_cart_interface::device_apf_cart_interface(const machine_config &mconfig, device_t &device) :
+	device_interface(device, "apfcart"),
+	m_rom(nullptr),
+	m_rom_size(0)
 {
 }
 
@@ -45,7 +44,7 @@ device_apf_cart_interface::~device_apf_cart_interface()
 //  rom_alloc - alloc the space for the cart
 //-------------------------------------------------
 
-void device_apf_cart_interface::rom_alloc(UINT32 size, const char *tag)
+void device_apf_cart_interface::rom_alloc(uint32_t size, const char *tag)
 {
 	if (m_rom == nullptr)
 	{
@@ -59,7 +58,7 @@ void device_apf_cart_interface::rom_alloc(UINT32 size, const char *tag)
 //  ram_alloc - alloc the space for the ram
 //-------------------------------------------------
 
-void device_apf_cart_interface::ram_alloc(UINT32 size)
+void device_apf_cart_interface::ram_alloc(uint32_t size)
 {
 	m_ram.resize(size);
 }
@@ -72,11 +71,12 @@ void device_apf_cart_interface::ram_alloc(UINT32 size)
 //-------------------------------------------------
 //  apf_cart_slot_device - constructor
 //-------------------------------------------------
-apf_cart_slot_device::apf_cart_slot_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock) :
-						device_t(mconfig, APF_CART_SLOT, "APF Cartridge Slot", tag, owner, clock, "apf_cart_slot", __FILE__),
-						device_image_interface(mconfig, *this),
-						device_slot_interface(mconfig, *this),
-						m_type(APF_STD), m_cart(nullptr)
+apf_cart_slot_device::apf_cart_slot_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock) :
+	device_t(mconfig, APF_CART_SLOT, tag, owner, clock),
+	device_image_interface(mconfig, *this),
+	device_single_card_slot_interface<device_apf_cart_interface>(mconfig, *this),
+	m_type(APF_STD),
+	m_cart(nullptr)
 {
 }
 
@@ -95,19 +95,7 @@ apf_cart_slot_device::~apf_cart_slot_device()
 
 void apf_cart_slot_device::device_start()
 {
-	m_cart = dynamic_cast<device_apf_cart_interface *>(get_card_device());
-}
-
-//-------------------------------------------------
-//  device_config_complete - perform any
-//  operations now that the configuration is
-//  complete
-//-------------------------------------------------
-
-void apf_cart_slot_device::device_config_complete()
-{
-	// set brief and instance name
-	update_names();
+	m_cart = get_card_device();
 }
 
 
@@ -133,7 +121,7 @@ static int apf_get_pcb_id(const char *slot)
 {
 	for (auto & elem : slot_list)
 	{
-		if (!core_stricmp(elem.slot_option, slot))
+		if (!strcmp(elem.slot_option, slot))
 			return elem.pcb_id;
 	}
 
@@ -156,26 +144,26 @@ static const char *apf_get_slot(int type)
  call load
  -------------------------------------------------*/
 
-bool apf_cart_slot_device::call_load()
+image_init_result apf_cart_slot_device::call_load()
 {
 	if (m_cart)
 	{
-		UINT32 size = (software_entry() == nullptr) ? length() : get_software_region_length("rom");
+		uint32_t size = !loaded_through_softlist() ? length() : get_software_region_length("rom");
 
 		if (size > 0x3800)
 		{
 			seterror(IMAGE_ERROR_UNSPECIFIED, "Image extends beyond the expected size for an APF cart");
-			return IMAGE_INIT_FAIL;
+			return image_init_result::FAIL;
 		}
 
 		m_cart->rom_alloc(size, tag());
 
-		if (software_entry() == nullptr)
+		if (!loaded_through_softlist())
 			fread(m_cart->get_rom_base(), size);
 		else
 			memcpy(m_cart->get_rom_base(), get_software_region("rom"), size);
 
-		if (software_entry() == nullptr)
+		if (!loaded_through_softlist())
 		{
 			m_type = APF_STD;
 			// attempt to identify Space Destroyer, which needs 1K of additional RAM
@@ -199,21 +187,10 @@ bool apf_cart_slot_device::call_load()
 
 		//printf("Type: %s\n", apf_get_slot(m_type));
 
-		return IMAGE_INIT_PASS;
+		return image_init_result::PASS;
 	}
 
-	return IMAGE_INIT_PASS;
-}
-
-
-/*-------------------------------------------------
- call softlist load
- -------------------------------------------------*/
-
-bool apf_cart_slot_device::call_softlist_load(software_list_device &swlist, const char *swname, const rom_entry *start_entry)
-{
-	load_software_part_region(*this, swlist, swname, start_entry);
-	return TRUE;
+	return image_init_result::PASS;
 }
 
 
@@ -221,12 +198,12 @@ bool apf_cart_slot_device::call_softlist_load(software_list_device &swlist, cons
  get default card software
  -------------------------------------------------*/
 
-void apf_cart_slot_device::get_default_card_software(std::string &result)
+std::string apf_cart_slot_device::get_default_card_software(get_default_card_software_hook &hook) const
 {
-	if (open_image_file(mconfig().options()))
+	if (hook.image_file())
 	{
-		const char *slot_string = "std";
-		UINT32 size = core_fsize(m_file);
+		const char *slot_string;
+		uint32_t size = hook.image_file()->size();
 		int type = APF_STD;
 
 		// attempt to identify Space Destroyer, which needs 1K of additional RAM
@@ -238,23 +215,21 @@ void apf_cart_slot_device::get_default_card_software(std::string &result)
 		slot_string = apf_get_slot(type);
 
 		//printf("type: %s\n", slot_string);
-		clear();
 
-		result.assign(slot_string);
-		return;
+		return std::string(slot_string);
 	}
 
-	software_get_default_slot(result, "std");
+	return software_get_default_slot("std");
 }
 
 /*-------------------------------------------------
  read
  -------------------------------------------------*/
 
-READ8_MEMBER(apf_cart_slot_device::read_rom)
+uint8_t apf_cart_slot_device::read_rom(offs_t offset)
 {
 	if (m_cart)
-		return m_cart->read_rom(space, offset);
+		return m_cart->read_rom(offset);
 	else
 		return 0xff;
 }
@@ -263,10 +238,10 @@ READ8_MEMBER(apf_cart_slot_device::read_rom)
  read
  -------------------------------------------------*/
 
-READ8_MEMBER(apf_cart_slot_device::extra_rom)
+uint8_t apf_cart_slot_device::extra_rom(offs_t offset)
 {
 	if (m_cart)
-		return m_cart->extra_rom(space, offset);
+		return m_cart->extra_rom(offset);
 	else
 		return 0xff;
 }
@@ -275,10 +250,10 @@ READ8_MEMBER(apf_cart_slot_device::extra_rom)
  read
  -------------------------------------------------*/
 
-READ8_MEMBER(apf_cart_slot_device::read_ram)
+uint8_t apf_cart_slot_device::read_ram(offs_t offset)
 {
 	if (m_cart)
-		return m_cart->read_ram(space, offset);
+		return m_cart->read_ram(offset);
 	else
 		return 0xff;
 }
@@ -287,8 +262,8 @@ READ8_MEMBER(apf_cart_slot_device::read_ram)
  write
  -------------------------------------------------*/
 
-WRITE8_MEMBER(apf_cart_slot_device::write_ram)
+void apf_cart_slot_device::write_ram(offs_t offset, uint8_t data)
 {
 	if (m_cart)
-		m_cart->write_ram(space, offset, data);
+		m_cart->write_ram(offset, data);
 }

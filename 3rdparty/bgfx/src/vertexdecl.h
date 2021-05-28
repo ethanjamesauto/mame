@@ -1,6 +1,6 @@
 /*
- * Copyright 2011-2015 Branimir Karadzic. All rights reserved.
- * License: http://www.opensource.org/licenses/BSD-2-Clause
+ * Copyright 2011-2019 Branimir Karadzic. All rights reserved.
+ * License: https://github.com/bkaradzic/bgfx#license-bsd-2-clause
  */
 
 #ifndef BGFX_VERTEXDECL_H_HEADER_GUARD
@@ -17,8 +17,8 @@ namespace bgfx
 	/// Returns attribute name.
 	const char* getAttribName(Attrib::Enum _attr);
 
-	/// Dump vertex declaration into debug output.
-	void dump(const VertexDecl& _decl);
+	///
+	const char* getAttribNameShort(Attrib::Enum _attr);
 
 	///
 	Attrib::Enum idToAttrib(uint16_t id);
@@ -30,10 +30,10 @@ namespace bgfx
 	AttribType::Enum idToAttribType(uint16_t id);
 
 	///
-	int32_t write(bx::WriterI* _writer, const bgfx::VertexDecl& _decl);
+	int32_t write(bx::WriterI* _writer, const bgfx::VertexLayout& _layout, bx::Error* _err = NULL);
 
 	///
-	int32_t read(bx::ReaderI* _reader, bgfx::VertexDecl& _decl);
+	int32_t read(bx::ReaderI* _reader, bgfx::VertexLayout& _layout, bx::Error* _err = NULL);
 
 } // namespace bgfx
 

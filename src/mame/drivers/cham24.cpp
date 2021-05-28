@@ -39,7 +39,7 @@ PCB Layout
 |A                                   |
 | GW6582  LS02                       |
 |          |-----------| 4040        |
-|  74HC245 |Phillps    | 4040        |
+|  74HC245 |Philips    | 4040        |
 |          |SAA71111AH2|             |
 |          |20505650   |             |
 |          |bP0219     | 24-3.U3     |
@@ -59,7 +59,11 @@ Notes:
 #include "emu.h"
 #include "cpu/m6502/n2a03.h"
 #include "video/ppu2c0x.h"
+#include "screen.h"
+#include "speaker.h"
 
+
+namespace {
 
 class cham24_state : public driver_device
 {
@@ -69,30 +73,32 @@ public:
 		m_maincpu(*this, "maincpu"),
 		m_ppu(*this, "ppu") { }
 
-	required_device<cpu_device> m_maincpu;
-	required_device<ppu2c0x_device> m_ppu;
+	void cham24(machine_config &config);
 
-	std::unique_ptr<UINT8[]> m_nt_ram;
-	UINT8* m_nt_page[4];
-	UINT32 m_in_0;
-	UINT32 m_in_1;
-	UINT32 m_in_0_shift;
-	UINT32 m_in_1_shift;
-	DECLARE_WRITE8_MEMBER(nt_w);
-	DECLARE_READ8_MEMBER(nt_r);
-	DECLARE_WRITE8_MEMBER(sprite_dma_w);
-	DECLARE_READ8_MEMBER(cham24_IN0_r);
-	DECLARE_WRITE8_MEMBER(cham24_IN0_w);
-	DECLARE_READ8_MEMBER(cham24_IN1_r);
-	DECLARE_WRITE8_MEMBER(cham24_mapper_w);
-	DECLARE_DRIVER_INIT(cham24);
+protected:
 	virtual void machine_start() override;
 	virtual void machine_reset() override;
-	virtual void video_start() override;
-	DECLARE_PALETTE_INIT(cham24);
-	UINT32 screen_update_cham24(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
+
+private:
+	required_device<n2a03_device> m_maincpu;
+	required_device<ppu2c0x_device> m_ppu;
+
+	std::unique_ptr<uint8_t[]> m_nt_ram;
+	uint8_t* m_nt_page[4];
+	uint32_t m_in_0;
+	uint32_t m_in_1;
+	uint32_t m_in_0_shift;
+	uint32_t m_in_1_shift;
+	void nt_w(offs_t offset, uint8_t data);
+	uint8_t nt_r(offs_t offset);
+	void sprite_dma_w(address_space &space, uint8_t data);
+	uint8_t cham24_IN0_r();
+	void cham24_IN0_w(uint8_t data);
+	uint8_t cham24_IN1_r();
+	void cham24_mapper_w(offs_t offset, uint8_t data);
 	void cham24_set_mirroring( int mirroring );
-	void ppu_irq(int *ppu_regs);
+	void cham24_map(address_map &map);
+	void cham24_ppu_map(address_map &map);
 };
 
 
@@ -129,31 +135,31 @@ void cham24_state::cham24_set_mirroring( int mirroring )
 	}
 }
 
-WRITE8_MEMBER(cham24_state::nt_w)
+void cham24_state::nt_w(offs_t offset, uint8_t data)
 {
 	int page = ((offset & 0xc00) >> 10);
 	m_nt_page[page][offset & 0x3ff] = data;
 }
 
-READ8_MEMBER(cham24_state::nt_r)
+uint8_t cham24_state::nt_r(offs_t offset)
 {
 	int page = ((offset & 0xc00) >> 10);
 	return m_nt_page[page][offset & 0x3ff];
 
 }
 
-WRITE8_MEMBER(cham24_state::sprite_dma_w)
+void cham24_state::sprite_dma_w(address_space &space, uint8_t data)
 {
 	int source = (data & 7);
 	m_ppu->spriteram_dma(space, source);
 }
 
-READ8_MEMBER(cham24_state::cham24_IN0_r)
+uint8_t cham24_state::cham24_IN0_r()
 {
 	return ((m_in_0 >> m_in_0_shift++) & 0x01) | 0x40;
 }
 
-WRITE8_MEMBER(cham24_state::cham24_IN0_w)
+void cham24_state::cham24_IN0_w(uint8_t data)
 {
 	if (data & 0xfe)
 	{
@@ -173,21 +179,21 @@ WRITE8_MEMBER(cham24_state::cham24_IN0_w)
 
 }
 
-READ8_MEMBER(cham24_state::cham24_IN1_r)
+uint8_t cham24_state::cham24_IN1_r()
 {
 	return ((m_in_1 >> m_in_1_shift++) & 0x01) | 0x40;
 }
 
-WRITE8_MEMBER(cham24_state::cham24_mapper_w)
+void cham24_state::cham24_mapper_w(offs_t offset, uint8_t data)
 {
-	UINT32 gfx_bank = offset & 0x3f;
-	UINT32 prg_16k_bank_page = (offset >> 6) & 0x01;
-	UINT32 prg_bank = (offset >> 7) & 0x1f;
-	UINT32 prg_bank_page_size = (offset >> 12) & 0x01;
-	UINT32 gfx_mirroring = (offset >> 13) & 0x01;
+	uint32_t gfx_bank = offset & 0x3f;
+	uint32_t prg_16k_bank_page = (offset >> 6) & 0x01;
+	uint32_t prg_bank = (offset >> 7) & 0x1f;
+	uint32_t prg_bank_page_size = (offset >> 12) & 0x01;
+	uint32_t gfx_mirroring = (offset >> 13) & 0x01;
 
-	UINT8* dst = memregion("maincpu")->base();
-	UINT8* src = memregion("user1")->base();
+	uint8_t* dst = memregion("maincpu")->base();
+	uint8_t* src = memregion("user1")->base();
 
 	// switch PPU VROM bank
 	membank("bank1")->set_base(memregion("gfx1")->base() + (0x2000 * gfx_bank));
@@ -218,14 +224,22 @@ WRITE8_MEMBER(cham24_state::cham24_mapper_w)
 	}
 }
 
-static ADDRESS_MAP_START( cham24_map, AS_PROGRAM, 8, cham24_state )
-	AM_RANGE(0x0000, 0x07ff) AM_RAM /* NES RAM */
-	AM_RANGE(0x2000, 0x3fff) AM_DEVREADWRITE("ppu", ppu2c0x_device, read, write)
-	AM_RANGE(0x4014, 0x4014) AM_WRITE(sprite_dma_w)
-	AM_RANGE(0x4016, 0x4016) AM_READWRITE(cham24_IN0_r,        cham24_IN0_w)            /* IN0 - input port 1 */
-	AM_RANGE(0x4017, 0x4017) AM_READ(cham24_IN1_r)    /* IN1 - input port 2 / PSG second control register */
-	AM_RANGE(0x8000, 0xffff) AM_ROM AM_WRITE(cham24_mapper_w)
-ADDRESS_MAP_END
+void cham24_state::cham24_map(address_map &map)
+{
+	map(0x0000, 0x07ff).ram(); /* NES RAM */
+	map(0x2000, 0x3fff).rw(m_ppu, FUNC(ppu2c0x_device::read), FUNC(ppu2c0x_device::write));
+	map(0x4014, 0x4014).w(FUNC(cham24_state::sprite_dma_w));
+	map(0x4016, 0x4016).rw(FUNC(cham24_state::cham24_IN0_r), FUNC(cham24_state::cham24_IN0_w));            /* IN0 - input port 1 */
+	map(0x4017, 0x4017).r(FUNC(cham24_state::cham24_IN1_r));    /* IN1 - input port 2 / PSG second control register */
+	map(0x8000, 0xffff).rom().w(FUNC(cham24_state::cham24_mapper_w));
+}
+
+void cham24_state::cham24_ppu_map(address_map &map)
+{
+	map(0x0000, 0x1fff).bankr("bank1");
+	map(0x2000, 0x3eff).rw(FUNC(cham24_state::nt_r), FUNC(cham24_state::nt_w));
+	map(0x3f00, 0x3fff).rw(m_ppu, FUNC(ppu2c0x_device::palette_read), FUNC(ppu2c0x_device::palette_write));
+}
 
 static INPUT_PORTS_START( cham24 )
 	PORT_START("P1") /* IN0 */
@@ -249,89 +263,54 @@ static INPUT_PORTS_START( cham24 )
 	PORT_BIT( 0x80, IP_ACTIVE_HIGH, IPT_JOYSTICK_RIGHT ) PORT_PLAYER(2)
 INPUT_PORTS_END
 
-void cham24_state::machine_reset()
-{
-}
-
-PALETTE_INIT_MEMBER(cham24_state, cham24)
-{
-	m_ppu->init_palette(palette, 0);
-}
-
-void cham24_state::ppu_irq(int *ppu_regs)
-{
-	m_maincpu->set_input_line(INPUT_LINE_NMI, PULSE_LINE);
-}
-
-void cham24_state::video_start()
-{
-}
-
-UINT32 cham24_state::screen_update_cham24(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
-{
-	/* render the ppu */
-	m_ppu->render(bitmap, 0, 0, 0, 0);
-	return 0;
-}
-
 
 void cham24_state::machine_start()
 {
+	/* need nametable ram, though. I doubt this uses more than 2k, but it starts up configured for 4 */
+	m_nt_ram = std::make_unique<uint8_t[]>(0x1000);
+}
+
+void cham24_state::machine_reset()
+{
 	/* switch PRG rom */
-	UINT8* dst = memregion("maincpu")->base();
-	UINT8* src = memregion("user1")->base();
+	uint8_t* dst = memregion("maincpu")->base();
+	uint8_t* src = memregion("user1")->base();
 
 	memcpy(&dst[0x8000], &src[0x0f8000], 0x4000);
 	memcpy(&dst[0xc000], &src[0x0f8000], 0x4000);
 
 	/* uses 8K swapping, all ROM!*/
-	m_ppu->space(AS_PROGRAM).install_read_bank(0x0000, 0x1fff, "bank1");
 	membank("bank1")->set_base(memregion("gfx1")->base());
 
-	/* need nametable ram, though. I doubt this uses more than 2k, but it starts up configured for 4 */
-	m_nt_ram = std::make_unique<UINT8[]>(0x1000);
 	m_nt_page[0] = m_nt_ram.get();
 	m_nt_page[1] = m_nt_ram.get() + 0x400;
 	m_nt_page[2] = m_nt_ram.get() + 0x800;
 	m_nt_page[3] = m_nt_ram.get() + 0xc00;
-
-	/* and read/write handlers */
-	m_ppu->space(AS_PROGRAM).install_readwrite_handler(0x2000, 0x3eff,read8_delegate(FUNC(cham24_state::nt_r), this), write8_delegate(FUNC(cham24_state::nt_w), this));
 }
 
-DRIVER_INIT_MEMBER(cham24_state,cham24)
+
+void cham24_state::cham24(machine_config &config)
 {
-}
-
-static GFXDECODE_START( cham24 )
-	/* none, the ppu generates one */
-GFXDECODE_END
-
-static MACHINE_CONFIG_START( cham24, cham24_state )
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", N2A03, N2A03_DEFAULTCLOCK)
-	MCFG_CPU_PROGRAM_MAP(cham24_map)
-
+	N2A03(config, m_maincpu, NTSC_APU_CLOCK);
+	m_maincpu->set_addrmap(AS_PROGRAM, &cham24_state::cham24_map);
 
 	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_REFRESH_RATE(60)
-	MCFG_SCREEN_SIZE(32*8, 262)
-	MCFG_SCREEN_VISIBLE_AREA(0*8, 32*8-1, 0*8, 30*8-1)
-	MCFG_SCREEN_UPDATE_DRIVER(cham24_state, screen_update_cham24)
-	MCFG_SCREEN_PALETTE("palette")
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_RASTER));
+	screen.set_refresh_hz(60);
+	screen.set_size(32*8, 262);
+	screen.set_visarea(0*8, 32*8-1, 0*8, 30*8-1);
+	screen.set_screen_update("ppu", FUNC(ppu2c0x_device::screen_update));
 
-	MCFG_GFXDECODE_ADD("gfxdecode", "palette", cham24)
-	MCFG_PALETTE_ADD("palette", 8*4*16)
-	MCFG_PALETTE_INIT_OWNER(cham24_state, cham24)
-
-	MCFG_PPU2C04_ADD("ppu")
-	MCFG_PPU2C0X_CPU("maincpu")
-	MCFG_PPU2C0X_SET_NMI(cham24_state, ppu_irq)
+	PPU_2C02(config, m_ppu);
+	m_ppu->set_addrmap(0, &cham24_state::cham24_ppu_map);
+	m_ppu->set_cpu_tag(m_maincpu);
+	m_ppu->int_callback().set_inputline(m_maincpu, INPUT_LINE_NMI);
 
 	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_MONO("mono")
-MACHINE_CONFIG_END
+	SPEAKER(config, "mono").front_center();
+	m_maincpu->add_route(ALL_OUTPUTS, "mono", 0.50);
+}
 
 ROM_START( cham24 )
 	ROM_REGION(0x10000, "maincpu", ROMREGION_ERASE00)
@@ -346,4 +325,7 @@ ROM_START( cham24 )
 	ROM_LOAD( "24-3.u3", 0x0000, 0x10000, CRC(e97955fa) SHA1(6d686c5d0967c9c2f40dbd8e6a0c0907606f2c7d) ) // unknown rom
 ROM_END
 
-GAME( 2002, cham24, 0, cham24, cham24, cham24_state, cham24, ROT0, "bootleg", "Chameleon 24", MACHINE_NOT_WORKING )
+} // Anonymous namespace
+
+
+GAME( 2002, cham24, 0, cham24, cham24, cham24_state, empty_init, ROT0, "bootleg", "Chameleon 24", MACHINE_NOT_WORKING )

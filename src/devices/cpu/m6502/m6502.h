@@ -4,18 +4,12 @@
 
     m6502.h
 
-    Mostek 6502, original NMOS variant
+    MOS Technology 6502, original NMOS variant
 
 ***************************************************************************/
 
-#ifndef __M6502FAM_H__
-#define __M6502FAM_H__
-
-#define MCFG_M6502_DISABLE_DIRECT() \
-	downcast<m6502_device *>(device)->disable_direct();
-
-#define MCFG_M6502_SYNC_CALLBACK(_cb) \
-	devcb = &m6502_device::set_sync_callback(*device, DEVCB_##_cb);
+#ifndef MAME_CPU_M6502_M6502_H
+#define MAME_CPU_M6502_M6502_H
 
 class m6502_device : public cpu_device {
 public:
@@ -26,91 +20,50 @@ public:
 		V_LINE   = INPUT_LINE_IRQ0 + 16
 	};
 
-	m6502_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
-	m6502_device(const machine_config &mconfig, device_type type, const char *name, const char *tag, device_t *owner, UINT32 clock, const char *shortname, const char *source);
-
-	DECLARE_WRITE_LINE_MEMBER( irq_line );
-	DECLARE_WRITE_LINE_MEMBER( nmi_line );
+	m6502_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
 	bool get_sync() const { return sync; }
-	void disable_direct() { direct_disabled = true; }
 
-	template<class _Object> static devcb_base &set_sync_callback(device_t &device, _Object object) { return downcast<m6502_device &>(device).sync_w.set_callback(object); }
+	auto sync_cb() { return sync_w.bind(); }
 
 	devcb_write_line sync_w;
 
 protected:
+	m6502_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock);
+
 	class memory_interface {
 	public:
-		address_space *program, *sprogram;
-		direct_read_data *direct, *sdirect;
+		memory_access<16, 0, 0, ENDIANNESS_LITTLE>::cache cprogram, csprogram;
+		memory_access<16, 0, 0, ENDIANNESS_LITTLE>::specific program;
+		memory_access<14, 0, 0, ENDIANNESS_LITTLE>::specific program14;
 
-		virtual ~memory_interface() {}
-		virtual UINT8 read(UINT16 adr) = 0;
-		virtual UINT8 read_9(UINT16 adr);
-		virtual UINT8 read_sync(UINT16 adr) = 0;
-		virtual UINT8 read_arg(UINT16 adr) = 0;
-		virtual void write(UINT16 adr, UINT8 val) = 0;
-		virtual void write_9(UINT16 adr, UINT8 val);
+		virtual ~memory_interface() = default;
+		virtual uint8_t read(uint16_t adr) = 0;
+		virtual uint8_t read_9(uint16_t adr);
+		virtual uint8_t read_sync(uint16_t adr) = 0;
+		virtual uint8_t read_arg(uint16_t adr) = 0;
+		virtual void write(uint16_t adr, uint8_t val) = 0;
+		virtual void write_9(uint16_t adr, uint8_t val);
 	};
 
-	class mi_default_normal : public memory_interface {
+	class mi_default : public memory_interface {
 	public:
-		virtual ~mi_default_normal() {}
-		virtual UINT8 read(UINT16 adr) override;
-		virtual UINT8 read_sync(UINT16 adr) override;
-		virtual UINT8 read_arg(UINT16 adr) override;
-		virtual void write(UINT16 adr, UINT8 val) override;
+		virtual ~mi_default() = default;
+		virtual uint8_t read(uint16_t adr) override;
+		virtual uint8_t read_sync(uint16_t adr) override;
+		virtual uint8_t read_arg(uint16_t adr) override;
+		virtual void write(uint16_t adr, uint8_t val) override;
 	};
 
-	class mi_default_nd : public mi_default_normal {
+	class mi_default14 : public mi_default {
 	public:
-		virtual ~mi_default_nd() {}
-		virtual UINT8 read_sync(UINT16 adr) override;
-		virtual UINT8 read_arg(UINT16 adr) override;
-	};
-
-	struct disasm_entry {
-		const char *opcode;
-		int mode;
-		offs_t flags;
+		virtual ~mi_default14() = default;
+		virtual uint8_t read(uint16_t adr) override;
+		virtual void write(uint16_t adr, uint8_t val) override;
 	};
 
 	enum {
 		STATE_RESET = 0xff00
-	};
-
-	enum {
-		DASM_non,    /* no additional arguments */
-		DASM_aba,    /* absolute */
-		DASM_abx,    /* absolute + X */
-		DASM_aby,    /* absolute + Y */
-		DASM_acc,    /* accumulator */
-		DASM_adr,    /* absolute address (jmp,jsr) */
-		DASM_bzp,    /* zero page with bit selection */
-		DASM_iax,    /* indirect + X (65c02 jmp) */
-		DASM_idx,    /* zero page pre indexed */
-		DASM_idy,    /* zero page post indexed */
-		DASM_idz,    /* zero page post indexed (65ce02) */
-		DASM_imm,    /* immediate */
-		DASM_imp,    /* implicit */
-		DASM_ind,    /* indirect (jmp) */
-		DASM_isy,    /* zero page pre indexed sp and post indexed Y (65ce02) */
-		DASM_iw2,    /* immediate word (65ce02) */
-		DASM_iw3,    /* augment (65ce02) */
-		DASM_rel,    /* relative */
-		DASM_rw2,    /* relative word (65cs02, 65ce02) */
-		DASM_zpb,    /* zero page and branch (65c02 bbr, bbs) */
-		DASM_zpg,    /* zero page */
-		DASM_zpi,    /* zero page indirect (65c02) */
-		DASM_zpx,    /* zero page + X */
-		DASM_zpy,    /* zero page + Y */
-		DASM_imz,    /* load immediate byte, store to zero page address (M740) */
-		DASM_spg,    /* "special page": implied FF00 OR immediate value (M740)*/
-		DASM_biz,    /* bit, zero page (M740) */
-		DASM_bzr,    /* bit, zero page, relative offset (M740) */
-		DASM_bar,    /* bit, accumulator, relative offset (M740) */
-		DASM_bac     /* bit, accumulator (M740) */
 	};
 
 	enum {
@@ -132,88 +85,86 @@ protected:
 	virtual void device_reset() override;
 
 	// device_execute_interface overrides
-	virtual UINT32 execute_min_cycles() const override;
-	virtual UINT32 execute_max_cycles() const override;
-	virtual UINT32 execute_input_lines() const override;
+	virtual uint32_t execute_min_cycles() const noexcept override;
+	virtual uint32_t execute_max_cycles() const noexcept override;
+	virtual uint32_t execute_input_lines() const noexcept override;
 	virtual void execute_run() override;
 	virtual void execute_set_input(int inputnum, int state) override;
+	virtual bool execute_input_edge_triggered(int inputnum) const noexcept override;
 
 	// device_memory_interface overrides
-	virtual const address_space_config *memory_space_config(address_spacenum spacenum = AS_0) const override;
+	virtual space_config_vector memory_space_config() const override;
 
 	// device_state_interface overrides
 	virtual void state_import(const device_state_entry &entry) override;
 	virtual void state_export(const device_state_entry &entry) override;
-	virtual void state_string_export(const device_state_entry &entry, std::string &str) override;
+	virtual void state_string_export(const device_state_entry &entry, std::string &str) const override;
 
 	// device_disasm_interface overrides
-	virtual UINT32 disasm_min_opcode_bytes() const override;
-	virtual UINT32 disasm_max_opcode_bytes() const override;
-	virtual offs_t disasm_disassemble(char *buffer, offs_t pc, const UINT8 *oprom, const UINT8 *opram, UINT32 options) override;
+	virtual std::unique_ptr<util::disasm_interface> create_disassembler() override;
 
 	address_space_config program_config, sprogram_config;
 
-	UINT16  PPC;                    /* previous program counter */
-	UINT16  NPC;                    /* next start-of-instruction program counter */
-	UINT16  PC;                     /* program counter */
-	UINT16  SP;                     /* stack pointer (always 100 - 1FF) */
-	UINT16  TMP;                    /* temporary internal values */
-	UINT8   TMP2;                   /* another temporary internal value, 8 bits this time */
-	UINT8   A;                      /* Accumulator */
-	UINT8   X;                      /* X index register */
-	UINT8   Y;                      /* Y index register */
-	UINT8   P;                      /* Processor status */
-	UINT8   IR;                     /* Prefetched instruction register */
+	uint16_t  PPC;                    /* previous program counter */
+	uint16_t  NPC;                    /* next start-of-instruction program counter */
+	uint16_t  PC;                     /* program counter */
+	uint16_t  SP;                     /* stack pointer (always 100 - 1FF) */
+	uint16_t  TMP;                    /* temporary internal values */
+	uint8_t   TMP2;                   /* another temporary internal value, 8 bits this time */
+	uint8_t   A;                      /* Accumulator */
+	uint8_t   X;                      /* X index register */
+	uint8_t   Y;                      /* Y index register */
+	uint8_t   P;                      /* Processor status */
+	uint8_t   IR;                     /* Prefetched instruction register */
 	int     inst_state_base;        /* Current instruction bank */
 
-	memory_interface *mintf;
+	std::unique_ptr<memory_interface> mintf;
 	int inst_state, inst_substate;
-	int icount;
+	int icount, bcount, count_before_instruction_step;
 	bool nmi_state, irq_state, apu_irq_state, v_state;
-	bool irq_taken, sync, direct_disabled, inhibit_interrupts;
+	bool nmi_pending, irq_taken, sync, inhibit_interrupts;
 
-	static const disasm_entry disasm_entries[0x100];
-
-	offs_t disassemble_generic(char *buffer, offs_t pc, const UINT8 *oprom, const UINT8 *opram, UINT32 options, const disasm_entry *table);
-	UINT8 read(UINT16 adr) { return mintf->read(adr); }
-	UINT8 read_9(UINT16 adr) { return mintf->read_9(adr); }
-	void write(UINT16 adr, UINT8 val) { mintf->write(adr, val); }
-	void write_9(UINT16 adr, UINT8 val) { mintf->write_9(adr, val); }
-	UINT8 read_arg(UINT16 adr) { return mintf->read_arg(adr); }
-	UINT8 read_pc() { return mintf->read_arg(PC++); }
-	UINT8 read_pc_noinc() { return mintf->read_arg(PC); }
+	uint8_t read(uint16_t adr) { return mintf->read(adr); }
+	uint8_t read_9(uint16_t adr) { return mintf->read_9(adr); }
+	void write(uint16_t adr, uint8_t val) { mintf->write(adr, val); }
+	void write_9(uint16_t adr, uint8_t val) { mintf->write_9(adr, val); }
+	uint8_t read_arg(uint16_t adr) { return mintf->read_arg(adr); }
+	uint8_t read_pc() { return mintf->read_arg(PC++); }
+	uint8_t read_pc_noinc() { return mintf->read_arg(PC); }
 	void prefetch();
 	void prefetch_noirq();
-	void set_nz(UINT8 v);
+	void set_nz(uint8_t v);
 
+	u32 XPC;
+	virtual offs_t pc_to_external(u16 pc); // For paged PCs
 	virtual void do_exec_full();
 	virtual void do_exec_partial();
 
 	// inline helpers
-	static inline bool page_changing(UINT16 base, int delta) { return ((base + delta) ^ base) & 0xff00; }
-	static inline UINT16 set_l(UINT16 base, UINT8 val) { return (base & 0xff00) | val; }
-	static inline UINT16 set_h(UINT16 base, UINT8 val) { return (base & 0x00ff) | (val << 8); }
+	static inline bool page_changing(uint16_t base, int delta) { return ((base + delta) ^ base) & 0xff00; }
+	static inline uint16_t set_l(uint16_t base, uint8_t val) { return (base & 0xff00) | val; }
+	static inline uint16_t set_h(uint16_t base, uint8_t val) { return (base & 0x00ff) | (val << 8); }
 
 	inline void dec_SP() { SP = set_l(SP, SP-1); }
 	inline void inc_SP() { SP = set_l(SP, SP+1); }
 
-	void do_adc_d(UINT8 val);
-	void do_adc_nd(UINT8 val);
-	void do_sbc_d(UINT8 val);
-	void do_sbc_nd(UINT8 val);
+	void do_adc_d(uint8_t val);
+	void do_adc_nd(uint8_t val);
+	void do_sbc_d(uint8_t val);
+	void do_sbc_nd(uint8_t val);
 	void do_arr_d();
 	void do_arr_nd();
 
-	void do_adc(UINT8 val);
-	void do_cmp(UINT8 val1, UINT8 val2);
-	void do_sbc(UINT8 val);
-	void do_bit(UINT8 val);
+	void do_adc(uint8_t val);
+	void do_cmp(uint8_t val1, uint8_t val2);
+	void do_sbc(uint8_t val);
+	void do_bit(uint8_t val);
 	void do_arr();
-	UINT8 do_asl(UINT8 v);
-	UINT8 do_lsr(UINT8 v);
-	UINT8 do_ror(UINT8 v);
-	UINT8 do_rol(UINT8 v);
-	UINT8 do_asr(UINT8 v);
+	uint8_t do_asl(uint8_t v);
+	uint8_t do_lsr(uint8_t v);
+	uint8_t do_ror(uint8_t v);
+	uint8_t do_rol(uint8_t v);
+	uint8_t do_asr(uint8_t v);
 
 #define O(o) void o ## _full(); void o ## _partial()
 
@@ -314,6 +265,23 @@ protected:
 #undef O
 };
 
+class m6502_mcu_device : public m6502_device {
+protected:
+	m6502_mcu_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock);
+
+	void internal_update() { internal_update(total_cycles()); }
+	virtual void internal_update(uint64_t current_time) = 0;
+	void recompute_bcount(uint64_t event_time);
+	static void add_event(uint64_t &event_time, uint64_t new_event);
+
+	virtual void execute_run() override;
+};
+
+class m6512_device : public m6502_device {
+public:
+	m6512_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
+};
+
 enum {
 	M6502_PC = 1,
 	M6502_A,
@@ -330,6 +298,7 @@ enum {
 	M6502_SET_OVERFLOW = m6502_device::V_LINE
 };
 
-extern const device_type M6502;
+DECLARE_DEVICE_TYPE(M6502, m6502_device)
+DECLARE_DEVICE_TYPE(M6512, m6512_device)
 
-#endif
+#endif // MAME_CPU_M6502_M6502_H

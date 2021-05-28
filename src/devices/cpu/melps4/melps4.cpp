@@ -37,18 +37,45 @@
 
 */
 
+#include "emu.h"
 #include "melps4.h"
+#include "melps4d.h"
 #include "debugger.h"
 
 
+melps4_cpu_device::melps4_cpu_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock, int prgwidth, address_map_constructor program, int datawidth, address_map_constructor data, int d_pins, uint8_t sm_page, uint8_t int_page)
+	: cpu_device(mconfig, type, tag, owner, clock)
+	, m_program_config("program", ENDIANNESS_LITTLE, 16, prgwidth, -1, program)
+	, m_data_config("data", ENDIANNESS_LITTLE, 8, datawidth, 0, data)
+	, m_prgwidth(prgwidth)
+	, m_datawidth(datawidth)
+	, m_d_pins(d_pins)
+	, m_sm_page(sm_page)
+	, m_int_page(int_page)
+	, m_xami_mask(0xf)
+	, m_sp_mask(0x7<<4)
+	, m_ba_op(0x01)
+	, m_stack_levels(3)
+	, m_read_k(*this)
+	, m_read_d(*this)
+	, m_read_s(*this)
+	, m_read_f(*this)
+	, m_write_d(*this)
+	, m_write_s(*this)
+	, m_write_f(*this)
+	, m_write_g(*this)
+	, m_write_u(*this)
+	, m_write_t(*this)
+{ }
+
 // disasm
-void melps4_cpu_device::state_string_export(const device_state_entry &entry, std::string &str)
+void melps4_cpu_device::state_string_export(const device_state_entry &entry, std::string &str) const
 {
 	switch (entry.index())
 	{
 		// obviously not from a single flags register, letters are made up
 		case STATE_GENFLAGS:
-			strprintf(str, "%c%c%c%c%c %c%c%c",
+			str = string_format("%c%c%c%c%c %c%c%c",
 				m_intp ? 'P':'p',
 				m_inte ? 'I':'i',
 				m_sm   ? 'S':'s',
@@ -187,7 +214,8 @@ void melps4_cpu_device::device_start()
 	save_item(NAME(m_w));
 
 	// register state for debugger
-	state_add(STATE_GENPC, "curpc", m_pc).formatstr("%04X").noshow();
+	state_add(STATE_GENPC, "GENPC", m_pc).formatstr("%04X").noshow();
+	state_add(STATE_GENPCBASE, "CURPC", m_pc).formatstr("%04X").noshow();
 	state_add(STATE_GENFLAGS, "GENFLAGS", m_cy).formatstr("%9s").noshow();
 
 	state_add(MELPS4_PC, "PC", m_pc).formatstr("%04X");
@@ -204,10 +232,16 @@ void melps4_cpu_device::device_start()
 	state_add(MELPS4_V, "V", m_v).formatstr("%1X");
 	state_add(MELPS4_W, "W", m_w).formatstr("%1X");
 
-	m_icountptr = &m_icount;
+	set_icountptr(m_icount);
 }
 
-
+device_memory_interface::space_config_vector melps4_cpu_device::memory_space_config() const
+{
+	return space_config_vector {
+		std::make_pair(AS_PROGRAM, &m_program_config),
+		std::make_pair(AS_DATA,    &m_data_config)
+	};
+}
 
 //-------------------------------------------------
 //  device_reset - device-specific reset
@@ -246,7 +280,7 @@ void melps4_cpu_device::device_reset()
 //  i/o handling
 //-------------------------------------------------
 
-UINT8 melps4_cpu_device::read_gen_port(int port)
+uint8_t melps4_cpu_device::read_gen_port(int port)
 {
 	// input generic port
 	switch (port)
@@ -263,7 +297,7 @@ UINT8 melps4_cpu_device::read_gen_port(int port)
 	return 0;
 }
 
-void melps4_cpu_device::write_gen_port(int port, UINT8 data)
+void melps4_cpu_device::write_gen_port(int port, uint8_t data)
 {
 	// output generic port
 	switch (port)
@@ -292,7 +326,7 @@ int melps4_cpu_device::read_d_pin(int bit)
 {
 	// read port D, return state of selected pin
 	bit &= 0xf;
-	UINT16 d = (m_port_d | m_read_d(bit, 0xffff)) & m_d_mask;
+	uint16_t d = (m_port_d | m_read_d(bit, 0xffff)) & m_d_mask;
 	return d >> bit & 1;
 }
 
@@ -367,7 +401,7 @@ void melps4_cpu_device::check_interrupt()
 	if (!m_inte)
 		return;
 
-	int which = 0;
+	int which;
 
 	// assume that lower irq vectors have higher priority
 	if (m_irqflag[0])
@@ -418,9 +452,10 @@ void melps4_cpu_device::execute_run()
 		m_prohibit_irq = false;
 
 		// fetch next opcode
-		debugger_instruction_hook(this, m_pc);
+		if (!m_skip)
+			debugger_instruction_hook(m_pc);
 		m_icount--;
-		m_op = m_program->read_word(m_pc << 1) & 0x1ff;
+		m_op = m_program->read_word(m_pc) & 0x1ff;
 		m_bitmask = 1 << (m_op & 3);
 		m_pc = (m_pc & ~0x7f) | ((m_pc + 1) & 0x7f); // stays in the same page
 
@@ -437,4 +472,9 @@ void melps4_cpu_device::execute_run()
 		else
 			execute_one();
 	}
+}
+
+std::unique_ptr<util::disasm_interface> melps4_cpu_device::create_disassembler()
+{
+	return std::make_unique<melps4_disassembler>();
 }

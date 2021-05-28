@@ -34,13 +34,13 @@
     derbyjo2: hangs going into game
     dbzhypd, dbzhypdj: plays OK
     habumeij: boots, goes into game, on-screen timer counts down after SA-1 is enabled but controls aren't responsive
-    haruaug3a, pebble, haruaug3: uses SA-1 DMA
+    haruaug3a, pebble, haruaug3: plays OK
     itoibass: boots, some missing gfx
     jikkparo: plays OK
     jl96drem: plays OK
     jumpind: boots and runs, uses SA-1 normal DMA only but has corrupt gfx
     kakinoki: S-CPU crashes after pressing start
-    kirby3j, kirby3: uses SA-1 DMA
+    kirby3j, kirby3: plays OK
     kirbysdb, kirbyss, kirbyfun, kirbysd, kirbysda: plays OK
     marvelou: plays OK, uses SA-1 normal DMA only but has corrupt gfx
     miniyonk: plays OK
@@ -55,7 +55,7 @@
     shinshog: plays OK
     shogisai: plays OK
     shogisa2: plays OK
-    smrpgj, smrpg: needs SA-1 character conversion for level up Bonus Chance (possible to get past now)
+    smrpgj, smrpg: plays OK
     srobotg: some corrupt in-game GFX, may be SNES rendering errors
     sshogi3: plays OK
     taikyoid: plays OK
@@ -82,14 +82,23 @@
 //  constructor
 //-------------------------------------------------
 
-const device_type SNS_LOROM_SA1 = &device_creator<sns_sa1_device>;
+DEFINE_DEVICE_TYPE(SNS_LOROM_SA1, sns_sa1_device, "sns_rom_sa1", "SNES Cart + SA-1")
 
 
-sns_sa1_device::sns_sa1_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-					: device_t(mconfig, SNS_LOROM_SA1, "SNES Cart + SA-1", tag, owner, clock, "sns_rom_sa1", __FILE__),
-						device_sns_cart_interface( mconfig, *this ),
-						m_sa1(*this, "sa1cpu"), m_sa1_ctrl(0), m_scpu_sie(0), m_sa1_reset(0), m_sa1_nmi(0), m_sa1_irq(0), m_scpu_ctrl(0), m_sa1_sie(0), m_irq_vector(0), m_nmi_vector(0), m_hcount(0), m_vcount(0), m_bank_c_hi(0), m_bank_c_rom(0), m_bank_d_hi(0), m_bank_d_rom(0), m_bank_e_hi(0), m_bank_e_rom(0), m_bank_f_hi(0), m_bank_f_rom(0), m_bwram_snes(0), m_bwram_sa1(0), m_bwram_sa1_source(0), m_bwram_sa1_format(0), m_bwram_write_snes(0), m_bwram_write_sa1(0), m_bwpa_sa1(0), m_iram_write_snes(0), m_iram_write_sa1(0), m_dma_ctrl(0), m_dma_ccparam(0), m_src_addr(0), m_dst_addr(0), m_dma_cnt(0), m_math_ctlr(0), m_math_overflow(0), m_math_a(0), m_math_b(0), m_math_res(0), m_vda(0), m_vbit(0), m_vlen(0), m_drm(0), m_scpu_flags(0), m_sa1_flags(0), m_hcr(0), m_vcr(0)
-				{
+sns_sa1_device::sns_sa1_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: device_t(mconfig, SNS_LOROM_SA1, tag, owner, clock)
+	, device_sns_cart_interface(mconfig, *this)
+	, m_sa1(*this, "sa1cpu")
+	, m_sa1_ctrl(0), m_scpu_sie(0), m_sa1_reset(0), m_sa1_nmi(0), m_sa1_irq(0), m_scpu_ctrl(0), m_sa1_sie(0)
+	, m_irq_vector(0), m_nmi_vector(0)
+	, m_hcount(0), m_vcount(0)
+	, m_bank_c_hi(0), m_bank_c_rom(0), m_bank_d_hi(0), m_bank_d_rom(0), m_bank_e_hi(0), m_bank_e_rom(0), m_bank_f_hi(0), m_bank_f_rom(0)
+	, m_bwram_snes(0), m_bwram_sa1(0), m_bwram_sa1_source(0), m_bwram_sa1_format(0), m_bwram_write_snes(0), m_bwram_write_sa1(0), m_bwpa_sa1(0)
+	, m_iram_write_snes(0), m_iram_write_sa1(0)
+	, m_dma_ctrl(0), m_dma_ccparam(0), m_src_addr(0), m_dst_addr(0), m_dma_cnt(0)
+	, m_math_ctlr(0), m_math_overflow(0), m_math_a(0), m_math_b(0), m_math_res(0)
+	, m_vda(0), m_vbit(0), m_vlen(0), m_drm(0), m_scpu_flags(0), m_sa1_flags(0), m_hcr(0), m_vcr(0)
+{
 }
 
 
@@ -99,6 +108,55 @@ void sns_sa1_device::device_start()
 	m_nmi_vector = 0;
 	m_bank_c_hi = 0;
 	m_bank_c_rom = 0;
+
+	save_item(NAME(m_internal_ram));
+	save_item(NAME(m_sa1_ctrl));
+	save_item(NAME(m_scpu_sie));
+	save_item(NAME(m_sa1_reset));
+	save_item(NAME(m_sa1_nmi));
+	save_item(NAME(m_sa1_irq));
+	save_item(NAME(m_scpu_ctrl));
+	save_item(NAME(m_sa1_sie));
+	save_item(NAME(m_irq_vector));
+	save_item(NAME(m_nmi_vector));
+	save_item(NAME(m_hcount));
+	save_item(NAME(m_vcount));
+	save_item(NAME(m_bank_c_hi));
+	save_item(NAME(m_bank_c_rom));
+	save_item(NAME(m_bank_d_hi));
+	save_item(NAME(m_bank_d_rom));
+	save_item(NAME(m_bank_e_hi));
+	save_item(NAME(m_bank_e_rom));
+	save_item(NAME(m_bank_f_hi));
+	save_item(NAME(m_bank_f_rom));
+	save_item(NAME(m_bwram_snes));
+	save_item(NAME(m_bwram_sa1));
+	save_item(NAME(m_bwram_sa1_source));
+	save_item(NAME(m_bwram_sa1_format));
+	save_item(NAME(m_bwram_write_snes));
+	save_item(NAME(m_bwram_write_sa1));
+	save_item(NAME(m_bwpa_sa1));
+	save_item(NAME(m_iram_write_snes));
+	save_item(NAME(m_iram_write_sa1));
+	save_item(NAME(m_dma_ctrl));
+	save_item(NAME(m_dma_ccparam));
+	save_item(NAME(m_src_addr));
+	save_item(NAME(m_dst_addr));
+	save_item(NAME(m_dma_cnt));
+	save_item(NAME(m_brf_reg));
+	save_item(NAME(m_math_ctlr));
+	save_item(NAME(m_math_overflow));
+	save_item(NAME(m_math_a));
+	save_item(NAME(m_math_b));
+	save_item(NAME(m_math_res));
+	save_item(NAME(m_vda));
+	save_item(NAME(m_vbit));
+	save_item(NAME(m_vlen));
+	save_item(NAME(m_drm));
+	save_item(NAME(m_scpu_flags));
+	save_item(NAME(m_sa1_flags));
+	save_item(NAME(m_hcr));
+	save_item(NAME(m_vcr));
 }
 
 void sns_sa1_device::device_reset()
@@ -161,11 +219,11 @@ void sns_sa1_device::recalc_irqs()
 {
 	if (m_scpu_flags & m_scpu_sie & (SCPU_IRQ_SA1|SCPU_IRQ_CHARCONV))
 	{
-		machine().device("maincpu")->execute().set_input_line(G65816_LINE_IRQ, ASSERT_LINE);
+		write_irq(ASSERT_LINE);
 	}
 	else
 	{
-		machine().device("maincpu")->execute().set_input_line(G65816_LINE_IRQ, CLEAR_LINE);
+		write_irq(CLEAR_LINE);
 	}
 
 	if (m_sa1_flags & m_sa1_sie & (SA1_IRQ_SCPU|SA1_IRQ_TIMER|SA1_IRQ_DMA))
@@ -195,7 +253,8 @@ void sns_sa1_device::recalc_irqs()
 
 // handle this separately to avoid accessing recursively the regs?
 
-UINT8 sns_sa1_device::var_length_read(address_space &space, UINT32 offset)
+template <bool SA1Read>
+uint8_t sns_sa1_device::var_length_read(uint32_t offset)
 {
 	// handle 0xffea/0xffeb/0xffee/0xffef
 	if ((offset & 0xffffe0) == 0x00ffe0)
@@ -207,19 +266,19 @@ UINT8 sns_sa1_device::var_length_read(address_space &space, UINT32 offset)
 	}
 
 	if ((offset & 0xc08000) == 0x008000)  //$00-3f:8000-ffff
-		return read_l(space, (offset & 0x7fffff));
+		return read_l(offset & 0x7fffff);
 
 	if ((offset & 0xc08000) == 0x808000)  //$80-bf:8000-ffff
-		return read_h(space, (offset & 0x7fffff));
+		return read_h(offset & 0x7fffff);
 
 	if ((offset & 0xc00000) == 0xc00000)  //$c0-ff:0000-ffff
-		return read_h(space, (offset & 0x7fffff));
+		return read_h(offset & 0x7fffff);
 
 	if ((offset & 0x40e000) == 0x006000)  //$00-3f|80-bf:6000-7fff
-		return read_bwram((m_bwram_snes * 0x2000) + (offset & 0x1fff));
+		return read_bwram<SA1Read>((m_bwram_snes * 0x2000) + (offset & 0x1fff));
 
 	if ((offset & 0xf00000) == 0x400000)  //$40-4f:0000-ffff
-		return read_bwram(offset & 0xfffff);
+		return read_bwram<SA1Read>(offset & 0xfffff);
 
 	if ((offset & 0x40f800) == 0x000000)  //$00-3f|80-bf:0000-07ff
 		return read_iram(offset);
@@ -230,15 +289,15 @@ UINT8 sns_sa1_device::var_length_read(address_space &space, UINT32 offset)
 	return 0;
 }
 
-void sns_sa1_device::dma_transfer(address_space &space)
+void sns_sa1_device::dma_transfer()
 {
 //  printf("DMA src %08x (%d), dst %08x (%d) cnt %d\n", m_src_addr, m_dma_ctrl & 3, m_dst_addr, m_dma_ctrl & 4, m_dma_cnt);
 
 	while (m_dma_cnt--)
 	{
-		UINT8 data = 0; // open bus?
-		UINT32 dma_src = m_src_addr++;
-		UINT32 dma_dst = m_dst_addr++;
+		uint8_t data = 0; // open bus?
+		uint32_t dma_src = m_src_addr++;
+		uint32_t dma_dst = m_dst_addr++;
 
 		// source and destination cannot be the same
 		// source = { 0=ROM, 1=BWRAM, 2=IRAM }
@@ -251,26 +310,26 @@ void sns_sa1_device::dma_transfer(address_space &space)
 			case 0: // ROM
 				if ((dma_src & 0x408000) == 0x008000 && (dma_src & 0x800000) == 0x000000)
 				{
-					data = read_l(space, (dma_src & 0x7fffff));
+					data = read_l(dma_src & 0x7fffff);
 				}
 				if ((dma_src & 0x408000) == 0x008000 && (dma_src & 0x800000) == 0x800000)
 				{
-					data = read_h(space, (dma_src & 0x7fffff));
+					data = read_h(dma_src & 0x7fffff);
 				}
 				if ((dma_src & 0xc00000) == 0xc00000)
 				{
-					data = read_h(space, (dma_src & 0x7fffff));
+					data = read_h(dma_src & 0x7fffff);
 				}
 				break;
 
 			case 1: // BWRAM
 				if ((dma_src & 0x40e000) == 0x006000)
 				{
-					data = read_bwram((m_bwram_sa1 * 0x2000) + (dma_src & 0x1fff));
+					data = read_bwram<true>((m_bwram_sa1 * 0x2000) + (dma_src & 0x1fff));
 				}
 				if ((dma_src & 0xf00000) == 0x400000)
 				{
-					data = read_bwram(dma_src & 0xfffff);
+					data = read_bwram<true>(dma_src & 0xfffff);
 				}
 				break;
 
@@ -302,19 +361,21 @@ void sns_sa1_device::dma_transfer(address_space &space)
 	recalc_irqs();
 }
 
-void sns_sa1_device::dma_cctype1_transfer(address_space &space)
+void sns_sa1_device::dma_cctype1_transfer()
 {
+	m_cconv1_dma_active = true;
 	m_scpu_flags |= SCPU_IRQ_CHARCONV;
 	recalc_irqs();
 }
 
-void sns_sa1_device::dma_cctype2_transfer(address_space &space)
+void sns_sa1_device::dma_cctype2_transfer()
 {
 }
 
-UINT8 sns_sa1_device::read_regs(address_space &space, UINT32 offset)
+template<bool SA1Read>
+uint8_t sns_sa1_device::read_regs(uint32_t offset)
 {
-	UINT8 value = 0xff;
+	uint8_t value = 0xff;
 	offset &= 0x1ff;    // $2200 + offset gives the reg value to compare with docs
 
 	switch (offset)
@@ -349,23 +410,23 @@ UINT8 sns_sa1_device::read_regs(address_space &space, UINT32 offset)
 			break;
 		case 0x106:
 			// Math Result bits0-7
-			value = (UINT64)(m_math_res >> 0) & 0xff;
+			value = (uint64_t)(m_math_res >> 0) & 0xff;
 			break;
 		case 0x107:
 			// Math Result bits8-15
-			value = (UINT64)(m_math_res >> 8) & 0xff;
+			value = (uint64_t)(m_math_res >> 8) & 0xff;
 			break;
 		case 0x108:
 			// Math Result bits16-23
-			value = (UINT64)(m_math_res >> 16) & 0xff;
+			value = (uint64_t)(m_math_res >> 16) & 0xff;
 			break;
 		case 0x109:
 			// Math Result bits24-31
-			value = (UINT64)(m_math_res >> 24) & 0xff;
+			value = (uint64_t)(m_math_res >> 24) & 0xff;
 			break;
 		case 0x10a:
 			// Math Result bits32-39
-			value = (UINT64)(m_math_res >> 32) & 0xff;
+			value = (uint64_t)(m_math_res >> 32) & 0xff;
 			break;
 		case 0x10b:
 			// Math Overflow (above 40bit result)
@@ -374,8 +435,7 @@ UINT8 sns_sa1_device::read_regs(address_space &space, UINT32 offset)
 		case 0x10c:
 			// Var-Length Read Port Low
 			{
-				UINT32 data = (var_length_read(space, m_vda + 0) <<  0) | (var_length_read(space, m_vda + 1) <<  8)
-															| (var_length_read(space, m_vda + 2) << 16);
+				uint32_t data = (var_length_read<SA1Read>(m_vda + 0) <<  0) | (var_length_read<SA1Read>(m_vda + 1) <<  8) | (var_length_read<SA1Read>(m_vda + 2) << 16);
 				data >>= m_vbit;
 				value = (data >> 0) & 0xff;
 			}
@@ -383,8 +443,7 @@ UINT8 sns_sa1_device::read_regs(address_space &space, UINT32 offset)
 		case 0x10d:
 			// Var-Length Read Port High
 			{
-				UINT32 data = (var_length_read(space, m_vda + 0) <<  0) | (var_length_read(space, m_vda + 1) <<  8)
-															| (var_length_read(space, m_vda + 2) << 16);
+				uint32_t data = (var_length_read<SA1Read>(m_vda + 0) <<  0) | (var_length_read<SA1Read>(m_vda + 1) <<  8) | (var_length_read<SA1Read>(m_vda + 2) << 16);
 				data >>= m_vbit;
 
 				if (m_drm == 1)
@@ -408,7 +467,7 @@ UINT8 sns_sa1_device::read_regs(address_space &space, UINT32 offset)
 	return value;
 }
 
-void sns_sa1_device::write_regs(address_space &space, UINT32 offset, UINT8 data)
+void sns_sa1_device::write_regs(uint32_t offset, uint8_t data)
 {
 	offset &= 0x1ff;    // $2200 + offset gives the reg value to compare with docs
 
@@ -636,6 +695,13 @@ void sns_sa1_device::write_regs(address_space &space, UINT32 offset, UINT8 data)
 		case 0x031:
 			// Both  CDMA  00h   Character Conversion DMA Parameters (W)
 			m_dma_ccparam = data;
+			m_dma_cconv_size = (data >> 2) & 7;
+			if (m_dma_cconv_size > 5) m_dma_cconv_size = 5;
+			m_dma_cconv_bits = data & 3;
+			if (m_dma_cconv_bits > 2) m_dma_cconv_bits = 2;
+
+			if (BIT(data, 7))
+				m_cconv1_dma_active = false;
 			break;
 		case 0x032:
 			// DMA Source Device Start Address Low
@@ -660,26 +726,24 @@ void sns_sa1_device::write_regs(address_space &space, UINT32 offset, UINT8 data)
 			{
 				if (!(m_dma_ctrl & 0x20) && !(m_dma_ctrl & 0x04)) // Normal DMA to IRAM
 				{
-					dma_transfer(space);
-//                  printf("SA-1: normal DMA to IRAM\n");
+					dma_transfer();
 				}
 
 				if (m_dma_ctrl & 0x20 && m_dma_ctrl & 0x10) // CC DMA Type 1
 				{
-//                  printf("SA-1: CC DMA type 1\n");
-					dma_cctype1_transfer(space);
+					dma_cctype1_transfer();
 				}
 			}
 			break;
 		case 0x037:
 			// DMA Dest Device Start Address High
-			m_dst_addr = (m_dst_addr & 0xffff00) | (data << 16);
+			m_dst_addr = (m_dst_addr & 0x00ffff) | (data << 16);
 			if (m_dma_ctrl & 0x80)
 			{
 				if (!(m_dma_ctrl & 0x20) && m_dma_ctrl & 0x04)  // Normal DMA to BWRAM
 				{
 //                  printf("SA-1: normal DMA to BWRAM\n");
-					dma_transfer(space);
+					dma_transfer();
 				}
 			}
 			break;
@@ -720,7 +784,7 @@ void sns_sa1_device::write_regs(address_space &space, UINT32 offset, UINT8 data)
 				if (m_dma_ctrl & 0x20 && !(m_dma_ctrl & 0x10))  // CC DMA Type 2
 				{
 //                  printf("SA-1: CC DMA type 2\n");
-					dma_cctype2_transfer(space);
+					dma_cctype2_transfer();
 				}
 			}
 			break;
@@ -749,7 +813,7 @@ void sns_sa1_device::write_regs(address_space &space, UINT32 offset, UINT8 data)
 			switch (m_math_ctlr)
 			{
 				case 0: //signed multiplication
-					m_math_res = (INT16)m_math_a * (INT16)m_math_b;
+					m_math_res = (int16_t)m_math_a * (int16_t)m_math_b;
 					m_math_b = 0;
 					break;
 				case 1: //unsigned division
@@ -757,15 +821,15 @@ void sns_sa1_device::write_regs(address_space &space, UINT32 offset, UINT8 data)
 						m_math_res = 0;
 					else
 					{
-						INT16  quotient  = (INT16)m_math_a / (UINT16)m_math_b;
-						UINT16 remainder = (INT16)m_math_a % (UINT16)m_math_b;
-						m_math_res = (UINT64)((remainder << 16) | quotient);
+						int16_t  quotient  = (int16_t)m_math_a / (uint16_t)m_math_b;
+						uint16_t remainder = (int16_t)m_math_a % (uint16_t)m_math_b;
+						m_math_res = (uint64_t)((remainder << 16) | quotient);
 					}
 					break;
 				case 2: //sigma (accumulative multiplication)
 				case 3:
-					UINT64 acum = (INT16)m_math_a * (INT16)m_math_b;
-					UINT64 mask = U64(0xffffffffff);
+					uint64_t acum = (int16_t)m_math_a * (int16_t)m_math_b;
+					uint64_t mask = 0xffffffffffU;
 					m_math_res += acum;
 					m_math_overflow = (m_math_res > mask) ? 0x80 : 0;
 					m_math_res &= mask;
@@ -807,23 +871,87 @@ void sns_sa1_device::write_regs(address_space &space, UINT32 offset, UINT8 data)
 	}
 }
 
-UINT8 sns_sa1_device::read_iram(UINT32 offset)
+uint8_t sns_sa1_device::read_iram(uint32_t offset)
 {
 	return m_internal_ram[offset & 0x7ff];
 }
 
-void sns_sa1_device::write_iram(UINT32 offset, UINT8 data)
+void sns_sa1_device::write_iram(uint32_t offset, uint8_t data)
 {
 	m_internal_ram[offset & 0x7ff] = data;
 }
 
-UINT8 sns_sa1_device::read_bwram(UINT32 offset)
+uint8_t sns_sa1_device::read_cconv1_dma(uint32_t offset)
 {
-	int shift = 0;
-	UINT8 mask = 0xff;
+	uint32_t store_mask = (1 << (6 - m_dma_cconv_bits)) - 1;
+
+	if ((offset & store_mask) == 0)
+	{
+		uint32_t bpp = 2 << (2 - m_dma_cconv_bits);
+		uint32_t tile_stride = (8 << m_dma_cconv_size) >> m_dma_cconv_bits;
+		uint32_t bwram_addr_mask = m_nvram.size() - 1;
+		uint32_t tile = ((offset - m_src_addr) & bwram_addr_mask) >> (6 - m_dma_cconv_bits);
+		uint32_t ty = (tile >> m_dma_cconv_size);
+		uint32_t tx = tile & ((1 << m_dma_cconv_size) - 1);
+		uint32_t bwram_src = m_src_addr + ty * 8 * tile_stride + tx * bpp;
+
+		for (uint32_t y = 0; y < 8; y++)
+		{
+			uint64_t raw_pixels = 0;
+			for (uint64_t bit = 0; bit < bpp; bit++)
+			{
+				raw_pixels |= (uint64_t)m_nvram[(bwram_src + bit) & bwram_addr_mask] << (bit << 3);
+			}
+			bwram_src += tile_stride;
+
+			uint8_t linear[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+			for (uint32_t x = 0; x < 8; x++)
+			{
+				linear[0] |= BIT(raw_pixels, 0) << (7 - x);
+				linear[1] |= BIT(raw_pixels, 1) << (7 - x);
+				if (m_dma_cconv_bits == 2)
+				{
+					raw_pixels >>= 2;
+					continue;
+				}
+				linear[2] |= BIT(raw_pixels, 2) << (7 - x);
+				linear[3] |= BIT(raw_pixels, 3) << (7 - x);
+				if (m_dma_cconv_bits == 1)
+				{
+					raw_pixels >>= 4;
+					continue;
+				}
+				linear[4] |= BIT(raw_pixels, 4) << (7 - x);
+				linear[5] |= BIT(raw_pixels, 5) << (7 - x);
+				linear[6] |= BIT(raw_pixels, 6) << (7 - x);
+				linear[7] |= BIT(raw_pixels, 7) << (7 - x);
+				raw_pixels >>= 8;
+			}
+
+			for (uint32_t byte = 0; byte < bpp; byte++)
+			{
+				uint32_t dst_addr = m_dst_addr + (y << 1) + ((byte & 6) << 3) + (byte & 1);
+				write_iram(dst_addr, linear[byte]);
+			}
+		}
+	}
+
+	return read_iram(m_dst_addr + (offset & store_mask));
+}
+
+template<bool SA1Read>
+uint8_t sns_sa1_device::read_bwram(uint32_t offset)
+{
+	int shift;
+	uint8_t mask;
 
 	if (m_nvram.empty())
 		return 0xff;    // this should probably never happen, or are there SA-1 games with no BWRAM?
+
+	if (m_cconv1_dma_active && !SA1Read)
+	{
+		return read_cconv1_dma(offset);
+	}
 
 	if (offset < 0x100000)
 		return m_nvram[offset & (m_nvram.size() - 1)];
@@ -834,25 +962,25 @@ UINT8 sns_sa1_device::read_bwram(UINT32 offset)
 	if (m_bwram_sa1_format)
 	{
 		// 2bits mode
-		offset /= 4;
-		shift = ((offset % 4) * 2);
+		shift = ((offset & 3) << 1);
 		mask = 0x03;
+		offset >>= 2;
 	}
 	else
 	{
 		// 4bits mode
-		offset /= 2;
-		shift = ((offset % 2) * 4);
+		shift = ((offset & 1) << 2);
 		mask = 0x0f;
+		offset >>= 1;
 	}
 
 	// only return the correct bits
 	return (m_nvram[offset & (m_nvram.size() - 1)] >> shift) & mask;
 }
 
-void sns_sa1_device::write_bwram(UINT32 offset, UINT8 data)
+void sns_sa1_device::write_bwram(uint32_t offset, uint8_t data)
 {
-	UINT8 mask = 0xff;
+	uint8_t mask;
 
 	if (m_nvram.empty())
 		return; // this should probably never happen, or are there SA-1 games with no BWRAM?
@@ -869,16 +997,16 @@ void sns_sa1_device::write_bwram(UINT32 offset, UINT8 data)
 	if (m_bwram_sa1_format)
 	{
 		// 2bits mode
-		offset /= 4;
-		data = (data & 0x03) << ((offset % 4) * 2);
-		mask = 0x03 << ((offset % 4) * 2);
+		data = (data & 0x03) << ((offset & 3) << 1);
+		mask = 0x03 << ((offset & 3) << 1);
+		offset >>= 2;
 	}
 	else
 	{
 		// 4bits mode
-		offset /= 2;
-		data = (data & 0x0f) << ((offset % 2) * 4);
-		mask = 0x0f << ((offset % 2) * 4);
+		data = (data & 0x0f) << ((offset & 1) << 2);
+		mask = 0x0f << ((offset & 1) << 2);
+		offset >>= 1;
 	}
 
 	// only change the correct bits, keeping the rest untouched
@@ -892,9 +1020,9 @@ void sns_sa1_device::write_bwram(UINT32 offset, UINT8 data)
  -------------------------------------------------*/
 
 
-READ8_MEMBER(sns_sa1_device::read_l)
+uint8_t sns_sa1_device::read_l(offs_t offset)
 {
-	int bank = 0;
+	int bank;
 
 	if (offset == 0xffea && BIT(m_scpu_ctrl, 4)) return (m_nmi_vector >> 0) & 0xff;
 	if (offset == 0xffeb && BIT(m_scpu_ctrl, 4)) return (m_nmi_vector >> 8) & 0xff;
@@ -927,9 +1055,9 @@ READ8_MEMBER(sns_sa1_device::read_l)
 		return 0; // this should not happen (the driver should only call read_l in the above case)
 }
 
-READ8_MEMBER(sns_sa1_device::read_h)
+uint8_t sns_sa1_device::read_h(offs_t offset)
 {
-	int bank = 0;
+	int bank;
 
 	// ROM is mapped to [80-bf][8000-ffff] & [c0-ff][0000-ffff]
 	if (offset < 0x200000)
@@ -963,40 +1091,40 @@ READ8_MEMBER(sns_sa1_device::read_h)
 		return m_rom[rom_bank_map[(m_bank_f_rom * 0x20) + ((offset - 0x700000) / 0x8000)] * 0x8000 + (offset & 0x7fff)];
 }
 
-WRITE8_MEMBER(sns_sa1_device::write_l)
+void sns_sa1_device::write_l(offs_t offset, uint8_t data)
 {
 }
 
-WRITE8_MEMBER(sns_sa1_device::write_h)
+void sns_sa1_device::write_h(offs_t offset, uint8_t data)
 {
 }
 
-READ8_MEMBER( sns_sa1_device::chip_read )
+uint8_t sns_sa1_device::chip_read(offs_t offset)
 {
-	UINT16 address = offset & 0xffff;
+	uint16_t address = offset & 0xffff;
 
 	if (offset < 0x400000 && address >= 0x2200 && address < 0x2400)
-		return read_regs(space, address & 0x1ff);   // SA-1 Regs
+		return read_regs<false>(address & 0x1ff);   // SA-1 Regs
 
 	if (offset < 0x400000 && address >= 0x3000 && address < 0x3800)
 		return read_iram(address & 0x7ff);  // Internal SA-1 RAM (2K)
 
 	if (offset < 0x400000 && address >= 0x6000 && address < 0x8000)
-		return read_bwram((m_bwram_snes * 0x2000) + (offset & 0x1fff)); // SA-1 BWRAM
+		return read_bwram<false>((m_bwram_snes * 0x2000) + (offset & 0x1fff)); // SA-1 BWRAM
 
 	if (offset >= 0x400000 && offset < 0x500000)
-		return read_bwram(offset & 0xfffff);  // SA-1 BWRAM again (but not called for the [c0-cf] range, because it's not mirrored)
+		return read_bwram<false>(offset & 0xfffff);  // SA-1 BWRAM again (but not called for the [c0-cf] range, because it's not mirrored)
 
 	return 0xff;
 }
 
 
-WRITE8_MEMBER( sns_sa1_device::chip_write )
+void sns_sa1_device::chip_write(offs_t offset, uint8_t data)
 {
-	UINT16 address = offset & 0xffff;
+	uint16_t address = offset & 0xffff;
 
 	if (offset < 0x400000 && address >= 0x2200 && address < 0x2400)
-		write_regs(space, address & 0x1ff, data);  // SA-1 Regs
+		write_regs(address & 0x1ff, data);  // SA-1 Regs
 
 	if (offset < 0x400000 && address >= 0x3000 && address < 0x3800)
 		write_iram(address & 0x7ff, data);  // Internal SA-1 RAM (2K)
@@ -1017,9 +1145,9 @@ WRITE8_MEMBER( sns_sa1_device::chip_write )
 // I/O regs or WRAM, and there are a few additional accesses to IRAM (in [00-3f][0000-07ff])
 // and to BWRAM (in [60-6f][0000-ffff], so-called bitmap mode)
 
-READ8_MEMBER( sns_sa1_device::sa1_hi_r )
+uint8_t sns_sa1_device::sa1_hi_r(offs_t offset)
 {
-	UINT16 address = offset & 0xffff;
+	uint16_t address = offset & 0xffff;
 
 	if (offset < 0x400000)
 	{
@@ -1028,24 +1156,24 @@ READ8_MEMBER( sns_sa1_device::sa1_hi_r )
 			if (address < 0x0800)
 				return read_iram(offset);   // Internal SA-1 RAM (2K)
 			else if (address >= 0x2200 && address < 0x2400)
-				return read_regs(space, offset & 0x1ff);    // SA-1 Regs
+				return read_regs<true>(offset & 0x1ff);    // SA-1 Regs
 			else if (address >= 0x3000 && address < 0x3800)
 				return read_iram(offset);   // Internal SA-1 RAM (2K)
 		}
 		else if (address < 0x8000)
-			return read_bwram((m_bwram_sa1 * 0x2000) + (offset & 0x1fff) + (m_bwram_sa1_source * 0x100000));        // SA-1 BWRAM
+			return read_bwram<true>((m_bwram_sa1 * 0x2000) + (offset & 0x1fff) + (m_bwram_sa1_source * 0x100000));        // SA-1 BWRAM
 		else
-			return read_h(space, offset);   // ROM
+			return read_h(offset);   // ROM
 
 		return 0xff;    // maybe open bus? same as the main system one or diff? (currently not accessible from carts anyway...)
 	}
 	else
-		return read_h(space, offset);   // ROM
+		return read_h(offset);   // ROM
 }
 
-READ8_MEMBER( sns_sa1_device::sa1_lo_r )
+uint8_t sns_sa1_device::sa1_lo_r(offs_t offset)
 {
-	UINT16 address = offset & 0xffff;
+	uint16_t address = offset & 0xffff;
 
 	if (offset < 0x400000)
 	{
@@ -1054,12 +1182,12 @@ READ8_MEMBER( sns_sa1_device::sa1_lo_r )
 			if (address < 0x0800)
 				return read_iram(offset);   // Internal SA-1 RAM (2K)
 			else if (address >= 0x2200 && address < 0x2400)
-				return read_regs(space, offset & 0x1ff);    // SA-1 Regs
+				return read_regs<true>(offset & 0x1ff);    // SA-1 Regs
 			else if (address >= 0x3000 && address < 0x3800)
 				return read_iram(offset);   // Internal SA-1 RAM (2K)
 		}
 		else if (address < 0x8000)
-			return read_bwram((m_bwram_sa1 * 0x2000) + (offset & 0x1fff) + (m_bwram_sa1_source * 0x100000));        // SA-1 BWRAM
+			return read_bwram<true>((m_bwram_sa1 * 0x2000) + (offset & 0x1fff) + (m_bwram_sa1_source * 0x100000));        // SA-1 BWRAM
 		else if (offset == 0xffee)
 		{
 			return m_sa1_irq & 0xff;
@@ -1085,21 +1213,21 @@ READ8_MEMBER( sns_sa1_device::sa1_lo_r )
 			return m_sa1_reset>>8;
 		}
 		else
-			return read_l(space, offset);   // ROM
+			return read_l(offset);   // ROM
 
 		return 0xff;    // maybe open bus? same as the main system one or diff? (currently not accessible from carts anyway...)
 	}
 	else if (offset < 0x500000)
-		return read_bwram(offset & 0xfffff);      // SA-1 BWRAM (not mirrored above!)
+		return read_bwram<true>(offset & 0xfffff);      // SA-1 BWRAM (not mirrored above!)
 	else if (offset >= 0x600000 && offset < 0x700000)
-		return read_bwram((offset & 0xfffff) + 0x100000);       // SA-1 BWRAM Bitmap mode
+		return read_bwram<true>((offset & 0xfffff) + 0x100000);       // SA-1 BWRAM Bitmap mode
 	else
 		return 0xff;    // nothing should be mapped here, so maybe open bus?
 }
 
-WRITE8_MEMBER( sns_sa1_device::sa1_hi_w )
+void sns_sa1_device::sa1_hi_w(offs_t offset, uint8_t data)
 {
-	UINT16 address = offset & 0xffff;
+	uint16_t address = offset & 0xffff;
 	if (offset < 0x400000)
 	{
 		if (address < 0x6000)
@@ -1107,7 +1235,7 @@ WRITE8_MEMBER( sns_sa1_device::sa1_hi_w )
 			if (address < 0x0800)
 				write_iram(offset, data);   // Internal SA-1 RAM (2K)
 			else if (address >= 0x2200 && address < 0x2400)
-				write_regs(space, offset & 0x1ff, data);   // SA-1 Regs
+				write_regs(offset & 0x1ff, data);   // SA-1 Regs
 			else if (address >= 0x3000 && address < 0x3800)
 				write_iram(offset, data);   // Internal SA-1 RAM (2K)
 		}
@@ -1116,29 +1244,26 @@ WRITE8_MEMBER( sns_sa1_device::sa1_hi_w )
 	}
 }
 
-WRITE8_MEMBER( sns_sa1_device::sa1_lo_w )
+void sns_sa1_device::sa1_lo_w(offs_t offset, uint8_t data)
 {
 	if (offset >= 0x400000 && offset < 0x500000)
 		write_bwram(offset & 0xfffff, data);        // SA-1 BWRAM (not mirrored above!)
 	else if (offset >= 0x600000 && offset < 0x700000)
 		write_bwram((offset & 0xfffff) + 0x100000, data);       // SA-1 BWRAM Bitmap mode
 	else
-		sa1_hi_w(space, offset, data);
+		sa1_hi_w(offset, data);
 }
 
-static ADDRESS_MAP_START( sa1_map, AS_PROGRAM, 8, sns_sa1_device )
-	AM_RANGE(0x000000, 0x7dffff) AM_READWRITE(sa1_lo_r, sa1_lo_w)
-	AM_RANGE(0x7e0000, 0x7fffff) AM_NOP
-	AM_RANGE(0x800000, 0xffffff) AM_READWRITE(sa1_hi_r, sa1_hi_w)
-ADDRESS_MAP_END
-
-
-static MACHINE_CONFIG_FRAGMENT( snes_sa1 )
-	MCFG_CPU_ADD("sa1cpu", G65816, 10000000)
-	MCFG_CPU_PROGRAM_MAP(sa1_map)
-MACHINE_CONFIG_END
-
-machine_config_constructor sns_sa1_device::device_mconfig_additions() const
+void sns_sa1_device::sa1_map(address_map &map)
 {
-	return MACHINE_CONFIG_NAME( snes_sa1 );
+	map(0x000000, 0x7dffff).rw(FUNC(sns_sa1_device::sa1_lo_r), FUNC(sns_sa1_device::sa1_lo_w));
+	map(0x7e0000, 0x7fffff).noprw();
+	map(0x800000, 0xffffff).rw(FUNC(sns_sa1_device::sa1_hi_r), FUNC(sns_sa1_device::sa1_hi_w));
+}
+
+
+void sns_sa1_device::device_add_mconfig(machine_config &config)
+{
+	G65816(config, m_sa1, 10000000);
+	m_sa1->set_addrmap(AS_PROGRAM, &sns_sa1_device::sa1_map);
 }

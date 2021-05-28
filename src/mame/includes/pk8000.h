@@ -1,40 +1,51 @@
 // license:BSD-3-Clause
 // copyright-holders:Miodrag Milanovic
+#ifndef MAME_INCLUDES_PK8000_H
+#define MAME_INCLUDES_PK8000_H
+
+#pragma once
+
+#include "emupal.h"
+
 class pk8000_base_state : public driver_device
 {
 public:
 	pk8000_base_state(const machine_config &mconfig, device_type type, const char *tag)
-		: driver_device(mconfig, type, tag) ,
-		m_maincpu(*this, "maincpu") { }
+		: driver_device(mconfig, type, tag)
+		, m_maincpu(*this, "maincpu")
+	{ }
 
-	DECLARE_READ8_MEMBER(pk8000_video_color_r);
-	DECLARE_WRITE8_MEMBER(pk8000_video_color_w);
-	DECLARE_READ8_MEMBER(pk8000_text_start_r);
-	DECLARE_WRITE8_MEMBER(pk8000_text_start_w);
-	DECLARE_READ8_MEMBER(pk8000_chargen_start_r);
-	DECLARE_WRITE8_MEMBER(pk8000_chargen_start_w);
-	DECLARE_READ8_MEMBER(pk8000_video_start_r);
-	DECLARE_WRITE8_MEMBER(pk8000_video_start_w);
-	DECLARE_READ8_MEMBER(pk8000_color_start_r);
-	DECLARE_WRITE8_MEMBER(pk8000_color_start_w);
-	DECLARE_READ8_MEMBER(pk8000_color_r);
-	DECLARE_WRITE8_MEMBER(pk8000_color_w);
-	DECLARE_READ8_MEMBER(pk8000_84_porta_r);
-	DECLARE_WRITE8_MEMBER(pk8000_84_porta_w);
-	DECLARE_WRITE8_MEMBER(pk8000_84_portc_w);
-
-	DECLARE_PALETTE_INIT(pk8000);
-
-	UINT32 pk8000_video_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect, UINT8 *videomem);
 protected:
-	UINT8 m_pk8000_text_start;
-	UINT8 m_pk8000_chargen_start;
-	UINT8 m_pk8000_video_start;
-	UINT8 m_pk8000_color_start;
+	uint8_t _84_porta_r();
+	void _84_porta_w(uint8_t data);
+	void _84_portc_w(uint8_t data);
 
-	UINT8 m_pk8000_video_mode;
-	UINT8 m_pk8000_video_color;
-	UINT8 m_pk8000_color[32];
-	UINT8 m_pk8000_video_enable;
+	uint8_t video_color_r();
+	void video_color_w(uint8_t data);
+	uint8_t text_start_r();
+	void text_start_w(uint8_t data);
+	uint8_t chargen_start_r();
+	void chargen_start_w(uint8_t data);
+	uint8_t video_start_r();
+	void video_start_w(uint8_t data);
+	uint8_t color_start_r();
+	void color_start_w(uint8_t data);
+	uint8_t color_r(offs_t offset);
+	void color_w(offs_t offset, uint8_t data);
+
+	void pk8000_palette(palette_device &palette) const;
+	uint32_t video_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect, uint8_t *videomem);
+
+	uint8_t m_text_start;
+	uint8_t m_chargen_start;
+	uint8_t m_video_start;
+	uint8_t m_color_start;
+
+	uint8_t m_video_mode;
+	uint8_t m_video_color;
+	uint8_t m_color[32];
+	uint8_t m_video_enable;
 	required_device<cpu_device> m_maincpu;
 };
+
+#endif // MAME_INCLUDES_PK8000_H

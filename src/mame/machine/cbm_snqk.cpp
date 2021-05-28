@@ -24,23 +24,22 @@
  * 0x001c data */
 
 
-int general_cbm_loadsnap( device_image_interface &image, const char *file_type, int snapshot_size,
-	address_space &space, offs_t offset, void (*cbm_sethiaddress)(address_space &space, UINT16 hiaddress) )
+image_init_result general_cbm_loadsnap( device_image_interface &image, address_space &space, offs_t offset,
+	void (*cbm_sethiaddress)(address_space &space, uint16_t hiaddress) )
 {
 	char buffer[7];
-	dynamic_buffer data;
-	UINT32 bytesread;
-	UINT16 address = 0;
+	std::vector<uint8_t> data;
+	uint32_t bytesread;
+	uint16_t address = 0;
 	int i;
 
-	if (!file_type)
-		goto error;
+	int snapshot_size = image.length();
 
-	if (!core_stricmp(file_type, "prg"))
+	if (image.is_filetype("prg"))
 	{
 		/* prg files */
 	}
-	else if (!core_stricmp(file_type, "p00"))
+	else if (image.is_filetype("p00"))
 	{
 		/* p00 files */
 		if (image.fread( buffer, sizeof(buffer)) != sizeof(buffer))
@@ -50,7 +49,7 @@ int general_cbm_loadsnap( device_image_interface &image, const char *file_type, 
 		image.fseek(26, SEEK_SET);
 		snapshot_size -= 26;
 	}
-	else if (!core_stricmp(file_type, "t64"))
+	else if (image.is_filetype("t64"))
 	{
 		/* t64 files - for GB64 Single T64s loading to x0801 - header is always the same size */
 		if (image.fread( buffer, sizeof(buffer)) != sizeof(buffer))
@@ -66,8 +65,8 @@ int general_cbm_loadsnap( device_image_interface &image, const char *file_type, 
 	}
 
 	image.fread( &address, 2);
-	address = LITTLE_ENDIANIZE_INT16(address);
-	if (!core_stricmp(file_type, "t64"))
+	address = little_endianize_int16(address);
+	if (image.is_filetype("t64"))
 		address = 2049;
 	snapshot_size -= 2;
 
@@ -81,13 +80,13 @@ int general_cbm_loadsnap( device_image_interface &image, const char *file_type, 
 		space.write_byte(address + i + offset, data[i]);
 
 	cbm_sethiaddress(space, address + snapshot_size);
-	return IMAGE_INIT_PASS;
+	return image_init_result::PASS;
 
 error:
-	return IMAGE_INIT_FAIL;
+	return image_init_result::FAIL;
 }
 
-void cbm_quick_sethiaddress( address_space &space, UINT16 hiaddress )
+void cbm_quick_sethiaddress( address_space &space, uint16_t hiaddress )
 {
 	space.write_byte(0xae, hiaddress & 0xff);
 	space.write_byte(0x31, hiaddress & 0xff);

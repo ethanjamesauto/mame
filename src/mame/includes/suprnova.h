@@ -1,34 +1,30 @@
 // license:BSD-3-Clause
 // copyright-holders:David Haywood, Sylvain Glaize, Paul Priest, Olivier Galibert
+#ifndef MAME_INCLUDES_SUPRNOVA_H
+#define MAME_INCLUDES_SUPRNOVA_H
 
-#include "cpu/sh2/sh2.h"
+#pragma once
 
+#include "video/sknsspr.h"
 
-struct hit_t
-{
-	UINT16 x1p, y1p, z1p, x1s, y1s, z1s;
-	UINT16 x2p, y2p, z2p, x2s, y2s, z2s;
-	UINT16 org;
+#include "cpu/sh/sh2.h"
+#include "machine/timer.h"
 
-	UINT16 x1_p1, x1_p2, y1_p1, y1_p2, z1_p1, z1_p2;
-	UINT16 x2_p1, x2_p2, y2_p1, y2_p2, z2_p1, z2_p2;
-	UINT16 x1tox2, y1toy2, z1toz2;
-	INT16 x_in, y_in, z_in;
-	UINT16 flag;
-
-	UINT8 disconnect;
-};
+#include "emupal.h"
+#include "screen.h"
+#include "tilemap.h"
 
 
 class skns_state : public driver_device
 {
 public:
-	skns_state(const machine_config &mconfig, device_type type, const char *tag)
-		: driver_device(mconfig, type, tag),
+	skns_state(const machine_config &mconfig, device_type type, const char *tag) :
+		driver_device(mconfig, type, tag),
 		m_maincpu(*this,"maincpu"),
 		m_spritegen(*this, "spritegen"),
 		m_gfxdecode(*this, "gfxdecode"),
 		m_palette(*this, "palette"),
+		m_screen(*this, "screen"),
 		m_spriteram(*this,"spriteram"),
 		m_spc_regs(*this, "spc_regs"),
 		m_v3_regs(*this, "v3_regs"),
@@ -39,27 +35,76 @@ public:
 		m_palette_ram(*this, "palette_ram"),
 		m_v3t_ram(*this, "v3t_ram"),
 		m_main_ram(*this, "main_ram"),
-		m_cache_ram(*this, "cache_ram") { }
+		m_cache_ram(*this, "cache_ram"),
+		m_paddle(*this, "Paddle.%c", 'A')
+	{ }
+
+	void sknsk(machine_config &config);
+	void sknsu(machine_config &config);
+	void sknsa(machine_config &config);
+	void sknsj(machine_config &config);
+	void sknse(machine_config &config);
+	void skns(machine_config &config);
+
+	void init_sengekis();
+	void init_cyvern();
+	void init_puzzloopa();
+	void init_teljan();
+	void init_panicstr();
+	void init_puzzloope();
+	void init_sengekij();
+	void init_puzzloopj();
+	void init_sarukani();
+	void init_gutsn();
+	void init_jjparad2();
+	void init_galpans3();
+	void init_jjparads();
+	void init_galpans2();
+	void init_galpanis();
+	void init_puzzloopu();
+	void init_senknow();
+	void init_galpani4();
+	void init_ryouran();
+
+	template <int P> DECLARE_CUSTOM_INPUT_MEMBER(paddle_r);
+
+private:
+	struct hit_t
+	{
+		uint16_t x1p, y1p, z1p, x1s, y1s, z1s;
+		uint16_t x2p, y2p, z2p, x2s, y2s, z2s;
+		uint16_t org;
+
+		uint16_t x1_p1, x1_p2, y1_p1, y1_p2, z1_p1, z1_p2;
+		uint16_t x2_p1, x2_p2, y2_p1, y2_p2, z2_p1, z2_p2;
+		uint16_t x1tox2, y1toy2, z1toz2;
+		int16_t x_in, y_in, z_in;
+		uint16_t flag;
+
+		uint8_t disconnect;
+	};
 
 	required_device<sh2_device> m_maincpu;
 	required_device<sknsspr_device> m_spritegen;
 	required_device<gfxdecode_device> m_gfxdecode;
 	required_device<palette_device> m_palette;
+	required_device<screen_device> m_screen;
 
-	required_shared_ptr<UINT32> m_spriteram;
-	required_shared_ptr<UINT32> m_spc_regs;
-	required_shared_ptr<UINT32> m_v3_regs;
-	required_shared_ptr<UINT32> m_tilemapA_ram;
-	required_shared_ptr<UINT32> m_tilemapB_ram;
-	required_shared_ptr<UINT32> m_v3slc_ram;
-	required_shared_ptr<UINT32> m_pal_regs;
-	required_shared_ptr<UINT32> m_palette_ram;
-	required_shared_ptr<UINT32> m_v3t_ram;
-	required_shared_ptr<UINT32> m_main_ram;
-	required_shared_ptr<UINT32> m_cache_ram;
+	required_shared_ptr<uint32_t> m_spriteram;
+	required_shared_ptr<uint32_t> m_spc_regs;
+	required_shared_ptr<uint32_t> m_v3_regs;
+	required_shared_ptr<uint32_t> m_tilemapA_ram;
+	required_shared_ptr<uint32_t> m_tilemapB_ram;
+	required_shared_ptr<uint32_t> m_v3slc_ram;
+	required_shared_ptr<uint32_t> m_pal_regs;
+	required_shared_ptr<uint32_t> m_palette_ram;
+	required_shared_ptr<uint32_t> m_v3t_ram;
+	required_shared_ptr<uint32_t> m_main_ram;
+	required_shared_ptr<uint32_t> m_cache_ram;
+
+	optional_ioport_array<4> m_paddle;
 
 	hit_t m_hit;
-	UINT32 m_timer_0_temp[4];
 	bitmap_ind16 m_sprite_bitmap;
 	bitmap_ind16 m_tilemap_bitmap_lower;
 	bitmap_ind8 m_tilemap_bitmapflags_lower;
@@ -69,18 +114,18 @@ public:
 	int m_depthB;
 	int m_use_spc_bright;
 	int m_use_v3_bright;
-	UINT8 m_bright_spc_b;
-	UINT8 m_bright_spc_g;
-	UINT8 m_bright_spc_r;
-	UINT8 m_bright_spc_b_trans;
-	UINT8 m_bright_spc_g_trans;
-	UINT8 m_bright_spc_r_trans;
-	UINT8 m_bright_v3_b;
-	UINT8 m_bright_v3_g;
-	UINT8 m_bright_v3_r;
-	UINT8 m_bright_v3_b_trans;
-	UINT8 m_bright_v3_g_trans;
-	UINT8 m_bright_v3_r_trans;
+	uint8_t m_bright_spc_b;
+	uint8_t m_bright_spc_g;
+	uint8_t m_bright_spc_r;
+	uint8_t m_bright_spc_b_trans;
+	uint8_t m_bright_spc_g_trans;
+	uint8_t m_bright_spc_r_trans;
+	uint8_t m_bright_v3_b;
+	uint8_t m_bright_v3_g;
+	uint8_t m_bright_v3_r;
+	uint8_t m_bright_v3_b_trans;
+	uint8_t m_bright_v3_g_trans;
+	uint8_t m_bright_v3_r_trans;
 	int m_spc_changed;
 	int m_v3_changed;
 	int m_palette_updated;
@@ -88,56 +133,37 @@ public:
 	int m_alt_enable_sprites;
 	tilemap_t *m_tilemap_A;
 	tilemap_t *m_tilemap_B;
+	uint8_t *m_btiles;
+	uint8_t m_region;
 
-	UINT8 m_region;
+	void hit_w(offs_t offset, uint32_t data);
+	void hit2_w(uint32_t data);
+	uint32_t hit_r(offs_t offset);
+	void io_w(offs_t offset, uint32_t data, uint32_t mem_mask = ~0);
+	void v3t_w(offs_t offset, uint32_t data, uint32_t mem_mask = ~0);
+	void pal_regs_w(offs_t offset, uint32_t data, uint32_t mem_mask = ~0);
+	void palette_ram_w(offs_t offset, uint32_t data, uint32_t mem_mask = ~0);
+	void tilemapA_w(offs_t offset, uint32_t data, uint32_t mem_mask = ~0);
+	void tilemapB_w(offs_t offset, uint32_t data, uint32_t mem_mask = ~0);
+	void v3_regs_w(offs_t offset, uint32_t data, uint32_t mem_mask = ~0);
 
-	DECLARE_WRITE32_MEMBER(skns_hit_w);
-	DECLARE_WRITE32_MEMBER(skns_hit2_w);
-	DECLARE_READ32_MEMBER(skns_hit_r);
-	DECLARE_WRITE32_MEMBER(skns_io_w);
-	DECLARE_WRITE32_MEMBER(skns_v3t_w);
-	DECLARE_READ32_MEMBER(gutsn_speedup_r);
-	DECLARE_READ32_MEMBER(cyvern_speedup_r);
-	DECLARE_READ32_MEMBER(puzzloopj_speedup_r);
-	DECLARE_READ32_MEMBER(puzzloopa_speedup_r);
-	DECLARE_READ32_MEMBER(puzzloopu_speedup_r);
-	DECLARE_READ32_MEMBER(puzzloope_speedup_r);
-	DECLARE_READ32_MEMBER(senknow_speedup_r);
-	DECLARE_READ32_MEMBER(teljan_speedup_r);
-	DECLARE_READ32_MEMBER(jjparads_speedup_r);
-	DECLARE_READ32_MEMBER(jjparad2_speedup_r);
-	DECLARE_READ32_MEMBER(ryouran_speedup_r);
-	DECLARE_READ32_MEMBER(galpans2_speedup_r);
-	DECLARE_READ32_MEMBER(panicstr_speedup_r);
-	DECLARE_READ32_MEMBER(sengekis_speedup_r);
-	DECLARE_READ32_MEMBER(sengekij_speedup_r);
-	DECLARE_WRITE32_MEMBER(skns_pal_regs_w);
-	DECLARE_WRITE32_MEMBER(skns_palette_ram_w);
-	DECLARE_WRITE32_MEMBER(skns_tilemapA_w);
-	DECLARE_WRITE32_MEMBER(skns_tilemapB_w);
-	DECLARE_WRITE32_MEMBER(skns_v3_regs_w);
-	DECLARE_CUSTOM_INPUT_MEMBER(paddle_r);
-	DECLARE_DRIVER_INIT(sengekis);
-	DECLARE_DRIVER_INIT(cyvern);
-	DECLARE_DRIVER_INIT(puzzloopa);
-	DECLARE_DRIVER_INIT(teljan);
-	DECLARE_DRIVER_INIT(panicstr);
-	DECLARE_DRIVER_INIT(puzzloope);
-	DECLARE_DRIVER_INIT(sengekij);
-	DECLARE_DRIVER_INIT(puzzloopj);
-	DECLARE_DRIVER_INIT(sarukani);
-	DECLARE_DRIVER_INIT(gutsn);
-	DECLARE_DRIVER_INIT(jjparad2);
-	DECLARE_DRIVER_INIT(galpans3);
-	DECLARE_DRIVER_INIT(jjparads);
-	DECLARE_DRIVER_INIT(galpans2);
-	DECLARE_DRIVER_INIT(galpanis);
-	DECLARE_DRIVER_INIT(puzzloopu);
-	DECLARE_DRIVER_INIT(senknow);
-	DECLARE_DRIVER_INIT(galpani4);
-	DECLARE_DRIVER_INIT(ryouran);
-	TILE_GET_INFO_MEMBER(get_tilemap_A_tile_info);
-	TILE_GET_INFO_MEMBER(get_tilemap_B_tile_info);
+	uint32_t gutsn_speedup_r();
+	uint32_t cyvern_speedup_r();
+	uint32_t puzzloopj_speedup_r();
+	uint32_t puzzloopa_speedup_r();
+	uint32_t puzzloopu_speedup_r();
+	uint32_t puzzloope_speedup_r();
+	uint32_t senknow_speedup_r();
+	uint32_t teljan_speedup_r();
+	uint32_t jjparads_speedup_r();
+	uint32_t jjparad2_speedup_r();
+	uint32_t ryouran_speedup_r();
+	uint32_t galpans2_speedup_r();
+	uint32_t panicstr_speedup_r();
+	uint32_t sengekis_speedup_r();
+	uint32_t sengekij_speedup_r();
+
+	virtual void machine_start() override;
 	virtual void machine_reset() override;
 	virtual void video_start() override;
 	virtual void video_reset() override;
@@ -146,16 +172,24 @@ public:
 	DECLARE_MACHINE_RESET(sknsu);
 	DECLARE_MACHINE_RESET(sknse);
 	DECLARE_MACHINE_RESET(sknsk);
-	UINT32 screen_update_skns(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect);
-	void screen_eof_skns(screen_device &screen, bool state);
+
+	TILE_GET_INFO_MEMBER(get_tilemap_A_tile_info);
+	TILE_GET_INFO_MEMBER(get_tilemap_B_tile_info);
+	uint32_t screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect);
+	DECLARE_WRITE_LINE_MEMBER(screen_vblank);
+
 	TIMER_DEVICE_CALLBACK_MEMBER(interrupt_callback);
-	TIMER_DEVICE_CALLBACK_MEMBER(skns_irq);
-	void suprnova_draw_roz(bitmap_ind16 &bitmap, bitmap_ind8& bitmapflags, const rectangle &cliprect, tilemap_t *tmap, UINT32 startx, UINT32 starty, int incxx, int incxy, int incyx, int incyy, int wraparound, int columnscroll, UINT32* scrollram);
-	void palette_set_rgb_brightness (int offset, UINT8 brightness_r, UINT8 brightness_g, UINT8 brightness_b);
+	TIMER_DEVICE_CALLBACK_MEMBER(irq);
+	void draw_roz(bitmap_ind16 &bitmap, bitmap_ind8& bitmapflags, const rectangle &cliprect, tilemap_t *tmap, uint32_t startx, uint32_t starty, int incxx, int incxy, int incyx, int incyy, int wraparound, int columnscroll, uint32_t* scrollram);
+	void palette_set_rgb_brightness (int offset, uint8_t brightness_r, uint8_t brightness_g, uint8_t brightness_b);
 	void palette_update();
-	void supernova_draw_a( bitmap_ind16 &bitmap, bitmap_ind8 &bitmap_flags, const rectangle &cliprect, int tran );
-	void supernova_draw_b( bitmap_ind16 &bitmap, bitmap_ind8 &bitmap_flags, const rectangle &cliprect, int tran );
+	void draw_a( bitmap_ind16 &bitmap, bitmap_ind8 &bitmap_flags, const rectangle &cliprect, int tran );
+	void draw_b( bitmap_ind16 &bitmap, bitmap_ind8 &bitmap_flags, const rectangle &cliprect, int tran );
 	void hit_recalc();
-	void init_skns();
-	void set_drc_pcflush(UINT32 addr);
+	void init_drc();
+	void set_drc_pcflush(uint32_t addr);
+
+	void skns_map(address_map &map);
 };
+
+#endif // MAME_INCLUDES_SUPRNOVA_H

@@ -7,53 +7,27 @@
     Cassette tape image abstraction code
 
 *********************************************************************/
+#ifndef MAME_FORMATS_CASSIMG_H
+#define MAME_FORMATS_CASSIMG_H
 
-#ifndef CASSIMG_H
-#define CASSIMG_H
+#pragma once
 
-#include "osdcore.h"
-#include "coretmpl.h"
 #include "ioprocs.h"
 
+#include "osdcore.h"
+
+#include <memory>
+#include <string>
+#include <vector>
+
 #ifndef LOG_FORMATS
-#define LOG_FORMATS if (0) printf
+#define LOG_FORMATS(...) do { if (0) osd_printf_info(__VA_ARGS__); } while (false)
 #endif
 
-/***************************************************************************
-
-    Constants
-
-***************************************************************************/
-
-#define CASSETTE_FLAG_READWRITE         0
-#define CASSETTE_FLAG_READONLY          1
-#define CASSETTE_FLAG_NOSAVEONEXIT      0
-#define CASSETTE_FLAG_SAVEONEXIT        2
-
-#define CASSETTE_WAVEFORM_8BIT          0
-#define CASSETTE_WAVEFORM_16BIT         2
-#define CASSETTE_WAVEFORM_16BIT_FLIP    3
-#define CASSETTE_WAVEFORM_32BIT         4
-#define CASSETTE_WAVEFORM_32BIT_FLIP    5
-#define CASSETTE_WAVEFORM_ENDIAN_FLIP   1
-#define CASSETTE_WAVEFORM_UNSIGNED      8
-
-#define CASSETTE_MODULATION_SQUAREWAVE  0
-#define CASSETTE_MODULATION_SINEWAVE    1
-
-
-#ifdef LSB_FIRST
-#define CASSETTE_WAVEFORM_16BITBE       CASSETTE_WAVEFORM_16BIT_FLIP
-#define CASSETTE_WAVEFORM_16BITLE       CASSETTE_WAVEFORM_16BIT
-#define CASSETTE_WAVEFORM_32BITBE       CASSETTE_WAVEFORM_32BIT_FLIP
-#define CASSETTE_WAVEFORM_32BITLE       CASSETTE_WAVEFORM_32BIT
-#else
-#define CASSETTE_WAVEFORM_16BITBE       CASSETTE_WAVEFORM_16BIT
-#define CASSETTE_WAVEFORM_16BITLE       CASSETTE_WAVEFORM_16BIT_FLIP
-#define CASSETTE_WAVEFORM_32BITBE       CASSETTE_WAVEFORM_32BIT
-#define CASSETTE_WAVEFORM_32BITLE       CASSETTE_WAVEFORM_32BIT_FLIP
+// hack to get around rogues that define this
+#ifdef UNSUPPORTED
+#undef UNSUPPORTED
 #endif
-
 
 /***************************************************************************
 
@@ -61,162 +35,208 @@
 
 ***************************************************************************/
 
-typedef enum
+class cassette_image
 {
-	CASSETTE_ERROR_SUCCESS,         /* no error */
-	CASSETTE_ERROR_INTERNAL,        /* fatal internal error */
-	CASSETTE_ERROR_UNSUPPORTED,     /* this operation is unsupported */
-	CASSETTE_ERROR_OUTOFMEMORY,     /* ran out of memory */
-	CASSETTE_ERROR_INVALIDIMAGE     /* invalid image */
-}
-casserr_t;
+public:
+	enum : int
+	{
+		FLAG_READWRITE          = 0,
+		FLAG_READONLY           = 1,
+		FLAG_NOSAVEONEXIT       = 0,
+		FLAG_SAVEONEXIT         = 2
+	};
 
-typedef std::vector<INT32> sample_block;
+	enum : int
+	{
+		WAVEFORM_8BIT           = 0,
+		WAVEFORM_16BIT          = 2,
+		WAVEFORM_16BIT_FLIP     = 3,
+		WAVEFORM_32BIT          = 4,
+		WAVEFORM_32BIT_FLIP     = 5,
+		WAVEFORM_ENDIAN_FLIP    = 1,
+		WAVEFORM_UNSIGNED       = 8,
 
-struct CassetteOptions
-{
-	int channels;
-	int bits_per_sample;
-	UINT32 sample_frequency;
+#ifdef LSB_FIRST
+		WAVEFORM_16BITBE        = WAVEFORM_16BIT_FLIP,
+		WAVEFORM_16BITLE        = WAVEFORM_16BIT,
+		WAVEFORM_32BITBE        = WAVEFORM_32BIT_FLIP,
+		WAVEFORM_32BITLE        = WAVEFORM_32BIT
+#else
+		WAVEFORM_16BITBE        = WAVEFORM_16BIT,
+		WAVEFORM_16BITLE        = WAVEFORM_16BIT_FLIP,
+		WAVEFORM_32BITBE        = WAVEFORM_32BIT,
+		WAVEFORM_32BITLE        = WAVEFORM_32BIT_FLIP
+#endif
+	};
+
+	enum : int
+	{
+		MODULATION_SQUAREWAVE   = 0,
+		MODULATION_SINEWAVE     = 1
+	};
+
+
+	enum class error
+	{
+		SUCCESS,                // no error
+		INTERNAL,               // fatal internal error
+		UNSUPPORTED,            // this operation is unsupported
+		OUT_OF_MEMORY,          // ran out of memory
+		INVALID_IMAGE,          // invalid image
+		READ_WRITE_UNSUPPORTED  // read/write is not supported by this image format
+	};
+
+	using ptr = std::unique_ptr<cassette_image>;
+
+	struct Options
+	{
+		int channels = 0;
+		int bits_per_sample = 0;
+		uint32_t sample_frequency = 0;
+	};
+
+	struct Info
+	{
+		int channels = 0;
+		int bits_per_sample = 0;
+		uint32_t sample_frequency = 0;
+		size_t sample_count = 0;
+	};
+
+	struct Format
+	{
+		const char *extensions = nullptr;
+		error (*identify)(cassette_image *cassette, Options *opts) = nullptr;
+		error (*load)(cassette_image *cassette) = nullptr;
+		error (*save)(cassette_image *cassette, const Info *info) = nullptr;
+	};
+
+	/* used for the core modulation code */
+	struct Modulation
+	{
+		int flags = 0;
+		double zero_frequency_low = 0;
+		double zero_frequency_canonical = 0;
+		double zero_frequency_high = 0;
+		double one_frequency_low = 0;
+		double one_frequency_canonical = 0;
+		double one_frequency_high = 0;
+	};
+
+	/* code to adapt existing legacy fill_wave functions */
+	struct LegacyWaveFiller
+	{
+		int (*fill_wave)(int16_t *, int, uint8_t *) = nullptr;
+		int chunk_size = 0;
+		int chunk_samples = 0;
+		int (*chunk_sample_calc)(const uint8_t *bytes, int length) = nullptr;
+		uint32_t sample_frequency = 0;
+		int header_samples = 0;
+		int trailer_samples = 0;
+	};
+
+	~cassette_image();
+
+	// calls for accessing the raw cassette image
+	void image_read(void *buffer, uint64_t offset, size_t length);
+	uint8_t image_read_byte(uint64_t offset);
+	void image_write(const void *buffer, uint64_t offset, size_t length);
+	uint64_t image_size();
+
+	// waveform accesses
+	error get_samples(int channel,
+		double time_index, double sample_period, size_t sample_count, size_t sample_spacing,
+		void *samples, int waveform_flags);
+	error put_samples(int channel,
+		double time_index, double sample_period, size_t sample_count, size_t sample_spacing,
+		const void *samples, int waveform_flags);
+	error get_sample(int channel, double time_index, double sample_period, int32_t *sample);
+	error put_sample(int channel, double time_index, double sample_period, int32_t sample);
+
+	// waveform accesses to/from the raw image - these are only used by lib\formats\wavfile.cpp
+	error read_samples(int channels, double time_index,
+		double sample_period, size_t sample_count, uint64_t offset, int waveform_flags);
+	error write_samples(int channels, double time_index,
+		double sample_period, size_t sample_count, uint64_t offset, int waveform_flags);
+
+	// modulation support
+	error modulation_identify(const Modulation &modulation,
+		Options *opts);
+	error put_modulated_data(int channel, double time_index,
+		const void *data, size_t data_length, const Modulation &modulation,
+		double *time_displacement);
+	error put_modulated_filler(int channel, double time_index,
+		uint8_t filler, size_t filler_length, const Modulation &modulation,
+		double *time_displacement);
+	error read_modulated_data(int channel, double time_index,
+		uint64_t offset, uint64_t length, const Modulation &modulation,
+		double *time_displacement);
+	error put_modulated_data_bit(int channel, double time_index,
+		uint8_t data, const Modulation &modulation,
+		double *time_displacement);
+
+	/* legacy code support */
+#define CODE_HEADER     ((uint8_t*)-1)
+#define CODE_TRAILER    ((uint8_t*)-2)
+	error legacy_identify(Options *opts, const LegacyWaveFiller *legacy_args);
+	error legacy_construct(const LegacyWaveFiller *legacy_args);
+
+	/* debug calls */
+	void dump(const char *filename);
+
+	error save();
+	void change(void *file, const io_procs *procs, const Format *format, int flags);
+	Info get_info() const;
+
+	static error open(void *file, const io_procs *procs,
+		const Format *format, int flags, ptr &outcassette);
+	static error open_choices(void *file, const io_procs *procs, const std::string &extension,
+		const Format *const *formats, int flags, ptr &outcassette);
+	static error create(void *file, const io_procs *procs, const cassette_image::Format *format,
+		const cassette_image::Options *opts, int flags, ptr &outcassette);
+
+	// builtin formats
+	static const Format wavfile_format;
+
+private:
+	struct manipulation_ranges;
+
+	cassette_image(const Format *format, void *file, const io_procs *procs, int flags);
+	cassette_image(const cassette_image &) = delete;
+	cassette_image(cassette_image &&) = delete;
+	cassette_image &operator=(const cassette_image &) = delete;
+	cassette_image &operator=(cassette_image &&) = delete;
+
+	error try_identify_format(const Format &format, const std::string &extension, int flags, Options &opts);
+	error perform_save();
+	error compute_manipulation_ranges(int channel, double time_index, double sample_period, manipulation_ranges &ranges) const;
+	error lookup_sample(int channel, size_t sample, int32_t *&ptr);
+
+	const Format *m_format = nullptr;
+	io_generic m_io;
+
+	int m_channels = 0;
+	int m_flags = 0;
+	uint32_t m_sample_frequency = 0;
+
+	std::vector<std::unique_ptr<int32_t []> > m_blocks;
+	size_t m_sample_count = 0;
 };
-
-struct CassetteInfo
-{
-	int channels;
-	int bits_per_sample;
-	UINT32 sample_frequency;
-	size_t sample_count;
-};
-
-struct cassette_image
-{
-	const struct CassetteFormat *format;
-	struct io_generic io;
-
-	int channels;
-	int flags;
-	UINT32 sample_frequency;
-
-	std::vector<sample_block *> blocks;
-	size_t sample_count;
-};
-
-struct CassetteFormat
-{
-	const char *extensions;
-	casserr_t (*identify)(cassette_image *cassette, struct CassetteOptions *opts);
-	casserr_t (*load)(cassette_image *cassette);
-	casserr_t (*save)(cassette_image *cassette, const struct CassetteInfo *info);
-};
-
-/* used for the core modulation code */
-struct CassetteModulation
-{
-	int flags;
-	double zero_frequency_low;
-	double zero_frequency_cannonical;
-	double zero_frequency_high;
-	double one_frequency_low;
-	double one_frequency_cannonical;
-	double one_frequency_high;
-};
-
-/* code to adapt existing legacy fill_wave functions */
-struct CassetteLegacyWaveFiller
-{
-	int (*fill_wave)(INT16 *, int, UINT8 *);
-	int chunk_size;
-	int chunk_samples;
-	int (*chunk_sample_calc)(const UINT8 *bytes, int length);
-	UINT32 sample_frequency;
-	int header_samples;
-	int trailer_samples;
-};
-
-/* builtin formats */
-extern const struct CassetteFormat wavfile_format;
 
 /* macros for specifying format lists */
 #define CASSETTE_FORMATLIST_EXTERN(name)    \
-	extern const struct CassetteFormat *const name[]
+	extern const cassette_image::Format *const name[]
 
 #define CASSETTE_FORMATLIST_START(name)     \
-	const struct CassetteFormat *const name[] = \
+	const cassette_image::Format *const name[] =    \
 	{                                       \
-		&wavfile_format,
+		&cassette_image::wavfile_format,
 #define CASSETTE_FORMAT(name)               \
 		&(name),
 #define CASSETTE_FORMATLIST_END             \
-		NULL                                \
+		nullptr                             \
 	};
 
 CASSETTE_FORMATLIST_EXTERN(cassette_default_formats);
 
-/***************************************************************************
-
-    Prototypes
-
-***************************************************************************/
-
-casserr_t cassette_open(void *file, const struct io_procs *procs,
-	const struct CassetteFormat *format, int flags, cassette_image **outcassette);
-casserr_t cassette_open_choices(void *file, const struct io_procs *procs, const char *extension,
-	const struct CassetteFormat *const *formats, int flags, cassette_image **outcassette);
-casserr_t cassette_create(void *file, const struct io_procs *procs, const struct CassetteFormat *format,
-	const struct CassetteOptions *opts, int flags, cassette_image **outcassette);
-casserr_t cassette_save(cassette_image *cassette);
-void cassette_close(cassette_image *cassette);
-void cassette_change(cassette_image *cassette, void *file, const struct io_procs *procs, const struct CassetteFormat *format, int flags);
-void cassette_get_info(cassette_image *cassette, struct CassetteInfo *info);
-
-/* calls for accessing the raw cassette image */
-void cassette_image_read(cassette_image *cassette, void *buffer, UINT64 offset, size_t length);
-void cassette_image_write(cassette_image *cassette, const void *buffer, UINT64 offset, size_t length);
-UINT64 cassette_image_size(cassette_image *cassette);
-
-/* waveform accesses */
-casserr_t cassette_get_samples(cassette_image *cassette, int channel,
-	double time_index, double sample_period, size_t sample_count, size_t sample_bytes,
-	void *samples, int waveform_flags);
-casserr_t cassette_put_samples(cassette_image *cassette, int channel,
-	double time_index, double sample_period, size_t sample_count, size_t sample_bytes,
-	const void *samples, int waveform_flags);
-casserr_t cassette_get_sample(cassette_image *cassette, int channel,
-	double time_index, double sample_period, INT32 *sample);
-casserr_t cassette_put_sample(cassette_image *cassette, int channel,
-	double time_index, double sample_period, INT32 sample);
-
-/* waveform accesses to/from the raw image */
-casserr_t cassette_read_samples(cassette_image *cassette, int channels, double time_index,
-	double sample_period, size_t sample_count, UINT64 offset, int waveform_flags);
-casserr_t cassette_write_samples(cassette_image *cassette, int channels, double time_index,
-	double sample_period, size_t sample_count, UINT64 offset, int waveform_flags);
-
-/* modulation support */
-casserr_t cassette_modulation_identify(cassette_image *cassette, const struct CassetteModulation *modulation,
-	struct CassetteOptions *opts);
-casserr_t cassette_put_modulated_data(cassette_image *cassette, int channel, double time_index,
-	const void *data, size_t data_length, const struct CassetteModulation *modulation,
-	double *time_displacement);
-casserr_t cassette_put_modulated_filler(cassette_image *cassette, int channel, double time_index,
-	UINT8 filler, size_t filler_length, const struct CassetteModulation *modulation,
-	double *time_displacement);
-casserr_t cassette_read_modulated_data(cassette_image *cassette, int channel, double time_index,
-	UINT64 offset, UINT64 length, const struct CassetteModulation *modulation,
-	double *time_displacement);
-casserr_t cassette_put_modulated_data_bit(cassette_image *cassette, int channel, double time_index,
-	UINT8 data, const struct CassetteModulation *modulation,
-	double *time_displacement);
-
-/* debug calls */
-void cassette_dump(cassette_image *image, const char *filename);
-
-/* legacy code support */
-#define CODE_HEADER     ((UINT8*)-1)
-#define CODE_TRAILER    ((UINT8*)-2)
-casserr_t cassette_legacy_identify(cassette_image *cassette, struct CassetteOptions *opts,
-	const struct CassetteLegacyWaveFiller *legacy_args);
-casserr_t cassette_legacy_construct(cassette_image *cassette,
-	const struct CassetteLegacyWaveFiller *legacy_args);
-
-#endif /* CASSIMG_H */
+#endif // MAME_FORMATS_CASSIMG_H

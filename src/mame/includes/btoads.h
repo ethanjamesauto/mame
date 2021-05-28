@@ -13,57 +13,31 @@
 #include "video/tlc34076.h"
 #include "sound/bsmt2000.h"
 #include "machine/nvram.h"
+#include "emupal.h"
+#include "screen.h"
 
 class btoads_state : public driver_device
 {
 public:
 	btoads_state(const machine_config &mconfig, device_type type, const char *tag)
 		: driver_device(mconfig, type, tag),
-			m_audiocpu(*this, "audiocpu"),
-			m_bsmt(*this, "bsmt"),
-			m_tlc34076(*this, "tlc34076"),
-			m_vram_fg0(*this, "vram_fg0", 16),
-			m_vram_fg1(*this, "vram_fg1", 16),
-			m_vram_fg_data(*this, "vram_fg_data"),
-			m_vram_bg0(*this, "vram_bg0"),
-			m_vram_bg1(*this, "vram_bg1"),
-			m_sprite_scale(*this, "sprite_scale"),
-			m_sprite_control(*this, "sprite_control") ,
+		m_vram_fg0(*this, "vram_fg0", 0x200000, ENDIANNESS_LITTLE),
+		m_vram_fg1(*this, "vram_fg1", 0x200000, ENDIANNESS_LITTLE),
+		m_vram_fg_data(*this, "vram_fg_data"),
+		m_vram_bg0(*this, "vram_bg0", 0x400000, ENDIANNESS_LITTLE),
+		m_vram_bg1(*this, "vram_bg1", 0x400000, ENDIANNESS_LITTLE),
+		m_sprite_scale(*this, "sprite_scale"),
+		m_sprite_control(*this, "sprite_control"),
 		m_maincpu(*this, "maincpu"),
+		m_audiocpu(*this, "audiocpu"),
+		m_bsmt(*this, "bsmt"),
+		m_tlc34076(*this, "tlc34076"),
 		m_screen(*this, "screen") { }
 
-	// in drivers/btoads
-	DECLARE_WRITE16_MEMBER( main_sound_w );
-	DECLARE_READ16_MEMBER( main_sound_r );
-	DECLARE_CUSTOM_INPUT_MEMBER( main_to_sound_r );
-	DECLARE_CUSTOM_INPUT_MEMBER( sound_to_main_r );
-	DECLARE_WRITE8_MEMBER( sound_data_w );
-	DECLARE_READ8_MEMBER( sound_data_r );
-	DECLARE_READ8_MEMBER( sound_ready_to_send_r );
-	DECLARE_READ8_MEMBER( sound_data_ready_r );
-	DECLARE_WRITE8_MEMBER( sound_int_state_w );
-	DECLARE_READ8_MEMBER( bsmt_ready_r );
-	DECLARE_WRITE8_MEMBER( bsmt2000_port_w );
+	DECLARE_READ_LINE_MEMBER( main_to_sound_r );
+	DECLARE_READ_LINE_MEMBER( sound_to_main_r );
 
-	// in video/btoads
-	DECLARE_WRITE16_MEMBER( misc_control_w );
-	DECLARE_WRITE16_MEMBER( display_control_w );
-	DECLARE_WRITE16_MEMBER( scroll0_w );
-	DECLARE_WRITE16_MEMBER( scroll1_w );
-	DECLARE_WRITE16_MEMBER( paletteram_w );
-	DECLARE_READ16_MEMBER( paletteram_r );
-	DECLARE_WRITE16_MEMBER( vram_bg0_w );
-	DECLARE_WRITE16_MEMBER( vram_bg1_w );
-	DECLARE_READ16_MEMBER( vram_bg0_r );
-	DECLARE_READ16_MEMBER( vram_bg1_r );
-	DECLARE_WRITE16_MEMBER( vram_fg_display_w );
-	DECLARE_WRITE16_MEMBER( vram_fg_draw_w );
-	DECLARE_READ16_MEMBER( vram_fg_display_r );
-	DECLARE_READ16_MEMBER( vram_fg_draw_r );
-	void render_sprite_row(UINT16 *sprite_source, UINT32 address);
-	TMS340X0_TO_SHIFTREG_CB_MEMBER(to_shiftreg);
-	TMS340X0_FROM_SHIFTREG_CB_MEMBER(from_shiftreg);
-	TMS340X0_SCANLINE_RGB32_CB_MEMBER(scanline_update);
+	void btoads(machine_config &config);
 
 protected:
 	// device overrides
@@ -73,6 +47,7 @@ protected:
 	virtual void machine_start() override;
 	virtual void video_start() override;
 
+private:
 	// timer IDs
 	enum
 	{
@@ -80,38 +55,74 @@ protected:
 		TIMER_ID_DELAYED_SOUND
 	};
 
+	// shared pointers
+	memory_share_creator<uint8_t> m_vram_fg0;
+	memory_share_creator<uint8_t> m_vram_fg1;
+	required_shared_ptr<uint32_t> m_vram_fg_data;
+	memory_share_creator<uint16_t> m_vram_bg0;
+	memory_share_creator<uint16_t> m_vram_bg1;
+	required_shared_ptr<uint32_t> m_sprite_scale;
+	required_shared_ptr<uint32_t> m_sprite_control;
+
+	// state
+	uint8_t m_main_to_sound_data;
+	uint8_t m_main_to_sound_ready;
+	uint8_t m_sound_to_main_data;
+	uint8_t m_sound_to_main_ready;
+	uint8_t m_sound_int_state;
+	uint8_t *m_vram_fg_draw;
+	uint8_t *m_vram_fg_display;
+	int32_t m_xscroll0;
+	int32_t m_yscroll0;
+	int32_t m_xscroll1;
+	int32_t m_yscroll1;
+	uint8_t m_screen_control;
+	uint16_t m_sprite_source_offs;
+	uint8_t *m_sprite_dest_base;
+	uint16_t m_sprite_dest_offs;
+	uint16_t m_misc_control;
+	int m_xcount;
+	std::unique_ptr<uint8_t[]> m_nvram_data;
+
+	// in drivers/btoads
+	void nvram_w(offs_t offset, uint8_t data);
+	uint8_t nvram_r(offs_t offset);
+	void main_sound_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	uint16_t main_sound_r();
+	void sound_data_w(uint8_t data);
+	uint8_t sound_data_r();
+	uint8_t sound_ready_to_send_r();
+	uint8_t sound_data_ready_r();
+	void sound_int_state_w(uint8_t data);
+	uint8_t bsmt_ready_r();
+	void bsmt2000_port_w(offs_t offset, uint8_t data);
+
+	// in video/btoads
+	void misc_control_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	void display_control_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	void scroll0_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	void scroll1_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	void vram_bg0_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	void vram_bg1_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	uint16_t vram_bg0_r(offs_t offset);
+	uint16_t vram_bg1_r(offs_t offset);
+	void vram_fg_display_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	void vram_fg_draw_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	uint16_t vram_fg_display_r(offs_t offset);
+	uint16_t vram_fg_draw_r(offs_t offset);
+	void render_sprite_row(uint16_t *sprite_source, uint32_t address);
+	TMS340X0_TO_SHIFTREG_CB_MEMBER(to_shiftreg);
+	TMS340X0_FROM_SHIFTREG_CB_MEMBER(from_shiftreg);
+	TMS340X0_SCANLINE_RGB32_CB_MEMBER(scanline_update);
+
 	// devices
+	required_device<tms34020_device> m_maincpu;
 	required_device<z80_device> m_audiocpu;
 	required_device<bsmt2000_device> m_bsmt;
 	required_device<tlc34076_device> m_tlc34076;
-
-	// shared pointers
-	required_shared_ptr<UINT8> m_vram_fg0;
-	required_shared_ptr<UINT8> m_vram_fg1;
-	required_shared_ptr<UINT16> m_vram_fg_data;
-	required_shared_ptr<UINT16> m_vram_bg0;
-	required_shared_ptr<UINT16> m_vram_bg1;
-	required_shared_ptr<UINT16> m_sprite_scale;
-	required_shared_ptr<UINT16> m_sprite_control;
-
-	// state
-	UINT8 m_main_to_sound_data;
-	UINT8 m_main_to_sound_ready;
-	UINT8 m_sound_to_main_data;
-	UINT8 m_sound_to_main_ready;
-	UINT8 m_sound_int_state;
-	UINT8 *m_vram_fg_draw;
-	UINT8 *m_vram_fg_display;
-	INT32 m_xscroll0;
-	INT32 m_yscroll0;
-	INT32 m_xscroll1;
-	INT32 m_yscroll1;
-	UINT8 m_screen_control;
-	UINT16 m_sprite_source_offs;
-	UINT8 *m_sprite_dest_base;
-	UINT16 m_sprite_dest_offs;
-	UINT16 m_misc_control;
-	int m_xcount;
-	required_device<cpu_device> m_maincpu;
 	required_device<screen_device> m_screen;
+
+	void main_map(address_map &map);
+	void sound_io_map(address_map &map);
+	void sound_map(address_map &map);
 };

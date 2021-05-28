@@ -38,7 +38,7 @@
         VCC         28      57          NC
         NC          29      58          NC
 
-    Slots are organized into a chain (MEI -> MEO) , the first module that
+    Slots are organized into a chain (MEI -> MEO), the first module that
     decode the address on bus, clear the MEO line for disable other modules
     with less priority.
 
@@ -106,9 +106,9 @@
 
 #include "emu.h"
 #include "kc.h"
-#include "emuopts.h"
 
-#define  LOG    0
+//#define VERBOSE 1
+#include "logmacro.h"
 
 
 /***************************************************************************
@@ -119,8 +119,8 @@
 //  GLOBAL VARIABLES
 //**************************************************************************
 
-const device_type KCEXP_SLOT  = &device_creator<kcexp_slot_device>;
-const device_type KCCART_SLOT = &device_creator<kccart_slot_device>;
+DEFINE_DEVICE_TYPE(KCEXP_SLOT,  kcexp_slot_device,  "kcexp_slot",  "KC85 Expansion Slot")
+DEFINE_DEVICE_TYPE(KCCART_SLOT, kccart_slot_device, "kccart_slot", "KC85 Cartridge Slot")
 
 
 //**************************************************************************
@@ -132,7 +132,7 @@ const device_type KCCART_SLOT = &device_creator<kccart_slot_device>;
 //-------------------------------------------------
 
 device_kcexp_interface::device_kcexp_interface(const machine_config &mconfig, device_t &device)
-	: device_slot_card_interface(mconfig, device)
+	: device_interface(device, "kcexp")
 {
 }
 
@@ -153,29 +153,20 @@ device_kcexp_interface::~device_kcexp_interface()
 //-------------------------------------------------
 //  kcexp_slot_device - constructor
 //-------------------------------------------------
-kcexp_slot_device::kcexp_slot_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock) :
-		device_t(mconfig, KCEXP_SLOT, "KC85 Expansion Slot", tag, owner, clock, "kcexp_slot", __FILE__),
-		device_slot_interface(mconfig, *this),
-		m_out_irq_cb(*this),
-		m_out_nmi_cb(*this),
-		m_out_halt_cb(*this), m_cart(nullptr), m_next_slot_tag(nullptr), m_next_slot(nullptr)
+kcexp_slot_device::kcexp_slot_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock) :
+	kcexp_slot_device(mconfig, KCEXP_SLOT, tag, owner, clock)
 {
 }
 
-kcexp_slot_device::kcexp_slot_device(const machine_config &mconfig, device_type type, const char *name, const char *tag, device_t *owner, UINT32 clock, const char *shortname, const char *source) :
-		device_t(mconfig, type, name, tag, owner, clock, shortname, source),
-		device_slot_interface(mconfig, *this),
-		m_out_irq_cb(*this),
-		m_out_nmi_cb(*this),
-		m_out_halt_cb(*this), m_cart(nullptr), m_next_slot_tag(nullptr), m_next_slot(nullptr)
+kcexp_slot_device::kcexp_slot_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock) :
+	device_t(mconfig, type, tag, owner, clock),
+	device_single_card_slot_interface<device_kcexp_interface>(mconfig, *this),
+	m_out_irq_cb(*this),
+	m_out_nmi_cb(*this),
+	m_out_halt_cb(*this),
+	m_cart(nullptr),
+	m_next_slot(*this, finder_base::DUMMY_TAG)
 {
-}
-
-void kcexp_slot_device::static_set_next_slot(device_t &device, const char *next_slot_tag)
-{
-	kcexp_slot_device &kc_slot = dynamic_cast<kcexp_slot_device &>(device);
-
-	kc_slot.m_next_slot_tag = next_slot_tag;
 }
 
 //-------------------------------------------------
@@ -186,14 +177,22 @@ kcexp_slot_device::~kcexp_slot_device()
 {
 }
 
+
+void kcexp_slot_device::device_validity_check(validity_checker &valid) const
+{
+	std::pair<device_t &, char const *> const next_target(m_next_slot.finder_target());
+	if ((next_target.second != finder_base::DUMMY_TAG) && !m_next_slot)
+		osd_printf_error("Next slot device %s relative to %s not found", next_target.second, next_target.first.tag());
+}
+
+
 //-------------------------------------------------
 //  device_start - device-specific startup
 //-------------------------------------------------
 
 void kcexp_slot_device::device_start()
 {
-	m_cart = dynamic_cast<device_kcexp_interface *>(get_card_device());
-	m_next_slot = m_next_slot_tag ? owner()->subdevice<kcexp_slot_device>(m_next_slot_tag) : nullptr;
+	m_cart = get_card_device();
 
 	// resolve callbacks
 	m_out_irq_cb.resolve_safe();
@@ -206,9 +205,9 @@ void kcexp_slot_device::device_start()
     module id read
 -------------------------------------------------*/
 
-UINT8 kcexp_slot_device::module_id_r()
+uint8_t kcexp_slot_device::module_id_r()
 {
-	UINT8 result = 0xff;
+	uint8_t result = 0xff;
 
 	if (m_cart)
 		result = m_cart->module_id_r();
@@ -219,7 +218,7 @@ UINT8 kcexp_slot_device::module_id_r()
 /*-------------------------------------------------
     module control write
 -------------------------------------------------*/
-void kcexp_slot_device::control_w(UINT8 data)
+void kcexp_slot_device::control_w(uint8_t data)
 {
 	if (m_cart)
 		m_cart->control_w(data);
@@ -229,7 +228,7 @@ void kcexp_slot_device::control_w(UINT8 data)
     read
 -------------------------------------------------*/
 
-void kcexp_slot_device::read(offs_t offset, UINT8 &data)
+void kcexp_slot_device::read(offs_t offset, uint8_t &data)
 {
 	if (m_cart)
 		m_cart->read(offset, data);
@@ -240,7 +239,7 @@ void kcexp_slot_device::read(offs_t offset, UINT8 &data)
     write
 -------------------------------------------------*/
 
-void kcexp_slot_device::write(offs_t offset, UINT8 data)
+void kcexp_slot_device::write(offs_t offset, uint8_t data)
 {
 	if (m_cart)
 		m_cart->write(offset, data);
@@ -250,7 +249,7 @@ void kcexp_slot_device::write(offs_t offset, UINT8 data)
     IO read
 -------------------------------------------------*/
 
-void kcexp_slot_device::io_read(offs_t offset, UINT8 &data)
+void kcexp_slot_device::io_read(offs_t offset, uint8_t &data)
 {
 	if (m_cart)
 		m_cart->io_read(offset, data);
@@ -261,7 +260,7 @@ void kcexp_slot_device::io_read(offs_t offset, UINT8 &data)
    IO write
 -------------------------------------------------*/
 
-void kcexp_slot_device::io_write(offs_t offset, UINT8 data)
+void kcexp_slot_device::io_write(offs_t offset, uint8_t data)
 {
 	if (m_cart)
 		m_cart->io_write(offset, data);
@@ -273,7 +272,7 @@ void kcexp_slot_device::io_write(offs_t offset, UINT8 data)
 
 WRITE_LINE_MEMBER( kcexp_slot_device::mei_w )
 {
-	if (LOG) logerror("KCEXP '%s': %s MEI line\n", tag(), state != CLEAR_LINE ? "ASSERT": "CLEAR");
+	LOG("KCEXP: %s MEI line\n", state != CLEAR_LINE ? "ASSERT": "CLEAR");
 
 	if (m_cart)
 		m_cart->mei_w(state);
@@ -285,7 +284,7 @@ WRITE_LINE_MEMBER( kcexp_slot_device::mei_w )
 
 WRITE_LINE_MEMBER( kcexp_slot_device::meo_w )
 {
-	if (LOG) logerror("KCEXP '%s': %s MEO line\n", tag(), state != CLEAR_LINE ? "ASSERT": "CLEAR");
+	LOG("KCEXP: %s MEO line\n", state != CLEAR_LINE ? "ASSERT": "CLEAR");
 
 	if (m_next_slot)
 		m_next_slot->mei_w(state);
@@ -299,9 +298,9 @@ WRITE_LINE_MEMBER( kcexp_slot_device::meo_w )
 //-------------------------------------------------
 //  kccart_slot_device - constructor
 //-------------------------------------------------
-kccart_slot_device::kccart_slot_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock) :
-		kcexp_slot_device(mconfig, KCCART_SLOT, "KC85 Cartridge Slot", tag, owner, clock, "kccart_slot", __FILE__),
-		device_image_interface(mconfig, *this)
+kccart_slot_device::kccart_slot_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock) :
+	kcexp_slot_device(mconfig, KCCART_SLOT, tag, owner, clock),
+	device_image_interface(mconfig, *this)
 {
 }
 
@@ -313,32 +312,20 @@ kccart_slot_device::~kccart_slot_device()
 {
 }
 
-//-------------------------------------------------
-//  device_config_complete - perform any
-//  operations now that the configuration is
-//  complete
-//-------------------------------------------------
-
-void kccart_slot_device::device_config_complete()
-{
-	// set brief and instance name
-	update_names();
-}
-
 /*-------------------------------------------------
     call load
 -------------------------------------------------*/
 
-bool kccart_slot_device::call_load()
+image_init_result kccart_slot_device::call_load()
 {
 	if (m_cart)
 	{
-		offs_t read_length = 0;
-		UINT8 *cart_base = m_cart->get_cart_base();
+		offs_t read_length;
+		uint8_t *cart_base = m_cart->get_cart_base();
 
 		if (cart_base != nullptr)
 		{
-			if (software_entry() == nullptr)
+			if (!loaded_through_softlist())
 			{
 				read_length = length();
 				fread(m_cart->get_cart_base(), read_length);
@@ -350,27 +337,17 @@ bool kccart_slot_device::call_load()
 			}
 		}
 		else
-			return IMAGE_INIT_FAIL;
+			return image_init_result::FAIL;
 	}
 
-	return IMAGE_INIT_PASS;
-}
-
-/*-------------------------------------------------
-    call softlist load
--------------------------------------------------*/
-
-bool kccart_slot_device::call_softlist_load(software_list_device &swlist, const char *swname, const rom_entry *start_entry)
-{
-	load_software_part_region(*this, swlist, swname, start_entry );
-	return TRUE;
+	return image_init_result::PASS;
 }
 
 /*-------------------------------------------------
     get default card software
 -------------------------------------------------*/
 
-void kccart_slot_device::get_default_card_software(std::string &result)
+std::string kccart_slot_device::get_default_card_software(get_default_card_software_hook &hook) const
 {
-	software_get_default_slot(result, "standard");
+	return software_get_default_slot("standard");
 }

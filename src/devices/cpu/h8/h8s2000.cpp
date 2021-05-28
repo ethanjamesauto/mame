@@ -2,16 +2,17 @@
 // copyright-holders:Olivier Galibert
 #include "emu.h"
 #include "h8s2000.h"
+#include "h8s2000d.h"
 
-h8s2000_device::h8s2000_device(const machine_config &mconfig, device_type type, const char *name, const char *tag, device_t *owner, UINT32 clock, const char *shortname, const char *source, address_map_delegate map_delegate) :
-	h8h_device(mconfig, type, name, tag, owner, clock, shortname, source, map_delegate)
+h8s2000_device::h8s2000_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock, address_map_constructor map_delegate) :
+	h8h_device(mconfig, type, tag, owner, clock, map_delegate)
 {
 	has_exr = true;
 }
 
-offs_t h8s2000_device::disasm_disassemble(char *buffer, offs_t pc, const UINT8 *oprom, const UINT8 *opram, UINT32 options)
+std::unique_ptr<util::disasm_interface> h8s2000_device::create_disassembler()
 {
-	return disassemble_generic(buffer, pc, oprom, opram, options, disasm_entries);
+	return std::make_unique<h8s2000_disassembler>();
 }
 
-#include "cpu/h8/h8s2000.inc"
+#include "cpu/h8/h8s2000.hxx"

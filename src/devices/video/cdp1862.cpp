@@ -6,7 +6,10 @@
 
 **********************************************************************/
 
+#include "emu.h"
 #include "cdp1862.h"
+
+#include "screen.h"
 
 
 
@@ -14,7 +17,7 @@
 //  MACROS / CONSTANTS
 //**************************************************************************
 
-static const int CDP1862_BACKGROUND_COLOR_SEQUENCE[] = { 2, 0, 1, 4 };
+static constexpr int CDP1862_BACKGROUND_COLOR_SEQUENCE[] = { 2, 0, 1, 4 };
 
 
 
@@ -23,7 +26,7 @@ static const int CDP1862_BACKGROUND_COLOR_SEQUENCE[] = { 2, 0, 1, 4 };
 //**************************************************************************
 
 // device type definition
-const device_type CDP1862 = &device_creator<cdp1862_device>;
+DEFINE_DEVICE_TYPE(CDP1862, cdp1862_device, "cdp1862", "RCA CDP1862")
 
 
 
@@ -75,8 +78,8 @@ inline void cdp1862_device::initialize_palette()
 //  cdp1862_device - constructor
 //-------------------------------------------------
 
-cdp1862_device::cdp1862_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: device_t(mconfig, CDP1862, "CDP1862", tag, owner, clock, "cdp1862", __FILE__),
+cdp1862_device::cdp1862_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: device_t(mconfig, CDP1862, tag, owner, clock),
 		device_video_interface(mconfig, *this),
 		m_read_rd(*this),
 		m_read_bd(*this),
@@ -97,7 +100,7 @@ void cdp1862_device::device_start()
 	m_read_gd.resolve_safe(0);
 
 	// find devices
-	m_screen->register_screen_bitmap(m_bitmap);
+	screen().register_screen_bitmap(m_bitmap);
 
 	// init palette
 	initialize_palette();
@@ -123,12 +126,11 @@ void cdp1862_device::device_reset()
 //  dma_w -
 //-------------------------------------------------
 
-WRITE8_MEMBER( cdp1862_device::dma_w )
+void cdp1862_device::dma_w(uint8_t data)
 {
 	int rd = 1, bd = 1, gd = 1;
-	int sx = m_screen->hpos() + 4;
-	int y = m_screen->vpos();
-	int x;
+	int sx = screen().hpos() + 4;
+	int y = screen().vpos();
 
 	if (!m_con)
 	{
@@ -137,7 +139,7 @@ WRITE8_MEMBER( cdp1862_device::dma_w )
 		gd = m_read_gd();
 	}
 
-	for (x = 0; x < 8; x++)
+	for (int x = 0; x < 8; x++)
 	{
 		int color = CDP1862_BACKGROUND_COLOR_SEQUENCE[m_bgcolor] + 8;
 
@@ -146,7 +148,7 @@ WRITE8_MEMBER( cdp1862_device::dma_w )
 			color = (gd << 2) | (bd << 1) | rd;
 		}
 
-		m_bitmap.pix32(y, sx + x) = m_palette[color];
+		m_bitmap.pix(y, sx + x) = m_palette[color];
 
 		data <<= 1;
 	}
@@ -157,7 +159,7 @@ WRITE8_MEMBER( cdp1862_device::dma_w )
 //  disp_on_w -
 //-------------------------------------------------
 
-WRITE_LINE_MEMBER( cdp1862_device::bkg_w )
+void cdp1862_device::bkg_w(int state)
 {
 	if (state)
 	{
@@ -175,7 +177,7 @@ WRITE_LINE_MEMBER( cdp1862_device::bkg_w )
 //  disp_off_w -
 //-------------------------------------------------
 
-WRITE_LINE_MEMBER( cdp1862_device::con_w )
+void cdp1862_device::con_w(int state)
 {
 	if (!state)
 	{
@@ -188,7 +190,7 @@ WRITE_LINE_MEMBER( cdp1862_device::con_w )
 //  screen_update -
 //-------------------------------------------------
 
-UINT32 cdp1862_device::screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
+uint32_t cdp1862_device::screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
 {
 	copybitmap(bitmap, m_bitmap, 0, 0, 0, 0, cliprect);
 

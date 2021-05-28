@@ -1,15 +1,11 @@
 // license:BSD-3-Clause
 // copyright-holders:Takahiro Nogi
-#include "includes/nb1413m3.h"
+#include "machine/nb1413m3.h"
+#include "screen.h"
 
 class hyhoo_state : public driver_device
 {
 public:
-	enum
-	{
-		TIMER_BLITTER
-	};
-
 	hyhoo_state(const machine_config &mconfig, device_type type, const char *tag)
 		: driver_device(mconfig, type, tag),
 		m_maincpu(*this, "maincpu"),
@@ -17,10 +13,19 @@ public:
 		m_screen(*this, "screen"),
 		m_clut(*this, "clut") { }
 
+	void hyhoo(machine_config &config);
+	void hyhoo2(machine_config &config);
+
+private:
+	enum
+	{
+		TIMER_BLITTER
+	};
+
 	required_device<cpu_device> m_maincpu;
 	required_device<nb1413m3_device> m_nb1413m3;
 	required_device<screen_device> m_screen;
-	required_shared_ptr<UINT8> m_clut;
+	required_shared_ptr<uint8_t> m_clut;
 
 	int m_blitter_destx;
 	int m_blitter_desty;
@@ -34,17 +39,18 @@ public:
 	int m_highcolorflag;
 	int m_flipscreen;
 	bitmap_rgb32 m_tmpbitmap;
+	emu_timer *m_blitter_timer;
 
-	DECLARE_WRITE8_MEMBER(hyhoo_blitter_w);
-	DECLARE_WRITE8_MEMBER(hyhoo_romsel_w);
-
-	DECLARE_CUSTOM_INPUT_MEMBER(nb1413m3_busyflag_r);
+	void hyhoo_blitter_w(offs_t offset, uint8_t data);
+	void hyhoo_romsel_w(uint8_t data);
 
 	virtual void video_start() override;
 
-	UINT32 screen_update_hyhoo(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect);
+	uint32_t screen_update_hyhoo(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect);
 	void hyhoo_gfxdraw();
 
-protected:
+	void hyhoo_io_map(address_map &map);
+	void hyhoo_map(address_map &map);
+
 	virtual void device_timer(emu_timer &timer, device_timer_id id, int param, void *ptr) override;
 };

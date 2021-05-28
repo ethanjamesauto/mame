@@ -14,12 +14,14 @@
 *********************************************************************/
 
 #include "emu.h"
-#include "emuopts.h"
-#include "harddisk.h"
 #include "harddriv.h"
 
+#include "emuopts.h"
+#include "harddisk.h"
+#include "romload.h"
 
-static OPTION_GUIDE_START(hd_option_guide)
+
+OPTION_GUIDE_START(hd_option_guide)
 	OPTION_INT('C', "cylinders",        "Cylinders")
 	OPTION_INT('H', "heads",            "Heads")
 	OPTION_INT('S', "sectors",          "Sectors")
@@ -27,38 +29,32 @@ static OPTION_GUIDE_START(hd_option_guide)
 	OPTION_INT('K', "hunksize",         "Hunk Bytes")
 OPTION_GUIDE_END
 
-static const char *hd_option_spec =
+static char const *const hd_option_spec =
 	"C1-[512]-1024;H1/2/[4]/8;S1-[16]-64;L128/256/[512]/1024;K512/1024/2048/[4096]";
 
 
 // device type definition
-const device_type HARDDISK = &device_creator<harddisk_image_device>;
+DEFINE_DEVICE_TYPE(HARDDISK, harddisk_image_device, "harddisk_image", "Harddisk")
 
 //-------------------------------------------------
 //  harddisk_image_device - constructor
 //-------------------------------------------------
 
-harddisk_image_device::harddisk_image_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: device_t(mconfig, HARDDISK, "Harddisk", tag, owner, clock, "harddisk_image", __FILE__),
-		device_image_interface(mconfig, *this),
-		m_chd(nullptr),
-		m_hard_disk_handle(nullptr),
-		m_device_image_load(device_image_load_delegate()),
-		m_device_image_unload(device_image_func_delegate()),
-		m_interface(nullptr)
+harddisk_image_device::harddisk_image_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: harddisk_image_device(mconfig, HARDDISK, tag, owner, clock)
 {
 }
 
 //-------------------------------------------------
 //  harddisk_image_device - constructor for subclasses
 //-------------------------------------------------
-harddisk_image_device::harddisk_image_device(const machine_config &mconfig, device_type type, const char *name, const char *tag, device_t *owner, UINT32 clock, const char *shortname, const char *source)
-	: device_t(mconfig, type, name, tag, owner, clock, shortname, source),
+harddisk_image_device::harddisk_image_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock)
+	: device_t(mconfig, type, tag, owner, clock),
 		device_image_interface(mconfig, *this),
 		m_chd(nullptr),
 		m_hard_disk_handle(nullptr),
-		m_device_image_load(device_image_load_delegate()),
-		m_device_image_unload(device_image_func_delegate()),
+		m_device_image_load(*this),
+		m_device_image_unload(*this),
 		m_interface(nullptr)
 {
 }
@@ -79,13 +75,10 @@ harddisk_image_device::~harddisk_image_device()
 
 void harddisk_image_device::device_config_complete()
 {
-	m_formatlist.append(*global_alloc(image_device_format("chd", "CHD Hard drive", "chd,hd", hd_option_spec)));
-
-	// set brief and instance name
-	update_names();
+	add_format("chd", "CHD Hard drive", "chd,hd,hdv,2mg,hdi", hd_option_spec);
 }
 
-const option_guide *harddisk_image_device::create_option_guide() const
+const util::option_guide &harddisk_image_device::create_option_guide() const
 {
 	return hd_option_guide;
 }
@@ -96,10 +89,13 @@ const option_guide *harddisk_image_device::create_option_guide() const
 
 void harddisk_image_device::device_start()
 {
+	m_device_image_load.resolve();
+	m_device_image_unload.resolve();
+
 	m_chd = nullptr;
 
 	// try to locate the CHD from a DISK_REGION
-	chd_file *handle = get_disk_handle(machine(), tag());
+	chd_file *handle = machine().rom_load().get_disk_handle(tag());
 	if (handle != nullptr)
 	{
 		m_hard_disk_handle = hard_disk_open(handle);
@@ -112,13 +108,16 @@ void harddisk_image_device::device_start()
 
 void harddisk_image_device::device_stop()
 {
-	if (m_hard_disk_handle)
+	if (m_hard_disk_handle != nullptr)
+	{
 		hard_disk_close(m_hard_disk_handle);
+		m_hard_disk_handle = nullptr;
+	}
 }
 
-bool harddisk_image_device::call_load()
+image_init_result harddisk_image_device::call_load()
 {
-	int our_result;
+	image_init_result our_result;
 
 	our_result = internal_load_hd();
 
@@ -132,48 +131,42 @@ bool harddisk_image_device::call_load()
 
 }
 
-bool harddisk_image_device::call_create(int create_format, option_resolution *create_args)
+image_init_result harddisk_image_device::call_create(int create_format, util::option_resolution *create_args)
 {
 	int err;
-	UINT32 sectorsize, hunksize;
-	UINT32 cylinders, heads, sectors, totalsectors;
-	std::string metadata;
 
-	cylinders   = option_resolution_lookup_int(create_args, 'C');
-	heads       = option_resolution_lookup_int(create_args, 'H');
-	sectors     = option_resolution_lookup_int(create_args, 'S');
-	sectorsize  = option_resolution_lookup_int(create_args, 'L');
-	hunksize    = option_resolution_lookup_int(create_args, 'K');
+	if (!create_args)
+		throw emu_fatalerror("harddisk_image_device::call_create: Expected create_args to not be nullptr");
 
-	totalsectors = cylinders * heads * sectors;
+	const uint32_t cylinders   = create_args->lookup_int('C');
+	const uint32_t heads       = create_args->lookup_int('H');
+	const uint32_t sectors     = create_args->lookup_int('S');
+	const uint32_t sectorsize  = create_args->lookup_int('L');
+	const uint32_t hunksize    = create_args->lookup_int('K');
+
+	const uint32_t totalsectors = cylinders * heads * sectors;
 
 	/* create the CHD file */
 	chd_codec_type compression[4] = { CHD_CODEC_NONE };
-	err = m_origchd.create(*image_core_file(), (UINT64)totalsectors * (UINT64)sectorsize, hunksize, sectorsize, compression);
+	err = m_origchd.create(image_core_file(), (uint64_t)totalsectors * (uint64_t)sectorsize, hunksize, sectorsize, compression);
 	if (err != CHDERR_NONE)
-		goto error;
+		return image_init_result::FAIL;
 
 	/* if we created the image and hence, have metadata to set, set the metadata */
-	strprintf(metadata, HARD_DISK_METADATA_FORMAT, cylinders, heads, sectors, sectorsize);
-	err = m_origchd.write_metadata(HARD_DISK_METADATA_TAG, 0, metadata);
+	err = m_origchd.write_metadata(HARD_DISK_METADATA_TAG, 0, string_format(HARD_DISK_METADATA_FORMAT, cylinders, heads, sectors, sectorsize));
 	m_origchd.close();
 
 	if (err != CHDERR_NONE)
-		goto error;
+		return image_init_result::FAIL;
 
 	return internal_load_hd();
-
-error:
-	return IMAGE_INIT_FAIL;
 }
 
 void harddisk_image_device::call_unload()
 {
 	/* Check if there is an image_unload callback defined */
-	if ( !m_device_image_unload.isnull() )
-	{
+	if (!m_device_image_unload.isnull())
 		m_device_image_unload(*this);
-	}
 
 	if (m_hard_disk_handle != nullptr)
 	{
@@ -181,8 +174,11 @@ void harddisk_image_device::call_unload()
 		m_hard_disk_handle = nullptr;
 	}
 
-	m_origchd.close();
-	m_diffchd.close();
+	if (m_chd)
+	{
+		m_origchd.close();
+		m_diffchd.close();
+	}
 	m_chd = nullptr;
 }
 
@@ -197,8 +193,8 @@ static chd_error open_disk_diff(emu_options &options, const char *name, chd_file
 	/* try to open the diff */
 	//printf("Opening differencing image file: %s\n", fname.c_str());
 	emu_file diff_file(options.diff_directory(), OPEN_FLAG_READ | OPEN_FLAG_WRITE);
-	file_error filerr = diff_file.open(fname.c_str());
-	if (filerr == FILERR_NONE)
+	osd_file::error filerr = diff_file.open(fname.c_str());
+	if (filerr == osd_file::error::NONE)
 	{
 		std::string fullpath(diff_file.fullpath());
 		diff_file.close();
@@ -211,7 +207,7 @@ static chd_error open_disk_diff(emu_options &options, const char *name, chd_file
 	//printf("Creating differencing image: %s\n", fname.c_str());
 	diff_file.set_openflags(OPEN_FLAG_READ | OPEN_FLAG_WRITE | OPEN_FLAG_CREATE | OPEN_FLAG_CREATE_PATHS);
 	filerr = diff_file.open(fname.c_str());
-	if (filerr == FILERR_NONE)
+	if (filerr == osd_file::error::NONE)
 	{
 		std::string fullpath(diff_file.fullpath());
 		diff_file.close();
@@ -229,36 +225,47 @@ static chd_error open_disk_diff(emu_options &options, const char *name, chd_file
 	return CHDERR_FILE_NOT_FOUND;
 }
 
-int harddisk_image_device::internal_load_hd()
+image_init_result harddisk_image_device::internal_load_hd()
 {
 	chd_error err = CHDERR_NONE;
-
 	m_chd = nullptr;
+	uint8_t header[64];
 
-	if (m_hard_disk_handle)
+	if (m_hard_disk_handle != nullptr)
+	{
 		hard_disk_close(m_hard_disk_handle);
+		m_hard_disk_handle = nullptr;
+	}
 
 	/* open the CHD file */
-	if (software_entry() != nullptr)
+	if (loaded_through_softlist())
 	{
-		m_chd = get_disk_handle(device().machine(), device().subtag("harddriv").c_str());
+		m_chd = machine().rom_load().get_disk_handle(device().subtag("harddriv").c_str());
 	}
 	else
 	{
-		err = m_origchd.open(*image_core_file(), true);
-		if (err == CHDERR_NONE)
+		fseek(0, SEEK_SET);
+		fread(header, 64);
+		fseek(0, SEEK_SET);
+
+		if (!memcmp("MComprHD", header, 8))
 		{
-			m_chd = &m_origchd;
-		}
-		else if (err == CHDERR_FILE_NOT_WRITEABLE)
-		{
-			err = m_origchd.open(*image_core_file(), false);
+			err = m_origchd.open(image_core_file(), true);
+
 			if (err == CHDERR_NONE)
 			{
-				err = open_disk_diff(device().machine().options(), basename_noext(), m_origchd, m_diffchd);
+				m_chd = &m_origchd;
+			}
+			else if (err == CHDERR_FILE_NOT_WRITEABLE)
+			{
+				err = m_origchd.open(image_core_file(), false);
 				if (err == CHDERR_NONE)
 				{
-					m_chd = &m_diffchd;
+					err = open_disk_diff(device().machine().options(), basename_noext(), m_origchd, m_diffchd);
+					if (err == CHDERR_NONE)
+					{
+						m_chd = &m_diffchd;
+					}
 				}
 			}
 		}
@@ -269,7 +276,41 @@ int harddisk_image_device::internal_load_hd()
 		/* open the hard disk file */
 		m_hard_disk_handle = hard_disk_open(m_chd);
 		if (m_hard_disk_handle != nullptr)
-			return IMAGE_INIT_PASS;
+			return image_init_result::PASS;
+	}
+	else
+	{
+		if (is_open())
+		{
+			uint32_t skip = 0;
+
+			// check for 2MG format
+			if (!memcmp(header, "2IMG", 4))
+			{
+				skip = header[0x18] | (header[0x19] << 8) | (header[0x1a] << 16) | (header[0x1b] << 24);
+				osd_printf_verbose("harddriv: detected 2MG, creator is %c%c%c%c, data at %08x\n", header[4], header[5], header[6], header[7], skip);
+			}
+			// check for HDI format
+			else if (is_filetype("hdi"))
+			{
+				skip = header[0x8] | (header[0x9] << 8) | (header[0xa] << 16) | (header[0xb] << 24);
+				uint32_t data_size = header[0xc] | (header[0xd] << 8) | (header[0xe] << 16) | (header[0xf] << 24);
+				if (data_size == image_core_file().size() - skip)
+				{
+					osd_printf_verbose("harddriv: detected Anex86 HDI, data at %08x\n", skip);
+				}
+				else
+				{
+					skip = 0;
+				}
+			}
+
+			m_hard_disk_handle = hard_disk_open(image_core_file(), skip);
+			if (m_hard_disk_handle != nullptr)
+				return image_init_result::PASS;
+		}
+
+		return image_init_result::FAIL;
 	}
 
 	/* if we had an error, close out the CHD */
@@ -278,7 +319,7 @@ int harddisk_image_device::internal_load_hd()
 	m_chd = nullptr;
 	seterror(IMAGE_ERROR_UNSPECIFIED, chd_file::error_string(err));
 
-	return IMAGE_INIT_FAIL;
+	return image_init_result::FAIL;
 }
 
 /*************************************

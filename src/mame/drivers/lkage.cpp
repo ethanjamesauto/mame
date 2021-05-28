@@ -86,113 +86,102 @@ TODO:
 ***************************************************************************/
 
 #include "emu.h"
-#include "cpu/z80/z80.h"
-#include "cpu/m6805/m6805.h"
-#include "sound/2203intf.h"
 #include "includes/lkage.h"
 
-#define MAIN_CPU_CLOCK      (XTAL_12MHz/2)
-#define SOUND_CPU_CLOCK     (XTAL_8MHz/2)
-#define AUDIO_CLOCK         (XTAL_8MHz/2)
-#define MCU_CLOCK           (XTAL_12MHz/4)
+#include "cpu/m6805/m6805.h"
+#include "cpu/z80/z80.h"
+#include "sound/ymopn.h"
+
+#include "screen.h"
+#include "speaker.h"
 
 
-TIMER_CALLBACK_MEMBER(lkage_state::nmi_callback)
+#define MAIN_CPU_CLOCK      (XTAL(12'000'000)/2)
+#define SOUND_CPU_CLOCK     (XTAL(8'000'000)/2)
+#define AUDIO_CLOCK         (XTAL(8'000'000)/2)
+#define MCU_CLOCK           (XTAL(12'000'000)/4)
+
+
+void lkage_state::lkage_sh_nmi_disable_w(uint8_t data)
 {
-	if (m_sound_nmi_enable)
-		m_audiocpu->set_input_line(INPUT_LINE_NMI, PULSE_LINE);
-	else
-		m_pending_nmi = 1;
+	m_soundnmi->in_w<1>(0);
 }
 
-WRITE8_MEMBER(lkage_state::lkage_sound_command_w)
+void lkage_state::lkage_sh_nmi_enable_w(uint8_t data)
 {
-	soundlatch_byte_w(space, offset, data);
-	machine().scheduler().synchronize(timer_expired_delegate(FUNC(lkage_state::nmi_callback),this), data);
+	m_soundnmi->in_w<1>(1);
 }
 
-WRITE8_MEMBER(lkage_state::lkage_sh_nmi_disable_w)
-{
-	m_sound_nmi_enable = 0;
-}
-
-WRITE8_MEMBER(lkage_state::lkage_sh_nmi_enable_w)
-{
-	m_sound_nmi_enable = 1;
-	if (m_pending_nmi)
-	{
-		/* probably wrong but commands may go lost otherwise */
-		m_audiocpu->set_input_line(INPUT_LINE_NMI, PULSE_LINE);
-		m_pending_nmi = 0;
-	}
-}
-
-READ8_MEMBER(lkage_state::sound_status_r)
+uint8_t lkage_state::sound_status_r()
 {
 	return 0xff;
 }
 
-static ADDRESS_MAP_START( lkage_map, AS_PROGRAM, 8, lkage_state )
-	AM_RANGE(0x0000, 0xdfff) AM_ROM
-	AM_RANGE(0xe000, 0xe7ff) AM_RAM /* work ram */
-	AM_RANGE(0xe800, 0xefff) AM_RAM_DEVWRITE("palette", palette_device, write) AM_SHARE("palette")
-	AM_RANGE(0xf000, 0xf003) AM_RAM AM_SHARE("vreg") /* video registers */
-	AM_RANGE(0xf060, 0xf060) AM_WRITE(lkage_sound_command_w)
-	AM_RANGE(0xf061, 0xf061) AM_WRITENOP AM_READ(sound_status_r)
-	AM_RANGE(0xf062, 0xf062) AM_READWRITE(lkage_mcu_r,lkage_mcu_w)
-	AM_RANGE(0xf063, 0xf063) AM_WRITENOP /* pulsed; nmi on sound cpu? */
-	AM_RANGE(0xf080, 0xf080) AM_READ_PORT("DSW1")
-	AM_RANGE(0xf081, 0xf081) AM_READ_PORT("DSW2")
-	AM_RANGE(0xf082, 0xf082) AM_READ_PORT("DSW3")
-	AM_RANGE(0xf083, 0xf083) AM_READ_PORT("SYSTEM")
-	AM_RANGE(0xf084, 0xf084) AM_READ_PORT("P1")
-	AM_RANGE(0xf086, 0xf086) AM_READ_PORT("P2")
-	AM_RANGE(0xf087, 0xf087) AM_READ(lkage_mcu_status_r)
-	AM_RANGE(0xf0a0, 0xf0a3) AM_RAM /* unknown */
-	AM_RANGE(0xf0c0, 0xf0c5) AM_RAM AM_SHARE("scroll")
-	AM_RANGE(0xf0e1, 0xf0e1) AM_WRITENOP /* pulsed */
-	AM_RANGE(0xf100, 0xf15f) AM_RAM AM_SHARE("spriteram")
-	AM_RANGE(0xf160, 0xf1ff) AM_RAM /* unknown - no valid sprite data */
-	AM_RANGE(0xf400, 0xffff) AM_RAM_WRITE(lkage_videoram_w) AM_SHARE("videoram")
-ADDRESS_MAP_END
+void lkage_state::lkage_map(address_map &map)
+{
+	map(0x0000, 0xdfff).rom();
+	map(0xe000, 0xe7ff).ram(); /* work ram */
+	map(0xe800, 0xefff).ram().w(m_palette, FUNC(palette_device::write8)).share("palette");
+	map(0xf000, 0xf003).ram().share("vreg"); /* video registers */
+	map(0xf060, 0xf060).w(m_soundlatch, FUNC(generic_latch_8_device::write));
+	map(0xf061, 0xf061).nopw().r(FUNC(lkage_state::sound_status_r));
+	map(0xf063, 0xf063).nopw(); /* pulsed; nmi on sound cpu? */
+	map(0xf080, 0xf080).portr("DSW1");
+	map(0xf081, 0xf081).portr("DSW2");
+	map(0xf082, 0xf082).portr("DSW3");
+	map(0xf083, 0xf083).portr("SYSTEM");
+	map(0xf084, 0xf084).portr("P1");
+	map(0xf086, 0xf086).portr("P2");
+	map(0xf0a0, 0xf0a3).ram(); /* unknown */
+	map(0xf0c0, 0xf0c5).ram().share("scroll");
+	map(0xf0e1, 0xf0e1).nopw(); /* pulsed */
+	map(0xf100, 0xf15f).ram().share("spriteram");
+	map(0xf160, 0xf1ff).ram(); /* unknown - no valid sprite data */
+	map(0xf400, 0xffff).ram().w(FUNC(lkage_state::lkage_videoram_w)).share("videoram");
+}
+
+void lkage_state::lkage_map_mcu(address_map &map)
+{
+	lkage_map(map);
+	map(0xf062, 0xf062).rw(m_bmcu, FUNC(taito68705_mcu_device::data_r), FUNC(taito68705_mcu_device::data_w));
+	map(0xf087, 0xf087).r(FUNC(lkage_state::mcu_status_r));
+}
+
+void lkage_state::lkage_map_boot(address_map &map)
+{
+	lkage_map(map);
+	map(0xf062, 0xf062).rw(FUNC(lkage_state::fake_mcu_r), FUNC(lkage_state::fake_mcu_w));
+	map(0xf087, 0xf087).r(FUNC(lkage_state::fake_status_r));
+}
 
 
-READ8_MEMBER(lkage_state::port_fetch_r)
+uint8_t lkage_state::port_fetch_r(offs_t offset)
 {
 	return memregion("user1")->base()[offset];
 }
 
-static ADDRESS_MAP_START( lkage_io_map, AS_IO, 8, lkage_state )
-	AM_RANGE(0x4000, 0x7fff) AM_READ(port_fetch_r)
-ADDRESS_MAP_END
+void lkage_state::lkage_io_map(address_map &map)
+{
+	map(0x4000, 0x7fff).r(FUNC(lkage_state::port_fetch_r));
+}
 
-static ADDRESS_MAP_START( lkage_m68705_map, AS_PROGRAM, 8, lkage_state )
-	ADDRESS_MAP_GLOBAL_MASK(0x7ff)
-	AM_RANGE(0x0000, 0x0000) AM_READWRITE(lkage_68705_port_a_r,lkage_68705_port_a_w)
-	AM_RANGE(0x0001, 0x0001) AM_READWRITE(lkage_68705_port_b_r,lkage_68705_port_b_w)
-	AM_RANGE(0x0002, 0x0002) AM_READWRITE(lkage_68705_port_c_r,lkage_68705_port_c_w)
-	AM_RANGE(0x0004, 0x0004) AM_WRITE(lkage_68705_ddr_a_w)
-	AM_RANGE(0x0005, 0x0005) AM_WRITE(lkage_68705_ddr_b_w)
-	AM_RANGE(0x0006, 0x0006) AM_WRITE(lkage_68705_ddr_c_w)
-	AM_RANGE(0x0010, 0x007f) AM_RAM
-	AM_RANGE(0x0080, 0x07ff) AM_ROM
-ADDRESS_MAP_END
 
 /***************************************************************************/
 
 /* sound section is almost identical to Bubble Bobble, YM2203 instead of YM3526 */
 
-static ADDRESS_MAP_START( lkage_sound_map, AS_PROGRAM, 8, lkage_state )
-	AM_RANGE(0x0000, 0x7fff) AM_ROM
-	AM_RANGE(0x8000, 0x87ff) AM_RAM
-	AM_RANGE(0x9000, 0x9001) AM_DEVREADWRITE("ym1", ym2203_device, read, write)
-	AM_RANGE(0xa000, 0xa001) AM_DEVREADWRITE("ym2", ym2203_device, read, write)
-	AM_RANGE(0xb000, 0xb000) AM_READ(soundlatch_byte_r) AM_WRITENOP /* ??? */
-	AM_RANGE(0xb001, 0xb001) AM_READNOP /* ??? */ AM_WRITE(lkage_sh_nmi_enable_w)
-	AM_RANGE(0xb002, 0xb002) AM_WRITE(lkage_sh_nmi_disable_w)
-	AM_RANGE(0xb003, 0xb003) AM_WRITENOP
-	AM_RANGE(0xe000, 0xefff) AM_ROM /* space for diagnostic ROM? */
-ADDRESS_MAP_END
+void lkage_state::lkage_sound_map(address_map &map)
+{
+	map(0x0000, 0x7fff).rom();
+	map(0x8000, 0x87ff).ram();
+	map(0x9000, 0x9001).rw("ym1", FUNC(ym2203_device::read), FUNC(ym2203_device::write));
+	map(0xa000, 0xa001).rw("ym2", FUNC(ym2203_device::read), FUNC(ym2203_device::write));
+	map(0xb000, 0xb000).r(m_soundlatch, FUNC(generic_latch_8_device::read)).nopw(); /* ??? */
+	map(0xb001, 0xb001).nopr() /* ??? */ .w(FUNC(lkage_state::lkage_sh_nmi_enable_w));
+	map(0xb002, 0xb002).w(FUNC(lkage_state::lkage_sh_nmi_disable_w));
+	map(0xb003, 0xb003).nopw();
+	map(0xe000, 0xefff).rom(); /* space for diagnostic ROM? */
+}
 
 /***************************************************************************/
 
@@ -471,15 +460,11 @@ static const gfx_layout sprite_layout =
 	32*8
 };
 
-static GFXDECODE_START( lkage )
+static GFXDECODE_START( gfx_lkage )
 	GFXDECODE_ENTRY( "gfx1", 0x0000, tile_layout,  /*128*/0, 64 )
 	GFXDECODE_ENTRY( "gfx1", 0x0000, sprite_layout,  0, 16 )
 GFXDECODE_END
 
-WRITE_LINE_MEMBER(lkage_state::irqhandler)
-{
-	m_audiocpu->set_input_line(0, state ? ASSERT_LINE : CLEAR_LINE);
-}
 
 void lkage_state::machine_start()
 {
@@ -491,22 +476,6 @@ void lkage_state::machine_start()
 
 	save_item(NAME(m_mcu_ready));
 	save_item(NAME(m_mcu_val));
-	save_item(NAME(m_sound_nmi_enable));
-	save_item(NAME(m_pending_nmi));
-
-	save_item(NAME(m_port_a_in));
-	save_item(NAME(m_port_a_out));
-	save_item(NAME(m_ddr_a));
-	save_item(NAME(m_port_b_in));
-	save_item(NAME(m_port_b_out));
-	save_item(NAME(m_ddr_b));
-	save_item(NAME(m_port_c_in));
-	save_item(NAME(m_port_c_out));
-	save_item(NAME(m_ddr_c));
-	save_item(NAME(m_mcu_sent));
-	save_item(NAME(m_main_sent));
-	save_item(NAME(m_from_main));
-	save_item(NAME(m_from_mcu));
 }
 
 void lkage_state::machine_reset()
@@ -515,115 +484,99 @@ void lkage_state::machine_reset()
 
 	m_mcu_ready = 3;
 	m_mcu_val = 0;
-	m_sound_nmi_enable = 0;
-	m_pending_nmi = 0;
 
-	m_port_a_in = 0;
-	m_port_a_out = 0;
-	m_ddr_a = 0;
-	m_port_b_in = 0;
-	m_port_b_out = 0;
-	m_ddr_b = 0;
-	m_port_c_in = 0;
-	m_port_c_out = 0;
-	m_ddr_c = 0;
-	m_mcu_sent = 0;
-	m_main_sent = 0;
-	m_from_main = 0;
-	m_from_mcu = 0;
+	m_soundnmi->in_w<1>(0);
 }
 
-static MACHINE_CONFIG_START( lkage, lkage_state )
-
+void lkage_state::lkage(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", Z80, MAIN_CPU_CLOCK)
-	MCFG_CPU_PROGRAM_MAP(lkage_map)
-	MCFG_CPU_IO_MAP(lkage_io_map)
-	MCFG_CPU_VBLANK_INT_DRIVER("screen", lkage_state,  irq0_line_hold)
+	Z80(config, m_maincpu, MAIN_CPU_CLOCK);
+	m_maincpu->set_addrmap(AS_PROGRAM, &lkage_state::lkage_map_mcu);
+	m_maincpu->set_addrmap(AS_IO, &lkage_state::lkage_io_map);
+	m_maincpu->set_vblank_int("screen", FUNC(lkage_state::irq0_line_hold));
 
-	MCFG_CPU_ADD("audiocpu", Z80, SOUND_CPU_CLOCK)
-	MCFG_CPU_PROGRAM_MAP(lkage_sound_map)
-								/* IRQs are triggered by the YM2203 */
+	Z80(config, m_audiocpu, SOUND_CPU_CLOCK);
+	m_audiocpu->set_addrmap(AS_PROGRAM, &lkage_state::lkage_sound_map); /* IRQs are triggered by the YM2203 */
 
-	MCFG_CPU_ADD("mcu", M68705,MCU_CLOCK)
-	MCFG_CPU_PROGRAM_MAP(lkage_m68705_map)
-
+	TAITO68705_MCU(config, m_bmcu, MCU_CLOCK);
 
 	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_REFRESH_RATE(60)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(2500) /* not accurate */)
-	MCFG_SCREEN_SIZE(32*8, 32*8)
-	MCFG_SCREEN_VISIBLE_AREA(2*8, 32*8-1, 2*8, 30*8-1)
-	MCFG_SCREEN_UPDATE_DRIVER(lkage_state, screen_update_lkage)
-	MCFG_SCREEN_PALETTE("palette")
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_RASTER));
+	screen.set_refresh_hz(60);
+	screen.set_vblank_time(ATTOSECONDS_IN_USEC(2500)); /* not accurate */
+	screen.set_size(32*8, 32*8);
+	screen.set_visarea(2*8, 32*8-1, 2*8, 30*8-1);
+	screen.set_screen_update(FUNC(lkage_state::screen_update_lkage));
+	screen.set_palette(m_palette);
 
-	MCFG_GFXDECODE_ADD("gfxdecode", "palette", lkage)
-	MCFG_PALETTE_ADD("palette", 1024)
-	MCFG_PALETTE_FORMAT(xxxxRRRRGGGGBBBB)
-
+	GFXDECODE(config, m_gfxdecode, m_palette, gfx_lkage);
+	PALETTE(config, m_palette).set_format(palette_device::xRGB_444, 1024);
 
 	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_MONO("mono")
+	SPEAKER(config, "mono").front_center();
 
-	MCFG_SOUND_ADD("ym1", YM2203, AUDIO_CLOCK )
-	MCFG_YM2203_IRQ_HANDLER(WRITELINE(lkage_state, irqhandler))
-	MCFG_SOUND_ROUTE(0, "mono", 0.15)
-	MCFG_SOUND_ROUTE(1, "mono", 0.15)
-	MCFG_SOUND_ROUTE(2, "mono", 0.15)
-	MCFG_SOUND_ROUTE(3, "mono", 0.40)
+	GENERIC_LATCH_8(config, m_soundlatch).data_pending_callback().set(m_soundnmi, FUNC(input_merger_device::in_w<0>));
 
-	MCFG_SOUND_ADD("ym2", YM2203, AUDIO_CLOCK )
-	MCFG_SOUND_ROUTE(0, "mono", 0.15)
-	MCFG_SOUND_ROUTE(1, "mono", 0.15)
-	MCFG_SOUND_ROUTE(2, "mono", 0.15)
-	MCFG_SOUND_ROUTE(3, "mono", 0.40)
-MACHINE_CONFIG_END
+	INPUT_MERGER_ALL_HIGH(config, m_soundnmi).output_handler().set_inputline(m_audiocpu, INPUT_LINE_NMI);
 
+	ym2203_device &ym1(YM2203(config, "ym1", AUDIO_CLOCK));
+	ym1.irq_handler().set_inputline(m_audiocpu, 0);
+	ym1.add_route(0, "mono", 0.15);
+	ym1.add_route(1, "mono", 0.15);
+	ym1.add_route(2, "mono", 0.15);
+	ym1.add_route(3, "mono", 0.40);
 
-static MACHINE_CONFIG_START( lkageb, lkage_state )
+	ym2203_device &ym2(YM2203(config, "ym2", AUDIO_CLOCK));
+	ym2.add_route(0, "mono", 0.15);
+	ym2.add_route(1, "mono", 0.15);
+	ym2.add_route(2, "mono", 0.15);
+	ym2.add_route(3, "mono", 0.40);
+}
 
+void lkage_state::lkageb(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", Z80,MAIN_CPU_CLOCK)
-	MCFG_CPU_PROGRAM_MAP(lkage_map)
-	MCFG_CPU_IO_MAP(lkage_io_map)
-	MCFG_CPU_VBLANK_INT_DRIVER("screen", lkage_state,  irq0_line_hold)
+	Z80(config, m_maincpu, MAIN_CPU_CLOCK);
+	m_maincpu->set_addrmap(AS_PROGRAM, &lkage_state::lkage_map_boot);
+	m_maincpu->set_addrmap(AS_IO, &lkage_state::lkage_io_map);
+	m_maincpu->set_vblank_int("screen", FUNC(lkage_state::irq0_line_hold));
 
-	MCFG_CPU_ADD("audiocpu", Z80, SOUND_CPU_CLOCK)
-	MCFG_CPU_PROGRAM_MAP(lkage_sound_map)
-								/* IRQs are triggered by the YM2203 */
-
+	Z80(config, m_audiocpu, SOUND_CPU_CLOCK);
+	m_audiocpu->set_addrmap(AS_PROGRAM, &lkage_state::lkage_sound_map); /* IRQs are triggered by the YM2203 */
 
 	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_REFRESH_RATE(60)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(2500) /* not accurate */)
-	MCFG_SCREEN_SIZE(32*8, 32*8)
-	MCFG_SCREEN_VISIBLE_AREA(2*8, 32*8-1, 2*8, 30*8-1)
-	MCFG_SCREEN_UPDATE_DRIVER(lkage_state, screen_update_lkage)
-	MCFG_SCREEN_PALETTE("palette")
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_RASTER));
+	screen.set_refresh_hz(60);
+	screen.set_vblank_time(ATTOSECONDS_IN_USEC(2500)); /* not accurate */
+	screen.set_size(32*8, 32*8);
+	screen.set_visarea(2*8, 32*8-1, 2*8, 30*8-1);
+	screen.set_screen_update(FUNC(lkage_state::screen_update_lkage));
+	screen.set_palette(m_palette);
 
-	MCFG_GFXDECODE_ADD("gfxdecode", "palette", lkage)
-	MCFG_PALETTE_ADD("palette", 1024)
-	MCFG_PALETTE_FORMAT(xxxxRRRRGGGGBBBB)
-
+	GFXDECODE(config, m_gfxdecode, m_palette, gfx_lkage);
+	PALETTE(config, m_palette).set_format(palette_device::xRGB_444, 1024);
 
 	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_MONO("mono")
+	SPEAKER(config, "mono").front_center();
 
-	MCFG_SOUND_ADD("ym1", YM2203, AUDIO_CLOCK)
-	MCFG_YM2203_IRQ_HANDLER(WRITELINE(lkage_state, irqhandler))
-	MCFG_SOUND_ROUTE(0, "mono", 0.15)
-	MCFG_SOUND_ROUTE(1, "mono", 0.15)
-	MCFG_SOUND_ROUTE(2, "mono", 0.15)
-	MCFG_SOUND_ROUTE(3, "mono", 0.40)
+	GENERIC_LATCH_8(config, m_soundlatch).data_pending_callback().set(m_soundnmi, FUNC(input_merger_device::in_w<0>));
 
-	MCFG_SOUND_ADD("ym2", YM2203, AUDIO_CLOCK)
-	MCFG_SOUND_ROUTE(0, "mono", 0.15)
-	MCFG_SOUND_ROUTE(1, "mono", 0.15)
-	MCFG_SOUND_ROUTE(2, "mono", 0.15)
-	MCFG_SOUND_ROUTE(3, "mono", 0.40)
-MACHINE_CONFIG_END
+	INPUT_MERGER_ALL_HIGH(config, m_soundnmi).output_handler().set_inputline(m_audiocpu, INPUT_LINE_NMI);
+
+	ym2203_device &ym1(YM2203(config, "ym1", AUDIO_CLOCK));
+	ym1.irq_handler().set_inputline("audiocpu", 0);
+	ym1.add_route(0, "mono", 0.15);
+	ym1.add_route(1, "mono", 0.15);
+	ym1.add_route(2, "mono", 0.15);
+	ym1.add_route(3, "mono", 0.40);
+
+	ym2203_device &ym2(YM2203(config, "ym2", AUDIO_CLOCK));
+	ym2.add_route(0, "mono", 0.15);
+	ym2.add_route(1, "mono", 0.15);
+	ym2.add_route(2, "mono", 0.15);
+	ym2.add_route(3, "mono", 0.40);
+}
 
 ROM_START( lkage )
 	ROM_REGION( 0x14000, "maincpu", 0 ) /* Z80 code (main CPU) */
@@ -633,7 +586,7 @@ ROM_START( lkage )
 	ROM_REGION( 0x10000, "audiocpu", 0 ) /* Z80 code (sound CPU) */
 	ROM_LOAD( "a54-04.54",   0x0000, 0x8000, CRC(541faf9a) SHA1(b142ff3bd198f700697ec06ea92db3109ab5818e) )
 
-	ROM_REGION( 0x10000, "mcu", 0 ) /* 68705 MCU code */
+	ROM_REGION( 0x00800, "bmcu:mcu", 0 ) /* 68705 MCU code */
 	ROM_LOAD( "a54-09.53",   0x0000, 0x0800, CRC(0e8b8846) SHA1(a4a105462b0127229bb7edfadd2e581c7e40f1cc) )
 
 	ROM_REGION( 0x4000, "user1", 0 ) /* data */
@@ -663,7 +616,7 @@ ROM_START( lkageo )
 	ROM_REGION( 0x10000, "audiocpu", 0 ) /* Z80 code (sound CPU) */
 	ROM_LOAD( "a54-04.54",   0x0000, 0x8000, CRC(541faf9a) SHA1(b142ff3bd198f700697ec06ea92db3109ab5818e) )
 
-	ROM_REGION( 0x10000, "mcu", 0 ) /* 68705 MCU code */
+	ROM_REGION( 0x00800, "bmcu:mcu", 0 ) /* 68705 MCU code */
 	ROM_LOAD( "a54-09.53",   0x0000, 0x0800, CRC(0e8b8846) SHA1(a4a105462b0127229bb7edfadd2e581c7e40f1cc) )
 
 	ROM_REGION( 0x4000, "user1", 0 ) /* data */
@@ -693,7 +646,7 @@ ROM_START( lkageoo )
 	ROM_REGION( 0x10000, "audiocpu", 0 ) /* Z80 code (sound CPU) */
 	ROM_LOAD( "a54-04.54",   0x0000, 0x8000, CRC(541faf9a) SHA1(b142ff3bd198f700697ec06ea92db3109ab5818e) )
 
-	ROM_REGION( 0x10000, "mcu", 0 ) /* 68705 MCU code */
+	ROM_REGION( 0x00800, "bmcu:mcu", 0 ) /* 68705 MCU code */
 	ROM_LOAD( "a54-09.53",   0x0000, 0x0800, CRC(0e8b8846) SHA1(a4a105462b0127229bb7edfadd2e581c7e40f1cc) )
 
 	ROM_REGION( 0x4000, "user1", 0 ) /* data */
@@ -776,6 +729,24 @@ ROM_START( lkageb3 )
 
 	ROM_REGION( 0x0200, "proms", 0 )
 	ROM_LOAD( "a54-10.2",    0x0000, 0x0200, CRC(17dfbd14) SHA1(f8f0b6dfedd4ba108dad43ccc7697ef4ab9cbf86) ) /* unknown */
+ROM_END
+
+ROM_START( lkageb4 )
+	ROM_REGION( 0x10000, "maincpu", 0 )
+	ROM_LOAD( "1.ic37",      0x0000, 0x8000, CRC(fa20e863) SHA1(0edba6014e8d7cdd7f6ad1bb5eb65338a3a91243) )
+	ROM_LOAD( "2.ic38",      0x8000, 0x8000, CRC(a5bdd3b4) SHA1(4f691ea8b75fae0dd92f827998e97e40791d24b2) )
+
+	ROM_REGION( 0x10000, "audiocpu", 0 )
+	ROM_LOAD( "4.ic54",   0x0000, 0x8000, CRC(541faf9a) SHA1(b142ff3bd198f700697ec06ea92db3109ab5818e) )
+
+	ROM_REGION( 0x4000, "user1", 0 )
+	ROM_LOAD( "a54-03.51",   0x0000, 0x4000, CRC(493e76d8) SHA1(13c6160edd94ba2801fd89bb33bcae3a1e3454ff) )
+
+	ROM_REGION( 0x10000, "gfx1", 0 )
+	ROM_LOAD( "5.ic84", 0x0000, 0x4000, CRC(0033c06a) SHA1(89964503fc338817c6511fd15942741996b7037a) )
+	ROM_LOAD( "6.ic85", 0x4000, 0x4000, CRC(9f04d9ad) SHA1(3b9a4d30348fd02e5c8ae94655548bd4a02dd65d) )
+	ROM_LOAD( "7.ic86", 0x8000, 0x4000, CRC(b20561a4) SHA1(0d6d83dfae79ea133e37704ca47426b4c978fb36) )
+	ROM_LOAD( "8.ic87", 0xc000, 0x4000, CRC(3ff3b230) SHA1(ffcd964efb0af32b5d7a70305dfda615ea95acbe) )
 ROM_END
 
 /*
@@ -876,7 +847,7 @@ ROM_START( bygone )
 	ROM_REGION( 0x10000, "audiocpu", 0 ) /* Z80 code (sound CPU) */
 	ROM_LOAD( "a53_07.ic54",   0x0000, 0x8000, CRC(72f69a77) SHA1(dfc1050a4123b3c83ae733ece1b6fe2836beb901) )
 
-	ROM_REGION( 0x10000, "mcu", 0 ) /* 68705 MCU code */
+	ROM_REGION( 0x00800, "bmcu:mcu", 0 ) /* 68705 MCU code */
 	ROM_LOAD( "a51_09.ic53",   0x0000, 0x0800, CRC(0e8b8846) SHA1(a4a105462b0127229bb7edfadd2e581c7e40f1cc) ) /* the same as lkage */
 
 	ROM_REGION( 0x4000, "user1", 0 ) /* data */
@@ -893,9 +864,18 @@ ROM_START( bygone )
 ROM_END
 
 
-/*Note: This probably uses another MCU dump,which is undumped.*/
+uint8_t lkage_state::mcu_status_r()
+{
+	// bit 0 = when 1, MCU is ready to receive data from main CPU
+	// bit 1 = when 1, MCU has sent data to the main CPU
+	return
+		((CLEAR_LINE == m_bmcu->host_semaphore_r()) ? 0x01 : 0x00) |
+		((CLEAR_LINE != m_bmcu->mcu_semaphore_r()) ? 0x02 : 0x00);
+}
 
-READ8_MEMBER(lkage_state::fake_mcu_r)
+// Note: This probably uses another MCU program, which is undumped.
+
+uint8_t lkage_state::fake_mcu_r()
 {
 	int result = 0;
 
@@ -930,38 +910,32 @@ READ8_MEMBER(lkage_state::fake_mcu_r)
 	return result;
 }
 
-WRITE8_MEMBER(lkage_state::fake_mcu_w)
+void lkage_state::fake_mcu_w(uint8_t data)
 {
 	m_mcu_val = data;
 }
 
-READ8_MEMBER(lkage_state::fake_status_r)
+uint8_t lkage_state::fake_status_r()
 {
 	return m_mcu_ready;
 }
 
-DRIVER_INIT_MEMBER(lkage_state,lkage)
+void lkage_state::init_lkage()
 {
-	m_sprite_dx=0;
+	m_sprite_dx = 0;
 }
 
-DRIVER_INIT_MEMBER(lkage_state,lkageb)
+
+void lkage_state::init_bygone()
 {
-	m_maincpu->space(AS_PROGRAM).install_read_handler(0xf062, 0xf062, read8_delegate(FUNC(lkage_state::fake_mcu_r),this));
-	m_maincpu->space(AS_PROGRAM).install_read_handler(0xf087, 0xf087, read8_delegate(FUNC(lkage_state::fake_status_r),this));
-	m_maincpu->space(AS_PROGRAM).install_write_handler(0xf062, 0xf062, write8_delegate(FUNC(lkage_state::fake_mcu_w),this));
-	m_sprite_dx=0;
+	m_sprite_dx = 1;
 }
 
-DRIVER_INIT_MEMBER(lkage_state,bygone)
-{
-	m_sprite_dx=1;
-}
-
-GAME( 1984, lkage,    0,        lkage,    lkage, lkage_state,    lkage,    ROT0, "Taito Corporation", "The Legend of Kage", MACHINE_NO_COCKTAIL | MACHINE_SUPPORTS_SAVE )
-GAME( 1984, lkageo,   lkage,    lkage,    lkage, lkage_state,    lkage,    ROT0, "Taito Corporation", "The Legend of Kage (older)", MACHINE_NO_COCKTAIL | MACHINE_SUPPORTS_SAVE )
-GAME( 1984, lkageoo,  lkage,    lkage,    lkage, lkage_state,    lkage,    ROT0, "Taito Corporation", "The Legend of Kage (oldest)", MACHINE_NO_COCKTAIL | MACHINE_SUPPORTS_SAVE )
-GAME( 1984, lkageb,   lkage,    lkageb,   lkageb, lkage_state,   lkageb,   ROT0, "bootleg", "The Legend of Kage (bootleg set 1)", MACHINE_NO_COCKTAIL | MACHINE_SUPPORTS_SAVE )
-GAME( 1984, lkageb2,  lkage,    lkageb,   lkageb, lkage_state,   lkageb,   ROT0, "bootleg", "The Legend of Kage (bootleg set 2)", MACHINE_NO_COCKTAIL | MACHINE_SUPPORTS_SAVE )
-GAME( 1984, lkageb3,  lkage,    lkageb,   lkageb, lkage_state,   lkageb,   ROT0, "bootleg", "The Legend of Kage (bootleg set 3)", MACHINE_NO_COCKTAIL | MACHINE_SUPPORTS_SAVE )
-GAME( 1985, bygone,   0,        lkage,    bygone, lkage_state,   bygone,   ROT0, "Taito Corporation", "Bygone", MACHINE_IMPERFECT_SOUND | MACHINE_IMPERFECT_GRAPHICS | MACHINE_NO_COCKTAIL | MACHINE_SUPPORTS_SAVE )
+GAME( 1984, lkage,   0,     lkage,  lkage,  lkage_state, init_lkage,  ROT0, "Taito Corporation", "The Legend of Kage",                 MACHINE_NO_COCKTAIL | MACHINE_SUPPORTS_SAVE )
+GAME( 1984, lkageo,  lkage, lkage,  lkage,  lkage_state, init_lkage,  ROT0, "Taito Corporation", "The Legend of Kage (older)",         MACHINE_NO_COCKTAIL | MACHINE_SUPPORTS_SAVE )
+GAME( 1984, lkageoo, lkage, lkage,  lkage,  lkage_state, init_lkage,  ROT0, "Taito Corporation", "The Legend of Kage (oldest)",        MACHINE_NO_COCKTAIL | MACHINE_SUPPORTS_SAVE )
+GAME( 1984, lkageb,  lkage, lkageb, lkageb, lkage_state, init_lkage,  ROT0, "bootleg",           "The Legend of Kage (bootleg set 1)", MACHINE_NO_COCKTAIL | MACHINE_SUPPORTS_SAVE )
+GAME( 1984, lkageb2, lkage, lkageb, lkageb, lkage_state, init_lkage,  ROT0, "bootleg",           "The Legend of Kage (bootleg set 2)", MACHINE_NO_COCKTAIL | MACHINE_SUPPORTS_SAVE )
+GAME( 1984, lkageb3, lkage, lkageb, lkageb, lkage_state, init_lkage,  ROT0, "bootleg",           "The Legend of Kage (bootleg set 3)", MACHINE_NO_COCKTAIL | MACHINE_SUPPORTS_SAVE )
+GAME( 1984, lkageb4, lkage, lkageb, lkageb, lkage_state, init_lkage,  ROT0, "bootleg",           "The Legend of Kage (bootleg set 4)", MACHINE_NO_COCKTAIL | MACHINE_SUPPORTS_SAVE )
+GAME( 1985, bygone,  0,     lkage,  bygone, lkage_state, init_bygone, ROT0, "Taito Corporation", "Bygone (prototype)",                 MACHINE_IMPERFECT_SOUND | MACHINE_IMPERFECT_GRAPHICS | MACHINE_NO_COCKTAIL | MACHINE_SUPPORTS_SAVE )

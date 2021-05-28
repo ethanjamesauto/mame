@@ -2,7 +2,11 @@
 // copyright-holders:Sandro Ronco
 /***************************************************************************
 
-    Micronics 1000
+    Micronic 1000
+
+    This is a small handheld CP/M computer with a 4x8 keypad and a 128x64
+    LCD display. It was produced by Victor Micronic Ltd, a UK subsidiary
+    of Datronic AB.
 
     06/2010 (Sandro Ronco)
     - ROM/RAM banking
@@ -18,9 +22,10 @@
     The display shows "TESTING..." for about 2 min before showing the information screen
 
     More info:
-    http://www.philpem.me.uk/elec/micronic/
-    http://members.lycos.co.uk/leeedavison/z80/micronic/index.html
-    http://reocities.com/SiliconValley/Port/8052/
+    http://web.archive.org/web/20180104024745/http://www.philpem.me.uk/elec/micronic/
+    http://web.archive.org/web/20080411235036/http://members.lycos.co.uk:80/leeedavison/z80/micronic/index.html
+    https://geocities.restorativland.org/SiliconValley/Port/8052/
+    https://www.cbronline.com/news/victor_micronic_has_the_m1000_handheld_computer_terminal/
 
 ****************************************************************************/
 
@@ -112,16 +117,17 @@
 
 */
 
-
 #include "emu.h"
 #include "includes/micronic.h"
-#include "rendlay.h"
+#include "screen.h"
+#include "speaker.h"
 
-READ8_MEMBER( micronic_state::keypad_r )
+
+uint8_t micronic_state::keypad_r()
 {
-	UINT8 data = 0;
+	uint8_t data = 0;
 
-	for (UINT8 bit = 0; bit < 8; bit++)
+	for (uint8_t bit = 0; bit < 8; bit++)
 	{
 		if (m_kp_matrix & (1 << bit))
 		{
@@ -136,39 +142,39 @@ READ8_MEMBER( micronic_state::keypad_r )
 	return data;
 }
 
-READ8_MEMBER( micronic_state::status_flag_r )
+uint8_t micronic_state::status_flag_r()
 {
 	return m_status_flag;
 }
 
-WRITE8_MEMBER( micronic_state::status_flag_w )
+void micronic_state::status_flag_w(uint8_t data)
 {
 	m_status_flag = data;
 }
 
-WRITE8_MEMBER( micronic_state::kp_matrix_w )
+void micronic_state::kp_matrix_w(uint8_t data)
 {
 	m_kp_matrix = data;
 }
 
-WRITE8_MEMBER( micronic_state::beep_w )
+void micronic_state::beep_w(uint8_t data)
 {
-	UINT16 frequency[16] =
+	uint16_t frequency[16] =
 	{
 			0, 4000, 2000, 1333, 1000, 800, 667, 571,
 		500,  444,  400,  364,  333, 308, 286, 267
 	};
 
-	m_beep->set_frequency(frequency[data & 0x0f]);
+	m_beep->set_clock(frequency[data & 0x0f]);
 	m_beep->set_state((data & 0x0f) ? 1 : 0);
 }
 
-READ8_MEMBER( micronic_state::irq_flag_r )
+uint8_t micronic_state::irq_flag_r()
 {
-	return (m_backbattery->read()<<4) | (m_mainbattery->read()<<3) | (keypad_r(space, offset) ? 0 : 1);
+	return (m_backbattery->read()<<4) | (m_mainbattery->read()<<3) | (keypad_r() ? 0 : 1);
 }
 
-WRITE8_MEMBER( micronic_state::bank_select_w )
+void micronic_state::bank_select_w(uint8_t data)
 {
 	if (data < 2)
 	{
@@ -178,16 +184,16 @@ WRITE8_MEMBER( micronic_state::bank_select_w )
 	else
 	{
 		m_bank1->set_entry((data <= m_banks_num) ? data : m_banks_num);
-		m_maincpu->space(AS_PROGRAM).install_write_bank(0x0000, 0x7fff, "bank1");
+		m_maincpu->space(AS_PROGRAM).install_write_bank(0x0000, 0x7fff, membank("bank1"));
 	}
 }
 
-WRITE8_MEMBER( micronic_state::lcd_contrast_w )
+void micronic_state::lcd_contrast_w(uint8_t data)
 {
 	m_lcd_contrast = data;
 }
 
-WRITE8_MEMBER( micronic_state::port_2c_w )
+void micronic_state::port_2c_w(uint8_t data)
 {
 	m_lcd_backlight = BIT(data, 4);
 }
@@ -197,56 +203,58 @@ WRITE8_MEMBER( micronic_state::port_2c_w )
     RTC-146818
 ***************************************************************************/
 
-WRITE8_MEMBER( micronic_state::rtc_address_w )
+void micronic_state::rtc_address_w(uint8_t data)
 {
-	m_rtc->write(space, 0, data);
+	m_rtc->write(0, data);
 }
 
-READ8_MEMBER( micronic_state::rtc_data_r )
+uint8_t micronic_state::rtc_data_r()
 {
-	return m_rtc->read(space, 1);
+	return m_rtc->read(1);
 }
 
-WRITE8_MEMBER( micronic_state::rtc_data_w )
+void micronic_state::rtc_data_w(uint8_t data)
 {
-	m_rtc->write(space, 1, data);
+	m_rtc->write(1, data);
 }
 
 /***************************************************************************
     Machine
 ***************************************************************************/
 
-static ADDRESS_MAP_START(micronic_mem, AS_PROGRAM, 8, micronic_state)
-	AM_RANGE(0x0000, 0x7fff) AM_RAMBANK("bank1")
-	AM_RANGE(0x8000, 0xffff) AM_RAM  AM_SHARE("ram_base")
-ADDRESS_MAP_END
+void micronic_state::micronic_mem(address_map &map)
+{
+	map(0x0000, 0x7fff).bankrw("bank1");
+	map(0x8000, 0xffff).ram().share("ram_base");
+}
 
-static ADDRESS_MAP_START(micronic_io, AS_IO, 8, micronic_state)
-	ADDRESS_MAP_GLOBAL_MASK (0xff)
+void micronic_state::micronic_io(address_map &map)
+{
+	map.global_mask(0xff);
 
 	/* keypad */
-	AM_RANGE(0x00, 0x00) AM_READ(keypad_r)
-	AM_RANGE(0x02, 0x02) AM_WRITE(kp_matrix_w)
+	map(0x00, 0x00).r(FUNC(micronic_state::keypad_r));
+	map(0x02, 0x02).w(FUNC(micronic_state::kp_matrix_w));
 
 	/* hd61830 */
-	AM_RANGE(0x03, 0x03) AM_DEVREADWRITE(HD61830_TAG, hd61830_device, data_r, data_w)
-	AM_RANGE(0x23, 0x23) AM_DEVREADWRITE(HD61830_TAG, hd61830_device, status_r, control_w)
+	map(0x03, 0x03).rw(m_lcdc, FUNC(hd61830_device::data_r), FUNC(hd61830_device::data_w));
+	map(0x23, 0x23).rw(m_lcdc, FUNC(hd61830_device::status_r), FUNC(hd61830_device::control_w));
 
 	/* rtc-146818 */
-	AM_RANGE(0x08, 0x08) AM_WRITE(rtc_address_w)
-	AM_RANGE(0x28, 0x28) AM_READWRITE(rtc_data_r, rtc_data_w)
+	map(0x08, 0x08).w(FUNC(micronic_state::rtc_address_w));
+	map(0x28, 0x28).rw(FUNC(micronic_state::rtc_data_r), FUNC(micronic_state::rtc_data_w));
 
 	/* sound */
-	AM_RANGE(0x2b, 0x2b) AM_WRITE(beep_w)
+	map(0x2b, 0x2b).w(FUNC(micronic_state::beep_w));
 
 	/* basic machine */
-	AM_RANGE(0x05, 0x05) AM_READ(irq_flag_r)
-	AM_RANGE(0x2c, 0x2c) AM_WRITE(port_2c_w)
-	AM_RANGE(0x47, 0x47) AM_WRITE(bank_select_w)
-	AM_RANGE(0x46, 0x46) AM_WRITE(lcd_contrast_w)
-	AM_RANGE(0x48, 0x48) AM_WRITE(status_flag_w)
-	AM_RANGE(0x49, 0x49) AM_READ(status_flag_r)
-ADDRESS_MAP_END
+	map(0x05, 0x05).r(FUNC(micronic_state::irq_flag_r));
+	map(0x2c, 0x2c).w(FUNC(micronic_state::port_2c_w));
+	map(0x47, 0x47).w(FUNC(micronic_state::bank_select_w));
+	map(0x46, 0x46).w(FUNC(micronic_state::lcd_contrast_w));
+	map(0x48, 0x48).w(FUNC(micronic_state::status_flag_w));
+	map(0x49, 0x49).r(FUNC(micronic_state::status_flag_r));
+}
 
 /* Input ports */
 static INPUT_PORTS_START( micronic )
@@ -306,10 +314,10 @@ void micronic_state::nvram_init(nvram_device &nvram, void *data, size_t size)
 }
 
 
-PALETTE_INIT_MEMBER(micronic_state, micronic)
+void micronic_state::micronic_palette(palette_device &palette) const
 {
 	palette.set_pen_color(0, rgb_t(138, 146, 148));
-	palette.set_pen_color(1, rgb_t(92, 83, 88));
+	palette.set_pen_color(1, rgb_t( 92,  83,  88));
 }
 
 void micronic_state::machine_start()
@@ -342,58 +350,54 @@ void micronic_state::machine_reset()
 
 WRITE_LINE_MEMBER( micronic_state::mc146818_irq )
 {
-	m_maincpu->set_input_line(0, !state ? HOLD_LINE : CLEAR_LINE);
+	m_maincpu->set_input_line(0, state ? HOLD_LINE : CLEAR_LINE);
 }
 
 
-static MACHINE_CONFIG_START( micronic, micronic_state )
+void micronic_state::micronic(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD(Z80_TAG, Z80, XTAL_3_579545MHz)
-	MCFG_CPU_PROGRAM_MAP(micronic_mem)
-	MCFG_CPU_IO_MAP(micronic_io)
+	Z80(config, m_maincpu, 3.579545_MHz_XTAL);
+	m_maincpu->set_addrmap(AS_PROGRAM, &micronic_state::micronic_mem);
+	m_maincpu->set_addrmap(AS_IO, &micronic_state::micronic_io);
 
 	/* video hardware */
-	MCFG_SCREEN_ADD(SCREEN_TAG, LCD)
-	MCFG_SCREEN_REFRESH_RATE(80)
-	MCFG_SCREEN_UPDATE_DEVICE(HD61830_TAG, hd61830_device, screen_update)
-	MCFG_SCREEN_SIZE(120, 64)   //6x20, 8x8
-	MCFG_SCREEN_VISIBLE_AREA(0, 120-1, 0, 64-1)
-	MCFG_SCREEN_PALETTE("palette")
+	screen_device &screen(SCREEN(config, SCREEN_TAG, SCREEN_TYPE_LCD));
+	screen.set_refresh_hz(80);
+	screen.set_screen_update(HD61830_TAG, FUNC(hd61830_device::screen_update));
+	screen.set_size(120, 64);   //6x20, 8x8
+	screen.set_visarea(0, 120-1, 0, 64-1);
+	screen.set_palette("palette");
 
-	MCFG_DEFAULT_LAYOUT(layout_lcd)
+	PALETTE(config, "palette", FUNC(micronic_state::micronic_palette), 2);
 
-	MCFG_PALETTE_ADD("palette", 2)
-	MCFG_PALETTE_INIT_OWNER(micronic_state, micronic)
-
-	MCFG_DEVICE_ADD(HD61830_TAG, HD61830, XTAL_4_9152MHz/2/2)
+	HD61830(config, m_lcdc, 4.9152_MHz_XTAL / 2 / 2);
 
 	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_MONO( "mono" )
-	MCFG_SOUND_ADD( "beeper", BEEP, 0 )
-	MCFG_SOUND_ROUTE( ALL_OUTPUTS, "mono", 1.00 )
+	SPEAKER(config, "mono").front_center();
+	BEEP(config, m_beep, 0).add_route(ALL_OUTPUTS, "mono", 1.00);
 
 	/* ram banks */
-	MCFG_RAM_ADD(RAM_TAG)
-	MCFG_RAM_DEFAULT_SIZE("224K")
+	RAM(config, RAM_TAG).set_default_size("224K");
 
-	MCFG_NVRAM_ADD_CUSTOM_DRIVER("nvram1", micronic_state, nvram_init)  // base ram
-	MCFG_NVRAM_ADD_CUSTOM_DRIVER("nvram2", micronic_state, nvram_init)  // additional ram banks
+	NVRAM(config, "nvram1").set_custom_handler(FUNC(micronic_state::nvram_init));  // base RAM
+	NVRAM(config, "nvram2").set_custom_handler(FUNC(micronic_state::nvram_init));  // additional RAM banks
 
-	MCFG_MC146818_ADD( MC146818_TAG, XTAL_32_768kHz )
-	MCFG_MC146818_IRQ_HANDLER(WRITELINE(micronic_state, mc146818_irq))
-MACHINE_CONFIG_END
+	MC146818(config, m_rtc, 32.768_kHz_XTAL);
+	m_rtc->irq().set(FUNC(micronic_state::mc146818_irq));
+}
 
 /* ROM definition */
 ROM_START( micronic )
 	ROM_REGION( 0x18000, Z80_TAG, 0 )
 	ROM_SYSTEM_BIOS(0, "v228", "Micronic 1000")
-	ROMX_LOAD( "micron1.bin", 0x0000, 0x8000, CRC(5632c8b7) SHA1(d1c9cf691848e9125f9ea352e4ffa41c288f3e29), ROM_BIOS(1))
-	ROMX_LOAD( "micron2.bin", 0x10000, 0x8000, CRC(dc8e7341) SHA1(927dddb3914a50bb051256d126a047a29eff7c65), ROM_BIOS(1))
+	ROMX_LOAD("micron1.bin", 0x0000, 0x8000, CRC(5632c8b7) SHA1(d1c9cf691848e9125f9ea352e4ffa41c288f3e29), ROM_BIOS(0))
+	ROMX_LOAD("micron2.bin", 0x10000, 0x8000, CRC(dc8e7341) SHA1(927dddb3914a50bb051256d126a047a29eff7c65), ROM_BIOS(0))
 	ROM_SYSTEM_BIOS(1, "test", "Micronic 1000 LCD monitor")
-	ROMX_LOAD( "monitor2.bin", 0x0000, 0x8000, CRC(c6ae2bbf) SHA1(1f2e3a3d4720a8e1bb38b37f4ab9e0e32676d030), ROM_BIOS(2))
+	ROMX_LOAD("monitor2.bin", 0x0000, 0x8000, CRC(c6ae2bbf) SHA1(1f2e3a3d4720a8e1bb38b37f4ab9e0e32676d030), ROM_BIOS(1))
 ROM_END
 
 /* Driver */
 
-/*    YEAR  NAME    PARENT  COMPAT   MACHINE    INPUT    INIT    COMPANY   FULLNAME       FLAGS */
-COMP( 198?, micronic,  0,       0,  micronic,   micronic, driver_device,     0,  "Victor Micronic",   "Micronic 1000",      MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
+//    YEAR  NAME      PARENT  COMPAT  MACHINE   INPUT     CLASS           INIT        COMPANY            FULLNAME         FLAGS
+COMP( 1987, micronic, 0,      0,      micronic, micronic, micronic_state, empty_init, "Victor Micronic", "Micronic 1000", MACHINE_NOT_WORKING | MACHINE_NO_SOUND )

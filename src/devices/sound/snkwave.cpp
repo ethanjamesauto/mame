@@ -12,17 +12,14 @@
 #include "snkwave.h"
 
 
-#define CLOCK_SHIFT 8
-
-
-const device_type SNKWAVE = &device_creator<snkwave_device>;
+DEFINE_DEVICE_TYPE(SNKWAVE, snkwave_device, "snkwave", "SNK Wave")
 
 //-------------------------------------------------
 //  snkwave_device - constructor
 //-------------------------------------------------
 
-snkwave_device::snkwave_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: device_t(mconfig, SNKWAVE, "SNK Wave", tag, owner, clock, "snkwave", __FILE__),
+snkwave_device::snkwave_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: device_t(mconfig, SNKWAVE, tag, owner, clock),
 		device_sound_interface(mconfig, *this),
 		m_stream(nullptr),
 		m_external_clock(0),
@@ -31,7 +28,7 @@ snkwave_device::snkwave_device(const machine_config &mconfig, const char *tag, d
 		m_counter(0),
 		m_waveform_position(0)
 {
-	memset(m_waveform, 0, sizeof(m_waveform));
+	std::fill(std::begin(m_waveform), std::end(m_waveform), 0);
 }
 
 //-------------------------------------------------
@@ -58,7 +55,7 @@ void snkwave_device::device_start()
 	save_item(NAME(m_frequency));
 	save_item(NAME(m_counter));
 	save_item(NAME(m_waveform_position));
-	save_pointer(NAME(m_waveform), SNKWAVE_WAVEFORM_LENGTH);
+	save_pointer(NAME(m_waveform), WAVEFORM_LENGTH);
 }
 
 
@@ -67,25 +64,25 @@ void snkwave_device::device_start()
 //  for our sound stream
 //-------------------------------------------------
 
-void snkwave_device::sound_stream_update(sound_stream &stream, stream_sample_t **inputs, stream_sample_t **outputs, int samples)
+void snkwave_device::sound_stream_update(sound_stream &stream, std::vector<read_stream_view> const &inputs, std::vector<write_stream_view> &outputs)
 {
-	stream_sample_t *buffer = outputs[0];
-
-	/* zap the contents of the buffer */
-	memset(buffer, 0, samples * sizeof(*buffer));
+	auto &buffer = outputs[0];
 
 	assert(m_counter < 0x1000);
 	assert(m_frequency < 0x1000);
 
 	/* if no sound, we're done */
 	if (m_frequency == 0xfff)
+	{
+		buffer.fill(0);
 		return;
+	}
 
 	/* generate sound into buffer while updating the counter */
-	while (samples-- > 0)
+	for (int sampindex = 0; sampindex < buffer.samples(); sampindex++)
 	{
 		int loops;
-		INT16 out = 0;
+		int16_t out = 0;
 
 		loops = 1 << CLOCK_SHIFT;
 		while (loops > 0)
@@ -96,7 +93,7 @@ void snkwave_device::sound_stream_update(sound_stream &stream, stream_sample_t *
 			{
 				out += m_waveform[m_waveform_position] * steps;
 				m_counter = m_frequency;
-				m_waveform_position = (m_waveform_position + 1) & (SNKWAVE_WAVEFORM_LENGTH-1);
+				m_waveform_position = (m_waveform_position + 1) & (WAVEFORM_LENGTH-1);
 				loops -= steps;
 			}
 			else
@@ -107,7 +104,7 @@ void snkwave_device::sound_stream_update(sound_stream &stream, stream_sample_t *
 			}
 		}
 
-		*buffer++ = out;
+		buffer.put_int(sampindex, out, 32768);
 	}
 }
 
@@ -118,7 +115,7 @@ void snkwave_device::sound_stream_update(sound_stream &stream, stream_sample_t *
     2-5         waveform (8 3-bit nibbles)
 */
 
-WRITE8_MEMBER( snkwave_device::snkwave_w )
+void snkwave_device::snkwave_w(offs_t offset, uint8_t data)
 {
 	m_stream->update();
 
@@ -142,12 +139,12 @@ WRITE8_MEMBER( snkwave_device::snkwave_w )
    So the sequence 01234567 will play as
    89ABCDEF76543210
 */
-void snkwave_device::update_waveform(unsigned int offset, UINT8 data)
+void snkwave_device::update_waveform(unsigned int offset, uint8_t data)
 {
-	assert(offset < SNKWAVE_WAVEFORM_LENGTH/4);
+	assert(offset < WAVEFORM_LENGTH/4);
 
 	m_waveform[offset * 2]     = ((data & 0x38) >> 3) << (12-CLOCK_SHIFT);
 	m_waveform[offset * 2 + 1] = ((data & 0x07) >> 0) << (12-CLOCK_SHIFT);
-	m_waveform[SNKWAVE_WAVEFORM_LENGTH-2 - offset * 2] = ~m_waveform[offset * 2 + 1];
-	m_waveform[SNKWAVE_WAVEFORM_LENGTH-1 - offset * 2] = ~m_waveform[offset * 2];
+	m_waveform[WAVEFORM_LENGTH-2 - offset * 2] = ~m_waveform[offset * 2 + 1];
+	m_waveform[WAVEFORM_LENGTH-1 - offset * 2] = ~m_waveform[offset * 2];
 }

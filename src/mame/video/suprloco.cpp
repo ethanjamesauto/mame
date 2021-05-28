@@ -30,42 +30,35 @@
   I'm not sure about the resistor values, I'm using the Galaxian ones.
 
 ***************************************************************************/
-PALETTE_INIT_MEMBER(suprloco_state, suprloco)
+void suprloco_state::suprloco_palette(palette_device &palette) const
 {
-	const UINT8 *color_prom = memregion("proms")->base();
-	int i;
+	const uint8_t *color_prom = memregion("proms")->base();
 
-
-	for (i = 0;i < 512;i++)
+	for (int i = 0; i < 512; i++)
 	{
-		int bit0,bit1,bit2,r,g,b;
+		int bit0, bit1, bit2;
 
-		/* red component */
-		bit0 = (color_prom[i] >> 0) & 0x01;
-		bit1 = (color_prom[i] >> 1) & 0x01;
-		bit2 = (color_prom[i] >> 2) & 0x01;
-		r = 0x21 * bit0 + 0x47 * bit1 + 0x97 * bit2;
-		/* green component */
-		bit0 = (color_prom[i] >> 3) & 0x01;
-		bit1 = (color_prom[i] >> 4) & 0x01;
-		bit2 = (color_prom[i] >> 5) & 0x01;
-		g = 0x21 * bit0 + 0x47 * bit1 + 0x97 * bit2;
-		/* blue component */
+		// red component
+		bit0 = BIT(color_prom[i], 0);
+		bit1 = BIT(color_prom[i], 1);
+		bit2 = BIT(color_prom[i], 2);
+		int const r = 0x21 * bit0 + 0x47 * bit1 + 0x97 * bit2;
+		// green component
+		bit0 = BIT(color_prom[i], 3);
+		bit1 = BIT(color_prom[i], 4);
+		bit2 = BIT(color_prom[i], 5);
+		int const g = 0x21 * bit0 + 0x47 * bit1 + 0x97 * bit2;
+		// blue component
 		bit0 = 0;
-		bit1 = (color_prom[i] >> 6) & 0x01;
-		bit2 = (color_prom[i] >> 7) & 0x01;
-		b = 0x21 * bit0 + 0x47 * bit1 + 0x97 * bit2;
+		bit1 = BIT(color_prom[i], 6);
+		bit2 = BIT(color_prom[i], 7);
+		int const b = 0x21 * bit0 + 0x47 * bit1 + 0x97 * bit2;
 
-		palette.set_pen_color(i,rgb_t(r,g,b));
+		palette.set_pen_color(i, rgb_t(r, g, b));
 
-		/* hack: generate a second bank of sprite palette with red changed to purple */
+		// hack: generate a second bank of sprite palette with red changed to purple
 		if (i >= 256)
-		{
-			if ((i & 0x0f) == 0x09)
-				palette.set_pen_color(i+256,rgb_t(r,g,0xff));
-			else
-				palette.set_pen_color(i+256,rgb_t(r,g,b));
-		}
+			palette.set_pen_color(i + 256, rgb_t(r, g, ((i & 0x0f) == 0x09) ? 0xff : b));
 	}
 }
 
@@ -79,8 +72,8 @@ PALETTE_INIT_MEMBER(suprloco_state, suprloco)
 
 TILE_GET_INFO_MEMBER(suprloco_state::get_tile_info)
 {
-	UINT8 attr = m_videoram[2*tile_index+1];
-	SET_TILE_INFO_MEMBER(0,
+	uint8_t attr = m_videoram[2*tile_index+1];
+	tileinfo.set(0,
 			m_videoram[2*tile_index] | ((attr & 0x03) << 8),
 			(attr & 0x1c) >> 2,
 			0);
@@ -97,7 +90,7 @@ TILE_GET_INFO_MEMBER(suprloco_state::get_tile_info)
 
 void suprloco_state::video_start()
 {
-	m_bg_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(suprloco_state::get_tile_info),this),TILEMAP_SCAN_ROWS,8,8,32,32);
+	m_bg_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(suprloco_state::get_tile_info)), TILEMAP_SCAN_ROWS, 8,8, 32,32);
 
 	m_bg_tilemap->set_scroll_rows(32);
 
@@ -112,13 +105,13 @@ void suprloco_state::video_start()
 
 ***************************************************************************/
 
-WRITE8_MEMBER(suprloco_state::videoram_w)
+void suprloco_state::videoram_w(offs_t offset, uint8_t data)
 {
 	m_videoram[offset] = data;
 	m_bg_tilemap->mark_tile_dirty(offset/2);
 }
 
-WRITE8_MEMBER(suprloco_state::scrollram_w)
+void suprloco_state::scrollram_w(offs_t offset, uint8_t data)
 {
 	int adj = flip_screen() ? -8 : 8;
 
@@ -126,7 +119,7 @@ WRITE8_MEMBER(suprloco_state::scrollram_w)
 	m_bg_tilemap->set_scrollx(offset, data - adj);
 }
 
-WRITE8_MEMBER(suprloco_state::control_w)
+void suprloco_state::control_w(uint8_t data)
 {
 	/* There is probably a palette select in here */
 
@@ -143,18 +136,12 @@ WRITE8_MEMBER(suprloco_state::control_w)
 		/*logerror("Bit 4 = %d\n", (data >> 4) & 1); */
 	}
 
-	coin_counter_w(machine(), 0, data & 0x01);
-	coin_counter_w(machine(), 1, data & 0x02);
+	machine().bookkeeping().coin_counter_w(0, data & 0x01);
+	machine().bookkeeping().coin_counter_w(1, data & 0x02);
 
 	flip_screen_set(data & 0x80);
 
 	m_control = data;
-}
-
-
-READ8_MEMBER(suprloco_state::control_r)
-{
-	return m_control;
 }
 
 
@@ -168,7 +155,7 @@ inline void suprloco_state::draw_pixel(bitmap_ind16 &bitmap,const rectangle &cli
 	}
 
 	if (cliprect.contains(x, y))
-		bitmap.pix16(y, x) = color;
+		bitmap.pix(y, x) = color;
 }
 
 
@@ -176,8 +163,8 @@ void suprloco_state::draw_sprite(bitmap_ind16 &bitmap,const rectangle &cliprect,
 {
 	int flip = flip_screen();
 	int sx,sy,col,row,height,src,adjy,dy;
-	UINT8 *spr_reg;
-	UINT8 *gfx2;
+	uint8_t *spr_reg;
+	uint8_t *gfx2;
 	pen_t pen_base;
 	short skip; /* bytes to skip before drawing each row (can be negative) */
 
@@ -207,8 +194,8 @@ void suprloco_state::draw_sprite(bitmap_ind16 &bitmap,const rectangle &cliprect,
 	for (row = 0;row < height;row++,adjy+=dy)
 	{
 		int color1,color2,flipx;
-		UINT8 data;
-		UINT8 *gfx;
+		uint8_t data;
+		uint8_t *gfx;
 
 		src += skip;
 
@@ -249,7 +236,7 @@ void suprloco_state::draw_sprite(bitmap_ind16 &bitmap,const rectangle &cliprect,
 void suprloco_state::draw_sprites(bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	int spr_number;
-	UINT8 *spr_reg;
+	uint8_t *spr_reg;
 
 
 	for (spr_number = 0;spr_number < (m_spriteram.bytes() >> 4);spr_number++)
@@ -260,7 +247,7 @@ void suprloco_state::draw_sprites(bitmap_ind16 &bitmap, const rectangle &cliprec
 	}
 }
 
-UINT32 suprloco_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t suprloco_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	m_bg_tilemap->draw(screen, bitmap, cliprect, 0,0);
 	draw_sprites(bitmap,cliprect);

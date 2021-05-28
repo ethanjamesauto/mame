@@ -1,13 +1,18 @@
 // license:BSD-3-Clause
 // copyright-holders:Fabio Priuli
-#ifndef __A78_SLOT_H
-#define __A78_SLOT_H
+#ifndef MAME_BUS_A7800_A78_SLOT_H
+#define MAME_BUS_A7800_A78_SLOT_H
+
+#pragma once
+
+#include "softlist_dev.h"
 
 
 /***************************************************************************
  TYPE DEFINITIONS
  ***************************************************************************/
 
+#define A78SLOT_ROM_REGION_TAG ":cart:rom"
 
 /* PCB */
 enum
@@ -18,6 +23,7 @@ enum
 	A78_TYPE3,          // as TYPE1 + POKEY chip on the PCB
 	A78_TYPE6,          // as TYPE1 + RAM IC on the PCB
 	A78_TYPEA,          // Alien Brigade, Crossbow (9x16K banks with diff bankswitch)
+	A78_TYPE8,          // Rescue on Fractalus, as TYPE0 + 2K Mirror RAM IC on the PCB
 	A78_ABSOLUTE,       // F18 Hornet
 	A78_ACTIVISION,     // Double Dragon, Rampage
 	A78_HSC,            // Atari HighScore cart
@@ -36,46 +42,44 @@ enum
 
 // ======================> device_a78_cart_interface
 
-class device_a78_cart_interface : public device_slot_card_interface
+class device_a78_cart_interface : public device_interface
 {
 public:
 	// construction/destruction
-	device_a78_cart_interface(const machine_config &mconfig, device_t &device);
 	virtual ~device_a78_cart_interface();
 
 	// memory accessor
-	virtual DECLARE_READ8_MEMBER(read_04xx) { return 0xff; }
-	virtual DECLARE_READ8_MEMBER(read_10xx) { return 0xff; }
-	virtual DECLARE_READ8_MEMBER(read_30xx) { return 0xff; }
-	virtual DECLARE_READ8_MEMBER(read_40xx) { return 0xff; }
-	virtual DECLARE_WRITE8_MEMBER(write_04xx) {}
-	virtual DECLARE_WRITE8_MEMBER(write_10xx) {}
-	virtual DECLARE_WRITE8_MEMBER(write_30xx) {}
-	virtual DECLARE_WRITE8_MEMBER(write_40xx) {}
+	virtual uint8_t read_04xx(offs_t offset) { return 0xff; }
+	virtual uint8_t read_10xx(offs_t offset) { return 0xff; }
+	virtual uint8_t read_30xx(offs_t offset) { return 0xff; }
+	virtual uint8_t read_40xx(offs_t offset) { return 0xff; }
+	virtual void write_04xx(offs_t offset, uint8_t data) {}
+	virtual void write_10xx(offs_t offset, uint8_t data) {}
+	virtual void write_30xx(offs_t offset, uint8_t data) {}
+	virtual void write_40xx(offs_t offset, uint8_t data) {}
 
-	void rom_alloc(UINT32 size, const char *tag);
-	void ram_alloc(UINT32 size);
-	void nvram_alloc(UINT32 size);
-	UINT8* get_rom_base() { return m_rom; }
-	UINT8* get_ram_base() { return &m_ram[0]; }
-	UINT8* get_nvram_base() { return &m_nvram[0]; }
-	UINT32 get_rom_size() { return m_rom_size; }
-	UINT32 get_ram_size() { return m_ram.size(); }
-	UINT32 get_nvram_size() { return m_nvram.size(); }
+	void rom_alloc(uint32_t size, const char *tag);
+	void ram_alloc(uint32_t size);
+	void nvram_alloc(uint32_t size);
+	uint8_t* get_rom_base() { return m_rom; }
+	uint8_t* get_ram_base() { return &m_ram[0]; }
+	uint8_t* get_nvram_base() { return &m_nvram[0]; }
+	uint32_t get_rom_size() { return m_rom_size; }
+	uint32_t get_ram_size() { return m_ram.size(); }
+	uint32_t get_nvram_size() { return m_nvram.size(); }
 
 protected:
+	device_a78_cart_interface(const machine_config &mconfig, device_t &device);
+
 	// internal state
-	UINT8 *m_rom;
-	UINT32 m_rom_size;
-	dynamic_buffer m_ram;
-	dynamic_buffer m_nvram; // HiScore cart can save scores!
+	uint8_t *m_rom;
+	uint32_t m_rom_size;
+	std::vector<uint8_t> m_ram;
+	std::vector<uint8_t> m_nvram; // HiScore cart can save scores!
 	// helpers
-	UINT32 m_base_rom;
+	uint32_t m_base_rom;
 	int m_bank_mask;
 };
-
-
-void a78_partialhash(hash_collection &dest, const unsigned char *data, unsigned long length, const char *functions);
 
 
 // ======================> a78_cart_slot_device
@@ -86,70 +90,65 @@ class a78_cart_slot_device : public device_t,
 {
 public:
 	// construction/destruction
-	a78_cart_slot_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	template <typename T>
+	a78_cart_slot_device(machine_config const &mconfig, char const *tag, device_t *owner, T &&opts, char const *dflt)
+		: a78_cart_slot_device(mconfig, tag, owner, (uint32_t)0)
+	{
+		option_reset();
+		opts(*this);
+		set_default_option(dflt);
+		set_fixed(false);
+	}
+	a78_cart_slot_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock = 0);
 	virtual ~a78_cart_slot_device();
 
-	// device-level overrides
-	virtual void device_start() override;
-	virtual void device_config_complete() override;
-
 	// image-level overrides
-	virtual bool call_load() override;
+	virtual image_init_result call_load() override;
 	virtual void call_unload() override;
-	virtual bool call_softlist_load(software_list_device &swlist, const char *swname, const rom_entry *start_entry) override;
 
-	int get_cart_type() { return m_type; };
-	int identify_cart_type(UINT8 *ROM, UINT32 len);
-	bool has_cart() { return m_cart != nullptr; }
-
-	virtual iodevice_t image_type() const override { return IO_CARTSLOT; }
-	virtual bool is_readable()  const override { return 1; }
-	virtual bool is_writeable() const override { return 0; }
-	virtual bool is_creatable() const override { return 0; }
-	virtual bool must_be_loaded() const override { return 0; }
-	virtual bool is_reset_on_load() const override { return 1; }
-	virtual const option_guide *create_option_guide() const override { return nullptr; }
-	virtual const char *image_interface() const override { return "a7800_cart"; }
-	virtual const char *file_extensions() const override { return "bin,a78"; }
-	virtual device_image_partialhash_func get_partial_hash() const override { return &a78_partialhash; }
+	virtual iodevice_t image_type() const noexcept override { return IO_CARTSLOT; }
+	virtual bool is_readable()  const noexcept override { return true; }
+	virtual bool is_writeable() const noexcept override { return false; }
+	virtual bool is_creatable() const noexcept override { return false; }
+	virtual bool must_be_loaded() const noexcept override { return false; }
+	virtual bool is_reset_on_load() const noexcept override { return true; }
+	virtual const char *image_interface() const noexcept override { return "a7800_cart"; }
+	virtual const char *file_extensions() const noexcept override { return "a78"; }
+	virtual u32 unhashed_header_length() const noexcept override { return 128; }
 
 	// slot interface overrides
-	virtual void get_default_card_software(std::string &result) override;
+	virtual std::string get_default_card_software(get_default_card_software_hook &hook) const override;
+
+	int get_cart_type() { return m_type; };
+	bool has_cart() { return m_cart != nullptr; }
 
 	// reading and writing
-	virtual DECLARE_READ8_MEMBER(read_04xx);
-	virtual DECLARE_READ8_MEMBER(read_10xx);
-	virtual DECLARE_READ8_MEMBER(read_30xx);
-	virtual DECLARE_READ8_MEMBER(read_40xx);
-	virtual DECLARE_WRITE8_MEMBER(write_04xx);
-	virtual DECLARE_WRITE8_MEMBER(write_10xx);
-	virtual DECLARE_WRITE8_MEMBER(write_30xx);
-	virtual DECLARE_WRITE8_MEMBER(write_40xx);
+	uint8_t read_04xx(offs_t offset);
+	uint8_t read_10xx(offs_t offset);
+	uint8_t read_30xx(offs_t offset);
+	uint8_t read_40xx(offs_t offset);
+	void write_04xx(offs_t offset, uint8_t data);
+	void write_10xx(offs_t offset, uint8_t data);
+	void write_30xx(offs_t offset, uint8_t data);
+	void write_40xx(offs_t offset, uint8_t data);
 
 private:
+	// device-level overrides
+	virtual void device_start() override;
+
+	// device_image_interface implementation
+	virtual const software_list_loader &get_software_list_loader() const override { return rom_software_list_loader::instance(); }
+
 	device_a78_cart_interface*       m_cart;
 	int m_type;
-	int m_stick_type;
 
-	int verify_header(char *header);
-	int validate_header(int head, bool log);
-	void internal_header_logging(UINT8 *header, UINT32 len);
+	image_verify_result verify_header(char *header);
+	int validate_header(int head, bool log) const;
+	void internal_header_logging(uint8_t *header, uint32_t len);
 };
 
 
 // device type definition
-extern const device_type A78_CART_SLOT;
+DECLARE_DEVICE_TYPE(A78_CART_SLOT, a78_cart_slot_device)
 
-
-/***************************************************************************
- DEVICE CONFIGURATION MACROS
- ***************************************************************************/
-
-#define A78SLOT_ROM_REGION_TAG ":cart:rom"
-
-#define MCFG_A78_CARTRIDGE_ADD(_tag,_slot_intf,_def_slot) \
-	MCFG_DEVICE_ADD(_tag, A78_CART_SLOT, 0)  \
-	MCFG_DEVICE_SLOT_INTERFACE(_slot_intf, _def_slot, false)
-
-
-#endif
+#endif // MAME_BUS_A7800_A78_SLOT_H

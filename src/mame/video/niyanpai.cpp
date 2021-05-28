@@ -15,17 +15,17 @@
 
 
 ******************************************************************************/
-READ16_MEMBER(niyanpai_state::palette_r)
+uint16_t niyanpai_state::palette_r(offs_t offset)
 {
 	return m_palette_ptr[offset];
 }
 
-WRITE16_MEMBER(niyanpai_state::palette_w)
+void niyanpai_state::palette_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	int r, g, b;
 	int offs_h, offs_l;
-	UINT16 oldword = m_palette_ptr[offset];
-	UINT16 newword;
+	uint16_t oldword = m_palette_ptr[offset];
+	uint16_t newword;
 
 	COMBINE_DATA(&m_palette_ptr[offset]);
 	newword = m_palette_ptr[offset];
@@ -62,7 +62,7 @@ WRITE16_MEMBER(niyanpai_state::palette_w)
 int niyanpai_state::blitter_r(int vram, int offset)
 {
 	int ret;
-	UINT8 *GFXROM = memregion("gfx1")->base();
+	uint8_t *GFXROM = memregion("gfx1")->base();
 
 	switch (offset)
 	{
@@ -74,7 +74,7 @@ int niyanpai_state::blitter_r(int vram, int offset)
 	return ret;
 }
 
-void niyanpai_state::blitter_w(int vram, int offset, UINT8 data)
+void niyanpai_state::blitter_w(int vram, int offset, uint8_t data)
 {
 	switch (offset)
 	{
@@ -107,12 +107,12 @@ void niyanpai_state::blitter_w(int vram, int offset, UINT8 data)
 	}
 }
 
-void niyanpai_state::clutsel_w(int vram, UINT8 data)
+void niyanpai_state::clutsel_w(int vram, uint8_t data)
 {
 	m_clutsel[vram] = data;
 }
 
-void niyanpai_state::clut_w(int vram, int offset, UINT8 data)
+void niyanpai_state::clut_w(int vram, int offset, uint8_t data)
 {
 	m_clut[vram][((m_clutsel[vram] & 0xff) * 0x10) + (offset & 0x0f)] = data;
 }
@@ -124,7 +124,7 @@ void niyanpai_state::clut_w(int vram, int offset, UINT8 data)
 void niyanpai_state::vramflip(int vram)
 {
 	int x, y;
-	UINT16 color1, color2;
+	uint16_t color1, color2;
 	int width = m_screen->width();
 	int height = m_screen->height();
 
@@ -158,8 +158,8 @@ void niyanpai_state::vramflip(int vram)
 
 void niyanpai_state::update_pixel(int vram, int x, int y)
 {
-	UINT16 color = m_videoram[vram][(y * m_screen->width()) + x];
-	m_tmpbitmap[vram].pix16(y, x) = color;
+	uint16_t color = m_videoram[vram][(y * m_screen->width()) + x];
+	m_tmpbitmap[vram].pix(y, x) = color;
 }
 
 void niyanpai_state::device_timer(emu_timer &timer, device_timer_id id, int param, void *ptr)
@@ -170,13 +170,13 @@ void niyanpai_state::device_timer(emu_timer &timer, device_timer_id id, int para
 		m_nb19010_busyflag = 1;
 		break;
 	default:
-		assert_always(FALSE, "Unknown id in niyanpai_state::device_timer");
+		throw emu_fatalerror("Unknown id in niyanpai_state::device_timer");
 	}
 }
 
 void niyanpai_state::gfxdraw(int vram)
 {
-	UINT8 *GFX = memregion("gfx1")->base();
+	uint8_t *GFX = memregion("gfx1")->base();
 	int width = m_screen->width();
 
 	int x, y;
@@ -185,7 +185,7 @@ void niyanpai_state::gfxdraw(int vram)
 	int sizex, sizey;
 	int skipx, skipy;
 	int ctrx, ctry;
-	UINT16 color, color1, color2;
+	uint16_t color, color1, color2;
 	int gfxaddr, gfxlen;
 
 	m_nb19010_busyctr = 0;
@@ -333,21 +333,21 @@ void niyanpai_state::gfxdraw(int vram)
 
 
 ******************************************************************************/
-WRITE8_MEMBER(niyanpai_state::blitter_0_w){ blitter_w(0, offset, data); }
-WRITE8_MEMBER(niyanpai_state::blitter_1_w){ blitter_w(1, offset, data); }
-WRITE8_MEMBER(niyanpai_state::blitter_2_w){ blitter_w(2, offset, data); }
+void niyanpai_state::blitter_0_w(offs_t offset, uint8_t data){ blitter_w(0, offset, data); }
+void niyanpai_state::blitter_1_w(offs_t offset, uint8_t data){ blitter_w(1, offset, data); }
+void niyanpai_state::blitter_2_w(offs_t offset, uint8_t data){ blitter_w(2, offset, data); }
 
-READ8_MEMBER(niyanpai_state::blitter_0_r){ return blitter_r(0, offset); }
-READ8_MEMBER(niyanpai_state::blitter_1_r){ return blitter_r(1, offset); }
-READ8_MEMBER(niyanpai_state::blitter_2_r){ return blitter_r(2, offset); }
+uint8_t niyanpai_state::blitter_0_r(offs_t offset){ return blitter_r(0, offset); }
+uint8_t niyanpai_state::blitter_1_r(offs_t offset){ return blitter_r(1, offset); }
+uint8_t niyanpai_state::blitter_2_r(offs_t offset){ return blitter_r(2, offset); }
 
-WRITE8_MEMBER(niyanpai_state::clut_0_w){ clut_w(0, offset, data); }
-WRITE8_MEMBER(niyanpai_state::clut_1_w){ clut_w(1, offset, data); }
-WRITE8_MEMBER(niyanpai_state::clut_2_w){ clut_w(2, offset, data); }
+void niyanpai_state::clut_0_w(offs_t offset, uint8_t data){ clut_w(0, offset, data); }
+void niyanpai_state::clut_1_w(offs_t offset, uint8_t data){ clut_w(1, offset, data); }
+void niyanpai_state::clut_2_w(offs_t offset, uint8_t data){ clut_w(2, offset, data); }
 
-WRITE8_MEMBER(niyanpai_state::clutsel_0_w){ clutsel_w(0, data); }
-WRITE8_MEMBER(niyanpai_state::clutsel_1_w){ clutsel_w(1, data); }
-WRITE8_MEMBER(niyanpai_state::clutsel_2_w){ clutsel_w(2, data); }
+void niyanpai_state::clutsel_0_w(uint8_t data){ clutsel_w(0, data); }
+void niyanpai_state::clutsel_1_w(uint8_t data){ clutsel_w(1, data); }
+void niyanpai_state::clutsel_2_w(uint8_t data){ clutsel_w(2, data); }
 
 /******************************************************************************
 
@@ -361,16 +361,16 @@ void niyanpai_state::video_start()
 	m_screen->register_screen_bitmap(m_tmpbitmap[0]);
 	m_screen->register_screen_bitmap(m_tmpbitmap[1]);
 	m_screen->register_screen_bitmap(m_tmpbitmap[2]);
-	m_videoram[0] = make_unique_clear<UINT16[]>(width * height);
-	m_videoram[1] = make_unique_clear<UINT16[]>(width * height);
-	m_videoram[2] = make_unique_clear<UINT16[]>(width * height);
-	m_videoworkram[0] = make_unique_clear<UINT16[]>(width * height);
-	m_videoworkram[1] = make_unique_clear<UINT16[]>(width * height);
-	m_videoworkram[2] = make_unique_clear<UINT16[]>(width * height);
-	m_palette_ptr = std::make_unique<UINT16[]>(0x480);
-	m_clut[0] = std::make_unique<UINT8[]>(0x1000);
-	m_clut[1] = std::make_unique<UINT8[]>(0x1000);
-	m_clut[2] = std::make_unique<UINT8[]>(0x1000);
+	m_videoram[0] = make_unique_clear<uint16_t[]>(width * height);
+	m_videoram[1] = make_unique_clear<uint16_t[]>(width * height);
+	m_videoram[2] = make_unique_clear<uint16_t[]>(width * height);
+	m_videoworkram[0] = make_unique_clear<uint16_t[]>(width * height);
+	m_videoworkram[1] = make_unique_clear<uint16_t[]>(width * height);
+	m_videoworkram[2] = make_unique_clear<uint16_t[]>(width * height);
+	m_palette_ptr = std::make_unique<uint16_t[]>(0x480);
+	m_clut[0] = std::make_unique<uint8_t[]>(0x1000);
+	m_clut[1] = std::make_unique<uint8_t[]>(0x1000);
+	m_clut[2] = std::make_unique<uint8_t[]>(0x1000);
 	m_nb19010_busyflag = 1;
 	m_blitter_timer = timer_alloc(TIMER_BLITTER);
 
@@ -392,16 +392,16 @@ void niyanpai_state::video_start()
 	save_item(NAME(m_nb19010_busyctr));
 	save_item(NAME(m_nb19010_busyflag));
 	save_item(NAME(m_flipscreen_old));
-	save_pointer(NAME(m_palette_ptr.get()), 0x480);
-	save_pointer(NAME(m_videoram[0].get()), width * height);
-	save_pointer(NAME(m_videoram[1].get()), width * height);
-	save_pointer(NAME(m_videoram[2].get()), width * height);
-	save_pointer(NAME(m_videoworkram[0].get()), width * height);
-	save_pointer(NAME(m_videoworkram[1].get()), width * height);
-	save_pointer(NAME(m_videoworkram[2].get()), width * height);
-	save_pointer(NAME(m_clut[0].get()), 0x1000);
-	save_pointer(NAME(m_clut[1].get()), 0x1000);
-	save_pointer(NAME(m_clut[2].get()), 0x1000);
+	save_pointer(NAME(m_palette_ptr), 0x480);
+	save_pointer(NAME(m_videoram[0]), width * height);
+	save_pointer(NAME(m_videoram[1]), width * height);
+	save_pointer(NAME(m_videoram[2]), width * height);
+	save_pointer(NAME(m_videoworkram[0]), width * height);
+	save_pointer(NAME(m_videoworkram[1]), width * height);
+	save_pointer(NAME(m_videoworkram[2]), width * height);
+	save_pointer(NAME(m_clut[0]), 0x1000);
+	save_pointer(NAME(m_clut[1]), 0x1000);
+	save_pointer(NAME(m_clut[2]), 0x1000);
 	save_item(NAME(m_tmpbitmap[0]));
 	save_item(NAME(m_tmpbitmap[1]));
 	save_item(NAME(m_tmpbitmap[2]));
@@ -411,7 +411,7 @@ void niyanpai_state::video_start()
 
 
 ******************************************************************************/
-UINT32 niyanpai_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t niyanpai_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	int i;
 	int x, y;

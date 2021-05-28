@@ -235,12 +235,14 @@
 
 #include "emu.h"
 #include "includes/lazercmd.h"
+#include "screen.h"
+#include "speaker.h"
 
 // color overlays, bbonk does not have an overlay
 #include "lazercmd.lh"
 #include "medlanes.lh"
 
-#define MASTER_CLOCK XTAL_8MHz
+#define MASTER_CLOCK XTAL(8'000'000)
 
 /*************************************************************
  * Interrupt for the cpu
@@ -259,7 +261,7 @@ TIMER_DEVICE_CALLBACK_MEMBER(lazercmd_state::lazercmd_timer)
 	{
 		m_timer_count = 0;
 		m_sense_state ^= 1;
-		m_maincpu->write_sense(m_sense_state ? ASSERT_LINE : CLEAR_LINE);
+		m_maincpu->set_input_line(S2650_SENSE_LINE, m_sense_state ? ASSERT_LINE : CLEAR_LINE);
 	}
 }
 
@@ -281,39 +283,38 @@ TIMER_DEVICE_CALLBACK_MEMBER(lazercmd_state::bbonk_timer)
  *************************************************************/
 
 /* triggered by WRTC,r opcode */
-WRITE8_MEMBER(lazercmd_state::lazercmd_ctrl_port_w)
+void lazercmd_state::lazercmd_ctrl_port_w(uint8_t data)
 {
 }
 
 /* triggered by REDC,r opcode */
-READ8_MEMBER(lazercmd_state::lazercmd_ctrl_port_r)
+uint8_t lazercmd_state::lazercmd_ctrl_port_r()
 {
-	UINT8 data = 0;
+	uint8_t data = 0;
 	return data;
 }
 
 /* triggered by WRTD,r opcode */
-WRITE8_MEMBER(lazercmd_state::lazercmd_data_port_w)
+void lazercmd_state::lazercmd_data_port_w(uint8_t data)
 {
 }
 
 /* triggered by REDD,r opcode */
-READ8_MEMBER(lazercmd_state::lazercmd_data_port_r)
+uint8_t lazercmd_state::lazercmd_data_port_r()
 {
-	UINT8 data = ioport("DSW")->read() & 0x0f;
+	uint8_t data = ioport("DSW")->read() & 0x0f;
 	return data;
 }
 
-WRITE8_MEMBER(lazercmd_state::lazercmd_hardware_w)
+void lazercmd_state::lazercmd_hardware_w(offs_t offset, uint8_t data)
 {
 	switch (offset)
 	{
 		case 0: /* audio channels */
-			m_dac_data = (data & 0x80) ^ ((data & 0x40) << 1) ^ ((data & 0x20) << 2) ^ ((data & 0x10) << 3);
-			if (m_dac_data)
-				m_dac->write_unsigned8(0xff);
-			else
-				m_dac->write_unsigned8(0);
+			m_dac0->write(BIT(data, 7));
+			m_dac1->write(BIT(data, 6));
+			m_dac2->write(BIT(data, 5));
+			m_dac3->write(BIT(data, 4));
 			break;
 		case 1: /* marker Y position */
 			m_marker_y = data;
@@ -327,7 +328,7 @@ WRITE8_MEMBER(lazercmd_state::lazercmd_hardware_w)
 	}
 }
 
-WRITE8_MEMBER(lazercmd_state::medlanes_hardware_w)
+void lazercmd_state::medlanes_hardware_w(offs_t offset, uint8_t data)
 {
 	switch (offset)
 	{
@@ -335,11 +336,8 @@ WRITE8_MEMBER(lazercmd_state::medlanes_hardware_w)
 			/* bits 4 and 5 are used to control a sound board */
 			/* these could be used to control sound samples */
 			/* at the moment they are routed through the dac */
-			m_dac_data = ((data & 0x20) << 2) ^ ((data & 0x10) << 3);
-			if (m_dac_data)
-				m_dac->write_unsigned8(0xff);
-			else
-				m_dac->write_unsigned8(0);
+			m_dac2->write(BIT(data, 5));
+			m_dac3->write(BIT(data, 4));
 			break;
 		case 1: /* marker Y position */
 			m_marker_y = data;
@@ -353,7 +351,7 @@ WRITE8_MEMBER(lazercmd_state::medlanes_hardware_w)
 	}
 }
 
-WRITE8_MEMBER(lazercmd_state::bbonk_hardware_w)
+void lazercmd_state::bbonk_hardware_w(offs_t offset, uint8_t data)
 {
 	switch (offset)
 	{
@@ -361,11 +359,8 @@ WRITE8_MEMBER(lazercmd_state::bbonk_hardware_w)
 			/* bits 4 and 5 are used to control a sound board */
 			/* these could be used to control sound samples */
 			/* at the moment they are routed through the dac */
-			m_dac_data = ((data & 0x20) << 2) ^ ((data & 0x10) << 3);
-			if (m_dac_data)
-				m_dac->write_unsigned8(0xff);
-			else
-				m_dac->write_unsigned8(0);
+			m_dac2->write(BIT(data, 5));
+			m_dac3->write(BIT(data, 4));
 			break;
 		case 3: /* D5 inverts video?, D4 clears coin detected and D0 toggles on attract mode */
 			m_attract = data;
@@ -373,9 +368,9 @@ WRITE8_MEMBER(lazercmd_state::bbonk_hardware_w)
 	}
 }
 
-READ8_MEMBER(lazercmd_state::lazercmd_hardware_r)
+uint8_t lazercmd_state::lazercmd_hardware_r(offs_t offset)
 {
-	UINT8 data = 0;
+	uint8_t data = 0;
 
 	switch (offset)
 	{
@@ -414,38 +409,42 @@ READ8_MEMBER(lazercmd_state::lazercmd_hardware_r)
  *
  *************************************************************/
 
-static ADDRESS_MAP_START( lazercmd_map, AS_PROGRAM, 8, lazercmd_state )
-	AM_RANGE(0x0000, 0x0bff) AM_ROM
-	AM_RANGE(0x1c00, 0x1c1f) AM_RAM
-	AM_RANGE(0x1c20, 0x1eff) AM_RAM AM_SHARE("videoram")
-	AM_RANGE(0x1f00, 0x1f03) AM_WRITE(lazercmd_hardware_w)
-	AM_RANGE(0x1f00, 0x1f07) AM_READ(lazercmd_hardware_r)
-ADDRESS_MAP_END
+void lazercmd_state::lazercmd_map(address_map &map)
+{
+	map(0x0000, 0x0bff).rom();
+	map(0x1c00, 0x1c1f).ram();
+	map(0x1c20, 0x1eff).ram().share("videoram");
+	map(0x1f00, 0x1f03).w(FUNC(lazercmd_state::lazercmd_hardware_w));
+	map(0x1f00, 0x1f07).r(FUNC(lazercmd_state::lazercmd_hardware_r));
+}
 
 
-static ADDRESS_MAP_START( medlanes_map, AS_PROGRAM, 8, lazercmd_state )
-	AM_RANGE(0x0000, 0x0bff) AM_ROM
-	AM_RANGE(0x1000, 0x17ff) AM_ROM
-	AM_RANGE(0x1c00, 0x1c1f) AM_RAM
-	AM_RANGE(0x1c20, 0x1eff) AM_RAM AM_SHARE("videoram")
-	AM_RANGE(0x1f00, 0x1f03) AM_WRITE(medlanes_hardware_w)
-	AM_RANGE(0x1f00, 0x1f07) AM_READ(lazercmd_hardware_r)
-ADDRESS_MAP_END
+void lazercmd_state::medlanes_map(address_map &map)
+{
+	map(0x0000, 0x0bff).rom();
+	map(0x1000, 0x17ff).rom();
+	map(0x1c00, 0x1c1f).ram();
+	map(0x1c20, 0x1eff).ram().share("videoram");
+	map(0x1f00, 0x1f03).w(FUNC(lazercmd_state::medlanes_hardware_w));
+	map(0x1f00, 0x1f07).r(FUNC(lazercmd_state::lazercmd_hardware_r));
+}
 
 
-static ADDRESS_MAP_START( bbonk_map, AS_PROGRAM, 8, lazercmd_state )
-	AM_RANGE(0x0000, 0x0bff) AM_ROM
-	AM_RANGE(0x1c00, 0x1c1f) AM_RAM
-	AM_RANGE(0x1c20, 0x1eff) AM_RAM AM_SHARE("videoram")
-	AM_RANGE(0x1f00, 0x1f03) AM_WRITE(bbonk_hardware_w)
-	AM_RANGE(0x1f00, 0x1f07) AM_READ(lazercmd_hardware_r)
-ADDRESS_MAP_END
+void lazercmd_state::bbonk_map(address_map &map)
+{
+	map(0x0000, 0x0bff).rom();
+	map(0x1c00, 0x1c1f).ram();
+	map(0x1c20, 0x1eff).ram().share("videoram");
+	map(0x1f00, 0x1f03).w(FUNC(lazercmd_state::bbonk_hardware_w));
+	map(0x1f00, 0x1f07).r(FUNC(lazercmd_state::lazercmd_hardware_r));
+}
 
 
-static ADDRESS_MAP_START( lazercmd_portmap, AS_IO, 8, lazercmd_state )
-	AM_RANGE(S2650_CTRL_PORT, S2650_CTRL_PORT) AM_READWRITE(lazercmd_ctrl_port_r, lazercmd_ctrl_port_w)
-	AM_RANGE(S2650_DATA_PORT, S2650_DATA_PORT) AM_READWRITE(lazercmd_data_port_r, lazercmd_data_port_w)
-ADDRESS_MAP_END
+void lazercmd_state::lazercmd_portmap(address_map &map)
+{
+	map(S2650_CTRL_PORT, S2650_CTRL_PORT).rw(FUNC(lazercmd_state::lazercmd_ctrl_port_r), FUNC(lazercmd_state::lazercmd_ctrl_port_w));
+	map(S2650_DATA_PORT, S2650_DATA_PORT).rw(FUNC(lazercmd_state::lazercmd_data_port_r), FUNC(lazercmd_state::lazercmd_data_port_w));
+}
 
 
 
@@ -591,19 +590,19 @@ static const gfx_layout charlayout =
 	10*8                    /* every char takes 10 bytes */
 };
 
-static GFXDECODE_START( lazercmd )
+static GFXDECODE_START( gfx_lazercmd )
 	GFXDECODE_ENTRY( "gfx1", 0, charlayout, 0, 2 )
 GFXDECODE_END
 
-PALETTE_INIT_MEMBER(lazercmd_state, lazercmd)
+void lazercmd_state::lazercmd_palette(palette_device &palette) const
 {
-	palette.set_pen_color(0, rgb_t(0xb0, 0xb0, 0xb0)); /* white */
-	palette.set_pen_color(1, rgb_t(0x00, 0x00, 0x00)); /* black */
+	palette.set_pen_color(0, rgb_t(0xb0, 0xb0, 0xb0)); // white
+	palette.set_pen_color(1, rgb_t(0x00, 0x00, 0x00)); // black
 
-	palette.set_pen_color(2, rgb_t(0x00, 0x00, 0x00)); /* black */
-	palette.set_pen_color(3, rgb_t(0xb0, 0xb0, 0xb0)); /* white */
+	palette.set_pen_color(2, rgb_t(0x00, 0x00, 0x00)); // black
+	palette.set_pen_color(3, rgb_t(0xb0, 0xb0, 0xb0)); // white
 
-	palette.set_pen_color(4, rgb_t(0xff, 0xff, 0xff)); /* bright white */
+	palette.set_pen_color(4, rgb_t(0xff, 0xff, 0xff)); // bright white
 }
 
 
@@ -613,7 +612,6 @@ void lazercmd_state::machine_start()
 	save_item(NAME(m_marker_y));
 	save_item(NAME(m_timer_count));
 	save_item(NAME(m_sense_state));
-	save_item(NAME(m_dac_data));
 	save_item(NAME(m_attract));
 }
 
@@ -623,108 +621,103 @@ void lazercmd_state::machine_reset()
 	m_marker_y = 0;
 	m_timer_count = 0;
 	m_sense_state = 0;
-	m_dac_data = 0;
 	m_attract = 0;
 }
 
 
-static MACHINE_CONFIG_START( lazercmd, lazercmd_state )
-
+void lazercmd_state::lazercmd(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", S2650, MASTER_CLOCK/12) /* 666 kHz? */
+	S2650(config, m_maincpu, MASTER_CLOCK/12); /* 666 kHz? */
 /*  Main Clock is 8MHz divided by 12
     but memory and IO access is only possible
     within the line and frame blanking period
     thus requiring an extra loading of approx 3-5 */
-	MCFG_CPU_PROGRAM_MAP(lazercmd_map)
-	MCFG_CPU_IO_MAP(lazercmd_portmap)
-	MCFG_TIMER_DRIVER_ADD_SCANLINE("scantimer", lazercmd_state, lazercmd_timer, "screen", 0, 1)
+	m_maincpu->set_addrmap(AS_PROGRAM, &lazercmd_state::lazercmd_map);
+	m_maincpu->set_addrmap(AS_DATA, &lazercmd_state::lazercmd_portmap);
+	TIMER(config, "scantimer").configure_scanline(FUNC(lazercmd_state::lazercmd_timer), "screen", 0, 1);
 
 	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_REFRESH_RATE(60)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(2500) /* not accurate */)
-	MCFG_SCREEN_SIZE(HORZ_RES * HORZ_CHR, VERT_RES * VERT_CHR + 16)
-	MCFG_SCREEN_VISIBLE_AREA(0 * HORZ_CHR, HORZ_RES * HORZ_CHR - 1, 0 * VERT_CHR, (VERT_RES - 1) * VERT_CHR - 1)
-	MCFG_SCREEN_UPDATE_DRIVER(lazercmd_state, screen_update_lazercmd)
-	MCFG_SCREEN_PALETTE("palette")
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_RASTER));
+	screen.set_refresh_hz(60);
+	screen.set_vblank_time(ATTOSECONDS_IN_USEC(2500) /* not accurate */);
+	screen.set_size(HORZ_RES * HORZ_CHR, VERT_RES * VERT_CHR + 16);
+	screen.set_visarea(0 * HORZ_CHR, HORZ_RES * HORZ_CHR - 1, 0 * VERT_CHR, (VERT_RES - 1) * VERT_CHR - 1);
+	screen.set_screen_update(FUNC(lazercmd_state::screen_update_lazercmd));
+	screen.set_palette(m_palette);
 
-	MCFG_GFXDECODE_ADD("gfxdecode", "palette", lazercmd)
-	MCFG_PALETTE_ADD("palette", 5)
-	MCFG_PALETTE_INIT_OWNER(lazercmd_state, lazercmd)
+	GFXDECODE(config, m_gfxdecode, m_palette, gfx_lazercmd);
+	PALETTE(config, m_palette, FUNC(lazercmd_state::lazercmd_palette), 5);
 
 	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_MONO("mono")
+	SPEAKER(config, "speaker").front_center();
+	DAC_1BIT(config, m_dac0, 0).add_route(ALL_OUTPUTS, "speaker", 0.99);
+	DAC_1BIT(config, m_dac1, 0).add_route(ALL_OUTPUTS, "speaker", 0.99);
+	DAC_1BIT(config, m_dac2, 0).add_route(ALL_OUTPUTS, "speaker", 0.99);
+	DAC_1BIT(config, m_dac3, 0).add_route(ALL_OUTPUTS, "speaker", 0.99);
+}
 
-	MCFG_DAC_ADD("dac")
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 1.0)
-MACHINE_CONFIG_END
 
-
-static MACHINE_CONFIG_START( medlanes, lazercmd_state )
-
+void lazercmd_state::medlanes(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", S2650, MASTER_CLOCK/12) /* 666 kHz */
+	S2650(config, m_maincpu, MASTER_CLOCK/12); /* 666 kHz */
 /*  Main Clock is 8MHz divided by 12
     but memory and IO access is only possible
     within the line and frame blanking period
     thus requiring an extra loading of approx 3-5 */
-	MCFG_CPU_PROGRAM_MAP(medlanes_map)
-	MCFG_CPU_IO_MAP(lazercmd_portmap)
-	MCFG_TIMER_DRIVER_ADD_SCANLINE("scantimer", lazercmd_state, lazercmd_timer, "screen", 0, 1)
+	m_maincpu->set_addrmap(AS_PROGRAM, &lazercmd_state::medlanes_map);
+	m_maincpu->set_addrmap(AS_DATA, &lazercmd_state::lazercmd_portmap);
+	TIMER(config, "scantimer").configure_scanline(FUNC(lazercmd_state::lazercmd_timer), "screen", 0, 1);
 
 	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_REFRESH_RATE(60)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(2500) /* not accurate */)
-	MCFG_SCREEN_SIZE(HORZ_RES * HORZ_CHR, VERT_RES * VERT_CHR)
-	MCFG_SCREEN_VISIBLE_AREA(0 * HORZ_CHR, HORZ_RES * HORZ_CHR - 1, 0 * VERT_CHR, VERT_RES * VERT_CHR - 1)
-	MCFG_SCREEN_UPDATE_DRIVER(lazercmd_state, screen_update_lazercmd)
-	MCFG_SCREEN_PALETTE("palette")
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_RASTER));
+	screen.set_refresh_hz(60);
+	screen.set_vblank_time(ATTOSECONDS_IN_USEC(2500) /* not accurate */);
+	screen.set_size(HORZ_RES * HORZ_CHR, VERT_RES * VERT_CHR);
+	screen.set_visarea(0 * HORZ_CHR, HORZ_RES * HORZ_CHR - 1, 0 * VERT_CHR, VERT_RES * VERT_CHR - 1);
+	screen.set_screen_update(FUNC(lazercmd_state::screen_update_lazercmd));
+	screen.set_palette(m_palette);
 
-	MCFG_GFXDECODE_ADD("gfxdecode", "palette", lazercmd)
-	MCFG_PALETTE_ADD("palette", 5)
-	MCFG_PALETTE_INIT_OWNER(lazercmd_state, lazercmd)
+	GFXDECODE(config, m_gfxdecode, m_palette, gfx_lazercmd);
+	PALETTE(config, m_palette, FUNC(lazercmd_state::lazercmd_palette), 5);
 
 	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_MONO("mono")
+	SPEAKER(config, "speaker").front_center();
+	DAC_1BIT(config, m_dac2, 0).add_route(ALL_OUTPUTS, "speaker", 0.99);
+	DAC_1BIT(config, m_dac3, 0).add_route(ALL_OUTPUTS, "speaker", 0.99);
+}
 
-	MCFG_DAC_ADD("dac")
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 1.0)
-MACHINE_CONFIG_END
 
-
-static MACHINE_CONFIG_START( bbonk, lazercmd_state )
-
+void lazercmd_state::bbonk(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", S2650, MASTER_CLOCK/12) /* 666 kHz */
+	S2650(config, m_maincpu, MASTER_CLOCK/12); /* 666 kHz */
 /*  Main Clock is 8MHz divided by 12
     but memory and IO access is only possible
     within the line and frame blanking period
     thus requiring an extra loading of approx 3-5 */
-	MCFG_CPU_PROGRAM_MAP(bbonk_map)
-	MCFG_CPU_IO_MAP(lazercmd_portmap)
-	MCFG_TIMER_DRIVER_ADD_SCANLINE("scantimer", lazercmd_state, bbonk_timer, "screen", 0, 1)
+	m_maincpu->set_addrmap(AS_PROGRAM, &lazercmd_state::bbonk_map);
+	m_maincpu->set_addrmap(AS_DATA, &lazercmd_state::lazercmd_portmap);
+	TIMER(config, "scantimer").configure_scanline(FUNC(lazercmd_state::bbonk_timer), "screen", 0, 1);
 
 	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_REFRESH_RATE(60)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(2500) /* not accurate */)
-	MCFG_SCREEN_SIZE(HORZ_RES * HORZ_CHR, VERT_RES * VERT_CHR)
-	MCFG_SCREEN_VISIBLE_AREA(0 * HORZ_CHR, HORZ_RES * HORZ_CHR - 1, 0 * VERT_CHR, (VERT_RES - 1) * VERT_CHR - 1)
-	MCFG_SCREEN_UPDATE_DRIVER(lazercmd_state, screen_update_lazercmd)
-	MCFG_SCREEN_PALETTE("palette")
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_RASTER));
+	screen.set_refresh_hz(60);
+	screen.set_vblank_time(ATTOSECONDS_IN_USEC(2500) /* not accurate */);
+	screen.set_size(HORZ_RES * HORZ_CHR, VERT_RES * VERT_CHR);
+	screen.set_visarea(0 * HORZ_CHR, HORZ_RES * HORZ_CHR - 1, 0 * VERT_CHR, (VERT_RES - 1) * VERT_CHR - 1);
+	screen.set_screen_update(FUNC(lazercmd_state::screen_update_lazercmd));
+	screen.set_palette(m_palette);
 
-	MCFG_GFXDECODE_ADD("gfxdecode", "palette", lazercmd)
-	MCFG_PALETTE_ADD("palette", 5)
-	MCFG_PALETTE_INIT_OWNER(lazercmd_state, lazercmd)
+	GFXDECODE(config, m_gfxdecode, m_palette, gfx_lazercmd);
+	PALETTE(config, m_palette, FUNC(lazercmd_state::lazercmd_palette), 5);
 
 	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_MONO("mono")
-
-	MCFG_DAC_ADD("dac")
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 1.0)
-MACHINE_CONFIG_END
+	SPEAKER(config, "speaker").front_center();
+	DAC_1BIT(config, m_dac2, 0).add_route(ALL_OUTPUTS, "speaker", 0.99);
+	DAC_1BIT(config, m_dac3, 0).add_route(ALL_OUTPUTS, "speaker", 0.99);
+}
 
 /***************************************************************************
 
@@ -775,10 +768,9 @@ ROM_START( bbonk )
 ROM_END
 
 
-DRIVER_INIT_MEMBER(lazercmd_state,lazercmd)
+void lazercmd_state::init_lazercmd()
 {
-	int i, y;
-	UINT8 *gfx = memregion("gfx1")->base();
+	uint8_t *gfx = memregion("gfx1")->base();
 
 /******************************************************************
  * To show the maze bit #6 and #7 of the video ram are used.
@@ -788,12 +780,12 @@ DRIVER_INIT_MEMBER(lazercmd_state,lazercmd)
  * character generator only contains 8 rows, so we expand the
  * font to 8x10.
  ******************************************************************/
-	for (i = 0; i < 0x40; i++)
+	for (int i = 0; i < 0x40; i++)
 	{
-		UINT8 *d = &gfx[0 * 64 * 10 + i * VERT_CHR];
-		UINT8 *s = &gfx[4 * 64 * 10 + i * VERT_FNT];
+		uint8_t *d = &gfx[0 * 64 * 10 + i * VERT_CHR];
+		uint8_t *s = &gfx[4 * 64 * 10 + i * VERT_FNT];
 
-		for (y = 0; y < VERT_CHR; y++)
+		for (int y = 0; y < VERT_CHR; y++)
 		{
 			d[0 * 64 * 10] = (y < VERT_FNT) ? *s++ : 0xff;
 			d[1 * 64 * 10] = (y == VERT_CHR - 1) ? 0 : *d;
@@ -806,6 +798,6 @@ DRIVER_INIT_MEMBER(lazercmd_state,lazercmd)
 
 
 
-GAMEL( 1976, lazercmd, 0, lazercmd, lazercmd, lazercmd_state, lazercmd, ROT0, "Meadows Games, Inc.", "Lazer Command", MACHINE_SUPPORTS_SAVE, layout_lazercmd )
-GAMEL( 1977, medlanes, 0, medlanes, medlanes, lazercmd_state, lazercmd, ROT0, "Meadows Games, Inc.", "Meadows Lanes", MACHINE_IMPERFECT_SOUND | MACHINE_SUPPORTS_SAVE, layout_medlanes )
-GAME ( 1976, bbonk,    0, bbonk,    bbonk,    lazercmd_state, lazercmd, ROT0, "Meadows Games, Inc.", "Bigfoot Bonkers", MACHINE_SUPPORTS_SAVE )
+GAMEL( 1976, lazercmd, 0, lazercmd, lazercmd, lazercmd_state, init_lazercmd, ROT0, "Meadows Games, Inc.", "Lazer Command", MACHINE_SUPPORTS_SAVE, layout_lazercmd )
+GAMEL( 1977, medlanes, 0, medlanes, medlanes, lazercmd_state, init_lazercmd, ROT0, "Meadows Games, Inc.", "Meadows Lanes", MACHINE_IMPERFECT_SOUND | MACHINE_SUPPORTS_SAVE, layout_medlanes )
+GAME(  1976, bbonk,    0, bbonk,    bbonk,    lazercmd_state, init_lazercmd, ROT0, "Meadows Games, Inc.", "Bigfoot Bonkers", MACHINE_SUPPORTS_SAVE )

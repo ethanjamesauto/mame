@@ -28,7 +28,7 @@ inline void fromance_state::get_fromance_tile_info( tile_data &tileinfo, int til
 				m_local_videoram[layer][0x2000 + tile_index];
 	int color = m_local_videoram[layer][tile_index] & 0x7f;
 
-	SET_TILE_INFO_MEMBER(layer, tile, color, 0);
+	tileinfo.set(layer, tile, color, 0);
 }
 
 TILE_GET_INFO_MEMBER(fromance_state::get_fromance_bg_tile_info){ get_fromance_tile_info(tileinfo, tile_index, 0); }
@@ -41,7 +41,7 @@ inline void fromance_state::get_nekkyoku_tile_info( tile_data &tileinfo, int til
 				m_local_videoram[layer][0x1000 + tile_index];
 	int color = m_local_videoram[layer][tile_index + 0x2000] & 0x3f;
 
-	SET_TILE_INFO_MEMBER(layer, tile, color, 0);
+	tileinfo.set(layer, tile, color, 0);
 }
 
 TILE_GET_INFO_MEMBER(fromance_state::get_nekkyoku_bg_tile_info){ get_nekkyoku_tile_info(tileinfo, tile_index, 0); }
@@ -58,11 +58,11 @@ TILE_GET_INFO_MEMBER(fromance_state::get_nekkyoku_fg_tile_info){ get_nekkyoku_ti
 void fromance_state::init_common(  )
 {
 	/* allocate local videoram */
-	m_local_videoram[0] = std::make_unique<UINT8[]>(0x1000 * 3);
-	m_local_videoram[1] = std::make_unique<UINT8[]>(0x1000 * 3);
+	m_local_videoram[0] = std::make_unique<uint8_t[]>(0x1000 * 3);
+	m_local_videoram[1] = std::make_unique<uint8_t[]>(0x1000 * 3);
 
 	/* allocate local palette RAM */
-	m_local_paletteram = std::make_unique<UINT8[]>(0x800 * 2);
+	m_local_paletteram = std::make_unique<uint8_t[]>(0x800 * 2);
 
 	/* configure tilemaps */
 	m_fg_tilemap->set_transparent_pen(15);
@@ -72,8 +72,8 @@ void fromance_state::init_common(  )
 
 	/* state save */
 	save_item(NAME(m_selected_videoram));
-	save_pointer(NAME(m_local_videoram[0].get()), 0x1000 * 3);
-	save_pointer(NAME(m_local_videoram[1].get()), 0x1000 * 3);
+	save_pointer(NAME(m_local_videoram[0]), 0x1000 * 3);
+	save_pointer(NAME(m_local_videoram[1]), 0x1000 * 3);
 	save_item(NAME(m_selected_paletteram));
 	save_item(NAME(m_scrollx));
 	save_item(NAME(m_scrolly));
@@ -82,16 +82,14 @@ void fromance_state::init_common(  )
 	save_item(NAME(m_flipscreen_old));
 	save_item(NAME(m_scrollx_ofs));
 	save_item(NAME(m_scrolly_ofs));
-	save_item(NAME(m_crtc_register));
-	save_item(NAME(m_crtc_data));
-	save_pointer(NAME(m_local_paletteram.get()), 0x800 * 2);
+	save_pointer(NAME(m_local_paletteram), 0x800 * 2);
 }
 
 VIDEO_START_MEMBER(fromance_state,fromance)
 {
 	/* allocate tilemaps */
-	m_bg_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(fromance_state::get_fromance_bg_tile_info),this), TILEMAP_SCAN_ROWS, 8, 4, 64, 64);
-	m_fg_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(fromance_state::get_fromance_fg_tile_info),this), TILEMAP_SCAN_ROWS, 8, 4, 64, 64);
+	m_bg_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(fromance_state::get_fromance_bg_tile_info)), TILEMAP_SCAN_ROWS, 8, 4, 64, 64);
+	m_fg_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(fromance_state::get_fromance_fg_tile_info)), TILEMAP_SCAN_ROWS, 8, 4, 64, 64);
 
 	init_common();
 }
@@ -99,23 +97,10 @@ VIDEO_START_MEMBER(fromance_state,fromance)
 VIDEO_START_MEMBER(fromance_state,nekkyoku)
 {
 	/* allocate tilemaps */
-	m_bg_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(fromance_state::get_nekkyoku_bg_tile_info),this), TILEMAP_SCAN_ROWS, 8, 4, 64, 64);
-	m_fg_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(fromance_state::get_nekkyoku_fg_tile_info),this), TILEMAP_SCAN_ROWS, 8, 4, 64, 64);
+	m_bg_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(fromance_state::get_nekkyoku_bg_tile_info)), TILEMAP_SCAN_ROWS, 8, 4, 64, 64);
+	m_fg_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(fromance_state::get_nekkyoku_fg_tile_info)), TILEMAP_SCAN_ROWS, 8, 4, 64, 64);
 
 	init_common();
-}
-
-VIDEO_START_MEMBER(fromance_state,pipedrm)
-{
-	VIDEO_START_CALL_MEMBER(fromance);
-	m_scrolly_ofs = 0x00;
-}
-
-VIDEO_START_MEMBER(fromance_state,hatris)
-{
-	VIDEO_START_CALL_MEMBER(fromance);
-	m_scrollx_ofs = 0xB9;
-	m_scrolly_ofs = 0x00;
 }
 
 /*************************************
@@ -124,7 +109,7 @@ VIDEO_START_MEMBER(fromance_state,hatris)
  *
  *************************************/
 
-WRITE8_MEMBER(fromance_state::fromance_gfxreg_w)
+void fromance_state::fromance_gfxreg_w(uint8_t data)
 {
 	m_gfxreg = data;
 	m_flipscreen = (data & 0x01);
@@ -146,7 +131,7 @@ WRITE8_MEMBER(fromance_state::fromance_gfxreg_w)
  *
  *************************************/
 
-READ8_MEMBER(fromance_state::fromance_paletteram_r)
+uint8_t fromance_state::fromance_paletteram_r(offs_t offset)
 {
 	/* adjust for banking and read */
 	offset |= m_selected_paletteram << 11;
@@ -154,7 +139,7 @@ READ8_MEMBER(fromance_state::fromance_paletteram_r)
 }
 
 
-WRITE8_MEMBER(fromance_state::fromance_paletteram_w)
+void fromance_state::fromance_paletteram_w(offs_t offset, uint8_t data)
 {
 	int palword;
 
@@ -175,13 +160,13 @@ WRITE8_MEMBER(fromance_state::fromance_paletteram_w)
  *
  *************************************/
 
-READ8_MEMBER(fromance_state::fromance_videoram_r)
+uint8_t fromance_state::fromance_videoram_r(offs_t offset)
 {
 	return m_local_videoram[m_selected_videoram][offset];
 }
 
 
-WRITE8_MEMBER(fromance_state::fromance_videoram_w)
+void fromance_state::fromance_videoram_w(offs_t offset, uint8_t data)
 {
 	m_local_videoram[m_selected_videoram][offset] = data;
 	(m_selected_videoram ? m_fg_tilemap : m_bg_tilemap)->mark_tile_dirty(offset & 0x0fff);
@@ -195,7 +180,7 @@ WRITE8_MEMBER(fromance_state::fromance_videoram_w)
  *
  *************************************/
 
-WRITE8_MEMBER(fromance_state::fromance_scroll_w)
+void fromance_state::fromance_scroll_w(offs_t offset, uint8_t data)
 {
 	if (m_flipscreen)
 	{
@@ -217,6 +202,7 @@ WRITE8_MEMBER(fromance_state::fromance_scroll_w)
 	}
 	else
 	{
+
 		switch (offset)
 		{
 			case 0:
@@ -250,32 +236,52 @@ TIMER_CALLBACK_MEMBER(fromance_state::crtc_interrupt_gen)
 		m_crtc_timer->adjust(m_screen->frame_period() / param, 0, m_screen->frame_period() / param);
 }
 
-
-WRITE8_MEMBER(fromance_state::fromance_crtc_data_w)
+/*
+ 0  1  2  3  4  5
+57 63 69 71 1f 00 (all games)
+4f 62 69 71 1f 04 nekkyoku
+ 8  9  A  B
+7a 7b 7d 7f  (all games)
+79 7a 7d 7f  nekkyoku (gameplay/title screen)
+77 79 7d 7e  nekkyoku (gals display)
+ */
+// TODO: guesswork, looks fully programmable
+void fromance_state::crtc_refresh()
 {
-	m_crtc_data[m_crtc_register] = data;
+	if (m_gga->reg(0) == 0) // sanity check
+		return;
 
-	switch (m_crtc_register)
+	rectangle visarea;
+	attoseconds_t refresh;
+
+	visarea.min_x = 0;
+	visarea.min_y = 0;
+	visarea.max_x = ((m_gga->reg(0)+1)*4) - 1;
+	visarea.max_y = 240 - 1;
+
+	refresh = HZ_TO_ATTOSECONDS(60);
+
+	m_screen->configure(512, 256, visarea, refresh);
+}
+
+void fromance_state::fromance_gga_data_w(offs_t offset, uint8_t data)
+{
+	switch (offset)
 	{
-		/* only register we know about.... */
+		case 0x00:
+			crtc_refresh();
+			break;
+
 		case 0x0b:
+			// TODO: actually is never > 0x80?
 			m_crtc_timer->adjust(m_screen->time_until_vblank_start(), (data > 0x80) ? 2 : 1);
 			break;
 
 		default:
-			logerror("CRTC register %02X = %02X\n", m_crtc_register, data & 0xff);
+			logerror("CRTC register %02X = %02X\n", offset, data);
 			break;
 	}
 }
-
-
-WRITE8_MEMBER(fromance_state::fromance_crtc_register_w)
-{
-	m_crtc_register = data;
-}
-
-
-
 
 
 /*************************************
@@ -284,7 +290,7 @@ WRITE8_MEMBER(fromance_state::fromance_crtc_register_w)
  *
  *************************************/
 
-UINT32 fromance_state::screen_update_fromance(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t fromance_state::screen_update_fromance(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	m_bg_tilemap->set_scrollx(0, m_scrollx[0]);
 	m_bg_tilemap->set_scrolly(0, m_scrolly[0]);
@@ -293,22 +299,5 @@ UINT32 fromance_state::screen_update_fromance(screen_device &screen, bitmap_ind1
 
 	m_bg_tilemap->draw(screen, bitmap, cliprect, 0, 0);
 	m_fg_tilemap->draw(screen, bitmap, cliprect, 0, 0);
-	return 0;
-}
-
-
-UINT32 fromance_state::screen_update_pipedrm(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
-{
-	UINT8* sram = m_spriteram;
-
-	/* there seems to be no logical mapping for the X scroll register -- maybe it's gone */
-	m_bg_tilemap->set_scrolly(0, m_scrolly[1]);
-	m_fg_tilemap->set_scrolly(0, m_scrolly[0]);
-
-	m_bg_tilemap->draw(screen, bitmap, cliprect, 0, 0);
-	m_fg_tilemap->draw(screen, bitmap, cliprect, 0, 0);
-
-	m_spr_old->turbofrc_draw_sprites((UINT16*)sram, m_spriteram.bytes(), 0, bitmap, cliprect, screen.priority(), 0);
-	m_spr_old->turbofrc_draw_sprites((UINT16*)sram, m_spriteram.bytes(), 0, bitmap, cliprect, screen.priority(), 1);
 	return 0;
 }

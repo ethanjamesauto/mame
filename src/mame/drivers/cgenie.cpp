@@ -22,7 +22,10 @@
 #include "bus/rs232/rs232.h"
 #include "bus/cgenie/expansion/expansion.h"
 #include "bus/cgenie/parallel/parallel.h"
+#include "screen.h"
 #include "softlist.h"
+#include "speaker.h"
+
 
 //**************************************************************************
 //  TYPE DEFINITIONS
@@ -31,8 +34,8 @@
 class cgenie_state : public driver_device
 {
 public:
-	cgenie_state(const machine_config &mconfig, device_type type, const char *tag)
-		: driver_device(mconfig, type, tag),
+	cgenie_state(const machine_config &mconfig, device_type type, const char *tag) :
+		driver_device(mconfig, type, tag),
 		m_maincpu(*this, "maincpu"),
 		m_cassette(*this, "cassette"),
 		m_ram(*this, RAM_TAG),
@@ -42,33 +45,36 @@ public:
 		m_char_rom(*this, "gfx1"),
 		m_color_ram(*this, "colorram"),
 		m_font_ram(*this, "fontram"),
-		m_keyboard(*this, "KEY"),
+		m_keyboard(*this, "KEY.%u", 0),
 		m_palette(nullptr),
 		m_control(0xff),
 		m_rs232_rx(1),
 		m_rs232_dcd(1)
-	{}
+	{ }
 
-	DECLARE_DRIVER_INIT(cgenie_eu);
-	DECLARE_DRIVER_INIT(cgenie_nz);
+	void init_cgenie_eu();
+	void init_cgenie_nz();
 
 	MC6845_BEGIN_UPDATE(crtc_begin_update);
 	MC6845_UPDATE_ROW(crtc_update_row);
 
 	// 4-bit color ram
-	DECLARE_READ8_MEMBER(colorram_r);
-	DECLARE_WRITE8_MEMBER(colorram_w);
+	uint8_t colorram_r(offs_t offset);
+	void colorram_w(offs_t offset, uint8_t data);
 
 	// control port
-	DECLARE_WRITE8_MEMBER(control_w);
-	DECLARE_READ8_MEMBER(control_r);
+	void control_w(uint8_t data);
+	uint8_t control_r();
 
-	DECLARE_READ8_MEMBER(keyboard_r);
+	uint8_t keyboard_r(offs_t offset);
 	DECLARE_INPUT_CHANGED_MEMBER(rst_callback);
 
 	DECLARE_WRITE_LINE_MEMBER(rs232_rx_w);
 	DECLARE_WRITE_LINE_MEMBER(rs232_dcd_w);
 
+	void cgenie(machine_config &config);
+	void cgenie_io(address_map &map);
+	void cgenie_mem(address_map &map);
 protected:
 	virtual void machine_start() override;
 
@@ -76,12 +82,12 @@ private:
 	required_device<cpu_device> m_maincpu;
 	required_device<cassette_image_device> m_cassette;
 	required_device<ram_device> m_ram;
-	required_device<hd6845_device> m_crtc;
+	required_device<hd6845s_device> m_crtc;
 	required_device<rs232_port_device> m_rs232;
-	required_device<expansion_slot_device> m_exp;
+	required_device<cg_exp_slot_device> m_exp;
 	required_memory_region m_char_rom;
-	required_shared_ptr<UINT8> m_color_ram;
-	required_shared_ptr<UINT8> m_font_ram;
+	required_shared_ptr<uint8_t> m_color_ram;
+	required_shared_ptr<uint8_t> m_font_ram;
 	required_ioport_array<8> m_keyboard;
 
 	static const rgb_t m_palette_bg[];
@@ -91,7 +97,7 @@ private:
 	const rgb_t *m_palette;
 	rgb_t m_background_color;
 
-	UINT8 m_control;
+	uint8_t m_control;
 
 	int m_rs232_rx;
 	int m_rs232_dcd;
@@ -102,25 +108,27 @@ private:
 //  ADDRESS MAPS
 //**************************************************************************
 
-static ADDRESS_MAP_START( cgenie_mem, AS_PROGRAM, 8, cgenie_state )
-	ADDRESS_MAP_UNMAP_HIGH
-	AM_RANGE(0x0000, 0x3fff) AM_ROM
-//  AM_RANGE(0x4000, 0xbfff) AM_RAM // set up in machine_start
-	AM_RANGE(0xc000, 0xefff) AM_NOP // cartridge space
-	AM_RANGE(0xf000, 0xf3ff) AM_READWRITE(colorram_r, colorram_w) AM_SHARE("colorram")
-	AM_RANGE(0xf400, 0xf7ff) AM_RAM AM_SHARE("fontram")
-	AM_RANGE(0xf800, 0xf8ff) AM_MIRROR(0x300) AM_READ(keyboard_r)
-	AM_RANGE(0xfc00, 0xffff) AM_NOP // cartridge space
-ADDRESS_MAP_END
+void cgenie_state::cgenie_mem(address_map &map)
+{
+	map.unmap_value_high();
+	map(0x0000, 0x3fff).rom();
+//  map(0x4000, 0xbfff).ram(); // set up in machine_start()
+	map(0xc000, 0xefff).noprw(); // cartridge space
+	map(0xf000, 0xf3ff).rw(FUNC(cgenie_state::colorram_r), FUNC(cgenie_state::colorram_w)).share("colorram");
+	map(0xf400, 0xf7ff).ram().share("fontram");
+	map(0xf800, 0xf8ff).mirror(0x300).r(FUNC(cgenie_state::keyboard_r));
+	map(0xfc00, 0xffff).noprw(); // cartridge space
+}
 
-static ADDRESS_MAP_START( cgenie_io, AS_IO, 8, cgenie_state )
-	ADDRESS_MAP_GLOBAL_MASK(0xff)
-	AM_RANGE(0xf8, 0xf8) AM_DEVWRITE("ay8910", ay8910_device, address_w)
-	AM_RANGE(0xf9, 0xf9) AM_DEVREADWRITE("ay8910", ay8910_device, data_r, data_w)
-	AM_RANGE(0xfa, 0xfa) AM_DEVWRITE("crtc", hd6845_device, address_w)
-	AM_RANGE(0xfb, 0xfb) AM_DEVREADWRITE("crtc", hd6845_device, register_r, register_w)
-	AM_RANGE(0xff, 0xff) AM_READWRITE(control_r, control_w)
-ADDRESS_MAP_END
+void cgenie_state::cgenie_io(address_map &map)
+{
+	map.global_mask(0xff);
+	map(0xf8, 0xf8).w("ay8910", FUNC(ay8910_device::address_w));
+	map(0xf9, 0xf9).rw("ay8910", FUNC(ay8910_device::data_r), FUNC(ay8910_device::data_w));
+	map(0xfa, 0xfa).w(m_crtc, FUNC(hd6845s_device::address_w));
+	map(0xfb, 0xfb).rw(m_crtc, FUNC(hd6845s_device::register_r), FUNC(hd6845s_device::register_w));
+	map(0xff, 0xff).rw(FUNC(cgenie_state::control_r), FUNC(cgenie_state::control_w));
+}
 
 
 //**************************************************************************
@@ -130,38 +138,38 @@ ADDRESS_MAP_END
 static INPUT_PORTS_START( cgenie )
 	PORT_START("KEY.0")
 	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_OPENBRACE)     PORT_CHAR('@') PORT_CHAR('`')
-	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_A)             PORT_CHAR('a') PORT_CHAR('A')
-	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_B)             PORT_CHAR('b') PORT_CHAR('B')
-	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_C)             PORT_CHAR('c') PORT_CHAR('C')
-	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_D)             PORT_CHAR('d') PORT_CHAR('D')
-	PORT_BIT(0x20, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_E)             PORT_CHAR('e') PORT_CHAR('E')
-	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_F)             PORT_CHAR('f') PORT_CHAR('F')
-	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_G)             PORT_CHAR('g') PORT_CHAR('G')
+	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_A)             PORT_CHAR('A') PORT_CHAR('a')
+	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_B)             PORT_CHAR('B') PORT_CHAR('b')
+	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_C)             PORT_CHAR('C') PORT_CHAR('c')
+	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_D)             PORT_CHAR('D') PORT_CHAR('d')
+	PORT_BIT(0x20, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_E)             PORT_CHAR('E') PORT_CHAR('e')
+	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_F)             PORT_CHAR('F') PORT_CHAR('f')
+	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_G)             PORT_CHAR('G') PORT_CHAR('g')
 
 	PORT_START("KEY.1")
-	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_H)             PORT_CHAR('h') PORT_CHAR('H')
-	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_I)             PORT_CHAR('i') PORT_CHAR('I')
-	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_J)             PORT_CHAR('j') PORT_CHAR('J')
-	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_K)             PORT_CHAR('k') PORT_CHAR('K')
-	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_L)             PORT_CHAR('l') PORT_CHAR('L')
-	PORT_BIT(0x20, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_M)             PORT_CHAR('m') PORT_CHAR('M')
-	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_N)             PORT_CHAR('n') PORT_CHAR('N')
-	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_O)             PORT_CHAR('o') PORT_CHAR('O')
+	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_H)             PORT_CHAR('H') PORT_CHAR('h')
+	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_I)             PORT_CHAR('I') PORT_CHAR('i')
+	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_J)             PORT_CHAR('J') PORT_CHAR('j')
+	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_K)             PORT_CHAR('K') PORT_CHAR('k')
+	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_L)             PORT_CHAR('L') PORT_CHAR('l')
+	PORT_BIT(0x20, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_M)             PORT_CHAR('M') PORT_CHAR('m')
+	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_N)             PORT_CHAR('N') PORT_CHAR('n')
+	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_O)             PORT_CHAR('O') PORT_CHAR('o')
 
 	PORT_START("KEY.2")
-	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_P)             PORT_CHAR('p') PORT_CHAR('P')
-	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_Q)             PORT_CHAR('q') PORT_CHAR('Q')
-	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_R)             PORT_CHAR('r') PORT_CHAR('R')
-	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_S)             PORT_CHAR('s') PORT_CHAR('S')
-	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_T)             PORT_CHAR('t') PORT_CHAR('T')
-	PORT_BIT(0x20, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_U)             PORT_CHAR('u') PORT_CHAR('U')
-	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_V)             PORT_CHAR('v') PORT_CHAR('V')
-	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_W)             PORT_CHAR('w') PORT_CHAR('W')
+	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_P)             PORT_CHAR('P') PORT_CHAR('p')
+	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_Q)             PORT_CHAR('Q') PORT_CHAR('q')
+	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_R)             PORT_CHAR('R') PORT_CHAR('r')
+	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_S)             PORT_CHAR('S') PORT_CHAR('s')
+	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_T)             PORT_CHAR('T') PORT_CHAR('t')
+	PORT_BIT(0x20, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_U)             PORT_CHAR('U') PORT_CHAR('u')
+	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_V)             PORT_CHAR('V') PORT_CHAR('v')
+	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_W)             PORT_CHAR('W') PORT_CHAR('w')
 
 	PORT_START("KEY.3")
-	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_X)             PORT_CHAR('x') PORT_CHAR('X')
-	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_Y)             PORT_CHAR('y') PORT_CHAR('Y')
-	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_Z)             PORT_CHAR('z') PORT_CHAR('Z')
+	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_X)             PORT_CHAR('X') PORT_CHAR('x')
+	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_Y)             PORT_CHAR('Y') PORT_CHAR('y')
+	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_Z)             PORT_CHAR('Z') PORT_CHAR('z')
 	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_UNUSED)   // produces [ and { when pressed, not on keyboard
 	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_F1)            PORT_CHAR(UCHAR_MAMEKEY(F1)) PORT_CHAR(UCHAR_MAMEKEY(F5))
 	PORT_BIT(0x20, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_F2)            PORT_CHAR(UCHAR_MAMEKEY(F2)) PORT_CHAR(UCHAR_MAMEKEY(F6))
@@ -191,11 +199,11 @@ static INPUT_PORTS_START( cgenie )
 	PORT_START("KEY.6")
 	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_ENTER)         PORT_CHAR(13)
 	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("Clear") PORT_CODE(KEYCODE_EQUALS) PORT_CHAR(UCHAR_MAMEKEY(F10))
-	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("Break") PORT_CODE(KEYCODE_BACKSLASH2) PORT_CHAR(UCHAR_MAMEKEY(ESC))
-	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_UP)            PORT_CHAR(UCHAR_MAMEKEY(UP))
-	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_DOWN)          PORT_CHAR(UCHAR_MAMEKEY(DOWN))
-	PORT_BIT(0x20, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_LEFT)          PORT_CHAR(UCHAR_MAMEKEY(LEFT))
-	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_RIGHT)         PORT_CHAR(UCHAR_MAMEKEY(RIGHT))
+	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("Break") PORT_CODE(KEYCODE_ESC) PORT_CHAR(27)
+	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_UP)            PORT_CHAR(UCHAR_MAMEKEY(UP)) // prints [ which is interpreted by basic as ^
+	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_DOWN)          PORT_CHAR(UCHAR_MAMEKEY(DOWN)) // newline
+	PORT_BIT(0x20, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_LEFT)          PORT_CHAR(UCHAR_MAMEKEY(LEFT)) // backspace
+	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_RIGHT)         PORT_CHAR(UCHAR_MAMEKEY(RIGHT)) // tab
 	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_CODE(KEYCODE_SPACE)         PORT_CHAR(' ')
 
 	PORT_START("KEY.7")
@@ -203,13 +211,13 @@ static INPUT_PORTS_START( cgenie )
 	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("Mod Sel") PORT_CODE(KEYCODE_LALT)  PORT_CHAR(UCHAR_MAMEKEY(F9))
 	PORT_BIT(0x04, IP_ACTIVE_HIGH, IPT_UNUSED)
 	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("Rpt") PORT_CODE(KEYCODE_PGDN) PORT_CHAR(UCHAR_MAMEKEY(F11))
-	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("Ctrl") PORT_CODE(KEYCODE_LCONTROL) PORT_CHAR(UCHAR_MAMEKEY(F12))
+	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("Ctrl") PORT_CODE(KEYCODE_LCONTROL) PORT_CHAR(UCHAR_SHIFT_2)
 	PORT_BIT(0x20, IP_ACTIVE_HIGH, IPT_UNUSED)
 	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_UNUSED)
 	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_OTHER) PORT_NAME("L.P.") // marked as "L.P." in the manual, lightpen?
 
 	PORT_START("RST")
-	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_OTHER) PORT_CODE(KEYCODE_F5) PORT_NAME("Rst") PORT_CHAR(UCHAR_MAMEKEY(F5)) PORT_CHANGED_MEMBER(DEVICE_SELF, cgenie_state, rst_callback, NULL)
+	PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_OTHER) PORT_CODE(KEYCODE_F5) PORT_NAME("Rst") PORT_CHAR(UCHAR_MAMEKEY(F5)) PORT_CHANGED_MEMBER(DEVICE_SELF, cgenie_state, rst_callback, 0)
 INPUT_PORTS_END
 
 
@@ -217,9 +225,9 @@ INPUT_PORTS_END
 //  KEYBOARD
 //**************************************************************************
 
-READ8_MEMBER( cgenie_state::keyboard_r )
+uint8_t cgenie_state::keyboard_r(offs_t offset)
 {
-	UINT8 data = 0;
+	uint8_t data = 0;
 
 	for (int i = 0; i < 8; i++)
 		if (BIT(offset, i))
@@ -238,7 +246,7 @@ INPUT_CHANGED_MEMBER( cgenie_state::rst_callback )
 //  CONTROL PORT & RS232
 //**************************************************************************
 
-WRITE8_MEMBER( cgenie_state::control_w )
+void cgenie_state::control_w(uint8_t data)
 {
 	// cassette output
 	m_cassette->output(BIT(data, 0) ? -1.0 : 1.0);
@@ -258,9 +266,9 @@ WRITE8_MEMBER( cgenie_state::control_w )
 	m_control = data;
 }
 
-READ8_MEMBER( cgenie_state::control_r )
+uint8_t cgenie_state::control_r()
 {
-	UINT8 data = 0;
+	uint8_t data = 0;
 
 	data |= m_cassette->input() > 0 ? 1 : 0;
 	data |= m_rs232_rx << 1;
@@ -284,12 +292,12 @@ WRITE_LINE_MEMBER( cgenie_state::rs232_dcd_w )
 //  DRIVER INIT
 //**************************************************************************
 
-DRIVER_INIT_MEMBER( cgenie_state, cgenie_eu )
+void cgenie_state::init_cgenie_eu()
 {
 	m_palette = &m_palette_eu[0];
 }
 
-DRIVER_INIT_MEMBER( cgenie_state, cgenie_nz )
+void cgenie_state::init_cgenie_nz()
 {
 	m_palette = &m_palette_nz[0];
 }
@@ -298,10 +306,6 @@ void cgenie_state::machine_start()
 {
 	// setup ram
 	m_maincpu->space(AS_PROGRAM).install_ram(0x4000, 0x4000 + m_ram->size() - 1, m_ram->pointer());
-
-	// setup expansion bus
-	m_exp->set_program_space(&m_maincpu->space(AS_PROGRAM));
-	m_exp->set_io_space(&m_maincpu->space(AS_IO));
 }
 
 
@@ -309,12 +313,12 @@ void cgenie_state::machine_start()
 //  VIDEO EMULATION
 //**************************************************************************
 
-READ8_MEMBER( cgenie_state::colorram_r )
+uint8_t cgenie_state::colorram_r(offs_t offset)
 {
 	return m_color_ram[offset] | 0xf0;
 }
 
-WRITE8_MEMBER( cgenie_state::colorram_w )
+void cgenie_state::colorram_w(offs_t offset, uint8_t data)
 {
 	m_color_ram[offset] = data & 0x0f;
 }
@@ -332,29 +336,29 @@ MC6845_UPDATE_ROW( cgenie_state::crtc_update_row )
 
 	for (int column = 0; column < x_count; column++)
 	{
-		UINT8 code = m_ram->pointer()[ma + column];
-		UINT8 color = m_color_ram[(ma & 0xbff) + column];
+		uint8_t code = m_ram->pointer()[ma + column];
+		uint8_t color = m_color_ram[(ma + column) & 0x3ff];
 
 		// gfx mode?
 		if (BIT(m_control, 5))
 		{
 			const rgb_t map[] = { m_background_color, m_palette[8], m_palette[6], m_palette[5] };
 
-			bitmap.pix32(y + vbp, column * 4 + hbp + 0) = map[code >> 6 & 0x03];
-			bitmap.pix32(y + vbp, column * 4 + hbp + 1) = map[code >> 4 & 0x03];
-			bitmap.pix32(y + vbp, column * 4 + hbp + 2) = map[code >> 2 & 0x03];
-			bitmap.pix32(y + vbp, column * 4 + hbp + 3) = map[code >> 0 & 0x03];
+			bitmap.pix(y + vbp, column * 4 + hbp + 0) = map[code >> 6 & 0x03];
+			bitmap.pix(y + vbp, column * 4 + hbp + 1) = map[code >> 4 & 0x03];
+			bitmap.pix(y + vbp, column * 4 + hbp + 2) = map[code >> 2 & 0x03];
+			bitmap.pix(y + vbp, column * 4 + hbp + 3) = map[code >> 0 & 0x03];
 		}
 		else
 		{
-			UINT8 gfx = 0;
+			uint8_t gfx = 0;
 
 			// cursor visible?
 			if (cursor_x == column)
 				gfx = 0xff;
 
 			// or use character rom?
-			else if ((code < 128) || (code < 192 && BIT(m_control, 4)) || (code > 192 && BIT(m_control, 3)))
+			else if ((code < 128) || (code < 192 && BIT(m_control, 4)) || (code >= 192 && BIT(m_control, 3)))
 				gfx = m_char_rom->base()[(code << 3) | ra];
 
 			// or the programmable characters?
@@ -363,7 +367,7 @@ MC6845_UPDATE_ROW( cgenie_state::crtc_update_row )
 
 			// 8 pixel chars
 			for (int p = 0; p < 8; p++)
-				bitmap.pix32(y + vbp, column * 8 + hbp + p) = BIT(gfx, 7 - p) ? m_palette[color] : m_background_color;
+				bitmap.pix(y + vbp, column * 8 + hbp + p) = BIT(gfx, 7 - p) ? m_palette[color] : m_background_color;
 		}
 	}
 }
@@ -376,7 +380,7 @@ MC6845_UPDATE_ROW( cgenie_state::crtc_update_row )
 // how accurate are these colors?
 const rgb_t cgenie_state::m_palette_bg[] =
 {
-	rgb_t::black,
+	rgb_t::black(),
 	rgb_t(0x70, 0x28, 0x20), // dark orange
 	rgb_t(0x28, 0x70, 0x20), // dark green
 	rgb_t(0x48, 0x48, 0x48), // dark gray
@@ -401,13 +405,13 @@ const rgb_t cgenie_state::m_palette_eu[] =
 	rgb_t(0x8c, 0x8c, 0x8c), // light gray
 	rgb_t(0x00, 0xfb, 0x8c), // turquoise
 	rgb_t(0xd2, 0x00, 0xff), // magenta
-	rgb_t::white             // bright white
+	rgb_t::white()           // bright white
 };
 
 // new zealand palette
 const rgb_t cgenie_state::m_palette_nz[] =
 {
-	rgb_t::white,
+	rgb_t::white(),
 	rgb_t(0x12, 0xff, 0xff),
 	rgb_t(0xff, 0x6f, 0xff),
 	rgb_t(0x31, 0x77, 0xff),
@@ -422,7 +426,7 @@ const rgb_t cgenie_state::m_palette_nz[] =
 	rgb_t(0xff, 0xf9, 0x00),
 	rgb_t(0x00, 0xda, 0x00),
 	rgb_t(0xff, 0x22, 0x00),
-	rgb_t::black
+	rgb_t::black()
 };
 
 
@@ -430,56 +434,59 @@ const rgb_t cgenie_state::m_palette_nz[] =
 //  MACHINE DEFINTIONS
 //**************************************************************************
 
-static MACHINE_CONFIG_START( cgenie, cgenie_state )
+void cgenie_state::cgenie(machine_config &config)
+{
 	// basic machine hardware
-	MCFG_CPU_ADD("maincpu", Z80, XTAL_17_73447MHz / 8)  // 2.2168 MHz
-	MCFG_CPU_PROGRAM_MAP(cgenie_mem)
-	MCFG_CPU_IO_MAP(cgenie_io)
+	Z80(config, m_maincpu, XTAL(17'734'470) / 8); // 2.2168 MHz
+	m_maincpu->set_addrmap(AS_PROGRAM, &cgenie_state::cgenie_mem);
+	m_maincpu->set_addrmap(AS_IO, &cgenie_state::cgenie_io);
 
 	// video hardware
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_RAW_PARAMS(XTAL_17_73447MHz / 2, 568, 32, 416, 312, 28, 284)
-	MCFG_SCREEN_UPDATE_DEVICE("crtc", hd6845_device, screen_update)
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_RASTER));
+	screen.set_raw(XTAL(17'734'470) / 2, 568, 32, 416, 312, 28, 284);
+	screen.set_screen_update("crtc", FUNC(hd6845s_device::screen_update));
 
-	MCFG_MC6845_ADD("crtc", HD6845, "screen", XTAL_17_73447MHz / 16)
-	MCFG_MC6845_SHOW_BORDER_AREA(true)
-	MCFG_MC6845_CHAR_WIDTH(8)
-	MCFG_MC6845_BEGIN_UPDATE_CB(cgenie_state, crtc_begin_update)
-	MCFG_MC6845_UPDATE_ROW_CB(cgenie_state, crtc_update_row)
+	HD6845S(config, m_crtc, XTAL(17'734'470) / 16);
+	m_crtc->set_screen("screen");
+	m_crtc->set_show_border_area(true);
+	m_crtc->set_char_width(8);
+	m_crtc->set_begin_update_callback(FUNC(cgenie_state::crtc_begin_update));
+	m_crtc->set_update_row_callback(FUNC(cgenie_state::crtc_update_row));
 
 	// sound hardware
-	MCFG_SPEAKER_STANDARD_MONO("mono")
-	MCFG_SOUND_ADD("ay8910", AY8910, XTAL_17_73447MHz / 8)
-	MCFG_AY8910_PORT_A_READ_CB(DEVREAD8("par", parallel_slot_device, pa_r))
-	MCFG_AY8910_PORT_A_WRITE_CB(DEVWRITE8("par", parallel_slot_device, pa_w))
-	MCFG_AY8910_PORT_B_READ_CB(DEVREAD8("par", parallel_slot_device, pb_r))
-	MCFG_AY8910_PORT_B_WRITE_CB(DEVWRITE8("par", parallel_slot_device, pb_w))
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.75)
+	SPEAKER(config, "mono").front_center();
+	ay8910_device &ay8910(AY8910(config, "ay8910", XTAL(17'734'470) / 8));
+	ay8910.port_a_read_callback().set("par", FUNC(cg_parallel_slot_device::pa_r));
+	ay8910.port_a_write_callback().set("par", FUNC(cg_parallel_slot_device::pa_w));
+	ay8910.port_b_read_callback().set("par", FUNC(cg_parallel_slot_device::pb_r));
+	ay8910.port_b_write_callback().set("par", FUNC(cg_parallel_slot_device::pb_w));
+	ay8910.add_route(ALL_OUTPUTS, "mono", 0.75);
 
-	MCFG_CASSETTE_ADD("cassette")
-	MCFG_CASSETTE_FORMATS(cgenie_cassette_formats)
-	MCFG_CASSETTE_DEFAULT_STATE(CASSETTE_STOPPED)
-	MCFG_CASSETTE_INTERFACE("cgenie_cass")
+	CASSETTE(config, m_cassette);
+	m_cassette->set_formats(cgenie_cassette_formats);
+	m_cassette->set_default_state(CASSETTE_STOPPED);
+	m_cassette->add_route(ALL_OUTPUTS, "mono", 0.05);
+	m_cassette->set_interface("cgenie_cass");
 
-	MCFG_SOFTWARE_LIST_ADD("cass_list", "cgenie_cass")
+	SOFTWARE_LIST(config, "cass_list").set_original("cgenie_cass");
 
 	// serial port
-	MCFG_RS232_PORT_ADD("rs232", default_rs232_devices, nullptr)
-	MCFG_RS232_RXD_HANDLER(WRITELINE(cgenie_state, rs232_rx_w))
-	MCFG_RS232_DCD_HANDLER(WRITELINE(cgenie_state, rs232_dcd_w))
+	rs232_port_device &rs232(RS232_PORT(config, "rs232", default_rs232_devices, nullptr));
+	rs232.rxd_handler().set(FUNC(cgenie_state::rs232_rx_w));
+	rs232.dcd_handler().set(FUNC(cgenie_state::rs232_dcd_w));
 
 	// cartridge expansion slot
-	MCFG_EXPANSION_SLOT_ADD("exp")
-	MCFG_EXPANSION_SLOT_INT_HANDLER(INPUTLINE("maincpu", INPUT_LINE_IRQ0))
+	CG_EXP_SLOT(config, m_exp);
+	m_exp->set_program_space(m_maincpu, AS_PROGRAM);
+	m_exp->set_io_space(m_maincpu, AS_IO);
+	m_exp->int_handler().set_inputline(m_maincpu, INPUT_LINE_IRQ0);
 
 	// parallel slot
-	MCFG_PARALLEL_SLOT_ADD("par")
+	CG_PARALLEL_SLOT(config, "par");
 
 	// internal ram
-	MCFG_RAM_ADD(RAM_TAG)
-	MCFG_RAM_DEFAULT_SIZE("16K")
-	MCFG_RAM_EXTRA_OPTIONS("32K")
-MACHINE_CONFIG_END
+	RAM(config, RAM_TAG).set_default_size("16K").set_extra_options("32K");
+}
 
 
 //**************************************************************************
@@ -503,9 +510,9 @@ ROM_END
 ROM_START( cgenienz )
 	ROM_REGION(0x4000, "maincpu", 0)
 	ROM_SYSTEM_BIOS(0, "old", "Old ROM")
-	ROMX_LOAD("cg-basic-rom-v1-pal-en.rom", 0x0000, 0x4000, CRC(844aaedd) SHA1(b7f984bc5cd979c7ad11ff909e8134f694aea7aa), ROM_BIOS(1))
+	ROMX_LOAD("cg-basic-rom-v1-pal-en.rom", 0x0000, 0x4000, CRC(844aaedd) SHA1(b7f984bc5cd979c7ad11ff909e8134f694aea7aa), ROM_BIOS(0))
 	ROM_SYSTEM_BIOS(1, "new", "New ROM")
-	ROMX_LOAD("cgromv2.rom", 0x0000, 0x4000, CRC(cfb84e09) SHA1(e199e4429bab6f9fca2bb05e71324538928a693a), ROM_BIOS(2))
+	ROMX_LOAD("cgromv2.rom", 0x0000, 0x4000, CRC(cfb84e09) SHA1(e199e4429bab6f9fca2bb05e71324538928a693a), ROM_BIOS(1))
 
 	ROM_REGION(0x0800, "gfx1", 0)
 	ROM_LOAD("cgenie1.fnt", 0x0000, 0x0800, CRC(4fed774a) SHA1(d53df8212b521892cc56be690db0bb474627d2ff))
@@ -516,6 +523,6 @@ ROM_END
 //  SYSTEM DRIVERS
 //**************************************************************************
 
-//    YEAR  NAME      PARENT    COMPAT  MACHINE INPUT   CLASS         INIT       COMPANY FULLNAME                             FLAGS
-COMP( 1982, cgenie,   0,        0,      cgenie, cgenie, cgenie_state, cgenie_eu, "EACA", "Colour Genie EG2000",               0)
-COMP( 1982, cgenienz, cgenie,   0,      cgenie, cgenie, cgenie_state, cgenie_nz, "EACA", "Colour Genie EG2000 (New Zealand)", 0)
+//    YEAR  NAME      PARENT  COMPAT  MACHINE INPUT   CLASS         INIT            COMPANY FULLNAME                             FLAGS
+COMP( 1982, cgenie,   0,      0,      cgenie, cgenie, cgenie_state, init_cgenie_eu, "EACA", "Colour Genie EG2000",               0)
+COMP( 1982, cgenienz, cgenie, 0,      cgenie, cgenie, cgenie_state, init_cgenie_nz, "EACA", "Colour Genie EG2000 (New Zealand)", 0)

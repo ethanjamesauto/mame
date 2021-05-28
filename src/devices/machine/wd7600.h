@@ -6,51 +6,17 @@
  *  Created on: 5/05/2014
  */
 
-#ifndef WD7600_H_
-#define WD7600_H_
+#ifndef MAME_MACHINE_WD7600_H
+#define MAME_MACHINE_WD7600_H
 
-#include "emu.h"
+#pragma once
+
 #include "machine/am9517a.h"
 #include "machine/pic8259.h"
 #include "machine/pit8253.h"
 #include "machine/ds128x.h"
 #include "machine/at_keybc.h"
 #include "machine/ram.h"
-
-
-#define MCFG_WD7600_ADD(_tag, _clock, _cputag, _isatag, _biostag, _keybctag) \
-	MCFG_DEVICE_ADD(_tag, WD7600, _clock) \
-	wd7600_device::static_set_cputag(*device, _cputag); \
-	wd7600_device::static_set_isatag(*device, _isatag); \
-	wd7600_device::static_set_biostag(*device, _biostag); \
-	wd7600_device::static_set_keybctag(*device, _keybctag);
-
-#define MCFG_WD7600_IOR(_ior) \
-	downcast<wd7600_device *>(device)->set_ior_callback(DEVCB_##_ior);
-
-#define MCFG_WD7600_IOW(_iow) \
-	downcast<wd7600_device *>(device)->set_iow_callback(DEVCB_##_iow);
-
-#define MCFG_WD7600_TC(_tc) \
-	downcast<wd7600_device *>(device)->set_tc_callback(DEVCB_##_tc);
-
-#define MCFG_WD7600_HOLD(_hold) \
-	downcast<wd7600_device *>(device)->set_hold_callback(DEVCB_##_hold);
-
-#define MCFG_WD7600_NMI(_nmi) \
-	downcast<wd7600_device *>(device)->set_nmi_callback(DEVCB_##_nmi);
-
-#define MCFG_WD7600_INTR(_intr) \
-	downcast<wd7600_device *>(device)->set_intr_callback(DEVCB_##_intr);
-
-#define MCFG_WD7600_CPURESET(_cpureset) \
-	downcast<wd7600_device *>(device)->set_cpureset_callback(DEVCB_##_cpureset);
-
-#define MCFG_WD7600_A20M(_a20m) \
-	downcast<wd7600_device *>(device)->set_a20m_callback(DEVCB_##_a20m);
-
-#define MCFG_WD7600_SPKR(_spkr) \
-	downcast<wd7600_device *>(device)->set_spkr_callback(DEVCB_##_spkr);
 
 
 //**************************************************************************
@@ -63,72 +29,25 @@ class wd7600_device : public device_t
 {
 public:
 	// construction/destruction
-	wd7600_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
-
-	// optional information overrides
-	virtual machine_config_constructor device_mconfig_additions() const override;
+	wd7600_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
 	// callbacks
-	template<class _ior> void set_ior_callback(_ior ior) { m_read_ior.set_callback(ior); }
-	template<class _iow> void set_iow_callback(_iow iow) { m_write_iow.set_callback(iow); }
-	template<class _tc> void set_tc_callback(_tc tc) { m_write_tc.set_callback(tc); }
-	template<class _hold> void set_hold_callback(_hold hold) { m_write_hold.set_callback(hold); }
-	template<class _cpureset> void set_cpureset_callback(_cpureset cpureset) { m_write_cpureset.set_callback(cpureset); }
-	template<class _nmi> void set_nmi_callback(_nmi nmi) { m_write_nmi.set_callback(nmi); }
-	template<class _intr> void set_intr_callback(_intr intr) { m_write_intr.set_callback(intr); }
-	template<class _a20m> void set_a20m_callback(_a20m a20m) { m_write_a20m.set_callback(a20m); }
-	template<class _spkr> void set_spkr_callback(_spkr spkr) { m_write_spkr.set_callback(spkr); }
+	auto ior_callback() { return m_read_ior.bind(); }
+	auto iow_callback() { return m_write_iow.bind(); }
+	auto tc_callback() { return m_write_tc.bind(); }
+	auto hold_callback() { return m_write_hold.bind(); }
+	auto cpureset_callback() { return m_write_cpureset.bind(); }
+	auto nmi_callback() { return m_write_nmi.bind(); }
+	auto intr_callback() { return m_write_intr.bind(); }
+	auto a20m_callback() { return m_write_a20m.bind(); }
+	auto spkr_callback() { return m_write_spkr.bind(); }
 
 	// inline configuration
-	static void static_set_cputag(device_t &device, const char *tag);
-	static void static_set_isatag(device_t &device, const char *tag);
-	static void static_set_biostag(device_t &device, const char *tag);
-	static void static_set_keybctag(device_t &device, const char *tag);
-
-	DECLARE_WRITE_LINE_MEMBER(rtc_irq_w);
-	DECLARE_WRITE_LINE_MEMBER( pic1_int_w ) { m_write_intr(state); }
-	DECLARE_READ8_MEMBER( pic1_slave_ack_r );
-	DECLARE_WRITE_LINE_MEMBER( ctc_out1_w );
-	DECLARE_WRITE_LINE_MEMBER( ctc_out2_w );
-	DECLARE_WRITE8_MEMBER( rtc_w );
-	DECLARE_WRITE8_MEMBER( keyb_cmd_w );
-	DECLARE_WRITE8_MEMBER( keyb_data_w );
-	DECLARE_READ8_MEMBER( keyb_data_r );
-	DECLARE_READ8_MEMBER( keyb_status_r );
-	DECLARE_WRITE8_MEMBER( a20_reset_w );
-	DECLARE_READ8_MEMBER( a20_reset_r );
-	DECLARE_READ8_MEMBER( portb_r );
-	DECLARE_WRITE8_MEMBER( portb_w );
-	DECLARE_WRITE8_MEMBER( dma_page_w ) { m_dma_page[offset & 0x0f] = data; }
-	DECLARE_READ8_MEMBER( dma_page_r ) { return m_dma_page[offset & 0x0f]; }
-	DECLARE_READ8_MEMBER( dma_read_byte );
-	DECLARE_WRITE8_MEMBER( dma_write_byte );
-	DECLARE_READ8_MEMBER( dma_read_word );
-	DECLARE_WRITE8_MEMBER( dma_write_word );
-	DECLARE_WRITE_LINE_MEMBER( dma1_eop_w );
-	DECLARE_READ8_MEMBER( dma1_ior0_r ) { return m_read_ior(0); }
-	DECLARE_READ8_MEMBER( dma1_ior1_r ) { return m_read_ior(1); }
-	DECLARE_READ8_MEMBER( dma1_ior2_r ) { return m_read_ior(2); }
-	DECLARE_READ8_MEMBER( dma1_ior3_r ) { return m_read_ior(3); }
-	DECLARE_READ8_MEMBER( dma2_ior1_r ) { UINT16 result = m_read_ior(5); m_dma_high_byte = result >> 8; return result; }
-	DECLARE_READ8_MEMBER( dma2_ior2_r ) { UINT16 result = m_read_ior(6); m_dma_high_byte = result >> 8; return result; }
-	DECLARE_READ8_MEMBER( dma2_ior3_r ) { UINT16 result = m_read_ior(7); m_dma_high_byte = result >> 8; return result; }
-	DECLARE_WRITE8_MEMBER( dma1_iow0_w ) { m_write_iow(0, data, 0xffff); }
-	DECLARE_WRITE8_MEMBER( dma1_iow1_w ) { m_write_iow(1, data, 0xffff); }
-	DECLARE_WRITE8_MEMBER( dma1_iow2_w ) { m_write_iow(2, data, 0xffff); }
-	DECLARE_WRITE8_MEMBER( dma1_iow3_w ) { m_write_iow(3, data, 0xffff); }
-	DECLARE_WRITE8_MEMBER( dma2_iow1_w ) { m_write_iow(5, (m_dma_high_byte << 8) | data, 0xffff); }
-	DECLARE_WRITE8_MEMBER( dma2_iow2_w ) { m_write_iow(6, (m_dma_high_byte << 8) | data, 0xffff); }
-	DECLARE_WRITE8_MEMBER( dma2_iow3_w ) { m_write_iow(7, (m_dma_high_byte << 8) | data, 0xffff); }
-	DECLARE_WRITE_LINE_MEMBER( dma1_dack0_w ) { set_dma_channel(0, state); }
-	DECLARE_WRITE_LINE_MEMBER( dma1_dack1_w ) { set_dma_channel(1, state); }
-	DECLARE_WRITE_LINE_MEMBER( dma1_dack2_w ) { set_dma_channel(2, state); }
-	DECLARE_WRITE_LINE_MEMBER( dma1_dack3_w ) { set_dma_channel(3, state); }
-	DECLARE_WRITE_LINE_MEMBER( dma2_dack0_w );
-	DECLARE_WRITE_LINE_MEMBER( dma2_dack1_w ) { set_dma_channel(5, state); }
-	DECLARE_WRITE_LINE_MEMBER( dma2_dack2_w ) { set_dma_channel(6, state); }
-	DECLARE_WRITE_LINE_MEMBER( dma2_dack3_w ) { set_dma_channel(7, state); }
-	DECLARE_WRITE_LINE_MEMBER( dma2_hreq_w ) { m_write_hold(state); }
+	template <typename T> void set_cputag(T &&tag) { m_cpu.set_tag(std::forward<T>(tag)); }
+	template <typename T> void set_isatag(T &&tag) { m_isa.set_tag(std::forward<T>(tag)); }
+	template <typename T> void set_biostag(T &&tag) { m_bios.set_tag(std::forward<T>(tag)); }
+	template <typename T> void set_keybctag(T &&tag) { m_keybc.set_tag(std::forward<T>(tag)); }
+	template <typename T> void set_ramtag(T &&tag) { m_ram.set_tag(std::forward<T>(tag)); }
 
 	// input lines
 	DECLARE_WRITE_LINE_MEMBER( irq01_w ) { m_pic1->ir1_w(state); }
@@ -156,20 +75,20 @@ public:
 	DECLARE_WRITE_LINE_MEMBER( gatea20_w );
 	DECLARE_WRITE_LINE_MEMBER( kbrst_w );
 
-	DECLARE_READ16_MEMBER(refresh_r);
-	DECLARE_WRITE16_MEMBER(refresh_w);
-	DECLARE_READ16_MEMBER(chipsel_r);
-	DECLARE_WRITE16_MEMBER(chipsel_w);
-	DECLARE_READ16_MEMBER(mem_ctrl_r);
-	DECLARE_WRITE16_MEMBER(mem_ctrl_w);
-	DECLARE_READ16_MEMBER(bank_01_start_r);
-	DECLARE_WRITE16_MEMBER(bank_01_start_w);
-	DECLARE_READ16_MEMBER(bank_23_start_r);
-	DECLARE_WRITE16_MEMBER(bank_23_start_w);
-	DECLARE_READ16_MEMBER(split_addr_r);
-	DECLARE_WRITE16_MEMBER(split_addr_w);
-	DECLARE_READ16_MEMBER(diag_r);
-	DECLARE_WRITE16_MEMBER(diag_w);
+	uint16_t refresh_r();
+	void refresh_w(uint16_t data);
+	uint16_t chipsel_r();
+	void chipsel_w(uint16_t data);
+	uint16_t mem_ctrl_r();
+	void mem_ctrl_w(uint16_t data);
+	uint16_t bank_01_start_r(offs_t offset, uint16_t mem_mask);
+	void bank_01_start_w(offs_t offset, uint16_t data, uint16_t mem_mask);
+	uint16_t bank_23_start_r(offs_t offset, uint16_t mem_mask);
+	void bank_23_start_w(offs_t offset, uint16_t data, uint16_t mem_mask);
+	uint16_t split_addr_r();
+	void split_addr_w(uint16_t data);
+	uint16_t diag_r();
+	void diag_w(uint16_t data);
 
 	IRQ_CALLBACK_MEMBER(intack_cb) { return m_pic1->acknowledge(); }
 
@@ -177,8 +96,54 @@ protected:
 	// device-level overrides
 	virtual void device_start() override;
 	virtual void device_reset() override;
+	// optional information overrides
+	virtual void device_add_mconfig(machine_config &config) override;
 
 private:
+	DECLARE_WRITE_LINE_MEMBER( pic1_int_w ) { m_write_intr(state); }
+	uint8_t pic1_slave_ack_r(offs_t offset);
+	DECLARE_WRITE_LINE_MEMBER( ctc_out1_w );
+	DECLARE_WRITE_LINE_MEMBER( ctc_out2_w );
+	void rtc_w(offs_t offset, uint8_t data);
+	void keyb_cmd_w(uint8_t data);
+	void keyb_data_w(uint8_t data);
+	uint8_t keyb_data_r();
+	uint8_t keyb_status_r();
+	void a20_reset_w(uint8_t data);
+	uint8_t a20_reset_r();
+	uint8_t portb_r();
+	void portb_w(uint8_t data);
+	void dma_page_w(offs_t offset, uint8_t data) { m_dma_page[offset & 0x0f] = data; }
+	uint8_t dma_page_r(offs_t offset) { return m_dma_page[offset & 0x0f]; }
+	uint8_t dma_read_byte(offs_t offset);
+	void dma_write_byte(offs_t offset, uint8_t data);
+	uint8_t dma_read_word(offs_t offset);
+	void dma_write_word(offs_t offset, uint8_t data);
+	DECLARE_WRITE_LINE_MEMBER( dma1_eop_w );
+	uint8_t dma1_ior0_r() { return m_read_ior(0); }
+	uint8_t dma1_ior1_r() { return m_read_ior(1); }
+	uint8_t dma1_ior2_r() { return m_read_ior(2); }
+	uint8_t dma1_ior3_r() { return m_read_ior(3); }
+	uint8_t dma2_ior1_r() { uint16_t result = m_read_ior(5); m_dma_high_byte = result >> 8; return result; }
+	uint8_t dma2_ior2_r() { uint16_t result = m_read_ior(6); m_dma_high_byte = result >> 8; return result; }
+	uint8_t dma2_ior3_r() { uint16_t result = m_read_ior(7); m_dma_high_byte = result >> 8; return result; }
+	void dma1_iow0_w(uint8_t data) { m_write_iow(0, data, 0xffff); }
+	void dma1_iow1_w(uint8_t data) { m_write_iow(1, data, 0xffff); }
+	void dma1_iow2_w(uint8_t data) { m_write_iow(2, data, 0xffff); }
+	void dma1_iow3_w(uint8_t data) { m_write_iow(3, data, 0xffff); }
+	void dma2_iow1_w(uint8_t data) { m_write_iow(5, (m_dma_high_byte << 8) | data, 0xffff); }
+	void dma2_iow2_w(uint8_t data) { m_write_iow(6, (m_dma_high_byte << 8) | data, 0xffff); }
+	void dma2_iow3_w(uint8_t data) { m_write_iow(7, (m_dma_high_byte << 8) | data, 0xffff); }
+	DECLARE_WRITE_LINE_MEMBER( dma1_dack0_w ) { set_dma_channel(0, state); }
+	DECLARE_WRITE_LINE_MEMBER( dma1_dack1_w ) { set_dma_channel(1, state); }
+	DECLARE_WRITE_LINE_MEMBER( dma1_dack2_w ) { set_dma_channel(2, state); }
+	DECLARE_WRITE_LINE_MEMBER( dma1_dack3_w ) { set_dma_channel(3, state); }
+	DECLARE_WRITE_LINE_MEMBER( dma2_dack0_w );
+	DECLARE_WRITE_LINE_MEMBER( dma2_dack1_w ) { set_dma_channel(5, state); }
+	DECLARE_WRITE_LINE_MEMBER( dma2_dack2_w ) { set_dma_channel(6, state); }
+	DECLARE_WRITE_LINE_MEMBER( dma2_dack3_w ) { set_dma_channel(7, state); }
+	DECLARE_WRITE_LINE_MEMBER( dma2_hreq_w ) { m_write_hold(state); }
+
 	devcb_read16 m_read_ior;
 	devcb_write16 m_write_iow;
 	devcb_write8 m_write_tc;
@@ -196,6 +161,12 @@ private:
 	required_device<pit8254_device> m_ctc;
 	required_device<ds12885_device> m_rtc;
 
+	required_device<device_memory_interface> m_cpu;
+	required_device<at_keyboard_controller_device> m_keybc;
+	required_device<ram_device> m_ram;
+	required_region_ptr<uint8_t> m_bios;
+	required_region_ptr<uint8_t> m_isa;
+
 	offs_t page_offset();
 	void set_dma_channel(int channel, bool state);
 	void keyboard_gatea20(int state);
@@ -203,38 +174,30 @@ private:
 	void a20m();
 
 	// internal state
-	const char *m_cputag;
-	const char *m_isatag;
-	const char *m_biostag;
-	const char *m_keybctag;
-	UINT8 m_portb;
+	uint8_t m_portb;
 	int m_iochck;
 	int m_nmi_mask;
 	int m_alt_a20;
 	int m_ext_gatea20;
 	int m_kbrst;
 	int m_refresh_toggle;
-	UINT16 m_refresh_ctrl;
-	UINT16 m_memory_ctrl;
-	UINT16 m_chip_sel;
-	UINT16 m_split_start;
-	UINT8 m_bank_start[4];
-	UINT16 m_diagnostic;
+	uint16_t m_refresh_ctrl;
+	uint16_t m_memory_ctrl;
+	uint16_t m_chip_sel;
+	uint16_t m_split_start;
+	uint8_t m_bank_start[4];
+	uint16_t m_diagnostic;
 
 	int m_dma_eop;
-	UINT8 m_dma_page[0x10];
-	UINT8 m_dma_high_byte;
+	uint8_t m_dma_page[0x10];
+	uint8_t m_dma_high_byte;
 	int m_dma_channel;
 
 	address_space *m_space;
 	address_space *m_space_io;
-	UINT8 *m_isa;
-	UINT8 *m_bios;
-	UINT8 *m_ram;
-	at_keyboard_controller_device *m_keybc;
 };
 
 // device type definition
-extern const device_type WD7600;
+DECLARE_DEVICE_TYPE(WD7600, wd7600_device)
 
-#endif /* WD7600_H_ */
+#endif // MAME_MACHINE_WD7600_H

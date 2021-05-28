@@ -1,6 +1,9 @@
 // license:BSD-3-Clause
 // copyright-holders:Andreas Naive, Olivier Galibert, David Haywood
 /*
+  TODO:
+  - merge interface for ST-V and NAOMI too.
+
   re: Tecmo World Cup '98 (ST-V) (from ANY)
 
   I got one of the card in subject open it up to check the rom version
@@ -17,11 +20,32 @@
 #include "emu.h"
 #include "machine/315-5881_crypt.h"
 
-extern const device_type SEGA315_5881_CRYPT = &device_creator<sega_315_5881_crypt_device>;
+DEFINE_DEVICE_TYPE(SEGA315_5881_CRYPT, sega_315_5881_crypt_device, "sega315_5881", "Sega 315-5881 Encryption")
 
+// TODO: standard hookup doesn't work properly (causes a crash in LA Machine Gun)
+//       might be due of high address variables not properly set (@see sega_315_5881_crypt_device::set_addr_high)
+void sega_315_5881_crypt_device::iomap_64be(address_map &map)
+{
+	map(0x0000, 0x0001).r(FUNC(sega_315_5881_crypt_device::ready_r));
+//  TODO: it is unknown if the
+	map(0x0010, 0x0011).w(FUNC(sega_315_5881_crypt_device::addrlo_w));
+	map(0x0012, 0x0013).w(FUNC(sega_315_5881_crypt_device::addrhi_w));
+	map(0x0018, 0x0019).w(FUNC(sega_315_5881_crypt_device::subkey_be_w));
+	map(0x001c, 0x001d).r(FUNC(sega_315_5881_crypt_device::decrypt_be_r));
+}
 
-sega_315_5881_crypt_device::sega_315_5881_crypt_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: device_t(mconfig, SEGA315_5881_CRYPT, "Sega 315-5881 Encryption", tag, owner, clock, "sega315_5881", __FILE__)
+void sega_315_5881_crypt_device::iomap_le(address_map &map)
+{
+	map(0x0000, 0x0001).r(FUNC(sega_315_5881_crypt_device::ready_r));
+	map(0x0008, 0x0009).w(FUNC(sega_315_5881_crypt_device::addrlo_w));
+	map(0x000a, 0x000b).w(FUNC(sega_315_5881_crypt_device::addrhi_w));
+	map(0x000c, 0x000d).w(FUNC(sega_315_5881_crypt_device::subkey_le_w));
+	map(0x000e, 0x000f).r(FUNC(sega_315_5881_crypt_device::decrypt_le_r));
+}
+
+sega_315_5881_crypt_device::sega_315_5881_crypt_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: device_t(mconfig, SEGA315_5881_CRYPT, tag, owner, clock)
+	, m_read(*this)
 {
 }
 
@@ -29,15 +53,15 @@ sega_315_5881_crypt_device::sega_315_5881_crypt_device(const machine_config &mco
 
 void sega_315_5881_crypt_device::device_start()
 {
-	buffer = std::make_unique<UINT8[]>(BUFFER_SIZE);
-	line_buffer = std::make_unique<UINT8[]>(LINE_SIZE);
-	line_buffer_prev = std::make_unique<UINT8[]>(LINE_SIZE);
+	buffer = std::make_unique<uint8_t[]>(BUFFER_SIZE);
+	line_buffer = std::make_unique<uint8_t[]>(LINE_SIZE);
+	line_buffer_prev = std::make_unique<uint8_t[]>(LINE_SIZE);
 
-	m_read.bind_relative_to(*owner());
+	m_read.resolve();
 
-	save_pointer(NAME(buffer.get()), BUFFER_SIZE);
-	save_pointer(NAME(line_buffer.get()), LINE_SIZE);
-	save_pointer(NAME(line_buffer_prev.get()), LINE_SIZE);
+	save_pointer(NAME(buffer), BUFFER_SIZE);
+	save_pointer(NAME(line_buffer), LINE_SIZE);
+	save_pointer(NAME(line_buffer_prev), LINE_SIZE);
 	save_item(NAME(prot_cur_address));
 	save_item(NAME(subkey));
 	save_item(NAME(enc_ready));
@@ -68,6 +92,7 @@ void sega_315_5881_crypt_device::device_reset()
 	dec_hist = 0;
 	dec_header = 0;
 	enc_ready = false;
+	first_read = false;
 
 	buffer_pos = 0;
 	line_buffer_pos = 0;
@@ -75,7 +100,77 @@ void sega_315_5881_crypt_device::device_reset()
 	buffer_bit = 0;
 }
 
-UINT16 sega_315_5881_crypt_device::do_decrypt(UINT8 *&base)
+/*************************************************
+ *
+ * Chip I/O interface (Model 2/3)
+ *
+ ************************************************/
+
+uint16_t sega_315_5881_crypt_device::ready_r()
+{
+	// bit 0: busy flag
+	return 0;
+}
+
+void sega_315_5881_crypt_device::addrlo_w(uint16_t data)
+{
+	set_addr_low(data&0xffff);
+	first_read = true;
+}
+
+void sega_315_5881_crypt_device::addrhi_w(offs_t offset, uint16_t data, uint16_t mem_mask)
+{
+	set_addr_high(0);
+	if (data != 0)
+		printf("sega_315_5881_crypt_device not zero high address %08x (%08x)\n", data, mem_mask);
+	first_read = true;
+}
+
+void sega_315_5881_crypt_device::subkey_le_w(offs_t offset, uint16_t data, uint16_t mem_mask)
+{
+	printf("subkey %08x (%08x)\n", data, mem_mask);
+	set_subkey(data & 0xffff);
+}
+
+void sega_315_5881_crypt_device::subkey_be_w(offs_t offset, uint16_t data, uint16_t mem_mask)
+{
+	uint16_t subkey;
+	printf("subkey %08x (%08x)\n", data, mem_mask);
+	// endian swap the sub-key for big endian CPUs
+	subkey = ((data & 0xff00) >> 8) | ((data & 0x00ff) << 8);
+	set_subkey(subkey);
+}
+
+uint16_t sega_315_5881_crypt_device::decrypt_le_r()
+{
+	uint16_t retval = decrypt_be_r();
+	// endian swap the sub-key for little endian CPUs
+	retval = ((retval & 0xff00) >> 8) | ((retval & 0x00ff) << 8);
+
+	return retval;
+}
+
+uint16_t sega_315_5881_crypt_device::decrypt_be_r()
+{
+	if (first_read == true)
+	{
+		// the RAM based schemes expect a dummy value before the start of the stream
+		// to match the previous simulation (dynamite cop) I use 0x0000 here
+
+		// this is actually header data?
+		first_read = false;
+		return 0;
+	}
+
+	uint8_t* base;
+	uint16_t retval;
+	retval = do_decrypt(base);
+	// retval = ((retval & 0xff00) >> 8) | ((retval & 0x00ff) << 8);
+
+	return retval;
+}
+
+uint16_t sega_315_5881_crypt_device::do_decrypt(uint8_t *&base)
 {
 	if(!enc_ready)
 		enc_start();
@@ -101,13 +196,13 @@ UINT16 sega_315_5881_crypt_device::do_decrypt(UINT8 *&base)
 	return (base[0] << 8) | base[1];
 }
 
-void sega_315_5881_crypt_device::set_addr_low(UINT16 data)
+void sega_315_5881_crypt_device::set_addr_low(uint16_t data)
 {
 	prot_cur_address = (prot_cur_address & 0xffff0000) | data;
 	enc_ready = false;
 }
 
-void sega_315_5881_crypt_device::set_addr_high(UINT16 data)
+void sega_315_5881_crypt_device::set_addr_high(uint16_t data)
 {
 	prot_cur_address = (prot_cur_address & 0x0000ffff) | (data << 16);
 	enc_ready = false;
@@ -116,7 +211,7 @@ void sega_315_5881_crypt_device::set_addr_high(UINT16 data)
 	buffer_bit2 = 15;
 }
 
-void sega_315_5881_crypt_device::set_subkey(UINT16 data)
+void sega_315_5881_crypt_device::set_subkey(uint16_t data)
 {
 	subkey = data;
 	enc_ready = false;
@@ -536,7 +631,7 @@ const int sega_315_5881_crypt_device::fn2_sequence_key_scheduling[16] = {77,34,8
 
 const int sega_315_5881_crypt_device::fn2_middle_result_scheduling[16] = {1,10,44,68,74,78,81,95,2,4,30,40,41,51,53,58};
 
-int sega_315_5881_crypt_device::feistel_function(int input, const struct sbox *sboxes, UINT32 subkeys)
+int sega_315_5881_crypt_device::feistel_function(int input, const struct sbox *sboxes, uint32_t subkeys)
 {
 	int k,m;
 	int aux;
@@ -566,18 +661,18 @@ noticing that the weak key-scheduling would allow to create some pregenerated lo
 of the function. Even so, it would still be pretty slow, so caching techniques could be a wiser option here.
 **************************/
 
-UINT16 sega_315_5881_crypt_device::block_decrypt(UINT32 game_key, UINT16 sequence_key, UINT16 counter, UINT16 data)
+uint16_t sega_315_5881_crypt_device::block_decrypt(uint32_t game_key, uint16_t sequence_key, uint16_t counter, uint16_t data)
 {
 	int j;
 	int aux, aux2;
 	int A, B;
 	int middle_result;
-	UINT32 fn1_subkeys[4];
-	UINT32 fn2_subkeys[4];
+	uint32_t fn1_subkeys[4];
+	uint32_t fn2_subkeys[4];
 
 	/* Game-key scheduling; this could be done just once per game at initialization time */
-	memset(fn1_subkeys, 0, sizeof(UINT32) * 4);
-	memset(fn2_subkeys, 0, sizeof(UINT32) * 4);
+	memset(fn1_subkeys, 0, sizeof(uint32_t) * 4);
+	memset(fn2_subkeys, 0, sizeof(uint32_t) * 4);
 
 	for (j = 0; j < FN1GK; ++j) {
 		if (BIT(game_key, fn1_game_key_scheduling[j][0]) != 0) {
@@ -617,7 +712,7 @@ UINT16 sega_315_5881_crypt_device::block_decrypt(UINT32 game_key, UINT16 sequenc
 
 	// First Feistel Network
 
-	aux = BITSWAP16(counter, 5, 12, 14, 13, 9, 3, 6, 4, 8, 1, 15, 11, 0, 7, 10, 2);
+	aux = bitswap<16>(counter, 5, 12, 14, 13, 9, 3, 6, 4, 8, 1, 15, 11, 0, 7, 10, 2);
 
 	// 1st round
 	B = aux >> 8;
@@ -647,7 +742,7 @@ UINT16 sega_315_5881_crypt_device::block_decrypt(UINT32 game_key, UINT16 sequenc
 
 	// Second Feistel Network
 
-	aux = BITSWAP16(data, 14, 3, 8, 12, 13, 7, 15, 4, 6, 2, 9, 5, 11, 0, 1, 10);
+	aux = bitswap<16>(data, 14, 3, 8, 12, 13, 7, 15, 4, 6, 2, 9, 5, 11, 0, 1, 10);
 
 	// 1st round
 	B = aux >> 8;
@@ -664,20 +759,20 @@ UINT16 sega_315_5881_crypt_device::block_decrypt(UINT32 game_key, UINT16 sequenc
 
 	aux = (B << 8) | A;
 
-	aux = BITSWAP16(aux, 15, 7, 6, 14, 13, 12, 5, 4, 3, 2, 11, 10, 9, 1, 0, 8);
+	aux = bitswap<16>(aux, 15, 7, 6, 14, 13, 12, 5, 4, 3, 2, 11, 10, 9, 1, 0, 8);
 
 	return aux;
 }
 
 
-UINT16 sega_315_5881_crypt_device::get_decrypted_16()
+uint16_t sega_315_5881_crypt_device::get_decrypted_16()
 {
-	UINT16 enc;
+	uint16_t enc;
 
 	enc = m_read(prot_cur_address);
 
-	UINT16 dec = block_decrypt(key, subkey, prot_cur_address, enc);
-	UINT16 res = (dec & 3) | (dec_hist & 0xfffc);
+	uint16_t dec = block_decrypt(key, subkey, prot_cur_address, enc);
+	uint16_t res = (dec & 3) | (dec_hist & 0xfffc);
 	dec_hist = dec;
 
 	prot_cur_address ++;
@@ -694,7 +789,7 @@ void sega_315_5881_crypt_device::enc_start()
 	done_compression = 0;
 	buffer_pos = BUFFER_SIZE;
 
-	if (buffer_bit2 != 15) // if we have remaining bits in the decompression buffer we shouldn't read the next word yet but should instead use the bits we have?? (twcup98) (might just be because we should be pulling bytes not words?)
+	if (buffer_bit2 < 14) // if we have remaining bits in the decompression buffer we shouldn't read the next word yet but should instead use the bits we have?? (twcup98 needs this, twsoc98 value is 14 on title screen and expects normal logic)
 	{
 //      printf("buffer_bit2 is %d\n", buffer_bit2);
 		dec_header = (buffer2a & 0x0003) << 16;
@@ -725,7 +820,6 @@ void sega_315_5881_crypt_device::enc_start()
 		buffer_bit2 = 15;
 	}
 
-	printf("header %08x\n", dec_header);
 	enc_ready = true;
 }
 
@@ -733,7 +827,7 @@ void sega_315_5881_crypt_device::enc_fill()
 {
 	assert(buffer_pos == BUFFER_SIZE);
 	for(int i = 0; i != BUFFER_SIZE; i+=2) {
-		UINT16 val = get_decrypted_16();
+		uint16_t val = get_decrypted_16();
 		buffer[i] = val;
 		buffer[i+1] = val >> 8;
 		block_pos+=2;
@@ -767,7 +861,7 @@ void sega_315_5881_crypt_device::enc_fill()
                count = ccc + 1
 11111111 - empty node
 */
-const UINT8 sega_315_5881_crypt_device::trees[9][2][32] = {
+const uint8_t sega_315_5881_crypt_device::trees[9][2][32] = {
 	{
 		{0x01,0x10,0x0f,0x05,0xc4,0x13,0x87,0x0a,0xcc,0x81,0xce,0x0c,0x86,0x0e,0x84,0xc2,
 			0x11,0xc1,0xc3,0xcf,0x15,0xc8,0xcd,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,},
@@ -857,9 +951,9 @@ int sega_315_5881_crypt_device::get_compressed_bit()
 void sega_315_5881_crypt_device::line_fill()
 {
 	assert(line_buffer_pos == line_buffer_size);
-	UINT8 *lp = line_buffer.get();
-	UINT8 *lc = line_buffer_prev.get();
-	
+	uint8_t *lp = line_buffer.get();
+	uint8_t *lc = line_buffer_prev.get();
+
 	line_buffer.swap(line_buffer_prev);
 
 	line_buffer_pos = 0;
@@ -871,7 +965,7 @@ void sega_315_5881_crypt_device::line_fill()
 
 		int slot = i ? i < line_buffer_size - 7 ? 1 : (i & 7) + 1 : 0;
 
-		UINT32 tmp = 0;
+		uint32_t tmp = 0;
 		while (!(tmp&0x80))
 			if(get_compressed_bit())
 				tmp = trees[slot][1][tmp];
@@ -892,7 +986,7 @@ void sega_315_5881_crypt_device::line_fill()
 
 			} else {
 				// Get a byte in the stream and write n times
-				UINT8 byte;
+				uint8_t byte;
 				byte =         get_compressed_bit()  << 1;
 				byte = (byte | get_compressed_bit()) << 1;
 				byte = (byte | get_compressed_bit()) << 1;

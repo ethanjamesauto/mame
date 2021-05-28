@@ -8,10 +8,10 @@
 
 ***************************************************************************/
 
-#pragma once
+#ifndef MAME_SOUND_OKIADPCM_H
+#define MAME_SOUND_OKIADPCM_H
 
-#ifndef __OKIADPCM_H__
-#define __OKIADPCM_H__
+#pragma once
 
 
 // ======================> oki_adpcm_state
@@ -23,13 +23,19 @@ public:
 	oki_adpcm_state() { compute_tables(); reset(); }
 
 	void reset();
-	INT16 clock(UINT8 nibble);
+	int16_t clock(uint8_t nibble);
+	int16_t output() { return m_signal; }
+	void save();
+	void restore();
 
-	INT32   m_signal;
-	INT32   m_step;
+	int32_t   m_signal;
+	int32_t   m_step;
+	int32_t   m_loop_signal;
+	int32_t   m_loop_step;
+	bool      m_saved;
 
 private:
-	static const INT8 s_index_shift[8];
+	static const int8_t s_index_shift[8];
 	static int s_diff_lookup[49*16];
 
 	static void compute_tables();
@@ -47,13 +53,19 @@ public:
 	oki_adpcm2_state() { compute_tables(); reset(); }
 
 	void reset();
-	INT16 clock(UINT8 nibble);
+	int16_t clock(uint8_t nibble);
+	int16_t output() { return m_signal; }
+	void save();
+	void restore();
 
-	INT32   m_signal;
-	INT32   m_step;
+	int32_t   m_signal;
+	int32_t   m_step;
+	int32_t   m_loop_signal;
+	int32_t   m_loop_step;
+	bool      m_saved;
 
 private:
-	static const INT8 s_index_shift[8];
+	static const int8_t s_index_shift[8];
 	static int s_diff_lookup[49*16];
 
 	static void compute_tables();
@@ -61,4 +73,4 @@ private:
 };
 
 
-#endif // __OKIADPCM_H__
+#endif // MAME_SOUND_OKIADPCM_H

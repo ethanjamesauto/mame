@@ -10,21 +10,22 @@
  *
  *****************************************************************************/
 
+#ifndef MAME_CPU_SC61860_SC61860_H
+#define MAME_CPU_SC61860_SC61860_H
+
 #pragma once
 
-#ifndef __SC61860_H__
-#define __SC61860_H__
-
 /*
-  official names seam to be
+  Official names seem to be:
   ESR-H, ESR-J
-  (ESR-L SC62015 ist complete different)
- */
+  (ESR-L SC62015 is completely different)
+*/
 
-/* unsolved problems
-   the processor has 8 kbyte internal rom
-   only readable with special instructions and program execution
-   64 kb external ram (first 8kbyte not seen for program execution?) */
+/* Known Issues:
+   - The processor has an 8kbyte internal ROM which is only readable with
+     special instructions and program execution.
+   - 64kbyte external RAM (first 8kbytes not seen for program execution?)
+*/
 
 
 enum
@@ -33,7 +34,7 @@ enum
 	SC61860_P, SC61860_Q, SC61860_R,
 	SC61860_CARRY,
 	SC61860_ZERO,
-	// the following are in the internal ram!
+	// The following are in the internal RAM!
 	SC61860_BA,
 	SC61860_X, SC61860_Y,
 	SC61860_I, SC61860_J, SC61860_K, SC61860_L, SC61860_V, SC61860_W,
@@ -44,48 +45,24 @@ enum
 };
 
 
-#define MCFG_SC61860_READ_RESET_HANDLER(_devcb) \
-	devcb = &sc61860_device::set_reset_cb(*device, DEVCB_##_devcb);
-
-#define MCFG_SC61860_READ_BRK_HANDLER(_devcb) \
-	devcb = &sc61860_device::set_brk_cb(*device, DEVCB_##_devcb);
-
-#define MCFG_SC61860_READ_X_HANDLER(_devcb) \
-	devcb = &sc61860_device::set_x_cb(*device, DEVCB_##_devcb);
-
-#define MCFG_SC61860_READ_A_HANDLER(_devcb) \
-	devcb = &sc61860_device::set_ina_cb(*device, DEVCB_##_devcb);
-
-#define MCFG_SC61860_WRITE_A_HANDLER(_devcb) \
-	devcb = &sc61860_device::set_outa_cb(*device, DEVCB_##_devcb);
-
-#define MCFG_SC61860_READ_B_HANDLER(_devcb) \
-	devcb = &sc61860_device::set_inb_cb(*device, DEVCB_##_devcb);
-
-#define MCFG_SC61860_WRITE_B_HANDLER(_devcb) \
-	devcb = &sc61860_device::set_outb_cb(*device, DEVCB_##_devcb);
-
-#define MCFG_SC61860_WRITE_C_HANDLER(_devcb) \
-	devcb = &sc61860_device::set_outc_cb(*device, DEVCB_##_devcb);
-
 class sc61860_device : public cpu_device
 {
 public:
 	// construction/destruction
-	sc61860_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	sc61860_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
-	// static configuration helpers
-	template<class _Object> static devcb_base &set_reset_cb(device_t &device, _Object object) { return downcast<sc61860_device &>(device).m_reset.set_callback(object); }
-	template<class _Object> static devcb_base &set_brk_cb(device_t &device, _Object object) { return downcast<sc61860_device &>(device).m_brk.set_callback(object); }
-	template<class _Object> static devcb_base &set_x_cb(device_t &device, _Object object) { return downcast<sc61860_device &>(device).m_x.set_callback(object); }
-	template<class _Object> static devcb_base &set_ina_cb(device_t &device, _Object object) { return downcast<sc61860_device &>(device).m_ina.set_callback(object); }
-	template<class _Object> static devcb_base &set_outa_cb(device_t &device, _Object object) { return downcast<sc61860_device &>(device).m_outa.set_callback(object); }
-	template<class _Object> static devcb_base &set_inb_cb(device_t &device, _Object object) { return downcast<sc61860_device &>(device).m_inb.set_callback(object); }
-	template<class _Object> static devcb_base &set_outb_cb(device_t &device, _Object object) { return downcast<sc61860_device &>(device).m_outb.set_callback(object); }
-	template<class _Object> static devcb_base &set_outc_cb(device_t &device, _Object object) { return downcast<sc61860_device &>(device).m_outc.set_callback(object); }
+	// configuration helpers
+	auto reset_cb() { return m_reset.bind(); }
+	auto brk_cb() { return m_brk.bind(); }
+	auto x_cb() { return m_x.bind(); }
+	auto in_a_cb() { return m_ina.bind(); }
+	auto out_a_cb() { return m_outa.bind(); }
+	auto in_b_cb() { return m_inb.bind(); }
+	auto out_b_cb() { return m_outb.bind(); }
+	auto out_c_cb() { return m_outc.bind(); }
 
 	/* this is though for power on/off of the sharps */
-	UINT8 *internal_ram();
+	uint8_t *internal_ram();
 
 	TIMER_CALLBACK_MEMBER(sc61860_2ms_tick);
 
@@ -95,23 +72,21 @@ protected:
 	virtual void device_reset() override;
 
 	// device_execute_interface overrides
-	virtual UINT32 execute_min_cycles() const override { return 2; }
-	virtual UINT32 execute_max_cycles() const override { return 4; }
-	virtual UINT32 execute_input_lines() const override { return 0; }
+	virtual uint32_t execute_min_cycles() const noexcept override { return 2; }
+	virtual uint32_t execute_max_cycles() const noexcept override { return 4; }
+	virtual uint32_t execute_input_lines() const noexcept override { return 0; }
 	virtual void execute_run() override;
 
 	// device_memory_interface overrides
-	virtual const address_space_config *memory_space_config(address_spacenum spacenum = AS_0) const override { return (spacenum == AS_PROGRAM) ? &m_program_config : nullptr; }
+	virtual space_config_vector memory_space_config() const override;
 
 	// device_state_interface overrides
 	virtual void state_import(const device_state_entry &entry) override;
 	virtual void state_export(const device_state_entry &entry) override;
-	void state_string_export(const device_state_entry &entry, std::string &str) override;
+	virtual void state_string_export(const device_state_entry &entry, std::string &str) const override;
 
 	// device_disasm_interface overrides
-	virtual UINT32 disasm_min_opcode_bytes() const override { return 1; }
-	virtual UINT32 disasm_max_opcode_bytes() const override { return 4; }
-	virtual offs_t disasm_disassemble(char *buffer, offs_t pc, const UINT8 *oprom, const UINT8 *opram, UINT32 options) override;
+	virtual std::unique_ptr<util::disasm_interface> create_disassembler() override;
 
 private:
 	address_space_config m_program_config;
@@ -125,36 +100,38 @@ private:
 	devcb_write8 m_outb;
 	devcb_write8 m_outc;
 
-	UINT8 m_p, m_q, m_r; //7 bits only?
+	uint8_t m_p, m_q, m_r; //7 bits only?
 
-	UINT8 m_c;        // port c, used for HLT.
-	UINT8 m_d, m_h;
-	UINT16 m_oldpc, m_pc, m_dp;
+	uint8_t m_c;        // port c, used for HLT.
+	uint8_t m_d, m_h;
+	uint16_t m_oldpc, m_pc, m_dp;
 
 	int m_carry, m_zero;
 
 	struct { int t2ms, t512ms; int count; } m_timer;
+	emu_timer *m_2ms_tick_timer;
 
-	address_space *m_program;
-	direct_read_data *m_direct;
+	memory_access<16, 0, 0, ENDIANNESS_BIG>::cache m_cache;
+	memory_access<16, 0, 0, ENDIANNESS_BIG>::specific m_program;
+
 	int m_icount;
-	UINT8 m_ram[0x100]; // internal special ram, should be 0x60, 0x100 to avoid memory corruption for now
+	uint8_t m_ram[0x100]; // internal special ram, should be 0x60, 0x100 to avoid memory corruption for now
 
-	UINT32 m_debugger_temp;
+	uint32_t m_debugger_temp;
 
-	inline UINT8 READ_OP();
-	inline UINT8 READ_OP_ARG();
-	inline UINT16 READ_OP_ARG_WORD();
-	inline UINT8 READ_BYTE(UINT16 adr);
-	inline void WRITE_BYTE(UINT16 a, UINT8 v);
-	inline UINT8 READ_RAM(int r);
-	inline void WRITE_RAM(int r, UINT8 v);
-	inline void PUSH(UINT8 v);
-	inline UINT8 POP();
-	inline void sc61860_load_imm(int r, UINT8 v);
+	inline uint8_t READ_OP();
+	inline uint8_t READ_OP_ARG();
+	inline uint16_t READ_OP_ARG_WORD();
+	inline uint8_t READ_BYTE(uint16_t adr);
+	inline void WRITE_BYTE(uint16_t a, uint8_t v);
+	inline uint8_t READ_RAM(int r);
+	inline void WRITE_RAM(int r, uint8_t v);
+	inline void PUSH(uint8_t v);
+	inline uint8_t POP();
+	inline void sc61860_load_imm(int r, uint8_t v);
 	inline void sc61860_load();
-	inline void sc61860_load_imm_p(UINT8 v);
-	inline void sc61860_load_imm_q(UINT8 v);
+	inline void sc61860_load_imm_p(uint8_t v);
+	inline void sc61860_load_imm_q(uint8_t v);
 	inline void sc61860_load_r();
 	inline void sc61860_load_ext(int r);
 	inline void sc61860_load_dp();
@@ -164,11 +141,11 @@ private:
 	inline void sc61860_store_r();
 	inline void sc61860_store_ext(int r);
 	inline void sc61860_exam(int a, int b);
-	inline void sc61860_test(int reg, UINT8 value);
+	inline void sc61860_test(int reg, uint8_t value);
 	inline void sc61860_test_ext();
-	inline void sc61860_and(int reg, UINT8 value);
+	inline void sc61860_and(int reg, uint8_t value);
 	inline void sc61860_and_ext();
-	inline void sc61860_or(int reg, UINT8 value);
+	inline void sc61860_or(int reg, uint8_t value);
 	inline void sc61860_or_ext();
 	inline void sc61860_rotate_right();
 	inline void sc61860_rotate_left();
@@ -177,18 +154,18 @@ private:
 	inline void sc61860_inc_p();
 	inline void sc61860_dec(int reg);
 	inline void sc61860_dec_p();
-	inline void sc61860_add(int reg, UINT8 value);
+	inline void sc61860_add(int reg, uint8_t value);
 	inline void sc61860_add_carry();
 	inline void sc61860_add_word();
-	inline void sc61860_sub(int reg, UINT8 value);
+	inline void sc61860_sub(int reg, uint8_t value);
 	inline void sc61860_sub_carry();
 	inline void sc61860_sub_word();
-	inline void sc61860_cmp(int reg, UINT8 value);
+	inline void sc61860_cmp(int reg, uint8_t value);
 	inline void sc61860_pop();
 	inline void sc61860_push();
 	inline void sc61860_prepare_table_call();
 	inline void sc61860_execute_table_call();
-	inline void sc61860_call(UINT16 adr);
+	inline void sc61860_call(uint16_t adr);
 	inline void sc61860_return();
 	inline void sc61860_jump(int yes);
 	inline void sc61860_jump_rel_plus(int yes);
@@ -230,7 +207,6 @@ private:
 };
 
 
-extern const device_type SC61860;
+DECLARE_DEVICE_TYPE(SC61860, sc61860_device)
 
-
-#endif /* __SC61860_H__ */
+#endif // MAME_CPU_SC61860_SC61860_H

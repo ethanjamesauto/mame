@@ -7,11 +7,10 @@
     Disk image formats
 
 ***************************************************************************/
+#ifndef MAME_FORMATS_FSD_DSK_H
+#define MAME_FORMATS_FSD_DSK_H
 
 #pragma once
-
-#ifndef __FSD_DSK_H__
-#define __FSD_DSK_H__
 
 #include "flopimg.h"
 #include "wd177x_dsk.h"
@@ -34,10 +33,10 @@ public:
 	virtual const char *extensions() const override;
 	virtual bool supports_save() const override;
 
-	virtual int identify(io_generic *io, UINT32 form_factor) override;
-	virtual bool load(io_generic *io, UINT32 form_factor, floppy_image *image) override;
+	virtual int identify(io_generic *io, uint32_t form_factor, const std::vector<uint32_t> &variants) override;
+	virtual bool load(io_generic *io, uint32_t form_factor, const std::vector<uint32_t> &variants, floppy_image *image) override;
 };
 
 extern const floppy_format_type FLOPPY_FSD_FORMAT;
 
-#endif // __FSD_DSK_H__
+#endif // MAME_FORMATS_FSD_DSK_H

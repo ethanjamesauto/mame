@@ -13,22 +13,27 @@ TODO:
 ***************************************************************************/
 
 #include "emu.h"
+#include "includes/asterix.h"
+#include "includes/konamipt.h"
+
 #include "cpu/m68000/m68000.h"
 #include "cpu/z80/z80.h"
 #include "machine/eepromser.h"
-#include "sound/2151intf.h"
 #include "sound/k053260.h"
-#include "includes/konamipt.h"
-#include "includes/asterix.h"
+#include "sound/ymopm.h"
+#include "emupal.h"
+#include "screen.h"
+#include "speaker.h"
+
 
 #if 0
-READ16_MEMBER(asterix_state::control2_r)
+uint16_t asterix_state::control2_r()
 {
 	return m_cur_control2;
 }
 #endif
 
-WRITE16_MEMBER(asterix_state::control2_w)
+void asterix_state::control2_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	if (ACCESSING_BITS_0_7)
 	{
@@ -40,6 +45,14 @@ WRITE16_MEMBER(asterix_state::control2_w)
 
 		/* bit 5 is select tile bank */
 		m_k056832->set_tile_bank((data & 0x20) >> 5);
+		// TODO: looks like 0xffff is used from time to time for chip selection/reset something, not unlike Jackal
+		if((data & 0xff) != 0xff)
+		{
+			machine().bookkeeping().coin_counter_w(0, data & 0x08);
+			machine().bookkeeping().coin_counter_w(1, data & 0x10);
+			machine().bookkeeping().coin_lockout_w(0, data & 0x40);
+			machine().bookkeeping().coin_lockout_w(1, data & 0x80);
+		}
 	}
 }
 
@@ -60,17 +73,17 @@ void asterix_state::device_timer(emu_timer &timer, device_timer_id id, int param
 		m_audiocpu->set_input_line(INPUT_LINE_NMI, ASSERT_LINE);
 		break;
 	default:
-		assert_always(FALSE, "Unknown id in asterix_state::device_timer");
+		throw emu_fatalerror("Unknown id in asterix_state::device_timer");
 	}
 }
 
-WRITE8_MEMBER(asterix_state::sound_arm_nmi_w)
+void asterix_state::sound_arm_nmi_w(uint8_t data)
 {
 	m_audiocpu->set_input_line(INPUT_LINE_NMI, CLEAR_LINE);
 	timer_set(attotime::from_usec(5), TIMER_NMI);
 }
 
-WRITE16_MEMBER(asterix_state::sound_irq_w)
+void asterix_state::sound_irq_w(uint16_t data)
 {
 	m_audiocpu->set_input_line(0, HOLD_LINE);
 }
@@ -79,19 +92,19 @@ WRITE16_MEMBER(asterix_state::sound_irq_w)
 // You're not supposed to laugh.
 // This emulation is grossly overkill but hey, I'm having fun.
 #if 0
-WRITE16_MEMBER(asterix_state::protection_w)
+void asterix_state::protection_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	COMBINE_DATA(m_prot + offset);
 
 	if (offset == 1)
 	{
-		UINT32 cmd = (m_prot[0] << 16) | m_prot[1];
+		uint32_t cmd = (m_prot[0] << 16) | m_prot[1];
 		switch (cmd >> 24)
 		{
 		case 0x64:
 			{
-			UINT32 param1 = (read_word(cmd & 0xffffff) << 16) | read_word((cmd & 0xffffff) + 2);
-			UINT32 param2 = (read_word((cmd & 0xffffff) + 4) << 16) | read_word((cmd & 0xffffff) + 6);
+			uint32_t param1 = (read_word(cmd & 0xffffff) << 16) | read_word((cmd & 0xffffff) + 2);
+			uint32_t param2 = (read_word((cmd & 0xffffff) + 4) << 16) | read_word((cmd & 0xffffff) + 6);
 
 			switch (param1 >> 24)
 			{
@@ -117,20 +130,20 @@ WRITE16_MEMBER(asterix_state::protection_w)
 }
 #endif
 
-WRITE16_MEMBER(asterix_state::protection_w)
+void asterix_state::protection_w(address_space &space, offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	COMBINE_DATA(m_prot + offset);
 
 	if (offset == 1)
 	{
-		UINT32 cmd = (m_prot[0] << 16) | m_prot[1];
+		uint32_t cmd = (m_prot[0] << 16) | m_prot[1];
 		switch (cmd >> 24)
 		{
 		case 0x64:
 		{
-			UINT32 param1 = (space.read_word(cmd & 0xffffff) << 16)
+			uint32_t param1 = (space.read_word(cmd & 0xffffff) << 16)
 				| space.read_word((cmd & 0xffffff) + 2);
-			UINT32 param2 = (space.read_word((cmd & 0xffffff) + 4) << 16)
+			uint32_t param2 = (space.read_word((cmd & 0xffffff) + 4) << 16)
 				| space.read_word((cmd & 0xffffff) + 6);
 
 			switch (param1 >> 24)
@@ -156,37 +169,39 @@ WRITE16_MEMBER(asterix_state::protection_w)
 	}
 }
 
-static ADDRESS_MAP_START( main_map, AS_PROGRAM, 16, asterix_state )
-	AM_RANGE(0x000000, 0x0fffff) AM_ROM
-	AM_RANGE(0x100000, 0x107fff) AM_RAM
-	AM_RANGE(0x180000, 0x1807ff) AM_DEVREADWRITE("k053244", k05324x_device, k053245_word_r, k053245_word_w)
-	AM_RANGE(0x180800, 0x180fff) AM_RAM                             // extra RAM, or mirror for the above?
-	AM_RANGE(0x200000, 0x20000f) AM_DEVREADWRITE("k053244", k05324x_device, k053244_word_r, k053244_word_w)
-	AM_RANGE(0x280000, 0x280fff) AM_RAM_DEVWRITE("palette", palette_device, write) AM_SHARE("palette")
-	AM_RANGE(0x300000, 0x30001f) AM_DEVREADWRITE("k053244", k05324x_device, k053244_lsb_r, k053244_lsb_w)
-	AM_RANGE(0x380000, 0x380001) AM_READ_PORT("IN0")
-	AM_RANGE(0x380002, 0x380003) AM_READ_PORT("IN1")
-	AM_RANGE(0x380100, 0x380101) AM_WRITE(control2_w)
-	AM_RANGE(0x380200, 0x380203) AM_DEVREADWRITE8("k053260", k053260_device, main_read, main_write, 0x00ff)
-	AM_RANGE(0x380300, 0x380301) AM_WRITE(sound_irq_w)
-	AM_RANGE(0x380400, 0x380401) AM_WRITE(asterix_spritebank_w)
-	AM_RANGE(0x380500, 0x38051f) AM_DEVWRITE("k053251", k053251_device, lsb_w)
-	AM_RANGE(0x380600, 0x380601) AM_NOP                             // Watchdog
-	AM_RANGE(0x380700, 0x380707) AM_DEVWRITE("k056832", k056832_device, b_word_w)
-	AM_RANGE(0x380800, 0x380803) AM_WRITE(protection_w)
-	AM_RANGE(0x400000, 0x400fff) AM_DEVREADWRITE("k056832", k056832_device, ram_half_word_r, ram_half_word_w)
-	AM_RANGE(0x420000, 0x421fff) AM_DEVREAD("k056832", k056832_device, old_rom_word_r)   // Passthrough to tile roms
-	AM_RANGE(0x440000, 0x44003f) AM_DEVWRITE("k056832", k056832_device, word_w)
-ADDRESS_MAP_END
+void asterix_state::main_map(address_map &map)
+{
+	map(0x000000, 0x0fffff).rom();
+	map(0x100000, 0x107fff).ram();
+	map(0x180000, 0x1807ff).rw(m_k053244, FUNC(k05324x_device::k053245_word_r), FUNC(k05324x_device::k053245_word_w));
+	map(0x180800, 0x180fff).ram();                             // extra RAM, or mirror for the above?
+	map(0x200000, 0x20000f).rw(m_k053244, FUNC(k05324x_device::k053244_r), FUNC(k05324x_device::k053244_w));
+	map(0x280000, 0x280fff).ram().w("palette", FUNC(palette_device::write16)).share("palette");
+	map(0x300000, 0x30001f).rw(m_k053244, FUNC(k05324x_device::k053244_r), FUNC(k05324x_device::k053244_w)).umask16(0x00ff);
+	map(0x380000, 0x380001).portr("IN0");
+	map(0x380002, 0x380003).portr("IN1");
+	map(0x380100, 0x380101).w(FUNC(asterix_state::control2_w));
+	map(0x380200, 0x380203).rw("k053260", FUNC(k053260_device::main_read), FUNC(k053260_device::main_write)).umask16(0x00ff);
+	map(0x380300, 0x380301).w(FUNC(asterix_state::sound_irq_w));
+	map(0x380400, 0x380401).w(FUNC(asterix_state::asterix_spritebank_w));
+	map(0x380500, 0x38051f).w(m_k053251, FUNC(k053251_device::write)).umask16(0x00ff);
+	map(0x380600, 0x380601).noprw();                             // Watchdog
+	map(0x380700, 0x380707).w(m_k056832, FUNC(k056832_device::b_word_w));
+	map(0x380800, 0x380803).w(FUNC(asterix_state::protection_w));
+	map(0x400000, 0x400fff).rw(m_k056832, FUNC(k056832_device::ram_half_word_r), FUNC(k056832_device::ram_half_word_w));
+	map(0x420000, 0x421fff).r(m_k056832, FUNC(k056832_device::old_rom_word_r));   // Passthrough to tile roms
+	map(0x440000, 0x44003f).w(m_k056832, FUNC(k056832_device::word_w));
+}
 
-static ADDRESS_MAP_START( sound_map, AS_PROGRAM, 8, asterix_state )
-	AM_RANGE(0x0000, 0xefff) AM_ROM
-	AM_RANGE(0xf000, 0xf7ff) AM_RAM
-	AM_RANGE(0xf801, 0xf801) AM_DEVREADWRITE("ymsnd", ym2151_device, status_r, data_w)
-	AM_RANGE(0xfa00, 0xfa2f) AM_DEVREADWRITE("k053260", k053260_device, read, write)
-	AM_RANGE(0xfc00, 0xfc00) AM_WRITE(sound_arm_nmi_w)
-	AM_RANGE(0xfe00, 0xfe00) AM_DEVWRITE("ymsnd", ym2151_device, register_w)
-ADDRESS_MAP_END
+void asterix_state::sound_map(address_map &map)
+{
+	map(0x0000, 0xefff).rom();
+	map(0xf000, 0xf7ff).ram();
+	map(0xf801, 0xf801).rw("ymsnd", FUNC(ym2151_device::status_r), FUNC(ym2151_device::data_w));
+	map(0xfa00, 0xfa2f).rw("k053260", FUNC(k053260_device::read), FUNC(k053260_device::write));
+	map(0xfc00, 0xfc00).w(FUNC(asterix_state::sound_arm_nmi_w));
+	map(0xfe00, 0xfe00).w("ymsnd", FUNC(ym2151_device::address_w));
+}
 
 
 
@@ -200,8 +215,8 @@ static INPUT_PORTS_START( asterix )
 
 	PORT_START("IN1")
 	KONAMI16_LSB(2, IPT_UNKNOWN, IPT_START2)
-	PORT_BIT( 0x0100, IP_ACTIVE_HIGH, IPT_SPECIAL ) PORT_READ_LINE_DEVICE_MEMBER("eeprom", eeprom_serial_er5911_device, do_read)
-	PORT_BIT( 0x0200, IP_ACTIVE_HIGH, IPT_SPECIAL ) PORT_READ_LINE_DEVICE_MEMBER("eeprom", eeprom_serial_er5911_device, ready_read)
+	PORT_BIT( 0x0100, IP_ACTIVE_HIGH, IPT_CUSTOM ) PORT_READ_LINE_DEVICE_MEMBER("eeprom", eeprom_serial_er5911_device, do_read)
+	PORT_BIT( 0x0200, IP_ACTIVE_HIGH, IPT_CUSTOM ) PORT_READ_LINE_DEVICE_MEMBER("eeprom", eeprom_serial_er5911_device, ready_read)
 	PORT_SERVICE_NO_TOGGLE(0x0400, IP_ACTIVE_LOW )
 	PORT_BIT( 0xf800, IP_ACTIVE_HIGH, IPT_UNKNOWN )
 
@@ -245,57 +260,51 @@ void asterix_state::machine_reset()
 	}
 }
 
-static MACHINE_CONFIG_START( asterix, asterix_state )
-
+void asterix_state::asterix(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", M68000, XTAL_24MHz/2) // 12MHz
-	MCFG_CPU_PROGRAM_MAP(main_map)
-	MCFG_CPU_VBLANK_INT_DRIVER("screen", asterix_state,  asterix_interrupt)
+	M68000(config, m_maincpu, XTAL(24'000'000)/2); // 12MHz
+	m_maincpu->set_addrmap(AS_PROGRAM, &asterix_state::main_map);
+	m_maincpu->set_vblank_int("screen", FUNC(asterix_state::asterix_interrupt));
 
-	MCFG_CPU_ADD("audiocpu", Z80, XTAL_32MHz/4) // 8MHz Z80E ??
-	MCFG_CPU_PROGRAM_MAP(sound_map)
+	Z80(config, m_audiocpu, XTAL(32'000'000)/4); // 8MHz Z80E ??
+	m_audiocpu->set_addrmap(AS_PROGRAM, &asterix_state::sound_map);
 
-	MCFG_EEPROM_SERIAL_ER5911_8BIT_ADD("eeprom")
+	EEPROM_ER5911_8BIT(config, "eeprom");
 
 	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_REFRESH_RATE(60)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(0))
-	MCFG_SCREEN_SIZE(64*8, 32*8)
-	MCFG_SCREEN_VISIBLE_AREA(14*8, (64-14)*8-1, 2*8, 30*8-1 )
-	MCFG_SCREEN_UPDATE_DRIVER(asterix_state, screen_update_asterix)
-	MCFG_SCREEN_PALETTE("palette")
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_RASTER));
+	screen.set_refresh_hz(60);
+	screen.set_vblank_time(ATTOSECONDS_IN_USEC(0));
+	screen.set_size(64*8, 32*8);
+	screen.set_visarea(14*8, (64-14)*8-1, 2*8, 30*8-1);
+	screen.set_screen_update(FUNC(asterix_state::screen_update_asterix));
+	screen.set_palette("palette");
 
-	MCFG_PALETTE_ADD("palette", 2048)
-	MCFG_PALETTE_ENABLE_SHADOWS()
-	MCFG_PALETTE_FORMAT(xBBBBBGGGGGRRRRR)
+	PALETTE(config, "palette").set_format(palette_device::xBGR_555, 2048).enable_shadows();
 
-	MCFG_GFXDECODE_ADD("gfxdecode", "palette", empty)
+	K056832(config, m_k056832, 0);
+	m_k056832->set_tile_callback(FUNC(asterix_state::tile_callback));
+	m_k056832->set_config(K056832_BPP_4, 1, 1);
+	m_k056832->set_palette("palette");
 
-	MCFG_DEVICE_ADD("k056832", K056832, 0)
-	MCFG_K056832_CB(asterix_state, tile_callback)
-	MCFG_K056832_CONFIG("gfx1", 0, K056832_BPP_4, 1, 1, "none")
-	MCFG_K056832_GFXDECODE("gfxdecode")
-	MCFG_K056832_PALETTE("palette")
+	K053244(config, m_k053244, 0);
+	m_k053244->set_palette("palette");
+	m_k053244->set_offsets(-3, -1);
+	m_k053244->set_sprite_callback(FUNC(asterix_state::sprite_callback));
 
-	MCFG_DEVICE_ADD("k053244", K053244, 0)
-	MCFG_GFX_PALETTE("palette")
-	MCFG_K05324X_OFFSETS(-3, -1)
-	MCFG_K05324X_CB(asterix_state, sprite_callback)
-
-	MCFG_K053251_ADD("k053251")
+	K053251(config, m_k053251, 0);
 
 	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_STEREO("lspeaker", "rspeaker")
+	SPEAKER(config, "lspeaker").front_left();
+	SPEAKER(config, "rspeaker").front_right();
 
-	MCFG_YM2151_ADD("ymsnd", XTAL_32MHz/8) // 4MHz
-	MCFG_SOUND_ROUTE(0, "lspeaker", 1.0)
-	MCFG_SOUND_ROUTE(1, "rspeaker", 1.0)
+	YM2151(config, "ymsnd", XTAL(32'000'000)/8).add_route(0, "lspeaker", 1.0).add_route(1, "rspeaker", 1.0); // 4MHz
 
-	MCFG_K053260_ADD("k053260", XTAL_32MHz/8) // 4MHz
-	MCFG_SOUND_ROUTE(0, "lspeaker", 0.75)
-	MCFG_SOUND_ROUTE(1, "rspeaker", 0.75)
-MACHINE_CONFIG_END
+	k053260_device &k053260(K053260(config, "k053260", XTAL(32'000'000)/8)); // 4MHz
+	k053260.add_route(0, "lspeaker", 0.75);
+	k053260.add_route(1, "rspeaker", 0.75);
+}
 
 
 ROM_START( asterix )
@@ -308,7 +317,7 @@ ROM_START( asterix )
 	ROM_REGION( 0x010000, "audiocpu", 0 )
 	ROM_LOAD( "068_a05.5f", 0x000000, 0x010000,  CRC(d3d0d77b) SHA1(bfa77a8bf651dc27f481e96a2d63242084cc214c) )
 
-	ROM_REGION( 0x100000, "gfx1", 0 )
+	ROM_REGION( 0x100000, "k056832", 0 )
 	ROM_LOAD32_WORD( "068a12.16k", 0x000000, 0x080000, CRC(b9da8e9c) SHA1(a46878916833923e421da0667e37620ae0b77744) )
 	ROM_LOAD32_WORD( "068a11.12k", 0x000002, 0x080000, CRC(7eb07a81) SHA1(672c0c60834df7816d33d88643e4575b8ca9bcc1) )
 
@@ -319,7 +328,7 @@ ROM_START( asterix )
 	ROM_REGION( 0x200000, "k053260", 0 )
 	ROM_LOAD( "068a06.1e", 0x000000, 0x200000, CRC(6df9ec0e) SHA1(cee60312e9813bd6579f3ac7c3c2521a8e633eca) )
 
-	ROM_REGION16_BE( 0x80, "eeprom", 0 )
+	ROM_REGION( 0x80, "eeprom", 0 )
 	ROM_LOAD( "asterix.nv", 0x0000, 0x0080, CRC(490085c8) SHA1(2a79e7c79db4b4fb0e6a7249cfd6a57e74b170e3) )
 ROM_END
 
@@ -333,7 +342,7 @@ ROM_START( asterixeac )
 	ROM_REGION( 0x010000, "audiocpu", 0 )
 	ROM_LOAD( "068_a05.5f", 0x000000, 0x010000,  CRC(d3d0d77b) SHA1(bfa77a8bf651dc27f481e96a2d63242084cc214c) )
 
-	ROM_REGION( 0x100000, "gfx1", 0 )
+	ROM_REGION( 0x100000, "k056832", 0 )
 	ROM_LOAD32_WORD( "068a12.16k", 0x000000, 0x080000, CRC(b9da8e9c) SHA1(a46878916833923e421da0667e37620ae0b77744) )
 	ROM_LOAD32_WORD( "068a11.12k", 0x000002, 0x080000, CRC(7eb07a81) SHA1(672c0c60834df7816d33d88643e4575b8ca9bcc1) )
 
@@ -344,7 +353,7 @@ ROM_START( asterixeac )
 	ROM_REGION( 0x200000, "k053260", 0 )
 	ROM_LOAD( "068a06.1e", 0x000000, 0x200000, CRC(6df9ec0e) SHA1(cee60312e9813bd6579f3ac7c3c2521a8e633eca) )
 
-	ROM_REGION16_BE( 0x80, "eeprom", 0 )
+	ROM_REGION( 0x80, "eeprom", 0 )
 	ROM_LOAD( "asterixeac.nv", 0x0000, 0x0080, CRC(490085c8) SHA1(2a79e7c79db4b4fb0e6a7249cfd6a57e74b170e3) )
 ROM_END
 
@@ -358,7 +367,7 @@ ROM_START( asterixeaa )
 	ROM_REGION( 0x010000, "audiocpu", 0 )
 	ROM_LOAD( "068_a05.5f", 0x000000, 0x010000,  CRC(d3d0d77b) SHA1(bfa77a8bf651dc27f481e96a2d63242084cc214c) )
 
-	ROM_REGION( 0x100000, "gfx1", 0 )
+	ROM_REGION( 0x100000, "k056832", 0 )
 	ROM_LOAD32_WORD( "068a12.16k", 0x000000, 0x080000, CRC(b9da8e9c) SHA1(a46878916833923e421da0667e37620ae0b77744) )
 	ROM_LOAD32_WORD( "068a11.12k", 0x000002, 0x080000, CRC(7eb07a81) SHA1(672c0c60834df7816d33d88643e4575b8ca9bcc1) )
 
@@ -369,7 +378,7 @@ ROM_START( asterixeaa )
 	ROM_REGION( 0x200000, "k053260", 0 )
 	ROM_LOAD( "068a06.1e", 0x000000, 0x200000, CRC(6df9ec0e) SHA1(cee60312e9813bd6579f3ac7c3c2521a8e633eca) )
 
-	ROM_REGION16_BE( 0x80, "eeprom", 0 )
+	ROM_REGION( 0x80, "eeprom", 0 )
 	ROM_LOAD( "asterixeaa.nv", 0x0000, 0x0080, CRC(30275de0) SHA1(4bbf90a4e5b20406153329e9e7c4c2bf72676f8d) )
 ROM_END
 
@@ -383,7 +392,7 @@ ROM_START( asterixaad )
 	ROM_REGION( 0x010000, "audiocpu", 0 )
 	ROM_LOAD( "068_a05.5f", 0x000000, 0x010000,  CRC(d3d0d77b) SHA1(bfa77a8bf651dc27f481e96a2d63242084cc214c) )
 
-	ROM_REGION( 0x100000, "gfx1", 0 )
+	ROM_REGION( 0x100000, "k056832", 0 )
 	ROM_LOAD32_WORD( "068a12.16k", 0x000000, 0x080000, CRC(b9da8e9c) SHA1(a46878916833923e421da0667e37620ae0b77744) )
 	ROM_LOAD32_WORD( "068a11.12k", 0x000002, 0x080000, CRC(7eb07a81) SHA1(672c0c60834df7816d33d88643e4575b8ca9bcc1) )
 
@@ -394,7 +403,7 @@ ROM_START( asterixaad )
 	ROM_REGION( 0x200000, "k053260", 0 )
 	ROM_LOAD( "068a06.1e", 0x000000, 0x200000, CRC(6df9ec0e) SHA1(cee60312e9813bd6579f3ac7c3c2521a8e633eca) )
 
-	ROM_REGION16_BE( 0x80, "eeprom", 0 )
+	ROM_REGION( 0x80, "eeprom", 0 )
 	ROM_LOAD( "asterixaad.nv", 0x0000, 0x0080, CRC(bcca86a7) SHA1(1191b0011749e2516df723c9d63da9c2304fa594) )
 ROM_END
 
@@ -408,7 +417,7 @@ ROM_START( asterixj )
 	ROM_REGION( 0x010000, "audiocpu", 0 )
 	ROM_LOAD( "068_a05.5f", 0x000000, 0x010000,  CRC(d3d0d77b) SHA1(bfa77a8bf651dc27f481e96a2d63242084cc214c) )
 
-	ROM_REGION( 0x100000, "gfx1", 0 )
+	ROM_REGION( 0x100000, "k056832", 0 )
 	ROM_LOAD32_WORD( "068a12.16k", 0x000000, 0x080000, CRC(b9da8e9c) SHA1(a46878916833923e421da0667e37620ae0b77744) )
 	ROM_LOAD32_WORD( "068a11.12k", 0x000002, 0x080000, CRC(7eb07a81) SHA1(672c0c60834df7816d33d88643e4575b8ca9bcc1) )
 
@@ -419,22 +428,22 @@ ROM_START( asterixj )
 	ROM_REGION( 0x200000, "k053260", 0 )
 	ROM_LOAD( "068a06.1e", 0x000000, 0x200000, CRC(6df9ec0e) SHA1(cee60312e9813bd6579f3ac7c3c2521a8e633eca) )
 
-	ROM_REGION16_BE( 0x80, "eeprom", 0 )
+	ROM_REGION( 0x80, "eeprom", 0 )
 	ROM_LOAD( "asterixj.nv", 0x0000, 0x0080, CRC(84229f2c) SHA1(34c7491c731fbf741dfd53bfc559d91201ccfb03) )
 ROM_END
 
 
-DRIVER_INIT_MEMBER(asterix_state,asterix)
+void asterix_state::init_asterix()
 {
 #if 0
-	*(UINT16 *)(memregion("maincpu")->base() + 0x07f34) = 0x602a;
-	*(UINT16 *)(memregion("maincpu")->base() + 0x00008) = 0x0400;
+	*(uint16_t *)(memregion("maincpu")->base() + 0x07f34) = 0x602a;
+	*(uint16_t *)(memregion("maincpu")->base() + 0x00008) = 0x0400;
 #endif
 }
 
 
-GAME( 1992, asterix,    0,       asterix, asterix, asterix_state, asterix, ROT0, "Konami", "Asterix (ver EAD)", MACHINE_IMPERFECT_GRAPHICS | MACHINE_SUPPORTS_SAVE )
-GAME( 1992, asterixeac, asterix, asterix, asterix, asterix_state, asterix, ROT0, "Konami", "Asterix (ver EAC)", MACHINE_IMPERFECT_GRAPHICS | MACHINE_SUPPORTS_SAVE )
-GAME( 1992, asterixeaa, asterix, asterix, asterix, asterix_state, asterix, ROT0, "Konami", "Asterix (ver EAA)", MACHINE_IMPERFECT_GRAPHICS | MACHINE_SUPPORTS_SAVE )
-GAME( 1992, asterixaad, asterix, asterix, asterix, asterix_state, asterix, ROT0, "Konami", "Asterix (ver AAD)", MACHINE_IMPERFECT_GRAPHICS | MACHINE_SUPPORTS_SAVE )
-GAME( 1992, asterixj,   asterix, asterix, asterix, asterix_state, asterix, ROT0, "Konami", "Asterix (ver JAD)", MACHINE_IMPERFECT_GRAPHICS | MACHINE_SUPPORTS_SAVE )
+GAME( 1992, asterix,    0,       asterix, asterix, asterix_state, init_asterix, ROT0, "Konami", "Asterix (ver EAD)", MACHINE_IMPERFECT_GRAPHICS | MACHINE_SUPPORTS_SAVE )
+GAME( 1992, asterixeac, asterix, asterix, asterix, asterix_state, init_asterix, ROT0, "Konami", "Asterix (ver EAC)", MACHINE_IMPERFECT_GRAPHICS | MACHINE_SUPPORTS_SAVE )
+GAME( 1992, asterixeaa, asterix, asterix, asterix, asterix_state, init_asterix, ROT0, "Konami", "Asterix (ver EAA)", MACHINE_IMPERFECT_GRAPHICS | MACHINE_SUPPORTS_SAVE )
+GAME( 1992, asterixaad, asterix, asterix, asterix, asterix_state, init_asterix, ROT0, "Konami", "Asterix (ver AAD)", MACHINE_IMPERFECT_GRAPHICS | MACHINE_SUPPORTS_SAVE )
+GAME( 1992, asterixj,   asterix, asterix, asterix, asterix_state, init_asterix, ROT0, "Konami", "Asterix (ver JAD)", MACHINE_IMPERFECT_GRAPHICS | MACHINE_SUPPORTS_SAVE )

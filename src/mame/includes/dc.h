@@ -5,13 +5,15 @@
     dc.h - Sega Dreamcast includes
 
 */
+#ifndef MAME_INCLUDES_DC_H
+#define MAME_INCLUDES_DC_H
 
-#ifndef __DC_H__
-#define __DC_H__
+#pragma once
 
 #include "video/powervr2.h"
 #include "machine/naomig1.h"
 #include "machine/maple-dc.h"
+#include "machine/timer.h"
 #include "sound/aica.h"
 
 class dc_state : public driver_device
@@ -30,54 +32,60 @@ class dc_state : public driver_device
 		m_naomig1(*this, "rom_board"),
 		m_aica(*this, "aica") { }
 
-	required_shared_ptr<UINT64> dc_framebuffer_ram; // '32-bit access area'
-	required_shared_ptr<UINT64> dc_texture_ram; // '64-bit access area'
+	required_shared_ptr<uint64_t> dc_framebuffer_ram; // '32-bit access area'
+	required_shared_ptr<uint64_t> dc_texture_ram; // '64-bit access area'
 
-	required_shared_ptr<UINT32> dc_sound_ram;
-	required_shared_ptr<UINT64> dc_ram;
+	required_shared_ptr<uint16_t> dc_sound_ram;
+	required_shared_ptr<uint64_t> dc_ram;
 
 	/* machine related */
-	UINT32 dc_sysctrl_regs[0x200/4];
-	UINT32 g1bus_regs[0x100/4]; // DC-only
-	UINT32 g2bus_regs[0x100/4];
-	UINT8 m_armrst;
+	uint32_t dc_sysctrl_regs[0x200/4];
+	uint32_t g1bus_regs[0x100/4]; // DC-only
+	uint32_t g2bus_regs[0x100/4];
+	uint8_t m_armrst;
 
 	struct {
-		UINT32 g2_addr;
-		UINT32 root_addr;
-		UINT32 size;
-		UINT8 dir;
-		UINT8 flag;
-		UINT8 indirect;
-		UINT8 start;
-		UINT8 sel;
-	}m_g2_dma[4];
+		uint32_t g2_addr;
+		uint32_t root_addr;
+		uint32_t size;
+		uint8_t dir;
+		uint8_t flag;
+		uint8_t indirect;
+		uint8_t start;
+		uint8_t sel;
+	} m_g2_dma[4];
 
 	virtual void machine_start() override;
 	virtual void machine_reset() override;
 	TIMER_CALLBACK_MEMBER(g2_dma_irq);
 	TIMER_CALLBACK_MEMBER(ch2_dma_irq);
-	TIMER_CALLBACK_MEMBER(yuv_fifo_irq);
-	DECLARE_READ32_MEMBER(dc_aica_reg_r);
-	DECLARE_WRITE32_MEMBER(dc_aica_reg_w);
-	DECLARE_READ32_MEMBER(dc_arm_aica_r);
-	DECLARE_WRITE32_MEMBER(dc_arm_aica_w);
+	uint32_t dc_aica_reg_r(offs_t offset, uint32_t mem_mask = ~0);
+	void dc_aica_reg_w(offs_t offset, uint32_t data, uint32_t mem_mask = ~0);
+	uint32_t dc_arm_aica_r(offs_t offset);
+	void dc_arm_aica_w(offs_t offset, uint32_t data, uint32_t mem_mask = ~0);
 	void g2_dma_execute(address_space &space, int channel);
-	inline int decode_reg32_64(UINT32 offset, UINT64 mem_mask, UINT64 *shift);
-	inline int decode_reg3216_64(UINT32 offset, UINT64 mem_mask, UINT64 *shift);
+	inline int decode_reg32_64(uint32_t offset, uint64_t mem_mask, uint64_t *shift);
+	inline int decode_reg3216_64(uint32_t offset, uint64_t mem_mask, uint64_t *shift);
 	int dc_compute_interrupt_level();
 	void dc_update_interrupt_status();
-	inline int decode_reg_64(UINT32 offset, UINT64 mem_mask, UINT64 *shift);
-	DECLARE_READ64_MEMBER( dc_sysctrl_r );
-	DECLARE_WRITE64_MEMBER( dc_sysctrl_w );
-	DECLARE_READ64_MEMBER( dc_gdrom_r );
-	DECLARE_WRITE64_MEMBER( dc_gdrom_w );
-	DECLARE_READ64_MEMBER( dc_g2_ctrl_r );
-	DECLARE_WRITE64_MEMBER( dc_g2_ctrl_w );
-	DECLARE_READ64_MEMBER( dc_modem_r );
-	DECLARE_WRITE64_MEMBER( dc_modem_w );
-	DECLARE_WRITE8_MEMBER( g1_irq );
-	DECLARE_WRITE8_MEMBER( pvr_irq );
+	inline int decode_reg_64(uint32_t offset, uint64_t mem_mask, uint64_t *shift);
+	uint64_t dc_sysctrl_r(offs_t offset, uint64_t mem_mask = ~0);
+	void dc_sysctrl_w(offs_t offset, uint64_t data, uint64_t mem_mask = ~0);
+	uint64_t dc_gdrom_r(offs_t offset, uint64_t mem_mask = ~0);
+	void dc_gdrom_w(offs_t offset, uint64_t data, uint64_t mem_mask = ~0);
+	uint64_t dc_g2_ctrl_r(offs_t offset, uint64_t mem_mask = ~0);
+	void dc_g2_ctrl_w(address_space &space, offs_t offset, uint64_t data, uint64_t mem_mask = ~0);
+	uint64_t dc_modem_r(offs_t offset, uint64_t mem_mask = ~0);
+	void dc_modem_w(offs_t offset, uint64_t data, uint64_t mem_mask = ~0);
+	void g1_irq(uint8_t data);
+	void pvr_irq(uint8_t data);
+	void maple_irq(uint8_t data);
+	uint16_t soundram_r(offs_t offset);
+	void soundram_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	DECLARE_WRITE_LINE_MEMBER(aica_irq);
+	DECLARE_WRITE_LINE_MEMBER(sh4_aica_irq);
+	DECLARE_WRITE_LINE_MEMBER(external_irq);
+
 
 	required_device<sh4_base_device> m_maincpu;
 	required_device<cpu_device> m_soundcpu;
@@ -86,8 +94,13 @@ class dc_state : public driver_device
 	optional_device<naomi_g1_device> m_naomig1;
 	required_device<aica_device> m_aica;
 
-	void generic_dma(UINT32 main_adr, void *dma_ptr, UINT32 length, UINT32 size, bool to_mainram);
+	void generic_dma(uint32_t main_adr, void *dma_ptr, uint32_t length, uint32_t size, bool to_mainram);
 	TIMER_DEVICE_CALLBACK_MEMBER(dc_scanline);
+	DECLARE_MACHINE_RESET(dc_console);
+
+	void naomi_aw_base(machine_config &config);
+	void aica_map(address_map &map);
+	void dc_audio_map(address_map &map);
 };
 
 /*--------- Ch2-DMA Control Registers ----------*/
@@ -166,8 +179,9 @@ class dc_state : public driver_device
 #define SB_G1CRDYC  ((0x005f74b4-0x005f7400)/4)
 #define SB_GDAPRO   ((0x005f74b8-0x005f7400)/4)
 
-/*-------- Unknown/Special Registers ---------*/
-#define GD_UNLOCK   ((0x005f74e4-0x005f7400)/4)
+/*-------- BIOS security Registers ---------*/
+#define SB_SECUR_EADR  ((0x005f74e4-0x005f7400)/4)
+#define SB_SECUR_STATE ((0x005f74ec-0x005f7400)/4)
 /*---------- GD-DMA Debug Registers ------------*/
 #define SB_GDSTARD  ((0x005f74f4-0x005f7400)/4)
 #define SB_GDLEND   ((0x005f74f8-0x005f7400)/4)
@@ -276,6 +290,4 @@ class dc_state : public driver_device
 #define IST_ERR_ISP_LIMIT        0x00000004
 #define IST_ERR_PVRIF_ILL_ADDR   0x00000040
 
-void dc_maple_irq(running_machine &machine);
-
-#endif
+#endif // MAME_INCLUDES_DC_H

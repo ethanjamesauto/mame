@@ -7,9 +7,10 @@
     PC98 FDD disk images
 
 *********************************************************************/
+#ifndef MAME_FORMATS_FDD_DSK_H
+#define MAME_FORMATS_FDD_DSK_H
 
-#ifndef FDD_DSK_H
-#define FDD_DSK_H
+#pragma once
 
 #include "flopimg.h"
 
@@ -19,8 +20,8 @@ class fdd_format : public floppy_image_format_t
 public:
 	fdd_format();
 
-	virtual int identify(io_generic *io, UINT32 form_factor) override;
-	virtual bool load(io_generic *io, UINT32 form_factor, floppy_image *image) override;
+	virtual int identify(io_generic *io, uint32_t form_factor, const std::vector<uint32_t> &variants) override;
+	virtual bool load(io_generic *io, uint32_t form_factor, const std::vector<uint32_t> &variants, floppy_image *image) override;
 
 	virtual const char *name() const override;
 	virtual const char *description() const override;
@@ -30,4 +31,4 @@ public:
 
 extern const floppy_format_type FLOPPY_FDD_FORMAT;
 
-#endif /* FDD_DSK_H */
+#endif // MAME_FORMATS_FDD_DSK_H

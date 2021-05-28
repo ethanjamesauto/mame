@@ -1,44 +1,34 @@
 // license:BSD-3-Clause
 // copyright-holders:Olivier Galibert
-#ifndef __NEXTKBD_H__
-#define __NEXTKBD_H__
+#ifndef MAME_MACHINE_NEXTKBD_H
+#define MAME_MACHINE_NEXTKBD_H
 
-#include "emu.h"
+#pragma once
 
-#define MCFG_NEXTKBD_INT_CHANGE_CALLBACK(_write) \
-	devcb = &nextkbd_device::set_int_change_wr_callback(*device, DEVCB_##_write);
-
-#define MCFG_NEXTKBD_INT_POWER_CALLBACK(_write) \
-	devcb = &nextkbd_device::set_int_power_wr_callback(*device, DEVCB_##_write);
-
-#define MCFG_NEXTKBD_INT_NMI_CALLBACK(_write) \
-	devcb = &nextkbd_device::set_int_nmi_wr_callback(*device, DEVCB_##_write);
 
 class nextkbd_device : public device_t {
 public:
-	nextkbd_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	nextkbd_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
-	template<class _Object> static devcb_base &set_int_change_wr_callback(device_t &device, _Object object) { return downcast<nextkbd_device &>(device).int_change_cb.set_callback(object); }
-	template<class _Object> static devcb_base &set_int_power_wr_callback(device_t &device, _Object object) { return downcast<nextkbd_device &>(device).int_power_cb.set_callback(object); }
-	template<class _Object> static devcb_base &set_int_nmi_wr_callback(device_t &device, _Object object) { return downcast<nextkbd_device &>(device).int_nmi_cb.set_callback(object); }
+	auto int_change_wr_callback() { return int_change_cb.bind(); }
+	auto int_power_wr_callback() { return int_power_cb.bind(); }
+	auto int_nmi_wr_callback() { return int_nmi_cb.bind(); }
 
-	DECLARE_ADDRESS_MAP(amap, 32);
+	void amap(address_map &map);
 
-	DECLARE_READ8_MEMBER(status_snd_r);
-	DECLARE_READ8_MEMBER(status_kms_r);
-	DECLARE_READ8_MEMBER(status_dma_r);
-	DECLARE_READ8_MEMBER(status_cmd_r);
-	DECLARE_READ32_MEMBER(cdata_r);
-	DECLARE_READ32_MEMBER(kmdata_r);
+	uint8_t status_snd_r();
+	uint8_t status_kms_r();
+	uint8_t status_dma_r();
+	uint8_t status_cmd_r();
+	uint32_t cdata_r(offs_t offset, uint32_t mem_mask = ~0);
+	uint32_t kmdata_r(offs_t offset, uint32_t mem_mask = ~0);
 
-	DECLARE_WRITE8_MEMBER(ctrl_snd_w);
-	DECLARE_WRITE8_MEMBER(ctrl_kms_w);
-	DECLARE_WRITE8_MEMBER(ctrl_dma_w);
-	DECLARE_WRITE8_MEMBER(ctrl_cmd_w);
-	DECLARE_WRITE32_MEMBER(cdata_w);
-	DECLARE_WRITE32_MEMBER(kmdata_w);
-
-	bool int_level_get();
+	void ctrl_snd_w(uint8_t data);
+	void ctrl_kms_w(uint8_t data);
+	void ctrl_dma_w(uint8_t data);
+	void ctrl_cmd_w(uint8_t data);
+	void cdata_w(offs_t offset, uint32_t data, uint32_t mem_mask = ~0);
+	void kmdata_w(offs_t offset, uint32_t data, uint32_t mem_mask = ~0);
 
 	DECLARE_INPUT_CHANGED_MEMBER(update);
 
@@ -98,15 +88,15 @@ private:
 	emu_timer *poll_timer;
 	bool nmi_active;
 
-	UINT32 cdata, kmdata, fifo_ir, fifo_iw, fifo_size;
-	UINT32 fifo[FIFO_SIZE];
-	UINT32 km_address;
-	UINT32 prev_mousex, prev_mousey, prev_mousebtn;
-	UINT16 modifiers_state;
-	UINT8 ctrl_snd, ctrl_kms, ctrl_dma, ctrl_cmd;
+	uint32_t cdata, kmdata, fifo_ir, fifo_iw, fifo_size;
+	uint32_t fifo[FIFO_SIZE];
+	uint32_t km_address;
+	uint32_t prev_mousex, prev_mousey, prev_mousebtn;
+	uint16_t modifiers_state;
+	uint8_t ctrl_snd, ctrl_kms, ctrl_dma, ctrl_cmd;
 
-	void fifo_push(UINT32 val);
-	UINT32 fifo_pop();
+	void fifo_push(uint32_t val);
+	uint32_t fifo_pop();
 	bool fifo_empty() const;
 
 	void update_mouse(bool force_update);
@@ -116,6 +106,6 @@ private:
 	void handle_command();
 };
 
-extern const device_type NEXTKBD;
+DECLARE_DEVICE_TYPE(NEXTKBD, nextkbd_device)
 
-#endif
+#endif // MAME_MACHINE_NEXTKBD_H

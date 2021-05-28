@@ -16,17 +16,17 @@
     IMPLEMENTATION
 ***************************************************************************/
 
-const device_type MIDIOUT = &device_creator<midiout_device>;
+DEFINE_DEVICE_TYPE(MIDIOUT, midiout_device, "midiout", "MIDI Out image device")
 
 /*-------------------------------------------------
     ctor
 -------------------------------------------------*/
 
-midiout_device::midiout_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: device_t(mconfig, MIDIOUT, "MIDI Out image device", tag, owner, clock, "midiout", __FILE__),
+midiout_device::midiout_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: device_t(mconfig, MIDIOUT, tag, owner, clock),
 		device_image_interface(mconfig, *this),
 		device_serial_interface(mconfig, *this),
-		m_midi(nullptr)
+		m_midi()
 {
 }
 
@@ -36,7 +36,7 @@ midiout_device::midiout_device(const machine_config &mconfig, const char *tag, d
 
 void midiout_device::device_start()
 {
-	m_midi = nullptr;
+	m_midi.reset();
 }
 
 void midiout_device::device_reset()
@@ -47,56 +47,40 @@ void midiout_device::device_reset()
 	set_tra_rate(0);
 }
 
-void midiout_device::device_timer(emu_timer &timer, device_timer_id id, int param, void *ptr)
-{
-	device_serial_interface::device_timer(timer, id, param, ptr);
-}
-
-/*-------------------------------------------------
-    device_config_complete
--------------------------------------------------*/
-
-void midiout_device::device_config_complete(void)
-{
-	update_names();
-}
-
 /*-------------------------------------------------
     call_load
 -------------------------------------------------*/
 
-bool midiout_device::call_load(void)
+image_init_result midiout_device::call_load()
 {
 	m_midi = machine().osd().create_midi_device();
 
 	if (!m_midi->open_output(filename()))
 	{
-		global_free(m_midi);
-		m_midi = nullptr;
-		return IMAGE_INIT_FAIL;
+		m_midi.reset();
+		return image_init_result::FAIL;
 	}
 
-	return IMAGE_INIT_PASS;
+	return image_init_result::PASS;
 }
 
 /*-------------------------------------------------
     call_unload
 -------------------------------------------------*/
 
-void midiout_device::call_unload(void)
+void midiout_device::call_unload()
 {
 	if (m_midi)
 	{
 		m_midi->close();
-		global_free(m_midi);
-		m_midi = nullptr;
+		m_midi.reset();
 	}
 }
 
 void midiout_device::rcv_complete()    // Rx completed receiving byte
 {
 	receive_register_extract();
-	UINT8 data = get_received_char();
+	uint8_t data = get_received_char();
 
 	if (m_midi)
 	{

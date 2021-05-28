@@ -8,16 +8,17 @@
 
 #include "emu.h"
 
-#include "cpu/pdp1/tx0.h"
 #include "includes/tx0.h"
 #include "video/crt.h"
 
+#include <algorithm>
 
 
 
-inline void tx0_state::tx0_plot_pixel(bitmap_ind16 &bitmap, int x, int y, UINT32 color)
+
+inline void tx0_state::tx0_plot_pixel(bitmap_ind16 &bitmap, int x, int y, uint32_t color)
 {
-	bitmap.pix16(y, x) = color;
+	bitmap.pix(y, x) = color;
 }
 
 /*
@@ -39,7 +40,7 @@ void tx0_state::video_start()
 }
 
 
-void tx0_state::screen_eof_tx0(screen_device &screen, bool state)
+WRITE_LINE_MEMBER(tx0_state::screen_vblank_tx0)
 {
 	// rising edge
 	if (state)
@@ -64,7 +65,7 @@ void tx0_state::tx0_plot(int x, int y)
 /*
     screen_update_tx0: effectively redraw the screen
 */
-UINT32 tx0_state::screen_update_tx0(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t tx0_state::screen_update_tx0(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	m_crt->update(bitmap);
 
@@ -343,12 +344,13 @@ enum
 
 void tx0_state::tx0_typewriter_linefeed()
 {
-	UINT8 buf[typewriter_window_width];
-	int y;
+	uint8_t buf[typewriter_window_width];
 
-	for (y=0; y<typewriter_window_height-typewriter_scroll_step; y++)
+	assert(typewriter_window_width <= m_typewriter_bitmap.width());
+	assert(typewriter_window_height <= m_typewriter_bitmap.height());
+	for (int y=0; y<typewriter_window_height-typewriter_scroll_step; y++)
 	{
-		extract_scanline8(m_typewriter_bitmap, 0, y+typewriter_scroll_step, typewriter_window_width, buf);
+		std::copy_n(&m_typewriter_bitmap.pix(y+typewriter_scroll_step, 0), typewriter_window_width, buf);
 		draw_scanline8(m_typewriter_bitmap, 0, y, typewriter_window_width, buf, m_palette->pens());
 	}
 

@@ -1,91 +1,92 @@
-// license:GPL-2.0+
+// license:BSD-3-Clause
 // copyright-holders:Couriersud
-/***************************************************************************
 
-    nl_factory.c
-
-    Discrete netlist implementation.
-
-****************************************************************************/
+//
+// nl_factory.cpp
+//
 
 #include "nl_factory.h"
+#include "nl_base.h"
+#include "nl_errstr.h"
 #include "nl_setup.h"
+#include "plib/putil.h"
 
-namespace netlist
-{
-// ----------------------------------------------------------------------------------------
-// net_device_t_base_factory
-// ----------------------------------------------------------------------------------------
+namespace netlist {
+namespace factory {
 
-ATTR_COLD const pstring_list_t base_factory_t::term_param_list()
-{
-	if (m_def_param.startsWith("+"))
-		return pstring_list_t(m_def_param.substr(1), ",");
-	else
-		return pstring_list_t();
-}
-
-ATTR_COLD const pstring_list_t base_factory_t::def_params()
-{
-	if (m_def_param.startsWith("+") || m_def_param.equals("-"))
-		return pstring_list_t();
-	else
-		return pstring_list_t(m_def_param, ",");
-}
-
-
-factory_list_t::factory_list_t( setup_t &setup)
-: m_setup(setup)
-{
-}
-
-factory_list_t::~factory_list_t()
-{
-	for (std::size_t i=0; i < size(); i++)
+	// FIXME: this doesn't do anything, check how to remove
+	class NETLIB_NAME(wrapper) : public base_device_t
 	{
-		base_factory_t *p = value_at(i);
-		pfree(p);
-	}
-	clear();
-}
-
-#if 0
-device_t *factory_list_t::new_device_by_classname(const pstring &classname) const
-{
-	for (std::size_t i=0; i < m_list.size(); i++)
-	{
-		base_factory_t *p = m_list[i];
-		if (p->classname() == classname)
+	public:
+		NETLIB_NAME(wrapper)(netlist_state_t &anetlist, const pstring &name)
+		: base_device_t(anetlist, name)
 		{
-			device_t *ret = p->Create();
-			return ret;
 		}
-		p++;
-	}
-	return NULL; // appease code analysis
-}
-#endif
+	protected:
+		//NETLIB_RESETI() {}
+	};
 
-void factory_list_t::error(const pstring &s)
-{
-	m_setup.log().fatal("{1}", s);
-}
-
-device_t *factory_list_t::new_device_by_name(const pstring &name)
-{
-	base_factory_t *f = factory_by_name(name);
-	return f->Create();
-}
-
-base_factory_t * factory_list_t::factory_by_name(const pstring &name)
-{
-	if (contains(name))
-		return (*this)[name];
-	else
+	element_t::element_t(const pstring &name, properties &&props)
+	: m_name(name)
+	, m_properties(props)
 	{
-		m_setup.log().fatal("Class {1} not found!\n", name);
-		return NULL; // appease code analysis
 	}
-}
 
-}
+	// ----------------------------------------------------------------------------------------
+	// net_device_t_base_factory
+	// ----------------------------------------------------------------------------------------
+
+	list_t::list_t(log_type &alog)
+	: m_log(alog)
+	{
+	}
+
+	bool exists(const pstring &name);
+
+	bool list_t::exists(const pstring &name) const noexcept
+	{
+		for (const auto & e : *this)
+			if (e->name() == name)
+				return true;
+		return false;
+	}
+
+	void list_t::add(host_arena::unique_ptr<element_t> &&factory)
+	{
+		if (exists(factory->name()))
+		{
+			m_log.fatal(MF_FACTORY_ALREADY_CONTAINS_1(factory->name()));
+			throw nl_exception(MF_FACTORY_ALREADY_CONTAINS_1(factory->name()));
+		}
+		push_back(std::move(factory));
+	}
+
+	factory::element_t * list_t::factory_by_name(const pstring &devname)
+	{
+		for (auto & e : *this)
+		{
+			if (e->name() == devname)
+				return e.get();
+		}
+
+		m_log.fatal(MF_CLASS_1_NOT_FOUND(devname));
+		throw nl_exception(MF_CLASS_1_NOT_FOUND(devname));
+	}
+
+	// -----------------------------------------------------------------------------
+	// library_element_t: factory class to wrap macro based chips/elements
+	// -----------------------------------------------------------------------------
+
+	library_element_t::library_element_t(const pstring &name, properties &&props)
+	: element_t(name, std::move(properties(props).set_type(element_type::MACRO)))
+	{
+	}
+
+	device_arena::unique_ptr<core_device_t> library_element_t::make_device(device_arena &pool, netlist_state_t &anetlist, const pstring &name)
+	{
+		return plib::make_unique<NETLIB_NAME(wrapper)>(pool, anetlist, name);
+	}
+
+
+} // namespace factory
+ } // namespace netlist

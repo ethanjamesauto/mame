@@ -22,9 +22,6 @@
     * Support for FPU exceptions
 
     * New instructions?
-        - FCOPYI, ICOPYF
-            copy raw between float and integer registers
-
         - VALID opcode_desc,handle,param
             checksum/compare code referenced by opcode_desc; if not
             matching, generate exception with handle,param
@@ -36,11 +33,15 @@
 
 #include "emu.h"
 #include "drcuml.h"
+
+#include "emuopts.h"
 #include "drcbec.h"
+#ifdef NATIVE_DRC
 #include "drcbex86.h"
 #include "drcbex64.h"
+#endif
 
-using namespace uml;
+#include <fstream>
 
 
 
@@ -57,14 +58,22 @@ using namespace uml;
 //  TYPE DEFINITIONS
 //**************************************************************************
 
+// determine the type of the native DRC, falling back to C
+#ifndef NATIVE_DRC
+typedef drcbe_c drcbe_native;
+#else
+typedef NATIVE_DRC drcbe_native;
+#endif
+
+
 // structure describing back-end validation test
 struct bevalidate_test
 {
-	opcode_t                opcode;
-	UINT8                   size;
-	UINT8                   iflags;
-	UINT8                   flags;
-	UINT64                  param[4];
+	uml::opcode_t   opcode;
+	u8              size;
+	u8              iflags;
+	u8              flags;
+	u64             param[4];
 };
 
 
@@ -78,25 +87,34 @@ struct bevalidate_test
 //-------------------------------------------------
 
 drcbe_interface::drcbe_interface(drcuml_state &drcuml, drc_cache &cache, device_t &device)
-	: m_drcuml(drcuml),
-		m_cache(cache),
-		m_device(device),
-		m_state(*(drcuml_machine_state *)cache.alloc_near(sizeof(m_state))),
-		m_accessors((data_accessors *)cache.alloc_near(sizeof(*m_accessors) * ADDRESS_SPACES))
+	: m_drcuml(drcuml)
+	, m_cache(cache)
+	, m_device(device)
+	, m_space()
+	, m_state(*reinterpret_cast<drcuml_machine_state *>(cache.alloc_near(sizeof(m_state))))
+	, m_accessors(nullptr)
 {
 	// reset the machine state
-	memset(m_accessors, 0, sizeof(*m_accessors) * ADDRESS_SPACES);
 	memset(&m_state, 0, sizeof(m_state));
 
 	// find the spaces and fetch memory accessors
 	device_memory_interface *memory;
 	if (device.interface(memory))
-		for (address_spacenum spacenum = AS_0; spacenum < ARRAY_LENGTH(m_space); spacenum++)
+	{
+		int const count = memory->max_space_count();
+		m_accessors = reinterpret_cast<data_accessors *>(cache.alloc_near(sizeof(*m_accessors) * count));
+		memset(m_accessors, 0, sizeof(*m_accessors) * count);
+		m_space.resize(count, nullptr);
+
+		for (int spacenum = 0; spacenum < count; ++spacenum)
+		{
 			if (memory->has_space(spacenum))
 			{
 				m_space[spacenum] = &memory->space(spacenum);
 				m_space[spacenum]->accessors(m_accessors[spacenum]);
 			}
+		}
+	}
 }
 
 
@@ -118,21 +136,19 @@ drcbe_interface::~drcbe_interface()
 //  drcuml_state - constructor
 //-------------------------------------------------
 
-drcuml_state::drcuml_state(device_t &device, drc_cache &cache, UINT32 flags, int modes, int addrbits, int ignorebits)
-	: m_device(device),
-		m_cache(cache),
-		m_drcbe_interface(device.machine().options().drc_use_c() ?
-			std::unique_ptr<drcbe_interface>{ std::make_unique<drcbe_c>(*this, device, cache, flags, modes, addrbits, ignorebits) } :
-			std::unique_ptr<drcbe_interface>{ std::make_unique<drcbe_native>(*this, device, cache, flags, modes, addrbits, ignorebits) }),
-		m_beintf(*m_drcbe_interface.get()),
-		m_umllog(nullptr)
-{	
-	// if we're to log, create the logfile
-	if (device.machine().options().drc_log_uml())
-	{
-		std::string filename = std::string("drcuml_").append(m_device.shortname()).append(".asm");
-		m_umllog = fopen(filename.c_str(), "w");
-	}
+drcuml_state::drcuml_state(device_t &device, drc_cache &cache, u32 flags, int modes, int addrbits, int ignorebits)
+	: m_device(device)
+	, m_cache(cache)
+	, m_beintf(device.machine().options().drc_use_c()
+			? std::unique_ptr<drcbe_interface>{ new drcbe_c(*this, device, cache, flags, modes, addrbits, ignorebits) }
+			: std::unique_ptr<drcbe_interface>{ new drcbe_native(*this, device, cache, flags, modes, addrbits, ignorebits) })
+	, m_umllog(device.machine().options().drc_log_uml()
+			? new std::ofstream(util::string_format("drcuml_%s.asm", device.shortname()))
+			: nullptr)
+	, m_blocklist()
+	, m_handlelist()
+	, m_symlist()
+{
 }
 
 
@@ -142,9 +158,6 @@ drcuml_state::drcuml_state(device_t &device, drc_cache &cache, UINT32 flags, int
 
 drcuml_state::~drcuml_state()
 {
-	// close any files
-	if (m_umllog != nullptr)
-		fclose(m_umllog);
 }
 
 
@@ -162,22 +175,24 @@ void drcuml_state::reset()
 		m_cache.flush();
 
 		// reset all handle code pointers
-		for (code_handle *handle = m_handlelist.first(); handle != nullptr; handle = handle->next())
-			*handle->m_code = nullptr;
+		for (uml::code_handle &handle : m_handlelist)
+			*handle.codeptr_addr() = nullptr;
 
 		// call the backend to reset
-		m_beintf.reset();
+		m_beintf->reset();
 
 		// do a one-time validation if requested
-/*      if (VALIDATE_BACKEND)
-        {
-            static bool validated = false;
-            if (!validated)
-            {
-                validated = true;
-                validate_backend(this);
-            }
-        }*/
+#if 0
+		if (VALIDATE_BACKEND)
+		{
+			static bool validated = false;
+			if (!validated)
+			{
+				validated = true;
+				validate_backend(this);
+			}
+		}
+#endif
 	}
 	catch (drcuml_block::abort_compilation &)
 	{
@@ -190,21 +205,23 @@ void drcuml_state::reset()
 //  begin_block - begin a new code block
 //-------------------------------------------------
 
-drcuml_block *drcuml_state::begin_block(UINT32 maxinst)
+drcuml_block &drcuml_state::begin_block(uint32_t maxinst)
 {
 	// find an inactive block that matches our qualifications
-	drcuml_block *bestblock = nullptr;
-	for (drcuml_block *block = m_blocklist.first(); block != nullptr; block = block->next())
-		if (!block->inuse() && block->maxinst() >= maxinst && (bestblock == nullptr || block->maxinst() < bestblock->maxinst()))
-			bestblock = block;
+	drcuml_block *bestblock(nullptr);
+	for (drcuml_block &block : m_blocklist)
+	{
+		if (!block.inuse() && (block.maxinst() >= maxinst) && (!bestblock || (block.maxinst() < bestblock->maxinst())))
+			bestblock = &block;
+	}
 
 	// if we failed to find one, allocate a new one
-	if (bestblock == nullptr)
-		bestblock = &m_blocklist.append(*global_alloc(drcuml_block(*this, maxinst * 3/2)));
+	if (!bestblock)
+		bestblock = &*m_blocklist.emplace(m_blocklist.end(), *this, maxinst * 3 / 2);
 
 	// start the block
 	bestblock->begin();
-	return bestblock;
+	return *bestblock;
 }
 
 
@@ -212,10 +229,10 @@ drcuml_block *drcuml_state::begin_block(UINT32 maxinst)
 //  handle_alloc - allocate a new handle
 //-------------------------------------------------
 
-code_handle *drcuml_state::handle_alloc(const char *name)
+uml::code_handle *drcuml_state::handle_alloc(char const *name)
 {
 	// allocate the handle, add it to our list, and return it
-	return &m_handlelist.append(*global_alloc(code_handle(*this, name)));
+	return &*m_handlelist.emplace(m_handlelist.end(), *this, name);
 }
 
 
@@ -224,58 +241,52 @@ code_handle *drcuml_state::handle_alloc(const char *name)
 //  symbol table
 //-------------------------------------------------
 
-void drcuml_state::symbol_add(void *base, UINT32 length, const char *name)
+void drcuml_state::symbol_add(void *base, u32 length, char const *name)
 {
-	m_symlist.append(*global_alloc(symbol(base, length, name)));
+	m_symlist.emplace_back(base, length, name);
 }
 
 
 //-------------------------------------------------
 //  symbol_find - look up a symbol from the
-//  internal symbol table or return NULL if not
+//  internal symbol table or return nullptr if not
 //  found
 //-------------------------------------------------
 
-const char *drcuml_state::symbol_find(void *base, UINT32 *offset)
+const char *drcuml_state::symbol_find(void *base, u32 *offset)
 {
-	drccodeptr search = drccodeptr(base);
+	drccodeptr const search(reinterpret_cast<drccodeptr>(base));
 
 	// simple linear search
-	for (symbol *cursym = m_symlist.first(); cursym != nullptr; cursym = cursym->next())
-		if (search >= cursym->m_base && search < cursym->m_base + cursym->m_length)
+	for (symbol const &cursym : m_symlist)
+	{
+		// if no offset pointer, only match perfectly
+		if (cursym.includes(search) && (offset || (cursym.base() == search)))
 		{
-			// if no offset pointer, only match perfectly
-			if (offset == nullptr && search != cursym->m_base)
-				continue;
-
 			// return the offset and name
-			if (offset != nullptr)
-				*offset = search - cursym->m_base;
-			return cursym->m_name.c_str();
+			if (offset)
+				*offset = search - cursym.base();
+			return cursym.name().c_str();
 		}
+	}
 
-	// not found; return NULL
+	// not found; return nullptr
 	return nullptr;
 }
 
 
 //-------------------------------------------------
-//  log_printf - directly printf to the UML log
+//  log_vprintf - directly printf to the UML log
 //  if generated
 //-------------------------------------------------
 
-void drcuml_state::log_printf(const char *format, ...)
+void drcuml_state::log_vprintf(util::format_argument_pack<std::ostream> const &args)
 {
 	// if we have a file, print to it
-	if (m_umllog != nullptr)
+	if (m_umllog)
 	{
-		va_list va;
-
-		// do the printf
-		va_start(va, format);
-		vfprintf(m_umllog, format, va);
-		va_end(va);
-		fflush(m_umllog);
+		util::stream_format(*m_umllog, args);
+		m_umllog->flush();
 	}
 }
 
@@ -289,13 +300,12 @@ void drcuml_state::log_printf(const char *format, ...)
 //  drcuml_block - constructor
 //-------------------------------------------------
 
-drcuml_block::drcuml_block(drcuml_state &drcuml, UINT32 maxinst)
-	: m_drcuml(drcuml),
-		m_next(nullptr),
-		m_nextinst(0),
-		m_maxinst(maxinst * 3/2),
-		m_inst(m_maxinst),
-		m_inuse(false)
+drcuml_block::drcuml_block(drcuml_state &drcuml, u32 maxinst)
+	: m_drcuml(drcuml)
+	, m_nextinst(0)
+	, m_maxinst(maxinst * 3/2)
+	, m_inst(m_maxinst)
+	, m_inuse(false)
 {
 }
 
@@ -338,6 +348,7 @@ void drcuml_block::end()
 		disassemble();
 
 	// generate the code via the back-end
+	m_drcuml.cache().codegen_init();
 	m_drcuml.generate(*this, &m_inst[0], m_nextinst);
 
 	// block is no longer in use
@@ -368,36 +379,11 @@ void drcuml_block::abort()
 uml::instruction &drcuml_block::append()
 {
 	// get a pointer to the next instruction
-	instruction &curinst = m_inst[m_nextinst++];
+	uml::instruction &curinst(m_inst[m_nextinst++]);
 	if (m_nextinst > m_maxinst)
 		fatalerror("Overran maxinst in drcuml_block_append\n");
 
 	return curinst;
-}
-
-
-//-------------------------------------------------
-//  comment - attach a comment to the current
-//  output location in the specified block
-//-------------------------------------------------
-
-void drcuml_block::append_comment(const char *format, ...)
-{
-	// do the printf
-	std::string temp;
-	va_list va;
-	va_start(va, format);
-	strvprintf(temp,format, va);
-	va_end(va);
-
-	// allocate space in the cache to hold the comment
-	char *comment = (char *)m_drcuml.cache().alloc_temporary(temp.length() + 1);
-	if (comment == nullptr)
-		return;
-	strcpy(comment, temp.c_str());
-
-	// add an instruction with a pointer
-	append().comment(comment);
 }
 
 
@@ -408,39 +394,39 @@ void drcuml_block::append_comment(const char *format, ...)
 
 void drcuml_block::optimize()
 {
-	UINT32 mapvar[MAPVAR_COUNT] = { 0 };
+	u32 mapvar[uml::MAPVAR_COUNT] = { 0 };
 
 	// iterate over instructions
 	for (int instnum = 0; instnum < m_nextinst; instnum++)
 	{
-		instruction &inst = m_inst[instnum];
+		uml::instruction &inst(m_inst[instnum]);
 
 		// first compute what flags we need
-		UINT8 accumflags = 0;
-		UINT8 remainingflags = inst.output_flags();
+		u8 accumflags(0);
+		u8 remainingflags(inst.output_flags());
 
 		// scan ahead until we run out of possible remaining flags
 		for (int scannum = instnum + 1; remainingflags != 0 && scannum < m_nextinst; scannum++)
 		{
 			// any input flags are required
-			const instruction &scan = m_inst[scannum];
+			uml::instruction const &scan(m_inst[scannum]);
 			accumflags |= scan.input_flags();
 
 			// if the scanahead instruction is unconditional, assume his flags are modified
-			if (scan.condition() == COND_ALWAYS)
+			if (scan.condition() == uml::COND_ALWAYS)
 				remainingflags &= ~scan.modified_flags();
 		}
 		inst.set_flags(accumflags);
 
 		// track mapvars
-		if (inst.opcode() == OP_MAPVAR)
-			mapvar[inst.param(0).mapvar() - MAPVAR_M0] = inst.param(1).immediate();
+		if (inst.opcode() == uml::OP_MAPVAR)
+			mapvar[inst.param(0).mapvar() - uml::MAPVAR_M0] = inst.param(1).immediate();
 
 		// convert all mapvar parameters to immediates
-		else if (inst.opcode() != OP_RECOVER)
+		else if (inst.opcode() != uml::OP_RECOVER)
 			for (int pnum = 0; pnum < inst.numparams(); pnum++)
 				if (inst.param(pnum).is_mapvar())
-					inst.set_mapvar(pnum, mapvar[inst.param(pnum).mapvar() - MAPVAR_M0]);
+					inst.set_mapvar(pnum, mapvar[inst.param(pnum).mapvar() - uml::MAPVAR_M0]);
 
 		// now that flags are correct, simplify the instruction
 		inst.simplify();
@@ -456,44 +442,45 @@ void drcuml_block::optimize()
 void drcuml_block::disassemble()
 {
 	std::string comment;
-	std::string dasm;
 
 	// iterate over instructions and output
-	int firstcomment = -1;
+	int firstcomment(-1);
 	for (int instnum = 0; instnum < m_nextinst; instnum++)
 	{
-		const instruction &inst = m_inst[instnum];
-		bool flushcomments = false;
+		uml::instruction const &inst(m_inst[instnum]);
+		bool flushcomments(false);
 
 		// remember comments and mapvars for later
-		if (inst.opcode() == OP_COMMENT || inst.opcode() == OP_MAPVAR)
+		if (inst.opcode() == uml::OP_COMMENT || inst.opcode() == uml::OP_MAPVAR)
 		{
 			if (firstcomment == -1)
 				firstcomment = instnum;
 		}
 
 		// print labels, handles, and hashes left justified
-		else if (inst.opcode() == OP_LABEL)
-			m_drcuml.log_printf("$%X:\n", UINT32(inst.param(0).label()));
-		else if (inst.opcode() == OP_HANDLE)
+		else if (inst.opcode() == uml::OP_LABEL)
+			m_drcuml.log_printf("$%X:\n", u32(inst.param(0).label()));
+		else if (inst.opcode() == uml::OP_HANDLE)
 			m_drcuml.log_printf("%s:\n", inst.param(0).handle().string());
-		else if (inst.opcode() == OP_HASH)
-			m_drcuml.log_printf("(%X,%X):\n", UINT32(inst.param(0).immediate()), UINT32(inst.param(1).immediate()));
+		else if (inst.opcode() == uml::OP_HASH)
+			m_drcuml.log_printf("(%X,%X):\n", u32(inst.param(0).immediate()), u32(inst.param(1).immediate()));
 
 		// indent everything else with a tab
 		else
 		{
-			m_inst[instnum].disasm(dasm, &m_drcuml);
+			std::string const dasm(m_inst[instnum].disasm(&m_drcuml));
 
 			// include the first accumulated comment with this line
 			if (firstcomment != -1)
 			{
-				m_drcuml.log_printf("\t%-50.50s; %s\n", dasm.c_str(), get_comment_text(m_inst[firstcomment], comment));
+				m_drcuml.log_printf("\t%-50.50s; %s\n", dasm, get_comment_text(m_inst[firstcomment], comment));
 				firstcomment++;
-				flushcomments = TRUE;
+				flushcomments = true;
 			}
 			else
-				m_drcuml.log_printf("\t%s\n", dasm.c_str());
+			{
+				m_drcuml.log_printf("\t%s\n", dasm);
+			}
 		}
 
 		// flush any comments pending
@@ -501,8 +488,8 @@ void drcuml_block::disassemble()
 		{
 			while (firstcomment <= instnum)
 			{
-				const char *text = get_comment_text(m_inst[firstcomment++], comment);
-				if (text != nullptr)
+				char const *const text(get_comment_text(m_inst[firstcomment++], comment));
+				if (text)
 					m_drcuml.log_printf("\t%50s; %s\n", "", text);
 			}
 			firstcomment = -1;
@@ -518,20 +505,24 @@ void drcuml_block::disassemble()
 //  associated with a comment or mapvar
 //-------------------------------------------------
 
-const char *drcuml_block::get_comment_text(const instruction &inst, std::string &comment)
+char const *drcuml_block::get_comment_text(uml::instruction const &inst, std::string &comment)
 {
-	// comments return their strings
-	if (inst.opcode() == OP_COMMENT)
+	if (inst.opcode() == uml::OP_COMMENT)
+	{
+		// comments return their strings
 		return comment.assign(inst.param(0).string()).c_str();
-
-	// mapvars comment about their values
-	else if (inst.opcode() == OP_MAPVAR) {
-		strprintf(comment,"m%d = $%X", (int)inst.param(0).mapvar() - MAPVAR_M0, (UINT32)inst.param(1).immediate());
+	}
+	else if (inst.opcode() == uml::OP_MAPVAR)
+	{
+		// mapvars comment about their values
+		comment = string_format("m%d = $%X", int(inst.param(0).mapvar() - uml::MAPVAR_M0), u32(inst.param(1).immediate()));
 		return comment.c_str();
 	}
-
-	// everything else is NULL
-	return nullptr;
+	else
+	{
+		// everything else is nullptr
+		return nullptr;
+	}
 }
 
 
@@ -548,7 +539,7 @@ const char *drcuml_block::get_comment_text(const instruction &inst, std::string 
 //  array of parameter values
 //-------------------------------------------------
 
-inline UINT8 effective_test_psize(const opcode_info &opinfo, int pnum, int instsize, const UINT64 *params)
+inline uint8_t effective_test_psize(const opcode_info &opinfo, int pnum, int instsize, const uint64_t *params)
 {
 	switch (opinfo.param[pnum].size)
 	{
@@ -563,12 +554,12 @@ inline UINT8 effective_test_psize(const opcode_info &opinfo, int pnum, int insts
 	return instsize;
 }
 
-#define TEST_ENTRY_2(op, size, p1, p2, flags) { OP_##op, size, 0, flags, { U64(p1), U64(p2) } },
-#define TEST_ENTRY_2F(op, size, p1, p2, iflags, flags) { OP_##op, size, iflags, flags, { U64(p1), U64(p2) } },
-#define TEST_ENTRY_3(op, size, p1, p2, p3, flags) { OP_##op, size, 0, flags, { U64(p1), U64(p2), U64(p3) } },
-#define TEST_ENTRY_3F(op, size, p1, p2, p3, iflags, flags) { OP_##op, size, iflags, flags, { U64(p1), U64(p2), U64(p3) } },
-#define TEST_ENTRY_4(op, size, p1, p2, p3, p4, flags) { OP_##op, size, 0, flags, { U64(p1), U64(p2), U64(p3), U64(p4) } },
-#define TEST_ENTRY_4F(op, size, p1, p2, p3, p4, iflags, flags) { OP_##op, size, iflags, flags, { U64(p1), U64(p2), U64(p3), U64(p4) } },
+#define TEST_ENTRY_2(op, size, p1, p2, flags) { OP_##op, size, 0, flags, { u64(p1), u64(p2) } },
+#define TEST_ENTRY_2F(op, size, p1, p2, iflags, flags) { OP_##op, size, iflags, flags, { u64(p1), u64(p2) } },
+#define TEST_ENTRY_3(op, size, p1, p2, p3, flags) { OP_##op, size, 0, flags, { u64(p1), u64(p2), u64(p3) } },
+#define TEST_ENTRY_3F(op, size, p1, p2, p3, iflags, flags) { OP_##op, size, iflags, flags, { u64(p1), u64(p2), u64(p3) } },
+#define TEST_ENTRY_4(op, size, p1, p2, p3, p4, flags) { OP_##op, size, 0, flags, { u64(p1), u64(p2), u64(p3), u64(p4) } },
+#define TEST_ENTRY_4F(op, size, p1, p2, p3, p4, iflags, flags) { OP_##op, size, iflags, flags, { u64(p1), u64(p2), u64(p3), u64(p4) } },
 
 static const bevalidate_test bevalidate_test_list[] =
 {
@@ -703,7 +694,7 @@ static const bevalidate_test bevalidate_test_list[] =
 
 static void validate_backend(drcuml_state *drcuml)
 {
-	code_handle *handles[3];
+	uml::code_handle *handles[3];
 	int tnum;
 
 	// allocate handles for the code
@@ -713,10 +704,10 @@ static void validate_backend(drcuml_state *drcuml)
 
 	// iterate over test entries
 	printf("Backend validation....\n");
-	for (tnum = 31; tnum < ARRAY_LENGTH(bevalidate_test_list); tnum++)
+	for (tnum = 31; tnum < std::size(bevalidate_test_list); tnum++)
 	{
 		const bevalidate_test *test = &bevalidate_test_list[tnum];
-		parameter param[ARRAY_LENGTH(test->param)];
+		parameter param[std::size(test->param)];
 		char mnemonic[20], *dst;
 		const char *src;
 
@@ -735,7 +726,7 @@ static void validate_backend(drcuml_state *drcuml)
 				*dst++ = *src;
 		}
 		*dst = 0;
-		printf("Executing test %d/%d (%s)", tnum + 1, (int)ARRAY_LENGTH(bevalidate_test_list), mnemonic);
+		printf("Executing test %d/%d (%s)", tnum + 1, (int)std::size(bevalidate_test_list), mnemonic);
 
 		// reset parameter list and iterate
 		memset(param, 0, sizeof(param));
@@ -753,13 +744,13 @@ static void validate_backend(drcuml_state *drcuml)
     or else move on to iterate over the flags
 -------------------------------------------------*/
 
-static void bevalidate_iterate_over_params(drcuml_state *drcuml, code_handle **handles, const bevalidate_test *test, parameter *paramlist, int pnum)
+static void bevalidate_iterate_over_params(drcuml_state *drcuml, uml::code_handle **handles, const bevalidate_test *test, parameter *paramlist, int pnum)
 {
 	const opcode_info *opinfo = opcode_info_table[test->opcode()];
 	drcuml_ptype ptype;
 
 	// if no parameters, execute now
-	if (pnum >= ARRAY_LENGTH(opinfo->param) || opinfo->param[pnum].typemask == PTYPES_NONE)
+	if (pnum >= std::size(opinfo->param) || opinfo->param[pnum].typemask == PTYPES_NONE)
 	{
 		bevalidate_iterate_over_flags(drcuml, handles, test, paramlist);
 		return;
@@ -786,7 +777,7 @@ static void bevalidate_iterate_over_params(drcuml_state *drcuml, code_handle **h
 			// iterate over possibilities
 			for (pindex = 0; pindex < pcount; pindex++)
 			{
-				int skip = FALSE;
+				bool skip = false;
 				int pscannum;
 
 				// for param 0, print a dot
@@ -799,7 +790,7 @@ static void bevalidate_iterate_over_params(drcuml_state *drcuml, code_handle **h
 					// loop over all parameters we've done before; if the parameter is a source and matches us, skip this case
 					for (pscannum = 0; pscannum < pnum; pscannum++)
 						if ((opinfo->param[pscannum].output & PIO_IN) && ptype == paramlist[pscannum].type && pindex == paramlist[pscannum].value)
-							skip = TRUE;
+							skip = true;
 
 				// can't duplicate multiple dest parameters
 				if (opinfo->param[pnum].output & PIO_OUT)
@@ -807,7 +798,7 @@ static void bevalidate_iterate_over_params(drcuml_state *drcuml, code_handle **h
 					// loop over all parameters we've done before; if the parameter is a source and matches us, skip this case
 					for (pscannum = 0; pscannum < pnum; pscannum++)
 						if ((opinfo->param[pscannum].output & PIO_OUT) && ptype == paramlist[pscannum].type && pindex == paramlist[pscannum].value)
-							skip = TRUE;
+							skip = true;
 
 				// iterate over the next parameter in line
 				if (!skip)
@@ -826,11 +817,11 @@ static void bevalidate_iterate_over_params(drcuml_state *drcuml, code_handle **h
     all supported flag masks
 -------------------------------------------------*/
 
-static void bevalidate_iterate_over_flags(drcuml_state *drcuml, code_handle **handles, const bevalidate_test *test, parameter *paramlist)
+static void bevalidate_iterate_over_flags(drcuml_state *drcuml, uml::code_handle **handles, const bevalidate_test *test, parameter *paramlist)
 {
 	const opcode_info *opinfo = opcode_info_table[test->opcode()];
-	UINT8 flagmask = opinfo->outflags;
-	UINT8 curmask;
+	uint8_t flagmask = opinfo->outflags;
+	uint8_t curmask;
 
 	// iterate over all possible flag combinations
 	for (curmask = 0; curmask <= flagmask; curmask++)
@@ -845,17 +836,17 @@ static void bevalidate_iterate_over_flags(drcuml_state *drcuml, code_handle **ha
     results
 -------------------------------------------------*/
 
-static void bevalidate_execute(drcuml_state *drcuml, code_handle **handles, const bevalidate_test *test, const parameter *paramlist, UINT8 flagmask)
+static void bevalidate_execute(drcuml_state *drcuml, uml::code_handle **handles, const bevalidate_test *test, const parameter *paramlist, uint8_t flagmask)
 {
-	parameter params[ARRAY_LENGTH(test->param)];
+	parameter params[std::size(test->param)];
 	drcuml_machine_state istate, fstate;
 	instruction testinst;
 	drcuml_block *block;
-	UINT64 *parammem;
+	uint64_t *parammem;
 	int numparams;
 
 	// allocate memory for parameters
-	parammem = (UINT64 *)drcuml->cache->alloc_near(sizeof(UINT64) * (ARRAY_LENGTH(test->param) + 1));
+	parammem = (uint64_t *)drcuml->cache->alloc_near(sizeof(uint64_t) * (std::size(test->param) + 1));
 
 	// flush the cache
 	drcuml->reset();
@@ -897,7 +888,7 @@ static void bevalidate_execute(drcuml_state *drcuml, code_handle **handles, cons
 	}
 	testinst = block->inst[block->nextinst - 1];
 	UML_HANDLE(block, handles[2]);
-	UML_GETFLGS(block, MEM(&parammem[ARRAY_LENGTH(test->param)]), flagmask);
+	UML_GETFLGS(block, MEM(&parammem[std::size(test->param)]), flagmask);
 	UML_SAVE(block, &fstate);
 	UML_EXIT(block, IMM(0));
 
@@ -908,10 +899,10 @@ static void bevalidate_execute(drcuml_state *drcuml, code_handle **handles, cons
 	drcuml->execute(*handles[0]);
 
 	// verify the results
-	bevalidate_verify_state(drcuml, &istate, &fstate, test, *(UINT32 *)&parammem[ARRAY_LENGTH(test->param)], params, &testinst, handles[1]->code, handles[2]->code, flagmask);
+	bevalidate_verify_state(drcuml, &istate, &fstate, test, *(uint32_t *)&parammem[std::size(test->param)], params, &testinst, handles[1]->code, handles[2]->code, flagmask);
 
 	// free memory
-	drcuml->cache->dealloc(parammem, sizeof(UINT64) * (ARRAY_LENGTH(test->param) + 1));
+	drcuml->cache->dealloc(parammem, sizeof(uint64_t) * (std::size(test->param) + 1));
 }
 
 
@@ -931,17 +922,17 @@ static void bevalidate_initialize_random_state(drcuml_state *drcuml, drcuml_bloc
 	state->exp = machine.rand();
 
 	// initialize integer registers to random values
-	for (regnum = 0; regnum < ARRAY_LENGTH(state->r); regnum++)
+	for (regnum = 0; regnum < std::size(state->r); regnum++)
 	{
 		state->r[regnum].w.h = machine.rand();
 		state->r[regnum].w.l = machine.rand();
 	}
 
 	// initialize float registers to random values
-	for (regnum = 0; regnum < ARRAY_LENGTH(state->f); regnum++)
+	for (regnum = 0; regnum < std::size(state->f); regnum++)
 	{
-		*(UINT32 *)&state->f[regnum].s.h = machine.rand();
-		*(UINT32 *)&state->f[regnum].s.l = machine.rand();
+		*(uint32_t *)&state->f[regnum].s.h = machine.rand();
+		*(uint32_t *)&state->f[regnum].s.l = machine.rand();
 	}
 
 	// initialize map variables to random values
@@ -956,17 +947,17 @@ static void bevalidate_initialize_random_state(drcuml_state *drcuml, drcuml_bloc
     to executing a test
 -------------------------------------------------*/
 
-static int bevalidate_populate_state(drcuml_block *block, drcuml_machine_state *state, const bevalidate_test *test, const parameter *paramlist, parameter *params, UINT64 *parammem)
+static int bevalidate_populate_state(drcuml_block *block, drcuml_machine_state *state, const bevalidate_test *test, const parameter *paramlist, parameter *params, uint64_t *parammem)
 {
 	const opcode_info *opinfo = opcode_info_table[test->opcode()];
-	int numparams = ARRAY_LENGTH(test->param);
+	int numparams = std::size(test->param);
 	int pnum;
 
 	// copy flags as-is
 	state->flags = test->iflags;
 
 	// iterate over parameters
-	for (pnum = 0; pnum < ARRAY_LENGTH(test->param); pnum++)
+	for (pnum = 0; pnum < std::size(test->param); pnum++)
 	{
 		int psize = effective_test_psize(opinfo, pnum, test->size, test->param);
 		parameter *curparam = &params[pnum];
@@ -996,11 +987,11 @@ static int bevalidate_populate_state(drcuml_block *block, drcuml_machine_state *
 
 			// memory parameters: set the memory value in the parameter space and set the parameter value to point to it
 			case parameter::PTYPE_MEMORY:
-				curparam->value = (FPTR)&parammem[pnum];
+				curparam->value = (uintptr_t)&parammem[pnum];
 				if (psize == 4)
-					*(UINT32 *)(FPTR)curparam->value = test->param[pnum];
+					*(uint32_t *)(uintptr_t)curparam->value = test->param[pnum];
 				else
-					*(UINT64 *)(FPTR)curparam->value = test->param[pnum];
+					*(uint64_t *)(uintptr_t)curparam->value = test->param[pnum];
 				break;
 
 			// map variables: issue a MAPVAR instruction to set the value and set the parameter value to the mapvar index
@@ -1027,11 +1018,11 @@ static int bevalidate_populate_state(drcuml_block *block, drcuml_machine_state *
     discrepancies
 -------------------------------------------------*/
 
-static int bevalidate_verify_state(drcuml_state *drcuml, const drcuml_machine_state *istate, drcuml_machine_state *state, const bevalidate_test *test, UINT32 flags, const parameter *params, const instruction *testinst, drccodeptr codestart, drccodeptr codeend, UINT8 flagmask)
+static int bevalidate_verify_state(drcuml_state *drcuml, const drcuml_machine_state *istate, drcuml_machine_state *state, const bevalidate_test *test, uint32_t flags, const parameter *params, const instruction *testinst, drccodeptr codestart, drccodeptr codeend, uint8_t flagmask)
 {
 	const opcode_info *opinfo = opcode_info_table[test->opcode()];
-	UINT8 ireg[REG_I_END - REG_I0] = { 0 };
-	UINT8 freg[REG_F_END - REG_F0] = { 0 };
+	uint8_t ireg[REG_I_END - REG_I0] = { 0 };
+	uint8_t freg[REG_F_END - REG_F0] = { 0 };
 	char errorbuf[1024];
 	char *errend = errorbuf;
 	int pnum, regnum;
@@ -1055,12 +1046,12 @@ static int bevalidate_verify_state(drcuml_state *drcuml, const drcuml_machine_st
 	}
 
 	// check destination parameters
-	for (pnum = 0; pnum < ARRAY_LENGTH(test->param); pnum++)
+	for (pnum = 0; pnum < std::size(test->param); pnum++)
 		if (opinfo->param[pnum].output & PIO_OUT)
 		{
 			int psize = effective_test_psize(opinfo, pnum, test->size, test->param);
-			UINT64 mask = U64(0xffffffffffffffff) >> (64 - 8 * psize);
-			UINT64 result = 0;
+			uint64_t mask = u64(0xffffffffffffffff) >> (64 - 8 * psize);
+			uint64_t result = 0;
 
 			// fetch the result from the parameters
 			switch (params[pnum].type)
@@ -1080,9 +1071,9 @@ static int bevalidate_verify_state(drcuml_state *drcuml, const drcuml_machine_st
 				// memory registers fetch from the memory address
 				case parameter::PTYPE_MEMORY:
 					if (psize == 4)
-						result = *(UINT32 *)(FPTR)params[pnum].value;
+						result = *(uint32_t *)(uintptr_t)params[pnum].value;
 					else
-						result = *(UINT64 *)(FPTR)params[pnum].value;
+						result = *(uint64_t *)(uintptr_t)params[pnum].value;
 					break;
 
 				default:
@@ -1092,43 +1083,41 @@ static int bevalidate_verify_state(drcuml_state *drcuml, const drcuml_machine_st
 			// check against the mask
 			if (test->param[pnum] != UNDEFINED_U64 && (result & mask) != (test->param[pnum] & mask))
 			{
-				if ((UINT32)mask == mask)
+				if ((uint32_t)mask == mask)
 					errend += sprintf(errend, "  Parameter %d ... result:%08X  expected:%08X\n", pnum,
-										(UINT32)(result & mask), (UINT32)(test->param[pnum] & mask));
+										(uint32_t)(result & mask), (uint32_t)(test->param[pnum] & mask));
 				else
 					errend += sprintf(errend, "  Parameter %d ... result:%08X%08X  expected:%08X%08X\n", pnum,
-										(UINT32)((result & mask) >> 32), (UINT32)(result & mask),
-										(UINT32)((test->param[pnum] & mask) >> 32), (UINT32)(test->param[pnum] & mask));
+										(uint32_t)((result & mask) >> 32), (uint32_t)(result & mask),
+										(uint32_t)((test->param[pnum] & mask) >> 32), (uint32_t)(test->param[pnum] & mask));
 			}
 		}
 
 	// check source integer parameters for unexpected alterations
-	for (regnum = 0; regnum < ARRAY_LENGTH(state->r); regnum++)
+	for (regnum = 0; regnum < std::size(state->r); regnum++)
 		if (ireg[regnum] == 0 && istate->r[regnum].d != state->r[regnum].d)
 			errend += sprintf(errend, "  Register i%d ... result:%08X%08X  originally:%08X%08X\n", regnum,
-								(UINT32)(state->r[regnum].d >> 32), (UINT32)state->r[regnum].d,
-								(UINT32)(istate->r[regnum].d >> 32), (UINT32)istate->r[regnum].d);
+								(uint32_t)(state->r[regnum].d >> 32), (uint32_t)state->r[regnum].d,
+								(uint32_t)(istate->r[regnum].d >> 32), (uint32_t)istate->r[regnum].d);
 
 	// check source float parameters for unexpected alterations
-	for (regnum = 0; regnum < ARRAY_LENGTH(state->f); regnum++)
-		if (freg[regnum] == 0 && *(UINT64 *)&istate->f[regnum].d != *(UINT64 *)&state->f[regnum].d)
+	for (regnum = 0; regnum < std::size(state->f); regnum++)
+		if (freg[regnum] == 0 && *(uint64_t *)&istate->f[regnum].d != *(uint64_t *)&state->f[regnum].d)
 			errend += sprintf(errend, "  Register f%d ... result:%08X%08X  originally:%08X%08X\n", regnum,
-								(UINT32)(*(UINT64 *)&state->f[regnum].d >> 32), (UINT32)*(UINT64 *)&state->f[regnum].d,
-								(UINT32)(*(UINT64 *)&istate->f[regnum].d >> 32), (UINT32)*(UINT64 *)&istate->f[regnum].d);
+								(uint32_t)(*(uint64_t *)&state->f[regnum].d >> 32), (uint32_t)*(uint64_t *)&state->f[regnum].d,
+								(uint32_t)(*(uint64_t *)&istate->f[regnum].d >> 32), (uint32_t)*(uint64_t *)&istate->f[regnum].d);
 
 	// output the error if we have one
 	if (errend != errorbuf)
 	{
-		char disasm[256];
-
 		// disassemble the test instruction
-		testinst->disasm(disasm, drcuml);
+		std::string disasm = testinst->disasm(drcuml);
 
 		// output a description of what went wrong
 		printf("\n");
 		printf("----------------------------------------------\n");
 		printf("Backend validation error:\n");
-		printf("   %s\n", disasm);
+		printf("   %s\n", disasm.c_str());
 		printf("\n");
 		printf("Errors:\n");
 		printf("%s\n", errorbuf);

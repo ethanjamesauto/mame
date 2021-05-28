@@ -19,11 +19,11 @@
 
 TILE_GET_INFO_MEMBER(shuuz_state::get_playfield_tile_info)
 {
-	UINT16 data1 = tilemap.basemem_read(tile_index);
-	UINT16 data2 = tilemap.extmem_read(tile_index) >> 8;
+	uint16_t data1 = m_vad->playfield().basemem_read(tile_index);
+	uint16_t data2 = m_vad->playfield().extmem_read(tile_index) >> 8;
 	int code = data1 & 0x3fff;
 	int color = data2 & 0x0f;
-	SET_TILE_INFO_MEMBER(0, code, color, (data1 >> 15) & 1);
+	tileinfo.set(0, code, color, (data1 >> 15) & 1);
 }
 
 
@@ -75,22 +75,22 @@ const atari_motion_objects_config shuuz_state::s_mob_config =
  *
  *************************************/
 
-UINT32 shuuz_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t shuuz_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	// start drawing
-	m_vad->mob()->draw_async(cliprect);
+	m_vad->mob().draw_async(cliprect);
 
 	/* draw the playfield */
-	m_vad->playfield()->draw(screen, bitmap, cliprect, 0, 0);
+	m_vad->playfield().draw(screen, bitmap, cliprect, 0, 0);
 
 	// draw and merge the MO
-	bitmap_ind16 &mobitmap = m_vad->mob()->bitmap();
-	for (const sparse_dirty_rect *rect = m_vad->mob()->first_dirty_rect(cliprect); rect != nullptr; rect = rect->next())
-		for (int y = rect->min_y; y <= rect->max_y; y++)
+	bitmap_ind16 &mobitmap = m_vad->mob().bitmap();
+	for (const sparse_dirty_rect *rect = m_vad->mob().first_dirty_rect(cliprect); rect != nullptr; rect = rect->next())
+		for (int y = rect->top(); y <= rect->bottom(); y++)
 		{
-			UINT16 *mo = &mobitmap.pix16(y);
-			UINT16 *pf = &bitmap.pix16(y);
-			for (int x = rect->min_x; x <= rect->max_x; x++)
+			uint16_t const *const mo = &mobitmap.pix(y);
+			uint16_t *const pf = &bitmap.pix(y);
+			for (int x = rect->left(); x <= rect->right(); x++)
 				if (mo[x] != 0xffff)
 				{
 					/* verified from the GALs on the real PCB; equations follow
@@ -107,10 +107,10 @@ UINT32 shuuz_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, c
 					 *         +PFS7*(LBD7&LBD6)*!M3*!O13
 					 *
 					 */
-					int o13 = ((pf[x] & 0xf0) == 0xf0);
-					int mopf = 0;
+					int const o13 = ((pf[x] & 0xf0) == 0xf0);
 
 					/* compute the MO/PF signal */
+					int mopf = 0;
 					if ((!(pf[x] & 0x80) && ((mo[x] & 0xc0) != 0xc0) && ((mo[x] & 0x0e) != 0x00) && !o13) ||
 						((pf[x] & 0x80) && ((mo[x] & 0xc0) == 0xc0) && ((mo[x] & 0x0e) != 0x00) && !o13))
 						mopf = 1;

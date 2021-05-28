@@ -13,13 +13,22 @@
 ******************************************************************************/
 
 #include "emu.h"
+#include "includes/atari400.h"
+
 #include "cpu/m6502/m6502.h"
-#include "cpu/m6805/m6805.h"
-#include "includes/atari.h"
-#include "sound/speaker.h"
-#include "sound/pokey.h"
+#include "cpu/m6805/m68705.h"
+
 #include "machine/6821pia.h"
+#include "machine/rescap.h"
+#include "machine/timer.h"
+
+#include "sound/spkrdev.h"
+#include "sound/pokey.h"
+
 #include "video/gtia.h"
+
+#include "screen.h"
+#include "speaker.h"
 
 #include "maxaflex.lh"
 
@@ -28,66 +37,62 @@ class maxaflex_state : public atari_common_state
 {
 public:
 	maxaflex_state(const machine_config &mconfig, device_type type, const char *tag)
-		: atari_common_state(mconfig, type, tag),
-		m_mcu(*this, "mcu"),
-		m_speaker(*this, "speaker"),
-		m_region_maincpu(*this, "maincpu"),
-		m_dsw(*this, "dsw"),
-		m_coin(*this, "coin"),
-		m_console(*this, "console"),
-		m_joy01(*this, "djoy_0_1"),
-		m_joy23(*this, "djoy_2_3")
-	{ }
+		: atari_common_state(mconfig, type, tag)
+		, m_mcu(*this, "mcu")
+		, m_pokey(*this, "pokey")
+		, m_speaker(*this, "speaker")
+		, m_region_maincpu(*this, "maincpu")
+		, m_dsw(*this, "dsw")
+		, m_coin(*this, "coin")
+		, m_console(*this, "console")
+		, m_joy01(*this, "djoy_0_1")
+		, m_joy23(*this, "djoy_2_3")
+		, m_lamps(*this, "lamp%u", 0U)
+		, m_digits(*this, "digit%u", 0U)
+	{
+	}
 
-	UINT8 m_portA_in;
-	UINT8 m_portA_out;
-	UINT8 m_ddrA;
-	UINT8 m_portB_in;
-	UINT8 m_portB_out;
-	UINT8 m_ddrB;
-	UINT8 m_portC_in;
-	UINT8 m_portC_out;
-	UINT8 m_ddrC;
-	UINT8 m_tdr;
-	UINT8 m_tcr;
-	timer_device *m_mcu_timer;
-	void mmu(UINT8 new_mmu);
-	DECLARE_READ8_MEMBER(mcu_portA_r);
-	DECLARE_WRITE8_MEMBER(mcu_portA_w);
-	DECLARE_READ8_MEMBER(mcu_portB_r);
-	DECLARE_WRITE8_MEMBER(mcu_portB_w);
-	DECLARE_READ8_MEMBER(mcu_portC_r);
-	DECLARE_WRITE8_MEMBER(mcu_portC_w);
-	DECLARE_READ8_MEMBER(mcu_ddr_r);
-	DECLARE_WRITE8_MEMBER(mcu_portA_ddr_w);
-	DECLARE_WRITE8_MEMBER(mcu_portB_ddr_w);
-	DECLARE_WRITE8_MEMBER(mcu_portC_ddr_w);
-	DECLARE_READ8_MEMBER(mcu_tdr_r);
-	DECLARE_WRITE8_MEMBER(mcu_tdr_w);
-	DECLARE_READ8_MEMBER(mcu_tcr_r);
-	DECLARE_WRITE8_MEMBER(mcu_tcr_w);
+	void maxaflex(machine_config &config);
+
 	DECLARE_INPUT_CHANGED_MEMBER(coin_inserted);
-	DECLARE_READ8_MEMBER(pia_pa_r);
-	DECLARE_READ8_MEMBER(pia_pb_r);
-	WRITE8_MEMBER(pia_pb_w) { mmu(data); }
+
+private:
+	uint8_t mcu_porta_r();
+	void mcu_porta_w(uint8_t data);
+	void mcu_portb_w(uint8_t data);
+	void mcu_portc_w(uint8_t data);
+	uint8_t pia_pa_r();
+	uint8_t pia_pb_r();
+	void pia_pb_w(uint8_t data) { mmu(data); }
 	WRITE_LINE_MEMBER(pia_cb2_w) { }  // This is used by Floppy drive on Atari 8bits Home Computers
 	TIMER_DEVICE_CALLBACK_MEMBER(mf_interrupt);
-	TIMER_DEVICE_CALLBACK_MEMBER(mcu_timer_proc);
-	int atari_input_disabled();
+
+	virtual void machine_start() override;
 	virtual void machine_reset() override;
-	//required_device<cpu_device> m_maincpu;    // maincpu is already contained in atari_common_state
-	required_device<cpu_device> m_mcu;
+
+	bool atari_input_disabled() const { return !BIT(m_portb_out, 7); }
+	void mmu(uint8_t new_mmu);
+
+	void a600xl_mem(address_map &map);
+
+	uint8_t m_portb_out;
+	uint8_t m_portc_out;
+
+	required_device<m68705p3_device> m_mcu;
+	required_device<pokey_device> m_pokey;
 	required_device<speaker_sound_device> m_speaker;
-	required_region_ptr<UINT8> m_region_maincpu;
+	required_region_ptr<uint8_t> m_region_maincpu;
 	required_ioport m_dsw;
 	required_ioport m_coin;
 	required_ioport m_console;
 	required_ioport m_joy01;
 	required_ioport m_joy23;
+	output_finder<4> m_lamps;
+	output_finder<3> m_digits;
 };
 
 
-void maxaflex_state::mmu(UINT8 new_mmu)
+void maxaflex_state::mmu(uint8_t new_mmu)
 {
 	/* check if self-test ROM changed */
 	if (new_mmu & 0x80)
@@ -118,16 +123,18 @@ void maxaflex_state::mmu(UINT8 new_mmu)
     7   (out) AUDIO
 */
 
-READ8_MEMBER(maxaflex_state::mcu_portA_r)
+uint8_t maxaflex_state::mcu_porta_r()
 {
-	m_portA_in = m_dsw->read() | (m_coin->read() << 4) | (m_console->read() << 5);
-	return (m_portA_in & ~m_ddrA) | (m_portA_out & m_ddrA);
+	return
+			((m_dsw->read()     << 0) & 0x0f) |
+			((m_coin->read()    << 4) & 0x10) |
+			((m_console->read() << 5) & 0x20) |
+			0xc0;
 }
 
-WRITE8_MEMBER(maxaflex_state::mcu_portA_w)
+void maxaflex_state::mcu_porta_w(uint8_t data)
 {
-	m_portA_out = data;
-	m_speaker->level_w(data >> 7);
+	m_speaker->level_w(BIT(data, 7));
 }
 
 /* Port B:
@@ -141,34 +148,29 @@ WRITE8_MEMBER(maxaflex_state::mcu_portA_w)
     7   (out)   TOFF - enables/disables user controls
 */
 
-READ8_MEMBER(maxaflex_state::mcu_portB_r)
+void maxaflex_state::mcu_portb_w(uint8_t data)
 {
-	return (m_portB_in & ~m_ddrB) | (m_portB_out & m_ddrB);
-}
-
-WRITE8_MEMBER(maxaflex_state::mcu_portB_w)
-{
-	UINT8 diff = data ^ m_portB_out;
-	m_portB_out = data;
+	const uint8_t diff = data ^ m_portb_out;
+	m_portb_out = data;
 
 	/* clear coin interrupt */
-	if (data & 0x04)
-		m_mcu->set_input_line(M6805_IRQ_LINE, CLEAR_LINE );
-
-	/* AUDMUTE */
-	machine().sound().system_enable((data >> 5) & 1);
+	if (BIT(data, 2))
+		m_mcu->set_input_line(M6805_IRQ_LINE, CLEAR_LINE);
 
 	/* RES600 */
-	if (diff & 0x10)
-		m_maincpu->set_input_line(INPUT_LINE_RESET, (data & 0x10) ? CLEAR_LINE : ASSERT_LINE);
+	if (BIT(diff, 4))
+		m_maincpu->set_input_line(INPUT_LINE_RESET, BIT(data, 4) ? CLEAR_LINE : ASSERT_LINE);
+
+	/* AUDMUTE */
+	machine().sound().system_mute(!BIT(data, 5));
 
 	/* latch for lamps */
-	if ((diff & 0x40) && !(data & 0x40))
+	if (BIT(diff, 6) && !BIT(data, 6))
 	{
-		output_set_lamp_value(0, (m_portC_out >> 0) & 1);
-		output_set_lamp_value(1, (m_portC_out >> 1) & 1);
-		output_set_lamp_value(2, (m_portC_out >> 2) & 1);
-		output_set_lamp_value(3, (m_portC_out >> 3) & 1);
+		m_lamps[0] = BIT(m_portc_out, 0);
+		m_lamps[1] = BIT(m_portc_out, 1);
+		m_lamps[2] = BIT(m_portc_out, 2);
+		m_lamps[3] = BIT(m_portc_out, 3);
 	}
 }
 
@@ -178,148 +180,42 @@ WRITE8_MEMBER(maxaflex_state::mcu_portB_w)
     2   (out)   lamp START
     3   (out)   lamp OVER */
 
-READ8_MEMBER(maxaflex_state::mcu_portC_r)
-{
-	return (m_portC_in & ~m_ddrC) | (m_portC_out & m_ddrC);
-}
-
-WRITE8_MEMBER(maxaflex_state::mcu_portC_w)
+void maxaflex_state::mcu_portc_w(uint8_t data)
 {
 	/* uses a 7447A, which is equivalent to an LS47/48 */
-	static const UINT8 ls48_map[16] =
-		{ 0x3f,0x06,0x5b,0x4f,0x66,0x6d,0x7c,0x07,0x7f,0x67,0x58,0x4c,0x62,0x69,0x78,0x00 };
+	constexpr static uint8_t ls48_map[16] =
+			{ 0x3f, 0x06, 0x5b, 0x4f, 0x66, 0x6d, 0x7c, 0x07, 0x7f, 0x67, 0x58, 0x4c, 0x62, 0x69, 0x78, 0x00 };
 
-	m_portC_out = data & 0x0f;
+	m_portc_out = data & 0x0f;
 
 	/* displays */
-	switch( m_portB_out & 0x3 )
-	{
-		case 0x0: output_set_digit_value(0, ls48_map[m_portC_out]); break;
-		case 0x1: output_set_digit_value(1, ls48_map[m_portC_out]); break;
-		case 0x2: output_set_digit_value(2, ls48_map[m_portC_out]); break;
-		case 0x3: break;
-	}
-}
-
-READ8_MEMBER(maxaflex_state::mcu_ddr_r)
-{
-	return 0xff;
-}
-
-WRITE8_MEMBER(maxaflex_state::mcu_portA_ddr_w)
-{
-	m_ddrA = data;
-}
-
-WRITE8_MEMBER(maxaflex_state::mcu_portB_ddr_w)
-{
-	m_ddrB = data;
-}
-
-WRITE8_MEMBER(maxaflex_state::mcu_portC_ddr_w)
-{
-	m_ddrC = data;
-}
-
-TIMER_DEVICE_CALLBACK_MEMBER(maxaflex_state::mcu_timer_proc)
-{
-	if ( --m_tdr == 0x00 )
-	{
-		if ( (m_tcr & 0x40) == 0 )
-		{
-			//timer interrupt!
-			generic_pulse_irq_line(m_mcu, M68705_INT_TIMER, 1);
-		}
-	}
-}
-
-/* Timer Data Reg */
-READ8_MEMBER(maxaflex_state::mcu_tdr_r)
-{
-	return m_tdr;
-}
-
-WRITE8_MEMBER(maxaflex_state::mcu_tdr_w)
-{
-	m_tdr = data;
-}
-
-/* Timer control reg */
-READ8_MEMBER(maxaflex_state::mcu_tcr_r)
-{
-	return m_tcr & ~0x08;
-}
-
-WRITE8_MEMBER(maxaflex_state::mcu_tcr_w)
-{
-	m_tcr = data;
-	if ( (m_tcr & 0x40) == 0 )
-	{
-		int divider;
-		attotime period;
-
-		if ( !(m_tcr & 0x20) )
-		{
-			/* internal clock / 4*/
-			divider = 4;
-		}
-		else
-		{
-			/* external clock */
-			divider = 1;
-		}
-
-		if ( m_tcr & 0x07 )
-		{
-			/* use prescaler */
-			divider = divider * (1 << (m_tcr & 0x7));
-		}
-
-		period = attotime::from_hz(3579545) * divider;
-		m_mcu_timer->adjust(period, 0, period);
-	}
+	uint8_t const sel = m_portb_out & 0x03;
+	if (3U > sel)
+		m_digits[sel] = ls48_map[m_portc_out];
 }
 
 INPUT_CHANGED_MEMBER(maxaflex_state::coin_inserted)
 {
 	if (!newval)
-		m_mcu->set_input_line(M6805_IRQ_LINE, HOLD_LINE );
+		m_mcu->set_input_line(M6805_IRQ_LINE, ASSERT_LINE);
 }
 
-int maxaflex_state::atari_input_disabled()
+
+
+void maxaflex_state::a600xl_mem(address_map &map)
 {
-	return (m_portB_out & 0x80) == 0x00;
+	map(0x0000, 0x3fff).ram();
+	map(0x5000, 0x57ff).rom().region("maincpu", 0xd000);    /* self test */
+	map(0x8000, 0xbfff).rom(); /* game cartridge */
+	map(0xc000, 0xcfff).rom(); /* OS */
+	map(0xd000, 0xd0ff).rw(m_gtia, FUNC(gtia_device::read), FUNC(gtia_device::write));
+	map(0xd100, 0xd1ff).noprw();
+	map(0xd200, 0xd2ff).rw("pokey", FUNC(pokey_device::read), FUNC(pokey_device::write));
+	map(0xd300, 0xd3ff).rw("pia", FUNC(pia6821_device::read_alt), FUNC(pia6821_device::write_alt));
+	map(0xd400, 0xd4ff).rw(m_antic, FUNC(antic_device::read), FUNC(antic_device::write));
+	map(0xd500, 0xd7ff).noprw();
+	map(0xd800, 0xffff).rom(); /* OS */
 }
-
-
-
-static ADDRESS_MAP_START(a600xl_mem, AS_PROGRAM, 8, maxaflex_state )
-	AM_RANGE(0x0000, 0x3fff) AM_RAM
-	AM_RANGE(0x5000, 0x57ff) AM_ROM AM_REGION("maincpu", 0xd000)    /* self test */
-	AM_RANGE(0x8000, 0xbfff) AM_ROM /* game cartridge */
-	AM_RANGE(0xc000, 0xcfff) AM_ROM /* OS */
-	AM_RANGE(0xd000, 0xd0ff) AM_DEVREADWRITE("gtia", gtia_device, read, write)
-	AM_RANGE(0xd100, 0xd1ff) AM_NOP
-	AM_RANGE(0xd200, 0xd2ff) AM_DEVREADWRITE("pokey", pokey_device, read, write)
-	AM_RANGE(0xd300, 0xd3ff) AM_DEVREADWRITE("pia", pia6821_device, read_alt, write_alt)
-	AM_RANGE(0xd400, 0xd4ff) AM_DEVREADWRITE("antic", antic_device, read, write)
-	AM_RANGE(0xd500, 0xd7ff) AM_NOP
-	AM_RANGE(0xd800, 0xffff) AM_ROM /* OS */
-ADDRESS_MAP_END
-
-static ADDRESS_MAP_START( mcu_mem, AS_PROGRAM, 8, maxaflex_state )
-	ADDRESS_MAP_GLOBAL_MASK(0x7ff)
-	AM_RANGE(0x0000, 0x0000) AM_READ(mcu_portA_r) AM_WRITE(mcu_portA_w)
-	AM_RANGE(0x0001, 0x0001) AM_READ(mcu_portB_r) AM_WRITE(mcu_portB_w)
-	AM_RANGE(0x0002, 0x0002) AM_READ(mcu_portC_r) AM_WRITE(mcu_portC_w)
-	AM_RANGE(0x0004, 0x0004) AM_READ(mcu_ddr_r) AM_WRITE(mcu_portA_ddr_w)
-	AM_RANGE(0x0005, 0x0005) AM_READ(mcu_ddr_r) AM_WRITE(mcu_portB_ddr_w)
-	AM_RANGE(0x0006, 0x0006) AM_READ(mcu_ddr_r) AM_WRITE(mcu_portC_ddr_w)
-	AM_RANGE(0x0008, 0x0008) AM_READ(mcu_tdr_r) AM_WRITE(mcu_tdr_w)
-	AM_RANGE(0x0009, 0x0009) AM_READ(mcu_tcr_r) AM_WRITE(mcu_tcr_w)
-	AM_RANGE(0x0010, 0x007f) AM_RAM
-	AM_RANGE(0x0080, 0x07ff) AM_ROM
-ADDRESS_MAP_END
 
 
 static INPUT_PORTS_START( a600xl )
@@ -363,7 +259,7 @@ static INPUT_PORTS_START( a600xl )
 
 	/* Max-A-Flex specific ports */
 	PORT_START("coin")
-	PORT_BIT(0x1, IP_ACTIVE_LOW, IPT_COIN1 ) PORT_CHANGED_MEMBER(DEVICE_SELF, maxaflex_state,coin_inserted, 0)
+	PORT_BIT(0x1, IP_ACTIVE_LOW, IPT_COIN1) PORT_CHANGED_MEMBER(DEVICE_SELF, maxaflex_state, coin_inserted, 0)
 
 	PORT_START("dsw")
 	PORT_DIPNAME(0xf, 0x9, "Coin/Time" )
@@ -387,36 +283,40 @@ static INPUT_PORTS_START( a600xl )
 INPUT_PORTS_END
 
 
-READ8_MEMBER(maxaflex_state::pia_pa_r)
+uint8_t maxaflex_state::pia_pa_r()
 {
-	return atari_input_disabled() ? 0xff : read_safe(m_joy01, 0);
+	return atari_input_disabled() ? 0xff : m_joy01->read();
 }
 
-READ8_MEMBER(maxaflex_state::pia_pb_r)
+uint8_t maxaflex_state::pia_pb_r()
 {
-	return atari_input_disabled() ? 0xff : read_safe(m_joy23, 0);
+	return atari_input_disabled() ? 0xff : m_joy23->read();
 }
 
+
+void maxaflex_state::machine_start()
+{
+	atari_common_state::machine_start();
+
+	m_lamps.resolve();
+	m_digits.resolve();
+
+	save_item(NAME(m_portb_out));
+	save_item(NAME(m_portc_out));
+}
 
 void maxaflex_state::machine_reset()
 {
-	pokey_device *pokey = machine().device<pokey_device>("pokey");
-	pokey->write(15,0);
+	atari_common_state::machine_reset();
+
+	m_pokey->write(15, 0);
 
 	// Supervisor board reset
-	m_portA_in = m_portA_out = m_ddrA = 0;
-	m_portB_in = m_portB_out = m_ddrB = 0;
-	m_portC_in = m_portC_out = m_ddrC = 0;
-	m_tdr = m_tcr = 0;
-	m_mcu_timer = machine().device<timer_device>("mcu_timer");
+	m_portb_out = 0xff;
+	m_portc_out = 0xff;
 
-	output_set_lamp_value(0, 0);
-	output_set_lamp_value(1, 0);
-	output_set_lamp_value(2, 0);
-	output_set_lamp_value(3, 0);
-	output_set_digit_value(0, 0x00);
-	output_set_digit_value(1, 0x00);
-	output_set_digit_value(2, 0x00);
+	std::fill(std::begin(m_lamps), std::end(m_lamps), 0);
+	std::fill(std::begin(m_digits), std::end(m_digits), 0x00);
 }
 
 TIMER_DEVICE_CALLBACK_MEMBER( maxaflex_state::mf_interrupt )
@@ -424,54 +324,57 @@ TIMER_DEVICE_CALLBACK_MEMBER( maxaflex_state::mf_interrupt )
 	m_antic->generic_interrupt(2);
 }
 
-static MACHINE_CONFIG_START( maxaflex, maxaflex_state )
+void maxaflex_state::maxaflex(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", M6502, FREQ_17_EXACT)
-	MCFG_CPU_PROGRAM_MAP(a600xl_mem)
-	MCFG_TIMER_DRIVER_ADD_SCANLINE("scantimer", maxaflex_state, mf_interrupt, "screen", 0, 1)
+	m6502_device &maincpu(M6502(config, "maincpu", pokey_device::FREQ_17_EXACT));
+	maincpu.set_addrmap(AS_PROGRAM, &maxaflex_state::a600xl_mem);
+	TIMER(config, "scantimer").configure_scanline(FUNC(maxaflex_state::mf_interrupt), "screen", 0, 1);
 
-	MCFG_CPU_ADD("mcu", M68705, 3579545)
-	MCFG_CPU_PROGRAM_MAP(mcu_mem)
+	M68705P3(config, m_mcu, 3579545);
+	m_mcu->porta_r().set(FUNC(maxaflex_state::mcu_porta_r));
+	m_mcu->porta_w().set(FUNC(maxaflex_state::mcu_porta_w));
+	m_mcu->portb_w().set(FUNC(maxaflex_state::mcu_portb_w));
+	m_mcu->portc_w().set(FUNC(maxaflex_state::mcu_portc_w));
 
-	MCFG_DEVICE_ADD("gtia", ATARI_GTIA, 0)
-	MCFG_GTIA_READ_CB(IOPORT("console"))
+	ATARI_GTIA(config, m_gtia, 0);
+	m_gtia->set_region(GTIA_NTSC);
+	m_gtia->read_callback().set_ioport("console");
 
-	MCFG_DEVICE_ADD("antic", ATARI_ANTIC, 0)
-	MCFG_ANTIC_GTIA("gtia")
+	ATARI_ANTIC(config, m_antic, 0);
+	m_antic->set_gtia_tag(m_gtia);
 
-	MCFG_DEVICE_ADD("pia", PIA6821, 0)
-	MCFG_PIA_READPA_HANDLER(READ8(maxaflex_state, pia_pa_r))
-	MCFG_PIA_READPB_HANDLER(READ8(maxaflex_state, pia_pb_r))
-	MCFG_PIA_WRITEPB_HANDLER(WRITE8(maxaflex_state, pia_pb_w))
-	MCFG_PIA_CB2_HANDLER(WRITELINE(maxaflex_state, pia_cb2_w))
-
-	MCFG_TIMER_DRIVER_ADD("mcu_timer", maxaflex_state, mcu_timer_proc)
+	pia6821_device &pia(PIA6821(config, "pia", 0));
+	pia.readpa_handler().set(FUNC(maxaflex_state::pia_pa_r));
+	pia.readpb_handler().set(FUNC(maxaflex_state::pia_pb_r));
+	pia.writepb_handler().set(FUNC(maxaflex_state::pia_pb_w));
+	pia.cb2_handler().set(FUNC(maxaflex_state::pia_cb2_w));
 
 	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(0))
-	MCFG_SCREEN_VISIBLE_AREA(MIN_X, MAX_X, MIN_Y, MAX_Y)
-	MCFG_SCREEN_REFRESH_RATE(FRAME_RATE_60HZ)
-	MCFG_SCREEN_SIZE(HWIDTH*8, TOTAL_LINES_60HZ)
-	MCFG_SCREEN_UPDATE_DEVICE("antic", antic_device, screen_update)
-	MCFG_SCREEN_PALETTE("palette")
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_RASTER));
+	screen.set_vblank_time(ATTOSECONDS_IN_USEC(0));
+	screen.set_visarea(antic_device::MIN_X, antic_device::MAX_X, antic_device::MIN_Y, antic_device::MAX_Y);
+	screen.set_refresh_hz(antic_device::FRAME_RATE_60HZ);
+	screen.set_size(antic_device::HWIDTH * 8, antic_device::TOTAL_LINES_60HZ);
+	screen.set_screen_update("antic", FUNC(antic_device::screen_update));
+	screen.set_palette("palette");
 
-	MCFG_PALETTE_ADD("palette", 256)
-	MCFG_PALETTE_INIT_OWNER(atari_common_state, atari)
-	MCFG_DEFAULT_LAYOUT(layout_maxaflex)
+	PALETTE(config, "palette", FUNC(maxaflex_state::atari_palette), 256);
+	config.set_default_layout(layout_maxaflex);
 
 	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_MONO("mono")
+	SPEAKER(config, "mono").front_center();
 
-	MCFG_SOUND_ADD("pokey", POKEY, FREQ_17_EXACT)
-	MCFG_POKEY_INTERRUPT_CB(atari_common_state, interrupt_cb)
-	MCFG_POKEY_OUTPUT_RC(RES_K(1), CAP_U(0.0), 5.0)
+	POKEY(config, m_pokey, pokey_device::FREQ_17_EXACT);
+	m_pokey->set_interrupt_callback(FUNC(maxaflex_state::interrupt_cb));
+	m_pokey->set_output_rc(RES_K(1), CAP_U(0.0), 5.0);
+	m_pokey->add_route(ALL_OUTPUTS, "mono", 1.0);
 
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 1.0)
+	SPEAKER_SOUND(config, m_speaker);
+	m_speaker->add_route(ALL_OUTPUTS, "mono", 0.50);
 
-	MCFG_SOUND_ADD("speaker", SPEAKER_SOUND, 0)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.50)
-MACHINE_CONFIG_END
+	RAM(config, RAM_TAG).set_default_size("16K");
+}
 
 
 ROM_START(maxaflex)
@@ -535,8 +438,8 @@ ROM_START(mf_flip)
 ROM_END
 
 
-GAME( 1984, maxaflex, 0,        maxaflex, a600xl, driver_device,    0, ROT0, "Exidy", "Max-A-Flex", MACHINE_IS_BIOS_ROOT )
-GAME( 1982, mf_achas, maxaflex, maxaflex, a600xl, driver_device,    0, ROT0, "Exidy / First Star Software", "Astro Chase (Max-A-Flex)", 0 )
-GAME( 1983, mf_brist, maxaflex, maxaflex, a600xl, driver_device,    0, ROT0, "Exidy / First Star Software", "Bristles (Max-A-Flex)", 0 )
-GAME( 1983, mf_flip,  maxaflex, maxaflex, a600xl, driver_device,    0, ROT0, "Exidy / First Star Software", "Flip & Flop (Max-A-Flex)", 0 )
-GAME( 1984, mf_bdash, maxaflex, maxaflex, a600xl, driver_device,    0, ROT0, "Exidy / First Star Software", "Boulder Dash (Max-A-Flex)", 0 )
+GAME( 1984, maxaflex, 0,        maxaflex, a600xl, maxaflex_state, empty_init, ROT0, "Exidy",                       "Max-A-Flex",                MACHINE_IS_BIOS_ROOT )
+GAME( 1982, mf_achas, maxaflex, maxaflex, a600xl, maxaflex_state, empty_init, ROT0, "Exidy / First Star Software", "Astro Chase (Max-A-Flex)",  0 )
+GAME( 1983, mf_brist, maxaflex, maxaflex, a600xl, maxaflex_state, empty_init, ROT0, "Exidy / First Star Software", "Bristles (Max-A-Flex)",     0 )
+GAME( 1983, mf_flip,  maxaflex, maxaflex, a600xl, maxaflex_state, empty_init, ROT0, "Exidy / First Star Software", "Flip & Flop (Max-A-Flex)",  0 )
+GAME( 1984, mf_bdash, maxaflex, maxaflex, a600xl, maxaflex_state, empty_init, ROT0, "Exidy / First Star Software", "Boulder Dash (Max-A-Flex)", 0 )

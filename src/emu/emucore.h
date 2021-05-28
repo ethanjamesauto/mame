@@ -5,20 +5,21 @@
     emucore.h
 
     General core utilities and macros used throughout the emulator.
+
 ***************************************************************************/
+
+#ifndef MAME_EMU_EMUCORE_H
+#define MAME_EMU_EMUCORE_H
 
 #pragma once
 
-#ifndef __EMUCORE_H__
-#define __EMUCORE_H__
-
 // standard C includes
-#include <assert.h>
-#include <math.h>
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
-#include <stdarg.h>
+#include <cassert>
+#include <cmath>
+#include <cstdio>
+#include <cstring>
+#include <cstdlib>
+#include <cstdarg>
 
 // some cleanups for Solaris for things defined in stdlib.h
 #if defined(__sun__) && defined(__svr4__)
@@ -28,15 +29,19 @@
 
 // standard C++ includes
 #include <exception>
+#include <string>
+#include <type_traits>
 #include <typeinfo>
 
 // core system includes
 #include "osdcomm.h"
 #include "emualloc.h"
-#include "corestr.h"
+#include "coretmpl.h"
 #include "bitmap.h"
-#include "tagmap.h"
+#include "strformat.h"
+#include "vecstream.h"
 
+#include "emufwd.h"
 
 
 //**************************************************************************
@@ -55,17 +60,28 @@
 //  FUNDAMENTAL TYPES
 //**************************************************************************
 
-// genf is a generic function pointer; cast function pointers to this instead of void *
-typedef void genf(void);
+// explicitly sized integers
+using osd::u8;
+using osd::u16;
+using osd::u32;
+using osd::u64;
+using osd::s8;
+using osd::s16;
+using osd::s32;
+using osd::s64;
+
+// useful utility functions
+using util::underlying_value;
+using util::enum_value;
+using util::make_bitmask;
+using util::BIT;
+using util::bitswap;
+using util::iabs;
+using util::string_format;
+
 
 // pen_t is used to represent pixel values in bitmaps
-typedef UINT32 pen_t;
-
-// stream_sample_t is used to represent a single sample in a sound stream
-typedef INT32 stream_sample_t;
-
-// running_machine is core to pretty much everything
-class running_machine;
+typedef u32 pen_t;
 
 
 
@@ -73,38 +89,22 @@ class running_machine;
 //  USEFUL COMPOSITE TYPES
 //**************************************************************************
 
-// generic_ptr is a union of pointers to various sizes
-union generic_ptr
-{
-	generic_ptr(void *value) { v = value; }
-	void *      v;
-	INT8 *      i8;
-	UINT8 *     u8;
-	INT16 *     i16;
-	UINT16 *    u16;
-	INT32 *     i32;
-	UINT32 *    u32;
-	INT64 *     i64;
-	UINT64 *    u64;
-};
-
-
 // PAIR is an endian-safe union useful for representing 32-bit CPU registers
 union PAIR
 {
 #ifdef LSB_FIRST
-	struct { UINT8 l,h,h2,h3; } b;
-	struct { UINT16 l,h; } w;
-	struct { INT8 l,h,h2,h3; } sb;
-	struct { INT16 l,h; } sw;
+	struct { u8 l,h,h2,h3; } b;
+	struct { u16 l,h; } w;
+	struct { s8 l,h,h2,h3; } sb;
+	struct { s16 l,h; } sw;
 #else
-	struct { UINT8 h3,h2,h,l; } b;
-	struct { INT8 h3,h2,h,l; } sb;
-	struct { UINT16 h,l; } w;
-	struct { INT16 h,l; } sw;
+	struct { u8 h3,h2,h,l; } b;
+	struct { s8 h3,h2,h,l; } sb;
+	struct { u16 h,l; } w;
+	struct { s16 h,l; } sw;
 #endif
-	UINT32 d;
-	INT32 sd;
+	u32 d;
+	s32 sd;
 };
 
 
@@ -112,14 +112,14 @@ union PAIR
 union PAIR16
 {
 #ifdef LSB_FIRST
-	struct { UINT8 l,h; } b;
-	struct { INT8 l,h; } sb;
+	struct { u8 l,h; } b;
+	struct { s8 l,h; } sb;
 #else
-	struct { UINT8 h,l; } b;
-	struct { INT8 h,l; } sb;
+	struct { u8 h,l; } b;
+	struct { s8 h,l; } sb;
 #endif
-	UINT16 w;
-	INT16 sw;
+	u16 w;
+	s16 sw;
 };
 
 
@@ -127,22 +127,22 @@ union PAIR16
 union PAIR64
 {
 #ifdef LSB_FIRST
-	struct { UINT8 l,h,h2,h3,h4,h5,h6,h7; } b;
-	struct { UINT16 l,h,h2,h3; } w;
-	struct { UINT32 l,h; } d;
-	struct { INT8 l,h,h2,h3,h4,h5,h6,h7; } sb;
-	struct { INT16 l,h,h2,h3; } sw;
-	struct { INT32 l,h; } sd;
+	struct { u8 l,h,h2,h3,h4,h5,h6,h7; } b;
+	struct { u16 l,h,h2,h3; } w;
+	struct { u32 l,h; } d;
+	struct { s8 l,h,h2,h3,h4,h5,h6,h7; } sb;
+	struct { s16 l,h,h2,h3; } sw;
+	struct { s32 l,h; } sd;
 #else
-	struct { UINT8 h7,h6,h5,h4,h3,h2,h,l; } b;
-	struct { UINT16 h3,h2,h,l; } w;
-	struct { UINT32 h,l; } d;
-	struct { INT8 h7,h6,h5,h4,h3,h2,h,l; } sb;
-	struct { INT16 h3,h2,h,l; } sw;
-	struct { INT32 h,l; } sd;
+	struct { u8 h7,h6,h5,h4,h3,h2,h,l; } b;
+	struct { u16 h3,h2,h,l; } w;
+	struct { u32 h,l; } d;
+	struct { s8 h7,h6,h5,h4,h3,h2,h,l; } sb;
+	struct { s16 h3,h2,h,l; } sw;
+	struct { s32 h,l; } sd;
 #endif
-	UINT64 q;
-	INT64 sq;
+	u64 q;
+	s64 sq;
 };
 
 
@@ -158,6 +158,7 @@ enum endianness_t
 	ENDIANNESS_BIG
 };
 
+extern const char *const endianness_names[2];
 
 // declare native endianness to be one or the other
 #ifdef LSB_FIRST
@@ -175,14 +176,55 @@ const endianness_t ENDIANNESS_NATIVE = ENDIANNESS_BIG;
 
 
 // orientation of bitmaps
-#define ORIENTATION_FLIP_X              0x0001  /* mirror everything in the X direction */
-#define ORIENTATION_FLIP_Y              0x0002  /* mirror everything in the Y direction */
-#define ORIENTATION_SWAP_XY             0x0004  /* mirror along the top-left/bottom-right diagonal */
+constexpr int ORIENTATION_FLIP_X   = 0x0001;  // mirror everything in the X direction
+constexpr int ORIENTATION_FLIP_Y   = 0x0002;  // mirror everything in the Y direction
+constexpr int ORIENTATION_SWAP_XY  = 0x0004;  // mirror along the top-left/bottom-right diagonal
 
-#define ROT0                            0
-#define ROT90                           (ORIENTATION_SWAP_XY | ORIENTATION_FLIP_X)  /* rotate clockwise 90 degrees */
-#define ROT180                          (ORIENTATION_FLIP_X | ORIENTATION_FLIP_Y)   /* rotate 180 degrees */
-#define ROT270                          (ORIENTATION_SWAP_XY | ORIENTATION_FLIP_Y)  /* rotate counter-clockwise 90 degrees */
+constexpr int ROT0                 = 0;
+constexpr int ROT90                = ORIENTATION_SWAP_XY | ORIENTATION_FLIP_X;  // rotate clockwise 90 degrees
+constexpr int ROT180               = ORIENTATION_FLIP_X | ORIENTATION_FLIP_Y;   // rotate 180 degrees
+constexpr int ROT270               = ORIENTATION_SWAP_XY | ORIENTATION_FLIP_Y;  // rotate counter-clockwise 90 degrees
+
+
+// these are UTF-8 encoded strings for common characters
+#define UTF8_NBSP               "\xc2\xa0"          /* non-breaking space */
+
+#define UTF8_MULTIPLY           "\xc3\x97"          /* multiplication sign */
+#define UTF8_DIVIDE             "\xc3\xb7"          /* division sign */
+#define UTF8_SQUAREROOT         "\xe2\x88\x9a"      /* square root symbol */
+#define UTF8_PLUSMINUS          "\xc2\xb1"          /* plusminus symbol */
+
+#define UTF8_POW_2              "\xc2\xb2"          /* superscript 2 */
+#define UTF8_POW_X              "\xcb\xa3"          /* superscript x */
+#define UTF8_POW_Y              "\xca\xb8"          /* superscript y */
+#define UTF8_PRIME              "\xca\xb9"          /* prime symbol */
+#define UTF8_DEGREES            "\xc2\xb0"          /* degrees symbol */
+
+#define UTF8_SMALL_PI           "\xcf\x80"          /* Greek small letter pi */
+#define UTF8_CAPITAL_SIGMA      "\xce\xa3"          /* Greek capital letter sigma */
+#define UTF8_CAPITAL_DELTA      "\xce\x94"          /* Greek capital letter delta */
+
+#define UTF8_MACRON             "\xc2\xaf"          /* macron symbol */
+#define UTF8_NONSPACE_MACRON    "\xcc\x84"          /* nonspace macron, use after another char */
+
+#define a_RING                  "\xc3\xa5"          /* small a with a ring */
+#define a_UMLAUT                "\xc3\xa4"          /* small a with an umlaut */
+#define o_UMLAUT                "\xc3\xb6"          /* small o with an umlaut */
+#define u_UMLAUT                "\xc3\xbc"          /* small u with an umlaut */
+#define e_ACUTE                 "\xc3\xa9"          /* small e with an acute */
+#define n_TILDE                 "\xc3\xb1"          /* small n with a tilde */
+
+#define A_RING                  "\xc3\x85"          /* capital A with a ring */
+#define A_UMLAUT                "\xc3\x84"          /* capital A with an umlaut */
+#define O_UMLAUT                "\xc3\x96"          /* capital O with an umlaut */
+#define U_UMLAUT                "\xc3\x9c"          /* capital U with an umlaut */
+#define E_ACUTE                 "\xc3\x89"          /* capital E with an acute */
+#define N_TILDE                 "\xc3\x91"          /* capital N with a tilde */
+
+#define UTF8_LEFT               "\xe2\x86\x90"      /* cursor left */
+#define UTF8_RIGHT              "\xe2\x86\x92"      /* cursor right */
+#define UTF8_UP                 "\xe2\x86\x91"      /* cursor up */
+#define UTF8_DOWN               "\xe2\x86\x93"      /* cursor down */
 
 
 
@@ -191,17 +233,24 @@ const endianness_t ENDIANNESS_NATIVE = ENDIANNESS_BIG;
 //**************************************************************************
 
 // macro for defining a copy constructor and assignment operator to prevent copying
-#define DISABLE_COPYING(_Type) \
-private: \
-	_Type(const _Type &) = delete; \
-	_Type &operator=(const _Type &) = delete
+#define DISABLE_COPYING(TYPE) \
+	TYPE(const TYPE &) = delete; \
+	TYPE &operator=(const TYPE &) = delete
 
-// macro for declaring enumerator operators that increment/decrement like plain old C
-#define DECLARE_ENUM_OPERATORS(_Type) \
-inline void operator++(_Type &value) { value = (_Type)((int)value + 1); } \
-inline void operator++(_Type &value, int) { value = (_Type)((int)value + 1); } \
-inline void operator--(_Type &value) { value = (_Type)((int)value - 1); } \
-inline void operator--(_Type &value, int) { value = (_Type)((int)value - 1); }
+// macro for declaring enumeration operators that increment/decrement like plain old C
+#define DECLARE_ENUM_INCDEC_OPERATORS(TYPE) \
+inline TYPE &operator++(TYPE &value) { return value = TYPE(std::underlying_type_t<TYPE>(value) + 1); } \
+inline TYPE &operator--(TYPE &value) { return value = TYPE(std::underlying_type_t<TYPE>(value) - 1); } \
+inline TYPE operator++(TYPE &value, int) { TYPE const old(value); ++value; return old; } \
+inline TYPE operator--(TYPE &value, int) { TYPE const old(value); --value; return old; }
+
+// macro for declaring bitwise operators for an enumerated type
+#define DECLARE_ENUM_BITWISE_OPERATORS(TYPE) \
+constexpr TYPE operator~(TYPE value) { return TYPE(~std::underlying_type_t<TYPE>(value)); } \
+constexpr TYPE operator&(TYPE a, TYPE b) { return TYPE(std::underlying_type_t<TYPE>(a) & std::underlying_type_t<TYPE>(b)); } \
+constexpr TYPE operator|(TYPE a, TYPE b) { return TYPE(std::underlying_type_t<TYPE>(a) | std::underlying_type_t<TYPE>(b)); } \
+inline TYPE &operator&=(TYPE &a, TYPE b) { return a = a & b; } \
+inline TYPE &operator|=(TYPE &a, TYPE b) { return a = a | b; }
 
 
 // this macro passes an item followed by a string version of itself as two consecutive parameters
@@ -209,28 +258,11 @@ inline void operator--(_Type &value, int) { value = (_Type)((int)value - 1); }
 
 // this macro wraps a function 'x' and can be used to pass a function followed by its name
 #define FUNC(x) &x, #x
-#define FUNC_NULL NULL, "(null)"
-
-
-// standard assertion macros
-#undef assert
-#undef assert_always
-
-#if defined(MAME_DEBUG_FAST)
-#define assert(x)               do { } while (0)
-#define assert_always(x, msg)   do { if (!(x)) throw emu_fatalerror("Fatal error: %s\nCaused by assert: %s:%d: %s", msg, __FILE__, __LINE__, #x); } while (0)
-#elif defined(MAME_DEBUG)
-#define assert(x)               do { if (!(x)) throw emu_fatalerror("assert: %s:%d: %s", __FILE__, __LINE__, #x); } while (0)
-#define assert_always(x, msg)   do { if (!(x)) throw emu_fatalerror("Fatal error: %s\nCaused by assert: %s:%d: %s", msg, __FILE__, __LINE__, #x); } while (0)
-#else
-#define assert(x)               do { } while (0)
-#define assert_always(x, msg)   do { if (!(x)) throw emu_fatalerror("Fatal error: %s (%s:%d)", msg, __FILE__, __LINE__); } while (0)
-#endif
 
 
 // macros to convert radians to degrees and degrees to radians
-#define RADIAN_TO_DEGREE(x)   ((180.0 / M_PI) * (x))
-#define DEGREE_TO_RADIAN(x)   ((M_PI / 180.0) * (x))
+template <typename T> constexpr auto RADIAN_TO_DEGREE(T const &x) { return (180.0 / M_PI) * x; }
+template <typename T> constexpr auto DEGREE_TO_RADIAN(T const &x) { return (M_PI / 180.0) * x; }
 
 
 // endian-based value: first value is if 'endian' is little-endian, second is if 'endian' is big-endian
@@ -241,39 +273,6 @@ inline void operator--(_Type &value, int) { value = (_Type)((int)value - 1); }
 
 // endian-based value: first value is if 'endian' matches native, second is if 'endian' doesn't match native
 #define ENDIAN_VALUE_NE_NNE(endian,neval,nneval) (((endian) == ENDIANNESS_NATIVE) ? (neval) : (nneval))
-
-
-// useful macros to deal with bit shuffling encryptions
-#define BIT(x,n) (((x)>>(n))&1)
-
-#define BITSWAP8(val,B7,B6,B5,B4,B3,B2,B1,B0) \
-	((BIT(val,B7) << 7) | (BIT(val,B6) << 6) | (BIT(val,B5) << 5) | (BIT(val,B4) << 4) | \
-		(BIT(val,B3) << 3) | (BIT(val,B2) << 2) | (BIT(val,B1) << 1) | (BIT(val,B0) << 0))
-
-#define BITSWAP16(val,B15,B14,B13,B12,B11,B10,B9,B8,B7,B6,B5,B4,B3,B2,B1,B0) \
-	((BIT(val,B15) << 15) | (BIT(val,B14) << 14) | (BIT(val,B13) << 13) | (BIT(val,B12) << 12) | \
-		(BIT(val,B11) << 11) | (BIT(val,B10) << 10) | (BIT(val, B9) <<  9) | (BIT(val, B8) <<  8) | \
-		(BIT(val, B7) <<  7) | (BIT(val, B6) <<  6) | (BIT(val, B5) <<  5) | (BIT(val, B4) <<  4) | \
-		(BIT(val, B3) <<  3) | (BIT(val, B2) <<  2) | (BIT(val, B1) <<  1) | (BIT(val, B0) <<  0))
-
-#define BITSWAP24(val,B23,B22,B21,B20,B19,B18,B17,B16,B15,B14,B13,B12,B11,B10,B9,B8,B7,B6,B5,B4,B3,B2,B1,B0) \
-	((BIT(val,B23) << 23) | (BIT(val,B22) << 22) | (BIT(val,B21) << 21) | (BIT(val,B20) << 20) | \
-		(BIT(val,B19) << 19) | (BIT(val,B18) << 18) | (BIT(val,B17) << 17) | (BIT(val,B16) << 16) | \
-		(BIT(val,B15) << 15) | (BIT(val,B14) << 14) | (BIT(val,B13) << 13) | (BIT(val,B12) << 12) | \
-		(BIT(val,B11) << 11) | (BIT(val,B10) << 10) | (BIT(val, B9) <<  9) | (BIT(val, B8) <<  8) | \
-		(BIT(val, B7) <<  7) | (BIT(val, B6) <<  6) | (BIT(val, B5) <<  5) | (BIT(val, B4) <<  4) | \
-		(BIT(val, B3) <<  3) | (BIT(val, B2) <<  2) | (BIT(val, B1) <<  1) | (BIT(val, B0) <<  0))
-
-#define BITSWAP32(val,B31,B30,B29,B28,B27,B26,B25,B24,B23,B22,B21,B20,B19,B18,B17,B16,B15,B14,B13,B12,B11,B10,B9,B8,B7,B6,B5,B4,B3,B2,B1,B0) \
-	((BIT(val,B31) << 31) | (BIT(val,B30) << 30) | (BIT(val,B29) << 29) | (BIT(val,B28) << 28) | \
-		(BIT(val,B27) << 27) | (BIT(val,B26) << 26) | (BIT(val,B25) << 25) | (BIT(val,B24) << 24) | \
-		(BIT(val,B23) << 23) | (BIT(val,B22) << 22) | (BIT(val,B21) << 21) | (BIT(val,B20) << 20) | \
-		(BIT(val,B19) << 19) | (BIT(val,B18) << 18) | (BIT(val,B17) << 17) | (BIT(val,B16) << 16) | \
-		(BIT(val,B15) << 15) | (BIT(val,B14) << 14) | (BIT(val,B13) << 13) | (BIT(val,B12) << 12) | \
-		(BIT(val,B11) << 11) | (BIT(val,B10) << 10) | (BIT(val, B9) <<  9) | (BIT(val, B8) <<  8) | \
-		(BIT(val, B7) <<  7) | (BIT(val, B6) <<  6) | (BIT(val, B5) <<  5) | (BIT(val, B4) <<  4) | \
-		(BIT(val, B3) <<  3) | (BIT(val, B2) <<  2) | (BIT(val, B1) <<  1) | (BIT(val, B0) <<  0))
-
 
 
 //**************************************************************************
@@ -288,106 +287,102 @@ class emu_exception : public std::exception { };
 class emu_fatalerror : public emu_exception
 {
 public:
-	emu_fatalerror(const char *format, ...) ATTR_PRINTF(2,3);
-	emu_fatalerror(const char *format, va_list ap);
-	emu_fatalerror(int _exitcode, const char *format, ...) ATTR_PRINTF(3,4);
-	emu_fatalerror(int _exitcode, const char *format, va_list ap);
+	emu_fatalerror(util::format_argument_pack<std::ostream> const &args);
+	emu_fatalerror(int _exitcode, util::format_argument_pack<std::ostream> const &args);
 
-	const char *string() const { return text; }
-	int exitcode() const { return code; }
+	template <typename Format, typename... Params>
+	emu_fatalerror(Format const &fmt, Params &&... args)
+		: emu_fatalerror(static_cast<util::format_argument_pack<std::ostream> const &>(util::make_format_argument_pack(fmt, std::forward<Params>(args)...)))
+	{
+	}
+	template <typename Format, typename... Params>
+	emu_fatalerror(int _exitcode, Format const &fmt, Params &&... args)
+		: emu_fatalerror(_exitcode, static_cast<util::format_argument_pack<std::ostream> const &>(util::make_format_argument_pack(fmt, std::forward<Params>(args)...)))
+	{
+	}
+
+	virtual char const *what() const noexcept override { return m_text.c_str(); }
+	int exitcode() const noexcept { return m_code; }
 
 private:
-	char text[1024];
-	int code;
+	std::string m_text;
+	int m_code;
 };
 
+class tag_add_exception
+{
+public:
+	tag_add_exception(const char *tag) : m_tag(tag) { }
+	const char *tag() const { return m_tag.c_str(); }
+private:
+	std::string m_tag;
+};
 
 
 //**************************************************************************
 //  CASTING TEMPLATES
 //**************************************************************************
 
-class device_t;
+[[noreturn]] void report_bad_cast(const std::type_info &src_type, const std::type_info &dst_type);
+[[noreturn]] void report_bad_device_cast(const device_t *dev, const std::type_info &src_type, const std::type_info &dst_type);
 
-void report_bad_cast(const std::type_info &src_type, const std::type_info &dst_type);
-void report_bad_device_cast(const device_t *dev, const std::type_info &src_type, const std::type_info &dst_type);
+template <typename Dest, typename Source>
+inline void report_bad_cast(Source *src)
+{
+	if constexpr (std::is_base_of_v<device_t, Source>)
+	{
+		if (src) report_bad_device_cast(src, typeid(Source), typeid(Dest));
+		else report_bad_cast(typeid(Source), typeid(Dest));
+	}
+	else
+	{
+		device_t const *dev(dynamic_cast<device_t const *>(src));
+		if (dev) report_bad_device_cast(dev, typeid(Source), typeid(Dest));
+		else report_bad_cast(typeid(Source), typeid(Dest));
+	}
+}
 
 // template function for casting from a base class to a derived class that is checked
 // in debug builds and fast in release builds
-template<class _Dest, class _Source>
-inline _Dest downcast(_Source *src)
+template <typename Dest, typename Source>
+inline Dest downcast(Source *src)
 {
-#if defined(MAME_DEBUG) && !defined(MAME_DEBUG_FAST)
-	try {
-		if (dynamic_cast<_Dest>(src) != src)
-		{
-			if (dynamic_cast<const device_t *>(src) != nullptr)
-				report_bad_device_cast(dynamic_cast<const device_t *>(src), typeid(src), typeid(_Dest));
-			else
-				report_bad_cast(typeid(src), typeid(_Dest));
-		}
-	}
-	catch (std::bad_cast &)
-	{
-		report_bad_cast(typeid(src), typeid(_Dest));
-	}
+#if defined(MAME_DEBUG)
+	Dest const chk(dynamic_cast<Dest>(src));
+	if (chk != src) report_bad_cast<std::remove_pointer_t<Dest>, Source>(src);
 #endif
-	return static_cast<_Dest>(src);
+	return static_cast<Dest>(src);
 }
 
-template<class _Dest, class _Source>
-inline _Dest downcast(_Source &src)
+template<class Dest, class Source>
+inline Dest downcast(Source &src)
 {
-#if defined(MAME_DEBUG) && !defined(MAME_DEBUG_FAST)
-	try {
-		if (&dynamic_cast<_Dest>(src) != &src)
-		{
-			if (dynamic_cast<const device_t *>(&src) != nullptr)
-				report_bad_device_cast(dynamic_cast<const device_t *>(&src), typeid(src), typeid(_Dest));
-			else
-				report_bad_cast(typeid(src), typeid(_Dest));
-		}
-	}
-	catch (std::bad_cast &)
-	{
-		report_bad_cast(typeid(src), typeid(_Dest));
-	}
+#if defined(MAME_DEBUG)
+	std::remove_reference_t<Dest> *const chk(dynamic_cast<std::remove_reference_t<Dest> *>(&src));
+	if (chk != &src) report_bad_cast<std::remove_reference_t<Dest>, Source>(&src);
 #endif
-	return static_cast<_Dest>(src);
+	return static_cast<Dest>(src);
 }
 
 
-
-//**************************************************************************
-//  FUNCTION PROTOTYPES
-//**************************************************************************
-
-ATTR_NORETURN void fatalerror(const char *format, ...) ATTR_PRINTF(1,2);
-ATTR_NORETURN void fatalerror_exitcode(running_machine &machine, int exitcode, const char *format, ...) ATTR_PRINTF(3,4);
 
 //**************************************************************************
 //  INLINE FUNCTIONS
 //**************************************************************************
 
-// population count
-#if !defined(__NetBSD__)
-inline int popcount(UINT32 val)
+template <typename... T>
+[[noreturn]] inline void fatalerror(T &&... args)
 {
-	int count;
-
-	for (count = 0; val != 0; count++)
-		val &= val - 1;
-	return count;
+	throw emu_fatalerror(std::forward<T>(args)...);
 }
-#endif
 
 
 // convert a series of 32 bits into a float
-inline float u2f(UINT32 v)
+inline float u2f(u32 v)
 {
 	union {
 		float ff;
-		UINT32 vv;
+		u32 vv;
 	} u;
 	u.vv = v;
 	return u.ff;
@@ -395,11 +390,11 @@ inline float u2f(UINT32 v)
 
 
 // convert a float into a series of 32 bits
-inline UINT32 f2u(float f)
+inline u32 f2u(float f)
 {
 	union {
 		float ff;
-		UINT32 vv;
+		u32 vv;
 	} u;
 	u.ff = f;
 	return u.vv;
@@ -407,11 +402,11 @@ inline UINT32 f2u(float f)
 
 
 // convert a series of 64 bits into a double
-inline double u2d(UINT64 v)
+inline double u2d(u64 v)
 {
 	union {
 		double dd;
-		UINT64 vv;
+		u64 vv;
 	} u;
 	u.vv = v;
 	return u.dd;
@@ -419,14 +414,14 @@ inline double u2d(UINT64 v)
 
 
 // convert a double into a series of 64 bits
-inline UINT64 d2u(double d)
+inline u64 d2u(double d)
 {
 	union {
 		double dd;
-		UINT64 vv;
+		u64 vv;
 	} u;
 	u.dd = d;
 	return u.vv;
 }
 
-#endif  /* __EMUCORE_H__ */
+#endif // MAME_EMU_EMUCORE_H

@@ -2,7 +2,7 @@
 // copyright-holders:Philip Bennett
 /***************************************************************************
 
-    qs1000.c
+    qs1000.cpp
 
     QS1000 device emulator.
 
@@ -131,32 +131,23 @@
 
 
 // device type definition
-const device_type QS1000 = &device_creator<qs1000_device>;
+DEFINE_DEVICE_TYPE(QS1000, qs1000_device, "qs1000", "QS1000")
 
 //**************************************************************************
 //  GLOBAL VARIABLES
 //**************************************************************************
 
-static ADDRESS_MAP_START( qs1000_prg_map, AS_PROGRAM, 8, qs1000_device )
-	AM_RANGE(0x0000, 0x7fff) AM_ROM
-ADDRESS_MAP_END
+void qs1000_device::qs1000_prg_map(address_map &map)
+{
+	map(0x0000, 0x7fff).rom();
+}
 
 
-static ADDRESS_MAP_START( qs1000_io_map, AS_IO, 8, qs1000_device )
-	AM_RANGE(0x0000, 0x00ff) AM_RAM
-	AM_RANGE(0x0200, 0x0211) AM_WRITE(wave_w)
-	AM_RANGE(MCS51_PORT_P1, MCS51_PORT_P1) AM_READWRITE(p1_r, p1_w)
-	AM_RANGE(MCS51_PORT_P2, MCS51_PORT_P2) AM_READWRITE(p2_r, p2_w)
-	AM_RANGE(MCS51_PORT_P3, MCS51_PORT_P3) AM_READWRITE(p3_r, p3_w)
-ADDRESS_MAP_END
-
-
-// Machine fragment
-static MACHINE_CONFIG_FRAGMENT( qs1000 )
-	MCFG_CPU_ADD("cpu", I8052, DERIVED_CLOCK(1, 1))
-	MCFG_CPU_PROGRAM_MAP(qs1000_prg_map)
-	MCFG_CPU_IO_MAP(qs1000_io_map)
-MACHINE_CONFIG_END
+void qs1000_device::qs1000_io_map(address_map &map)
+{
+	map(0x0000, 0x00ff).ram();
+	map(0x0200, 0x0211).w(FUNC(qs1000_device::wave_w));
+}
 
 
 // ROM definition for the QS1000 internal program ROM
@@ -166,12 +157,6 @@ ROM_START( qs1000 )
 ROM_END
 
 
-// Wavetable ROM address map
-static ADDRESS_MAP_START( qs1000, AS_0, 8, qs1000_device )
-	AM_RANGE(0x000000, 0xffffff) AM_ROM AM_REGION("qs1000", 0)
-ADDRESS_MAP_END
-
-
 //**************************************************************************
 //  LIVE DEVICE
 //**************************************************************************
@@ -179,10 +164,10 @@ ADDRESS_MAP_END
 //-------------------------------------------------
 //  qs1000_device - constructor
 //-------------------------------------------------
-qs1000_device::qs1000_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: device_t(mconfig, QS1000, "QS1000", tag, owner, clock, "qs1000", __FILE__),
+qs1000_device::qs1000_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: device_t(mconfig, QS1000, tag, owner, clock),
 		device_sound_interface(mconfig, *this),
-		device_memory_interface(mconfig, *this),
+		device_rom_interface(mconfig, *this),
 		m_external_rom(false),
 		m_in_p1_cb(*this),
 		m_in_p2_cb(*this),
@@ -191,12 +176,9 @@ qs1000_device::qs1000_device(const machine_config &mconfig, const char *tag, dev
 		m_out_p2_cb(*this),
 		m_out_p3_cb(*this),
 		//m_serial_w_cb(*this),
-		m_space_config("samples", ENDIANNESS_LITTLE, 8, 24, 0, nullptr),
 		m_stream(nullptr),
-		m_direct(nullptr),
 		m_cpu(*this, "cpu")
 {
-	m_address_map[0] = *ADDRESS_MAP_NAME(qs1000);
 }
 
 
@@ -204,19 +186,38 @@ qs1000_device::qs1000_device(const machine_config &mconfig, const char *tag, dev
 //  rom_region - return a pointer to the device's
 //  internal ROM region
 //-------------------------------------------------
-const rom_entry *qs1000_device::device_rom_region() const
+const tiny_rom_entry *qs1000_device::device_rom_region() const
 {
 	return m_external_rom ? nullptr : ROM_NAME( qs1000 );
 }
 
 
 //-------------------------------------------------
-//  machine_config_additions - return a pointer to
-//  the device's machine fragment
+//  device_add_mconfig - add machine configuration
 //-------------------------------------------------
-machine_config_constructor qs1000_device::device_mconfig_additions() const
+
+void qs1000_device::device_add_mconfig(machine_config &config)
 {
-	return MACHINE_CONFIG_NAME( qs1000 );
+	I8052(config, m_cpu, DERIVED_CLOCK(1, 1));
+	m_cpu->set_addrmap(AS_PROGRAM, &qs1000_device::qs1000_prg_map);
+	m_cpu->set_addrmap(AS_IO, &qs1000_device::qs1000_io_map);
+	m_cpu->port_in_cb<1>().set(FUNC(qs1000_device::p1_r));
+	m_cpu->port_out_cb<1>().set(FUNC(qs1000_device::p1_w));
+	m_cpu->port_in_cb<2>().set(FUNC(qs1000_device::p2_r));
+	m_cpu->port_out_cb<2>().set(FUNC(qs1000_device::p2_w));
+	m_cpu->port_in_cb<3>().set(FUNC(qs1000_device::p3_r));
+	m_cpu->port_out_cb<3>().set(FUNC(qs1000_device::p3_w));
+	m_cpu->serial_rx_cb().set(FUNC(qs1000_device::data_to_i8052));
+}
+
+
+//-------------------------------------------------
+//  rom_bank_updated - the rom bank has changed
+//-------------------------------------------------
+
+void qs1000_device::rom_bank_updated()
+{
+	m_stream->update();
 }
 
 
@@ -225,9 +226,6 @@ machine_config_constructor qs1000_device::device_mconfig_additions() const
 //-------------------------------------------------
 void qs1000_device::device_start()
 {
-	// Find our direct access
-	m_direct = &space().direct();
-
 	// The QS1000 operates at 24MHz. Creating a stream at that rate
 	// would be overkill so we opt for a fraction of that rate which
 	// gives reasonable results
@@ -243,8 +241,6 @@ void qs1000_device::device_start()
 	m_out_p3_cb.resolve_safe();
 
 	//m_serial_w_cb.resolve_safe();
-
-	m_cpu->i8051_set_serial_rx_callback(read8_delegate(FUNC(qs1000_device::data_to_i8052),this));
 
 	save_item(NAME(m_serial_data_in));
 	save_item(NAME(m_wave_regs));
@@ -263,6 +259,9 @@ void qs1000_device::device_start()
 		save_item(NAME(m_channels[i].m_regs), i);
 		save_item(NAME(m_channels[i].m_adpcm.m_signal), i);
 		save_item(NAME(m_channels[i].m_adpcm.m_step), i);
+		save_item(NAME(m_channels[i].m_adpcm.m_loop_signal), i);
+		save_item(NAME(m_channels[i].m_adpcm.m_loop_step), i);
+		save_item(NAME(m_channels[i].m_adpcm.m_saved), i);
 	}
 }
 
@@ -270,7 +269,7 @@ void qs1000_device::device_start()
 //-------------------------------------------------
 //  serial_in - send data to the chip
 //-------------------------------------------------
-void qs1000_device::serial_in(UINT8 data)
+void qs1000_device::serial_in(uint8_t data)
 {
 	m_serial_data_in = data;
 
@@ -294,7 +293,7 @@ void qs1000_device::set_irq(int state)
 //  data_to_i8052 - called by the 8052 core to
 //  receive serial data
 //-------------------------------------------------
-READ8_MEMBER(qs1000_device::data_to_i8052)
+uint8_t qs1000_device::data_to_i8052()
 {
 	return m_serial_data_in;
 }
@@ -313,16 +312,6 @@ void qs1000_device::device_reset()
 
 
 //-------------------------------------------------
-//  memory_space_config - return a description of
-//  any address spaces owned by this device
-//-------------------------------------------------
-const address_space_config *qs1000_device::memory_space_config(address_spacenum spacenum) const
-{
-	return (spacenum == 0) ? &m_space_config : nullptr;
-}
-
-
-//-------------------------------------------------
 //  device_timer - handle deferred writes and
 //  resets as a timer callback
 //-------------------------------------------------
@@ -334,7 +323,7 @@ void qs1000_device::device_timer(emu_timer &timer, device_timer_id id, int param
 //-------------------------------------------------
 //  p0_r
 //-------------------------------------------------
-READ8_MEMBER( qs1000_device::p0_r )
+uint8_t  qs1000_device::p0_r()
 {
 	return 0xff;
 }
@@ -343,7 +332,7 @@ READ8_MEMBER( qs1000_device::p0_r )
 //-------------------------------------------------
 //  p1_r
 //-------------------------------------------------
-READ8_MEMBER( qs1000_device::p1_r )
+uint8_t  qs1000_device::p1_r()
 {
 	return m_in_p1_cb(0);
 }
@@ -352,7 +341,7 @@ READ8_MEMBER( qs1000_device::p1_r )
 //-------------------------------------------------
 //  p2_r
 //-------------------------------------------------
-READ8_MEMBER( qs1000_device::p2_r )
+uint8_t  qs1000_device::p2_r()
 {
 	return m_in_p2_cb(0);
 }
@@ -361,7 +350,7 @@ READ8_MEMBER( qs1000_device::p2_r )
 //-------------------------------------------------
 //  p3_r
 //-------------------------------------------------
-READ8_MEMBER( qs1000_device::p3_r )
+uint8_t qs1000_device::p3_r()
 {
 	return m_in_p3_cb(0);
 }
@@ -370,7 +359,7 @@ READ8_MEMBER( qs1000_device::p3_r )
 //-------------------------------------------------
 //  p0_w
 //-------------------------------------------------
-WRITE8_MEMBER( qs1000_device::p0_w )
+void qs1000_device::p0_w(uint8_t data)
 {
 }
 
@@ -379,7 +368,7 @@ WRITE8_MEMBER( qs1000_device::p0_w )
 //  p1_w
 //-------------------------------------------------
 
-WRITE8_MEMBER( qs1000_device::p1_w )
+void qs1000_device::p1_w(uint8_t data)
 {
 	m_out_p1_cb((offs_t)0, data);
 }
@@ -389,7 +378,7 @@ WRITE8_MEMBER( qs1000_device::p1_w )
 //  p2_w
 //-------------------------------------------------
 
-WRITE8_MEMBER( qs1000_device::p2_w )
+void qs1000_device::p2_w(uint8_t data)
 {
 	m_out_p2_cb((offs_t)0, data);
 }
@@ -399,7 +388,7 @@ WRITE8_MEMBER( qs1000_device::p2_w )
 //  p3_w
 //-------------------------------------------------
 
-WRITE8_MEMBER( qs1000_device::p3_w )
+void qs1000_device::p3_w(uint8_t data)
 {
 	m_out_p3_cb((offs_t)0, data);
 }
@@ -409,7 +398,7 @@ WRITE8_MEMBER( qs1000_device::p3_w )
 //  wave_w - process writes to wavetable engine
 //-------------------------------------------------
 
-WRITE8_MEMBER( qs1000_device::wave_w )
+void qs1000_device::wave_w(offs_t offset, uint8_t data)
 {
 	m_stream->update();
 
@@ -479,26 +468,24 @@ WRITE8_MEMBER( qs1000_device::wave_w )
 //-------------------------------------------------
 //  sound_stream_update -
 //-------------------------------------------------
-void qs1000_device::sound_stream_update(sound_stream &stream, stream_sample_t **inputs, stream_sample_t **outputs, int samples)
+void qs1000_device::sound_stream_update(sound_stream &stream, std::vector<read_stream_view> const &inputs, std::vector<write_stream_view> &outputs)
 {
 	// Rset the output stream
-	memset(outputs[0], 0x0, samples * sizeof(*outputs[0]));
-	memset(outputs[1], 0x0, samples * sizeof(*outputs[1]));
+	outputs[0].fill(0);
+	outputs[1].fill(0);
 
 	// Iterate over voices and accumulate sample data
 	for (auto & chan : m_channels)
 	{
-		
-
-		UINT8 lvol = chan.m_regs[6];
-		UINT8 rvol = chan.m_regs[7];
-		UINT8 vol  = chan.m_regs[8];
+		uint8_t lvol = chan.m_regs[6];
+		uint8_t rvol = chan.m_regs[7];
+		uint8_t vol  = chan.m_regs[8];
 
 		if (chan.m_flags & QS1000_PLAYING)
 		{
 			if (chan.m_flags & QS1000_ADPCM)
 			{
-				for (int samp = 0; samp < samples; samp++)
+				for (int samp = 0; samp < outputs[0].samples(); samp++)
 				{
 					if (chan.m_addr >= chan.m_loop_end)
 					{
@@ -520,26 +507,35 @@ void qs1000_device::sound_stream_update(sound_stream &stream, stream_sample_t **
 					{
 						chan.m_adpcm_addr++;
 
-						if (chan.m_start + chan.m_adpcm_addr >=  chan.m_loop_end)
+						if (chan.m_start + chan.m_adpcm_addr >= chan.m_loop_end)
+						{
 							chan.m_adpcm_addr = chan.m_loop_start - chan.m_start;
+#if 0 // Looping disabled until envelopes work
+							chan.m_adpcm.restore();
+						}
+						if (chan.m_start + chan.m_adpcm_addr == chan.m_loop_start)
+						{
+							chan.m_adpcm.save();
+#endif
+						}
 
-						UINT8 data = m_direct->read_byte(chan.m_start + (chan.m_adpcm_addr >> 1));
-						UINT8 nibble = (chan.m_adpcm_addr & 1 ? data : data >> 4) & 0xf;
+						uint8_t data = read_byte(chan.m_start + (chan.m_adpcm_addr >> 1));
+						uint8_t nibble = (chan.m_adpcm_addr & 1 ? data : data >> 4) & 0xf;
 						chan.m_adpcm_signal = chan.m_adpcm.clock(nibble);
 					}
 
-					INT8 result = (chan.m_adpcm_signal >> 4);
+					int8_t result = (chan.m_adpcm_signal >> 4);
 					chan.m_acc += chan.m_freq;
 					chan.m_addr = (chan.m_addr + (chan.m_acc >> 18)) & QS1000_ADDRESS_MASK;
 					chan.m_acc &= ((1 << 18) - 1);
 
-					outputs[0][samp] += (result * 4 * lvol * vol) >> 12;
-					outputs[1][samp] += (result * 4 * rvol * vol) >> 12;
+					outputs[0].add_int(samp, result * 4 * lvol * vol, 32768 << 12);
+					outputs[1].add_int(samp, result * 4 * rvol * vol, 32768 << 12);
 				}
 			}
 			else
 			{
-				for (int samp = 0; samp < samples; samp++)
+				for (int samp = 0; samp < outputs[0].samples(); samp++)
 				{
 					if (chan.m_addr >= chan.m_loop_end)
 					{
@@ -556,14 +552,14 @@ void qs1000_device::sound_stream_update(sound_stream &stream, stream_sample_t **
 						}
 					}
 
-					INT8 result = m_direct->read_byte(chan.m_addr) - 128;
+					int8_t result = read_byte(chan.m_addr) - 128;
 
 					chan.m_acc += chan.m_freq;
 					chan.m_addr = (chan.m_addr + (chan.m_acc >> 18)) & QS1000_ADDRESS_MASK;
 					chan.m_acc &= ((1 << 18) - 1);
 
-					outputs[0][samp] += (result * lvol * vol) >> 12;
-					outputs[1][samp] += (result * rvol * vol) >> 12;
+					outputs[0].add_int(samp, result * lvol * vol, 32768 << 12);
+					outputs[1].add_int(samp, result * rvol * vol, 32768 << 12);
 				}
 			}
 		}
@@ -573,57 +569,57 @@ void qs1000_device::sound_stream_update(sound_stream &stream, stream_sample_t **
 
 void qs1000_device::start_voice(int ch)
 {
-	UINT32 table_addr = (m_channels[ch].m_regs[0x01] << 16) | (m_channels[ch].m_regs[0x02] << 8) | m_channels[ch].m_regs[0x03];
+	uint32_t table_addr = (m_channels[ch].m_regs[0x01] << 16) | (m_channels[ch].m_regs[0x02] << 8) | m_channels[ch].m_regs[0x03];
 
 	// Fetch the sound information
-	UINT16 freq = (m_direct->read_byte(table_addr + 0) << 8) | m_direct->read_byte(table_addr + 1);
-	UINT16 word1 = (m_direct->read_byte(table_addr + 2) << 8) | m_direct->read_byte(table_addr + 3);
-	UINT16 base = (m_direct->read_byte(table_addr + 4) << 8) | m_direct->read_byte(table_addr + 5);
+	uint16_t freq = (read_byte(table_addr + 0) << 8) | read_byte(table_addr + 1);
+	uint16_t word1 = (read_byte(table_addr + 2) << 8) | read_byte(table_addr + 3);
+	uint16_t base = (read_byte(table_addr + 4) << 8) | read_byte(table_addr + 5);
 
 	if (LOGGING_ENABLED)
 		printf("[%.6x] Freq:%.4x  ????:%.4x  Addr:%.4x\n", table_addr, freq, word1, base);
 
-	// See Raccoon World and Wyvern Wings NULL sound
+	// See Raccoon World and Wyvern Wings nullptr sound
 	if (freq == 0)
 		return;
 
 	// Fetch the sample pointers and flags
-	UINT8 byte0 = m_direct->read_byte(base);
+	uint8_t byte0 = read_byte(base);
 
-	UINT32 start_addr;
+	uint32_t start_addr;
 
 	start_addr  = byte0 << 16;
-	start_addr |= m_direct->read_byte(base + 1) << 8;
-	start_addr |= m_direct->read_byte(base + 2) << 0;
+	start_addr |= read_byte(base + 1) << 8;
+	start_addr |= read_byte(base + 2) << 0;
 	start_addr &= QS1000_ADDRESS_MASK;
 
-	UINT32 loop_start;
+	uint32_t loop_start;
 
 	loop_start = (byte0 & 0xf0) << 16;
-	loop_start |= m_direct->read_byte(base + 3) << 12;
-	loop_start |= m_direct->read_byte(base + 4) << 4;
-	loop_start |= m_direct->read_byte(base + 5) >> 4;
+	loop_start |= read_byte(base + 3) << 12;
+	loop_start |= read_byte(base + 4) << 4;
+	loop_start |= read_byte(base + 5) >> 4;
 	loop_start &= QS1000_ADDRESS_MASK;
 
-	UINT32 loop_end;
+	uint32_t loop_end;
 
 	loop_end = (byte0 & 0xf0) << 16;
-	loop_end |= (m_direct->read_byte(base + 5) & 0xf) << 16;
-	loop_end |= m_direct->read_byte(base + 6) << 8;
-	loop_end |= m_direct->read_byte(base + 7);
+	loop_end |= (read_byte(base + 5) & 0xf) << 16;
+	loop_end |= read_byte(base + 6) << 8;
+	loop_end |= read_byte(base + 7);
 	loop_end &= QS1000_ADDRESS_MASK;
 
-	UINT8 byte8 = m_direct->read_byte(base + 8);
+	uint8_t byte8 = read_byte(base + 8);
 
 	if (LOGGING_ENABLED)
 	{
-		UINT8 byte9 = m_direct->read_byte(base + 9);
-		UINT8 byte10 = m_direct->read_byte(base + 10);
-		UINT8 byte11 = m_direct->read_byte(base + 11);
-		UINT8 byte12 = m_direct->read_byte(base + 12);
-		UINT8 byte13 = m_direct->read_byte(base + 13);
-		UINT8 byte14 = m_direct->read_byte(base + 14);
-		UINT8 byte15 = m_direct->read_byte(base + 15);
+		uint8_t byte9 = read_byte(base + 9);
+		uint8_t byte10 = read_byte(base + 10);
+		uint8_t byte11 = read_byte(base + 11);
+		uint8_t byte12 = read_byte(base + 12);
+		uint8_t byte13 = read_byte(base + 13);
+		uint8_t byte14 = read_byte(base + 14);
+		uint8_t byte15 = read_byte(base + 15);
 
 		printf("[%.6x] Sample Start:%.6x  Loop Start:%.6x  Loop End:%.6x  Params: %.2x %.2x %.2x %.2x %.2x %.2x %.2x %.2x\n", base, start_addr, loop_start, loop_end, byte8, byte9, byte10, byte11, byte12, byte13, byte14, byte15);
 	}

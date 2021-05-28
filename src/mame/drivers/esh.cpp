@@ -14,10 +14,11 @@ Notes:
     Eshb has some junk in the IO TEST screen.  Maybe a bad dump?
 
 Todo:
-    - LD TROUBLE message pops up after each cycle in attract.  NMI-related?
+    - LD TROUBLE appears at POST. Sync/timing issue?
+    - Performance spike after some time of gameplay, CPU comms gets corrupt?
+    - How to init NVRAM? Current defaults definitely aren't.
+    - Wrong overlay colors;
     - Convert to tilemaps (see next ToDo for feasibility).
-    - Apparently some tiles blink (in at least two different ways).
-    - 0xfe and 0xff are pretty obviously not NMI enables.  They're likely LED's.  Do the NMI right (somehow).
     - Rumor has it there's an analog beep hanging off 0xf5?  Implement it and finish off 0xf5 bits.
     - NVRAM range 0xe000-0xe800 might be too large.  It doesn't seem to write past 0xe600...
     - Maybe some of the IPT_UNKNOWNs do something?
@@ -28,45 +29,56 @@ Todo:
 #include "cpu/z80/z80.h"
 #include "machine/ldv1000.h"
 #include "machine/nvram.h"
+#include "sound/beep.h"
+#include "emupal.h"
+#include "speaker.h"
 
 
 class esh_state : public driver_device
 {
 public:
-	enum
-	{
-		TIMER_IRQ_STOP
-	};
-
 	esh_state(const machine_config &mconfig, device_type type, const char *tag)
-		: driver_device(mconfig, type, tag),
-			m_laserdisc(*this, "laserdisc") ,
-		m_tile_ram(*this, "tile_ram"),
-		m_tile_control_ram(*this, "tile_ctrl_ram"),
-		m_maincpu(*this, "maincpu"),
-		m_gfxdecode(*this, "gfxdecode"),
-		m_palette(*this, "palette")  { }
+		: driver_device(mconfig, type, tag)
+		, m_laserdisc(*this, "laserdisc")
+		, m_screen(*this, "screen")
+		, m_tile_ram(*this, "tile_ram")
+		, m_tile_control_ram(*this, "tile_ctrl_ram")
+		, m_maincpu(*this, "maincpu")
+		, m_gfxdecode(*this, "gfxdecode")
+		, m_beep(*this, "beeper")
+		, m_palette(*this, "palette")
+	{ }
 
-	required_device<pioneer_ldv1000_device> m_laserdisc;
-	required_shared_ptr<UINT8> m_tile_ram;
-	required_shared_ptr<UINT8> m_tile_control_ram;
-	UINT8 m_ld_video_visible;
-	DECLARE_READ8_MEMBER(ldp_read);
-	DECLARE_WRITE8_MEMBER(ldp_write);
-	DECLARE_WRITE8_MEMBER(misc_write);
-	DECLARE_WRITE8_MEMBER(led_writes);
-	DECLARE_WRITE8_MEMBER(nmi_line_w);
-	DECLARE_DRIVER_INIT(esh);
-	virtual void machine_start() override;
-	DECLARE_PALETTE_INIT(esh);
-	UINT32 screen_update_esh(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect);
-	INTERRUPT_GEN_MEMBER(vblank_callback_esh);
-	required_device<cpu_device> m_maincpu;
-	required_device<gfxdecode_device> m_gfxdecode;
-	required_device<palette_device> m_palette;
+	void esh(machine_config &config);
+
+	void init_esh();
 
 protected:
-	virtual void device_timer(emu_timer &timer, device_timer_id id, int param, void *ptr) override;
+	virtual void machine_start() override;
+	//virtual void device_timer(emu_timer &timer, device_timer_id id, int param, void *ptr) override;
+
+private:
+	required_device<pioneer_ldv1000_device> m_laserdisc;
+	required_device<screen_device> m_screen;
+	required_shared_ptr<uint8_t> m_tile_ram;
+	required_shared_ptr<uint8_t> m_tile_control_ram;
+	bool m_ld_video_visible;
+	uint8_t ldp_read();
+	void misc_write(uint8_t data);
+	void led_writes(offs_t offset, uint8_t data);
+	void nmi_line_w(uint8_t data);
+	bool m_nmi_enable;
+	void esh_palette(palette_device &palette) const;
+	uint32_t screen_update_esh(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect);
+	INTERRUPT_GEN_MEMBER(vblank_callback_esh);
+	DECLARE_WRITE_LINE_MEMBER(ld_command_strobe_cb);
+	required_device<cpu_device> m_maincpu;
+	required_device<gfxdecode_device> m_gfxdecode;
+	required_device<beep_device> m_beep;
+	required_device<palette_device> m_palette;
+
+	void z80_0_io(address_map &map);
+	void z80_0_mem(address_map &map);
 };
 
 
@@ -75,29 +87,53 @@ protected:
 
 
 /* VIDEO GOODS */
-UINT32 esh_state::screen_update_esh(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
+uint32_t esh_state::screen_update_esh(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
 {
-	int charx, chary;
+	const uint8_t pal_bank = m_ld_video_visible == true ? 0x10 : 0x00;
+	const uint32_t trans_mask = m_ld_video_visible == true ? 0 : -1;
+	gfx_element *gfx;// = m_gfxdecode->gfx(0);
 
 	/* clear */
 	bitmap.fill(0, cliprect);
 
+
 	/* Draw tiles */
-	for (charx = 0; charx < 32; charx++)
+	for (int charx = 0; charx < 32; charx++)
 	{
-		for (chary = 0; chary < 32; chary++)
+		for (int chary = 0; chary < 32; chary++)
 		{
 			int current_screen_character = (chary*32) + charx;
 
 			int palIndex  = (m_tile_control_ram[current_screen_character] & 0x0f);
 			int tileOffs  = (m_tile_control_ram[current_screen_character] & 0x10) >> 4;
-			//int blinkLine = (m_tile_control_ram[current_screen_character] & 0x40) >> 6;
-			//int blinkChar = (m_tile_control_ram[current_screen_character] & 0x80) >> 7;
+			bool blinkLine = bool((m_tile_control_ram[current_screen_character] & 0x40) >> 6);
+			bool blinkChar = bool((m_tile_control_ram[current_screen_character] & 0x80) >> 7);
 
-			m_gfxdecode->gfx(0)->transpen(bitmap,cliprect,
-					m_tile_ram[current_screen_character] + (0x100 * tileOffs),
-					palIndex,
-					0, 0, charx*8, chary*8, 0);
+
+			// TODO: blink timing
+			if(blinkChar == true && m_screen->frame_number() & 8)
+			{
+				if(trans_mask == 0)
+					continue;
+
+				for(int yi=0;yi<8;yi++)
+					for(int xi=0;xi<8;xi++)
+						bitmap.pix(yi+chary*8, xi+charx*8) = m_palette->pen(palIndex * 8 + pal_bank * 0x100);
+
+				continue;
+			}
+
+			if(blinkLine == true && m_screen->frame_number() & 8)
+				gfx = m_gfxdecode->gfx(1);
+			else
+				gfx = m_gfxdecode->gfx(0);
+
+
+			gfx->transpen(bitmap,cliprect,
+				m_tile_ram[current_screen_character] + (0x100 * tileOffs),
+				palIndex + pal_bank,
+				0, 0, charx*8, chary*8, trans_mask);
+
 		}
 	}
 
@@ -108,31 +144,27 @@ UINT32 esh_state::screen_update_esh(screen_device &screen, bitmap_rgb32 &bitmap,
 
 
 /* MEMORY HANDLERS */
-READ8_MEMBER(esh_state::ldp_read)
+
+uint8_t esh_state::ldp_read()
 {
 	return m_laserdisc->status_r();
 }
 
-WRITE8_MEMBER(esh_state::ldp_write)
-{
-	m_laserdisc->data_w(data);
-}
-
-WRITE8_MEMBER(esh_state::misc_write)
+void esh_state::misc_write(uint8_t data)
 {
 	/* Bit 0 unknown */
 
-	if (data & 0x02)
-		logerror("BEEP!\n");
-
+//  if (data & 0x02)
+//      logerror("BEEP!\n");
+	m_beep->set_state(BIT(data, 1)); // polarity unknown
 	/* Bit 2 unknown */
-	m_ld_video_visible = !((data & 0x08) >> 3);
+	m_ld_video_visible = bool(!((data & 0x08) >> 3));
 
 	/* Bits 4-7 unknown */
 	/* They cycle through a repeating pattern though */
 }
 
-WRITE8_MEMBER(esh_state::led_writes)
+void esh_state::led_writes(offs_t offset, uint8_t data)
 {
 	switch(offset)
 	{
@@ -163,40 +195,44 @@ WRITE8_MEMBER(esh_state::led_writes)
 	}
 }
 
-WRITE8_MEMBER(esh_state::nmi_line_w)
+void esh_state::nmi_line_w(uint8_t data)
 {
-	if (data == 0x00)
-		m_maincpu->set_input_line(INPUT_LINE_NMI, ASSERT_LINE);
-	if (data == 0x01)
-		m_maincpu->set_input_line(INPUT_LINE_NMI, CLEAR_LINE);
+	// 0 -> 1 transition enables this, else disabled?
+	m_nmi_enable = (data & 1) == 1;
+	//if (data == 0x00)
+	//  m_maincpu->set_input_line(INPUT_LINE_NMI, ASSERT_LINE);
+	//if (data == 0x01)
+	//  m_maincpu->set_input_line(INPUT_LINE_NMI, CLEAR_LINE);
 
-	if (data != 0x00 && data != 0x01)
-		logerror("NMI line got a weird value!\n");
+	if (data & 0xfe)
+		logerror("NMI line unknown bit set %02x\n",data);
 }
 
 
 /* PROGRAM MAPS */
-static ADDRESS_MAP_START( z80_0_mem, AS_PROGRAM, 8, esh_state )
-	AM_RANGE(0x0000,0x3fff) AM_ROM
-	AM_RANGE(0xe000,0xe7ff) AM_RAM AM_SHARE("nvram")
-	AM_RANGE(0xf000,0xf3ff) AM_RAM AM_SHARE("tile_ram")
-	AM_RANGE(0xf400,0xf7ff) AM_RAM AM_SHARE("tile_ctrl_ram")
-ADDRESS_MAP_END
+void esh_state::z80_0_mem(address_map &map)
+{
+	map(0x0000, 0x3fff).rom();
+	map(0xe000, 0xe7ff).ram().share("nvram");
+	map(0xf000, 0xf3ff).ram().share("tile_ram");
+	map(0xf400, 0xf7ff).ram().share("tile_ctrl_ram");
+}
 
 
 /* IO MAPS */
-static ADDRESS_MAP_START( z80_0_io, AS_IO, 8, esh_state )
-	ADDRESS_MAP_GLOBAL_MASK(0xff)
-	AM_RANGE(0xf0,0xf0) AM_READ_PORT("IN0")
-	AM_RANGE(0xf1,0xf1) AM_READ_PORT("IN1")
-	AM_RANGE(0xf2,0xf2) AM_READ_PORT("IN2")
-	AM_RANGE(0xf3,0xf3) AM_READ_PORT("IN3")
-	AM_RANGE(0xf4,0xf4) AM_READWRITE(ldp_read,ldp_write)
-	AM_RANGE(0xf5,0xf5) AM_WRITE(misc_write)    /* Continuously writes repeating patterns */
-	AM_RANGE(0xf8,0xfd) AM_WRITE(led_writes)
-	AM_RANGE(0xfe,0xfe) AM_WRITE(nmi_line_w)    /* Both 0xfe and 0xff flip quickly between 0 and 1 */
-	AM_RANGE(0xff,0xff) AM_NOP                  /*   (they're probably not NMI enables - likely LED's like their neighbors :) */
-ADDRESS_MAP_END                                 /*   (someday 0xf8-0xff will probably be a single handler) */
+void esh_state::z80_0_io(address_map &map)
+{
+	map.global_mask(0xff);
+	map(0xf0, 0xf0).portr("IN0");
+	map(0xf1, 0xf1).portr("IN1");
+	map(0xf2, 0xf2).portr("IN2");
+	map(0xf3, 0xf3).portr("IN3");
+	map(0xf4, 0xf4).r(FUNC(esh_state::ldp_read)).w(m_laserdisc, FUNC(pioneer_ldv1000_device::data_w));
+	map(0xf5, 0xf5).w(FUNC(esh_state::misc_write));    /* Continuously writes repeating patterns */
+	map(0xf8, 0xfd).w(FUNC(esh_state::led_writes));
+	map(0xfe, 0xfe).w(FUNC(esh_state::nmi_line_w));    /* Both 0xfe and 0xff flip quickly between 0 and 1 */
+	map(0xff, 0xff).noprw();                  /*   (they're probably not NMI enables - likely LED's like their neighbors :) */
+}                                 /*   (someday 0xf8-0xff will probably be a single handler) */
 
 
 /* PORTS */
@@ -206,7 +242,7 @@ static INPUT_PORTS_START( esh )
 	PORT_BIT( 0x02, IP_ACTIVE_LOW, IPT_COIN2 )
 	PORT_BIT( 0x04, IP_ACTIVE_LOW, IPT_START1 )
 	PORT_BIT( 0x08, IP_ACTIVE_LOW, IPT_START2 )
-	PORT_BIT( 0x10, IP_ACTIVE_LOW, IPT_OTHER ) PORT_NAME( "TEST" ) PORT_CODE( KEYCODE_T )
+	PORT_SERVICE( 0x10, IP_ACTIVE_LOW )
 	PORT_BIT( 0x20, IP_ACTIVE_LOW, IPT_UNKNOWN )
 	PORT_BIT( 0x40, IP_ACTIVE_LOW, IPT_UNKNOWN )
 	PORT_BIT( 0x80, IP_ACTIVE_LOW, IPT_UNKNOWN )
@@ -242,42 +278,44 @@ static INPUT_PORTS_START( esh )
 	PORT_BIT( 0x80, IP_ACTIVE_LOW, IPT_UNKNOWN )
 INPUT_PORTS_END
 
-PALETTE_INIT_MEMBER(esh_state, esh)
+void esh_state::esh_palette(palette_device &palette) const
 {
-	const UINT8 *color_prom = memregion("proms")->base();
-	int i;
+	uint8_t const *const color_prom = memregion("proms")->base();
 
-	/* Oddly enough, the top 4 bits of each byte is 0 */
-	for (i = 0; i < palette.entries(); i++)
+	// Oddly enough, the top 4 bits of each byte is 0 <- ???
+	for (int i = 0; i < palette.entries(); i++)
 	{
-		int r,g,b;
-		int bit0,bit1,bit2;
+		int bit0, bit1, bit2;
 
-		/* Presumably resistor values would help here */
+		// Presumably resistor values would help here
 
-		/* red component */
-		bit0 = (color_prom[i+0x100] >> 0) & 0x01;
-		bit1 = (color_prom[i+0x100] >> 1) & 0x01;
-		bit2 = (color_prom[i+0x100] >> 2) & 0x01;
-		r = (0x97 * bit2) + (0x47 * bit1) + (0x21 * bit0);
+		// red component
+		bit0 = BIT(color_prom[i+0x100], 0);
+		bit1 = BIT(color_prom[i+0x100], 1);
+		bit2 = BIT(color_prom[i+0x100], 2);
+		int const r = 0x21 * bit0 + 0x47 * bit1 + 0x97 * bit2;
 
-		/* green component */
-		bit0 = 0;
-		bit1 = (color_prom[i+0x100] >> 3) & 0x01;
-		bit2 = (color_prom[i+0x100] >> 4) & 0x01;
-		g = (0x97 * bit2) + (0x47 * bit1) + (0x21 * bit0);
+		// green component
+		bit0 = 0; //BIT(color_prom[i+0x100], 0);
+		bit1 = BIT(color_prom[i+0x100], 3);
+		bit2 = BIT(color_prom[i+0x100], 4);
+		int const g = 0x21 * bit0 + 0x47 * bit1 + 0x97 * bit2;
 
-		/* blue component */
-		bit0 = 0;
-		bit1 = (color_prom[i+0x100] >> 5) & 0x01;
-		bit2 = (color_prom[i+0x100] >> 6) & 0x01;
-		b = (0x97 * bit2) + (0x47 * bit1) + (0x21 * bit0);
+		// blue component
+		// TODO: actually opaque flag
+		int b;
+		if((color_prom[i+0x100] >> 7) & 1)
+			b = 0xff;
+		else
+		{
+			bit0 = 0; //BIT(color_prom[i+0x100], 5);
+			bit1 = BIT(color_prom[i+0x100], 5);
+			bit2 = BIT(color_prom[i+0x100], 6);
+			b = 0x21 * bit0 + 0x47 * bit1 + 0x97 * bit2;
+		}
 
-		palette.set_pen_color(i,rgb_t(r,g,b));
+		palette.set_pen_color(i, rgb_t(r, g, b));
 	}
-
-	/* make color 0 transparent */
-	palette.set_pen_color(0, rgb_t(0,0,0,0));
 }
 
 static const gfx_layout esh_gfx_layout =
@@ -285,33 +323,28 @@ static const gfx_layout esh_gfx_layout =
 	8,8,
 	RGN_FRAC(1,3),
 	3,
-	{ RGN_FRAC(0,3), RGN_FRAC(1,3), RGN_FRAC(2,3) },
+	{ RGN_FRAC(2,3), RGN_FRAC(1,3), RGN_FRAC(0,3) },
 	{ 0,1,2,3,4,5,6,7 },
 	{ 0*8, 1*8, 2*8, 3*8, 4*8, 5*8, 6*8, 7*8 },
 	8*8
 };
 
-static GFXDECODE_START( esh )
+static GFXDECODE_START( gfx_esh )
 	GFXDECODE_ENTRY("gfx1", 0, esh_gfx_layout, 0x0, 0x20)
+	GFXDECODE_ENTRY("gfx2", 0, esh_gfx_layout, 0x0, 0x20)
 GFXDECODE_END
-
-void esh_state::device_timer(emu_timer &timer, device_timer_id id, int param, void *ptr)
-{
-	switch (id)
-	{
-	case TIMER_IRQ_STOP:
-		m_maincpu->set_input_line(0, CLEAR_LINE);
-		break;
-	default:
-		assert_always(FALSE, "Unknown id in esh_state::device_timer");
-	}
-}
 
 INTERRUPT_GEN_MEMBER(esh_state::vblank_callback_esh)
 {
 	// IRQ
-	device.execute().set_input_line(0, ASSERT_LINE);
-	timer_set(attotime::from_usec(50), TIMER_IRQ_STOP);
+	device.execute().set_input_line(0, HOLD_LINE);
+}
+
+// TODO: 0xfe NMI enabled after writing to LD command port, NMI reads LD port.
+WRITE_LINE_MEMBER(esh_state::ld_command_strobe_cb)
+{
+	if(m_nmi_enable)
+		m_maincpu->set_input_line(INPUT_LINE_NMI, state ? ASSERT_LINE : CLEAR_LINE);
 }
 
 void esh_state::machine_start()
@@ -320,38 +353,41 @@ void esh_state::machine_start()
 
 
 /* DRIVER */
-static MACHINE_CONFIG_START( esh, esh_state )
-
+void esh_state::esh(machine_config &config)
+{
 	/* main cpu */
-	MCFG_CPU_ADD("maincpu", Z80, PCB_CLOCK/6)                       /* The denominator is a Daphne guess based on PacMan's hardware */
-	MCFG_CPU_PROGRAM_MAP(z80_0_mem)
-	MCFG_CPU_IO_MAP(z80_0_io)
-	MCFG_CPU_VBLANK_INT_DRIVER("screen", esh_state,  vblank_callback_esh)
+	Z80(config, m_maincpu, PCB_CLOCK/6);                       /* The denominator is a Daphne guess based on PacMan's hardware */
+	m_maincpu->set_addrmap(AS_PROGRAM, &esh_state::z80_0_mem);
+	m_maincpu->set_addrmap(AS_IO, &esh_state::z80_0_io);
+	m_maincpu->set_vblank_int("screen", FUNC(esh_state::vblank_callback_esh));
 
-	MCFG_NVRAM_ADD_0FILL("nvram")
+	NVRAM(config, "nvram", nvram_device::DEFAULT_ALL_0);
 
-
-	MCFG_LASERDISC_LDV1000_ADD("laserdisc")
-	MCFG_LASERDISC_OVERLAY_DRIVER(256, 256, esh_state, screen_update_esh)
-	MCFG_LASERDISC_OVERLAY_PALETTE("palette")
+	PIONEER_LDV1000(config, m_laserdisc, 0);
+	m_laserdisc->command_strobe_callback().set(FUNC(esh_state::ld_command_strobe_cb));
+	m_laserdisc->set_overlay(256, 256, FUNC(esh_state::screen_update_esh));
+	m_laserdisc->add_route(0, "lspeaker", 1.0);
+	m_laserdisc->add_route(1, "rspeaker", 1.0);
 
 	/* video hardware */
-	MCFG_LASERDISC_SCREEN_ADD_NTSC("screen", "laserdisc")
+	m_laserdisc->add_ntsc_screen(config, "screen");
 
-	MCFG_PALETTE_ADD("palette", 256)
-	MCFG_PALETTE_INIT_OWNER(esh_state, esh)
-
-	MCFG_GFXDECODE_ADD("gfxdecode", "palette", esh)
+	PALETTE(config, m_palette, FUNC(esh_state::esh_palette), 256);
+	GFXDECODE(config, m_gfxdecode, m_palette, gfx_esh);
 
 	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_STEREO("lspeaker", "rspeaker")
+	SPEAKER(config, "lspeaker").front_left();
+	SPEAKER(config, "rspeaker").front_right();
 
-	MCFG_SOUND_MODIFY("laserdisc")
-	MCFG_SOUND_ROUTE(0, "lspeaker", 1.0)
-	MCFG_SOUND_ROUTE(1, "rspeaker", 1.0)
-MACHINE_CONFIG_END
+	SPEAKER(config, "mono").front_center();
+	BEEP(config, m_beep, 2000).add_route(ALL_OUTPUTS, "mono", 0.25);
+}
 
-
+// we just disable even lines so we can simulate line blinking
+#define ROM_INTERLACED_GFX \
+	ROM_REGION( 0x3000, "gfx2", 0 ) \
+	ROM_COPY( "gfx1", 0, 0, 0x3000 ) \
+	ROMX_FILL( 0, 0x3000, 0x00, ROM_SKIP(1) )
 ROM_START( esh )
 	/* Main program CPU */
 	ROM_REGION( 0x4000, "maincpu", 0 )
@@ -364,6 +400,8 @@ ROM_START( esh )
 	ROM_LOAD( "b.l3", 0x1000, 0x1000, CRC(9366dde7) SHA1(891db65384d47d13355b2eea37f57c34bc775c8f) )
 	ROM_LOAD( "c.k3", 0x2000, 0x1000, CRC(a936ef01) SHA1(bcacb281ccb72ceb57fb6a79380cc3a9688743c4) )
 
+	ROM_INTERLACED_GFX
+
 	/* Color (+other) PROMs */
 	ROM_REGION( 0x400, "proms", 0 )
 	ROM_LOAD( "rgb.j1", 0x000, 0x200, CRC(1e9f795f) SHA1(61a58694929fa39b2412bc9244e5681d65a0eacb) )
@@ -371,7 +409,7 @@ ROM_START( esh )
 	ROM_LOAD( "v.c6",   0x300, 0x100, CRC(7157ba22) SHA1(07355f30efe46196d216356eda48a59fc622e43f) )
 
 	DISK_REGION( "laserdisc" )
-	DISK_IMAGE_READONLY( "esh", 0, NO_DUMP )
+	DISK_IMAGE_READONLY( "esh_ver2_en", 0, SHA1(c04709d95fd92259f013ec1cd28e3e36a163abe1) )
 ROM_END
 
 ROM_START( esha )
@@ -386,6 +424,8 @@ ROM_START( esha )
 	ROM_LOAD( "b.l3", 0x1000, 0x1000, CRC(9366dde7) SHA1(891db65384d47d13355b2eea37f57c34bc775c8f) )
 	ROM_LOAD( "c.k3", 0x2000, 0x1000, CRC(a936ef01) SHA1(bcacb281ccb72ceb57fb6a79380cc3a9688743c4) )
 
+	ROM_INTERLACED_GFX
+
 	/* Color (+other) PROMs */
 	ROM_REGION( 0x400, "proms", 0 )
 	ROM_LOAD( "rgb.j1", 0x000, 0x200, CRC(1e9f795f) SHA1(61a58694929fa39b2412bc9244e5681d65a0eacb) )
@@ -393,7 +433,7 @@ ROM_START( esha )
 	ROM_LOAD( "v.c6",   0x300, 0x100, CRC(7157ba22) SHA1(07355f30efe46196d216356eda48a59fc622e43f) )
 
 	DISK_REGION( "laserdisc" )
-	DISK_IMAGE_READONLY( "esh", 0, NO_DUMP )
+	DISK_IMAGE_READONLY( "esh_ver2_en", 0, SHA1(c04709d95fd92259f013ec1cd28e3e36a163abe1) )
 ROM_END
 
 ROM_START( eshb )
@@ -408,6 +448,8 @@ ROM_START( eshb )
 	ROM_LOAD( "b.l3", 0x1000, 0x1000, CRC(9366dde7) SHA1(891db65384d47d13355b2eea37f57c34bc775c8f) )
 	ROM_LOAD( "c.k3", 0x2000, 0x1000, CRC(a936ef01) SHA1(bcacb281ccb72ceb57fb6a79380cc3a9688743c4) )
 
+	ROM_INTERLACED_GFX
+
 	/* Color (+other) PROMs */
 	ROM_REGION( 0x400, "proms", 0 )
 	ROM_LOAD( "rgb.j1", 0x000, 0x200, CRC(1e9f795f) SHA1(61a58694929fa39b2412bc9244e5681d65a0eacb) )
@@ -415,15 +457,15 @@ ROM_START( eshb )
 	ROM_LOAD( "v.c6",   0x300, 0x100, CRC(7157ba22) SHA1(07355f30efe46196d216356eda48a59fc622e43f) )
 
 	DISK_REGION( "laserdisc" )
-	DISK_IMAGE_READONLY( "esh", 0, NO_DUMP )
+	DISK_IMAGE_READONLY( "esh_ver2_en", 0, SHA1(c04709d95fd92259f013ec1cd28e3e36a163abe1) )
 ROM_END
 
 
-DRIVER_INIT_MEMBER(esh_state,esh)
+void esh_state::init_esh()
 {
 }
 
-/*    YEAR  NAME  PARENT       MACHINE  INPUT    INIT     MONITOR  COMPANY          FULLNAME                     FLAGS */
-GAME( 1983, esh,      0,       esh,     esh, esh_state,     esh,     ROT0,    "Funai/Gakken",  "Esh's Aurunmilla (set 1)",  MACHINE_NOT_WORKING|MACHINE_NO_SOUND)
-GAME( 1983, esha,     esh,     esh,     esh, esh_state,     esh,     ROT0,    "Funai/Gakken",  "Esh's Aurunmilla (set 2)",  MACHINE_NOT_WORKING|MACHINE_NO_SOUND)
-GAME( 1983, eshb,     esh,     esh,     esh, esh_state,     esh,     ROT0,    "Funai/Gakken",  "Esh's Aurunmilla (set 3)",  MACHINE_NOT_WORKING|MACHINE_NO_SOUND)
+//    YEAR  NAME   PARENT   MACHINE  INPUT  STATE      INIT      MONITOR  COMPANY          FULLNAME                     FLAGS
+GAME( 1983, esh,   0,       esh,     esh,   esh_state, init_esh, ROT0,    "Funai/Gakken",  "Esh's Aurunmilla (set 1)",  MACHINE_NOT_WORKING|MACHINE_IMPERFECT_COLORS)
+GAME( 1983, esha,  esh,     esh,     esh,   esh_state, init_esh, ROT0,    "Funai/Gakken",  "Esh's Aurunmilla (set 2)",  MACHINE_NOT_WORKING|MACHINE_IMPERFECT_COLORS)
+GAME( 1983, eshb,  esh,     esh,     esh,   esh_state, init_esh, ROT0,    "Funai/Gakken",  "Esh's Aurunmilla (set 3)",  MACHINE_NOT_WORKING|MACHINE_IMPERFECT_COLORS)

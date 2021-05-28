@@ -2,6 +2,7 @@
 // copyright-holders:Robbbert
 
 
+#include "emu.h"
 #include "includes/kaypro.h"
 
 
@@ -20,9 +21,9 @@ WRITE_LINE_MEMBER( kaypro_state::write_centronics_busy )
 	m_centronics_busy = state;
 }
 
-READ8_MEMBER( kaypro_state::pio_system_r )
+u8 kaypro_state::pio_system_r()
 {
-	UINT8 data = 0;
+	u8 data = 0;
 
 	/* centronics busy */
 	data |= m_centronics_busy << 3;
@@ -33,7 +34,7 @@ READ8_MEMBER( kaypro_state::pio_system_r )
 	return data;
 }
 
-WRITE8_MEMBER( kaypro_state::kayproii_pio_system_w )
+void kaypro_state::kayproii_pio_system_w(u8 data)
 {
 /*  d7 bank select
     d6 disk drive motors - (0=on)
@@ -43,8 +44,9 @@ WRITE8_MEMBER( kaypro_state::kayproii_pio_system_w )
     d1 drive B
     d0 drive A */
 
-	membank("bankr0")->set_entry(BIT(data, 7));
-	membank("bank3")->set_entry(BIT(data, 7));
+	m_bankr->set_entry(BIT(data, 7));
+	m_bankw->set_entry(BIT(data, 7));
+	m_bank3->set_entry(BIT(data, 7));
 	m_is_motor_off = BIT(data, 6);
 
 	m_floppy = nullptr;
@@ -63,37 +65,38 @@ WRITE8_MEMBER( kaypro_state::kayproii_pio_system_w )
 		m_floppy->ss_w(!BIT(data, 2)); // signal exists even though drives are single sided
 	}
 
-	output_set_value("ledA", BIT(data, 0));     /* LEDs in artwork */
-	output_set_value("ledB", BIT(data, 1));
+	m_leds[0] = BIT(data, 0);     // LEDs in artwork
+	m_leds[1] = BIT(data, 1);
 
 	m_centronics->write_strobe(BIT(data, 4));
 
 	m_system_port = data;
 }
 
-WRITE8_MEMBER( kaypro_state::kaypro4_pio_system_w )
+void kaypro_state::kayproiv_pio_system_w(u8 data)
 {
-	kayproii_pio_system_w(space, offset, data);
+	kayproii_pio_system_w(data);
 
 	/* side select */
-	m_floppy->ss_w(BIT(data, 2));
+	if (m_floppy)
+		m_floppy->ss_w(BIT(data, 2));
 }
 
 /***********************************************************
 
-    KAYPRO2X SYSTEM PORT
+    KAYPRO484 SYSTEM PORT
 
     The PIOs were replaced by a few standard 74xx chips
 
 ************************************************************/
 
-READ8_MEMBER( kaypro_state::kaypro2x_system_port_r )
+u8 kaypro_state::kaypro484_system_port_r()
 {
-	UINT8 data = m_centronics_busy << 6;
+	u8 data = m_centronics_busy << 6;
 	return (m_system_port & 0xbf) | data;
 }
 
-WRITE8_MEMBER( kaypro_state::kaypro2x_system_port_w )
+void kaypro_state::kaypro484_system_port_w(u8 data)
 {
 /*  d7 bank select
     d6 alternate character set (write only)
@@ -104,8 +107,9 @@ WRITE8_MEMBER( kaypro_state::kaypro2x_system_port_w )
     d1 drive B
     d0 drive A */
 
-	membank("bankr0")->set_entry(BIT(data, 7));
-	membank("bank3")->set_entry(BIT(data, 7));
+	m_bankr->set_entry(BIT(data, 7));
+	m_bankw->set_entry(BIT(data, 7));
+	m_bank3->set_entry(BIT(data, 7));
 	m_is_motor_off = !BIT(data, 4);
 
 	m_floppy = nullptr;
@@ -124,8 +128,8 @@ WRITE8_MEMBER( kaypro_state::kaypro2x_system_port_w )
 		m_floppy->ss_w(!BIT(data, 2));
 	}
 
-	output_set_value("ledA", BIT(data, 0));     /* LEDs in artwork */
-	output_set_value("ledB", BIT(data, 1));
+	m_leds[0] = BIT(data, 0);     // LEDs in artwork
+	m_leds[1] = BIT(data, 1);
 
 	m_centronics->write_strobe(BIT(data, 3));
 
@@ -137,7 +141,7 @@ WRITE8_MEMBER( kaypro_state::kaypro2x_system_port_w )
 
     SIO
 
-    On Kaypro2x, Channel B on both SIOs is hardwired to 300 baud.
+    On Kaypro484, Channel B on both SIOs is hardwired to 300 baud.
 
     Both devices on sio2 (printer and modem) are not emulated.
 
@@ -162,29 +166,9 @@ WRITE8_MEMBER( kaypro_state::kaypro2x_system_port_w )
     FFh    19200 */
 
 
-READ8_MEMBER(kaypro_state::kaypro_sio_r)
-{
-	if (offset == 1)
-		return kay_kbd_d_r(machine());
-	else
-	if (offset == 3)
-		return kay_kbd_c_r(machine());
-	else
-		return m_sio->cd_ba_r(space, offset);
-}
-
-WRITE8_MEMBER(kaypro_state::kaypro_sio_w)
-{
-	if (offset == 1)
-		kay_kbd_d_w(machine(), data);
-	else
-		m_sio->cd_ba_w(space, offset, data);
-}
-
-
 /*************************************************************************************
 
-    Floppy DIsk
+    Floppy Disk
 
     If DRQ or IRQ is set, and cpu is halted, the NMI goes low.
     Since the HALT occurs last (and has no callback mechanism), we need to set
@@ -193,36 +177,30 @@ WRITE8_MEMBER(kaypro_state::kaypro_sio_w)
 
 *************************************************************************************/
 
-void kaypro_state::device_timer(emu_timer &timer, device_timer_id id, int param, void *ptr)
+TIMER_DEVICE_CALLBACK_MEMBER(kaypro_state::floppy_timer)
 {
 	bool halt;
-	switch (id)
+	halt = (bool)m_maincpu->state_int(Z80_HALT);
+	if (m_is_motor_off)
 	{
-	case TIMER_FLOPPY:
-		halt = (bool)m_maincpu->state_int(Z80_HALT);
-		if (m_is_motor_off)
-		{
-			timer_set(attotime::from_hz(10), TIMER_FLOPPY);
-			break;
-		}
-		if ((halt) && (m_fdc_rq & 3) && (m_fdc_rq < 0x80))
-		{
-			m_maincpu->set_input_line(INPUT_LINE_NMI, ASSERT_LINE);
-			m_fdc_rq |= 0x80;
-		}
-		else
-		if ((m_fdc_rq == 0x80) || ((!halt) && BIT(m_fdc_rq, 7)))
-		{
-			m_maincpu->set_input_line(INPUT_LINE_NMI, CLEAR_LINE);
-			m_fdc_rq &= 0x7f;
-		}
-		timer_set(attotime::from_hz(1e5), TIMER_FLOPPY);
-
-		break;
-	default:
-		assert_always(FALSE, "Unknown id in kaypro_state::device_timer");
+		m_floppy_timer->adjust(attotime::from_hz(10));
+		return;
 	}
+
+	if ((halt) && (m_fdc_rq & 3) && (m_fdc_rq < 0x80))
+	{
+		m_maincpu->set_input_line(INPUT_LINE_NMI, ASSERT_LINE);
+		m_fdc_rq |= 0x80;
+	}
+	else
+	if ((m_fdc_rq == 0x80) || ((!halt) && BIT(m_fdc_rq, 7)))
+	{
+		m_maincpu->set_input_line(INPUT_LINE_NMI, CLEAR_LINE);
+		m_fdc_rq &= 0x7f;
+	}
+	m_floppy_timer->adjust(attotime::from_hz(1e5));
 }
+
 
 WRITE_LINE_MEMBER( kaypro_state::fdc_intrq_w )
 {
@@ -240,21 +218,37 @@ WRITE_LINE_MEMBER( kaypro_state::fdc_drq_w )
     Machine
 
 ************************************************************/
-MACHINE_START_MEMBER( kaypro_state,kayproii )
+void kaypro_state::machine_start()
 {
-	m_pio_s->strobe_a(0);
+	if (m_pio_s)
+		m_pio_s->strobe_a(0);
+
+	m_leds.resolve();
+
+	save_pointer(NAME(m_vram), 0x1000);
+	save_pointer(NAME(m_ram),  0x4000);
+
+	save_item(NAME(m_mc6845_reg));
+	save_item(NAME(m_mc6845_ind));
+	save_item(NAME(m_framecnt));
+	save_item(NAME(m_centronics_busy));
+	save_item(NAME(m_is_motor_off));
+	save_item(NAME(m_fdc_rq));
+	save_item(NAME(m_system_port));
+	save_item(NAME(m_mc6845_video_address));
+
+	m_framecnt = 0;
 }
 
-MACHINE_RESET_MEMBER( kaypro_state,kaypro )
+void kaypro_state::machine_reset()
 {
-	MACHINE_RESET_CALL_MEMBER(kay_kbd);
-	membank("bankr0")->set_entry(1); // point at rom
-	membank("bankw0")->set_entry(0); // always write to ram
-	membank("bank3")->set_entry(1); // point at video ram
+	m_bankr->set_entry(1); // point at rom
+	m_bankw->set_entry(1); // always write to ram
+	m_bank3->set_entry(1); // point at video ram
 	m_system_port = 0x80;
 	m_fdc_rq = 0;
 	m_maincpu->reset();
-	timer_set(attotime::from_hz(1), TIMER_FLOPPY);   /* kick-start the nmi timer */
+	m_floppy_timer->adjust(attotime::from_hz(1));   /* kick-start the nmi timer */
 }
 
 
@@ -269,24 +263,35 @@ MACHINE_RESET_MEMBER( kaypro_state,kaypro )
 
 ************************************************************/
 
-QUICKLOAD_LOAD_MEMBER( kaypro_state, kaypro )
+QUICKLOAD_LOAD_MEMBER(kaypro_state::quickload_cb)
 {
-	UINT8 *RAM = memregion("rambank")->base();
-	UINT16 i;
-	UINT8 data;
+	m_bankr->set_entry(0);
+	m_bankw->set_entry(0);
+	m_bank3->set_entry(0);
+
+	address_space& prog_space = m_maincpu->space(AS_PROGRAM);
+
+	/* Avoid loading a program if CP/M-80 is not in memory */
+	if ((prog_space.read_byte(0) != 0xc3) || (prog_space.read_byte(5) != 0xc3))
+		return image_init_result::FAIL;
+
+	if (image.length() >= 0xfd00)
+		return image_init_result::FAIL;
 
 	/* Load image to the TPA (Transient Program Area) */
-	for (i = 0; i < quickload_size; i++)
+	u16 quickload_size = image.length();
+	for (u16 i = 0; i < quickload_size; i++)
 	{
-		if (image.fread( &data, 1) != 1) return IMAGE_INIT_FAIL;
-
-		RAM[i+0x100] = data;
+		u8 data;
+		if (image.fread( &data, 1) != 1)
+			return image_init_result::FAIL;
+		prog_space.write_byte(i+0x100, data);
 	}
 
-	membank("bankr0")->set_entry(0);
-	membank("bank3")->set_entry(0);
-	RAM[0x80]=0;                            // clear out command tail
-	RAM[0x81]=0;
-	m_maincpu->set_pc(0x100);                // start program
-	return IMAGE_INIT_PASS;
+	prog_space.write_byte(0x80, 0);   prog_space.write_byte(0x81, 0);    // clear out command tail
+
+	m_maincpu->set_pc(0x100);    // start program
+	m_maincpu->set_state_int(Z80_SP, 256 * prog_space.read_byte(7) - 300);   // put the stack a bit before BDOS
+
+	return image_init_result::PASS;
 }

@@ -24,215 +24,244 @@
 //-------------------------------------------------
 
 // BASE CARTS + NVRAM
-const device_type MD_STD_ROM = &device_creator<md_std_rom_device>;
-const device_type MD_ROM_SRAM = &device_creator<md_rom_sram_device>;
-const device_type MD_ROM_FRAM = &device_creator<md_rom_fram_device>;
+DEFINE_DEVICE_TYPE(MD_STD_ROM,      md_std_rom_device,      "md_std_rom",      "MD Standard cart")
+DEFINE_DEVICE_TYPE(MD_ROM_SRAM,     md_rom_sram_device,     "md_rom_sram",     "MD Standard cart + SRAM")
+DEFINE_DEVICE_TYPE(MD_ROM_FRAM,     md_rom_fram_device,     "md_rom_fram",     "MD Standard cart + FRAM")
 
 // BASE CARTS + BANKSWITCH AT RESET
-const device_type MD_ROM_CM2IN1 = &device_creator<md_rom_cm2in1_device>;
+DEFINE_DEVICE_TYPE(MD_ROM_CM2IN1,   md_rom_cm2in1_device,   "md_rom_cm2in1",   "MD Codemasters 2in1")
 
 // BASE CARTS + PROTECTION / BANKSWITCH
-const device_type MD_ROM_SSF2 = &device_creator<md_rom_ssf2_device>;
-const device_type MD_ROM_BUGSLIFE = &device_creator<md_rom_bugslife_device>;
-const device_type MD_ROM_SMOUSE = &device_creator<md_rom_smouse_device>;
-const device_type MD_ROM_SMW64 = &device_creator<md_rom_smw64_device>;
-const device_type MD_ROM_SMB = &device_creator<md_rom_smb_device>;
-const device_type MD_ROM_SMB2 = &device_creator<md_rom_smb2_device>;
-const device_type MD_ROM_SBUBL = &device_creator<md_rom_sbubl_device>;
-const device_type MD_ROM_RX3 = &device_creator<md_rom_rx3_device>;
-const device_type MD_ROM_MJLOV = &device_creator<md_rom_mjlov_device>;
-const device_type MD_ROM_KOF98 = &device_creator<md_rom_kof98_device>;
-const device_type MD_ROM_KOF99 = &device_creator<md_rom_kof99_device>;
-const device_type MD_ROM_SOULB = &device_creator<md_rom_soulb_device>;
-const device_type MD_ROM_CHINF3 = &device_creator<md_rom_chinf3_device>;
-const device_type MD_ROM_16MJ2 = &device_creator<md_rom_16mj2_device>;
-const device_type MD_ROM_ELFWOR = &device_creator<md_rom_elfwor_device>;
-const device_type MD_ROM_YASECH = &device_creator<md_rom_yasech_device>;
-const device_type MD_ROM_LION2 = &device_creator<md_rom_lion2_device>;
-const device_type MD_ROM_LION3 = &device_creator<md_rom_lion3_device>;
-const device_type MD_ROM_MCPIR = &device_creator<md_rom_mcpirate_device>;
-const device_type MD_ROM_POKEA = &device_creator<md_rom_pokea_device>;
-const device_type MD_ROM_POKESTAD = &device_creator<md_rom_pokestad_device>;
-const device_type MD_ROM_REALTEC = &device_creator<md_rom_realtec_device>;
-const device_type MD_ROM_REDCL = &device_creator<md_rom_redcl_device>;
-const device_type MD_ROM_SQUIR = &device_creator<md_rom_squir_device>;
-const device_type MD_ROM_TEKKENSP = &device_creator<md_rom_tekkensp_device>;
-const device_type MD_ROM_TOPF = &device_creator<md_rom_topf_device>;
-const device_type MD_ROM_RADICA = &device_creator<md_rom_radica_device>;
-const device_type MD_ROM_BEGGARP = &device_creator<md_rom_beggarp_device>;
-const device_type MD_ROM_WUKONG = &device_creator<md_rom_wukong_device>;
+DEFINE_DEVICE_TYPE(MD_ROM_SSF2,     md_rom_ssf2_device,     "md_rom_ssf2",     "MD Super SF2")
+DEFINE_DEVICE_TYPE(MD_ROM_BUGSLIFE, md_rom_bugslife_device, "md_rom_bugslife", "MD A Bug's Life")
+DEFINE_DEVICE_TYPE(MD_ROM_SMOUSE,   md_rom_smouse_device,   "md_rom_smouse",   "MD Huan Le Tao Qi Shu / Smart Mouse")
+DEFINE_DEVICE_TYPE(MD_ROM_SMW64,    md_rom_smw64_device,    "md_rom_smw64",    "MD Super Mario World 64")
+DEFINE_DEVICE_TYPE(MD_ROM_SMB,      md_rom_smb_device,      "md_rom_smb",      "MD Super Mario Bros.")
+DEFINE_DEVICE_TYPE(MD_ROM_SMB2,     md_rom_smb2_device,     "md_rom_smb2",     "MD Super Mario Bros. 2")
+DEFINE_DEVICE_TYPE(MD_ROM_SBUBL,    md_rom_sbubl_device,    "md_rom_sbubl",    "MD Super Bubble Bobble")
+DEFINE_DEVICE_TYPE(MD_ROM_RX3,      md_rom_rx3_device,      "md_rom_rx3",      "MD Rockman X3")
+DEFINE_DEVICE_TYPE(MD_ROM_MJLOV,    md_rom_mjlov_device,    "md_rom_mjlov",    "MD Majiang Qingren / Mahjong Lover")
+DEFINE_DEVICE_TYPE(MD_ROM_CJMJCLUB, md_rom_cjmjclub_device, "md_rom_cjmjclub", "MD Chaoji Majiang Club / Super Mahjong Club")
+DEFINE_DEVICE_TYPE(MD_ROM_KOF98,    md_rom_kof98_device,    "md_rom_kof98",    "MD KOF 98")
+DEFINE_DEVICE_TYPE(MD_ROM_KOF99,    md_rom_kof99_device,    "md_rom_kof99",    "MD KOF 99") // and others
+DEFINE_DEVICE_TYPE(MD_ROM_SOULB,    md_rom_soulb_device,    "md_rom_soulb",    "MD Soul Blade")
+DEFINE_DEVICE_TYPE(MD_ROM_CHINF3,   md_rom_chinf3_device,   "md_rom_chinf3",   "MD Chinese Fighter 3")
+DEFINE_DEVICE_TYPE(MD_ROM_16MJ2,    md_rom_16mj2_device,    "md_rom_16mj2",    "MD 16 Majong Tiles II")
+DEFINE_DEVICE_TYPE(MD_ROM_ELFWOR,   md_rom_elfwor_device,   "md_rom_elfwor",   "MD Linghuan Daoshi Super Magician / Elf Wor")
+DEFINE_DEVICE_TYPE(MD_ROM_YASECH,   md_rom_yasech_device,   "md_rom_yasech",   "MD Ya Se Chuan Shuo")
+DEFINE_DEVICE_TYPE(MD_ROM_LION2,    md_rom_lion2_device,    "md_rom_lion2",    "MD Lion King 2")
+DEFINE_DEVICE_TYPE(MD_ROM_LION3,    md_rom_lion3_device,    "md_rom_lion3",    "MD Lion King 3")
+DEFINE_DEVICE_TYPE(MD_ROM_MCPIR,    md_rom_mcpirate_device, "md_rom_mcpirate", "MD Pirate Multicarts (various)")
+DEFINE_DEVICE_TYPE(MD_ROM_POKEA,    md_rom_pokea_device,    "md_rom_pokea",    "MD Pokemon (alt protection)")
+DEFINE_DEVICE_TYPE(MD_ROM_POKESTAD, md_rom_pokestad_device, "md_rom_pokestad", "MD Pokemon Stadium")
+DEFINE_DEVICE_TYPE(MD_ROM_REALTEC,  md_rom_realtec_device,  "md_rom_realtec",  "MD Realtec")
+DEFINE_DEVICE_TYPE(MD_ROM_REDCL,    md_rom_redcl_device,    "md_rom_redcl",    "MD Redcliff")
+DEFINE_DEVICE_TYPE(MD_ROM_SQUIR,    md_rom_squir_device,    "md_rom_squir",    "MD Squirrel King")
+DEFINE_DEVICE_TYPE(MD_ROM_TC2000,   md_rom_tc2000_device,   "md_rom_tc2000",   "MD TC2000")
+DEFINE_DEVICE_TYPE(MD_ROM_TEKKENSP, md_rom_tekkensp_device, "md_rom_tekkensp", "MD Tekken Special")
+DEFINE_DEVICE_TYPE(MD_ROM_TOPF,     md_rom_topf_device,     "md_rom_topf",     "MD Top Fighter")
+DEFINE_DEVICE_TYPE(MD_ROM_RADICA,   md_rom_radica_device,   "md_rom_radica",   "MD Radica TV games")
+DEFINE_DEVICE_TYPE(MD_ROM_BEGGARP,  md_rom_beggarp_device,  "md_rom_beggarp",  "MD Beggar Prince")
+DEFINE_DEVICE_TYPE(MD_ROM_WUKONG,   md_rom_wukong_device,   "md_rom_wukong",   "MD Legend of Wukong")
+DEFINE_DEVICE_TYPE(MD_ROM_STARODYS, md_rom_starodys_device, "md_rom_starodys", "MD Star Odyssey")
+DEFINE_DEVICE_TYPE(MD_ROM_SRAM_ARG96, md_rom_sram_arg96_device, "md_rom_sram_arg96", "MD Futbol Argentino 96")
 
 
-md_std_rom_device::md_std_rom_device(const machine_config &mconfig, device_type type, const char *name, const char *tag, device_t *owner, UINT32 clock, const char *shortname, const char *source)
-					: device_t(mconfig, type, name, tag, owner, clock, shortname, source),
-					device_md_cart_interface( mconfig, *this )
+md_std_rom_device::md_std_rom_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock)
+	: device_t(mconfig, type, tag, owner, clock), device_md_cart_interface(mconfig, *this)
 {
 }
 
-md_std_rom_device::md_std_rom_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-					: device_t(mconfig, MD_STD_ROM, "MD Standard cart", tag, owner, clock, "md_std_rom", __FILE__),
-					device_md_cart_interface( mconfig, *this )
+md_std_rom_device::md_std_rom_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: md_std_rom_device(mconfig, MD_STD_ROM, tag, owner, clock)
 {
 }
 
-md_rom_sram_device::md_rom_sram_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-					: md_std_rom_device(mconfig, MD_ROM_SRAM, "MD Standard cart + SRAM", tag, owner, clock, "md_rom_sram", __FILE__)
+md_rom_sram_device::md_rom_sram_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: md_rom_sram_device(mconfig, MD_ROM_SRAM, tag, owner, clock)
 {
 }
 
-md_rom_fram_device::md_rom_fram_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-					: md_std_rom_device(mconfig, MD_ROM_FRAM, "MD Standard cart + FRAM", tag, owner, clock, "md_rom_fram", __FILE__)
+md_rom_sram_device::md_rom_sram_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock)
+	: md_std_rom_device(mconfig, type, tag, owner, clock)
 {
 }
 
-md_rom_ssf2_device::md_rom_ssf2_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-					: md_std_rom_device(mconfig, MD_ROM_SSF2, "MD Super SF2", tag, owner, clock, "md_rom_ssf2", __FILE__), m_lastoff(0), m_lastdata(0)
-				{
-}
 
-md_rom_cm2in1_device::md_rom_cm2in1_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-					: md_std_rom_device(mconfig, MD_ROM_CM2IN1, "MD Codemasters 2in1", tag, owner, clock, "md_rom_cm2in1", __FILE__), m_base(0)
-				{
-}
-
-md_rom_mcpirate_device::md_rom_mcpirate_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-					: md_std_rom_device(mconfig, MD_ROM_MCPIR, "MD Pirate Multicarts (Various)", tag, owner, clock, "md_rom_mcpirate", __FILE__), m_bank(0)
-				{
-}
-
-md_rom_bugslife_device::md_rom_bugslife_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-					: md_std_rom_device(mconfig, MD_ROM_BUGSLIFE, "MD A Bug's Life", tag, owner, clock, "md_rom_bugslife", __FILE__)
+md_rom_sram_arg96_device::md_rom_sram_arg96_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: md_rom_sram_device(mconfig, MD_ROM_SRAM_ARG96, tag, owner, clock)
 {
 }
 
-md_rom_smouse_device::md_rom_smouse_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-					: md_std_rom_device(mconfig, MD_ROM_SMOUSE, "MD Huan Le Tao Qi Shu / Smart Mouse", tag, owner, clock, "md_rom_smouse", __FILE__)
+
+md_rom_fram_device::md_rom_fram_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: md_std_rom_device(mconfig, MD_ROM_FRAM, tag, owner, clock)
 {
 }
 
-md_rom_smb_device::md_rom_smb_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-					: md_std_rom_device(mconfig, MD_ROM_SMB, "MD Super Mario Bros.", tag, owner, clock, "md_rom_smb", __FILE__)
+md_rom_cm2in1_device::md_rom_cm2in1_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: md_std_rom_device(mconfig, MD_ROM_CM2IN1, tag, owner, clock), m_base(0)
 {
 }
 
-md_rom_smb2_device::md_rom_smb2_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-					: md_std_rom_device(mconfig, MD_ROM_SMB2, "MD Super Mario Bros. 2", tag, owner, clock, "md_rom_smb2", __FILE__)
+md_rom_ssf2_device::md_rom_ssf2_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: md_std_rom_device(mconfig, MD_ROM_SSF2, tag, owner, clock), m_lastoff(0), m_lastdata(0)
 {
 }
 
-md_rom_smw64_device::md_rom_smw64_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-					: md_std_rom_device(mconfig, MD_ROM_SMW64, "MD Super Mario World 64", tag, owner, clock, "md_rom_smw64", __FILE__), m_latch0(0), m_latch1(0)
-				{
-}
-
-md_rom_sbubl_device::md_rom_sbubl_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-					: md_std_rom_device(mconfig, MD_ROM_SBUBL, "MD Super Bubble Bobble", tag, owner, clock, "md_rom_sbubl", __FILE__)
+md_rom_bugslife_device::md_rom_bugslife_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: md_std_rom_device(mconfig, MD_ROM_BUGSLIFE, tag, owner, clock)
 {
 }
 
-md_rom_rx3_device::md_rom_rx3_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-					: md_std_rom_device(mconfig, MD_ROM_RX3, "MD Rockman X3", tag, owner, clock, "md_rom_rx3", __FILE__)
+md_rom_smouse_device::md_rom_smouse_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: md_std_rom_device(mconfig, MD_ROM_SMOUSE, tag, owner, clock)
 {
 }
 
-md_rom_mjlov_device::md_rom_mjlov_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-					: md_std_rom_device(mconfig, MD_ROM_MJLOV, "MD Ma Jiang Qing Ren / Mahjong Lover", tag, owner, clock, "md_rom_mjlov", __FILE__)
+md_rom_smw64_device::md_rom_smw64_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: md_std_rom_device(mconfig, MD_ROM_SMW64, tag, owner, clock), m_latch0(0), m_latch1(0)
 {
 }
 
-md_rom_kof98_device::md_rom_kof98_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-					: md_std_rom_device(mconfig, MD_ROM_KOF98, "MD KOF 98", tag, owner, clock, "md_rom_kof98", __FILE__)
+md_rom_smb_device::md_rom_smb_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: md_std_rom_device(mconfig, MD_ROM_SMB, tag, owner, clock)
 {
 }
 
-md_rom_kof99_device::md_rom_kof99_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-					: md_std_rom_device(mconfig, MD_ROM_KOF99, "MD KOF 99 (and others)", tag, owner, clock, "md_rom_kof99", __FILE__)
+md_rom_smb2_device::md_rom_smb2_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: md_std_rom_device(mconfig, MD_ROM_SMB2, tag, owner, clock)
 {
 }
 
-md_rom_soulb_device::md_rom_soulb_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-					: md_std_rom_device(mconfig, MD_ROM_SOULB, "MD Soul Blade", tag, owner, clock, "md_rom_soulb", __FILE__)
+md_rom_sbubl_device::md_rom_sbubl_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: md_std_rom_device(mconfig, MD_ROM_SBUBL, tag, owner, clock)
 {
 }
 
-md_rom_chinf3_device::md_rom_chinf3_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-					: md_std_rom_device(mconfig, MD_ROM_CHINF3, "MD Chinese Fighter 3", tag, owner, clock, "md_rom_chinf3", __FILE__), m_bank(0)
-				{
-}
-
-md_rom_16mj2_device::md_rom_16mj2_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-					: md_std_rom_device(mconfig, MD_ROM_16MJ2, "MD 16 Mahjong Tiles II", tag, owner, clock, "md_rom_16mj2", __FILE__)
+md_rom_rx3_device::md_rom_rx3_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: md_std_rom_device(mconfig, MD_ROM_RX3, tag, owner, clock)
 {
 }
 
-md_rom_elfwor_device::md_rom_elfwor_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-					: md_std_rom_device(mconfig, MD_ROM_ELFWOR, "MD Linghuan Daoshi Super Magician / Elf Wor", tag, owner, clock, "md_rom_elfwor", __FILE__)
+md_rom_mjlov_device::md_rom_mjlov_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: md_std_rom_device(mconfig, MD_ROM_MJLOV, tag, owner, clock)
 {
 }
 
-md_rom_yasech_device::md_rom_yasech_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-					: md_std_rom_device(mconfig, MD_ROM_YASECH, "MD Ya Se Chuan Shuo", tag, owner, clock, "md_rom_yasech", __FILE__)
+md_rom_cjmjclub_device::md_rom_cjmjclub_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: md_std_rom_device(mconfig, MD_ROM_CJMJCLUB, tag, owner, clock)
 {
 }
 
-md_rom_lion2_device::md_rom_lion2_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-					: md_std_rom_device(mconfig, MD_ROM_LION2, "MD Lion King 2", tag, owner, clock, "md_rom_lion2", __FILE__), m_prot1_data(0), m_prot2_data(0)
-				{
-}
-
-md_rom_lion3_device::md_rom_lion3_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-					: md_std_rom_device(mconfig, MD_ROM_LION3, "MD Lion King 3", tag, owner, clock, "md_rom_lion3", __FILE__), m_bank(0)
-				{
-}
-
-md_rom_pokea_device::md_rom_pokea_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-					: md_std_rom_device(mconfig, MD_ROM_POKEA, "MD Pokemon (Alt Protection)", tag, owner, clock, "md_rom_pokea", __FILE__)
+md_rom_kof98_device::md_rom_kof98_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: md_std_rom_device(mconfig, MD_ROM_KOF98, tag, owner, clock)
 {
 }
 
-md_rom_pokestad_device::md_rom_pokestad_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-					: md_std_rom_device(mconfig, MD_ROM_POKESTAD, "MD Pokemon Stadium", tag, owner, clock, "md_rom_pokestad", __FILE__), m_bank(0)
-				{
-}
-
-md_rom_realtec_device::md_rom_realtec_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-					: md_std_rom_device(mconfig, MD_ROM_REALTEC, "MD Realtec", tag, owner, clock, "md_rom_realtec", __FILE__), m_bank_addr(0), m_bank_size(0), m_old_bank_addr(0)
-				{
-}
-
-md_rom_redcl_device::md_rom_redcl_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-					: md_std_rom_device(mconfig, MD_ROM_REDCL, "MD Redcliff", tag, owner, clock, "md_rom_redcl", __FILE__)
+md_rom_kof99_device::md_rom_kof99_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: md_std_rom_device(mconfig, MD_ROM_KOF99, tag, owner, clock)
 {
 }
 
-md_rom_squir_device::md_rom_squir_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-					: md_std_rom_device(mconfig, MD_ROM_SQUIR, "MD Squirrel King", tag, owner, clock, "md_rom_squir", __FILE__), m_latch(0)
-				{
+md_rom_soulb_device::md_rom_soulb_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: md_std_rom_device(mconfig, MD_ROM_SOULB, tag, owner, clock)
+{
 }
 
-md_rom_tekkensp_device::md_rom_tekkensp_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-					: md_std_rom_device(mconfig, MD_ROM_TEKKENSP, "MD Tekken Special", tag, owner, clock, "md_rom_tekkensp", __FILE__), m_reg(0)
-				{
+md_rom_chinf3_device::md_rom_chinf3_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: md_std_rom_device(mconfig, MD_ROM_CHINF3, tag, owner, clock), m_bank(0)
+{
 }
 
-md_rom_topf_device::md_rom_topf_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-					: md_std_rom_device(mconfig, MD_ROM_TOPF, "MD Top Fighter", tag, owner, clock, "md_rom_topf", __FILE__), m_latch(0)
-				{
+md_rom_16mj2_device::md_rom_16mj2_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: md_std_rom_device(mconfig, MD_ROM_16MJ2, tag, owner, clock)
+{
 }
 
-md_rom_radica_device::md_rom_radica_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-					: md_std_rom_device(mconfig, MD_ROM_RADICA, "MD Radica TV games", tag, owner, clock, "md_rom_radica", __FILE__), m_bank(0)
-				{
+md_rom_elfwor_device::md_rom_elfwor_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: md_std_rom_device(mconfig, MD_ROM_ELFWOR, tag, owner, clock)
+{
 }
 
-md_rom_beggarp_device::md_rom_beggarp_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-					: md_std_rom_device(mconfig, MD_ROM_BEGGARP, "MD Beggar Prince", tag, owner, clock, "md_rom_beggarp", __FILE__), m_mode(0), m_lock(0)
-				{
+md_rom_yasech_device::md_rom_yasech_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: md_std_rom_device(mconfig, MD_ROM_YASECH, tag, owner, clock)
+{
 }
 
-md_rom_wukong_device::md_rom_wukong_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-					: md_std_rom_device(mconfig, MD_ROM_WUKONG, "MD Legend of Wukong", tag, owner, clock, "md_rom_wukong", __FILE__), m_mode(0)
-				{
+md_rom_lion2_device::md_rom_lion2_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: md_std_rom_device(mconfig, MD_ROM_LION2, tag, owner, clock), m_prot1_data(0), m_prot2_data(0)
+{
+}
+
+md_rom_lion3_device::md_rom_lion3_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: md_std_rom_device(mconfig, MD_ROM_LION3, tag, owner, clock), m_bank(0)
+{
+}
+
+md_rom_mcpirate_device::md_rom_mcpirate_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: md_std_rom_device(mconfig, MD_ROM_MCPIR, tag, owner, clock), m_bank(0)
+{
+}
+
+md_rom_pokea_device::md_rom_pokea_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: md_std_rom_device(mconfig, MD_ROM_POKEA, tag, owner, clock)
+{
+}
+
+md_rom_pokestad_device::md_rom_pokestad_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: md_std_rom_device(mconfig, MD_ROM_POKESTAD, tag, owner, clock), m_bank(0)
+{
+}
+
+md_rom_realtec_device::md_rom_realtec_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: md_std_rom_device(mconfig, MD_ROM_REALTEC, tag, owner, clock), m_bank_addr(0), m_bank_size(0), m_old_bank_addr(0)
+{
+}
+
+md_rom_redcl_device::md_rom_redcl_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: md_std_rom_device(mconfig, MD_ROM_REDCL, tag, owner, clock)
+{
+}
+
+md_rom_squir_device::md_rom_squir_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: md_std_rom_device(mconfig, MD_ROM_SQUIR, tag, owner, clock), m_latch(0)
+{
+}
+
+md_rom_tc2000_device::md_rom_tc2000_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: md_std_rom_device(mconfig, MD_ROM_TC2000, tag, owner, clock)
+{
+}
+
+md_rom_tekkensp_device::md_rom_tekkensp_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: md_std_rom_device(mconfig, MD_ROM_TEKKENSP, tag, owner, clock), m_reg(0)
+{
+}
+
+md_rom_topf_device::md_rom_topf_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: md_std_rom_device(mconfig, MD_ROM_TOPF, tag, owner, clock), m_latch(0)
+{
+}
+
+md_rom_radica_device::md_rom_radica_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: md_std_rom_device(mconfig, MD_ROM_RADICA, tag, owner, clock), m_bank(0)
+{
+}
+
+md_rom_beggarp_device::md_rom_beggarp_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: md_std_rom_device(mconfig, MD_ROM_BEGGARP, tag, owner, clock), m_mode(0), m_lock(0)
+{
+}
+
+md_rom_wukong_device::md_rom_wukong_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: md_std_rom_device(mconfig, MD_ROM_WUKONG, tag, owner, clock), m_mode(0)
+{
+}
+
+md_rom_starodys_device::md_rom_starodys_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: md_std_rom_device(mconfig, MD_ROM_STARODYS, tag, owner, clock), m_mode(0), m_lock(0), m_ram_enable(0), m_base(0)
+{
 }
 
 //-------------------------------------------------
@@ -416,6 +445,22 @@ void md_rom_wukong_device::device_reset()
 	m_mode = 0;
 }
 
+void md_rom_starodys_device::device_start()
+{
+	save_item(NAME(m_mode));
+	save_item(NAME(m_lock));
+	save_item(NAME(m_ram_enable));
+	save_item(NAME(m_base));
+}
+
+void md_rom_starodys_device::device_reset()
+{
+	m_mode = 0;
+	m_lock = 0;
+	m_ram_enable = 1;
+	m_base = 0;
+}
+
 /*-------------------------------------------------
  mapper specific handlers
  -------------------------------------------------*/
@@ -424,7 +469,7 @@ void md_rom_wukong_device::device_reset()
  CART + SRAM
  -------------------------------------------------*/
 
-READ16_MEMBER(md_rom_sram_device::read)
+uint16_t md_rom_sram_device::read(offs_t offset)
 {
 	// since a lot of generic carts ends up here if loaded from fullpath
 	// we access nvram only if m_nvram_handlers_installed has been turned on
@@ -439,7 +484,7 @@ READ16_MEMBER(md_rom_sram_device::read)
 		return 0xffff;
 }
 
-WRITE16_MEMBER(md_rom_sram_device::write)
+void md_rom_sram_device::write(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	// since a lot of generic carts ends up here if loaded from fullpath
 	// we access nvram only if m_nvram_handlers_installed has been turned on
@@ -450,7 +495,7 @@ WRITE16_MEMBER(md_rom_sram_device::write)
 	}
 }
 
-WRITE16_MEMBER(md_rom_sram_device::write_a13)
+void md_rom_sram_device::write_a13(offs_t offset, uint16_t data)
 {
 	if (offset == 0xf0/2)
 	{
@@ -469,7 +514,7 @@ WRITE16_MEMBER(md_rom_sram_device::write_a13)
  CART + FRAM [almost same as SRAM... merge common parts?]
  -------------------------------------------------*/
 
-READ16_MEMBER(md_rom_fram_device::read)
+uint16_t md_rom_fram_device::read(offs_t offset)
 {
 	if (offset >= m_nvram_start/2 && offset <= m_nvram_end/2 && m_nvram_active)
 		return m_nvram[offset - m_nvram_start/2];
@@ -479,20 +524,20 @@ READ16_MEMBER(md_rom_fram_device::read)
 		return 0xffff;
 }
 
-WRITE16_MEMBER(md_rom_fram_device::write)
+void md_rom_fram_device::write(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	if (offset >= m_nvram_start/2 && offset <= m_nvram_end/2 && m_nvram_active)
 			m_nvram[offset - m_nvram_start/2] = data;
 }
 
-WRITE16_MEMBER(md_rom_fram_device::write_a13)
+void md_rom_fram_device::write_a13(offs_t offset, uint16_t data)
 {
 	if (offset == 0xf0/2)
 		m_nvram_active = BIT(data, 0);
 }
 
 
-READ16_MEMBER(md_rom_fram_device::read_a13)
+uint16_t md_rom_fram_device::read_a13(offs_t offset)
 {
 	if (offset == 0xf0/2)
 		return m_nvram_active;
@@ -504,7 +549,7 @@ READ16_MEMBER(md_rom_fram_device::read_a13)
  SUPER STREET FIGHTERS 2
  -------------------------------------------------*/
 
-READ16_MEMBER(md_rom_ssf2_device::read)
+uint16_t md_rom_ssf2_device::read(offs_t offset)
 {
 	if (offset < 0x400000/2)
 		return m_rom[offset];
@@ -513,7 +558,7 @@ READ16_MEMBER(md_rom_ssf2_device::read)
 }
 
 // I'm not very fond of the code below...
-WRITE16_MEMBER(md_rom_ssf2_device::write_a13)
+void md_rom_ssf2_device::write_a13(offs_t offset, uint16_t data)
 {
 	if (offset >= 0xf0/2)
 	{
@@ -524,7 +569,7 @@ WRITE16_MEMBER(md_rom_ssf2_device::write_a13)
 			m_lastdata = data;
 			if (offset) // bank 0 is not modified
 			{
-				UINT16 *ROM = get_rom_base();
+				uint16_t *ROM = get_rom_base();
 				m_bank[offset] = data & 0xf;
 				memcpy(ROM + offset * 0x080000/2, ROM + 0x400000/2 + (m_bank[offset] * 0x080000)/2, 0x080000);
 			}
@@ -538,7 +583,7 @@ WRITE16_MEMBER(md_rom_ssf2_device::write_a13)
 
 #define MD_ADDR_CM2IN1(a) (m_base == 0 ? ((a << 1) & 0x1fffff)/2 : (((a << 1) & 0x1fffff) + 0x200000)/2)
 
-READ16_MEMBER(md_rom_cm2in1_device::read)
+uint16_t md_rom_cm2in1_device::read(offs_t offset)
 {
 	if (offset < 0x400000/2)
 		return m_rom[MD_ADDR_CM2IN1(offset)];
@@ -551,15 +596,15 @@ READ16_MEMBER(md_rom_cm2in1_device::read)
  PIRATE MULTICARTS
  -------------------------------------------------*/
 
-READ16_MEMBER(md_rom_mcpirate_device::read)
+uint16_t md_rom_mcpirate_device::read(offs_t offset)
 {
 	if (offset < 0x400000/2)
 		return m_rom[(((m_bank * 0x10000) + (offset << 1)) & (m_rom_size - 1))/2];
 	else
-		return read(space, offset - 0x400000/2, 0xffff);
+		return read(offset - 0x400000/2);
 }
 
-WRITE16_MEMBER(md_rom_mcpirate_device::write_a13)
+void md_rom_mcpirate_device::write_a13(offs_t offset, uint16_t data)
 {
 	offset <<= 1;
 	if (offset < 0x40)
@@ -570,7 +615,7 @@ WRITE16_MEMBER(md_rom_mcpirate_device::write_a13)
  A BUG'S LIFE
  -------------------------------------------------*/
 
-READ16_MEMBER(md_rom_bugslife_device::read_a13)
+uint16_t md_rom_bugslife_device::read_a13(offs_t offset)
 {
 	if (offset == 0x00/2)   return 0x28;
 	if (offset == 0x02/2)   return 0x01;
@@ -582,7 +627,7 @@ READ16_MEMBER(md_rom_bugslife_device::read_a13)
  CHINESE FIGHTER 3
  -------------------------------------------------*/
 
-READ16_MEMBER(md_rom_chinf3_device::read)
+uint16_t md_rom_chinf3_device::read(offs_t offset)
 {
 	if (offset < 0x100000/2)
 	{
@@ -597,52 +642,52 @@ READ16_MEMBER(md_rom_chinf3_device::read)
 	 and the writes made at the start of the game.. */
 	if (offset >= 0x400000/2 && offset < 0x500000/2)
 	{
-		UINT32 retdat = 0;
+		uint32_t retdat;
 		/*
 		 04dc10 chifi3, prot_r? 2800
 		 04cefa chifi3, prot_r? 65262
 		 */
-		if (space.machine().device("maincpu")->safe_pc() == 0x01782) // makes 'VS' screen appear
+		if (machine().device<cpu_device>("maincpu")->pc() == 0x01782) // makes 'VS' screen appear
 		{
-			retdat = space.machine().device("maincpu")->state().state_int(M68K_D3) & 0xff;
+			retdat = machine().device<cpu_device>("maincpu")->state_int(M68K_D3) & 0xff;
 			retdat <<= 8;
 			return retdat;
 		}
-		else if (space.machine().device("maincpu")->safe_pc() == 0x1c24) // background gfx etc.
+		else if (machine().device<cpu_device>("maincpu")->pc() == 0x1c24) // background gfx etc.
 		{
-			retdat = space.machine().device("maincpu")->state().state_int(M68K_D3) & 0xff;
+			retdat = machine().device<cpu_device>("maincpu")->state_int(M68K_D3) & 0xff;
 			retdat <<= 8;
 			return retdat;
 		}
-		else if (space.machine().device("maincpu")->safe_pc() == 0x10c4a) // unknown
+		else if (machine().device<cpu_device>("maincpu")->pc() == 0x10c4a) // unknown
 		{
-			return space.machine().rand();
+			return machine().rand();
 		}
-		else if (space.machine().device("maincpu")->safe_pc() == 0x10c50) // unknown
+		else if (machine().device<cpu_device>("maincpu")->pc() == 0x10c50) // unknown
 		{
-			return space.machine().rand();
+			return machine().rand();
 		}
-		else if (space.machine().device("maincpu")->safe_pc() == 0x10c52) // relates to the game speed..
+		else if (machine().device<cpu_device>("maincpu")->pc() == 0x10c52) // relates to the game speed..
 		{
-			retdat = space.machine().device("maincpu")->state().state_int(M68K_D4) & 0xff;
+			retdat = machine().device<cpu_device>("maincpu")->state_int(M68K_D4) & 0xff;
 			retdat <<= 8;
 			return retdat;
 		}
-		else if (space.machine().device("maincpu")->safe_pc() == 0x061ae)
+		else if (machine().device<cpu_device>("maincpu")->pc() == 0x061ae)
 		{
-			retdat = space.machine().device("maincpu")->state().state_int(M68K_D3) & 0xff;
+			retdat = machine().device<cpu_device>("maincpu")->state_int(M68K_D3) & 0xff;
 			retdat <<= 8;
 			return retdat;
 		}
-		else if (space.machine().device("maincpu")->safe_pc() == 0x061b0)
+		else if (machine().device<cpu_device>("maincpu")->pc() == 0x061b0)
 		{
-			retdat = space.machine().device("maincpu")->state().state_int(M68K_D3) & 0xff;
+			retdat = machine().device<cpu_device>("maincpu")->state_int(M68K_D3) & 0xff;
 			retdat <<= 8;
 			return retdat;
 		}
 		else
 		{
-			logerror("%06x chifi3, prot_r? %04x\n", space.machine().device("maincpu")->safe_pc(), offset);
+			logerror("%06x chifi3, prot_r? %04x\n", machine().device<cpu_device>("maincpu")->pc(), offset);
 		}
 		return 0;
 	}
@@ -654,7 +699,7 @@ READ16_MEMBER(md_rom_chinf3_device::read)
 		return 0xffff;
 }
 
-WRITE16_MEMBER(md_rom_chinf3_device::write)
+void md_rom_chinf3_device::write(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	if (offset >= 0x600000/2 && offset < 0x700000/2)
 	{
@@ -667,7 +712,7 @@ WRITE16_MEMBER(md_rom_chinf3_device::write)
 		else if (data == 0x0000)
 			m_bank = 0;
 		else
-			logerror("%06x chifi3, bankw? %04x %04x\n", space.device().safe_pc(), offset, data);
+			logerror("%06x chifi3, bankw? %04x %04x\n", machine().device<cpu_device>("maincpu")->pc(), offset, data);
 	}
 }
 
@@ -675,7 +720,7 @@ WRITE16_MEMBER(md_rom_chinf3_device::write)
  16 MAHJONG II
  -------------------------------------------------*/
 
-READ16_MEMBER(md_rom_16mj2_device::read)
+uint16_t md_rom_16mj2_device::read(offs_t offset)
 {
 	if (offset == 0x400004/2)   return 0xc900;
 
@@ -690,7 +735,7 @@ READ16_MEMBER(md_rom_16mj2_device::read)
  LINGHUAN DAOSHI SUPER MAGICIAN / ELF WOR
  -------------------------------------------------*/
 
-READ16_MEMBER(md_rom_elfwor_device::read)
+uint16_t md_rom_elfwor_device::read(offs_t offset)
 {
 	// It returns (0x55 @ 0x400000 OR 0xc9 @ 0x400004) AND (0x0f @ 0x400002 OR 0x18 @ 0x400006).
 	// It is probably best to add handlers for all 4 addresses
@@ -710,7 +755,7 @@ READ16_MEMBER(md_rom_elfwor_device::read)
  HUAN LE TAO QI SHU / SMART MOUSE
  -------------------------------------------------*/
 
-READ16_MEMBER(md_rom_smouse_device::read)
+uint16_t md_rom_smouse_device::read(offs_t offset)
 {
 	if (offset == 0x400000/2)   return 0x5500;
 	if (offset == 0x400002/2)   return 0x0f00;
@@ -728,7 +773,7 @@ READ16_MEMBER(md_rom_smouse_device::read)
  YA SE CHUAN SHUO
  -------------------------------------------------*/
 
-READ16_MEMBER(md_rom_yasech_device::read)
+uint16_t md_rom_yasech_device::read(offs_t offset)
 {
 	if (offset == 0x400000/2)   return 0x6300;
 	if (offset == 0x400002/2)   return 0x9800;
@@ -746,7 +791,7 @@ READ16_MEMBER(md_rom_yasech_device::read)
  KOF98
  -------------------------------------------------*/
 
-READ16_MEMBER(md_rom_kof98_device::read)
+uint16_t md_rom_kof98_device::read(offs_t offset)
 {
 	if (offset == 0x480000/2)   return 0xaa00;
 	if (offset == 0x4800e0/2)   return 0xaa00;
@@ -766,7 +811,7 @@ READ16_MEMBER(md_rom_kof98_device::read)
  KOF 99
  -------------------------------------------------*/
 
-READ16_MEMBER(md_rom_kof99_device::read_a13)
+uint16_t md_rom_kof99_device::read_a13(offs_t offset)
 {
 	if (offset == 0x00/2)   return 0x00;    // startup protection check, chinese message if != 0
 	if (offset == 0x02/2)   return 0x01;    // write 02 to a13002.. shift right 1?
@@ -778,7 +823,7 @@ READ16_MEMBER(md_rom_kof99_device::read_a13)
  LION KING 2
  -------------------------------------------------*/
 
-READ16_MEMBER(md_rom_lion2_device::read)
+uint16_t md_rom_lion2_device::read(offs_t offset)
 {
 	if (offset == 0x400002/2)   return m_prot1_data;
 	if (offset == 0x400006/2)   return m_prot2_data;
@@ -790,7 +835,7 @@ READ16_MEMBER(md_rom_lion2_device::read)
 		return 0xffff;
 }
 
-WRITE16_MEMBER(md_rom_lion2_device::write)
+void md_rom_lion2_device::write(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	if (offset == 0x400000/2)   m_prot1_data = data;
 	if (offset == 0x400004/2)   m_prot2_data = data;
@@ -802,7 +847,7 @@ WRITE16_MEMBER(md_rom_lion2_device::write)
 
 #define MD_LION3_ADDR(a)  (((offset << 1) | (m_bank << 15)) & (m_rom_size - 1))/2
 
-READ16_MEMBER(md_rom_lion3_device::read)
+uint16_t md_rom_lion3_device::read(offs_t offset)
 {
 	if (offset < 0x100000/2)
 		return m_rom[MD_LION3_ADDR(offset)];
@@ -829,7 +874,7 @@ READ16_MEMBER(md_rom_lion3_device::read)
 		return 0xffff;
 }
 
-WRITE16_MEMBER(md_rom_lion3_device::write)
+void md_rom_lion3_device::write(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	if (offset >= 0x600000/2 && offset < 0x700000/2)
 	{
@@ -881,7 +926,7 @@ WRITE16_MEMBER(md_rom_lion3_device::write)
  MA JIANG QING REN / MAHJONG LOVER
  -------------------------------------------------*/
 
-READ16_MEMBER(md_rom_mjlov_device::read)
+uint16_t md_rom_mjlov_device::read(offs_t offset)
 {
 	if (offset == 0x400000/2)   return 0x9000;
 	if (offset == 0x401000/2)   return 0xd300;
@@ -895,10 +940,27 @@ READ16_MEMBER(md_rom_mjlov_device::read)
 
 
 /*-------------------------------------------------
+ CHAOJI MAJIANG CLUB
+ -------------------------------------------------*/
+
+uint16_t md_rom_cjmjclub_device::read(offs_t offset)
+{
+	if (offset == 0x400000/2)   return 0x9000;
+	if (offset == 0x400002/2)   return 0xd300;
+
+	// non-protection accesses
+	if (offset < 0x400000/2)
+		return m_rom[MD_ADDR(offset)];
+	else
+		return 0xffff;
+}
+
+
+/*-------------------------------------------------
  SUPER BUBBLE BOBBLE MD
  -------------------------------------------------*/
 
-READ16_MEMBER(md_rom_sbubl_device::read)
+uint16_t md_rom_sbubl_device::read(offs_t offset)
 {
 	if (offset == 0x400000/2)   return 0x5500;
 	if (offset == 0x400002/2)   return 0x0f00;
@@ -914,7 +976,7 @@ READ16_MEMBER(md_rom_sbubl_device::read)
  SOUL BLADE
  -------------------------------------------------*/
 
-READ16_MEMBER(md_rom_soulb_device::read)
+uint16_t md_rom_soulb_device::read(offs_t offset)
 {
 	if (offset == 0x400002/2)   return 0x9800;
 	if (offset == 0x400004/2)   return 0xc900;
@@ -933,7 +995,7 @@ READ16_MEMBER(md_rom_soulb_device::read)
 
 #define MD_POKESTAD_ADDR(a)  (((offset << 1) | (m_bank << 15)) & (m_rom_size - 1))/2
 
-READ16_MEMBER(md_rom_pokestad_device::read)
+uint16_t md_rom_pokestad_device::read(offs_t offset)
 {
 	if (offset < 0x100000/2)
 		return m_rom[MD_POKESTAD_ADDR(offset)];
@@ -945,7 +1007,7 @@ READ16_MEMBER(md_rom_pokestad_device::read)
 		return 0xffff;
 }
 
-WRITE16_MEMBER(md_rom_pokestad_device::write)
+void md_rom_pokestad_device::write(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	if (offset >= 0x700000/2 && offset < 0x800000/2)
 		m_bank = data & 0x7f;
@@ -955,7 +1017,7 @@ WRITE16_MEMBER(md_rom_pokestad_device::write)
  POKEMON ALT
  -------------------------------------------------*/
 
-READ16_MEMBER(md_rom_pokea_device::read_a13)
+uint16_t md_rom_pokea_device::read_a13(offs_t offset)
 {
 	if (offset == 0x00/2)   return 0x14;
 	if (offset == 0x02/2)   return 0x01;
@@ -967,14 +1029,14 @@ READ16_MEMBER(md_rom_pokea_device::read_a13)
  REALTEC
  -------------------------------------------------*/
 
-READ16_MEMBER(md_rom_realtec_device::read)
+uint16_t md_rom_realtec_device::read(offs_t offset)
 {
 	if (offset < (m_bank_size * 0x20000))   // two banks of same (variable) size at the bottom of the rom
 		return m_rom[MD_ADDR((offset + (m_bank_addr * 0x20000)/2))];
 	return m_rom[MD_ADDR(((offset & 0x1fff/2) + 0x7e000/2))];  // otherwise it accesses the final 8k of the image
 }
 
-WRITE16_MEMBER(md_rom_realtec_device::write)
+void md_rom_realtec_device::write(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	if (offset == 0x400000/2)
 	{
@@ -997,7 +1059,7 @@ WRITE16_MEMBER(md_rom_realtec_device::write)
  RED CLIFF
  -------------------------------------------------*/
 
-READ16_MEMBER(md_rom_redcl_device::read)
+uint16_t md_rom_redcl_device::read(offs_t offset)
 {
 	if (offset == 0x400000/2)   return 0x55 << 8;
 	if (offset == 0x400004/2)   return 0xaa << 8;
@@ -1013,7 +1075,7 @@ READ16_MEMBER(md_rom_redcl_device::read)
  ROCKMAN X3
  -------------------------------------------------*/
 
-READ16_MEMBER(md_rom_rx3_device::read_a13)
+uint16_t md_rom_rx3_device::read_a13(offs_t offset)
 {
 	if (offset == 0)
 		return 0x0c;
@@ -1025,7 +1087,7 @@ READ16_MEMBER(md_rom_rx3_device::read_a13)
  SQUIRREL KING
  -------------------------------------------------*/
 
-READ16_MEMBER(md_rom_squir_device::read)
+uint16_t md_rom_squir_device::read(offs_t offset)
 {
 	if ((offset >= 0x400000/2) && (offset < 0x400008/2))
 		return m_latch;
@@ -1037,7 +1099,7 @@ READ16_MEMBER(md_rom_squir_device::read)
 		return 0xffff;
 }
 
-WRITE16_MEMBER(md_rom_squir_device::write)
+void md_rom_squir_device::write(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	if (offset >= 0x400000/2 && offset < 0x400008/2)
 		m_latch = data;
@@ -1047,7 +1109,7 @@ WRITE16_MEMBER(md_rom_squir_device::write)
  SUPER MARIO BROS
  -------------------------------------------------*/
 
-READ16_MEMBER(md_rom_smb_device::read_a13)
+uint16_t md_rom_smb_device::read_a13(offs_t offset)
 {
 	if (offset == 0)
 		return 0x0c;
@@ -1059,7 +1121,7 @@ READ16_MEMBER(md_rom_smb_device::read_a13)
  SUPER MARIO BROS 2
  -------------------------------------------------*/
 
-READ16_MEMBER(md_rom_smb2_device::read_a13)
+uint16_t md_rom_smb2_device::read_a13(offs_t offset)
 {
 	if (offset == 0)
 		return 0x0a;
@@ -1071,7 +1133,7 @@ READ16_MEMBER(md_rom_smb2_device::read_a13)
  SUPER MARIO WORLD 64
  -------------------------------------------------*/
 
-READ16_MEMBER(md_rom_smw64_device::read)
+uint16_t md_rom_smw64_device::read(offs_t offset)
 {
 	// 0x000000-0x0fffff: lower 512KB ROM (up to 0x07ffff) + mirror
 	// 0x600000-0x6fffff: internal hardware (up to 0x67ffff) + mirror
@@ -1118,7 +1180,7 @@ READ16_MEMBER(md_rom_smw64_device::read)
 	}
 	if ((offset >= 0x670000/2) && (offset < 0x680000/2))
 	{
-		UINT16 data = (m_ctrl[1] & 0x80) ? ((m_ctrl[2] & 0x40) ? (m_reg[4] & m_reg[5]) : (m_reg[4] ^ 0xff)) : 0x0000;
+		uint16_t data = (m_ctrl[1] & 0x80) ? ((m_ctrl[2] & 0x40) ? (m_reg[4] & m_reg[5]) : (m_reg[4] ^ 0xff)) : 0x0000;
 		if (offset & 0x1)   // odd offset, return lower 7 bits of the above
 			return data & 0x7f;
 		else    // even offset, return whole data above, but also update the regs if CTRL3 has 0x80 set
@@ -1136,7 +1198,7 @@ READ16_MEMBER(md_rom_smw64_device::read)
 	return 0xffff;
 }
 
-WRITE16_MEMBER(md_rom_smw64_device::write)
+void md_rom_smw64_device::write(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	// 0x600000-0x6fffff: internal hardware (up to 0x67ffff) + mirror
 	// Namely,
@@ -1182,10 +1244,65 @@ WRITE16_MEMBER(md_rom_smw64_device::write)
 }
 
 /*-------------------------------------------------
+ TC2000 / TRUCO 96
+ -------------------------------------------------*/
+
+void md_rom_tc2000_device::device_start()
+{
+	save_item(NAME(m_retvalue));
+}
+
+void md_rom_tc2000_device::device_reset()
+{
+	m_retvalue = 0;
+}
+
+uint16_t md_rom_tc2000_device::read(offs_t offset)
+{
+	if (offset < 0x100000 / 2)
+	{
+		return md_std_rom_device::read(offset);
+	}
+	else
+	{
+		// this works for game boot and starting a game, are there any further checks?
+		logerror("protection read at offset %08x returning %04x\n", offset*2, m_retvalue);
+
+		return m_retvalue;
+	}
+}
+
+void md_rom_tc2000_device::write(offs_t offset, uint16_t data, uint16_t mem_mask)
+{
+	if (offset < 0x100000/2)
+	{
+		md_std_rom_device::write(offset, data, mem_mask);
+	}
+	else
+	{
+		if (((offset * 2) & 0xf) == 0x0) // truco96a uses this case
+		{
+			m_retvalue = 0x0000;
+		}
+		else if (((offset * 2) & 0xf) == 0x8)
+		{
+			m_retvalue = 0x5000;
+		}
+		else if (((offset * 2) & 0xf) == 0xc)
+		{
+			m_retvalue = 0xa000;
+		}
+
+		logerror("protection write at offset %08x %04x %04x\n", offset*2, data, mem_mask);
+	}
+}
+
+
+/*-------------------------------------------------
  TEKKEN SPECIAL
  -------------------------------------------------*/
 
-READ16_MEMBER(md_rom_tekkensp_device::read)
+uint16_t md_rom_tekkensp_device::read(offs_t offset)
 {
 	if (offset < 0x400000/2)
 		return m_rom[MD_ADDR(offset)];
@@ -1195,7 +1312,7 @@ READ16_MEMBER(md_rom_tekkensp_device::read)
 		return 0xffff;
 }
 
-WRITE16_MEMBER(md_rom_tekkensp_device::write)
+void md_rom_tekkensp_device::write(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	if (offset < 0x400000/2)
 		return;
@@ -1231,7 +1348,7 @@ WRITE16_MEMBER(md_rom_tekkensp_device::write)
  TOP FIGHTER
  -------------------------------------------------*/
 
-READ16_MEMBER(md_rom_topf_device::read)
+uint16_t md_rom_topf_device::read(offs_t offset)
 {
 	//cpu #0 (PC=0004CBAE): unmapped program memory word read from 006A35D4 & 00FF -- wants regD7
 	if (offset == 0x645b44/2)
@@ -1250,22 +1367,22 @@ READ16_MEMBER(md_rom_topf_device::read)
 		 cpu #0 (PC=001771A2): unmapped program memory word read from 006BD294 & 00FF
 		 */
 
-		if (space.device().safe_pc()==0x1771a2) return 0x50;
+		if (machine().device<cpu_device>("maincpu")->pc()==0x1771a2) return 0x50;
 		else
 		{
 			m_latch++;
-			logerror("%06x topfig_6BD294_r %04x\n",space.device().safe_pc(), m_latch);
+			logerror("%06x topfig_6BD294_r %04x\n",machine().device<cpu_device>("maincpu")->pc(), m_latch);
 			return m_latch;
 		}
 	}
 	if (offset == 0x6f5344/2)
 	{
-		if (space.device().safe_pc()==0x4C94E)
-			return space.machine().device("maincpu")->state().state_int((M68K_D0)) & 0xff;
+		if (machine().device<cpu_device>("maincpu")->pc()==0x4C94E)
+			return machine().device<cpu_device>("maincpu")->state_int((M68K_D0)) & 0xff;
 		else
 		{
 			m_latch++;
-			logerror("%06x topfig_6F5344_r %04x\n", space.device().safe_pc(), m_latch);
+			logerror("%06x topfig_6F5344_r %04x\n", machine().device<cpu_device>("maincpu")->pc(), m_latch);
 			return m_latch;
 		}
 	}
@@ -1286,7 +1403,7 @@ READ16_MEMBER(md_rom_topf_device::read)
 		return 0xffff;
 }
 
-WRITE16_MEMBER(md_rom_topf_device::write)
+void md_rom_topf_device::write(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	if (offset >= 0x700000/2 && offset < 0x800000/2)
 	{
@@ -1303,7 +1420,7 @@ WRITE16_MEMBER(md_rom_topf_device::write)
 			m_bank[2] = 0;
 		}
 		else
-			logerror("%06x offset %06x, data %04x\n", space.device().safe_pc(), offset, data);
+			logerror("%06x offset %06x, data %04x\n", machine().device<cpu_device>("maincpu")->pc(), offset, data);
 	}
 }
 
@@ -1311,12 +1428,12 @@ WRITE16_MEMBER(md_rom_topf_device::write)
  RADICA TV GAMES [to be split...]
  -------------------------------------------------*/
 
-READ16_MEMBER(md_rom_radica_device::read)
+uint16_t md_rom_radica_device::read(offs_t offset)
 {
 	return m_rom[(((m_bank * 0x10000) + (offset << 1)) & (m_rom_size - 1))/2];
 }
 
-READ16_MEMBER(md_rom_radica_device::read_a13)
+uint16_t md_rom_radica_device::read_a13(offs_t offset)
 {
 	if (offset < 0x80)
 		m_bank = offset & 0x3f;
@@ -1334,7 +1451,7 @@ READ16_MEMBER(md_rom_radica_device::read_a13)
  the end of ROM.
  -------------------------------------------------*/
 
-READ16_MEMBER(md_rom_beggarp_device::read)
+uint16_t md_rom_beggarp_device::read(offs_t offset)
 {
 	if (offset >= m_nvram_start/2 && offset <= m_nvram_end/2 && m_nvram_active)
 		return m_nvram[offset & 0x3fff];
@@ -1347,7 +1464,7 @@ READ16_MEMBER(md_rom_beggarp_device::read)
 	return 0xffff;
 }
 
-WRITE16_MEMBER(md_rom_beggarp_device::write)
+void md_rom_beggarp_device::write(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	if (offset >= 0x0e00/2 && offset < 0x0f00/2)
 		m_mode = BIT(data, 7);
@@ -1356,16 +1473,14 @@ WRITE16_MEMBER(md_rom_beggarp_device::write)
 		m_nvram[offset & 0x3fff] = data;
 }
 
-WRITE16_MEMBER(md_rom_beggarp_device::write_a13)
+// this works the same as in standard SRAM carts
+void md_rom_beggarp_device::write_a13(offs_t offset, uint16_t data)
 {
 	if (offset == 0xf0/2)
 	{
-		/* unsure if this is actually supposed to toggle or just switch on? yet to encounter game that uses this */
 		m_nvram_active = BIT(data, 0);
 		m_nvram_readonly = BIT(data, 1);
 
-		// since a lot of generic carts ends up here if loaded from fullpath
-		// we turn on nvram (with m_nvram_handlers_installed) only if they toggle it on by writing here!
 		if (m_nvram_active)
 			m_nvram_handlers_installed = 1;
 	}
@@ -1383,12 +1498,12 @@ WRITE16_MEMBER(md_rom_beggarp_device::write_a13)
  (i.e. mirror of first 128K)
  -------------------------------------------------*/
 
-READ16_MEMBER(md_rom_wukong_device::read)
+uint16_t md_rom_wukong_device::read(offs_t offset)
 {
 	if (offset >= m_nvram_start/2 && offset <= m_nvram_end/2 && m_nvram_active)
 		return m_nvram[offset - m_nvram_start/2];
 
-	// here can access both last 128K of the ROM and the first 128K, depending of bit7 of m_mode
+	// here can access both last 128K of the ROM and the first 128K, depending of m_mode
 	if (offset >= 0x200000/2 && offset < 0x220000/2)
 		return !m_mode ? m_rom[offset] : m_rom[offset & 0xffff];
 	else if (offset < 0x400000/2)
@@ -1397,7 +1512,7 @@ READ16_MEMBER(md_rom_wukong_device::read)
 		return 0xffff;
 }
 
-WRITE16_MEMBER(md_rom_wukong_device::write)
+void md_rom_wukong_device::write(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	if (offset < 0x100000/2)    // it actually writes to 0xe00/2
 		m_mode = BIT(data, 7);
@@ -1406,17 +1521,149 @@ WRITE16_MEMBER(md_rom_wukong_device::write)
 		m_nvram[offset - m_nvram_start/2] = data;
 }
 
-WRITE16_MEMBER(md_rom_wukong_device::write_a13)
+// this works the same as in standard SRAM carts
+void md_rom_wukong_device::write_a13(offs_t offset, uint16_t data)
 {
 	if (offset == 0xf0/2)
 	{
-		/* unsure if this is actually supposed to toggle or just switch on? yet to encounter game that uses this */
 		m_nvram_active = BIT(data, 0);
 		m_nvram_readonly = BIT(data, 1);
 
-		// since a lot of generic carts ends up here if loaded from fullpath
-		// we turn on nvram (with m_nvram_handlers_installed) only if they toggle it on by writing here!
 		if (m_nvram_active)
 			m_nvram_handlers_installed = 1;
+	}
+}
+
+
+/*-------------------------------------------------
+ STAR ODYSSEY
+ This game uses a slightly more complex mapper:
+ not only RAM can be enabled / disabled, but also
+ ROM can be mapped in three different modes.
+ In what we call Mode0 the first 256K are mirrored
+ into area 0x000000-0x1fffff; in Mode1 cart gives
+ access to 5x256K banks into area 0x000000-0x13ffff
+ and open bus into 0x140000-0x1fffff; in Mode2 the
+ ROM is disabled and the whole 0x000000-0x1fffff
+ gives open bus
+-------------------------------------------------*/
+
+uint16_t md_rom_starodys_device::read(offs_t offset)
+{
+	if (offset >= m_nvram_start/2 && offset <= m_nvram_end/2 && m_nvram_active && m_ram_enable)
+		return m_nvram[offset & 0x3fff];
+
+	if (offset < 0x200000/2)
+	{
+		if (m_mode == 0)
+			return m_rom[offset & 0x3ffff];
+		else if (m_mode == 1 && offset < 0x140000/2)
+			return m_rom[m_base * 0x40000/2 + offset];
+		else
+			return 0xffff;
+	}
+	else if (offset < 0x400000/2)
+		return m_rom[offset & 0xfffff];
+	else
+		return 0xffff;
+}
+
+void md_rom_starodys_device::write(offs_t offset, uint16_t data, uint16_t mem_mask)
+{
+	if (offset >= m_nvram_start/2 && offset <= m_nvram_end/2 && m_nvram_active && !m_nvram_readonly && m_ram_enable)
+		m_nvram[offset & 0x3fff] = data;
+
+	if (offset < 0x10000/2)
+	{
+		uint32_t prot_offs = (offset * 2) & 0xf00;
+		if (!m_lock)
+		{
+			if (prot_offs == 0xd00)
+			{
+				//printf("RAM enable %s!\n", BIT(data, 7) ? "Yes" : "No");
+				m_ram_enable = BIT(data, 7);
+			}
+			if (prot_offs == 0xe00)
+			{
+				if (BIT(data, 5))
+					m_mode = 2;
+				else if (BIT(data, 6))
+					m_mode = 1;
+				else
+					m_mode = 0;
+				//printf("ROM mode %d!\n", m_mode);
+
+				if (!BIT(data, 7))
+				{
+					//printf("LOCK BANKSWITCH!\n");
+					m_lock = 1;
+				}
+			}
+			if (prot_offs == 0xf00)
+			{
+				m_base = ((data >> 4) & 7);
+				m_mode = 1;
+				//printf("ROM base %d!\n", m_base);
+			}
+		}
+	}
+
+}
+
+uint16_t md_rom_starodys_device::read_a13(offs_t offset)
+{
+	return m_base << 4;
+}
+
+// this works the same as in standard SRAM carts
+void md_rom_starodys_device::write_a13(offs_t offset, uint16_t data)
+{
+	if (offset == 0xf0/2)
+	{
+		m_nvram_active = BIT(data, 0);
+		m_nvram_readonly = BIT(data, 1);
+
+		if (m_nvram_active)
+			m_nvram_handlers_installed = 1;
+	}
+}
+
+
+/*-------------------------------------------------
+ Futbol Argentino 96 (Argentina)
+ -------------------------------------------------*/
+
+uint16_t md_rom_sram_arg96_device::read(offs_t offset)
+{
+	if (offset < 0x400000 / 2)
+	{
+		return md_rom_sram_device::read(offset);
+	}
+	else
+	{
+		// these return values are probably connected somehow with the writes
+		// but the game only ever looks for these results before doing DMA operations
+		if ((offset * 2) == 0x4c6200)
+			return 0xa;
+		else if ((offset * 2) == 0x4c6600)
+			return 0x9;
+		else if ((offset * 2) == 0x4c6a00)
+			return 0x7;
+		else
+			logerror("unhandled read at offset %08x\n", offset);
+
+		return 0x0000;
+	}
+}
+
+void md_rom_sram_arg96_device::write(offs_t offset, uint16_t data, uint16_t mem_mask)
+{
+	if (offset < 0x400000/2)
+	{
+		md_rom_sram_device::write(offset, data, mem_mask);
+	}
+	else
+	{
+		logerror("unhandled write at offset %08x %04x %04x\n", offset, data, mem_mask);
 	}
 }

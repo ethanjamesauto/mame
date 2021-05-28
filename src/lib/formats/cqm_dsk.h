@@ -7,9 +7,10 @@
     CopyQM disk images
 
 *********************************************************************/
+#ifndef MAME_FORMATS_CQM_DSK_H
+#define MAME_FORMATS_CQM_DSK_H
 
-#ifndef CQM_DSK_H_
-#define CQM_DSK_H_
+#pragma once
 
 #include "flopimg.h"
 
@@ -18,9 +19,9 @@ class cqm_format : public floppy_image_format_t
 public:
 	cqm_format();
 
-	virtual int identify(io_generic *io, UINT32 form_factor) override;
-	virtual bool load(io_generic *io, UINT32 form_factor, floppy_image *image) override;
-	virtual bool save(io_generic *io, floppy_image *image) override;
+	virtual int identify(io_generic *io, uint32_t form_factor, const std::vector<uint32_t> &variants) override;
+	virtual bool load(io_generic *io, uint32_t form_factor, const std::vector<uint32_t> &variants, floppy_image *image) override;
+	virtual bool save(io_generic *io, const std::vector<uint32_t> &variants, floppy_image *image) override;
 
 	virtual const char *name() const override;
 	virtual const char *description() const override;
@@ -30,4 +31,4 @@ public:
 
 extern const floppy_format_type FLOPPY_CQM_FORMAT;
 
-#endif /* CQM_DSK_H_ */
+#endif // MAME_FORMATS_CQM_DSK_H

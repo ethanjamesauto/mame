@@ -5,18 +5,27 @@
 //  window.h - Win32 window handling
 //
 //============================================================
+#ifndef MAME_OSD_WINDOWS_WINDOW_H
+#define MAME_OSD_WINDOWS_WINDOW_H
 
-#ifndef __WIN_WINDOW__
-#define __WIN_WINDOW__
+#pragma once
 
-#include "video.h"
 #include "render.h"
 
 #include "modules/osdwindow.h"
+#include "modules/lib/osdlib.h"
 
-//============================================================
-//  PARAMETERS
-//============================================================
+#include <chrono>
+#include <list>
+#include <memory>
+#include <mutex>
+#include <utility>
+#include <vector>
+
+// standard windows headers
+#include <windows.h>
+#include <windowsx.h>
+#include <mmsystem.h>
 
 
 //============================================================
@@ -33,83 +42,88 @@
 //  TYPE DEFINITIONS
 //============================================================
 
-class win_window_info  : public osd_window
+enum class win_window_focus
+{
+	NONE,       // neither this window nor this thread have focus
+	THREAD,     // a window in this thread has focus
+	WINDOW      // this window has focus directly
+};
+
+
+class win_window_info  : public osd_window_t<HWND>
 {
 public:
-	win_window_info(running_machine &machine);
-	virtual ~win_window_info();
+	win_window_info(running_machine &machine, int index, std::shared_ptr<osd_monitor_info> monitor, const osd_window_config *config);
 
-	running_machine &machine() const override { return m_machine; }
+	bool attached_mode() const { return m_attached_mode; }
+	win_window_focus focus() const;
 
-	virtual render_target *target() override { return m_target; }
-	int fullscreen() const override { return m_fullscreen; }
-
-	void update();
-
-	virtual osd_monitor_info *winwindow_video_window_monitor(const osd_rect *proposed) override;
+	void update() override;
 
 	virtual bool win_has_menu() override
 	{
-		return GetMenu(m_hwnd) ? true : false;
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP)
+		return GetMenu(platform_window()) ? true : false;
+#else
+		return false;
+#endif
 	}
 
 	virtual osd_dim get_size() override
 	{
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP)
 		RECT client;
-		GetClientRect(m_hwnd, &client);
+		GetClientRect(platform_window(), &client);
 		return osd_dim(client.right - client.left, client.bottom - client.top);
+#else
+		throw ref new Platform::NotImplementedException();
+#endif
 	}
 
-	virtual osd_monitor_info *monitor() const override { return m_monitor; }
+	void capture_pointer() override;
+	void release_pointer() override;
+	void show_pointer() override;
+	void hide_pointer() override;
 
-	void destroy();
+	void complete_destroy() override;
 
 	// static
 
-	static void create(running_machine &machine, int index, osd_monitor_info *monitor, const osd_window_config *config);
+	static void create(running_machine &machine, int index, std::shared_ptr<osd_monitor_info> monitor, const osd_window_config *config);
 
 	// static callbacks
 
 	static LRESULT CALLBACK video_window_proc(HWND wnd, UINT message, WPARAM wparam, LPARAM lparam);
-	static unsigned __stdcall thread_entry(void *param);
 
 	// member variables
 
-	win_window_info *   m_next;
 	volatile int        m_init_state;
 
 	// window handle and info
-	char                m_title[256];
 	RECT                m_non_fullscreen_bounds;
 	int                 m_startmaximized;
 	int                 m_isminimized;
 	int                 m_ismaximized;
 
 	// monitor info
-	osd_monitor_info *  m_monitor;
-	int                 m_fullscreen;
-	int                 m_fullscreen_safe;
-	float               m_aspect;
+	int                                m_fullscreen_safe;
+	float                              m_aspect;
 
 	// rendering info
-	osd_lock *          m_render_lock;
-	render_target *     m_target;
-	int                 m_targetview;
+	std::mutex          m_render_lock;
+	unsigned            m_targetview;
 	int                 m_targetorient;
 	render_layer_config m_targetlayerconfig;
+	u32                 m_targetvismask;
 
 	// input info
-	DWORD               m_lastclicktime;
-	int                 m_lastclickx;
-	int                 m_lastclicky;
-
-	// drawing data
-	osd_renderer *      m_renderer;
+	std::chrono::steady_clock::time_point  m_lastclicktime;
+	int                                    m_lastclickx;
+	int                                    m_lastclicky;
 
 private:
-	void draw_video_contents(HDC dc, int update);
+	void draw_video_contents(HDC dc, bool update);
 	int complete_create();
-	void set_starting_view(int index, const char *defview, const char *view);
 	int wnd_extra_width();
 	int wnd_extra_height();
 	osd_rect constrain_to_aspect_ratio(const osd_rect &rect, int adjustment);
@@ -121,7 +135,13 @@ private:
 	void adjust_window_position_after_major_change();
 	void set_fullscreen(int fullscreen);
 
-	running_machine &   m_machine;
+	static POINT        s_saved_cursor_pos;
+
+#if !WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP)
+	static Windows::UI::Core::CoreCursor^ s_cursor;
+#endif
+
+	bool                m_attached_mode;
 };
 
 struct osd_draw_callbacks
@@ -130,20 +150,12 @@ struct osd_draw_callbacks
 	void (*exit)(void);
 };
 
-//============================================================
-//  GLOBAL VARIABLES
-//============================================================
-
-// windows
-extern win_window_info *win_window_list;
-
-
 
 //============================================================
 //  PROTOTYPES
 //============================================================
 
-BOOL winwindow_has_focus(void);
+bool winwindow_has_focus(void);
 void winwindow_update_cursor_state(running_machine &machine);
 
 extern LRESULT CALLBACK winwindow_video_window_proc_ui(HWND wnd, UINT message, WPARAM wparam, LPARAM lparam);
@@ -154,13 +166,11 @@ void winwindow_take_video(void);
 void winwindow_toggle_fsfx(void);
 
 void winwindow_process_events_periodic(running_machine &machine);
-void winwindow_process_events(running_machine &machine, int ingame, bool nodispatch);
+void winwindow_process_events(running_machine &machine, bool ingame, bool nodispatch);
 
-void winwindow_ui_pause_from_window_thread(running_machine &machine, int pause);
-void winwindow_ui_pause_from_main_thread(running_machine &machine, int pause);
+void winwindow_ui_pause(running_machine &machine, int pause);
 int winwindow_ui_is_paused(running_machine &machine);
 
-void winwindow_ui_exec_on_main_thread(void (*func)(void *), void *param);
 void winwindow_dispatch_message(running_machine &machine, MSG *message);
 
 extern int win_create_menu(running_machine &machine, HMENU *menus);
@@ -182,4 +192,4 @@ static inline int rect_height(const RECT *rect)
 	return rect->bottom - rect->top;
 }
 
-#endif
+#endif // MAME_OSD_WINDOWS_WINDOW_H

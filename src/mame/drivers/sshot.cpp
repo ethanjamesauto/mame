@@ -164,6 +164,9 @@ Given CS numbers this is released after the other GunChamp
 
 #include "emu.h"
 #include "cpu/scmp/scmp.h"
+#include "emupal.h"
+#include "screen.h"
+#include "tilemap.h"
 
 #include "gunchamps.lh"
 
@@ -171,22 +174,27 @@ Given CS numbers this is released after the other GunChamp
 class supershot_state : public driver_device
 {
 public:
-	supershot_state(const machine_config &mconfig, device_type type, const char *tag)
-		: driver_device(mconfig, type, tag),
+	supershot_state(const machine_config &mconfig, device_type type, const char *tag) :
+		driver_device(mconfig, type, tag),
 		m_videoram(*this, "videoram"),
 		m_maincpu(*this, "maincpu"),
-		m_gfxdecode(*this, "gfxdecode") { }
+		m_gfxdecode(*this, "gfxdecode")
+	{ }
 
-	required_shared_ptr<UINT8> m_videoram;
+	void supershot(machine_config &config);
+
+private:
+	required_shared_ptr<uint8_t> m_videoram;
 	tilemap_t   *m_tilemap;
-	DECLARE_WRITE8_MEMBER(supershot_vidram_w);
-	DECLARE_WRITE8_MEMBER(supershot_output0_w);
-	DECLARE_WRITE8_MEMBER(supershot_output1_w);
+	void supershot_vidram_w(offs_t offset, uint8_t data);
+	void supershot_output0_w(uint8_t data);
+	void supershot_output1_w(uint8_t data);
 	TILE_GET_INFO_MEMBER(get_supershot_text_tile_info);
 	virtual void video_start() override;
-	UINT32 screen_update_supershot(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
+	uint32_t screen_update_supershot(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
 	required_device<cpu_device> m_maincpu;
 	required_device<gfxdecode_device> m_gfxdecode;
+	void supershot_map(address_map &map);
 };
 
 
@@ -198,22 +206,22 @@ public:
 
 TILE_GET_INFO_MEMBER(supershot_state::get_supershot_text_tile_info)
 {
-	UINT8 code = m_videoram[tile_index];
-	SET_TILE_INFO_MEMBER(0, code, 0, 0);
+	uint8_t code = m_videoram[tile_index];
+	tileinfo.set(0, code, 0, 0);
 }
 
 void supershot_state::video_start()
 {
-	m_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(supershot_state::get_supershot_text_tile_info),this), TILEMAP_SCAN_ROWS, 8, 8, 32, 32);
+	m_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(supershot_state::get_supershot_text_tile_info)), TILEMAP_SCAN_ROWS, 8, 8, 32, 32);
 }
 
-UINT32 supershot_state::screen_update_supershot(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t supershot_state::screen_update_supershot(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	m_tilemap->draw(screen, bitmap, cliprect, 0, 0);
 	return 0;
 }
 
-WRITE8_MEMBER(supershot_state::supershot_vidram_w)
+void supershot_state::supershot_vidram_w(offs_t offset, uint8_t data)
 {
 	m_videoram[offset] = data;
 	m_tilemap->mark_tile_dirty(offset);
@@ -226,7 +234,7 @@ WRITE8_MEMBER(supershot_state::supershot_vidram_w)
  *
  *************************************/
 
-WRITE8_MEMBER(supershot_state::supershot_output0_w)
+void supershot_state::supershot_output0_w(uint8_t data)
 {
 	/*
 	    bit     signal      description
@@ -242,7 +250,7 @@ WRITE8_MEMBER(supershot_state::supershot_output0_w)
 	*/
 }
 
-WRITE8_MEMBER(supershot_state::supershot_output1_w)
+void supershot_state::supershot_output1_w(uint8_t data)
 {
 	/*
 	    bit     signal      description
@@ -265,17 +273,18 @@ WRITE8_MEMBER(supershot_state::supershot_output1_w)
  *
  *************************************/
 
-static ADDRESS_MAP_START( supershot_map, AS_PROGRAM, 8, supershot_state )
-	AM_RANGE(0x0000, 0x1fff) AM_ROM
-	AM_RANGE(0x2000, 0x23ff) AM_RAM_WRITE(supershot_vidram_w ) AM_SHARE("videoram")
-	AM_RANGE(0x4100, 0x41ff) AM_RAM
-	AM_RANGE(0x4200, 0x4200) AM_READ_PORT("GUNX")
-	AM_RANGE(0x4201, 0x4201) AM_READ_PORT("GUNY")
-	AM_RANGE(0x4202, 0x4202) AM_READ_PORT("IN0")
-	AM_RANGE(0x4203, 0x4203) AM_READ_PORT("DSW")
-	AM_RANGE(0x4206, 0x4206) AM_WRITE(supershot_output0_w)
-	AM_RANGE(0x4207, 0x4207) AM_WRITE(supershot_output1_w)
-ADDRESS_MAP_END
+void supershot_state::supershot_map(address_map &map)
+{
+	map(0x0000, 0x1fff).rom();
+	map(0x2000, 0x23ff).ram().w(FUNC(supershot_state::supershot_vidram_w)).share("videoram");
+	map(0x4100, 0x41ff).ram();
+	map(0x4200, 0x4200).portr("GUNX");
+	map(0x4201, 0x4201).portr("GUNY");
+	map(0x4202, 0x4202).portr("IN0");
+	map(0x4203, 0x4203).portr("DSW");
+	map(0x4206, 0x4206).w(FUNC(supershot_state::supershot_output0_w));
+	map(0x4207, 0x4207).w(FUNC(supershot_state::supershot_output1_w));
+}
 
 
 /*************************************
@@ -292,10 +301,10 @@ static INPUT_PORTS_START( supershot )
 	PORT_BIT( 0xff, 0x80, IPT_LIGHTGUN_Y ) PORT_CROSSHAIR(Y, 1.0, 0.0, 0) PORT_SENSITIVITY(70) PORT_KEYDELTA(10) PORT_PLAYER(1)
 
 	PORT_START("IN0")
-	PORT_BIT( 0xf4, IP_ACTIVE_HIGH, IPT_UNUSED )
-	PORT_BIT( 0x08, IP_ACTIVE_HIGH, IPT_BUTTON1 )
+	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_START1 )
 	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_COIN1 )
-	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_START )
+	PORT_BIT( 0x08, IP_ACTIVE_HIGH, IPT_BUTTON1 )
+	PORT_BIT( 0xf4, IP_ACTIVE_HIGH, IPT_UNUSED )
 
 	PORT_START("DSW")
 	PORT_DIPUNUSED( 0x01, 0x00 )
@@ -332,31 +341,31 @@ static const gfx_layout supershot_charlayout =
 	8*8
 };
 
-static GFXDECODE_START( supershot )
+static GFXDECODE_START( gfx_supershot )
 	GFXDECODE_ENTRY( "gfx", 0, supershot_charlayout,   0, 1  )
 GFXDECODE_END
 
-static MACHINE_CONFIG_START( supershot, supershot_state )
-
+void supershot_state::supershot(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", SCMP, XTAL_11_289MHz/4)
-	MCFG_CPU_PROGRAM_MAP(supershot_map)
+	INS8060(config, m_maincpu, XTAL(11'289'000)/4);
+	m_maincpu->set_addrmap(AS_PROGRAM, &supershot_state::supershot_map);
 
 	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_REFRESH_RATE(60)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(2500))
-	MCFG_SCREEN_SIZE((32)*8, (32)*8)
-	MCFG_SCREEN_VISIBLE_AREA(0*8, 32*8-1, 0*8, 32*8-1)
-	MCFG_SCREEN_UPDATE_DRIVER(supershot_state, screen_update_supershot)
-	MCFG_SCREEN_PALETTE("palette")
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_RASTER));
+	screen.set_refresh_hz(60);
+	screen.set_vblank_time(ATTOSECONDS_IN_USEC(2500));
+	screen.set_size((32)*8, (32)*8);
+	screen.set_visarea(0*8, 32*8-1, 0*8, 32*8-1);
+	screen.set_screen_update(FUNC(supershot_state::screen_update_supershot));
+	screen.set_palette("palette");
 
-	MCFG_GFXDECODE_ADD("gfxdecode", "palette", supershot)
-	MCFG_PALETTE_ADD_BLACK_AND_WHITE("palette")
+	GFXDECODE(config, m_gfxdecode, "palette", gfx_supershot);
+	PALETTE(config, "palette", palette_device::MONOCHROME);
 
 	/* sound hardware */
 	//...
-MACHINE_CONFIG_END
+}
 
 
 ROM_START( sshot )
@@ -395,5 +404,5 @@ ROM_START( gunchamps )
 ROM_END
 
 
-GAME( 1979, sshot,     0,        supershot, supershot, driver_device, 0, ROT0, "Model Racing", "Super Shot", MACHINE_IMPERFECT_GRAPHICS | MACHINE_NO_SOUND )
-GAMEL(1980, gunchamps, gunchamp, supershot, supershot, driver_device, 0, ROT0, "Model Racing", "Gun Champ (newer, Super Shot hardware)", MACHINE_IMPERFECT_GRAPHICS | MACHINE_NO_SOUND | MACHINE_NOT_WORKING, layout_gunchamps )
+GAME( 1979, sshot,     0,        supershot, supershot, supershot_state, empty_init, ROT0, "Model Racing", "Super Shot",                             MACHINE_IMPERFECT_GRAPHICS | MACHINE_NO_SOUND )
+GAMEL(1980, gunchamps, gunchamp, supershot, supershot, supershot_state, empty_init, ROT0, "Model Racing", "Gun Champ (newer, Super Shot hardware)", MACHINE_IMPERFECT_GRAPHICS | MACHINE_NO_SOUND | MACHINE_NOT_WORKING, layout_gunchamps )

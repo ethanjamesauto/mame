@@ -1,4 +1,4 @@
-// license:???
+// license:GPL-2.0+
 // copyright-holders:Jarek Burczynski, Tomasz Slanina
 /**************************************************************************************
 
@@ -164,9 +164,13 @@ Notes:
 **************************************************************************************/
 
 #include "emu.h"
+
 #include "cpu/z80/z80.h"
-#include "sound/dac.h"
-#include "sound/sn76496.h"
+#include "sound/samples.h"
+#include "sound/sn76477.h"
+#include "emupal.h"
+#include "screen.h"
+#include "speaker.h"
 
 
 /*************************************
@@ -185,19 +189,52 @@ public:
 		m_io9400(*this, "io9400"),
 		m_io9401(*this, "io9401"),
 		m_maincpu(*this, "maincpu"),
-		m_palette(*this, "palette") { }
+		m_palette(*this, "palette"),
+		m_samples(*this, "samples"),
+		m_sn(*this, "snsnd"),
+		m_sound1(0),
+		m_sound2(0),
+		m_sound3(0)
+	{ }
 
-	required_shared_ptr<UINT8> m_colorram;
-	required_shared_ptr<UINT8> m_videoram;
-	required_shared_ptr<UINT8> m_io9400;
-	required_shared_ptr<UINT8> m_io9401;
-	DECLARE_WRITE8_MEMBER(zvideoram_w);
-	DECLARE_READ8_MEMBER(spaceg_colorram_r);
-	DECLARE_PALETTE_INIT(spaceg);
-	UINT32 screen_update_spaceg(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
+	void spaceg(machine_config &config);
+
+protected:
+	virtual void driver_start() override;
+
+private:
+	required_shared_ptr<uint8_t> m_colorram;
+	required_shared_ptr<uint8_t> m_videoram;
+	required_shared_ptr<uint8_t> m_io9400;
+	required_shared_ptr<uint8_t> m_io9401;
+
 	required_device<cpu_device> m_maincpu;
 	required_device<palette_device> m_palette;
+	required_device<samples_device> m_samples;
+	required_device<sn76477_device> m_sn;
+
+	uint8_t m_sound1;
+	uint8_t m_sound2;
+	uint8_t m_sound3;
+
+	void zvideoram_w(offs_t offset, uint8_t data);
+	uint8_t colorram_r(offs_t offset);
+	void sound1_w(uint8_t data);
+	void sound2_w(uint8_t data);
+	void sound3_w(uint8_t data);
+
+	void spaceg_palette(palette_device &palette) const;
+	uint32_t screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
+
+	void spaceg_map(address_map &map);
 };
+
+void spaceg_state::driver_start()
+{
+	save_item(NAME(m_sound1));
+	save_item(NAME(m_sound2));
+	save_item(NAME(m_sound3));
+}
 
 /*************************************
  *
@@ -205,40 +242,38 @@ public:
  *
  *************************************/
 
-PALETTE_INIT_MEMBER(spaceg_state, spaceg)
+void spaceg_state::spaceg_palette(palette_device &palette) const
 {
-	int i;
-
-	for (i = 0; i < 128; i++)
-		palette.set_pen_color (i, rgb_t(0x00,0x00,0x00));
+	for (int i = 0; i < 128; i++)
+		palette.set_pen_color(i, rgb_t(0x00, 0x00, 0x00));
 
 	// proms are currently undumped...
-	palette.set_pen_color (0, rgb_t(0x00,0x00,0x00)); //ok czarny
-	palette.set_pen_color (1, rgb_t(0x7f,0x00,0x00));//???
-	palette.set_pen_color (2, rgb_t(0xff,0xff,0xff)); //ok+ bialy
-	palette.set_pen_color (3, rgb_t(0xff,0x00,0x00)); //ok j.czerw.
-	palette.set_pen_color (4, rgb_t(0x3f,0x3f,0xff)); //ok j.niebieski
-	palette.set_pen_color (5, rgb_t(0x3f,0xff,0x3f)); //ok j.zielony
-	palette.set_pen_color (6, rgb_t(0xff,0xbf,0xbf)); //ok+ 'majtki'
-	palette.set_pen_color (7, rgb_t(0xff,0xff,0x00)); //ok+ zolty
+	palette.set_pen_color( 0, rgb_t(0x00, 0x00, 0x00)); //ok czarny
+	palette.set_pen_color( 1, rgb_t(0x7f, 0x00, 0x00));//???
+	palette.set_pen_color( 2, rgb_t(0xff, 0xff, 0xff)); //ok+ bialy
+	palette.set_pen_color( 3, rgb_t(0xff, 0x00, 0x00)); //ok j.czerw.
+	palette.set_pen_color( 4, rgb_t(0x3f, 0x3f, 0xff)); //ok j.niebieski
+	palette.set_pen_color( 5, rgb_t(0x3f, 0xff, 0x3f)); //ok j.zielony
+	palette.set_pen_color( 6, rgb_t(0xff, 0xbf, 0xbf)); //ok+ 'majtki'
+	palette.set_pen_color( 7, rgb_t(0xff, 0xff, 0x00)); //ok+ zolty
 
-	palette.set_pen_color (8, rgb_t(0xff,0x7f,0x00)); //ok+ pomaranczowy
-	palette.set_pen_color (9, rgb_t(0x3f,0xbf,0xff)); //ok j.niebieski (ciemniejszy od 13)
-	palette.set_pen_color (10, rgb_t(0x3f,0xbf,0x3f));    //ok+ c.zielony
-	palette.set_pen_color (11, rgb_t(0x00,0xff,0x00));    //ok j.zielony
-	palette.set_pen_color (12, rgb_t(0x7f,0x00,0x00));    //ok brazowy (c.czerw)
-	palette.set_pen_color (13, rgb_t(0x7f,0xbf,0xff));    //ok j.niebieski (jasniejszy od 9)
-	palette.set_pen_color (14, rgb_t(0x00,0xff,0xff));//???
-	palette.set_pen_color (15, rgb_t(0x7f,0x7f,0x7f));//???
+	palette.set_pen_color( 8, rgb_t(0xff, 0x7f, 0x00)); //ok+ pomaranczowy
+	palette.set_pen_color( 9, rgb_t(0x3f, 0xbf, 0xff)); //ok j.niebieski (ciemniejszy od 13)
+	palette.set_pen_color(10, rgb_t(0x3f, 0xbf, 0x3f));    //ok+ c.zielony
+	palette.set_pen_color(11, rgb_t(0x00, 0xff, 0x00));    //ok j.zielony
+	palette.set_pen_color(12, rgb_t(0x7f, 0x00, 0x00));    //ok brazowy (c.czerw)
+	palette.set_pen_color(13, rgb_t(0x7f, 0xbf, 0xff));    //ok j.niebieski (jasniejszy od 9)
+	palette.set_pen_color(14, rgb_t(0x00, 0xff, 0xff));//???
+	palette.set_pen_color(15, rgb_t(0x7f, 0x7f, 0x7f));//???
 }
 
-WRITE8_MEMBER(spaceg_state::zvideoram_w)
+void spaceg_state::zvideoram_w(offs_t offset, uint8_t data)
 {
 	int col = m_colorram[0x400];
 	int xoff = *m_io9400 >> 5 & 7;
-	UINT16 offset2 = (offset + 0x100) & 0x1fff;
-	UINT16 sdata = data << (8 - xoff);
-	UINT16 vram_data = m_videoram[offset] << 8 | (m_videoram[offset2]);
+	uint16_t offset2 = (offset + 0x100) & 0x1fff;
+	uint16_t sdata = data << (8 - xoff);
+	uint16_t vram_data = m_videoram[offset] << 8 | (m_videoram[offset2]);
 
 	if (col > 0x0f) popmessage("color > 0x0f = %2d", col);
 	col &= 0x0f;
@@ -248,7 +283,7 @@ WRITE8_MEMBER(spaceg_state::zvideoram_w)
 		// draw
 		case 0:
 			vram_data &= ~(0xff00 >> xoff);
-			// (fall through)
+			[[fallthrough]];
 		case 1:
 			vram_data |= sdata;
 
@@ -263,8 +298,8 @@ WRITE8_MEMBER(spaceg_state::zvideoram_w)
 			break;
 
 		default:
-			logerror("mode = %02x pc = %04x\n", *m_io9401, space.device().safe_pc());
-			popmessage("mode = %02x pc = %04x\n", *m_io9401, space.device().safe_pc());
+			logerror("mode = %02x pc = %04x\n", *m_io9401, m_maincpu->pc());
+			popmessage("mode = %02x pc = %04x\n", *m_io9401, m_maincpu->pc());
 			return;
 	}
 
@@ -273,7 +308,7 @@ WRITE8_MEMBER(spaceg_state::zvideoram_w)
 }
 
 
-READ8_MEMBER(spaceg_state::spaceg_colorram_r)
+uint8_t spaceg_state::colorram_r(offs_t offset)
 {
 	int rgbcolor;
 
@@ -304,20 +339,17 @@ READ8_MEMBER(spaceg_state::spaceg_colorram_r)
 }
 
 
-UINT32 spaceg_state::screen_update_spaceg(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t spaceg_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
-	offs_t offs;
-
-	for (offs = 0; offs < 0x2000; offs++)
+	for (offs_t offs = 0; offs < 0x2000; offs++)
 	{
-		int i;
-		UINT8 data = m_videoram[offs];
+		uint8_t data = m_videoram[offs];
 		int y = offs & 0xff;
 		int x = (offs >> 8) << 3;
 
-		for (i = 0; i < 8; i++)
+		for (int i = 0; i < 8; i++)
 		{
-			bitmap.pix16(y, x) = (data & 0x80) ? m_colorram[offs] : 0;
+			bitmap.pix(y, x) = (data & 0x80) ? m_colorram[offs] : 0;
 
 			x++;
 			data <<= 1;
@@ -327,6 +359,62 @@ UINT32 spaceg_state::screen_update_spaceg(screen_device &screen, bitmap_ind16 &b
 	return 0;
 }
 
+static const char *const invaders_sample_names[] =
+{
+	"*invaders",
+	"1",        /* shot/missle */
+	"2",        /* base hit/explosion */
+	"3",        /* invader hit */
+	"4",        /* fleet move 1 */
+	"5",        /* fleet move 2 */
+	"6",        /* fleet move 3 */
+	"7",        /* fleet move 4 */
+	"8",        /* UFO/saucer hit */
+	"9",        /* bonus base */
+	nullptr
+};
+
+void spaceg_state::sound1_w(uint8_t data)
+{
+	if (!BIT(m_sound1, 1) && BIT(data, 1))
+		m_samples->start(1, 1); // Death
+
+	if (!BIT(m_sound1, 2) && BIT(data, 2))
+		m_samples->start(0, 0); // Shoot
+
+	m_sn->enable_w(!(data & 0x08)); // Boss
+
+	m_sound1 = data;
+
+	if (data & ~0x0e) logerror("spaceg sound3 unmapped %02x\n", data & ~0x0e);
+}
+
+void spaceg_state::sound2_w(uint8_t data)
+{
+	// game writes 0x01 at bootup & 0x11 when you start a game
+	m_sound2 = data;
+
+	if (data & ~0x11) logerror("spaceg sound2 unmapped %02x\n", data & ~0x11);
+}
+
+void spaceg_state::sound3_w(uint8_t data)
+{
+	if (!BIT(m_sound3, 0) && BIT(data, 0))
+		m_samples->start(4, 8); // Start of level
+
+	if (!BIT(m_sound3, 1) && BIT(data, 1))
+		m_samples->start(5, 8); // Rocket
+
+	if (!BIT(m_sound3, 2) && BIT(data, 2))
+		m_samples->start(2, 2); // Hit
+
+	if (!BIT(m_sound3, 3) && BIT(data, 3))
+		m_samples->start(3, 7); // Dive bomb
+
+	m_sound3 = data;
+
+	if (data & ~0x0f) logerror("spaceg sound3 unmapped %02x\n", data & ~0x0f);
+}
 
 /*************************************
  *
@@ -334,30 +422,34 @@ UINT32 spaceg_state::screen_update_spaceg(screen_device &screen, bitmap_ind16 &b
  *
  *************************************/
 
-static ADDRESS_MAP_START( spaceg_map, AS_PROGRAM, 8, spaceg_state )
-	AM_RANGE(0x0000, 0x1fff) AM_ROM
-	AM_RANGE(0x3000, 0x3fff) AM_ROM
-	AM_RANGE(0x7000, 0x77ff) AM_RAM
+void spaceg_state::spaceg_map(address_map &map)
+{
+	map(0x0000, 0x1fff).rom();
+	map(0x3000, 0x3fff).rom();
+	map(0x7000, 0x77ff).ram();
 
-	AM_RANGE(0xa000, 0xbfff) AM_RAM_READ(spaceg_colorram_r) AM_SHARE("colorram")
-	AM_RANGE(0xc000, 0xdfff) AM_RAM_WRITE(zvideoram_w) AM_SHARE("videoram")
+	map(0xa000, 0xbfff).ram().r(FUNC(spaceg_state::colorram_r)).share("colorram");
+	map(0xc000, 0xdfff).ram().w(FUNC(spaceg_state::zvideoram_w)).share("videoram");
 
-	AM_RANGE(0x9400, 0x9400) AM_WRITEONLY AM_SHARE("io9400") /* gfx ctrl */
-	AM_RANGE(0x9401, 0x9401) AM_WRITEONLY AM_SHARE("io9401") /* gfx ctrl */
+	map(0x9400, 0x9400).writeonly().share("io9400"); /* gfx ctrl */
+	map(0x9401, 0x9401).writeonly().share("io9401"); /* gfx ctrl */
 	/* 9402 -
 	    bits 0 and 1 probably control the lamps under the player 1 and player 2 start buttons
 	    bit 2 - unknown -
 	    bit 3 is probably a flip screen
 	    bit 7 - unknown - set to 1 during the gameplay (coinlock ?)
 	*/
-	AM_RANGE(0x9402, 0x9407) AM_RAM     /* surely wrong */
+	map(0x9402, 0x9402).nopw();
+	map(0x9405, 0x9405).w(FUNC(spaceg_state::sound1_w));
+	map(0x9406, 0x9406).w(FUNC(spaceg_state::sound2_w));
+	map(0x9407, 0x9407).w(FUNC(spaceg_state::sound3_w));
 
-	AM_RANGE(0x9800, 0x9800) AM_READ_PORT("9800")
-	AM_RANGE(0x9801, 0x9801) AM_READ_PORT("9801")
-	AM_RANGE(0x9802, 0x9802) AM_READ_PORT("9802")
-	AM_RANGE(0x9805, 0x9805) AM_READ_PORT("9805")
-	AM_RANGE(0x9806, 0x9806) AM_READ_PORT("9806")
-ADDRESS_MAP_END
+	map(0x9800, 0x9800).portr("9800");
+	map(0x9801, 0x9801).portr("9801");
+	map(0x9802, 0x9802).portr("9802");
+	map(0x9805, 0x9805).portr("9805");
+	map(0x9806, 0x9806).portr("9806");
+}
 
 
 
@@ -412,40 +504,50 @@ INPUT_PORTS_END
  *
  *************************************/
 
-static MACHINE_CONFIG_START( spaceg, spaceg_state )
-
+void spaceg_state::spaceg(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", Z80,2500000)         /* 2.5 MHz */
-	MCFG_CPU_PROGRAM_MAP(spaceg_map)
-	MCFG_CPU_VBLANK_INT_DRIVER("screen", spaceg_state,  nmi_line_pulse) /* 60 Hz NMIs (verified) */
+	Z80(config, m_maincpu, 2500000);         /* 2.5 MHz */
+	m_maincpu->set_addrmap(AS_PROGRAM, &spaceg_state::spaceg_map);
 
 	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_REFRESH_RATE(60)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(2500)) /* not accurate */
-	MCFG_SCREEN_SIZE(256, 256)
-	MCFG_SCREEN_VISIBLE_AREA(0, 255, 32, 255)
-	MCFG_SCREEN_UPDATE_DRIVER(spaceg_state, screen_update_spaceg)
-	MCFG_SCREEN_PALETTE("palette")
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_RASTER));
+	screen.set_refresh_hz(60);
+	screen.set_vblank_time(ATTOSECONDS_IN_USEC(2500)); /* not accurate */
+	screen.set_size(256, 256);
+	screen.set_visarea(0, 255, 32, 255);
+	screen.set_screen_update(FUNC(spaceg_state::screen_update));
+	screen.set_palette(m_palette);
+	screen.screen_vblank().set_inputline("maincpu", INPUT_LINE_NMI); // 60 Hz NMIs (verified)
 
-	MCFG_PALETTE_ADD("palette", 16+128-16)
-	MCFG_PALETTE_INIT_OWNER(spaceg_state, spaceg)
+	PALETTE(config, m_palette, FUNC(spaceg_state::spaceg_palette), 16+128-16);
 
 	/* sound hardware */
-//  MCFG_SPEAKER_STANDARD_MONO("mono")
+	SPEAKER(config, "mono").front_center();
 
-//  MCFG_SOUND_ADD("sn1", SN76496, 15468480/4)
-//  MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 1.0)
+	// HACK: SN76477 parameters copied from space invaders
+	SN76477(config, m_sn);
+	m_sn->set_noise_params(0, 0, 0);
+	m_sn->set_decay_res(0);
+	m_sn->set_attack_params(0, RES_K(100));
+	m_sn->set_amp_res(RES_K(56));
+	m_sn->set_feedback_res(RES_K(10));
+	m_sn->set_vco_params(0, CAP_U(0.1), RES_K(8.2));
+	m_sn->set_pitch_voltage(5.0);
+	m_sn->set_slf_params(CAP_U(1.0), RES_K(120));
+	m_sn->set_oneshot_params(0, 0);
+	m_sn->set_vco_mode(1);
+	m_sn->set_mixer_params(0, 0, 0);
+	m_sn->set_envelope_params(1, 0);
+	m_sn->set_enable(1);
+	m_sn->add_route(ALL_OUTPUTS, "mono", 0.5);
 
-//  MCFG_SOUND_ADD("sn2", SN76496, 15468480/4)
-//  MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 1.0)
-
-//  MCFG_SOUND_ADD("sn3", SN76496, 15468480/4)
-//  MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 1.0)
-
-//  MCFG_DAC_ADD("dac")
-//  MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 1.0)
-MACHINE_CONFIG_END
+	// HACK: samples copied from space invaders
+	SAMPLES(config, m_samples);
+	m_samples->set_channels(6);
+	m_samples->set_samples_names(invaders_sample_names);
+	m_samples->add_route(ALL_OUTPUTS, "mono", 1.0);
+}
 
 
 /*************************************
@@ -469,9 +571,9 @@ ROM_START( spaceg )
 	ROM_LOAD( "15.9h", 0x3800, 0x0400, CRC(55e2950d) SHA1(2241c3620c9a6df8b8bd234ccee9af5d3d19a5d4) )
 	ROM_LOAD( "16.8h", 0x3c00, 0x0400, CRC(567259c4) SHA1(b2c3f7aaceabea075af6a43b89fb7331732278c8) )
 
-	ROM_REGION( 0x40, "proms", 0 )
-	ROM_LOAD( "prom1", 0x0000, 0x0020, NO_DUMP )
-	ROM_LOAD( "prom2", 0x0020, 0x0020, NO_DUMP )
+	ROM_REGION( 0x40, "proms", 0 ) // the 2 PROMs are identical
+	ROM_LOAD( "74s288.6a", 0x0000, 0x0020, CRC(ae1f4acd) SHA1(1d502b61db73cf6a4ac3d235455a5c464f12652a) )
+	ROM_LOAD( "74s288.6b", 0x0020, 0x0020, CRC(ae1f4acd) SHA1(1d502b61db73cf6a4ac3d235455a5c464f12652a) )
 ROM_END
 
 
@@ -481,4 +583,4 @@ ROM_END
  *
  *************************************/
 
-GAME( 1979, spaceg, 0, spaceg, spaceg, driver_device, 0, ROT270, "Omori Electric Co., Ltd.", "Space Guerrilla", MACHINE_IMPERFECT_GRAPHICS | MACHINE_NO_SOUND | MACHINE_SUPPORTS_SAVE )
+GAME( 1979, spaceg, 0, spaceg, spaceg, spaceg_state, empty_init, ROT270, "Omori Electric Co., Ltd.", "Space Guerrilla", MACHINE_IMPERFECT_GRAPHICS | MACHINE_IMPERFECT_SOUND | MACHINE_SUPPORTS_SAVE )

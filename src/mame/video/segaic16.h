@@ -5,106 +5,136 @@
     Sega 16-bit common hardware
 
 ***************************************************************************/
+#ifndef MAME_VIDEO_SEGAIC16_H
+#define MAME_VIDEO_SEGAIC16_H
 
 #pragma once
-#ifndef __SEGAIC16VID_H__
-#define __SEGAIC16VID_H__
+
+#include "emupal.h"
+#include "tilemap.h"
+
+typedef device_delegate<void (int, uint16_t*, uint16_t*, uint16_t*, uint16_t*)> segaic16_video_pagelatch_delegate;
 
 
-
-/* tilemap systems */
-#define SEGAIC16_MAX_TILEMAPS       1
-
-#define SEGAIC16_TILEMAP_HANGON     0
-#define SEGAIC16_TILEMAP_16A        1
-#define SEGAIC16_TILEMAP_16B        2
-#define SEGAIC16_TILEMAP_16B_ALT    3
-
-#define SEGAIC16_TILEMAP_FOREGROUND 0
-#define SEGAIC16_TILEMAP_BACKGROUND 1
-#define SEGAIC16_TILEMAP_TEXT       2
+//**************************************************************************
+//  TYPE DEFINITIONS
+//**************************************************************************
 
 
+// ======================> sega_16bit_common_base
 
-/* rotation systems */
-#define SEGAIC16_MAX_ROTATE         1
-
-#define SEGAIC16_ROTATE_YBOARD      0
-
-
-
-/*************************************
- *
- *  Type definitions
- *
- *************************************/
-
-
-
-struct tilemap_callback_info
+class sega_16bit_common_base : public driver_device
 {
-	UINT16 *        rambase;                        /* base of RAM for this tilemap page */
-	const UINT8 *   bank;                           /* pointer to bank array */
-	UINT16          banksize;                       /* size of banks */
+public:
+	// palette helpers
+	void paletteram_w(address_space &space, offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	void hangon_paletteram_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	void philko_paletteram_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+
+protected:
+	// construction/destruction
+	sega_16bit_common_base(const machine_config &mconfig, device_type type, const char *tag);
+
+	// internal helpers
+	void palette_init();
+
+public: // -- stupid system16.cpp
+	// memory pointers
+	required_shared_ptr<u16> m_paletteram;
+protected:
+
+	// internal state
+	u32      m_palette_entries;          // number of palette entries
+	u8       m_palette_normal[32];       // RGB translations for normal pixels
+	u8       m_palette_shadow[32];       // RGB translations for shadowed pixels
+	u8       m_palette_hilight[32];      // RGB translations for hilighted pixels
+	required_device<palette_device> m_palette;
 };
-
-
-struct tilemap_info
-{
-	UINT8           index;                          /* index of this structure */
-	UINT8           type;                           /* type of tilemap (see segaic16.h for details) */
-	UINT8           numpages;                       /* number of allocated pages */
-	UINT8           flip;                           /* screen flip? */
-	UINT8           rowscroll, colscroll;           /* are rowscroll/colscroll enabled (if external enables are used) */
-	UINT8           bank[8];                        /* indexes of the tile banks */
-	UINT16          banksize;                       /* number of tiles per bank */
-	UINT16          latched_xscroll[4];             /* latched X scroll values */
-	UINT16          latched_yscroll[4];             /* latched Y scroll values */
-	UINT16          latched_pageselect[4];          /* latched page select values */
-	INT32           xoffs;                          /* X scroll offset */
-	tilemap_t *     tilemaps[16];                   /* up to 16 tilemap pages */
-	tilemap_t *     textmap;                        /* a single text tilemap */
-	struct tilemap_callback_info tmap_info[16];     /* callback info for 16 tilemap pages */
-	struct tilemap_callback_info textmap_info;      /* callback info for a single textmap page */
-	void            (*reset)(screen_device &screen, struct tilemap_info *info);/* reset callback */
-	void            (*draw_layer)(screen_device &screen, struct tilemap_info *info, bitmap_ind16 &bitmap, const rectangle &cliprect, int which, int flags, int priority);
-	UINT16 *        textram;                        /* pointer to textram pointer */
-	UINT16 *        tileram;                        /* pointer to tileram pointer */
-	emu_timer *     latch_timer;                    /* timer for latching 16b tilemap scroll values */
-};
-
-
-struct rotate_info
-{
-	UINT8           index;                          /* index of this structure */
-	UINT8           type;                           /* type of rotate system (see segaic16.h for details) */
-	UINT16          colorbase;                      /* base color index */
-	INT32           ramsize;                        /* size of rotate RAM */
-	UINT16 *        rotateram;                      /* pointer to rotateram pointer */
-	std::unique_ptr<UINT16[]>        buffer;                         /* buffered data */
-};
-
-
-/***************************************************************************
-    FUNCTION PROTOTYPES
-***************************************************************************/
-
 
 
 class segaic16_video_device :   public device_t,
 								public device_video_interface
 {
 public:
-	segaic16_video_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
-	~segaic16_video_device() {}
+	/* tilemap systems */
+	static constexpr unsigned MAX_TILEMAPS       = 1;
 
-	// static configuration
-	static void static_set_gfxdecode_tag(device_t &device, const char *tag);
+	static constexpr unsigned TILEMAP_HANGON     = 0;
+	static constexpr unsigned TILEMAP_16A        = 1;
+	static constexpr unsigned TILEMAP_16B        = 2;
+	static constexpr unsigned TILEMAP_16B_ALT    = 3;
 
-	UINT8 m_display_enable;
-	optional_shared_ptr<UINT16> m_tileram;
-	optional_shared_ptr<UINT16> m_textram;
-	optional_shared_ptr<UINT16> m_rotateram;
+	static constexpr unsigned TILEMAP_FOREGROUND = 0;
+	static constexpr unsigned TILEMAP_BACKGROUND = 1;
+	static constexpr unsigned TILEMAP_TEXT       = 2;
+
+
+
+	/* rotation systems */
+	static constexpr unsigned MAX_ROTATE         = 1;
+
+	static constexpr unsigned ROTATE_YBOARD      = 0;
+
+
+
+	struct tilemap_callback_info
+	{
+		uint16_t *        rambase;                        /* base of RAM for this tilemap page */
+		const uint8_t *   bank;                           /* pointer to bank array */
+		uint16_t          banksize;                       /* size of banks */
+	};
+
+
+	struct tilemap_info
+	{
+		uint8_t           index;                          /* index of this structure */
+		uint8_t           type;                           /* type of tilemap (see segaic16.h for details) */
+		uint8_t           numpages;                       /* number of allocated pages */
+		uint8_t           flip;                           /* screen flip? */
+		uint8_t           rowscroll, colscroll;           /* are rowscroll/colscroll enabled (if external enables are used) */
+		uint8_t           bank[8];                        /* indexes of the tile banks */
+		uint16_t          banksize;                       /* number of tiles per bank */
+		uint16_t          latched_xscroll[4];             /* latched X scroll values */
+		uint16_t          latched_yscroll[4];             /* latched Y scroll values */
+		uint16_t          latched_pageselect[4];          /* latched page select values */
+		int32_t           xoffs;                          /* X scroll offset */
+		tilemap_t *     tilemaps[16];                   /* up to 16 tilemap pages */
+		tilemap_t *     textmap;                        /* a single text tilemap */
+		struct tilemap_callback_info tmap_info[16];     /* callback info for 16 tilemap pages */
+		struct tilemap_callback_info textmap_info;      /* callback info for a single textmap page */
+		void            (*reset)(screen_device &screen, struct tilemap_info *info);/* reset callback */
+		void            (*draw_layer)(screen_device &screen, struct tilemap_info *info, bitmap_ind16 &bitmap, const rectangle &cliprect, int which, int flags, int priority);
+		uint16_t *        textram;                        /* pointer to textram pointer */
+		uint16_t *        tileram;                        /* pointer to tileram pointer */
+		emu_timer *     latch_timer;                    /* timer for latching 16b tilemap scroll values */
+	};
+
+
+	struct rotate_info
+	{
+		uint8_t           index;                          /* index of this structure */
+		uint8_t           type;                           /* type of rotate system (see segaic16.h for details) */
+		uint16_t          colorbase;                      /* base color index */
+		int32_t           ramsize;                        /* size of rotate RAM */
+		uint16_t *        rotateram;                      /* pointer to rotateram pointer */
+		std::unique_ptr<uint16_t[]>        buffer;                         /* buffered data */
+	};
+
+	template <typename T> segaic16_video_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock, T &&decode_tag)
+		: segaic16_video_device(mconfig, tag, owner, clock)
+	{
+		m_gfxdecode.set_tag(std::forward<T>(decode_tag));
+	}
+
+	segaic16_video_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
+
+	// configuration
+	template <typename... T> void set_pagelatch_cb(T &&... args) { m_pagelatch_cb.set(std::forward<T>(args)...); }
+
+	uint8_t m_display_enable;
+	optional_shared_ptr<uint16_t> m_tileram;
+	optional_shared_ptr<uint16_t> m_textram;
+	optional_shared_ptr<uint16_t> m_rotateram;
 
 	void tilemap_set_colscroll(int which, int enable);
 	void tilemap_set_rowscroll(int which, int enable);
@@ -114,26 +144,28 @@ public:
 	void tilemap_draw(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect, int which, int map, int priority, int priority_mark);
 //  void tilemap_16b_draw_layer(screen_device &screen, struct tilemap_info *info, bitmap_ind16 &bitmap, const rectangle &cliprect, int which, int flags, int priority);
 //  void tilemap_16a_draw_layer(screen_device &screen, struct tilemap_info *info, bitmap_ind16 &bitmap, const rectangle &cliprect, int which, int flags, int priority);
-//  void draw_virtual_tilemap(screen_device &screen, struct tilemap_info *info, bitmap_ind16 &bitmap, const rectangle &cliprect, UINT16 pages, UINT16 xscroll, UINT16 yscroll, UINT32 flags, UINT32 priority);
+//  void draw_virtual_tilemap(screen_device &screen, struct tilemap_info *info, bitmap_ind16 &bitmap, const rectangle &cliprect, uint16_t pages, uint16_t xscroll, uint16_t yscroll, uint32_t flags, uint32_t priority);
 //  void tilemap_16b_reset(screen_device &screen, struct tilemap_info *info);
 
+	segaic16_video_pagelatch_delegate m_pagelatch_cb;
+	void tilemap_16b_fill_latch(int i, uint16_t* latched_pageselect, uint16_t* latched_yscroll, uint16_t* latched_xscroll, uint16_t* textram);
 	TIMER_CALLBACK_MEMBER( tilemap_16b_latch_values );
 
-	struct rotate_info m_rotate[SEGAIC16_MAX_ROTATE];
-	struct tilemap_info m_bg_tilemap[SEGAIC16_MAX_TILEMAPS];
+	struct rotate_info m_rotate[MAX_ROTATE];
+	struct tilemap_info m_bg_tilemap[MAX_TILEMAPS];
 
 	void set_display_enable(int enable);
 	void tilemap_init(int which, int type, int colorbase, int xoffs, int numbanks);
 	void rotate_init(int which, int type, int colorbase);
 
-	DECLARE_READ16_MEMBER( tileram_r );
-	DECLARE_READ16_MEMBER( textram_r );
-	DECLARE_WRITE16_MEMBER( tileram_w );
-	DECLARE_WRITE16_MEMBER( textram_w );
+	uint16_t tileram_r(offs_t offset);
+	uint16_t textram_r(offs_t offset);
+	void tileram_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	void textram_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
 
 	void rotate_draw(int which, bitmap_ind16 &bitmap, const rectangle &cliprect, bitmap_ind8 &priority_bitmap, bitmap_ind16 &srcbitmap);
 
-	DECLARE_READ16_MEMBER( rotate_control_r );
+	uint16_t rotate_control_r();
 
 	TILE_GET_INFO_MEMBER( tilemap_16b_tile_info );
 	TILE_GET_INFO_MEMBER( tilemap_16b_text_info );
@@ -153,12 +185,6 @@ private:
 	required_device<gfxdecode_device> m_gfxdecode;
 };
 
-extern const device_type SEGAIC16VID;
+DECLARE_DEVICE_TYPE(SEGAIC16VID, segaic16_video_device)
 
-#define MCFG_SEGAIC16VID_ADD(_tag) \
-	MCFG_DEVICE_ADD(_tag, SEGAIC16VID, 0)
-
-#define MCFG_SEGAIC16VID_GFXDECODE(_gfxtag) \
-	segaic16_video_device::static_set_gfxdecode_tag(*device, "^" _gfxtag);
-
-#endif
+#endif // MAME_VIDEO_SEGAIC16_H

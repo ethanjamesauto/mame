@@ -1,5 +1,5 @@
 // license:BSD-3-Clause
-// copyright-holders:David Haywood
+// copyright-holders:David Haywood,Stephane Humbert
 /*******************************************************************************
  WWF Superstars (C) 1989 Technos Japan  (video/wwfsstar.c)
 ********************************************************************************
@@ -17,13 +17,13 @@
  for writes to Video Ram
 *******************************************************************************/
 
-WRITE16_MEMBER(wwfsstar_state::fg0_videoram_w)
+void wwfsstar_state::fg0_videoram_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	COMBINE_DATA(&m_fg0_videoram[offset]);
 	m_fg0_tilemap->mark_tile_dirty(offset/2);
 }
 
-WRITE16_MEMBER(wwfsstar_state::bg0_videoram_w)
+void wwfsstar_state::bg0_videoram_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	COMBINE_DATA(&m_bg0_videoram[offset]);
 	m_bg0_tilemap->mark_tile_dirty(offset/2);
@@ -50,14 +50,14 @@ TILE_GET_INFO_MEMBER(wwfsstar_state::get_fg0_tile_info)
 
 	**- End of Comments -*/
 
-	UINT16 *tilebase;
+	uint16_t *tilebase;
 	int tileno;
 	int colbank;
 
 	tilebase =  &m_fg0_videoram[tile_index*2];
 	tileno =  (tilebase[1] & 0x00ff) | ((tilebase[0] & 0x000f) << 8);
 	colbank = (tilebase[0] & 0x00f0) >> 4;
-	SET_TILE_INFO_MEMBER(0,
+	tileinfo.set(0,
 			tileno,
 			colbank,
 			0);
@@ -86,14 +86,14 @@ TILE_GET_INFO_MEMBER(wwfsstar_state::get_bg0_tile_info)
 
 	**- End of Comments -*/
 
-	UINT16 *tilebase;
+	uint16_t *tilebase;
 	int tileno, colbank, flipx;
 
 	tilebase =  &m_bg0_videoram[tile_index*2];
 	tileno =  (tilebase[1] & 0x00ff) | ((tilebase[0] & 0x000f) << 8);
 	colbank = (tilebase[0] & 0x0070) >> 4;
 	flipx   = (tilebase[0] & 0x0080) >> 7;
-	SET_TILE_INFO_MEMBER(2,
+	tileinfo.set(2,
 			tileno,
 			colbank,
 			flipx ? TILE_FLIPX : 0);
@@ -129,8 +129,8 @@ void wwfsstar_state::draw_sprites(bitmap_ind16 &bitmap, const rectangle &cliprec
 	**- End of Comments -*/
 
 	gfx_element *gfx = m_gfxdecode->gfx(1);
-	UINT16 *source = m_spriteram;
-	UINT16 *finish = source + 0x3ff/2;
+	uint16_t *source = m_spriteram;
+	uint16_t *finish = source + 0x3ff/2;
 
 	while (source < finish)
 	{
@@ -204,10 +204,10 @@ void wwfsstar_state::draw_sprites(bitmap_ind16 &bitmap, const rectangle &cliprec
 
 void wwfsstar_state::video_start()
 {
-	m_fg0_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(wwfsstar_state::get_fg0_tile_info),this),TILEMAP_SCAN_ROWS, 8, 8,32,32);
+	m_fg0_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(wwfsstar_state::get_fg0_tile_info)), TILEMAP_SCAN_ROWS, 8, 8, 32, 32);
 	m_fg0_tilemap->set_transparent_pen(0);
 
-	m_bg0_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(wwfsstar_state::get_bg0_tile_info),this),tilemap_mapper_delegate(FUNC(wwfsstar_state::bg0_scan),this), 16, 16,32,32);
+	m_bg0_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(wwfsstar_state::get_bg0_tile_info)), tilemap_mapper_delegate(*this, FUNC(wwfsstar_state::bg0_scan)), 16, 16, 32, 32);
 	m_fg0_tilemap->set_transparent_pen(0);
 
 	save_item(NAME(m_vblank));
@@ -215,7 +215,7 @@ void wwfsstar_state::video_start()
 	save_item(NAME(m_scrolly));
 }
 
-UINT32 wwfsstar_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t wwfsstar_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	m_bg0_tilemap->set_scrolly(0, m_scrolly  );
 	m_bg0_tilemap->set_scrollx(0, m_scrollx  );

@@ -1,17 +1,17 @@
 // license:BSD-3-Clause
 // copyright-holders:Curt Coder
+#ifndef MAME_INCLUDES_MPZ80_H
+#define MAME_INCLUDES_MPZ80_H
+
 #pragma once
 
-#ifndef __MPZ80__
-#define __MPZ80__
-
-#include "emu.h"
 #include "bus/s100/s100.h"
 #include "cpu/z80/z80.h"
 #include "machine/ram.h"
 
 #define Z80_TAG         "17a"
 #define AM9512_TAG      "17d"
+#define S100_TAG        "s100"
 
 class mpz80_state : public driver_device
 {
@@ -22,7 +22,7 @@ public:
 			m_ram(*this, RAM_TAG),
 			m_s100(*this, S100_TAG),
 			m_rom(*this, Z80_TAG),
-			m_map_ram(*this, "map_ram"),
+			m_map_ram(*this, "map_ram", 0x200, ENDIANNESS_LITTLE),
 			m_16c(*this, "16C"),
 			m_nmi(1),
 			m_pint(1),
@@ -37,15 +37,19 @@ public:
 			m_trap_aux(1)
 	{ }
 
-	required_device<cpu_device> m_maincpu;
-	required_device<ram_device> m_ram;
-	required_device<s100_bus_t> m_s100;
-	required_memory_region m_rom;
-	optional_shared_ptr<UINT8> m_map_ram;
-	required_ioport m_16c;
+	void mpz80(machine_config &config);
 
+protected:
 	virtual void machine_start() override;
 	virtual void machine_reset() override;
+
+private:
+	required_device<cpu_device> m_maincpu;
+	required_device<ram_device> m_ram;
+	required_device<s100_bus_device> m_s100;
+	required_memory_region m_rom;
+	memory_share_creator<uint8_t> m_map_ram;
+	required_ioport m_16c;
 
 	inline offs_t get_address(offs_t offset);
 	inline offs_t get_io_address(offs_t offset);
@@ -53,27 +57,25 @@ public:
 	inline void check_traps();
 	inline void check_interrupt();
 
-	DECLARE_READ8_MEMBER( mmu_r );
-	DECLARE_WRITE8_MEMBER( mmu_w );
-	DECLARE_READ8_MEMBER( mmu_io_r );
-	DECLARE_WRITE8_MEMBER( mmu_io_w );
-	DECLARE_READ8_MEMBER( trap_addr_r );
-	DECLARE_READ8_MEMBER( keyboard_r );
-	DECLARE_READ8_MEMBER( switch_r );
-	DECLARE_READ8_MEMBER( status_r );
-	DECLARE_WRITE8_MEMBER( disp_seg_w );
-	DECLARE_WRITE8_MEMBER( disp_col_w );
-	DECLARE_WRITE8_MEMBER( task_w );
-	DECLARE_WRITE8_MEMBER( mask_w );
-	DECLARE_WRITE8_MEMBER( terminal_w );
+	uint8_t mmu_r(offs_t offset);
+	void mmu_w(offs_t offset, uint8_t data);
+	uint8_t mmu_io_r(offs_t offset);
+	void mmu_io_w(offs_t offset, uint8_t data);
+	uint8_t trap_addr_r();
+	uint8_t keyboard_r();
+	uint8_t switch_r();
+	uint8_t status_r();
+	void disp_seg_w(uint8_t data);
+	void disp_col_w(uint8_t data);
+	void task_w(uint8_t data);
+	void mask_w(uint8_t data);
 	DECLARE_WRITE_LINE_MEMBER( s100_pint_w );
 	DECLARE_WRITE_LINE_MEMBER( s100_nmi_w );
-	DECLARE_DIRECT_UPDATE_MEMBER(mpz80_direct_update_handler);
 
 	// memory state
-	UINT32 m_addr;
-	UINT8 m_task;
-	UINT8 m_mask;
+	uint32_t m_addr;
+	uint8_t m_task;
+	uint8_t m_mask;
 
 	// interrupt state
 	int m_nmi;
@@ -81,10 +83,10 @@ public:
 	int m_int_pend;
 
 	// trap state
-	UINT8 m_pretrap_addr;
-	UINT8 m_trap_addr;
-	UINT8 m_status;
-	UINT16 m_trap_start;
+	uint8_t m_pretrap_addr;
+	uint8_t m_trap_addr;
+	uint8_t m_status;
+	uint16_t m_trap_start;
 	int m_pretrap;
 	int m_trap;
 	int m_trap_reset;
@@ -93,7 +95,9 @@ public:
 	int m_trap_int;
 	int m_trap_stop;
 	int m_trap_aux;
-	DECLARE_DRIVER_INIT(mpz80);
+	void init_mpz80();
+	void mpz80_io(address_map &map);
+	void mpz80_mem(address_map &map);
 };
 
-#endif
+#endif // MAME_INCLUDES_MPZ80_H

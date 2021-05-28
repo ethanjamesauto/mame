@@ -11,10 +11,9 @@
 #include "machine/z80ctc.h"
 #include "includes/cchasm.h"
 #include "sound/ay8910.h"
-#include "sound/dac.h"
 
 
-WRITE8_MEMBER(cchasm_state::reset_coin_flag_w)
+void cchasm_state::reset_coin_flag_w(uint8_t data)
 {
 	if (m_coin_flag)
 	{
@@ -32,27 +31,27 @@ INPUT_CHANGED_MEMBER(cchasm_state::set_coin_flag )
 	}
 }
 
-READ8_MEMBER(cchasm_state::coin_sound_r)
+uint8_t cchasm_state::coin_sound_r()
 {
-	UINT8 coin = (ioport("IN3")->read() >> 4) & 0x7;
+	uint8_t coin = (ioport("IN3")->read() >> 4) & 0x7;
 	return m_sound_flags | (m_coin_flag << 3) | coin;
 }
 
-READ8_MEMBER(cchasm_state::soundlatch2_r)
+uint8_t cchasm_state::soundlatch2_r()
 {
 	m_sound_flags &= ~0x80;
 	m_ctc->trg2(0);
-	return soundlatch2_byte_r(space, offset);
+	return m_soundlatch2->read();
 }
 
-WRITE8_MEMBER(cchasm_state::soundlatch4_w)
+void cchasm_state::soundlatch4_w(uint8_t data)
 {
 	m_sound_flags |= 0x40;
-	soundlatch4_byte_w(space, offset, data);
+	m_soundlatch4->write(data);
 	m_maincpu->set_input_line(1, HOLD_LINE);
 }
 
-WRITE16_MEMBER(cchasm_state::io_w)
+void cchasm_state::io_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	//static int led;
 
@@ -62,13 +61,13 @@ WRITE16_MEMBER(cchasm_state::io_w)
 		switch (offset & 0xf)
 		{
 		case 0:
-			soundlatch_byte_w(space, offset, data);
+			m_soundlatch->write(data);
 			break;
 		case 1:
 			m_sound_flags |= 0x80;
-			soundlatch2_byte_w(space, offset, data);
+			m_soundlatch2->write(data);
 			m_ctc->trg2(1);
-			m_audiocpu->set_input_line(INPUT_LINE_NMI, PULSE_LINE);
+			m_audiocpu->pulse_input_line(INPUT_LINE_NMI, attotime::zero);
 			break;
 		case 2:
 			//led = data;
@@ -77,15 +76,15 @@ WRITE16_MEMBER(cchasm_state::io_w)
 	}
 }
 
-READ16_MEMBER(cchasm_state::io_r)
+uint16_t cchasm_state::io_r(offs_t offset)
 {
 	switch (offset & 0xf)
 	{
 	case 0x0:
-		return soundlatch3_byte_r(space, offset) << 8;
+		return m_soundlatch3->read() << 8;
 	case 0x1:
 		m_sound_flags &= ~0x40;
-		return soundlatch4_byte_r(space,offset) << 8;
+		return m_soundlatch4->read() << 8;
 	case 0x2:
 		return (m_sound_flags| (ioport("IN3")->read() & 0x07) | 0x08) << 8;
 	case 0x5:
@@ -102,9 +101,8 @@ WRITE_LINE_MEMBER(cchasm_state::ctc_timer_1_w)
 {
 	if (state) /* rising edge */
 	{
-		m_output[0] ^= 0x7f;
-		m_channel_active[0] = 1;
-		m_dac1->write_unsigned8(m_output[0]);
+		m_output[0] = !m_output[0];
+		m_dac1->write(m_output[0]);
 	}
 }
 
@@ -112,9 +110,8 @@ WRITE_LINE_MEMBER(cchasm_state::ctc_timer_2_w)
 {
 	if (state) /* rising edge */
 	{
-		m_output[1] ^= 0x7f;
-		m_channel_active[1] = 1;
-		m_dac2->write_unsigned8(m_output[0]);
+		m_output[1] = !m_output[1];
+		m_dac2->write(m_output[1]);
 	}
 }
 
@@ -127,6 +124,5 @@ void cchasm_state::sound_start()
 
 	save_item(NAME(m_sound_flags));
 	save_item(NAME(m_coin_flag));
-	save_item(NAME(m_channel_active));
 	save_item(NAME(m_output));
 }

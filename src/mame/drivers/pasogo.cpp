@@ -101,12 +101,16 @@ TODO:
 
 ******************************************************************************/
 
+
 #include "emu.h"
 #include "cpu/nec/nec.h"
 #include "bus/generic/slot.h"
 #include "bus/generic/carts.h"
 #include "machine/bankdev.h"
-#include "includes/genpc.h"
+#include "machine/genpc.h"
+#include "machine/timer.h"
+#include "emupal.h"
+#include "screen.h"
 #include "softlist.h"
 
 /*
@@ -126,25 +130,30 @@ public:
 		, m_palette(*this, "palette")
 	{ }
 
+	void pasogo(machine_config &config);
+
+	DECLARE_INPUT_CHANGED_MEMBER(contrast);
+
+private:
 	required_device<cpu_device> m_maincpu;
 	required_device<generic_slot_device> m_cart;
 	required_device<address_map_bank_device> m_ems;
-	required_shared_ptr<UINT16> m_vram;
+	required_shared_ptr<uint16_t> m_vram;
 	required_device<palette_device> m_palette;
 
-	DECLARE_READ16_MEMBER(ems_r);
-	DECLARE_WRITE16_MEMBER(ems_w);
-	DECLARE_READ16_MEMBER(emsram_r);
-	DECLARE_WRITE16_MEMBER(emsram_w);
-	DECLARE_READ8_MEMBER(vg230_io_r);
-	DECLARE_WRITE8_MEMBER(vg230_io_w);
+	uint16_t ems_r(offs_t offset, uint16_t mem_mask);
+	void ems_w(offs_t offset, uint16_t data, uint16_t mem_mask);
+	uint16_t emsram_r(offs_t offset, uint16_t mem_mask);
+	void emsram_w(offs_t offset, uint16_t data, uint16_t mem_mask);
+	uint8_t vg230_io_r(offs_t offset);
+	void vg230_io_w(offs_t offset, uint8_t data);
 
 	struct
 	{
-		UINT8 index;
-		UINT8 data[0x100];
+		uint8_t index;
+		uint8_t data[0x100];
 		struct {
-			UINT16 data;
+			uint16_t data;
 		} bios_timer; // 1.19 MHz tclk signal
 		struct {
 			int seconds, minutes, hours, days;
@@ -163,14 +172,16 @@ public:
 	void machine_reset() override;
 	void machine_start() override;
 
-	UINT32 screen_update_pasogo(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
+	uint32_t screen_update_pasogo(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
 	INTERRUPT_GEN_MEMBER(pasogo_interrupt);
 	TIMER_DEVICE_CALLBACK_MEMBER(vg230_timer);
-	DECLARE_INPUT_CHANGED_MEMBER(contrast);
 
 	memory_region *m_cart_rom;
-	UINT8 m_ems_index;
-	UINT16 m_ems_bank[28];
+	uint8_t m_ems_index;
+	uint16_t m_ems_bank[28];
+	void emsbank_map(address_map &map);
+	void pasogo_io(address_map &map);
+	void pasogo_mem(address_map &map);
 };
 
 
@@ -207,7 +218,7 @@ void pasogo_state::machine_start()
 	system_time systime;
 
 	memset(&m_vg230, 0, sizeof(m_vg230));
-	m_vg230.pmu.write_protected = TRUE;
+	m_vg230.pmu.write_protected = true;
 	machine().base_datetime(systime);
 
 	m_vg230.rtc.seconds = systime.local_time.second;
@@ -218,10 +229,10 @@ void pasogo_state::machine_start()
 	m_vg230.bios_timer.data=0x7200; // HACK
 }
 
-READ8_MEMBER( pasogo_state::vg230_io_r )
+uint8_t pasogo_state::vg230_io_r(offs_t offset)
 {
-	int log = TRUE;
-	UINT8 data = 0;
+	int log = true;
+	uint8_t data = 0;
 
 	m_vg230.bios_timer.data += 0x100; //HACK
 	if (offset&1)
@@ -245,22 +256,22 @@ READ8_MEMBER( pasogo_state::vg230_io_r )
 
 			case 0x31:
 				data = m_vg230.bios_timer.data >> 8;
-				log = FALSE;
+				log = false;
 				break;
 
 			case 0x70:
 				data = m_vg230.rtc.seconds;
-				log = FALSE;
+				log = false;
 				break;
 
 			case 0x71:
 				data = m_vg230.rtc.minutes;
-				log = FALSE;
+				log = false;
 				break;
 
 			case 0x72:
 				data = m_vg230.rtc.hours;
-				log = FALSE;
+				log = false;
 				break;
 
 			case 0x73:
@@ -273,7 +284,7 @@ READ8_MEMBER( pasogo_state::vg230_io_r )
 
 			case 0x79:
 				/*rtc status*/
-				log = FALSE;
+				log = false;
 				break;
 
 			case 0x7a:
@@ -288,8 +299,8 @@ READ8_MEMBER( pasogo_state::vg230_io_r )
 				data &= ~1;
 				if (m_vg230.pmu.write_protected)
 					data |= 1;
-				m_vg230.pmu.write_protected = FALSE;
-				log = FALSE;
+				m_vg230.pmu.write_protected = false;
+				log = false;
 				break;
 		}
 
@@ -304,9 +315,9 @@ READ8_MEMBER( pasogo_state::vg230_io_r )
 }
 
 
-WRITE8_MEMBER( pasogo_state::vg230_io_w )
+void pasogo_state::vg230_io_w(offs_t offset, uint8_t data)
 {
-	int log = TRUE;
+	int log = true;
 
 	if (offset & 1)
 	{
@@ -356,14 +367,14 @@ WRITE8_MEMBER( pasogo_state::vg230_io_w )
 			case 0x79:
 				m_vg230.rtc.onehertz_interrupt_on = data & 1;
 				m_vg230.rtc.alarm_interrupt_on = data & 2;
-				log = FALSE;
+				log = false;
 				break;
 
 			case 0x7a:
 				if (data & 2)
 				{
-					m_vg230.rtc.alarm_interrupt_request = FALSE;
-					m_vg230.rtc.onehertz_interrupt_request = FALSE; /* update interrupt */
+					m_vg230.rtc.alarm_interrupt_request = false;
+					m_vg230.rtc.onehertz_interrupt_request = false; /* update interrupt */
 				}
 				break;
 		}
@@ -376,10 +387,10 @@ WRITE8_MEMBER( pasogo_state::vg230_io_w )
 }
 
 
-READ16_MEMBER( pasogo_state::ems_r )
+uint16_t pasogo_state::ems_r(offs_t offset, uint16_t mem_mask)
 {
-	UINT8 data = 0;
-	UINT8 index;
+	uint8_t data = 0;
+	uint8_t index;
 
 	switch (offset)
 	{
@@ -396,9 +407,9 @@ READ16_MEMBER( pasogo_state::ems_r )
 }
 
 
-WRITE16_MEMBER( pasogo_state::ems_w )
+void pasogo_state::ems_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
-	UINT8 index;
+	uint8_t index;
 
 	switch (offset)
 	{
@@ -423,36 +434,39 @@ WRITE16_MEMBER( pasogo_state::ems_w )
 	}
 }
 
-READ16_MEMBER( pasogo_state::emsram_r )
+uint16_t pasogo_state::emsram_r(offs_t offset, uint16_t mem_mask)
 {
 	m_ems->set_bank(m_ems_bank[(offset >> 13) & 0x1f] & 0x7fff);
-	return m_ems->read16(space, offset & 0x1fff, mem_mask);
+	return m_ems->read16(offset & 0x1fff, mem_mask);
 }
 
-WRITE16_MEMBER( pasogo_state::emsram_w )
+void pasogo_state::emsram_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	m_ems->set_bank(m_ems_bank[(offset >> 13) & 0x1f] & 0x7fff);
-	m_ems->write16(space, offset & 0x1fff, data, mem_mask);
+	m_ems->write16(offset & 0x1fff, data, mem_mask);
 }
 
-static ADDRESS_MAP_START(emsbank_map, AS_PROGRAM, 16, pasogo_state)
-	AM_RANGE(0x04080000, 0x040fffff) AM_RAM
-	AM_RANGE(0x08000000, 0x080fffff) AM_ROMBANK("bank27")
-	AM_RANGE(0x10000000, 0x1000ffff) AM_RAM // cart ram?
-ADDRESS_MAP_END
+void pasogo_state::emsbank_map(address_map &map)
+{
+	map(0x04080000, 0x040fffff).ram();
+	map(0x08000000, 0x080fffff).bankr("bank27");
+	map(0x10000000, 0x1000ffff).ram(); // cart ram?
+}
 
-static ADDRESS_MAP_START(pasogo_mem, AS_PROGRAM, 16, pasogo_state)
-	AM_RANGE(0x00000, 0x7ffff) AM_RAMBANK("bank10")
-	AM_RANGE(0xb8000, 0xbffff) AM_RAM AM_SHARE("vram")
-	AM_RANGE(0x80000, 0xeffff) AM_READWRITE(emsram_r, emsram_w)
-	AM_RANGE(0xf0000, 0xfffff) AM_ROMBANK("bank27")
-ADDRESS_MAP_END
+void pasogo_state::pasogo_mem(address_map &map)
+{
+	map(0x80000, 0xeffff).rw(FUNC(pasogo_state::emsram_r), FUNC(pasogo_state::emsram_w));
+	map(0xb8000, 0xbffff).ram().share("vram");
+	map(0xf0000, 0xfffff).bankr("bank27");
+}
 
 
-static ADDRESS_MAP_START(pasogo_io, AS_IO, 16, pasogo_state)
-	AM_RANGE(0x0026, 0x0027) AM_READWRITE8(vg230_io_r, vg230_io_w, 0xffff)
-	AM_RANGE(0x006c, 0x006f) AM_READWRITE(ems_r, ems_w)
-ADDRESS_MAP_END
+void pasogo_state::pasogo_io(address_map &map)
+{
+	map(0x0000, 0x00ff).m("mb", FUNC(ibm5160_mb_device::map));
+	map(0x0026, 0x0027).rw(FUNC(pasogo_state::vg230_io_r), FUNC(pasogo_state::vg230_io_w));
+	map(0x006c, 0x006f).rw(FUNC(pasogo_state::ems_r), FUNC(pasogo_state::ems_w));
+}
 
 
 static INPUT_PORTS_START( pasogo )
@@ -487,25 +501,24 @@ INPUT_CHANGED_MEMBER(pasogo_state::contrast)
 	}
 }
 
-UINT32 pasogo_state::screen_update_pasogo(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t pasogo_state::screen_update_pasogo(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
-	UINT8 *vram = (UINT8 *)m_vram.target();
-	int x, y;
-	for (y=0; y<240; y++)
+	uint8_t const *const vram = (uint8_t *)m_vram.target();
+	for (int y=0; y<240; y++)
 	{
-		for (x=0; x<(320/8); x++)
+		for (int x=0; x<(320/8); x++)
 		{
-			int a = (y & 3) * 0x2000;
-			UINT8 d1 = vram[a + (y >> 2) * 80 + x];
-			UINT16 *line = &bitmap.pix16(y, x << 3);
-			*line++ = ((d1 >> 7) & 1);
-			*line++ = ((d1 >> 6) & 1);
-			*line++ = ((d1 >> 5) & 1);
-			*line++ = ((d1 >> 4) & 1);
-			*line++ = ((d1 >> 3) & 1);
-			*line++ = ((d1 >> 2) & 1);
-			*line++ = ((d1 >> 1) & 1);
-			*line++ = ((d1 >> 0) & 1);
+			int const a = (y & 3) * 0x2000;
+			uint8_t const d1 = vram[a + (y >> 2) * 80 + x];
+			uint16_t *line = &bitmap.pix(y, x << 3);
+			*line++ = BIT(d1, 7);
+			*line++ = BIT(d1, 6);
+			*line++ = BIT(d1, 5);
+			*line++ = BIT(d1, 4);
+			*line++ = BIT(d1, 3);
+			*line++ = BIT(d1, 2);
+			*line++ = BIT(d1, 1);
+			*line++ = BIT(d1, 0);
 		}
 	}
 	return 0;
@@ -513,7 +526,7 @@ UINT32 pasogo_state::screen_update_pasogo(screen_device &screen, bitmap_ind16 &b
 
 INTERRUPT_GEN_MEMBER(pasogo_state::pasogo_interrupt)
 {
-//  m_maincpu->set_input_line(UPD7810_INTFE1, PULSE_LINE);
+//  m_maincpu->pulse_input_line(UPD7810_INTFE1, attotime::zero);
 }
 
 void pasogo_state::machine_reset()
@@ -521,56 +534,54 @@ void pasogo_state::machine_reset()
 	std::string region_tag;
 	ioport_port *color = ioport("COLOR");
 	m_cart_rom = memregion(region_tag.assign(m_cart->tag()).append(GENERIC_ROM_REGION_TAG).c_str());
-	if (!m_cart_rom)    // this should never happen, since we make carts mandatory!
-		m_cart_rom = memregion("maincpu");
+	if (!m_cart_rom) // even with mandatory carts, debug will crash without anything at the boot vector
+		m_cart_rom = memregion("empty");
 
 	membank("bank27")->set_base(m_cart_rom->base());
 	m_ems_index = 0;
 	memset(m_ems_bank, 0, sizeof(m_ems_bank));
-	contrast(*color->first_field(), nullptr, 0, color->read());
+	contrast(*color->fields().first(), 0, 0, color->read());
 }
 
-static MACHINE_CONFIG_START( pasogo, pasogo_state )
+void pasogo_state::pasogo(machine_config &config)
+{
+	V30(config, m_maincpu, XTAL(32'220'000)/2);
+	m_maincpu->set_addrmap(AS_PROGRAM, &pasogo_state::pasogo_mem);
+	m_maincpu->set_addrmap(AS_IO, &pasogo_state::pasogo_io);
+	m_maincpu->set_vblank_int("screen", FUNC(pasogo_state::pasogo_interrupt));
+	m_maincpu->set_irq_acknowledge_callback("mb:pic8259", FUNC(pic8259_device::inta_cb));
 
-	MCFG_CPU_ADD("maincpu", V30, XTAL_32_22MHz/2)
-	MCFG_CPU_PROGRAM_MAP(pasogo_mem)
-	MCFG_CPU_IO_MAP(pasogo_io)
-	MCFG_CPU_VBLANK_INT_DRIVER("screen", pasogo_state,  pasogo_interrupt)
-	MCFG_CPU_IRQ_ACKNOWLEDGE_DEVICE("mb:pic8259", pic8259_device, inta_cb)
+	ADDRESS_MAP_BANK(config, "ems").set_map(&pasogo_state::emsbank_map).set_options(ENDIANNESS_LITTLE, 16, 32, 0x4000);
 
-	MCFG_DEVICE_ADD("ems", ADDRESS_MAP_BANK, 0)
-	MCFG_DEVICE_PROGRAM_MAP(emsbank_map)
-	MCFG_ADDRESS_MAP_BANK_ENDIANNESS(ENDIANNESS_LITTLE)
-	MCFG_ADDRESS_MAP_BANK_DATABUS_WIDTH(16)
-	MCFG_ADDRESS_MAP_BANK_STRIDE(0x4000)
+	ibm5160_mb_device &mb(IBM5160_MOTHERBOARD(config, "mb", 0));
+	mb.set_cputag(m_maincpu);
+	mb.int_callback().set_inputline(m_maincpu, 0);
+	mb.nmi_callback().set_inputline(m_maincpu, INPUT_LINE_NMI);
 
-	MCFG_IBM5160_MOTHERBOARD_ADD("mb", "maincpu")
-
-	MCFG_RAM_ADD(RAM_TAG)
-	MCFG_RAM_DEFAULT_SIZE("512K")
+	RAM(config, RAM_TAG).set_default_size("512K");
 
 	// It's a CGA device right so lets use isa_cga!  Well, not so much.
 	// The carts use vg230 specific registers and mostly ignore the mc6845.
-	MCFG_SCREEN_ADD("screen", LCD)
-	MCFG_SCREEN_REFRESH_RATE(60)
-	MCFG_SCREEN_SIZE(320, 240)
-	MCFG_SCREEN_VISIBLE_AREA(0, 320-1, 0, 240-1)
-	MCFG_SCREEN_UPDATE_DRIVER(pasogo_state, screen_update_pasogo)
-	MCFG_SCREEN_PALETTE("palette")
-	MCFG_PALETTE_ADD("palette", 2)
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_LCD));
+	screen.set_refresh_hz(60);
+	screen.set_size(320, 240);
+	screen.set_visarea(0, 320-1, 0, 240-1);
+	screen.set_screen_update(FUNC(pasogo_state::screen_update_pasogo));
+	screen.set_palette(m_palette);
+	PALETTE(config, m_palette).set_entries(2);
 
-	MCFG_GENERIC_CARTSLOT_ADD("cartslot", generic_plain_slot, "pasogo_cart")
-	MCFG_GENERIC_WIDTH(GENERIC_ROM16_WIDTH)
-	MCFG_GENERIC_MANDATORY
+	GENERIC_CARTSLOT(config, m_cart, generic_plain_slot, "pasogo_cart");
+	m_cart->set_width(GENERIC_ROM16_WIDTH);
+	m_cart->set_must_be_loaded(true);
 
-	MCFG_SOFTWARE_LIST_ADD("cart_list","pasogo")
+	SOFTWARE_LIST(config, "cart_list").set_original("pasogo");
 
-	MCFG_TIMER_DRIVER_ADD_PERIODIC("vg230_timer", pasogo_state, vg230_timer, attotime::from_hz(1))
-MACHINE_CONFIG_END
+	TIMER(config, "vg230_timer").configure_periodic(FUNC(pasogo_state::vg230_timer), attotime::from_hz(1));
+}
 
 ROM_START( pasogo )
-	ROM_REGION( 0x2000, "maincpu", ROMREGION_ERASEFF )
+	ROM_REGION( 0x10000, "empty", ROMREGION_ERASEFF )
 ROM_END
 
-//    YEAR   NAME    PARENT  COMPAT    MACHINE   INPUT     INIT      COMPANY  FULLNAME          FLAGS
-CONS( 1996, pasogo,   0,      0,       pasogo,  pasogo, driver_device,    0,   "KOEI", "PasoGo", MACHINE_NO_SOUND|MACHINE_NOT_WORKING)
+//    YEAR  NAME    PARENT  COMPAT  MACHINE  INPUT   CLASS         INIT        COMPANY  FULLNAME  FLAGS
+CONS( 1996, pasogo, 0,      0,      pasogo,  pasogo, pasogo_state, empty_init, "KOEI",  "PasoGo", MACHINE_NO_SOUND|MACHINE_NOT_WORKING)

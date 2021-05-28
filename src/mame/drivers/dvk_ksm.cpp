@@ -3,15 +3,11 @@
 /***************************************************************************
 
     KSM (Kontroller Simvolnogo Monitora = Character Display Controller),
-    a single-board replacement for standalone 15IE-00-013 terminal (ie15.c)
-    in later-model DVK desktops.
+    a single-board replacement for standalone 15IE-00-013 terminal (ie15.c
+    driver in MAME) in later-model DVK desktops.
 
     MPI (Q-Bus clone) board, consumes only power from the bus.
     Interfaces with MS7004 (DEC LK201 workalike) keyboard and monochrome CRT.
-
-    Hardware revisions (XXX verify everything):
-    - 7.102.076 -- has DIP switches, SRAM at 0x2000, model name "KSM"
-    - 7.102.228 -- no DIP switches, SRAM at 0x2100, model name "KSM-01"
 
     Emulates a VT52 without copier (ESC Z response is ESC / M), with
     Hold Screen mode and Graphics character set (but it is unique and
@@ -48,8 +44,9 @@ ksm|DVK KSM,
 
     To do:
     - verify if pixel stretching is done by hw
-    - verify details of hw revisions (memory map, DIP presence...)
-    - baud rate selection (missing feature in bitbanger)
+    - verify details of hw revisions.  known ones:
+      - decimal 7.102.076 -- has DIP switches, model name "KSM".
+      - decimal 7.102.228 -- no DIP switches, model name "KSM-01" -- no dump.
 
 ****************************************************************************/
 
@@ -62,6 +59,10 @@ ksm|DVK KSM,
 #include "machine/i8255.h"
 #include "machine/ms7004.h"
 #include "machine/pic8259.h"
+#include "machine/timer.h"
+#include "emupal.h"
+#include "screen.h"
+
 
 #define SCREEN_PAGE (80*48)
 
@@ -69,90 +70,113 @@ ksm|DVK KSM,
 #define KSM_DISP_HORZ  800
 #define KSM_HORZ_START 200
 
-#define KSM_TOTAL_VERT 28*11
-#define KSM_DISP_VERT  25*11
-#define KSM_VERT_START 2*11
+#define KSM_TOTAL_VERT (28 * 11)
+#define KSM_DISP_VERT  (25 * 11)
+#define KSM_VERT_START (2 * 11)
 
 #define KSM_STATUSLINE_TOTAL 11
 #define KSM_STATUSLINE_VRAM 0xF8B0
 
-#define VERBOSE_DBG 0       /* general debug messages */
 
-#define DBG_LOG(N,M,A) \
-	do { \
-		if(VERBOSE_DBG>=N) \
-		{ \
-			if( M ) \
-				logerror("%11.6f at %s: %-24s",machine().time().as_double(),machine().describe_context(),(char*)M ); \
-			logerror A; \
-		} \
-	} while (0)
+//#define LOG_GENERAL (1U <<  0) //defined in logmacro.h already
+#define LOG_KEYBOARD  (1U <<  1)
+#define LOG_DEBUG     (1U <<  2)
+
+//#define VERBOSE (LOG_DEBUG)
+//#define LOG_OUTPUT_FUNC printf
+#include "logmacro.h"
+
+#define LOGKBD(...) LOGMASKED(LOG_KEYBOARD, __VA_ARGS__)
+#define LOGDBG(...) LOGMASKED(LOG_DEBUG, __VA_ARGS__)
 
 
 class ksm_state : public driver_device
 {
 public:
-	ksm_state(const machine_config &mconfig, device_type type, const char *tag) :
-		driver_device(mconfig, type, tag),
-		m_p_videoram(*this, "videoram"),
-		m_maincpu(*this, "maincpu"),
-		m_pic8259(*this, "pic8259"),
-		m_i8251line(*this, "i8251line"),
-		m_rs232(*this, "rs232"),
-		m_i8251kbd(*this, "i8251kbd"),
-		m_ms7004(*this, "ms7004"),
-		m_screen(*this, "screen")
+	ksm_state(const machine_config &mconfig, device_type type, const char *tag)
+		: driver_device(mconfig, type, tag)
+		, m_p_videoram(*this, "videoram")
+		, m_maincpu(*this, "maincpu")
+		, m_pic8259(*this, "pic8259")
+		, m_i8251line(*this, "i8251line")
+		, m_rs232(*this, "rs232")
+		, m_i8251kbd(*this, "i8251kbd")
+		, m_ms7004(*this, "ms7004")
+		, m_screen(*this, "screen")
+		, m_p_chargen(*this, "chargen")
 	{ }
+
+	void ksm(machine_config &config);
+
+private:
+	TIMER_DEVICE_CALLBACK_MEMBER( scanline_callback );
 
 	virtual void machine_reset() override;
 	virtual void video_start() override;
-	UINT32 screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
-	TIMER_DEVICE_CALLBACK_MEMBER( scanline_callback );
+	uint32_t screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
+
+	virtual void device_timer(emu_timer &timer, device_timer_id id, int param, void *ptr) override;
 
 	DECLARE_WRITE_LINE_MEMBER(write_keyboard_clock);
-	DECLARE_WRITE_LINE_MEMBER(write_line_clock);
 
-	DECLARE_WRITE8_MEMBER(ksm_ppi_porta_w);
-	DECLARE_WRITE8_MEMBER(ksm_ppi_portc_w);
+	DECLARE_WRITE_LINE_MEMBER(write_brga);
+	DECLARE_WRITE_LINE_MEMBER(write_brgb);
+	DECLARE_WRITE_LINE_MEMBER(write_brgc);
 
-private:
-	UINT32 draw_scanline(UINT16 *p, UINT16 offset, UINT8 scanline);
+	void ksm_ppi_porta_w(uint8_t data);
+	void ksm_ppi_portc_w(uint8_t data);
+
+	void ksm_io(address_map &map);
+	void ksm_mem(address_map &map);
+
+	uint32_t draw_scanline(uint16_t *p, uint16_t offset, uint8_t scanline);
 	rectangle m_tmpclip;
 	bitmap_ind16 m_tmpbmp;
 
-	const UINT8 *m_p_chargen;
-	struct {
-		UINT8 line;
-		UINT16 ptr;
+	struct
+	{
+		uint8_t line;
+		uint16_t ptr;
 	} m_video;
 
-protected:
-	required_shared_ptr<UINT8> m_p_videoram;
-	required_device<cpu_device> m_maincpu;
-	required_device<pic8259_device>  m_pic8259;
+	enum
+	{
+		TIMER_ID_BRG = 0
+	};
+
+	bool brg_state;
+	int brga, brgb, brgc;
+	emu_timer *m_brg = nullptr;
+
+	void update_brg(bool a, bool b, int c);
+
+	required_shared_ptr<uint8_t> m_p_videoram;
+	required_device<i8080_cpu_device> m_maincpu;
+	required_device<pic8259_device> m_pic8259;
 	required_device<i8251_device> m_i8251line;
 	required_device<rs232_port_device> m_rs232;
 	required_device<i8251_device> m_i8251kbd;
 	required_device<ms7004_device> m_ms7004;
 	required_device<screen_device> m_screen;
+	required_region_ptr<u8> m_p_chargen;
 };
 
-static ADDRESS_MAP_START( ksm_mem, AS_PROGRAM, 8, ksm_state )
-	ADDRESS_MAP_UNMAP_HIGH
-	AM_RANGE (0x0000, 0x0fff) AM_ROM
-	AM_RANGE (0x2000, 0x20ff) AM_RAM AM_MIRROR(0x0700)
-	AM_RANGE (0xc000, 0xffff) AM_RAM AM_SHARE("videoram")
-ADDRESS_MAP_END
+void ksm_state::ksm_mem(address_map &map)
+{
+	map.unmap_value_high();
+	map(0x0000, 0x0fff).rom();
+	map(0x2000, 0x20ff).ram().mirror(0x0700);
+	map(0xc000, 0xffff).ram().share("videoram");
+}
 
-static ADDRESS_MAP_START( ksm_io, AS_IO, 8, ksm_state )
-	ADDRESS_MAP_UNMAP_HIGH
-	AM_RANGE (0x5e, 0x5f) AM_DEVREADWRITE("pic8259", pic8259_device, read, write)
-	AM_RANGE (0x6e, 0x6e) AM_DEVREADWRITE("i8251kbd", i8251_device, data_r, data_w)
-	AM_RANGE (0x6f, 0x6f) AM_DEVREADWRITE("i8251kbd", i8251_device, status_r, control_w)
-	AM_RANGE (0x76, 0x76) AM_DEVREADWRITE("i8251line", i8251_device, data_r, data_w)
-	AM_RANGE (0x77, 0x77) AM_DEVREADWRITE("i8251line", i8251_device, status_r, control_w)
-	AM_RANGE (0x78, 0x7b) AM_DEVREADWRITE("ppi8255", i8255_device, read, write)
-ADDRESS_MAP_END
+void ksm_state::ksm_io(address_map &map)
+{
+	map.unmap_value_high();
+	map(0x5e, 0x5f).rw(m_pic8259, FUNC(pic8259_device::read), FUNC(pic8259_device::write));
+	map(0x6e, 0x6f).rw(m_i8251kbd, FUNC(i8251_device::read), FUNC(i8251_device::write));
+	map(0x76, 0x77).rw(m_i8251line, FUNC(i8251_device::read), FUNC(i8251_device::write));
+	map(0x78, 0x7b).rw("ppi8255", FUNC(i8255_device::read), FUNC(i8255_device::write));
+}
 
 /* Input ports */
 static INPUT_PORTS_START( ksm )
@@ -196,41 +220,98 @@ static INPUT_PORTS_START( ksm )
 	PORT_DIPSETTING(0x0E, "75")
 INPUT_PORTS_END
 
+void ksm_state::device_timer(emu_timer &timer, device_timer_id id, int param, void *ptr)
+{
+	if (id == TIMER_ID_BRG)
+	{
+		brg_state = !brg_state;
+		m_i8251line->write_txc(brg_state);
+		m_i8251line->write_rxc(brg_state);
+	}
+}
+
 void ksm_state::machine_reset()
 {
 	memset(&m_video, 0, sizeof(m_video));
+	brga = 0;
+	brgb = 0;
+	brgc = 0;
+	brg_state = 0;
 }
 
 void ksm_state::video_start()
 {
-	m_p_chargen = memregion("chargen")->base();
-
-	m_tmpclip = rectangle(0, KSM_DISP_HORZ-1, 0, KSM_DISP_VERT-1);
+	m_tmpclip = rectangle(0, KSM_DISP_HORZ - 1, 0, KSM_DISP_VERT - 1);
 	m_tmpbmp.allocate(KSM_DISP_HORZ, KSM_DISP_VERT);
+
+	m_brg = timer_alloc(TIMER_ID_BRG);
 }
 
-WRITE8_MEMBER(ksm_state::ksm_ppi_porta_w)
+void ksm_state::ksm_ppi_porta_w(uint8_t data)
 {
-	DBG_LOG(1,"PPI port A", ("line %d\n", data));
+	LOG("PPI port A line %d\n", data);
 	m_video.line = data;
 }
 
-WRITE8_MEMBER(ksm_state::ksm_ppi_portc_w)
+void ksm_state::ksm_ppi_portc_w(uint8_t data)
 {
-	DBG_LOG(1,"PPI port C", ("blink %d speed %d\n", BIT(data, 7), ((data >> 4) & 7) ));
+	brgc = (data >> 5) & 3;
+
+	LOG("PPI port C raw %02x blink %d speed %d\n", data, BIT(data, 7), brgc);
+
+	update_brg(brga, brgb, brgc);
 }
 
 WRITE_LINE_MEMBER(ksm_state::write_keyboard_clock)
 {
-//  KSM never sends data to keyboard
-//  m_i8251kbd->write_txc(state);
+	m_i8251kbd->write_txc(state);
 	m_i8251kbd->write_rxc(state);
 }
 
-WRITE_LINE_MEMBER(ksm_state::write_line_clock)
+WRITE_LINE_MEMBER(ksm_state::write_brga)
 {
-	m_i8251line->write_txc(state);
-	m_i8251line->write_rxc(state);
+	brga = state;
+	update_brg(brga, brgb, brgc);
+}
+
+WRITE_LINE_MEMBER(ksm_state::write_brgb)
+{
+	brgb = state;
+	update_brg(brga, brgb, brgc);
+}
+
+void ksm_state::update_brg(bool a, bool b, int c)
+{
+	LOGDBG("brg %d %d %d\n", a, b, c);
+
+	if (a && b) return;
+
+	switch ((a << 3) + (b << 2) + c)
+	{
+	case 0xa:
+		m_brg->adjust(attotime::from_hz(9600*16*2), 0, attotime::from_hz(9600*16*2));
+		break;
+
+	case 0x8:
+		m_brg->adjust(attotime::from_hz(4800*16*2), 0, attotime::from_hz(4800*16*2));
+		break;
+
+	case 0x4:
+		m_brg->adjust(attotime::from_hz(2400*16*2), 0, attotime::from_hz(2400*16*2));
+		break;
+
+	case 0x5:
+		m_brg->adjust(attotime::from_hz(1200*16*2), 0, attotime::from_hz(1200*16*2));
+		break;
+
+	case 0x6:
+		m_brg->adjust(attotime::from_hz(600*16*2), 0, attotime::from_hz(600*16*2));
+		break;
+
+	case 0x7:
+		m_brg->adjust(attotime::from_hz(300*16*2), 0, attotime::from_hz(300*16*2));
+		break;
+	}
 }
 
 /*
@@ -249,14 +330,17 @@ WRITE_LINE_MEMBER(ksm_state::write_line_clock)
     displayed on 3 extra scan lines.
 */
 
-UINT32 ksm_state::draw_scanline(UINT16 *p, UINT16 offset, UINT8 scanline)
+uint32_t ksm_state::draw_scanline(uint16_t *p, uint16_t offset, uint8_t scanline)
 {
-	UINT8 gfx, fg, bg, ra, blink;
-	UINT16 x, chr;
+	uint8_t gfx, fg, bg, ra, blink;
+	uint16_t x, chr;
 
-	bg = 0; fg = 1; ra = scanline % 8;
+	bg = 0;
+	fg = 1;
+	ra = scanline % 8;
 	blink = (m_screen->frame_number() % 10) > 4;
-	if (scanline > 7) {
+	if (scanline > 7)
+	{
 		offset -= 0x2000;
 	}
 
@@ -265,16 +349,12 @@ UINT32 ksm_state::draw_scanline(UINT16 *p, UINT16 offset, UINT8 scanline)
 		chr = m_p_videoram[x] << 3;
 		gfx = m_p_chargen[chr | ra];
 
-		if ((scanline > 7 && blink) || ((chr < (0x20<<3)) && !blink))
-			gfx = 0;
+		if ((scanline > 7 && blink) || ((chr < (0x20 << 3)) && !blink)) gfx = 0;
 
-		*p++ = BIT(gfx, 6) ? fg : bg;
-		*p++ = BIT(gfx, 5) ? fg : bg;
-		*p++ = BIT(gfx, 4) ? fg : bg;
-		*p++ = BIT(gfx, 3) ? fg : bg;
-		*p++ = BIT(gfx, 2) ? fg : bg;
-		*p++ = BIT(gfx, 1) ? fg : bg;
-		*p++ = BIT(gfx, 0) ? fg : bg;
+		for (int i = 6; i >= 0; i--)
+		{
+			*p++ = BIT(gfx, i) ? fg : bg;
+		}
 		*p++ = bg;
 		*p++ = bg;
 		*p++ = bg;
@@ -284,27 +364,29 @@ UINT32 ksm_state::draw_scanline(UINT16 *p, UINT16 offset, UINT8 scanline)
 
 TIMER_DEVICE_CALLBACK_MEMBER(ksm_state::scanline_callback)
 {
-	UINT16 y = m_screen->vpos();
-	UINT16 offset;
+	uint16_t y = m_screen->vpos();
 
-	DBG_LOG(2,"scanline_cb",
-		("addr %02x frame %d x %.4d y %.3d row %.2d\n",
-		m_video.line, (int)m_screen->frame_number(), m_screen->hpos(), y, y%11));
+	LOGDBG("scanline_cb addr %02x frame %d x %.4d y %.3d row %.2d\n",
+		m_video.line, (int)m_screen->frame_number(), m_screen->hpos(), y, y%11);
 
 	if (y < KSM_VERT_START) return;
 	y -= KSM_VERT_START;
 	if (y >= KSM_DISP_VERT) return;
 
-	if (y < KSM_STATUSLINE_TOTAL) {
+	uint16_t offset;
+	if (y < KSM_STATUSLINE_TOTAL)
+	{
 		offset = KSM_STATUSLINE_VRAM - 0xC000;
-	} else {
-		offset = 0x2000 + 0x30 + (((m_video.line + y/11 - 1) % 48) << 7);
+	}
+	else
+	{
+		offset = 0x2000 + 0x30 + (((m_video.line + y / 11 - 1) % 48) << 7);
 	}
 
-	draw_scanline(&m_tmpbmp.pix16(y), offset, y%11);
+	draw_scanline(&m_tmpbmp.pix(y), offset, y % 11);
 }
 
-UINT32 ksm_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t ksm_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	copybitmap(bitmap, m_tmpbmp, 0, 0, KSM_HORZ_START, KSM_VERT_START, cliprect);
 	return 0;
@@ -325,86 +407,66 @@ static const gfx_layout ksm_charlayout =
 	8*8                 /* every char takes 8 bytes */
 };
 
-static GFXDECODE_START( ksm )
+static GFXDECODE_START( gfx_ksm )
 	GFXDECODE_ENTRY("chargen", 0x0000, ksm_charlayout, 0, 1)
 GFXDECODE_END
 
-static MACHINE_CONFIG_START( ksm, ksm_state )
-	MCFG_CPU_ADD("maincpu", I8080, XTAL_15_4MHz/10)
-	MCFG_CPU_PROGRAM_MAP(ksm_mem)
-	MCFG_CPU_IO_MAP(ksm_io)
-	MCFG_CPU_IRQ_ACKNOWLEDGE_DEVICE("pic8259", pic8259_device, inta_cb)
+void ksm_state::ksm(machine_config &config)
+{
+	I8080(config, m_maincpu, XTAL(15'400'000)/10);
+	m_maincpu->set_addrmap(AS_PROGRAM, &ksm_state::ksm_mem);
+	m_maincpu->set_addrmap(AS_IO, &ksm_state::ksm_io);
+	m_maincpu->in_inta_func().set("pic8259", FUNC(pic8259_device::acknowledge));
 
-	MCFG_TIMER_DRIVER_ADD_PERIODIC("scantimer", ksm_state, scanline_callback, attotime::from_hz(50*28*11))
-	MCFG_TIMER_START_DELAY(attotime::from_hz(XTAL_15_4MHz/KSM_HORZ_START))
+	TIMER(config, "scantimer").configure_scanline(FUNC(ksm_state::scanline_callback), "screen", 0, 1);
 
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_UPDATE_DRIVER(ksm_state, screen_update)
-	MCFG_SCREEN_RAW_PARAMS(XTAL_15_4MHz, KSM_TOTAL_HORZ, KSM_HORZ_START,
+	SCREEN(config, m_screen, SCREEN_TYPE_RASTER, rgb_t::green());
+	m_screen->set_screen_update(FUNC(ksm_state::screen_update));
+	m_screen->set_raw(XTAL(15'400'000), KSM_TOTAL_HORZ, KSM_HORZ_START,
 		KSM_HORZ_START+KSM_DISP_HORZ, KSM_TOTAL_VERT, KSM_VERT_START,
 		KSM_VERT_START+KSM_DISP_VERT);
+	m_screen->set_palette("palette");
 
-	MCFG_SCREEN_PALETTE("palette")
+	GFXDECODE(config, "gfxdecode", "palette", gfx_ksm);
+	PALETTE(config, "palette", palette_device::MONOCHROME);
 
-	MCFG_GFXDECODE_ADD("gfxdecode", "palette", ksm)
-	MCFG_PALETTE_ADD_MONOCHROME_GREEN("palette")
+	PIC8259(config, m_pic8259, 0);
+	m_pic8259->out_int_callback().set_inputline(m_maincpu, 0);
 
-	MCFG_PIC8259_ADD( "pic8259", INPUTLINE("maincpu", 0), VCC, NULL )
+	// D30
+	i8255_device &ppi(I8255(config, "ppi8255"));
+	ppi.out_pa_callback().set(FUNC(ksm_state::ksm_ppi_porta_w));
+	ppi.in_pb_callback().set_ioport("SA1");
+	ppi.in_pc_callback().set_ioport("SA2");
+	ppi.out_pc_callback().set(FUNC(ksm_state::ksm_ppi_portc_w));
 
-	MCFG_DEVICE_ADD("ppi8255", I8255, 0)
-	MCFG_I8255_OUT_PORTA_CB(WRITE8(ksm_state, ksm_ppi_porta_w))
-	MCFG_I8255_IN_PORTB_CB(IOPORT("SA1"))
-	MCFG_I8255_IN_PORTC_CB(IOPORT("SA2"))
-	MCFG_I8255_OUT_PORTC_CB(WRITE8(ksm_state, ksm_ppi_portc_w))
+	// D42 - serial connection to host
+	I8251(config, m_i8251line, 0);
+	m_i8251line->txd_handler().set(m_rs232, FUNC(rs232_port_device::write_txd));
+	m_i8251line->rxrdy_handler().set(m_pic8259, FUNC(pic8259_device::ir3_w));
 
-	// serial connection to host
-	MCFG_DEVICE_ADD( "i8251line", I8251, 0)
-	MCFG_I8251_TXD_HANDLER(DEVWRITELINE("rs232", rs232_port_device, write_txd))
-	MCFG_I8251_DTR_HANDLER(DEVWRITELINE("rs232", rs232_port_device, write_dtr))
-	MCFG_I8251_RTS_HANDLER(DEVWRITELINE("rs232", rs232_port_device, write_rts))
-	MCFG_I8251_RXRDY_HANDLER(DEVWRITELINE("pic8259", pic8259_device, ir3_w))
+	RS232_PORT(config, m_rs232, default_rs232_devices, "null_modem");
+	m_rs232->rxd_handler().set(m_i8251line, FUNC(i8251_device::write_rxd));
+	m_rs232->cts_handler().set(m_i8251line, FUNC(i8251_device::write_cts));
+	m_rs232->dsr_handler().set(m_i8251line, FUNC(i8251_device::write_dsr));
 
-	MCFG_RS232_PORT_ADD("rs232", default_rs232_devices, "null_modem")
-	MCFG_RS232_RXD_HANDLER(DEVWRITELINE("i8251line", i8251_device, write_rxd))
-	MCFG_RS232_CTS_HANDLER(DEVWRITELINE("i8251line", i8251_device, write_cts))
-	MCFG_RS232_DSR_HANDLER(DEVWRITELINE("i8251line", i8251_device, write_dsr))
+	// D41 - serial connection to MS7004 keyboard
+	I8251(config, m_i8251kbd, 0);
+	m_i8251kbd->rxrdy_handler().set(m_pic8259, FUNC(pic8259_device::ir1_w));
+	m_i8251kbd->rts_handler().set(FUNC(ksm_state::write_brga));
+	m_i8251kbd->dtr_handler().set(FUNC(ksm_state::write_brgb));
 
-	MCFG_DEVICE_ADD("line_clock", CLOCK, 9600*16) // 8251 is set to /16 on the clock input
-	MCFG_CLOCK_SIGNAL_HANDLER(WRITELINE(ksm_state, write_line_clock))
-
-	// serial connection to MS7004 keyboard
-	MCFG_DEVICE_ADD( "i8251kbd", I8251, 0)
-	MCFG_I8251_RXRDY_HANDLER(DEVWRITELINE("pic8259", pic8259_device, ir1_w))
-
-	MCFG_DEVICE_ADD("ms7004", MS7004, 0)
-	MCFG_MS7004_TX_HANDLER(DEVWRITELINE("i8251kbd", i8251_device, write_rxd))
+	MS7004(config, m_ms7004, 0);
+	m_ms7004->tx_handler().set(m_i8251kbd, FUNC(i8251_device::write_rxd));
 
 	// baud rate is supposed to be 4800 but keyboard is slightly faster
-	MCFG_DEVICE_ADD("keyboard_clock", CLOCK, 4960*16)
-	MCFG_CLOCK_SIGNAL_HANDLER(WRITELINE(ksm_state, write_keyboard_clock))
-MACHINE_CONFIG_END
+	clock_device &keyboard_clock(CLOCK(config, "keyboard_clock", 4960*16));
+	keyboard_clock.signal_handler().set(FUNC(ksm_state::write_keyboard_clock));
+}
 
-
-/*
-    Assumes that SRAM is at 0x2000, which is where technical manual puts it.
-    Chargen has 1 missing pixel in 'G' character.
-*/
 ROM_START( dvk_ksm )
 	ROM_REGION(0x1000, "maincpu", ROMREGION_ERASE00)
 	ROM_LOAD( "ksm_04_rom0_d32.bin", 0x0000, 0x0800, CRC(6ad62715) SHA1(20f8f95119bc7fc6e0f16c67864e339a86edb44d))
-	ROM_LOAD( "ksm_05_rom1_d33.bin", 0x0800, 0x0800, CRC(5b29bcd2) SHA1(1f4f82c2f88f1e8615ec02076559dc606497e654))
-
-	ROM_REGION(0x0800, "chargen", ROMREGION_ERASE00)
-	ROM_LOAD("ksm_03_cg_d31.bin", 0x0000, 0x0800, CRC(98853aa7) SHA1(09b8e1b5b10a00c0b0ae7e36ad1328113d31230a))
-ROM_END
-
-/*
-    Assumes that SRAM is at 0x2100, otherwise identical.
-    Chargen has no missing pixels in 'G' character.
-*/
-ROM_START( dvk_ksm01 )
-	ROM_REGION(0x1000, "maincpu", ROMREGION_ERASE00)
-	ROM_LOAD( "ksm_04_rom0_d32.bin", 0x0000, 0x0800, CRC(5276dc9a) SHA1(dd41dfb4cb3f1cf22d96d95f1ff6a27fe4eb9a38))
 	ROM_LOAD( "ksm_05_rom1_d33.bin", 0x0800, 0x0800, CRC(5b29bcd2) SHA1(1f4f82c2f88f1e8615ec02076559dc606497e654))
 
 	ROM_REGION(0x0800, "chargen", ROMREGION_ERASE00)
@@ -413,6 +475,5 @@ ROM_END
 
 /* Driver */
 
-/*    YEAR  NAME      PARENT  COMPAT   MACHINE    INPUT    INIT                      COMPANY     FULLNAME       FLAGS */
-COMP( 1986, dvk_ksm,  0,      0,       ksm,       ksm,     driver_device,     0,     "USSR",     "DVK KSM",     0)
-COMP( 198?, dvk_ksm01,dvk_ksm,0,       ksm,       ksm,     driver_device,     0,     "USSR",     "DVK KSM-01",  0)
+/*    YEAR  NAME     PARENT  COMPAT  MACHINE  INPUT  CLASS      INIT        COMPANY  FULLNAME   FLAGS */
+COMP( 1986, dvk_ksm, 0,      0,      ksm,     ksm,   ksm_state, empty_init, "USSR",  "DVK KSM", 0 )

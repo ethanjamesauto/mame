@@ -19,8 +19,8 @@ void bigstrkb_state::draw_sprites(bitmap_ind16 &bitmap, const rectangle &cliprec
 	**- End of Comments -*/
 
 	gfx_element *gfx = m_gfxdecode->gfx(2);
-	UINT16 *source = m_spriteram;
-	UINT16 *finish = source + 0x800/2;
+	uint16_t *source = m_spriteram;
+	uint16_t *finish = source + 0x800/2;
 
 	while( source<finish )
 	{
@@ -67,10 +67,10 @@ TILE_GET_INFO_MEMBER(bigstrkb_state::get_tile_info)
 	tileno = m_videoram[tile_index] & 0x0fff;
 	col=    m_videoram[tile_index] & 0xf000;
 
-	SET_TILE_INFO_MEMBER(0,tileno,col>>12,0);
+	tileinfo.set(0,tileno,col>>12,0);
 }
 
-WRITE16_MEMBER(bigstrkb_state::videoram_w)
+void bigstrkb_state::videoram_w(offs_t offset, uint16_t data)
 {
 	m_videoram[offset] = data;
 	m_tilemap->mark_tile_dirty(offset);
@@ -83,10 +83,10 @@ TILE_GET_INFO_MEMBER(bigstrkb_state::get_tile2_info)
 	tileno = m_videoram2[tile_index] & 0x0fff;
 	col=    m_videoram2[tile_index] & 0xf000;
 
-	SET_TILE_INFO_MEMBER(1,tileno,col>>12,0);
+	tileinfo.set(1,tileno,col>>12,0);
 }
 
-WRITE16_MEMBER(bigstrkb_state::videoram2_w)
+void bigstrkb_state::videoram2_w(offs_t offset, uint16_t data)
 {
 	m_videoram2[offset] = data;
 	m_tilemap2->mark_tile_dirty(offset);
@@ -100,10 +100,10 @@ TILE_GET_INFO_MEMBER(bigstrkb_state::get_tile3_info)
 	tileno = m_videoram3[tile_index] & 0x0fff;
 	col=    m_videoram3[tile_index] & 0xf000;
 
-	SET_TILE_INFO_MEMBER(1,tileno+0x2000,(col>>12)+(0x100/16),0);
+	tileinfo.set(1,tileno+0x2000,(col>>12)+(0x100/16),0);
 }
 
-WRITE16_MEMBER(bigstrkb_state::videoram3_w)
+void bigstrkb_state::videoram3_w(offs_t offset, uint16_t data)
 {
 	m_videoram3[offset] = data;
 	m_tilemap3->mark_tile_dirty(offset);
@@ -113,16 +113,16 @@ WRITE16_MEMBER(bigstrkb_state::videoram3_w)
 
 void bigstrkb_state::video_start()
 {
-	m_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(bigstrkb_state::get_tile_info),this),TILEMAP_SCAN_COLS, 8, 8,64,32);
-	m_tilemap2 = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(bigstrkb_state::get_tile2_info),this),tilemap_mapper_delegate(FUNC(bigstrkb_state::bg_scan),this), 16, 16,128,64);
-	m_tilemap3 = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(bigstrkb_state::get_tile3_info),this),tilemap_mapper_delegate(FUNC(bigstrkb_state::bg_scan),this), 16, 16,128,64);
+	m_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(bigstrkb_state::get_tile_info)), TILEMAP_SCAN_COLS, 8, 8, 64, 32);
+	m_tilemap2 = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(bigstrkb_state::get_tile2_info)), tilemap_mapper_delegate(*this, FUNC(bigstrkb_state::bg_scan)), 16, 16, 128, 64);
+	m_tilemap3 = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(bigstrkb_state::get_tile3_info)), tilemap_mapper_delegate(*this, FUNC(bigstrkb_state::bg_scan)), 16, 16, 128, 64);
 
 	m_tilemap->set_transparent_pen(15);
 	//m_tilemap2->set_transparent_pen(15);
 	m_tilemap3->set_transparent_pen(15);
 }
 
-UINT32 bigstrkb_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t bigstrkb_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 //  bitmap.fill(m_palette->black_pen(), cliprect);
 

@@ -1,9 +1,8 @@
 // license:BSD-3-Clause
 // copyright-holders:Nathan Woods
-#ifndef _DWSOCK_H_
-#define _DWSOCK_H_
+#ifndef MAME_BUS_COCO_COCO_DWSOCKH_H
+#define MAME_BUS_COCO_COCO_DWSOCKH_H
 
-#include "emu.h"
 #include "osdcore.h"
 
 //**************************************************************************
@@ -25,7 +24,7 @@
 class beckerport_device : public device_t
 {
 public:
-	beckerport_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	beckerport_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
 	virtual ~beckerport_device();
 
 	// optional information overrides
@@ -40,8 +39,8 @@ public:
 	// driver update handlers
 	DECLARE_INPUT_CHANGED_MEMBER(drivewire_port_changed);
 
-	virtual DECLARE_READ8_MEMBER(read);
-	virtual DECLARE_WRITE8_MEMBER(write);
+	u8 read(offs_t offset);
+	void write(offs_t offset, u8 data);
 
 	// types
 	enum dwsock_ports {
@@ -57,7 +56,7 @@ private:
 	required_ioport         m_dwconfigport;
 	int                     m_dwtcpport;
 
-	osd_file *m_pSocket;
+	osd_file::ptr m_pSocket;
 
 	unsigned int m_rx_pending;
 	unsigned int m_head;
@@ -65,9 +64,9 @@ private:
 };
 
 // device type definition
-extern const device_type COCO_DWSOCK;
+DECLARE_DEVICE_TYPE(COCO_DWSOCK, beckerport_device)
 
 // device iterator
-typedef device_type_iterator<&device_creator<beckerport_device>, beckerport_device> beckerport_device_iterator;
+typedef device_type_enumerator<beckerport_device> beckerport_device_enumerator;
 
-#endif /* _DWSOCK_H_ */
+#endif // MAME_BUS_COCO_COCO_DWSOCKH_H

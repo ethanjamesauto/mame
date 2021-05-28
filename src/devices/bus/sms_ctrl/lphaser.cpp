@@ -4,8 +4,22 @@
 
     Sega Master System "Light Phaser" (light gun) emulation
 
+
+Release data from the Sega Retro project:
+
+  Year: 1986    Country/region: US    Model code: 3050
+  Year: 1987    Country/region: EU    Model code: ?
+  Year: 1989    Country/region: BR    Model code: 010470
+  Year: 198?    Country/region: KR    Model code: ?
+
+Notes:
+
+  The Light Phaser gun doesn't work with the Sega Mark III.
+
 **********************************************************************/
 
+#include "emu.h"
+#include "screen.h"
 #include "lphaser.h"
 
 
@@ -14,14 +28,14 @@
 //  DEVICE DEFINITIONS
 //**************************************************************************
 
-const device_type SMS_LIGHT_PHASER = &device_creator<sms_light_phaser_device>;
+DEFINE_DEVICE_TYPE(SMS_LIGHT_PHASER, sms_light_phaser_device, "sms_light_phaser", "Sega SMS Light Phaser")
 
 
 #define LGUN_RADIUS           6
 #define LGUN_X_INTERVAL       4
 
 
-CUSTOM_INPUT_MEMBER( sms_light_phaser_device::th_pin_r )
+READ_LINE_MEMBER( sms_light_phaser_device::th_pin_r )
 {
 	// The returned value is inverted due to IP_ACTIVE_LOW mapping.
 	return ~m_sensor_last_state;
@@ -38,14 +52,14 @@ INPUT_CHANGED_MEMBER( sms_light_phaser_device::position_changed )
 static INPUT_PORTS_START( sms_light_phaser )
 	PORT_START("CTRL_PORT")
 	PORT_BIT( 0x20, IP_ACTIVE_LOW, IPT_BUTTON1 ) // TL (trigger)
-	PORT_BIT( 0x40, IP_ACTIVE_LOW, IPT_SPECIAL ) PORT_CUSTOM_MEMBER(DEVICE_SELF, sms_light_phaser_device, th_pin_r, NULL)
+	PORT_BIT( 0x40, IP_ACTIVE_LOW, IPT_CUSTOM ) PORT_READ_LINE_DEVICE_MEMBER(DEVICE_SELF, sms_light_phaser_device, th_pin_r)
 	PORT_BIT( 0x9f, IP_ACTIVE_LOW, IPT_UNUSED )
 
 	PORT_START("LPHASER_X")
-	PORT_BIT( 0xff, 0x00, IPT_LIGHTGUN_X) PORT_CROSSHAIR(X, 1.0, 0.0, 0) PORT_SENSITIVITY(50) PORT_KEYDELTA(15) PORT_CHANGED_MEMBER(DEVICE_SELF, sms_light_phaser_device, position_changed, nullptr)
+	PORT_BIT( 0xff, 0x00, IPT_LIGHTGUN_X) PORT_CROSSHAIR(X, 1.0, 0.0, 0) PORT_SENSITIVITY(50) PORT_KEYDELTA(15) PORT_CHANGED_MEMBER(DEVICE_SELF, sms_light_phaser_device, position_changed, 0)
 
 	PORT_START("LPHASER_Y")
-	PORT_BIT( 0xff, 0x00, IPT_LIGHTGUN_Y) PORT_CROSSHAIR(Y, 1.0, 0.0, 0) PORT_SENSITIVITY(50) PORT_KEYDELTA(15) PORT_CHANGED_MEMBER(DEVICE_SELF, sms_light_phaser_device, position_changed, nullptr)
+	PORT_BIT( 0xff, 0x00, IPT_LIGHTGUN_Y) PORT_CROSSHAIR(Y, 1.0, 0.0, 0) PORT_SENSITIVITY(50) PORT_KEYDELTA(15) PORT_CHANGED_MEMBER(DEVICE_SELF, sms_light_phaser_device, position_changed, 0)
 INPUT_PORTS_END
 
 
@@ -68,17 +82,13 @@ ioport_constructor sms_light_phaser_device::device_input_ports() const
 //  sms_light_phaser_device - constructor
 //-------------------------------------------------
 
-sms_light_phaser_device::sms_light_phaser_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock) :
-	device_t(mconfig, SMS_LIGHT_PHASER, "Sega SMS Light Phaser", tag, owner, clock, "sms_light_phaser", __FILE__),
-	device_video_interface(mconfig, *this),
+sms_light_phaser_device::sms_light_phaser_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock) :
+	device_t(mconfig, SMS_LIGHT_PHASER, tag, owner, clock),
 	device_sms_control_port_interface(mconfig, *this),
 	m_lphaser_pins(*this, "CTRL_PORT"),
 	m_lphaser_x(*this, "LPHASER_X"),
 	m_lphaser_y(*this, "LPHASER_Y"), m_sensor_last_state(0), m_lphaser_timer(nullptr)
 {
-	// Workaround for failed validation that occurs when running on a driver
-	// with Sega Scope emulation, which adds 2 screens (left/right lenses).
-	m_screen_tag = ":screen";
 }
 
 
@@ -103,7 +113,7 @@ void sms_light_phaser_device::device_reset()
 //  sms_peripheral_r - light phaser read
 //-------------------------------------------------
 
-UINT8 sms_light_phaser_device::peripheral_r()
+uint8_t sms_light_phaser_device::peripheral_r()
 {
 	return m_lphaser_pins->read();
 }
@@ -135,18 +145,18 @@ UINT8 sms_light_phaser_device::peripheral_r()
 int sms_light_phaser_device::bright_aim_area( emu_timer *timer, int lgun_x, int lgun_y )
 {
 	const int r_x_r = LGUN_RADIUS * LGUN_RADIUS;
-	const rectangle &visarea = m_screen->visible_area();
+	const rectangle &visarea = m_port->m_screen->visible_area();
 	rectangle aim_area;
-	int beam_x = m_screen->hpos();
-	int beam_y = m_screen->vpos();
+	int beam_x = m_port->m_screen->hpos();
+	int beam_y = m_port->m_screen->vpos();
 	int beam_x_orig = beam_x;
 	int beam_y_orig = beam_y;
 	int dy, result = 1;
 	double dx_radius;
 	bool new_check_point = false;
 
-	aim_area.min_y = MAX(lgun_y - LGUN_RADIUS, visarea.min_y);
-	aim_area.max_y = MIN(lgun_y + LGUN_RADIUS, visarea.max_y);
+	aim_area.min_y = std::max(lgun_y - LGUN_RADIUS, visarea.min_y);
+	aim_area.max_y = std::min(lgun_y + LGUN_RADIUS, visarea.max_y);
 
 	while (!new_check_point)
 	{
@@ -175,8 +185,8 @@ int sms_light_phaser_device::bright_aim_area( emu_timer *timer, int lgun_x, int 
 			dx_radius = ceil((float) sqrt((float) (r_x_r - (dy * dy))));
 		}
 
-		aim_area.min_x = MAX(lgun_x - dx_radius, visarea.min_x);
-		aim_area.max_x = MIN(lgun_x + dx_radius, visarea.max_x);
+		aim_area.min_x = std::max(int32_t(lgun_x - dx_radius), visarea.min_x);
+		aim_area.max_x = std::min(int32_t(lgun_x + dx_radius), visarea.max_x);
 
 		while (!new_check_point)
 		{
@@ -212,11 +222,12 @@ int sms_light_phaser_device::bright_aim_area( emu_timer *timer, int lgun_x, int 
 			else
 			{
 				rgb_t color;
-				UINT8 brightness;
+				uint8_t brightness;
 				/* brightness of the lightgray color in the frame drawn by Light Phaser games */
-				const UINT8 sensor_min_brightness = 0x7f;
+				const uint8_t sensor_min_brightness = 0x7f;
 
-				color = m_port->pixel_r();
+				m_port->m_screen->update_now();
+				color = m_port->m_screen->pixel(beam_x, beam_y);
 
 				/* reference: http://www.w3.org/TR/AERT#color-contrast */
 				brightness = (color.r() * 0.299) + (color.g() * 0.587) + (color.b() * 0.114);
@@ -241,22 +252,22 @@ int sms_light_phaser_device::bright_aim_area( emu_timer *timer, int lgun_x, int 
 		}
 	}
 
-	timer->adjust(m_screen->time_until_pos(beam_y, beam_x));
+	timer->adjust(m_port->m_screen->time_until_pos(beam_y, beam_x));
 	return result;
 }
 
 
-UINT16 sms_light_phaser_device::screen_hpos_nonscaled(int scaled_hpos)
+uint16_t sms_light_phaser_device::screen_hpos_nonscaled(int scaled_hpos)
 {
-	const rectangle &visarea = m_screen->visible_area();
+	const rectangle &visarea = m_port->m_screen->visible_area();
 	int offset_x = (scaled_hpos * (visarea.max_x - visarea.min_x)) / 255;
 	return visarea.min_x + offset_x;
 }
 
 
-UINT16 sms_light_phaser_device::screen_vpos_nonscaled(int scaled_vpos)
+uint16_t sms_light_phaser_device::screen_vpos_nonscaled(int scaled_vpos)
 {
-	const rectangle &visarea = m_screen->visible_area();
+	const rectangle &visarea = m_port->m_screen->visible_area();
 	int offset_y = (scaled_vpos * (visarea.max_y - visarea.min_y)) / 255;
 	return visarea.min_y + offset_y;
 }
@@ -286,6 +297,6 @@ void sms_light_phaser_device::device_timer(emu_timer &timer, device_timer_id id,
 		sensor_check();
 		break;
 	default:
-		assert_always(FALSE, "Unknown id in sms_light_phaser_device::device_timer");
+		throw emu_fatalerror("sms_light_phaser_device(%s): Unknown timer ID", tag());
 	}
 }

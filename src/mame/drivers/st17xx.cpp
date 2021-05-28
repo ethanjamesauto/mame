@@ -2,43 +2,45 @@
 // copyright-holders:Justin Kerk
 /***************************************************************************
 
-	Saturn ST-17xx series DVD players
+    Saturn ST-17xx series DVD players
 
-	Skeleton driver.
+    Skeleton driver.
 
 ****************************************************************************/
 
 /*
 
-	TODO:
+    TODO:
 
-	- everything
+    - everything
 
-	Technical info:
-	DVD-player-on-a-chip designs from Mediatek:
-	http://www.mediatek.com/en/products/home-entertainment/consumer-dvd-blu-ray/
+    Technical info:
+    DVD-player-on-a-chip designs from Mediatek:
+    http://www.mediatek.com/en/products/home-entertainment/consumer-dvd-blu-ray/
 
-	MT1379:
-	http://pdf.datasheetcatalog.com/datasheets/134/477326_DS.pdf
+    MT1379:
+    http://pdf.datasheetcatalog.com/datasheets/134/477326_DS.pdf
 
-	MT1389:
-	http://newage.mpeg4-players.info/mt1389/mt1389.html
-	http://groups.yahoo.com/group/MEDIATEK1389/
-	http://www.sigmatek-xm600.borec.cz/chip.html
-	http://www.sigmatek-xm600.borec.cz/Info%20-%20MT1389%20v0.3b%20English.doc (rename to .rtf)
-	Includes an 8032, ARM7TDMI, and unknown DSP
+    MT1389:
+    http://newage.mpeg4-players.info/mt1389/mt1389.html
+    http://groups.yahoo.com/group/MEDIATEK1389/
+    http://www.sigmatek-xm600.borec.cz/chip.html
+    http://www.sigmatek-xm600.borec.cz/Info%20-%20MT1389%20v0.3b%20English.doc (rename to .rtf)
+    Includes an 8032, ARM7TDMI, and unknown DSP
 
-	SUNPLUS SPHE8200A:
-	http://pdf.datasheetcatalog.com/datasheets/2300/499420_DS.pdf
-	https://004code.googlecode.com/svn/trunk/h/regmapo_8200.h
-	"32-bit RISC" architecture, but which one?
+    SUNPLUS SPHE8200A:
+    http://pdf.datasheetcatalog.com/datasheets/2300/499420_DS.pdf
+    https://004code.googlecode.com/svn/trunk/h/regmapo_8200.h
+    "32-bit RISC" architecture, but which one?
 
 */
-
 
 #include "emu.h"
 #include "cpu/arm7/arm7.h"
 #include "cpu/arm7/arm7core.h"
+#include "emupal.h"
+#include "screen.h"
+
 
 #define SCREEN_TAG "screen"
 
@@ -48,17 +50,22 @@ public:
 	st17xx_state(const machine_config &mconfig, device_type type, const char *tag)
 		: driver_device(mconfig, type, tag) { }
 
+	void st17xx(machine_config &config);
+
+private:
 	virtual void machine_start() override;
 
 	virtual void video_start() override;
-	UINT32 screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect);
+	uint32_t screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect);
+	void cpu_map(address_map &map);
 };
 
 /* Memory Maps */
 
-static ADDRESS_MAP_START( cpu_map, AS_PROGRAM, 32, st17xx_state )
-	AM_RANGE(0x00000000, 0x000fffff) AM_ROM
-ADDRESS_MAP_END
+void st17xx_state::cpu_map(address_map &map)
+{
+	map(0x00000000, 0x000fffff).rom();
+}
 
 /* Input Ports */
 
@@ -71,7 +78,7 @@ void st17xx_state::video_start()
 {
 }
 
-UINT32 st17xx_state::screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
+uint32_t st17xx_state::screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
 {
 	return 0;
 }
@@ -84,21 +91,22 @@ void st17xx_state::machine_start()
 
 /* Machine Driver */
 
-static MACHINE_CONFIG_START( st17xx, st17xx_state )
+void st17xx_state::st17xx(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", ARM7, 50000000) /* speed unknown */
-	MCFG_CPU_PROGRAM_MAP(cpu_map)
+	arm7_cpu_device &maincpu(ARM7(config, "maincpu", 50000000)); /* speed unknown */
+	maincpu.set_addrmap(AS_PROGRAM, &st17xx_state::cpu_map);
 
 	/* video hardware */
-	MCFG_SCREEN_ADD(SCREEN_TAG, RASTER)
-	MCFG_SCREEN_REFRESH_RATE(60)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(2500)) /* not accurate */
-	MCFG_SCREEN_UPDATE_DRIVER(st17xx_state, screen_update)
-	MCFG_SCREEN_SIZE(640, 480)
-	MCFG_SCREEN_VISIBLE_AREA(0, 640-1, 0, 480-1)
+	screen_device &screen(SCREEN(config, SCREEN_TAG, SCREEN_TYPE_RASTER));
+	screen.set_refresh_hz(60);
+	screen.set_vblank_time(ATTOSECONDS_IN_USEC(2500)); /* not accurate */
+	screen.set_screen_update(FUNC(st17xx_state::screen_update));
+	screen.set_size(640, 480);
+	screen.set_visarea(0, 640-1, 0, 480-1);
 
-	MCFG_PALETTE_ADD("palette", 64)
-MACHINE_CONFIG_END
+	PALETTE(config, "palette").set_entries(64);
+}
 
 /* ROMs */
 
@@ -173,14 +181,14 @@ ROM_END
 
 /* System Drivers */
 
-/*    YEAR  NAME        PARENT      COMPAT  MACHINE     INPUT     CLASS          INIT    COMPANY      FULLNAME   FLAGS */
-CONS( 200?, st1700h,    0,          0,      st17xx,     st17xx,   driver_device,   0,    "Saturn",    "ST-1700 (headphone version)", MACHINE_IS_SKELETON )
-CONS( 200?, st1701,     0,          0,      st17xx,     st17xx,   driver_device,   0,    "Saturn",    "ST-1701", MACHINE_IS_SKELETON )
-CONS( 200?, st1702,     0,          0,      st17xx,     st17xx,   driver_device,   0,    "Saturn",    "ST-1702", MACHINE_IS_SKELETON )
-CONS( 200?, st1703,     0,          0,      st17xx,     st17xx,   driver_device,   0,    "Saturn",    "ST-1703", MACHINE_IS_SKELETON )
-CONS( 200?, st1704,     0,          0,      st17xx,     st17xx,   driver_device,   0,    "Saturn",    "ST-1704", MACHINE_IS_SKELETON )
-CONS( 200?, st1705,     0,          0,      st17xx,     st17xx,   driver_device,   0,    "Saturn",    "ST-1705", MACHINE_IS_SKELETON )
-CONS( 200?, st1706,     0,          0,      st17xx,     st17xx,   driver_device,   0,    "Saturn",    "ST-1706", MACHINE_IS_SKELETON )
-CONS( 200?, st1707,     0,          0,      st17xx,     st17xx,   driver_device,   0,    "Saturn",    "ST-1707", MACHINE_IS_SKELETON )
-CONS( 200?, st1708,     0,          0,      st17xx,     st17xx,   driver_device,   0,    "Saturn",    "ST-1708", MACHINE_IS_SKELETON )
-CONS( 200?, st1714,     0,          0,      st17xx,     st17xx,   driver_device,   0,    "Saturn",    "ST-1714", MACHINE_IS_SKELETON )
+//    YEAR  NAME     PARENT  COMPAT  MACHINE  INPUT   CLASS          INIT        COMPANY   FULLNAME                       FLAGS
+CONS( 200?, st1700h, 0,      0,      st17xx,  st17xx, st17xx_state,  empty_init, "Saturn", "ST-1700 (headphone version)", MACHINE_IS_SKELETON )
+CONS( 200?, st1701,  0,      0,      st17xx,  st17xx, st17xx_state,  empty_init, "Saturn", "ST-1701",                     MACHINE_IS_SKELETON )
+CONS( 200?, st1702,  0,      0,      st17xx,  st17xx, st17xx_state,  empty_init, "Saturn", "ST-1702",                     MACHINE_IS_SKELETON )
+CONS( 200?, st1703,  0,      0,      st17xx,  st17xx, st17xx_state,  empty_init, "Saturn", "ST-1703",                     MACHINE_IS_SKELETON )
+CONS( 200?, st1704,  0,      0,      st17xx,  st17xx, st17xx_state,  empty_init, "Saturn", "ST-1704",                     MACHINE_IS_SKELETON )
+CONS( 200?, st1705,  0,      0,      st17xx,  st17xx, st17xx_state,  empty_init, "Saturn", "ST-1705",                     MACHINE_IS_SKELETON )
+CONS( 200?, st1706,  0,      0,      st17xx,  st17xx, st17xx_state,  empty_init, "Saturn", "ST-1706",                     MACHINE_IS_SKELETON )
+CONS( 200?, st1707,  0,      0,      st17xx,  st17xx, st17xx_state,  empty_init, "Saturn", "ST-1707",                     MACHINE_IS_SKELETON )
+CONS( 200?, st1708,  0,      0,      st17xx,  st17xx, st17xx_state,  empty_init, "Saturn", "ST-1708",                     MACHINE_IS_SKELETON )
+CONS( 200?, st1714,  0,      0,      st17xx,  st17xx, st17xx_state,  empty_init, "Saturn", "ST-1714",                     MACHINE_IS_SKELETON )

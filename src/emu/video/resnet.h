@@ -8,10 +8,10 @@
 
 *****************************************************************************/
 
-#pragma once
+#ifndef MAME_EMU_VIDEO_RESNET_H
+#define MAME_EMU_VIDEO_RESNET_H
 
-#ifndef _RESNET_H_
-#define _RESNET_H_
+#pragma once
 
 /**********************************************************************
  *      Rbias
@@ -50,7 +50,7 @@
 #define RES_NET_VCC_CUSTOM          0x0008
 #define RES_NET_VCC_MASK            0x0008
 
-/* VBias prebuils - per channel but may be specified globally as default */
+/* VBias prebuilds - per channel but may be specified globally as default */
 
 #define RES_NET_VBIAS_USE_GLOBAL    0x0000
 #define RES_NET_VBIAS_5V            0x0010
@@ -95,7 +95,7 @@
 
 struct res_net_channel_info {
 	// per channel options
-	UINT32  options;
+	u32     options;
 	// Pullup resistor value in Ohms
 	double  rBias;
 	// Pulldown resistor value in Ohms
@@ -104,7 +104,7 @@ struct res_net_channel_info {
 	int     num;
 	// Resistor values
 	// - Least significant bit first
-	double R[8];
+	double  R[8];
 	// Minimum output voltage
 	// - Applicable if output is routed through a complimentary
 	// - darlington circuit
@@ -121,7 +121,7 @@ struct res_net_channel_info {
 
 struct res_net_info {
 	// global options
-	UINT32  options;
+	u32     options;
 	// The three color channels
 	res_net_channel_info rgb[3];
 	// Supply Voltage
@@ -136,7 +136,7 @@ struct res_net_info {
 	// - CMOS: 0.05V (@5v vcc)
 	double  vOH;
 	// Open Collector flag
-	UINT8   OpenCol;
+	u8      OpenCol;
 };
 
 #define RES_NET_MAX_COMP    3
@@ -145,9 +145,9 @@ struct res_net_decode_info {
 	int numcomp;
 	int start;
 	int end;
-	UINT16  offset[3 * RES_NET_MAX_COMP];
-	INT16   shift[3 * RES_NET_MAX_COMP];
-	UINT16  mask[3 * RES_NET_MAX_COMP];
+	u16 offset[3 * RES_NET_MAX_COMP];
+	s16 shift[3 * RES_NET_MAX_COMP];
+	u16 mask[3 * RES_NET_MAX_COMP];
 };
 
 /* return a single value for one channel */
@@ -156,25 +156,32 @@ int compute_res_net(int inputs, int channel, const res_net_info &di);
 
 /* compute all values */
 
-void compute_res_net_all(std::vector<rgb_t> &rgb, const UINT8 *prom, const res_net_decode_info &rdi, const res_net_info &di);
+void compute_res_net_all(std::vector<rgb_t> &rgb, const u8 *prom, const res_net_decode_info &rdi, const res_net_info &di);
 
 
 /* legacy interface */
 
-double compute_resistor_weights(
-	int minval, int maxval, double scaler,
-	int count_1, const int * resistances_1, double * weights_1, int pulldown_1, int pullup_1,
-	int count_2, const int * resistances_2, double * weights_2, int pulldown_2, int pullup_2,
-	int count_3, const int * resistances_3, double * weights_3, int pulldown_3, int pullup_3 );
+namespace emu::detail {
 
-#define combine_8_weights(tab,w0,w1,w2,w3,w4,w5,w6,w7)  ((int)(((tab)[0]*(w0) + (tab)[1]*(w1) + (tab)[2]*(w2) + (tab)[3]*(w3) + (tab)[4]*(w4) + (tab)[5]*(w5) + (tab)[6]*(w6) + (tab)[7]*(w7)) + 0.5))
-#define combine_7_weights(tab,w0,w1,w2,w3,w4,w5,w6)     ((int)(((tab)[0]*(w0) + (tab)[1]*(w1) + (tab)[2]*(w2) + (tab)[3]*(w3) + (tab)[4]*(w4) + (tab)[5]*(w5) + (tab)[6]*(w6)) + 0.5))
-#define combine_6_weights(tab,w0,w1,w2,w3,w4,w5)        ((int)(((tab)[0]*(w0) + (tab)[1]*(w1) + (tab)[2]*(w2) + (tab)[3]*(w3) + (tab)[4]*(w4) + (tab)[5]*(w5)) + 0.5))
-#define combine_5_weights(tab,w0,w1,w2,w3,w4)           ((int)(((tab)[0]*(w0) + (tab)[1]*(w1) + (tab)[2]*(w2) + (tab)[3]*(w3) + (tab)[4]*(w4)) + 0.5))
-#define combine_4_weights(tab,w0,w1,w2,w3)              ((int)(((tab)[0]*(w0) + (tab)[1]*(w1) + (tab)[2]*(w2) + (tab)[3]*(w3)) + 0.5))
-#define combine_3_weights(tab,w0,w1,w2)                 ((int)(((tab)[0]*(w0) + (tab)[1]*(w1) + (tab)[2]*(w2)) + 0.5))
-#define combine_2_weights(tab,w0,w1)                    ((int)(((tab)[0]*(w0) + (tab)[1]*(w1)) + 0.5))
-#define combine_1_weights(tab,w0)                       ((int)(((tab)[0]*(w0) + 0.5)))
+template <std::size_t I, typename T, std::size_t N, typename U>
+constexpr auto combine_weights(T const (&tab)[N], U w) { return tab[I] * w; }
+
+template <std::size_t I, typename T, std::size_t N, typename U, typename... V>
+constexpr auto combine_weights(T const (&tab)[N], U w0, V... w) { return (tab[I] * w0) + combine_weights<I + 1>(tab, w...); }
+
+} // namespace emu::detail
+
+double compute_resistor_weights(
+		int minval, int maxval, double scaler,
+		int count_1, const int * resistances_1, double * weights_1, int pulldown_1, int pullup_1,
+		int count_2, const int * resistances_2, double * weights_2, int pulldown_2, int pullup_2,
+		int count_3, const int * resistances_3, double * weights_3, int pulldown_3, int pullup_3);
+
+template <typename T = int, typename U, std::size_t N, typename... V>
+constexpr T combine_weights(U const (&tab)[N], V... w)
+{
+	return T(emu::detail::combine_weights<0U>(tab, w...) + 0.5);
+}
 
 
 
@@ -189,11 +196,11 @@ double compute_resistor_weights(
 /* for the open collector outputs PROMs */
 
 double compute_resistor_net_outputs(
-	int minval, int maxval, double scaler,
-	int count_1, const int * resistances_1, double * outputs_1, int pulldown_1, int pullup_1,
-	int count_2, const int * resistances_2, double * outputs_2, int pulldown_2, int pullup_2,
-	int count_3, const int * resistances_3, double * outputs_3, int pulldown_3, int pullup_3 );
+		int minval, int maxval, double scaler,
+		int count_1, const int * resistances_1, double * outputs_1, int pulldown_1, int pullup_1,
+		int count_2, const int * resistances_2, double * outputs_2, int pulldown_2, int pullup_2,
+		int count_3, const int * resistances_3, double * outputs_3, int pulldown_3, int pullup_3 );
 
 
 
-#endif /*_RESNET_H_*/
+#endif /* MAME_EMU_VIDEO_RESNET_H */

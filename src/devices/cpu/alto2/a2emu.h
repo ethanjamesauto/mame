@@ -8,8 +8,8 @@
 #ifdef  ALTO2_DEFINE_CONSTANTS
 
 #else   // ALTO2_DEFINE_CONSTANTS
-#ifndef _A2EMU_H_
-#define _A2EMU_H_
+#ifndef MAME_CPU_ALTO2_A2EMU_H
+#define MAME_CPU_ALTO2_A2EMU_H
 
 //! BUS source for emulator task
 enum {
@@ -42,9 +42,9 @@ enum {
 };
 
 struct {
-	UINT16 ir;                                  //!< emulator instruction register
-	UINT8 skip;                                 //!< emulator skip
-	UINT8 cy;                                   //!< emulator carry
+	uint16_t ir;                                  //!< emulator instruction register
+	uint8_t skip;                                 //!< emulator skip
+	uint8_t cy;                                   //!< emulator carry
 }   m_emu;
 void bs_early_emu_disp();                       //!< bus source: drive bus by IR[8-15], possibly sign extended
 void f1_early_emu_block();                      //!< F1 func: block task
@@ -65,5 +65,5 @@ void f2_late_acsource();                        //!< F2 func: branch on arithmet
 void init_emu(int task = task_emu);             //!< initialize the emulator task
 void exit_emu();                                //!< deinitialize the emulator task
 void reset_emu();                               //!< reset the emulator task
-#endif // _A2EMU_H_
+#endif // MAME_CPU_ALTO2_A2EMU_H
 #endif  // ALTO2_DEFINE_CONSTANTS

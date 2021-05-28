@@ -4,7 +4,7 @@
 
 Go 2000 - Korean Card game
 
-Newer PCB, very sparce with newer surface mounted CPUs
+Newer PCB, very sparse with newer surface mounted CPUs
 
 MC68EC000FU10
 Z84C0006FEC
@@ -34,75 +34,93 @@ Notes:
 #include "emu.h"
 #include "cpu/m68000/m68000.h"
 #include "cpu/z80/z80.h"
+#include "machine/gen_latch.h"
 #include "sound/dac.h"
+#include "emupal.h"
+#include "screen.h"
+#include "speaker.h"
+
 
 class go2000_state : public driver_device
 {
 public:
-	go2000_state(const machine_config &mconfig, device_type type, const char *tag)
-		: driver_device(mconfig, type, tag),
+	go2000_state(const machine_config &mconfig, device_type type, const char *tag) :
+		driver_device(mconfig, type, tag),
 		m_videoram(*this, "videoram"),
 		m_videoram2(*this, "videoram2"),
-		m_soundcpu(*this, "soundcpu"),
 		m_maincpu(*this, "maincpu"),
+		m_soundcpu(*this, "soundcpu"),
 		m_gfxdecode(*this, "gfxdecode"),
 		m_screen(*this, "screen"),
-		m_palette(*this, "palette") { }
+		m_palette(*this, "palette"),
+		m_soundlatch(*this, "soundlatch")
+	{ }
 
+	void go2000(machine_config &config);
+
+private:
 	/* memory pointers */
-	required_shared_ptr<UINT16> m_videoram;
-	required_shared_ptr<UINT16> m_videoram2;
+	required_shared_ptr<uint16_t> m_videoram;
+	required_shared_ptr<uint16_t> m_videoram2;
 
 	/* devices */
-	required_device<cpu_device> m_soundcpu;
-	DECLARE_WRITE16_MEMBER(sound_cmd_w);
-	DECLARE_WRITE8_MEMBER(go2000_pcm_1_bankswitch_w);
-	virtual void machine_start() override;
-	virtual void video_start() override;
-	UINT32 screen_update_go2000(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
 	required_device<cpu_device> m_maincpu;
+	required_device<cpu_device> m_soundcpu;
 	required_device<gfxdecode_device> m_gfxdecode;
 	required_device<screen_device> m_screen;
 	required_device<palette_device> m_palette;
+	required_device<generic_latch_8_device> m_soundlatch;
+
+	void sound_cmd_w(uint16_t data);
+	void go2000_pcm_1_bankswitch_w(uint8_t data);
+	virtual void machine_start() override;
+	virtual void video_start() override;
+	uint32_t screen_update_go2000(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
+	void go2000_map(address_map &map);
+	void go2000_sound_io(address_map &map);
+	void go2000_sound_map(address_map &map);
 };
 
 
-WRITE16_MEMBER(go2000_state::sound_cmd_w)
+void go2000_state::sound_cmd_w(uint16_t data)
 {
-	soundlatch_byte_w(space, offset, data & 0xff);
+	m_soundlatch->write(data & 0xff);
 	m_soundcpu->set_input_line(0, HOLD_LINE);
 }
 
-static ADDRESS_MAP_START( go2000_map, AS_PROGRAM, 16, go2000_state )
-	AM_RANGE(0x000000, 0x03ffff) AM_ROM
-	AM_RANGE(0x200000, 0x203fff) AM_RAM
-	AM_RANGE(0x600000, 0x60ffff) AM_RAM AM_SHARE("videoram")
-	AM_RANGE(0x610000, 0x61ffff) AM_RAM AM_SHARE("videoram2")
-	AM_RANGE(0x800000, 0x800fff) AM_RAM_DEVWRITE("palette", palette_device, write) AM_SHARE("palette")
-	AM_RANGE(0xa00000, 0xa00001) AM_READ_PORT("INPUTS")
-	AM_RANGE(0xa00002, 0xa00003) AM_READ_PORT("DSW")
-	AM_RANGE(0x620002, 0x620003) AM_WRITE(sound_cmd_w)
-//  AM_RANGE(0xe00000, 0xe00001) AM_WRITENOP
-//  AM_RANGE(0xe00010, 0xe00011) AM_WRITENOP
-//  AM_RANGE(0xe00020, 0xe00021) AM_WRITENOP
-ADDRESS_MAP_END
+void go2000_state::go2000_map(address_map &map)
+{
+	map(0x000000, 0x03ffff).rom();
+	map(0x200000, 0x203fff).ram();
+	map(0x600000, 0x60ffff).ram().share("videoram");
+	map(0x610000, 0x61ffff).ram().share("videoram2");
+	map(0x800000, 0x800fff).ram().w(m_palette, FUNC(palette_device::write16)).share("palette");
+	map(0xa00000, 0xa00001).portr("INPUTS");
+	map(0xa00002, 0xa00003).portr("DSW");
+	map(0x620002, 0x620003).w(FUNC(go2000_state::sound_cmd_w));
+//  map(0xe00000, 0xe00001).nopw();
+//  map(0xe00010, 0xe00011).nopw();
+//  map(0xe00020, 0xe00021).nopw();
+}
 
-WRITE8_MEMBER(go2000_state::go2000_pcm_1_bankswitch_w)
+void go2000_state::go2000_pcm_1_bankswitch_w(uint8_t data)
 {
 	membank("bank1")->set_entry(data & 0x07);
 }
 
-static ADDRESS_MAP_START( go2000_sound_map, AS_PROGRAM, 8, go2000_state )
-	AM_RANGE(0x0000, 0x03ff) AM_ROM
-	AM_RANGE(0x0400, 0xffff) AM_ROMBANK("bank1")
-ADDRESS_MAP_END
+void go2000_state::go2000_sound_map(address_map &map)
+{
+	map(0x0000, 0x03ff).rom();
+	map(0x0400, 0xffff).bankr("bank1");
+}
 
-static ADDRESS_MAP_START( go2000_sound_io, AS_IO, 8, go2000_state )
-	ADDRESS_MAP_GLOBAL_MASK(0xff)
-	AM_RANGE(0x00, 0x00) AM_READ(soundlatch_byte_r)
-	AM_RANGE(0x00, 0x00) AM_DEVWRITE("dac1", dac_device, write_unsigned8)
-	AM_RANGE(0x03, 0x03) AM_WRITE(go2000_pcm_1_bankswitch_w)
-ADDRESS_MAP_END
+void go2000_state::go2000_sound_io(address_map &map)
+{
+	map.global_mask(0xff);
+	map(0x00, 0x00).r(m_soundlatch, FUNC(generic_latch_8_device::read));
+	map(0x00, 0x00).w("dac", FUNC(dac_byte_interface::data_w));
+	map(0x03, 0x03).w(FUNC(go2000_state::go2000_pcm_1_bankswitch_w));
+}
 
 
 static INPUT_PORTS_START( go2000 )
@@ -177,7 +195,7 @@ static const gfx_layout go2000_layout =
 	8*32
 };
 
-static GFXDECODE_START( go2000 )
+static GFXDECODE_START( gfx_go2000 )
 	GFXDECODE_ENTRY( "gfx1", 0, go2000_layout,   0x0, 0x80  ) /* tiles */
 GFXDECODE_END
 
@@ -185,7 +203,7 @@ void go2000_state::video_start()
 {
 }
 
-UINT32 go2000_state::screen_update_go2000(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t go2000_state::screen_update_go2000(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	int count = 0;
 
@@ -315,7 +333,7 @@ UINT32 go2000_state::screen_update_go2000(screen_device &screen, bitmap_ind16 &b
 
 void go2000_state::machine_start()
 {
-	UINT8 *SOUND = memregion("soundcpu")->base();
+	uint8_t *SOUND = memregion("soundcpu")->base();
 	int i;
 
 	for (i = 0; i < 8; i++)
@@ -325,37 +343,35 @@ void go2000_state::machine_start()
 
 }
 
-static MACHINE_CONFIG_START( go2000, go2000_state )
+void go2000_state::go2000(machine_config &config)
+{
+	M68000(config, m_maincpu, 10000000);
+	m_maincpu->set_addrmap(AS_PROGRAM, &go2000_state::go2000_map);
+	m_maincpu->set_vblank_int("screen", FUNC(go2000_state::irq1_line_hold));
 
-	MCFG_CPU_ADD("maincpu", M68000, 10000000)
-	MCFG_CPU_PROGRAM_MAP(go2000_map)
-	MCFG_CPU_VBLANK_INT_DRIVER("screen", go2000_state,  irq1_line_hold)
-
-	MCFG_CPU_ADD("soundcpu", Z80, 4000000)
-	MCFG_CPU_PROGRAM_MAP(go2000_sound_map)
-	MCFG_CPU_IO_MAP(go2000_sound_io)
-
-
-	MCFG_GFXDECODE_ADD("gfxdecode", "palette", go2000)
-
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_REFRESH_RATE(60)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(0))
-	MCFG_SCREEN_SIZE(64*8, 32*8)
-	MCFG_SCREEN_VISIBLE_AREA(0*8, 48*8-1, 2*8, 30*8-1)
-	MCFG_SCREEN_UPDATE_DRIVER(go2000_state, screen_update_go2000)
-	MCFG_SCREEN_PALETTE("palette")
-
-	MCFG_PALETTE_ADD("palette", 0x800)
-	MCFG_PALETTE_FORMAT(xBBBBBGGGGGRRRRR)
+	Z80(config, m_soundcpu, 4000000);
+	m_soundcpu->set_addrmap(AS_PROGRAM, &go2000_state::go2000_sound_map);
+	m_soundcpu->set_addrmap(AS_IO, &go2000_state::go2000_sound_io);
 
 
-	MCFG_SPEAKER_STANDARD_STEREO("lspeaker", "rspeaker")
+	GFXDECODE(config, m_gfxdecode, m_palette, gfx_go2000);
 
-	MCFG_DAC_ADD("dac1")
-	MCFG_SOUND_ROUTE(0, "lspeaker", 0.50)
-	MCFG_SOUND_ROUTE(1, "rspeaker", 0.50)
-MACHINE_CONFIG_END
+	SCREEN(config, m_screen, SCREEN_TYPE_RASTER);
+	m_screen->set_refresh_hz(60);
+	m_screen->set_vblank_time(ATTOSECONDS_IN_USEC(0));
+	m_screen->set_size(64*8, 32*8);
+	m_screen->set_visarea(0*8, 48*8-1, 2*8, 30*8-1);
+	m_screen->set_screen_update(FUNC(go2000_state::screen_update_go2000));
+	m_screen->set_palette(m_palette);
+
+	PALETTE(config, m_palette).set_format(palette_device::xBGR_555, 0x800);
+
+
+	GENERIC_LATCH_8(config, m_soundlatch);
+
+	SPEAKER(config, "speaker").front_center();
+	DAC_8BIT_R2R(config, "dac", 0).add_route(0, "speaker", 0.25); // unknown DAC
+}
 
 ROM_START( go2000 )
 	ROM_REGION( 0x80000, "maincpu", 0 ) /* 68000 Code */
@@ -371,4 +387,4 @@ ROM_START( go2000 )
 ROM_END
 
 
-GAME( 2000, go2000,    0, go2000,    go2000, driver_device,    0, ROT0,  "SunA?", "Go 2000", MACHINE_SUPPORTS_SAVE )
+GAME( 2000, go2000, 0, go2000, go2000, go2000_state, empty_init, ROT0, "SunA?", "Go 2000", MACHINE_SUPPORTS_SAVE )

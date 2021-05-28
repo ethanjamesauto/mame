@@ -7,50 +7,25 @@
     6502, NES variant
 
 ***************************************************************************/
+#ifndef MAME_CPU_M6502_N2A03_H
+#define MAME_CPU_M6502_N2A03_H
 
-#ifndef __N2A03_H__
-#define __N2A03_H__
+#pragma once
 
 #include "m6502.h"
 #include "sound/nes_apu.h"
 
-class n2a03_device : public m6502_device {
+class n2a03_core_device : public m6502_device {
 public:
-	n2a03_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	n2a03_core_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
-	required_device<nesapu_device> m_apu;
+	virtual std::unique_ptr<util::disasm_interface> create_disassembler() override;
 
-	static const disasm_entry disasm_entries[0x100];
-
-	virtual offs_t disasm_disassemble(char *buffer, offs_t pc, const UINT8 *oprom, const UINT8 *opram, UINT32 options) override;
 	virtual void do_exec_full() override;
 	virtual void do_exec_partial() override;
 
-	READ8_MEMBER(psg1_4014_r);
-	READ8_MEMBER(psg1_4015_r);
-	WRITE8_MEMBER(psg1_4015_w);
-	WRITE8_MEMBER(psg1_4017_w);
-
 protected:
-	class mi_2a03_normal : public memory_interface {
-	public:
-		virtual ~mi_2a03_normal() {}
-		virtual UINT8 read(UINT16 adr) override;
-		virtual UINT8 read_sync(UINT16 adr) override;
-		virtual UINT8 read_arg(UINT16 adr) override;
-		virtual void write(UINT16 adr, UINT8 val) override;
-	};
-
-	class mi_2a03_nd : public memory_interface {
-	public:
-		virtual ~mi_2a03_nd() {}
-		virtual UINT8 read(UINT16 adr) override;
-		virtual UINT8 read_sync(UINT16 adr) override;
-		virtual UINT8 read_arg(UINT16 adr) override;
-		virtual void write(UINT16 adr, UINT8 val) override;
-	};
-
-	virtual void device_start() override;
+	n2a03_core_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock);
 
 #define O(o) void o ## _full(); void o ## _partial()
 
@@ -63,15 +38,41 @@ protected:
 
 #undef O
 
-	virtual machine_config_constructor device_mconfig_additions() const override;
-	virtual const address_space_config *memory_space_config(address_spacenum spacenum = AS_0) const override;
+private:
+};
+
+class n2a03_device : public n2a03_core_device, public device_mixer_interface {
+public:
+	n2a03_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
+
+	uint8_t psg1_4014_r();
+	uint8_t psg1_4015_r();
+	void psg1_4015_w(uint8_t data);
+	void psg1_4017_w(uint8_t data);
+
+	void n2a03_map(address_map &map);
+protected:
+
+	required_device<nesapu_device> m_apu;
+
+	virtual void device_add_mconfig(machine_config &config) override;
 
 private:
-	address_space_config m_program_config;
+	DECLARE_WRITE_LINE_MEMBER(apu_irq);
+	uint8_t apu_read_mem(offs_t offset);
 
 };
 
-#define N2A03_DEFAULTCLOCK (21477272.724 / 12)
+
+/* These are the official XTAL values and clock rates used by Nintendo for
+   manufacturing throughout the production of the 2A03. PALC_APU_CLOCK is
+   the clock rate devised by UMC(?) for PAL Famicom clone hardware.        */
+
+#define N2A03_NTSC_XTAL           XTAL(21'477'272)
+#define N2A03_PAL_XTAL            XTAL(26'601'712)
+#define NTSC_APU_CLOCK      (N2A03_NTSC_XTAL/12) /* 1.7897726666... MHz */
+#define PAL_APU_CLOCK       (N2A03_PAL_XTAL/16) /* 1.662607 MHz */
+#define PALC_APU_CLOCK      (N2A03_PAL_XTAL/15) /* 1.77344746666... MHz */
 
 enum {
 	N2A03_IRQ_LINE = m6502_device::IRQ_LINE,
@@ -80,6 +81,7 @@ enum {
 	N2A03_SET_OVERFLOW = m6502_device::V_LINE
 };
 
-extern const device_type N2A03;
+DECLARE_DEVICE_TYPE(N2A03_CORE, n2a03_core_device)
+DECLARE_DEVICE_TYPE(N2A03, n2a03_device)
 
-#endif
+#endif // MAME_CPU_M6502_N2A03_H

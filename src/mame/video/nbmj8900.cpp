@@ -16,35 +16,34 @@
 
 
 ******************************************************************************/
-READ8_MEMBER(nbmj8900_state::palette_type1_r)
+uint8_t nbmj8900_state::palette_type1_r(offs_t offset)
 {
 	return m_palette_ptr[offset];
 }
 
-WRITE8_MEMBER(nbmj8900_state::palette_type1_w)
+void nbmj8900_state::palette_type1_w(offs_t offset, uint8_t data)
 {
-	int r, g, b;
-
 	m_palette_ptr[offset] = data;
 
-	if (!(offset & 1)) return;
+	if (offset & 1)
+	{
+		offset &= 0x1fe;
 
-	offset &= 0x1fe;
+		int const r = (m_palette_ptr[offset + 0] >> 0) & 0x0f;
+		int const g = (m_palette_ptr[offset + 1] >> 4) & 0x0f;
+		int const b = (m_palette_ptr[offset + 1] >> 0) & 0x0f;
 
-	r = ((m_palette_ptr[offset + 0] & 0x0f) >> 0);
-	g = ((m_palette_ptr[offset + 1] & 0xf0) >> 4);
-	b = ((m_palette_ptr[offset + 1] & 0x0f) >> 0);
-
-	m_palette->set_pen_color((offset >> 1), pal4bit(r), pal4bit(g), pal4bit(b));
+		m_palette->set_pen_color((offset >> 1), pal4bit(r), pal4bit(g), pal4bit(b));
+	}
 }
 
 #ifdef UNUSED_FUNCTION
-READ8_MEMBER(nbmj8900_state::palette_type2_r)
+uint8_t nbmj8900_state::palette_type2_r(offs_t offset)
 {
 	return m_palette_ptr[offset];
 }
 
-WRITE8_MEMBER(nbmj8900_state::palette_type2_w)
+void nbmj8900_state::palette_type2_w(offs_t offset, uint8_t data)
 {
 	int r, g, b;
 
@@ -61,12 +60,12 @@ WRITE8_MEMBER(nbmj8900_state::palette_type2_w)
 	m_palette->set_pen_color((offset & 0x0ff), pal4bit(r), pal4bit(g), pal4bit(b));
 }
 
-READ8_MEMBER(nbmj8900_state::palette_type3_r)
+uint8_t nbmj8900_state::palette_type3_r(offs_t offset)
 {
 	return m_palette_ptr[offset];
 }
 
-WRITE8_MEMBER(nbmj8900_state::palette_type3_w)
+void nbmj8900_state::palette_type3_w(offs_t offset, uint8_t data)
 {
 	int r, g, b;
 
@@ -84,17 +83,17 @@ WRITE8_MEMBER(nbmj8900_state::palette_type3_w)
 }
 #endif
 
-WRITE8_MEMBER(nbmj8900_state::clutsel_w)
+void nbmj8900_state::clutsel_w(uint8_t data)
 {
 	m_clutsel = data;
 }
 
-READ8_MEMBER(nbmj8900_state::clut_r)
+uint8_t nbmj8900_state::clut_r(offs_t offset)
 {
 	return m_clut[offset];
 }
 
-WRITE8_MEMBER(nbmj8900_state::clut_w)
+void nbmj8900_state::clut_w(offs_t offset, uint8_t data)
 {
 	m_clut[((m_clutsel & 0x7f) * 0x10) + (offset & 0x0f)] = data;
 }
@@ -103,7 +102,7 @@ WRITE8_MEMBER(nbmj8900_state::clut_w)
 
 
 ******************************************************************************/
-WRITE8_MEMBER(nbmj8900_state::blitter_w)
+void nbmj8900_state::blitter_w(offs_t offset, uint8_t data)
 {
 	switch (offset)
 	{
@@ -127,12 +126,12 @@ WRITE8_MEMBER(nbmj8900_state::blitter_w)
 	}
 }
 
-WRITE8_MEMBER(nbmj8900_state::scrolly_w)
+void nbmj8900_state::scrolly_w(uint8_t data)
 {
 	m_scrolly = data;
 }
 
-WRITE8_MEMBER(nbmj8900_state::vramsel_w)
+void nbmj8900_state::vramsel_w(uint8_t data)
 {
 	/* protection - not sure about this */
 	m_nb1413m3->m_sndromrgntag = (data & 0x20) ? "protdata" : "voice";
@@ -140,7 +139,7 @@ WRITE8_MEMBER(nbmj8900_state::vramsel_w)
 	m_vram = data;
 }
 
-WRITE8_MEMBER(nbmj8900_state::romsel_w)
+void nbmj8900_state::romsel_w(uint8_t data)
 {
 	m_gfxrom = (data & 0x0f);
 
@@ -187,14 +186,14 @@ void nbmj8900_state::vramflip(int vram)
 
 void nbmj8900_state::update_pixel0(int x, int y)
 {
-	UINT8 color = m_videoram0[(y * m_screen_width) + x];
-	m_tmpbitmap0.pix16(y, x) = m_palette->pen(color);
+	uint8_t color = m_videoram0[(y * m_screen_width) + x];
+	m_tmpbitmap0.pix(y, x) = m_palette->pen(color);
 }
 
 void nbmj8900_state::update_pixel1(int x, int y)
 {
-	UINT8 color = m_videoram1[(y * m_screen_width) + x];
-	m_tmpbitmap1.pix16(y, x) = m_palette->pen(color);
+	uint8_t color = m_videoram1[(y * m_screen_width) + x];
+	m_tmpbitmap1.pix(y, x) = m_palette->pen(color);
 }
 
 void nbmj8900_state::device_timer(emu_timer &timer, device_timer_id id, int param, void *ptr)
@@ -202,10 +201,10 @@ void nbmj8900_state::device_timer(emu_timer &timer, device_timer_id id, int para
 	switch (id)
 	{
 	case TIMER_BLITTER:
-		m_nb1413m3->m_busyflag = 1;
+		m_nb1413m3->busyflag_w(1);
 		break;
 	default:
-		assert_always(FALSE, "Unknown id in nbmj8900_state::device_timer");
+		throw emu_fatalerror("Unknown id in nbmj8900_state::device_timer");
 	}
 }
 
@@ -356,7 +355,7 @@ void nbmj8900_state::gfxdraw()
 		}
 	}
 
-	m_nb1413m3->m_busyflag = 0;
+	m_nb1413m3->busyflag_w(0);
 	m_blitter_timer->adjust(attotime::from_nsec(2500) * m_nb1413m3->m_busyctr);
 }
 
@@ -373,12 +372,12 @@ void nbmj8900_state::video_start()
 
 	m_screen->register_screen_bitmap(m_tmpbitmap0);
 	m_screen->register_screen_bitmap(m_tmpbitmap1);
-	m_videoram0 = std::make_unique<UINT8[]>(m_screen_width * m_screen_height);
-	m_videoram1 = std::make_unique<UINT8[]>(m_screen_width * m_screen_height);
-	m_palette_ptr = std::make_unique<UINT8[]>(0x200);
-	m_clut = std::make_unique<UINT8[]>(0x800);
-	memset(m_videoram0.get(), 0xff, (m_screen_width * m_screen_height * sizeof(UINT8)));
-	memset(m_videoram1.get(), 0xff, (m_screen_width * m_screen_height * sizeof(UINT8)));
+	m_videoram0 = std::make_unique<uint8_t[]>(m_screen_width * m_screen_height);
+	m_videoram1 = std::make_unique<uint8_t[]>(m_screen_width * m_screen_height);
+	m_palette_ptr = std::make_unique<uint8_t[]>(0x200);
+	m_clut = std::make_unique<uint8_t[]>(0x800);
+	memset(m_videoram0.get(), 0xff, (m_screen_width * m_screen_height * sizeof(uint8_t)));
+	memset(m_videoram1.get(), 0xff, (m_screen_width * m_screen_height * sizeof(uint8_t)));
 //  m_palette->pen(0x07f) = 0xff;    /* palette_transparent_pen */
 	m_gfxdraw_mode = 1;
 	m_screen_refresh = 1;
@@ -397,10 +396,10 @@ void nbmj8900_state::video_start()
 	save_item(NAME(m_flipscreen));
 	save_item(NAME(m_clutsel));
 	//save_item(NAME(m_gfxdraw_mode)); //always 1?
-	save_pointer(NAME(m_videoram0.get()), m_screen_width * m_screen_height);
-	save_pointer(NAME(m_videoram1.get()), m_screen_width * m_screen_height);
-	save_pointer(NAME(m_palette_ptr.get()), 0x200);
-	save_pointer(NAME(m_clut.get()), 0x800);
+	save_pointer(NAME(m_videoram0), m_screen_width * m_screen_height);
+	save_pointer(NAME(m_videoram1), m_screen_width * m_screen_height);
+	save_pointer(NAME(m_palette_ptr), 0x200);
+	save_pointer(NAME(m_clut), 0x800);
 	save_item(NAME(m_flipscreen_old));
 }
 
@@ -413,7 +412,7 @@ void nbmj8900_state::postload()
 
 
 ******************************************************************************/
-UINT32 nbmj8900_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t nbmj8900_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	int x, y;
 

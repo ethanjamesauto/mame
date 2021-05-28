@@ -1,5 +1,5 @@
 // license:BSD-3-Clause
-// copyright-holders:Luca Elia, David Haywood
+// copyright-holders:Luca Elia, David Haywood,Stephane Humbert
 /* Kaneko 'Calc' hitbox collision / protection
 
    It is thought that this is done by the 'CALC1' 'TOYBOX' and 'CALC3' protection chips found on the various boards
@@ -28,23 +28,17 @@
 #include "emu.h"
 #include "kaneko_hit.h"
 
-const device_type KANEKO_HIT = &device_creator<kaneko_hit_device>;
+DEFINE_DEVICE_TYPE(KANEKO_HIT, kaneko_hit_device, "kaneko_hit", "Kaneko CALC Hitbox")
 
-kaneko_hit_device::kaneko_hit_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: device_t(mconfig, KANEKO_HIT, "Kaneko CALC Hitbox", tag, owner, clock, "kaneko_hit", __FILE__)
+kaneko_hit_device::kaneko_hit_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: device_t(mconfig, KANEKO_HIT, tag, owner, clock),
+		m_watchdog(*this, "^watchdog")
 {
 	m_hittype = -1;
 	memset(&m_hit, 0, sizeof m_hit);
 	memset(&m_hit3, 0, sizeof m_hit3);
 
 }
-
-void kaneko_hit_device::set_type(device_t &device, int hittype)
-{
-	kaneko_hit_device &dev = downcast<kaneko_hit_device &>(device);
-	dev.m_hittype = hittype;
-}
-
 
 void kaneko_hit_device::device_start()
 {
@@ -112,26 +106,26 @@ void kaneko_hit_device::device_reset()
 }
 
 
-READ16_MEMBER(kaneko_hit_device::kaneko_hit_r)
+uint16_t kaneko_hit_device::kaneko_hit_r(offs_t offset)
 {
 	switch (m_hittype)
 	{
-		case 0: return kaneko_hit_type0_r(space,offset,mem_mask);
-		case 1: return kaneko_hit_type1_r(space,offset,mem_mask);
-		case 2: return kaneko_hit_type2_r(space,offset,mem_mask);
+		case 0: return kaneko_hit_type0_r(offset);
+		case 1: return kaneko_hit_type1_r(offset);
+		case 2: return kaneko_hit_type2_r(offset);
 
 		default:
 			fatalerror("kaneko_hit_r called, but m_hittype not set\n");
 	}
 }
 
-WRITE16_MEMBER(kaneko_hit_device::kaneko_hit_w)
+void kaneko_hit_device::kaneko_hit_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	switch (m_hittype)
 	{
-		case 0: kaneko_hit_type0_w(space,offset,data, mem_mask); break;
-		case 1: kaneko_hit_type1_w(space,offset,data, mem_mask); break;
-		case 2: kaneko_hit_type2_w(space,offset,data, mem_mask); break;
+		case 0: kaneko_hit_type0_w(offset,data, mem_mask); break;
+		case 1: kaneko_hit_type1_w(offset,data, mem_mask); break;
+		case 2: kaneko_hit_type2_w(offset,data, mem_mask); break;
 
 		default:
 			fatalerror("kaneko_hit_r called, but m_hittype not set\n");
@@ -145,15 +139,15 @@ WRITE16_MEMBER(kaneko_hit_device::kaneko_hit_w)
  bonkadv
 *********************************************************************/
 
-READ16_MEMBER(kaneko_hit_device::kaneko_hit_type0_r)
+uint16_t kaneko_hit_device::kaneko_hit_type0_r(offs_t offset)
 {
 	calc1_hit_t &hit = m_hit;
-	UINT16 data = 0;
+	uint16_t data = 0;
 
 	switch (offset)
 	{
 		case 0x00/2: // watchdog
-			machine().watchdog_reset();
+			m_watchdog->watchdog_reset();
 			return 0;
 
 		case 0x02/2: // unknown (yet!), used by *MANY* games !!!
@@ -185,21 +179,21 @@ READ16_MEMBER(kaneko_hit_device::kaneko_hit_type0_r)
 			return data;
 
 		case 0x10/2:
-			return (((UINT32)hit.mult_a * (UINT32)hit.mult_b) >> 16);
+			return (((uint32_t)hit.mult_a * (uint32_t)hit.mult_b) >> 16);
 		case 0x12/2:
-			return (((UINT32)hit.mult_a * (UINT32)hit.mult_b) & 0xffff);
+			return (((uint32_t)hit.mult_a * (uint32_t)hit.mult_b) & 0xffff);
 
 		case 0x14/2:
 			return (machine().rand() & 0xffff);
 
 		default:
-			logerror("CPU #0 PC %06x: warning - read unmapped calc address %06x\n",space.device().safe_pc(),offset<<1);
+			logerror("%s warning - read unmapped calc address %06x\n", machine().describe_context(), offset<<1);
 	}
 
 	return 0;
 }
 
-WRITE16_MEMBER(kaneko_hit_device::kaneko_hit_type0_w)
+void kaneko_hit_device::kaneko_hit_type0_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	calc1_hit_t &hit = m_hit;
 	data &= mem_mask;
@@ -219,7 +213,7 @@ WRITE16_MEMBER(kaneko_hit_device::kaneko_hit_type0_w)
 		case 0x12/2: hit.mult_b = data; break;
 
 		default:
-			logerror("CPU #0 PC %06x: warning - write unmapped hit address %06x\n",space.device().safe_pc(),offset<<1);
+			logerror("%s warning - write unmapped hit address %06x\n", machine().describe_context(), offset<<1);
 	}
 }
 
@@ -230,11 +224,11 @@ WRITE16_MEMBER(kaneko_hit_device::kaneko_hit_type0_w)
  bloorwar
 *********************************************************************/
 
-READ16_MEMBER(kaneko_hit_device::kaneko_hit_type1_r)
+uint16_t kaneko_hit_device::kaneko_hit_type1_r(offs_t offset)
 {
 	calc1_hit_t &hit = m_hit;
-	UINT16 data = 0;
-	INT16 x_coll, y_coll;
+	uint16_t data = 0;
+	int16_t x_coll, y_coll;
 
 
 	x_coll = calc_compute_x(hit);
@@ -286,13 +280,13 @@ READ16_MEMBER(kaneko_hit_device::kaneko_hit_type1_r)
 		case 0x32/2: return hit.y2s;
 
 		default:
-			logerror("CPU #0 PC %06x: warning - read unmapped calc address %06x\n",space.device().safe_pc(),offset<<1);
+			logerror("%s warning - read unmapped calc address %06x\n", machine().describe_context(), offset<<1);
 	}
 
 	return 0;
 }
 
-WRITE16_MEMBER(kaneko_hit_device::kaneko_hit_type1_w)
+void kaneko_hit_device::kaneko_hit_type1_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	calc1_hit_t &hit = m_hit;
 	data &= mem_mask;
@@ -315,7 +309,7 @@ WRITE16_MEMBER(kaneko_hit_device::kaneko_hit_type1_w)
 		case 0x38/2: break;
 
 		default:
-			logerror("CPU #0 PC %06x: warning - write unmapped hit address %06x\n",space.device().safe_pc(),offset<<1);
+			logerror("%s warning - write unmapped hit address %06x\n", machine().describe_context(), offset<<1);
 	}
 }
 
@@ -327,9 +321,9 @@ WRITE16_MEMBER(kaneko_hit_device::kaneko_hit_type1_w)
   result      <---------->  |     <-------->     |       <---->
 */
 
-INT16 kaneko_hit_device::calc_compute_x(calc1_hit_t &hit)
+int16_t kaneko_hit_device::calc_compute_x(calc1_hit_t &hit)
 {
-	INT16 x_coll;
+	int16_t x_coll;
 
 	// X distance
 	if ((hit.x2p >= hit.x1p) && (hit.x2p < (hit.x1p + hit.x1s)))        // x2p inside x1
@@ -342,9 +336,9 @@ INT16 kaneko_hit_device::calc_compute_x(calc1_hit_t &hit)
 	return x_coll;
 }
 
-INT16 kaneko_hit_device::calc_compute_y(calc1_hit_t &hit)
+int16_t kaneko_hit_device::calc_compute_y(calc1_hit_t &hit)
 {
-	INT16 y_coll;
+	int16_t y_coll;
 
 	// Y distance
 	if ((hit.y2p >= hit.y1p) && (hit.y2p < (hit.y1p + hit.y1s)))        // y2p inside y1
@@ -364,7 +358,7 @@ INT16 kaneko_hit_device::calc_compute_y(calc1_hit_t &hit)
 *********************************************************************/
 
 
-WRITE16_MEMBER(kaneko_hit_device::kaneko_hit_type2_w)
+void kaneko_hit_device::kaneko_hit_type2_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	calc3_hit_t &hit3 = m_hit3;
 	data &= mem_mask;
@@ -425,14 +419,14 @@ WRITE16_MEMBER(kaneko_hit_device::kaneko_hit_type2_w)
 					hit3.mode=data;break;
 
 		default:
-			logerror("CPU #0 PC %06x: warning - write unmapped hit address %06x [ %06x] = %06x\n",space.device().safe_pc(),offset<<1, idx, data);
+			logerror("%s warning - write unmapped hit address %06x [ %06x] = %06x\n",machine().describe_context(),offset<<1, idx, data);
 	}
 
 	type2_recalc_collisions(hit3);
 }
 
 
-READ16_MEMBER(kaneko_hit_device::kaneko_hit_type2_r)
+uint16_t kaneko_hit_device::kaneko_hit_type2_r(offs_t offset)
 {
 	calc3_hit_t &hit3 = m_hit3;
 	int idx=offset*4;
@@ -477,7 +471,7 @@ READ16_MEMBER(kaneko_hit_device::kaneko_hit_type2_r)
 		case 0x88: return hit3.z1toz2;
 
 		default:
-			logerror("CPU #0 PC %06x: warning - read unmapped calc address %06x [ %06x]\n",space.device().safe_pc(),offset<<1, idx);
+			logerror("%s warning - read unmapped calc address %06x [ %06x]\n",machine().describe_context(),offset<<1, idx);
 	}
 
 	return 0;

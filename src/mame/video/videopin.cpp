@@ -21,22 +21,22 @@ TILEMAP_MAPPER_MEMBER(videopin_state::get_memory_offset)
 
 TILE_GET_INFO_MEMBER(videopin_state::get_tile_info)
 {
-	UINT8 code = m_video_ram[tile_index];
+	uint8_t code = m_video_ram[tile_index];
 
-	SET_TILE_INFO_MEMBER(0, code, 0, (code & 0x40) ? TILE_FLIPY : 0);
+	tileinfo.set(0, code, 0, (code & 0x40) ? TILE_FLIPY : 0);
 }
 
 
 void videopin_state::video_start()
 {
-	m_bg_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(videopin_state::get_tile_info),this), tilemap_mapper_delegate(FUNC(videopin_state::get_memory_offset),this),  8, 8, 48, 32);
+	m_bg_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(videopin_state::get_tile_info)), tilemap_mapper_delegate(*this, FUNC(videopin_state::get_memory_offset)), 8, 8, 48, 32);
 
 	save_item(NAME(m_ball_x));
 	save_item(NAME(m_ball_y));
 }
 
 
-UINT32 videopin_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t videopin_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	int col;
 	int row;
@@ -49,7 +49,7 @@ UINT32 videopin_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap
 	{
 		for (col = 0; col < 48; col++)
 		{
-			UINT32 offset = m_bg_tilemap->memory_index(col, row);
+			uint32_t offset = m_bg_tilemap->memory_index(col, row);
 
 			if (m_video_ram[offset] & 0x80)   /* ball bit found */
 			{
@@ -89,14 +89,14 @@ UINT32 videopin_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap
 }
 
 
-WRITE8_MEMBER(videopin_state::ball_w)
+void videopin_state::ball_w(uint8_t data)
 {
 	m_ball_x = data & 15;
 	m_ball_y = data >> 4;
 }
 
 
-WRITE8_MEMBER(videopin_state::video_ram_w)
+void videopin_state::video_ram_w(offs_t offset, uint8_t data)
 {
 	m_video_ram[offset] = data;
 	m_bg_tilemap->mark_tile_dirty(offset);

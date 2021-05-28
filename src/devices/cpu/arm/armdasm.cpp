@@ -1,5 +1,5 @@
 // license:BSD-3-Clause
-// copyright-holders:Bryan McPhail,Phil Stroffolino
+// copyright-holders:Bryan McPhail, Phil Stroffolino
 /*
     ARM 2/3 disassembler
 
@@ -7,80 +7,94 @@
 */
 
 #include "emu.h"
-#include "arm.h"
+#include "armdasm.h"
 
-static char *WriteImmediateOperand( char *pBuf, UINT32 opcode )
+uint32_t arm_disassembler::ExtractImmediateOperand(uint32_t opcode) const
 {
-	/* rrrrbbbbbbbb */
-	UINT32 imm;
-	int r;
-
-	imm = opcode&0xff;
-	r = ((opcode>>8)&0xf)*2;
-	imm = (imm>>r)|(r?(imm<<(32-r)):0);
-	pBuf += sprintf( pBuf, ", #$%x", imm );
-	return pBuf;
+	// rrrrbbbbbbbb
+	uint32_t imm = opcode & 0xff;
+	uint8_t r = ((opcode >> 8) & 0xf) * 2;
+	return (imm >> r) | (r ? (imm << (32 - r)) : 0);
 }
 
-static char *WriteDataProcessingOperand( char *pBuf, UINT32 opcode, int printOp0, int printOp1, int printOp2 )
+void arm_disassembler::WriteDataProcessingOperand(std::ostream &stream, uint32_t opcode, bool printOp0, bool printOp1, offs_t pc) const
 {
-	/* ccccctttmmmm */
+	// ccccctttmmmm
 	static const char *const pRegOp[4] = { "LSL","LSR","ASR","ROR" };
 
 	if (printOp0)
-		pBuf += sprintf(pBuf,"R%d, ", (opcode>>12)&0xf);
+		util::stream_format(stream, "R%d, ", (opcode >> 12) & 0xf);
 	if (printOp1)
-		pBuf += sprintf(pBuf,"R%d, ", (opcode>>16)&0xf);
+		util::stream_format(stream, "R%d, ", (opcode >> 16) & 0xf);
 
-	/* Immediate Op2 */
-	if( opcode&0x02000000 )
-		return WriteImmediateOperand(pBuf-2,opcode);
-
-	/* Register Op2 */
-	if (printOp2)
-		pBuf += sprintf(pBuf,"R%d, ", (opcode>>0)&0xf);
-
-	pBuf += sprintf(pBuf, "%s ", pRegOp[(opcode>>5)&3] );
-
-	if( opcode&0x10 ) /* Shift amount specified in bottom bits of RS */
+	// Immediate Op2
+	if (opcode & 0x02000000)
 	{
-		pBuf += sprintf( pBuf, "R%d", (opcode>>8)&0xf );
+		uint32_t imm = ExtractImmediateOperand(opcode);
+		util::stream_format(stream, "#$%x", imm);
+
+		// Calculate result of ADD/SUB Rn, R15, #imm
+		if ((opcode & 0x01ef0000) == 0x008f0000)
+			util::stream_format(stream, " ; =$%x", pc + 8 + imm);
+		else if ((opcode & 0x01ef0000) == 0x004f0000)
+			util::stream_format(stream, " ; =$%x", pc + 8 - imm);
 	}
-	else /* Shift amount immediate 5 bit unsigned integer */
+	else
 	{
-		int c=(opcode>>7)&0x1f;
-		if( c==0 ) c = 32;
-		pBuf += sprintf( pBuf, "#%d", c );
+		// Register Op2
+		util::stream_format(stream, "R%d", (opcode >> 0) & 0xf);
+
+		int shiftop = (opcode >> 5) & 3;
+		if ((opcode & 0x10) != 0)
+		{
+			// Shift amount specified in bottom bits of RS
+			util::stream_format(stream, ", %s R%d", pRegOp[shiftop], (opcode >> 8) & 0xf);
+		}
+		else
+		{
+			// Shift amount immediate 5 bit unsigned integer
+			int c = (opcode >> 7) & 0x1f;
+			if (c == 0)
+			{
+				if (shiftop == 0)
+				return;
+				c = 32;
+			}
+			util::stream_format(stream, ", %s #%d", pRegOp[shiftop], c);
+		}
 	}
-	return pBuf;
 }
 
-static char *WriteRegisterOperand1( char *pBuf, UINT32 opcode )
+void arm_disassembler::WriteRegisterOperand1(std::ostream &stream, uint32_t opcode) const
 {
 	/* ccccctttmmmm */
 	static const char *const pRegOp[4] = { "LSL","LSR","ASR","ROR" };
 
-	pBuf += sprintf(
-		pBuf,
-		", R%d %s ", /* Operand 1 register, Operand 2 register, shift type */
-		(opcode>> 0)&0xf,
-		pRegOp[(opcode>>5)&3] );
+	int shiftop = (opcode >> 5) & 3;
+	util::stream_format(
+		stream,
+		", R%d", /* Operand 1 register, Operand 2 register */
+		(opcode >> 0) & 0xf);
 
 	if( opcode&0x10 ) /* Shift amount specified in bottom bits of RS */
 	{
-		pBuf += sprintf( pBuf, "R%d", (opcode>>7)&0xf );
+		util::stream_format(stream, " %s R%d", pRegOp[shiftop], (opcode >> 7) & 0xf);
 	}
 	else /* Shift amount immediate 5 bit unsigned integer */
 	{
-		int c=(opcode>>7)&0x1f;
-		if( c==0 ) c = 32;
-		pBuf += sprintf( pBuf, "#%d", c );
+		int c = (opcode >> 7) & 0x1f;
+		if (c == 0)
+		{
+			if (shiftop == 0)
+				return;
+			c = 32;
+		}
+		util::stream_format(stream, " %s #%d", pRegOp[shiftop], c);
 	}
-	return pBuf;
 } /* WriteRegisterOperand */
 
 
-static char *WriteBranchAddress( char *pBuf, UINT32 pc, UINT32 opcode )
+void arm_disassembler::WriteBranchAddress(std::ostream &stream, uint32_t pc, uint32_t opcode) const
 {
 	opcode &= 0x00ffffff;
 	if( opcode&0x00800000 )
@@ -88,24 +102,18 @@ static char *WriteBranchAddress( char *pBuf, UINT32 pc, UINT32 opcode )
 		opcode |= 0xff000000; /* sign-extend */
 	}
 	pc += 8+4*opcode;
-	sprintf( pBuf, "$%x", pc );
-	return pBuf;
+	util::stream_format( stream, "$%x", pc );
 } /* WriteBranchAddress */
 
-static char *WritePadding( char *pBuf, const char *pBuf0 )
+void arm_disassembler::WritePadding(std::ostream &stream, std::streampos start_position) const
 {
-	pBuf0 += 8;
-	while( pBuf<pBuf0 )
-	{
-		*pBuf++ = ' ';
-	}
-	return pBuf;
+	std::streamoff difference = stream.tellp() - start_position;
+	for (std::streamoff i = difference; i < 8; i++)
+		stream << ' ';
 }
 
-static UINT32 arm_disasm( char *pBuf, UINT32 pc, UINT32 opcode )
+offs_t arm_disassembler::disassemble(std::ostream &stream, offs_t pc, const data_buffer &opcodes, const data_buffer &params)
 {
-	const char *pBuf0;
-
 	static const char *const pConditionCodeTable[16] =
 	{
 		"EQ","NE","CS","CC",
@@ -121,10 +129,12 @@ static UINT32 arm_disasm( char *pBuf, UINT32 pc, UINT32 opcode )
 		"ORR","MOV","BIC","MVN"
 	};
 	const char *pConditionCode;
-	UINT32 dasmflags = 0;
+	uint32_t dasmflags = 0;
+	std::streampos start_position = stream.tellp();
+
+	u32 opcode = opcodes.r32(pc);
 
 	pConditionCode= pConditionCodeTable[opcode>>28];
-	pBuf0 = pBuf;
 
 	if( (opcode&0x0fc000f0)==0x00000090u )
 	{
@@ -132,28 +142,27 @@ static UINT32 arm_disasm( char *pBuf, UINT32 pc, UINT32 opcode )
 		/* xxxx0000 00ASdddd nnnnssss 1001mmmm */
 		if( opcode&0x00200000 )
 		{
-			pBuf += sprintf( pBuf, "MLA" );
+			util::stream_format( stream, "MLA" );
 		}
 		else
 		{
-			pBuf += sprintf( pBuf, "MUL" );
+			util::stream_format( stream, "MUL" );
 		}
-		pBuf += sprintf( pBuf, "%s", pConditionCode );
-		if( opcode&0x00100000 )
-		{
-			*pBuf++ = 'S';
-		}
-		pBuf = WritePadding( pBuf, pBuf0 );
+		util::stream_format( stream, "%s", pConditionCode );
+		if ((opcode & 0x00100000) != 0)
+			stream << 'S';
 
-		pBuf += sprintf( pBuf,
+		WritePadding(stream, start_position);
+
+		util::stream_format(stream,
 			"R%d, R%d, R%d",
 			(opcode>>16)&0xf,
 			(opcode&0xf),
-			(opcode>>8)&0xf );
+			(opcode>>8)&0xf);
 
 		if( opcode&0x00200000 )
 		{
-			pBuf += sprintf( pBuf, ", R%d", (opcode>>12)&0xf );
+			util::stream_format( stream, ", R%d", (opcode>>12)&0xf );
 		}
 	}
 	else if( (opcode&0x0c000000)==0 )
@@ -164,17 +173,15 @@ static UINT32 arm_disasm( char *pBuf, UINT32 pc, UINT32 opcode )
 		/* xxxx001a aaaSnnnn ddddrrrr bbbbbbbb */
 		/* xxxx000a aaaSnnnn ddddcccc ctttmmmm */
 
-		pBuf += sprintf(
-			pBuf, "%s%s",
+		util::stream_format(stream,
+			"%s%s",
 			pOperation[op],
-			pConditionCode );
+			pConditionCode);
 
-		if( (opcode&0x01000000) )
-		{
-			*pBuf++ = 'S';
-		}
+		if ((opcode & 0x00100000) != 0)
+			stream << 'S';
 
-		pBuf = WritePadding( pBuf, pBuf0 );
+		WritePadding(stream, start_position);
 
 		switch (op) {
 		case 0x00:
@@ -187,20 +194,21 @@ static UINT32 arm_disasm( char *pBuf, UINT32 pc, UINT32 opcode )
 		case 0x07:
 		case 0x0c:
 		case 0x0e:
-			WriteDataProcessingOperand(pBuf, opcode, 1, 1, 1);
+			WriteDataProcessingOperand(stream, opcode, true, true, pc);
 			break;
 		case 0x08:
 		case 0x09:
 		case 0x0a:
 		case 0x0b:
-			WriteDataProcessingOperand(pBuf, opcode, 0, 1, 1);
+			WriteDataProcessingOperand(stream, opcode, false, true, pc);
 			break;
 		case 0x0d:
 			/* look for mov pc,lr */
 			if (((opcode >> 12) & 0x0f) == 15 && ((opcode >> 0) & 0x0f) == 14 && (opcode & 0x02000000) == 0)
-				dasmflags = DASMFLAG_STEP_OUT;
+				dasmflags = STEP_OUT;
+			[[fallthrough]];
 		case 0x0f:
-			WriteDataProcessingOperand(pBuf, opcode, 1, 0, 1);
+			WriteDataProcessingOperand(stream, opcode, true, false, pc);
 			break;
 		}
 	}
@@ -212,17 +220,17 @@ static UINT32 arm_disasm( char *pBuf, UINT32 pc, UINT32 opcode )
 		/* xxxx011P UBWLnnnn ddddcccc ctt0mmmm  Register form */
 		if( opcode&0x00100000 )
 		{
-			pBuf += sprintf( pBuf, "LDR" );
+			util::stream_format( stream, "LDR" );
 		}
 		else
 		{
-			pBuf += sprintf( pBuf, "STR" );
+			util::stream_format( stream, "STR" );
 		}
-		pBuf += sprintf( pBuf, "%s", pConditionCode );
+		util::stream_format( stream, "%s", pConditionCode );
 
 		if( opcode&0x00400000 )
 		{
-			pBuf += sprintf( pBuf, "B" );
+			util::stream_format( stream, "B" );
 		}
 
 		if( opcode&0x00200000 )
@@ -231,36 +239,41 @@ static UINT32 arm_disasm( char *pBuf, UINT32 pc, UINT32 opcode )
 			if( opcode&0x01000000 )
 			{
 				/* pre-indexed addressing */
-				pBuf += sprintf( pBuf, "!" );
+				util::stream_format( stream, "!" );
 			}
 			else
 			{
 				/* post-indexed addressing */
-				pBuf += sprintf( pBuf, "T" );
+				util::stream_format( stream, "T" );
 			}
 		}
 
-		pBuf = WritePadding( pBuf, pBuf0 );
-		pBuf += sprintf( pBuf, "R%d, [R%d",
-			(opcode>>12)&0xf, (opcode>>16)&0xf );
+		int memreg = (opcode >> 16) & 0xf;
+		WritePadding(stream, start_position);
+		util::stream_format(stream, "R%d, [R%d", (opcode >> 12) & 0xf, memreg);
 
 		if( opcode&0x02000000 )
 		{
 			/* register form */
-			pBuf = WriteRegisterOperand1( pBuf, opcode );
-			pBuf += sprintf( pBuf, "]" );
+			WriteRegisterOperand1(stream, opcode);
+			util::stream_format(stream, "]");
 		}
 		else
 		{
 			/* immediate form */
-			pBuf += sprintf( pBuf, "]" );
+			util::stream_format(stream, "]");
+			uint16_t displacement = opcode & 0xfff;
 			if( opcode&0x00800000 )
 			{
-				pBuf += sprintf( pBuf, ", #$%x", opcode&0xfff );
+				util::stream_format(stream, ", #$%x", displacement);
+				if (memreg == 15)
+					util::stream_format(stream, " ; [$%x]", pc + 8 + displacement);
 			}
 			else
 			{
-				pBuf += sprintf( pBuf, ", -#$%x", opcode&0xfff );
+				util::stream_format(stream, ", -#$%x", displacement);
+				if (memreg == 15)
+					util::stream_format(stream, " ; [$%x]", pc + 8 - displacement);
 			}
 		}
 	}
@@ -271,33 +284,33 @@ static UINT32 arm_disasm( char *pBuf, UINT32 pc, UINT32 opcode )
 
 		if( opcode&0x00100000 )
 		{
-			pBuf += sprintf( pBuf, "LDM" );
+			util::stream_format( stream, "LDM" );
 		}
 		else
 		{
-			pBuf += sprintf( pBuf, "STM" );
+			util::stream_format( stream, "STM" );
 		}
-		pBuf += sprintf( pBuf, "%s", pConditionCode );
+		util::stream_format( stream, "%s", pConditionCode );
 
 		if( opcode&0x01000000 )
 		{
-			pBuf += sprintf( pBuf, "P" );
+			util::stream_format( stream, "P" );
 		}
 		if( opcode&0x00800000 )
 		{
-			pBuf += sprintf( pBuf, "U" );
+			util::stream_format( stream, "U" );
 		}
 		if( opcode&0x00400000 )
 		{
-			pBuf += sprintf( pBuf, "^" );
+			util::stream_format( stream, "^" );
 		}
 		if( opcode&0x00200000 )
 		{
-			pBuf += sprintf( pBuf, "W" );
+			util::stream_format( stream, "W" );
 		}
 
-		pBuf = WritePadding( pBuf, pBuf0 );
-		pBuf += sprintf( pBuf, "[R%d], {",(opcode>>16)&0xf);
+		WritePadding(stream, start_position);
+		util::stream_format( stream, "[R%d], {",(opcode>>16)&0xf);
 
 		{
 			int j=0,last=0,found=0;
@@ -308,20 +321,20 @@ static UINT32 arm_disasm( char *pBuf, UINT32 pc, UINT32 opcode )
 				}
 				else if ((opcode&(1<<j))==0 && found) {
 					if (last==j-1)
-						pBuf += sprintf( pBuf, " R%d,",last);
+						util::stream_format( stream, " R%d,",last);
 					else
-						pBuf += sprintf( pBuf, " R%d-R%d,",last,j-1);
+						util::stream_format( stream, " R%d-R%d,",last,j-1);
 					found=0;
 				}
 			}
 			if (found && last==15)
-				pBuf += sprintf( pBuf, " R15,");
+				util::stream_format( stream, " R15,");
 			else if (found)
-				pBuf += sprintf( pBuf, " R%d-R%d,",last,15);
+				util::stream_format( stream, " R%d-R%d,",last,15);
 		}
 
-		pBuf--;
-		pBuf += sprintf( pBuf, " }");
+		stream.seekp(-1, std::ios_base::cur);
+		util::stream_format( stream, " }");
 	}
 	else if( (opcode&0x0e000000)==0x0a000000 )
 	{
@@ -329,19 +342,19 @@ static UINT32 arm_disasm( char *pBuf, UINT32 pc, UINT32 opcode )
 		/* xxxx101L oooooooo oooooooo oooooooo */
 		if( opcode&0x01000000 )
 		{
-			pBuf += sprintf( pBuf, "BL" );
-			dasmflags = DASMFLAG_STEP_OVER;
+			util::stream_format( stream, "BL" );
+			dasmflags = STEP_OVER;
 		}
 		else
 		{
-			pBuf += sprintf( pBuf, "B" );
+			util::stream_format( stream, "B" );
 		}
 
-		pBuf += sprintf( pBuf, "%s", pConditionCode );
+		util::stream_format( stream, "%s", pConditionCode );
 
-		pBuf = WritePadding( pBuf, pBuf0 );
+		WritePadding(stream, start_position);
 
-		pBuf = WriteBranchAddress( pBuf, pc, opcode );
+		WriteBranchAddress( stream, pc, opcode );
 	}
 	else if( (opcode&0x0f000000) == 0x0e000000 )
 	{
@@ -351,58 +364,55 @@ static UINT32 arm_disasm( char *pBuf, UINT32 pc, UINT32 opcode )
 		{
 			if( (opcode&0x0f100010)==0x0e100010 )
 			{
-				pBuf += sprintf( pBuf, "MRC" );
+				util::stream_format( stream, "MRC" );
 			}
 			else if( (opcode&0x0f100010)==0x0e000010 )
 			{
-				pBuf += sprintf( pBuf, "MCR" );
+				util::stream_format( stream, "MCR" );
 			}
 			else
 			{
-				pBuf += sprintf( pBuf, "???" );
+				util::stream_format( stream, "???" );
 			}
 
-			pBuf += sprintf( pBuf, "%s", pConditionCode );
-			pBuf = WritePadding( pBuf, pBuf0 );
-			pBuf += sprintf( pBuf, "R%d, CR%d {CRM%d, q%d}",(opcode>>12)&0xf, (opcode>>16)&0xf, (opcode>>0)&0xf, (opcode>>5)&0x7);
+			util::stream_format( stream, "%s", pConditionCode );
+			WritePadding(stream, start_position);
+			util::stream_format( stream, "R%d, CR%d {CRM%d, q%d}",(opcode>>12)&0xf, (opcode>>16)&0xf, (opcode>>0)&0xf, (opcode>>5)&0x7);
 			/* Nb:  full form should be o, p, R, CR, CRM, q */
 		}
 		else if( (opcode&0x0f000010)==0x0e000000 )
 		{
-			pBuf += sprintf( pBuf, "CDP" );
-			pBuf += sprintf( pBuf, "%s", pConditionCode );
-			pBuf = WritePadding( pBuf, pBuf0 );
-			pBuf += sprintf( pBuf, "%08x", opcode );
+			util::stream_format( stream, "CDP" );
+			util::stream_format( stream, "%s", pConditionCode );
+			WritePadding(stream, start_position);
+			util::stream_format( stream, "%08x", opcode );
 		}
 		else
 		{
-			pBuf += sprintf( pBuf, "???" );
+			util::stream_format( stream, "???" );
 		}
 	}
 	else if( (opcode&0x0f000000) == 0x0f000000 )
 	{
 		/* Software Interrupt */
-		pBuf += sprintf( pBuf, "SWI%s $%x",
+		util::stream_format( stream, "SWI%s $%x",
 			pConditionCode,
 			opcode&0x00ffffff );
-		dasmflags = DASMFLAG_STEP_OVER;
+		dasmflags = STEP_OVER;
 	}
 	else
 	{
-		pBuf += sprintf( pBuf, "Undefined" );
+		util::stream_format( stream, "Undefined" );
 	}
 
-	return dasmflags | DASMFLAG_SUPPORTED;
+	return 4 | dasmflags | SUPPORTED;
 }
 
-CPU_DISASSEMBLE( arm )
+u32 arm_disassembler::opcode_alignment() const
 {
-	UINT32 opcode = oprom[0] | (oprom[1] << 8) | (oprom[2] << 16) | (oprom[3] << 24);
-	return 4 | arm_disasm(buffer, pc, opcode);
+	return 4;
 }
 
-CPU_DISASSEMBLE( arm_be )
+arm_disassembler::arm_disassembler()
 {
-	UINT32 opcode = oprom[3] | (oprom[2] << 8) | (oprom[1] << 16) | (oprom[0] << 24);
-	return 4 | arm_disasm(buffer, pc, opcode);
 }

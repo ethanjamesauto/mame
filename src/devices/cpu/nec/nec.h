@@ -1,125 +1,152 @@
 // license:BSD-3-Clause
 // copyright-holders:Bryan McPhail
 /* ASG 971222 -- rewrote this interface */
-#ifndef __NEC_H_
-#define __NEC_H_
+#ifndef MAME_CPU_NEC_NEC_H
+#define MAME_CPU_NEC_NEC_H
 
+#pragma once
 
-#define NEC_INPUT_LINE_INTP0 10
-#define NEC_INPUT_LINE_INTP1 11
-#define NEC_INPUT_LINE_INTP2 12
+#include "necdasm.h"
+
 #define NEC_INPUT_LINE_POLL 20
 
 enum
 {
 	NEC_PC=0,
-	NEC_IP, NEC_AW, NEC_CW, NEC_DW, NEC_BW, NEC_SP, NEC_BP, NEC_IX, NEC_IY,
-	NEC_FLAGS, NEC_ES, NEC_CS, NEC_SS, NEC_DS,
+	NEC_AW, NEC_CW, NEC_DW, NEC_BW, NEC_SP, NEC_BP, NEC_IX, NEC_IY,
+	NEC_DS1, NEC_PS, NEC_SS, NEC_DS0,
+	NEC_AL, NEC_AH, NEC_CL, NEC_CH, NEC_DL, NEC_DH, NEC_BL, NEC_BH,
+	NEC_PSW,
+	NEC_XA,
 	NEC_PENDING
 };
 
 
-class nec_common_device : public cpu_device
+class nec_common_device : public cpu_device, public nec_disassembler::config
 {
-public:
-	// construction/destruction
-	nec_common_device(const machine_config &mconfig, device_type type, const char *name, const char *tag, device_t *owner, UINT32 clock, const char *shortname, const char *source, bool is_16bit, offs_t fetch_xor, UINT8 prefetch_size, UINT8 prefetch_cycles, UINT32 chip_type);
+	friend class device_v5x_interface;
 
 protected:
+	// construction/destruction
+	nec_common_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock, bool is_16bit, uint8_t prefetch_size, uint8_t prefetch_cycles, uint32_t chip_type, address_map_constructor internal_port_map = address_map_constructor());
+
 	// device-level overrides
 	virtual void device_start() override;
 	virtual void device_reset() override;
 
 	// device_execute_interface overrides
-	virtual UINT32 execute_min_cycles() const override { return 1; }
-	virtual UINT32 execute_max_cycles() const override { return 80; }
-	virtual UINT32 execute_input_lines() const override { return 1; }
-	virtual UINT32 execute_default_irq_vector() const override { return 0xff; }
+	virtual uint32_t execute_min_cycles() const noexcept override { return 1; }
+	virtual uint32_t execute_max_cycles() const noexcept override { return 80; }
+	virtual uint32_t execute_input_lines() const noexcept override { return 1; }
+	virtual uint32_t execute_default_irq_vector(int inputnum) const noexcept override { return 0xff; }
+	virtual bool execute_input_edge_triggered(int inputnum) const noexcept override { return inputnum == INPUT_LINE_NMI; }
 	virtual void execute_run() override;
 	virtual void execute_set_input(int inputnum, int state) override;
 
 	// device_memory_interface overrides
-	virtual const address_space_config *memory_space_config(address_spacenum spacenum = AS_0) const override { return (spacenum == AS_PROGRAM) ? &m_program_config : ( (spacenum == AS_IO) ? &m_io_config : nullptr); }
+	virtual space_config_vector memory_space_config() const override;
 
 	// device_state_interface overrides
-	void state_string_export(const device_state_entry &entry, std::string &str) override;
+	virtual void state_string_export(const device_state_entry &entry, std::string &str) const override;
 	virtual void state_import(const device_state_entry &entry) override;
 	virtual void state_export(const device_state_entry &entry) override;
 
 	// device_disasm_interface overrides
-	virtual UINT32 disasm_min_opcode_bytes() const override { return 1; }
-	virtual UINT32 disasm_max_opcode_bytes() const override { return 8; }
-	virtual offs_t disasm_disassemble(char *buffer, offs_t pc, const UINT8 *oprom, const UINT8 *opram, UINT32 options) override;
+	virtual std::unique_ptr<util::disasm_interface> create_disassembler() override;
+	virtual int get_mode() const override { return m_MF; };
 
-private:
+	virtual u8 io_read_byte(offs_t a) { return m_io->read_byte(a); }
+	virtual u16 io_read_word(offs_t a) { return m_io->read_word_unaligned(a); }
+	virtual void io_write_byte(offs_t a, u8 v) { m_io->write_byte(a, v); }
+	virtual void io_write_word(offs_t a, u16 v) { m_io->write_word_unaligned(a, v); }
+
+	void set_int_line(int state);
+	void set_nmi_line(int state);
+	void set_poll_line(int state);
+
 	address_space_config m_program_config;
 	address_space_config m_io_config;
 
-/* NEC registers */
-union necbasicregs
-{                   /* eight general registers */
-	UINT16 w[8];    /* viewed as 16 bits registers */
-	UINT8  b[16];   /* or as 8 bit registers */
-};
+private:
+	/* NEC registers */
+	union necbasicregs
+	{                   /* eight general registers */
+		uint16_t w[8];    /* viewed as 16 bits registers */
+		uint8_t  b[16];   /* or as 8 bit registers */
+	};
 
 	necbasicregs m_regs;
-	offs_t  m_fetch_xor;
-	UINT16  m_sregs[4];
+	uint16_t  m_sregs[4];
 
-	UINT16  m_ip;
+	uint16_t  m_ip;
+	uint16_t  m_prev_ip;
 
 	/* PSW flags */
-	INT32   m_SignVal;
-	UINT32  m_AuxVal;   /* 0 or non-0 valued flags */
-	UINT32  m_OverVal;
-	UINT32  m_ZeroVal;
-	UINT32  m_CarryVal;
-	UINT32  m_ParityVal;
-	UINT8   m_TF; /* 0 or 1 valued flags */
-	UINT8   m_IF;
-	UINT8   m_DF;
-	UINT8   m_MF;
+	int32_t   m_SignVal;
+	uint32_t  m_AuxVal;   /* 0 or non-0 valued flags */
+	uint32_t  m_OverVal;
+	uint32_t  m_ZeroVal;
+	uint32_t  m_CarryVal;
+	uint32_t  m_ParityVal;
+	uint8_t   m_TF; /* 0 or 1 valued flags */
+	uint8_t   m_IF;
+	uint8_t   m_DF;
+	uint8_t   m_MF;
 
 	/* interrupt related */
-	UINT32  m_pending_irq;
-	UINT32  m_nmi_state;
-	UINT32  m_irq_state;
-	UINT32  m_poll_state;
-	UINT8   m_no_interrupt;
-	UINT8   m_halted;
+	uint32_t  m_pending_irq;
+	uint32_t  m_nmi_state;
+	uint32_t  m_irq_state;
+	uint32_t  m_poll_state;
+	uint8_t   m_no_interrupt;
+	uint8_t   m_halted;
 
 	address_space *m_program;
-	direct_read_data *m_direct;
+	memory_access<24, 0, 0, ENDIANNESS_LITTLE>::cache m_cache8;
+	memory_access<24, 1, 0, ENDIANNESS_LITTLE>::cache m_cache16;
+
+	std::function<u8 (offs_t address)> m_dr8;
 	address_space *m_io;
 	int     m_icount;
 
-	UINT8   m_prefetch_size;
-	UINT8   m_prefetch_cycles;
-	INT8    m_prefetch_count;
-	UINT8   m_prefetch_reset;
-	UINT32  m_chip_type;
+	uint8_t   m_prefetch_size;
+	uint8_t   m_prefetch_cycles;
+	int8_t    m_prefetch_count;
+	uint8_t   m_prefetch_reset;
+	const uint32_t m_chip_type;
 
-	UINT32  m_prefix_base;    /* base address of the latest prefix segment */
-	UINT8   m_seg_prefix;     /* prefix segment indicator */
+	uint32_t  m_prefix_base;    /* base address of the latest prefix segment */
+	uint8_t   m_seg_prefix;     /* prefix segment indicator */
 
-	UINT32 m_EA;
-	UINT16 m_EO;
-	UINT16 m_E16;
+	uint32_t m_EA;
+	uint16_t m_EO;
+	uint16_t m_E16;
 
-	UINT32 m_debugger_temp;
+	uint32_t m_debugger_temp;
+	uint8_t m_em;
 
 	typedef void (nec_common_device::*nec_ophandler)();
-	typedef UINT32 (nec_common_device::*nec_eahandler)();
+	typedef uint32_t (nec_common_device::*nec_eahandler)();
 	static const nec_ophandler s_nec_instruction[256];
+	static const nec_ophandler s_nec80_instruction[256];
 	static const nec_eahandler s_GetEA[192];
 
+protected:
+	// FIXME: these belong in v33_base_device
+	bool m_xa;
+	optional_shared_ptr<uint16_t> m_v33_transtable;
+
+	offs_t v33_translate(offs_t addr);
+
+private:
 	inline void prefetch();
 	void do_prefetch(int previous_ICount);
-	inline UINT8 fetch();
-	inline UINT16 fetchword();
-	UINT8 fetchop();
+	inline uint8_t fetch();
+	inline uint16_t fetchword();
+	uint8_t fetchop();
 	void nec_interrupt(unsigned int_num, int source);
 	void nec_trap();
+	void nec_brk(unsigned int_num);
 	void external_int();
 
 	void i_add_br8();
@@ -369,65 +396,321 @@ union necbasicregs
 	void i_ffpre();
 	void i_wait();
 
-	UINT32 EA_000();
-	UINT32 EA_001();
-	UINT32 EA_002();
-	UINT32 EA_003();
-	UINT32 EA_004();
-	UINT32 EA_005();
-	UINT32 EA_006();
-	UINT32 EA_007();
-	UINT32 EA_100();
-	UINT32 EA_101();
-	UINT32 EA_102();
-	UINT32 EA_103();
-	UINT32 EA_104();
-	UINT32 EA_105();
-	UINT32 EA_106();
-	UINT32 EA_107();
-	UINT32 EA_200();
-	UINT32 EA_201();
-	UINT32 EA_202();
-	UINT32 EA_203();
-	UINT32 EA_204();
-	UINT32 EA_205();
-	UINT32 EA_206();
-	UINT32 EA_207();
+	uint32_t EA_000();
+	uint32_t EA_001();
+	uint32_t EA_002();
+	uint32_t EA_003();
+	uint32_t EA_004();
+	uint32_t EA_005();
+	uint32_t EA_006();
+	uint32_t EA_007();
+	uint32_t EA_100();
+	uint32_t EA_101();
+	uint32_t EA_102();
+	uint32_t EA_103();
+	uint32_t EA_104();
+	uint32_t EA_105();
+	uint32_t EA_106();
+	uint32_t EA_107();
+	uint32_t EA_200();
+	uint32_t EA_201();
+	uint32_t EA_202();
+	uint32_t EA_203();
+	uint32_t EA_204();
+	uint32_t EA_205();
+	uint32_t EA_206();
+	uint32_t EA_207();
+
+	void i_nop_80();
+	void i_lxib_80();
+	void i_staxb_80();
+	void i_inxb_80();
+	void i_inrb_80();
+	void i_dcrb_80();
+	void i_mvib_80();
+	void i_rlc_80();
+	void i_dadb_80();
+	void i_ldaxb_80();
+	void i_dcxb_80();
+	void i_inrc_80();
+	void i_dcrc_80();
+	void i_mvic_80();
+	void i_rrc_80();
+	void i_lxid_80();
+	void i_staxd_80();
+	void i_inxd_80();
+	void i_inrd_80();
+	void i_dcrd_80();
+	void i_mvid_80();
+	void i_ral_80();
+	void i_dadd_80();
+	void i_ldaxd_80();
+	void i_dcxd_80();
+	void i_inre_80();
+	void i_dcre_80();
+	void i_mvie_80();
+	void i_rar_80();
+	void i_lxih_80();
+	void i_shld_80();
+	void i_inxh_80();
+	void i_inrh_80();
+	void i_dcrh_80();
+	void i_mvih_80();
+	void i_daa_80();
+	void i_dadh_80();
+	void i_lhld_80();
+	void i_dcxh_80();
+	void i_inrl_80();
+	void i_dcrl_80();
+	void i_mvil_80();
+	void i_cma_80();
+	void i_lxis_80();
+	void i_sta_80();
+	void i_inxs_80();
+	void i_inrm_80();
+	void i_dcrm_80();
+	void i_mvim_80();
+	void i_stc_80();
+	void i_dads_80();
+	void i_lda_80();
+	void i_dcxs_80();
+	void i_inra_80();
+	void i_dcra_80();
+	void i_mvia_80();
+	void i_cmc_80();
+	void i_movbb_80();
+	void i_movbc_80();
+	void i_movbd_80();
+	void i_movbe_80();
+	void i_movbh_80();
+	void i_movbl_80();
+	void i_movbm_80();
+	void i_movba_80();
+	void i_movcb_80();
+	void i_movcc_80();
+	void i_movcd_80();
+	void i_movce_80();
+	void i_movch_80();
+	void i_movcl_80();
+	void i_movcm_80();
+	void i_movca_80();
+	void i_movdb_80();
+	void i_movdc_80();
+	void i_movdd_80();
+	void i_movde_80();
+	void i_movdh_80();
+	void i_movdl_80();
+	void i_movdm_80();
+	void i_movda_80();
+	void i_moveb_80();
+	void i_movec_80();
+	void i_moved_80();
+	void i_movee_80();
+	void i_moveh_80();
+	void i_movel_80();
+	void i_movem_80();
+	void i_movea_80();
+	void i_movhb_80();
+	void i_movhc_80();
+	void i_movhd_80();
+	void i_movhe_80();
+	void i_movhh_80();
+	void i_movhl_80();
+	void i_movhm_80();
+	void i_movha_80();
+	void i_movlb_80();
+	void i_movlc_80();
+	void i_movld_80();
+	void i_movle_80();
+	void i_movlh_80();
+	void i_movll_80();
+	void i_movlm_80();
+	void i_movla_80();
+	void i_movmb_80();
+	void i_movmc_80();
+	void i_movmd_80();
+	void i_movme_80();
+	void i_movmh_80();
+	void i_movml_80();
+	void i_hlt_80();
+	void i_movma_80();
+	void i_movab_80();
+	void i_movac_80();
+	void i_movad_80();
+	void i_movae_80();
+	void i_movah_80();
+	void i_moval_80();
+	void i_movam_80();
+	void i_movaa_80();
+	void i_addb_80();
+	void i_addc_80();
+	void i_addd_80();
+	void i_adde_80();
+	void i_addh_80();
+	void i_addl_80();
+	void i_addm_80();
+	void i_adda_80();
+	void i_adcb_80();
+	void i_adcc_80();
+	void i_adcd_80();
+	void i_adce_80();
+	void i_adch_80();
+	void i_adcl_80();
+	void i_adcm_80();
+	void i_adca_80();
+	void i_subb_80();
+	void i_subc_80();
+	void i_subd_80();
+	void i_sube_80();
+	void i_subh_80();
+	void i_subl_80();
+	void i_subm_80();
+	void i_suba_80();
+	void i_sbbb_80();
+	void i_sbbc_80();
+	void i_sbbd_80();
+	void i_sbbe_80();
+	void i_sbbh_80();
+	void i_sbbl_80();
+	void i_sbbm_80();
+	void i_sbba_80();
+	void i_anab_80();
+	void i_anac_80();
+	void i_anad_80();
+	void i_anae_80();
+	void i_anah_80();
+	void i_anal_80();
+	void i_anam_80();
+	void i_anaa_80();
+	void i_xrab_80();
+	void i_xrac_80();
+	void i_xrad_80();
+	void i_xrae_80();
+	void i_xrah_80();
+	void i_xral_80();
+	void i_xram_80();
+	void i_xraa_80();
+	void i_orab_80();
+	void i_orac_80();
+	void i_orad_80();
+	void i_orae_80();
+	void i_orah_80();
+	void i_oral_80();
+	void i_oram_80();
+	void i_oraa_80();
+	void i_cmpb_80();
+	void i_cmpc_80();
+	void i_cmpd_80();
+	void i_cmpe_80();
+	void i_cmph_80();
+	void i_cmpl_80();
+	void i_cmpm_80();
+	void i_cmpa_80();
+	void i_rnz_80();
+	void i_popb_80();
+	void i_jnz_80();
+	void i_jmp_80();
+	void i_cnz_80();
+	void i_pushb_80();
+	void i_adi_80();
+	void i_rst0_80();
+	void i_rz_80();
+	void i_ret_80();
+	void i_jz_80();
+	void i_cz_80();
+	void i_call_80();
+	void i_aci_80();
+	void i_rst1_80();
+	void i_rnc_80();
+	void i_popd_80();
+	void i_jnc_80();
+	void i_out_80();
+	void i_cnc_80();
+	void i_pushd_80();
+	void i_sui_80();
+	void i_rst2_80();
+	void i_rc_80();
+	void i_jc_80();
+	void i_in_80();
+	void i_cc_80();
+	void i_sbi_80();
+	void i_rst3_80();
+	void i_rpo_80();
+	void i_poph_80();
+	void i_jpo_80();
+	void i_xthl_80();
+	void i_cpo_80();
+	void i_pushh_80();
+	void i_ani_80();
+	void i_rst4_80();
+	void i_rpe_80();
+	void i_pchl_80();
+	void i_jpe_80();
+	void i_xchg_80();
+	void i_cpe_80();
+	void i_calln_80();
+	void i_xri_80();
+	void i_rst5_80();
+	void i_rp_80();
+	void i_popf_80();
+	void i_jp_80();
+	void i_di_80();
+	void i_cp_80();
+	void i_pushf_80();
+	void i_ori_80();
+	void i_rst6_80();
+	void i_rm_80();
+	void i_sphl_80();
+	void i_jm_80();
+	void i_ei_80();
+	void i_cm_80();
+	void i_cpi_80();
+	void i_rst7_80();
 };
 
 
 class v20_device : public nec_common_device
 {
 public:
-	v20_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	v20_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 };
 
 
 class v30_device : public nec_common_device
 {
 public:
-	v30_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	v30_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 };
 
 
-class v33_device : public nec_common_device
+class v33_base_device : public nec_common_device
+{
+protected:
+	v33_base_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock, address_map_constructor internal_port_map);
+
+	// device_memory_interface overrides
+	virtual bool memory_translate(int spacenum, int intention, offs_t &address) override;
+
+	void v33_internal_port_map(address_map &map);
+	uint16_t xam_r();
+};
+
+class v33_device : public v33_base_device
 {
 public:
-	v33_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	v33_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 };
 
-class v33a_device : public nec_common_device
+class v33a_device : public v33_base_device
 {
 public:
-	v33a_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	v33a_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 };
 
 
-extern const device_type V20;
-extern const device_type V30;
-extern const device_type V33;
-extern const device_type V33A;
+DECLARE_DEVICE_TYPE(V20,  v20_device)
+DECLARE_DEVICE_TYPE(V30,  v30_device)
+DECLARE_DEVICE_TYPE(V33,  v33_device)
+DECLARE_DEVICE_TYPE(V33A, v33a_device)
 
-
-
-#endif
+#endif // MAME_CPU_NEC_NEC_H

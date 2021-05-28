@@ -12,7 +12,7 @@
 #include "includes/aquarius.h"
 
 
-static const unsigned short aquarius_palette[] =
+static constexpr unsigned short aquarius_pens[] =
 {
 	0, 0, 1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6, 0, 7, 0, 8, 0, 9, 0,10, 0,11, 0,12, 0,13, 0,14, 0,15, 0,
 	0, 1, 1, 1, 2, 1, 3, 1, 4, 1, 5, 1, 6, 1, 7, 1, 8, 1, 9, 1,10, 1,11, 1,12, 1,13, 1,14, 1,15, 1,
@@ -32,47 +32,70 @@ static const unsigned short aquarius_palette[] =
 	0,15, 1,15, 2,15, 3,15, 4,15, 5,15, 6,15, 7,15, 8,15, 9,15,10,15,11,15,12,15,13,15,14,15,15,15,
 };
 
-PALETTE_INIT_MEMBER(aquarius_state, aquarius)
+void aquarius_state::aquarius_palette(palette_device &palette) const
 {
-	int i;
+	for (int i = 0; i < 16; i++)
+		palette.set_indirect_color(i, m_tea1002->color(i));
 
-	for (i = 0; i < 16; i++)
-		m_palette->set_indirect_color(i, m_tea1002->color(i));
-
-	for (i = 0; i < 512; i++)
-		m_palette->set_pen_indirect(i, aquarius_palette[i]);
+	for (int i = 0; i < 512; i++)
+		palette.set_pen_indirect(i, aquarius_pens[i]);
 }
 
-WRITE8_MEMBER(aquarius_state::aquarius_videoram_w)
+void aquarius_state::videoram_w(offs_t offset, uint8_t data)
 {
-	UINT8 *videoram = m_videoram;
-	videoram[offset] = data;
-	m_tilemap->mark_tile_dirty(offset);
+	int row = offset / 40;
+	int col = offset % 40;
+	int tile_index = (row + 2) * 44 + (col + 2);
+
+	m_videoram[offset] = data;
+	m_tilemap->mark_tile_dirty(tile_index);
+	if (offset == 0) m_tilemap->mark_all_dirty();
 }
 
-WRITE8_MEMBER(aquarius_state::aquarius_colorram_w)
+void aquarius_state::colorram_w(offs_t offset, uint8_t data)
 {
+	int row = offset / 40;
+	int col = offset % 40;
+	int tile_index = (row + 2) * 44 + (col + 2);
+
 	m_colorram[offset] = data;
-	m_tilemap->mark_tile_dirty(offset);
+	m_tilemap->mark_tile_dirty(tile_index);
+	if (offset == 0) m_tilemap->mark_all_dirty();
 }
 
-TILE_GET_INFO_MEMBER(aquarius_state::aquarius_gettileinfo)
+TILE_GET_INFO_MEMBER(aquarius_state::get_tile_info)
 {
-	UINT8 *videoram = m_videoram;
-	int bank = 0;
-	int code = videoram[tile_index];
-	int color = m_colorram[tile_index];
-	int flags = 0;
+	int row = tile_index / 44;
+	int col = tile_index % 44;
 
-	SET_TILE_INFO_MEMBER(bank, code, color, flags);
+	switch (row)
+	{
+	case 0: case 1: case 27: case 28:
+		// border top/bottom
+		tileinfo.set(0, m_videoram[0], m_colorram[0], 0);
+		break;
+	default:
+		switch (col)
+		{
+		case 0: case 1: case 42: case 43:
+			// border left/right
+			tileinfo.set(0, m_videoram[0], m_colorram[0], 0);
+			break;
+		default:
+			// display area
+			tileinfo.set(0, m_videoram[(row - 2) * 40 + (col - 2)], m_colorram[(row - 2) * 40 + (col - 2)], 0);
+			break;
+		}
+		break;
+	}
 }
 
 void aquarius_state::video_start()
 {
-	m_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(aquarius_state::aquarius_gettileinfo),this), TILEMAP_SCAN_ROWS, 8, 8, 40, 25);
+	m_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(aquarius_state::get_tile_info)), TILEMAP_SCAN_ROWS, 8, 8, 44, 29);
 }
 
-UINT32 aquarius_state::screen_update_aquarius(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t aquarius_state::screen_update_aquarius(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	m_tilemap->draw(screen, bitmap, cliprect, 0, 0);
 

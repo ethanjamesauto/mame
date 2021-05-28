@@ -9,8 +9,7 @@
 #include "emu.h"
 #include "debugger.h"
 #include "pdp8.h"
-
-CPU_DISASSEMBLE( pdp8 );
+#include "pdp8dasm.h"
 
 #define OP          ((op >> 011) & 07)
 
@@ -44,15 +43,15 @@ CPU_DISASSEMBLE( pdp8 );
 #define OPR_GROUP1_VAL  0000
 #define OPR_GROUP2_VAL  0400
 
-const device_type PDP8CPU = &device_creator<pdp8_device>;
+DEFINE_DEVICE_TYPE(PDP8, pdp8_device, "pdp8_cpu", "DEC PDP8")
 
 //-------------------------------------------------
 //  pdp8_device - constructor
 //-------------------------------------------------
 
-pdp8_device::pdp8_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: cpu_device(mconfig, PDP8CPU, "PDP8CPU", tag, owner, clock, "pdp8_cpu", __FILE__),
-		m_program_config("program", ENDIANNESS_BIG, 12, 12),
+pdp8_device::pdp8_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: cpu_device(mconfig, PDP8, tag, owner, clock),
+		m_program_config("program", ENDIANNESS_BIG, 16, 12, -1),
 		m_pc(0),
 		m_ac(0),
 		m_mb(0),
@@ -64,6 +63,7 @@ pdp8_device::pdp8_device(const machine_config &mconfig, const char *tag, device_
 		m_icount(0)
 {
 	// Allocate & setup
+	m_program_config.m_is_octal = true;
 }
 
 
@@ -72,8 +72,8 @@ void pdp8_device::device_start()
 	m_program = &space(AS_PROGRAM);
 
 	// register our state for the debugger
-	std::string tempstr;
 	state_add(STATE_GENPC,     "GENPC",     m_pc).noshow();
+	state_add(STATE_GENPCBASE, "CURPC",     m_pc).noshow();
 	state_add(STATE_GENFLAGS,  "GENFLAGS",  m_l).callimport().callexport().formatstr("%1s").noshow();
 	state_add(PDP8_PC,         "PC",        m_pc).mask(0xfff);
 	state_add(PDP8_AC,         "AC",        m_ac).mask(0xfff);
@@ -95,7 +95,7 @@ void pdp8_device::device_start()
 	save_item(NAME(m_halt));
 
 	// set our instruction counter
-	m_icountptr = &m_icount;
+	set_icountptr(m_icount);
 }
 
 void pdp8_device::device_stop()
@@ -116,18 +116,15 @@ void pdp8_device::device_reset()
 
 
 //-------------------------------------------------
-//  memory_space_config - return the configuration
-//  of the specified address space, or NULL if
-//  the space doesn't exist
+//  memory_space_config - return a vector of
+//  address space configurations for this device
 //-------------------------------------------------
 
-const address_space_config *pdp8_device::memory_space_config(address_spacenum spacenum) const
+device_memory_interface::space_config_vector pdp8_device::memory_space_config() const
 {
-	if (spacenum == AS_PROGRAM)
-	{
-		return &m_program_config;
-	}
-	return NULL;
+	return space_config_vector {
+		std::make_pair(AS_PROGRAM, &m_program_config),
+	};
 }
 
 
@@ -136,48 +133,25 @@ const address_space_config *pdp8_device::memory_space_config(address_spacenum sp
 //  for the debugger
 //-------------------------------------------------
 
-void pdp8_device::state_string_export(const device_state_entry &entry, std::string &str)
+void pdp8_device::state_string_export(const device_state_entry &entry, std::string &str) const
 {
 	switch (entry.index())
 	{
 		case STATE_GENFLAGS:
-			strprintf(str, "%c", m_halt ? 'H' : '.');
+			str = util::string_format("%c", m_halt ? 'H' : '.');
 			break;
 	}
 }
 
 
 //-------------------------------------------------
-//  disasm_min_opcode_bytes - return the length
-//  of the shortest instruction, in bytes
-//-------------------------------------------------
-
-UINT32 pdp8_device::disasm_min_opcode_bytes() const
-{
-	return 2;
-}
-
-
-//-------------------------------------------------
-//  disasm_max_opcode_bytes - return the length
-//  of the longest instruction, in bytes
-//-------------------------------------------------
-
-UINT32 pdp8_device::disasm_max_opcode_bytes() const
-{
-	return 2;
-}
-
-
-//-------------------------------------------------
-//  disasm_disassemble - call the disassembly
+//  disassemble - call the disassembly
 //  helper function
 //-------------------------------------------------
 
-offs_t pdp8_device::disasm_disassemble(char *buffer, offs_t pc, const UINT8 *oprom, const UINT8 *opram, UINT32 options)
+std::unique_ptr<util::disasm_interface> pdp8_device::create_disassembler()
 {
-	extern CPU_DISASSEMBLE( pdp8 );
-	return CPU_DISASSEMBLE_NAME(pdp8)(this, buffer, pc, oprom, opram, options);
+	return std::make_unique<pdp8_disassembler>();
 }
 
 
@@ -190,7 +164,7 @@ offs_t pdp8_device::disasm_disassemble(char *buffer, offs_t pc, const UINT8 *opr
 //  cycles it takes for one instruction to execute
 //-------------------------------------------------
 
-UINT32 pdp8_device::execute_min_cycles() const
+uint32_t pdp8_device::execute_min_cycles() const noexcept
 {
 	return 1; // TODO
 }
@@ -201,7 +175,7 @@ UINT32 pdp8_device::execute_min_cycles() const
 //  cycles it takes for one instruction to execute
 //-------------------------------------------------
 
-UINT32 pdp8_device::execute_max_cycles() const
+uint32_t pdp8_device::execute_max_cycles() const noexcept
 {
 	return 3; // TODO
 }
@@ -212,7 +186,7 @@ UINT32 pdp8_device::execute_max_cycles() const
 //  input/interrupt lines
 //-------------------------------------------------
 
-UINT32 pdp8_device::execute_input_lines() const
+uint32_t pdp8_device::execute_input_lines() const noexcept
 {
 	return 0; // TODO
 }
@@ -240,9 +214,9 @@ void pdp8_device::execute_run()
 	{
 		m_pc &= 07777;
 
-		debugger_instruction_hook(this, m_pc);
+		debugger_instruction_hook(m_pc);
 
-		UINT16 op = m_program->read_word(m_pc);
+		uint16_t op [[maybe_unused]] = m_program->read_word(m_pc);
 
 		--m_icount;
 	}

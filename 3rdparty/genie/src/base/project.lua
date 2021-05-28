@@ -17,7 +17,7 @@
 --    contains a reference back to the original project: prj = tr.project.
 --
 
-	function premake.project.buildsourcetree(prj)
+	function premake.project.buildsourcetree(prj, allfiles)
 		local tr = premake.tree.new(prj.name)
 		tr.project = prj
 
@@ -27,7 +27,7 @@
 			node.isvpath = isvpath
 		end
 
-		for fcfg in premake.project.eachfile(prj) do
+		for fcfg in premake.project.eachfile(prj, allfiles) do
 			isvpath = (fcfg.name ~= fcfg.vpath)
 			local node = premake.tree.add(tr, fcfg.vpath, onadd)
 			node.cfg = fcfg
@@ -65,15 +65,16 @@
 -- Iterator for a project's files; returns a file configuration object.
 --
 
-	function premake.project.eachfile(prj)
+	function premake.project.eachfile(prj, allfiles)
 		-- project root config contains the file config list
 		if not prj.project then prj = premake.getconfig(prj) end
 		local i = 0
-		local t = prj.files
+		local t = iif(allfiles, prj.allfiles, prj.files)
+		local c = iif(allfiles, prj.__allfileconfigs, prj.__fileconfigs)
 		return function ()
 			i = i + 1
 			if (i <= #t) then
-				local fcfg = prj.__fileconfigs[t[i]]
+				local fcfg = c[t[i]]
 				fcfg.vpath = premake.project.getvpath(prj, fcfg.name)
 				return fcfg
 			end
@@ -326,6 +327,8 @@
 				return premake.iscppproject(target)
 			elseif premake.isdotnetproject(source) then
 				return premake.isdotnetproject(target)
+			elseif premake.isswiftproject(source) then
+				return premake.isswiftproject(source) or premake.iscppproject(source)
 			end
 		end
 
@@ -503,7 +506,7 @@
 				ext = ".lib"
 			end
 		elseif namestyle == "posix" then
-			if kind == "WindowedApp" and system == "macosx" then
+			if kind == "WindowedApp" and system == "macosx" and not cfg.options.SkipBundling then
 				bundlename = name .. ".app"
 				bundlepath = path.join(dir, bundlename)
 				dir = path.join(bundlepath, "Contents/MacOS")
@@ -529,6 +532,36 @@
 			elseif kind == "StaticLib" then
 				prefix = "lib"
 				ext = ".a"
+			elseif kind == "SharedLib" then
+				ext = ".prx"
+			end
+		elseif namestyle == "TegraAndroid" then
+			-- the .so->.apk happens later for Application types
+			if kind == "ConsoleApp" or kind == "WindowedApp" or kind == "SharedLib" then
+				prefix = "lib"
+				ext = ".so"
+			elseif kind == "StaticLib" then
+				prefix = "lib"
+				ext = ".a"
+			end
+		elseif namestyle == "NX" then
+			-- NOTE: it would be cleaner to just output $(TargetExt) for all cases, but
+			-- there is logic elsewhere that assumes a '.' to be present in target name
+			-- such that it can reverse engineer the extension set here.
+			if kind == "ConsoleApp" or kind == "WindowedApp" then
+				ext = ".nspd_root"
+			elseif kind == "StaticLib" then
+				ext = ".a"
+			elseif kind == "SharedLib" then
+				ext = ".nro"
+			end
+		elseif namestyle == "Emscripten" then
+			if kind == "ConsoleApp" or kind == "WindowedApp" then
+				ext = ".html"
+			elseif kind == "StaticLib" then
+				ext = ".bc"
+			elseif kind == "SharedLib" then
+				ext = ".js"
 			end
 		end
 
@@ -572,8 +605,12 @@
 				return premake[action.valid_tools.cc[1]]
 			end
 			return premake.gcc
-		else
+		elseif premake.isdotnetproject(cfg) then
 			return premake.dotnet
+		elseif premake.isswiftproject(cfg) then
+			return premake.swift
+		else
+			return premake.valac
 		end
 	end
 
@@ -594,8 +631,14 @@
 
 		local fname = path.getname(abspath)
 		local max = abspath:len() - fname:len()
+        
+        -- First check for an exact match from the inverse vpaths
+        if prj.inversevpaths and prj.inversevpaths[abspath] then
+            return path.join(prj.inversevpaths[abspath], fname)
+        end
 
 		-- Look for matching patterns
+        local matches = {}
 		for replacement, patterns in pairs(prj.vpaths or {}) do
 			for _, pattern in ipairs(patterns) do
 				local i = abspath:find(path.wildcards(pattern))
@@ -640,11 +683,16 @@
 						leaf = path.getname(leaf)
 					end
 
-					vpath = path.join(stem, leaf)
-
+					table.insert(matches, path.join(stem, leaf))
 				end
 			end
 		end
+        
+        if #matches > 0 then
+            -- for the sake of determinism, return the first alphabetically
+            table.sort(matches)
+            vpath = matches[1]
+        end
 
 		return path.trimdots(vpath)
 	end
@@ -703,4 +751,20 @@
 
 	function premake.isdotnetproject(prj)
 		return (prj.language == "C#")
+	end
+
+--
+-- Returns true if the project uses the Vala language.
+--
+
+	function premake.isvalaproject(prj)
+		return (prj.language == "Vala")
+	end
+
+--
+-- Returns true if the project uses the Swift language.
+--
+
+	function premake.isswiftproject(prj)
+		return (prj.language == "Swift")
 	end

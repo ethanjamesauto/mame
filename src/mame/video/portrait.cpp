@@ -11,19 +11,19 @@
 #include "includes/portrait.h"
 
 
-WRITE8_MEMBER(portrait_state::bgvideo_write)
+void portrait_state::bgvideo_write(offs_t offset, uint8_t data)
 {
 	m_background->mark_tile_dirty(offset/2);
 	m_bgvideoram[offset] = data;
 }
 
-WRITE8_MEMBER(portrait_state::fgvideo_write)
+void portrait_state::fgvideo_write(offs_t offset, uint8_t data)
 {
 	m_foreground->mark_tile_dirty(offset/2);
 	m_fgvideoram[offset] = data;
 }
 
-inline void portrait_state::get_tile_info( tile_data &tileinfo, int tile_index, const UINT8 *source )
+inline void portrait_state::get_tile_info( tile_data &tileinfo, int tile_index, const uint8_t *source )
 {
 	int attr    = source[tile_index*2+0];
 	int tilenum = source[tile_index*2+1];
@@ -51,7 +51,7 @@ inline void portrait_state::get_tile_info( tile_data &tileinfo, int tile_index, 
 	else
 		color = ((tilenum&0xff)>>1)+0x80;
 
-	SET_TILE_INFO_MEMBER(0, tilenum, color, flags );
+	tileinfo.set(0, tilenum, color, flags );
 }
 
 TILE_GET_INFO_MEMBER(portrait_state::get_bg_tile_info)
@@ -66,8 +66,8 @@ TILE_GET_INFO_MEMBER(portrait_state::get_fg_tile_info)
 
 void portrait_state::video_start()
 {
-	m_background = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(portrait_state::get_bg_tile_info),this), TILEMAP_SCAN_ROWS, 16, 16, 32, 32 );
-	m_foreground = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(portrait_state::get_fg_tile_info),this), TILEMAP_SCAN_ROWS, 16, 16, 32, 32 );
+	m_background = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(portrait_state::get_bg_tile_info)), TILEMAP_SCAN_ROWS, 16, 16, 32, 32);
+	m_foreground = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(portrait_state::get_fg_tile_info)), TILEMAP_SCAN_ROWS, 16, 16, 32, 32);
 
 	m_foreground->set_transparent_pen(7);
 
@@ -76,51 +76,41 @@ void portrait_state::video_start()
 
 
 
-PALETTE_INIT_MEMBER(portrait_state, portrait)
+void portrait_state::portrait_palette(palette_device &palette) const
 {
-	const UINT8 *color_prom = memregion("proms")->base();
-	int i;
-	UINT8* lookup = memregion("tileattr")->base();
+	uint8_t const *const color_prom = memregion("proms")->base();
 
 /*
-    for (i = 0;i < 0x40;i++)
+    for (int i = 0; i < 0x40; i++)
     {
-        int r,g,b,data;
-        data = color_prom[0];
+        int const data = color_prom[i];
 
-
-        r = (data >> 0) & 0x7;
-        g = (data >> 3) & 0x3;
-        b = (data >> 5) & 0x7;
+        int const r = (data >> 0) & 0x7;
+        int const g = (data >> 3) & 0x3;
+        int const b = (data >> 5) & 0x7;
 
         palette.set_indirect_color(i, rgb_t(pal3bit(r), pal2bit(g), pal3bit(b)));
-
-        color_prom++;
     }
 */
 
-	for (i=0;i<0x20;i++)
+	for (int i = 0; i < 0x20; i++)
 	{
-		int r,g,b,data;
-		data = (color_prom[0]<<0) | (color_prom[0x20]<<8);
+		int const data = (color_prom[i + 0] << 0) | (color_prom[i + 0x20] << 8);
 
-		r = (data >> 0) & 0x1f;
-		g = (data >> 5) & 0x1f;
-		b = (data >> 10) & 0x1f;
+		int const r = (data >> 0) & 0x1f;
+		int const g = (data >> 5) & 0x1f;
+		int const b = (data >> 10) & 0x1f;
 
 		palette.set_indirect_color(i, rgb_t(pal5bit(r), pal5bit(g), pal5bit(b)));
 
 		// ?? the lookup seems to reference 0x3f colours, unless 1 bit is priority or similar?
-		palette.set_indirect_color(i+0x20, rgb_t(pal5bit(r>>1), pal5bit(g>>1), pal5bit(b>>1)));
-
-		color_prom++;
+		palette.set_indirect_color(i + 0x20, rgb_t(pal5bit(r >> 1), pal5bit(g >> 1), pal5bit(b >> 1)));
 	}
 
-
-
-	for (i = 0;i < 0x800;i++)
+	uint8_t const *const lookup = memregion("tileattr")->base();
+	for (int i = 0; i < 0x800; i++)
 	{
-		UINT8 ctabentry = lookup[i]&0x3f;
+		uint8_t const ctabentry = lookup[i] & 0x3f;
 		palette.set_pen_indirect(i, ctabentry);
 	}
 }
@@ -128,8 +118,8 @@ PALETTE_INIT_MEMBER(portrait_state, portrait)
 
 void portrait_state::draw_sprites(bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
-	UINT8 *source = m_spriteram;
-	UINT8 *finish = source + 0x200;
+	uint8_t *source = m_spriteram;
+	uint8_t *finish = source + 0x200;
 
 	while( source < finish )
 	{
@@ -184,7 +174,7 @@ void portrait_state::draw_sprites(bitmap_ind16 &bitmap, const rectangle &cliprec
 	}
 }
 
-UINT32 portrait_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t portrait_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	rectangle cliprect_scroll, cliprect_no_scroll;
 

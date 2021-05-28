@@ -7,12 +7,12 @@
 
     Emulation by Bryan McPhail, mish@tendril.co.uk
 
-    This board is based on the Hudson HuC6280 and Huc6270 IC's used in 
+    This board is based on the Hudson HuC6280 and Huc6270 IC's used in
     the NEC PC-Engine.
-    
+
     Differences from PC-Engine console:
     Input ports are different (2 dips, 2 joysticks, 1 coin port)
-    _Interface_ to palette is different (Huc6260 isn't present), 
+    _Interface_ to palette is different (Huc6260 isn't present),
     palette data is the same.
     Extra sound chips (YM2203 & Oki M5205), and extra HuC6280 processor to drive them.
     Twice as much VRAM (128kb).
@@ -20,7 +20,7 @@
     Todo:
     - There seems to be a bug with a stuck note from the YM2203 FM channel
       at the start of scene 3 and near the ending when your characters are
-      flying over a forest in a helicopter. 
+      flying over a forest in a helicopter.
       This is verified to NOT happen on real hardware - Guru
 
 **********************************************************************
@@ -64,7 +64,7 @@ Notes:
       DEC-01 - Hudson HuC6280 6502-based CPU with in-built Programmable Sound Generator
                used as the main CPU. Clock input is 21.4772MHz and is divided internally
                by 3 for the CPU (7.15906MHz) and by 6 for the PSG (3.579533MHz), although
-               in this case the PSG isn't used. The Hudson markings have been scratch off 
+               in this case the PSG isn't used. The Hudson markings have been scratch off
                and the IC is labelled 'DEC-01'
           45 - Hudson HuC6280 6502-based CPU with in-built PSG used as the sound CPU
                Clock input is 21.4772MHz and is divided internally by 3 for the CPU
@@ -93,38 +93,32 @@ Notes:
 **********************************************************************/
 
 #include "emu.h"
-#include "cpu/h6280/h6280.h"
-#include "sound/2203intf.h"
-#include "sound/c6280.h"
 #include "includes/battlera.h"
+#include "sound/ymopn.h"
+#include "speaker.h"
 
 
 void battlera_state::machine_start()
 {
 	save_item(NAME(m_control_port_select));
 	save_item(NAME(m_msm5205next));
-	save_item(NAME(m_toggle));
 }
 
-/******************************************************************************/
-
-WRITE8_MEMBER(battlera_state::sound_w)
+void battlera_state::machine_reset()
 {
-	if (offset == 0)
-	{
-		soundlatch_byte_w(space,0,data);
-		m_audiocpu->set_input_line(0, HOLD_LINE);
-	}
+	m_control_port_select = 0;
+	m_msm5205next = 0;
+	m_toggle = 0;
 }
 
 /******************************************************************************/
 
-WRITE8_MEMBER(battlera_state::control_data_w)
+void battlera_state::control_data_w(uint8_t data)
 {
 	m_control_port_select=data;
 }
 
-READ8_MEMBER(battlera_state::control_data_r)
+uint8_t battlera_state::control_data_r()
 {
 	switch (m_control_port_select)
 	{
@@ -140,23 +134,20 @@ READ8_MEMBER(battlera_state::control_data_r)
 
 /******************************************************************************/
 
-static ADDRESS_MAP_START( battlera_map, AS_PROGRAM, 8, battlera_state )
-	AM_RANGE(0x000000, 0x0fffff) AM_ROM
-	AM_RANGE(0x1e0800, 0x1e0801) AM_WRITE(sound_w)
-	AM_RANGE(0x1e1000, 0x1e13ff) AM_DEVREADWRITE( "huc6260", huc6260_device, palette_direct_read, palette_direct_write) AM_SHARE("paletteram")
-	AM_RANGE(0x1f0000, 0x1f1fff) AM_RAMBANK("bank8") /* Main ram */
-	AM_RANGE(0x1ff000, 0x1ff001) AM_READWRITE(control_data_r, control_data_w)
+void battlera_state::battlera_map(address_map &map)
+{
+	map(0x000000, 0x0fffff).rom();
+	map(0x1e0800, 0x1e0800).w(m_soundlatch, FUNC(generic_latch_8_device::write));
+	map(0x1e1000, 0x1e13ff).rw(m_huc6260, FUNC(huc6260_device::palette_direct_read), FUNC(huc6260_device::palette_direct_write)).share("paletteram");
+	map(0x1f0000, 0x1f1fff).ram(); /* Main ram */
+	map(0x1fe000, 0x1fe3ff).rw("huc6270", FUNC(huc6270_device::read), FUNC(huc6270_device::write));
+	map(0x1fe400, 0x1fe7ff).rw(m_huc6260, FUNC(huc6260_device::read), FUNC(huc6260_device::write));
+}
 
-	AM_RANGE( 0x1FE000, 0x1FE3FF) AM_DEVREADWRITE( "huc6270", huc6270_device, read, write )
-	AM_RANGE( 0x1FE400, 0x1FE7FF) AM_DEVREADWRITE( "huc6260", huc6260_device, read, write )
-	AM_RANGE( 0x1FEC00, 0x1FEFFF) AM_DEVREADWRITE( "maincpu", h6280_device, timer_r, timer_w )
-	AM_RANGE( 0x1FF400, 0x1FF7FF) AM_DEVREADWRITE( "maincpu", h6280_device, irq_status_r, irq_status_w )
-
-ADDRESS_MAP_END
-
-static ADDRESS_MAP_START( battlera_portmap, AS_IO, 8, battlera_state )
-	AM_RANGE( 0x00, 0x03) AM_DEVREADWRITE( "huc6270", huc6270_device, read, write )
-ADDRESS_MAP_END
+void battlera_state::battlera_portmap(address_map &map)
+{
+	map(0x00, 0x03).rw("huc6270", FUNC(huc6270_device::read), FUNC(huc6270_device::write));
+}
 
 /******************************************************************************/
 
@@ -171,25 +162,23 @@ WRITE_LINE_MEMBER(battlera_state::adpcm_int)
 		m_audiocpu->set_input_line(1, HOLD_LINE);
 }
 
-WRITE8_MEMBER(battlera_state::adpcm_data_w)
+void battlera_state::adpcm_data_w(uint8_t data)
 {
 	m_msm5205next = data;
 }
 
-WRITE8_MEMBER(battlera_state::adpcm_reset_w)
+void battlera_state::adpcm_reset_w(uint8_t data)
 {
 	m_msm->reset_w(0);
 }
 
-static ADDRESS_MAP_START( sound_map, AS_PROGRAM, 8, battlera_state )
-	AM_RANGE(0x000000, 0x00ffff) AM_ROM
-	AM_RANGE(0x040000, 0x040001) AM_DEVWRITE("ymsnd", ym2203_device, write)
-	AM_RANGE(0x080000, 0x080001) AM_WRITE(adpcm_data_w)
-	AM_RANGE(0x1fe800, 0x1fe80f) AM_DEVWRITE("c6280", c6280_device, c6280_w)
-	AM_RANGE(0x1f0000, 0x1f1fff) AM_RAMBANK("bank7") /* Main ram */
-	AM_RANGE(0x1ff000, 0x1ff001) AM_READ(soundlatch_byte_r) AM_WRITE(adpcm_reset_w)
-	AM_RANGE(0x1ff400, 0x1ff403) AM_DEVWRITE("audiocpu", h6280_device, irq_status_w)
-ADDRESS_MAP_END
+void battlera_state::sound_map(address_map &map)
+{
+	map(0x000000, 0x00ffff).rom();
+	map(0x040000, 0x040001).w("ymsnd", FUNC(ym2203_device::write));
+	map(0x080000, 0x080001).w(FUNC(battlera_state::adpcm_data_w));
+	map(0x1f0000, 0x1f1fff).ram(); /* Main ram */
+}
 
 /******************************************************************************/
 
@@ -260,57 +249,58 @@ INPUT_PORTS_END
 
 /******************************************************************************/
 
-UINT32 battlera_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t battlera_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	m_huc6260->video_update( bitmap, cliprect );
 	return 0;
 }
 
 
-static MACHINE_CONFIG_START( battlera, battlera_state )
-
+void battlera_state::battlera(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", H6280,21477200/3)
-	MCFG_CPU_PROGRAM_MAP(battlera_map)
-	MCFG_CPU_IO_MAP(battlera_portmap)
+	H6280(config, m_maincpu, 21477200/3);
+	m_maincpu->set_addrmap(AS_PROGRAM, &battlera_state::battlera_map);
+	m_maincpu->set_addrmap(AS_IO, &battlera_state::battlera_portmap);
+	m_maincpu->port_in_cb().set(FUNC(battlera_state::control_data_r));
+	m_maincpu->port_out_cb().set(FUNC(battlera_state::control_data_w));
+	m_maincpu->add_route(ALL_OUTPUTS, "mono", 0); // internal sound unused
 
-	MCFG_CPU_ADD("audiocpu", H6280,21477200/3)
-	MCFG_CPU_PROGRAM_MAP(sound_map)
+	H6280(config, m_audiocpu, 21477200/3);
+	m_audiocpu->set_addrmap(AS_PROGRAM, &battlera_state::sound_map);
+	m_audiocpu->port_in_cb().set(m_soundlatch, FUNC(generic_latch_8_device::read));
+	m_audiocpu->port_out_cb().set(FUNC(battlera_state::adpcm_reset_w));
+	m_audiocpu->add_route(ALL_OUTPUTS, "mono", 0.60); // music data is stereo, but hardware isn't
 
 	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_RAW_PARAMS(MAIN_CLOCK, HUC6260_WPF, 64, 64 + 1024 + 64, HUC6260_LPF, 18, 18 + 242)
-	MCFG_SCREEN_UPDATE_DRIVER( battlera_state, screen_update )
-	MCFG_SCREEN_PALETTE("huc6260:palette")
+	SCREEN(config, m_screen, SCREEN_TYPE_RASTER);
+	m_screen->set_raw(MAIN_CLOCK, huc6260_device::WPF, 64, 64 + 1024 + 64, huc6260_device::LPF, 18, 18 + 242);
+	m_screen->set_screen_update(FUNC(battlera_state::screen_update));
+	m_screen->set_palette(m_huc6260);
 
-	MCFG_DEVICE_ADD( "huc6260", HUC6260, MAIN_CLOCK )
-	MCFG_HUC6260_NEXT_PIXEL_DATA_CB(DEVREAD16("huc6270", huc6270_device, next_pixel))
-	MCFG_HUC6260_TIME_TIL_NEXT_EVENT_CB(DEVREAD16("huc6270", huc6270_device, time_until_next_event))
-	MCFG_HUC6260_VSYNC_CHANGED_CB(DEVWRITELINE("huc6270", huc6270_device, vsync_changed))
-	MCFG_HUC6260_HSYNC_CHANGED_CB(DEVWRITELINE("huc6270", huc6270_device, hsync_changed))
+	HUC6260(config, m_huc6260, MAIN_CLOCK);
+	m_huc6260->next_pixel_data().set("huc6270", FUNC(huc6270_device::next_pixel));
+	m_huc6260->time_til_next_event().set("huc6270", FUNC(huc6270_device::time_until_next_event));
+	m_huc6260->vsync_changed().set("huc6270", FUNC(huc6270_device::vsync_changed));
+	m_huc6260->hsync_changed().set("huc6270", FUNC(huc6270_device::hsync_changed));
 
-	MCFG_DEVICE_ADD( "huc6270", HUC6270, 0 )
-	MCFG_HUC6270_VRAM_SIZE(0x20000)
-	MCFG_HUC6270_IRQ_CHANGED_CB(INPUTLINE("maincpu", 0))
+	huc6270_device &huc6270(HUC6270(config, "huc6270", 0));
+	huc6270.set_vram_size(0x20000);
+	huc6270.irq().set_inputline(m_maincpu, 0);
 
 	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_STEREO("lspeaker", "rspeaker")
+	SPEAKER(config, "mono").front_center();
 
-	MCFG_SOUND_ADD("ymsnd", YM2203, 12000000 / 8)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "lspeaker", 0.40)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "rspeaker", 0.40)
+	GENERIC_LATCH_8(config, m_soundlatch);
+	m_soundlatch->data_pending_callback().set_inputline(m_audiocpu, 0);
 
-	MCFG_SOUND_ADD("msm", MSM5205, 384000)
-	MCFG_MSM5205_VCLK_CB(WRITELINE(battlera_state, adpcm_int)) /* interrupt function */
-	MCFG_MSM5205_PRESCALER_SELECTOR(MSM5205_S48_4B)      /* 8KHz            */
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "lspeaker", 0.85)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "rspeaker", 0.85)
+	YM2203(config, "ymsnd", 12000000 / 8).add_route(ALL_OUTPUTS, "mono", 0.40);
 
-	MCFG_SOUND_ADD("c6280", C6280, 21477270/6)
-	MCFG_C6280_CPU("audiocpu")
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "lspeaker", 0.60)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "rspeaker", 0.60)
-MACHINE_CONFIG_END
+	MSM5205(config, m_msm, 384000);
+	m_msm->vck_legacy_callback().set(FUNC(battlera_state::adpcm_int));
+	m_msm->set_prescaler_selector(msm5205_device::S48_4B); /* 8KHz */
+	m_msm->add_route(ALL_OUTPUTS, "mono", 0.85);
+}
 
 /******************************************************************************/
 
@@ -372,6 +362,6 @@ ROM_END
 
 /******************************************************************************/
 
-GAME( 1988, battlera, 0,        battlera, battlera, driver_device,  0,   ROT0, "Data East Corporation", "Battle Rangers (World)", MACHINE_IMPERFECT_SOUND | MACHINE_IMPERFECT_GRAPHICS | MACHINE_SUPPORTS_SAVE )
-GAME( 1988, bldwolf,  battlera, battlera, battlera, driver_device,  0,   ROT0, "Data East USA", "Bloody Wolf (US)", MACHINE_IMPERFECT_SOUND | MACHINE_IMPERFECT_GRAPHICS | MACHINE_SUPPORTS_SAVE )
-GAME( 1988, bldwolfj, battlera, battlera, battlera, driver_device,  0,   ROT0, "Data East Corporation", "Narazumono Sentoubutai Bloody Wolf (Japan)", MACHINE_IMPERFECT_SOUND | MACHINE_IMPERFECT_GRAPHICS | MACHINE_SUPPORTS_SAVE )
+GAME( 1988, battlera, 0,        battlera, battlera, battlera_state, empty_init, ROT0, "Data East Corporation", "Battle Rangers (World)",                     MACHINE_IMPERFECT_SOUND | MACHINE_IMPERFECT_GRAPHICS | MACHINE_SUPPORTS_SAVE )
+GAME( 1988, bldwolf,  battlera, battlera, battlera, battlera_state, empty_init, ROT0, "Data East USA",         "Bloody Wolf (US)",                           MACHINE_IMPERFECT_SOUND | MACHINE_IMPERFECT_GRAPHICS | MACHINE_SUPPORTS_SAVE )
+GAME( 1988, bldwolfj, battlera, battlera, battlera, battlera_state, empty_init, ROT0, "Data East Corporation", "Narazumono Sentoubutai Bloody Wolf (Japan)", MACHINE_IMPERFECT_SOUND | MACHINE_IMPERFECT_GRAPHICS | MACHINE_SUPPORTS_SAVE )

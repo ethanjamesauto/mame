@@ -1,88 +1,87 @@
 // license:BSD-3-Clause
 // copyright-holders:Olivier Galibert
-#ifndef LPC_ACPI_H
-#define LPC_ACPI_H
+#ifndef MAME_MACHINE_LPC_ACPI_H
+#define MAME_MACHINE_LPC_ACPI_H
+
+#pragma once
 
 #include "lpc.h"
 
-#define MCFG_LPC_ACPI_ADD(_tag) \
-	MCFG_DEVICE_ADD(_tag, LPC_ACPI, 0)
-
 class lpc_acpi_device : public lpc_device {
 public:
-	lpc_acpi_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	lpc_acpi_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
-	virtual void map_device(UINT64 memory_window_start, UINT64 memory_window_end, UINT64 memory_offset, address_space *memory_space,
-							UINT64 io_window_start, UINT64 io_window_end, UINT64 io_offset, address_space *io_space) override;
-
-	DECLARE_READ16_MEMBER( pm1_sts_r);
-	DECLARE_WRITE16_MEMBER(pm1_sts_w);
-	DECLARE_READ16_MEMBER( pm1_en_r);
-	DECLARE_WRITE16_MEMBER(pm1_en_w);
-	DECLARE_READ32_MEMBER( pm1_cnt_r);
-	DECLARE_WRITE32_MEMBER(pm1_cnt_w);
-	DECLARE_READ32_MEMBER( pm1_tmr_r);
-	DECLARE_READ32_MEMBER( proc_cnt_r);
-	DECLARE_WRITE32_MEMBER(proc_cnt_w);
-	DECLARE_READ8_MEMBER(  lv2_r);
-	DECLARE_READ32_MEMBER( gpe0_sts_r);
-	DECLARE_WRITE32_MEMBER(gpe0_sts_w);
-	DECLARE_READ32_MEMBER( gpe0_en_r);
-	DECLARE_WRITE32_MEMBER(gpe0_en_w);
-	DECLARE_READ32_MEMBER( smi_en_r);
-	DECLARE_WRITE32_MEMBER(smi_en_w);
-	DECLARE_READ32_MEMBER( smi_sts_r);
-	DECLARE_WRITE32_MEMBER(smi_sts_w);
-	DECLARE_READ16_MEMBER( alt_gp_smi_en_r);
-	DECLARE_WRITE16_MEMBER(alt_gp_smi_en_w);
-	DECLARE_READ16_MEMBER( alt_gp_smi_sts_r);
-	DECLARE_WRITE16_MEMBER(alt_gp_smi_sts_w);
-	DECLARE_READ16_MEMBER( devact_sts_r);
-	DECLARE_WRITE16_MEMBER(devact_sts_w);
-	DECLARE_READ16_MEMBER( devtrap_en_r);
-	DECLARE_WRITE16_MEMBER(devtrap_en_w);
-	DECLARE_READ16_MEMBER( bus_addr_track_r);
-	DECLARE_READ8_MEMBER(  bus_cyc_track_r);
-
-	DECLARE_READ8_MEMBER(  tco_rld_r);
-	DECLARE_WRITE8_MEMBER( tco_rld_w);
-	DECLARE_READ8_MEMBER(  tco_tmr_r);
-	DECLARE_WRITE8_MEMBER( tco_tmr_w);
-	DECLARE_READ8_MEMBER(  tco_dat_in_r);
-	DECLARE_WRITE8_MEMBER( tco_dat_in_w);
-	DECLARE_READ8_MEMBER(  tco_dat_out_r);
-	DECLARE_WRITE8_MEMBER( tco_dat_out_w);
-	DECLARE_READ16_MEMBER( tco1_sts_r);
-	DECLARE_WRITE16_MEMBER(tco1_sts_w);
-	DECLARE_READ16_MEMBER( tco2_sts_r);
-	DECLARE_WRITE16_MEMBER(tco2_sts_w);
-	DECLARE_READ16_MEMBER( tco1_cnt_r);
-	DECLARE_WRITE16_MEMBER(tco1_cnt_w);
-	DECLARE_READ16_MEMBER( tco2_cnt_r);
-	DECLARE_WRITE16_MEMBER(tco2_cnt_w);
-	DECLARE_READ8_MEMBER(  tco_message1_r);
-	DECLARE_WRITE8_MEMBER( tco_message1_w);
-	DECLARE_READ8_MEMBER(  tco_message2_r);
-	DECLARE_WRITE8_MEMBER( tco_message2_w);
-	DECLARE_READ8_MEMBER(  tco_wdstatus_r);
-	DECLARE_WRITE8_MEMBER( tco_wdstatus_w);
-	DECLARE_READ8_MEMBER(  sw_irq_gen_r);
-	DECLARE_WRITE8_MEMBER( sw_irq_gen_w);
+	virtual void map_device(uint64_t memory_window_start, uint64_t memory_window_end, uint64_t memory_offset, address_space *memory_space,
+							uint64_t io_window_start, uint64_t io_window_end, uint64_t io_offset, address_space *io_space) override;
 
 protected:
 	void device_start() override;
 	void device_reset() override;
 
 private:
-	UINT32 pm1_cnt, proc_cnt, gpe0_sts, gpe0_en, smi_en, smi_sts;
-	UINT16 pm1_sts, pm1_en, alt_gp_smi_en, alt_gp_smi_sts, devact_sts, devtrap_en;
-	UINT16 tco1_sts, tco2_sts, tco1_cnt, tco2_cnt;
-	UINT8  tco_rld, tco_tmr, tco_dat_in, tco_dat_out, tco_message1, tco_message2;
-	UINT8  tco_wdstatus, sw_irq_gen;
+	uint32_t pm1_cnt, proc_cnt, gpe0_sts, gpe0_en, smi_en, smi_sts;
+	uint16_t pm1_sts, pm1_en, alt_gp_smi_en, alt_gp_smi_sts, devact_sts, devtrap_en;
+	uint16_t tco1_sts, tco2_sts, tco1_cnt, tco2_cnt;
+	uint8_t  tco_rld, tco_tmr, tco_dat_in, tco_dat_out, tco_message1, tco_message2;
+	uint8_t  tco_wdstatus, sw_irq_gen;
 
-	DECLARE_ADDRESS_MAP(map, 32);
+	void map(address_map &map);
+
+	uint16_t pm1_sts_r();
+	void pm1_sts_w(uint16_t data);
+	uint16_t pm1_en_r();
+	void pm1_en_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	uint32_t pm1_cnt_r();
+	void pm1_cnt_w(offs_t offset, uint32_t data, uint32_t mem_mask = ~0);
+	uint32_t pm1_tmr_r();
+	uint32_t proc_cnt_r();
+	void proc_cnt_w(offs_t offset, uint32_t data, uint32_t mem_mask = ~0);
+	uint8_t lv2_r();
+	uint32_t gpe0_sts_r();
+	void gpe0_sts_w(offs_t offset, uint32_t data, uint32_t mem_mask = ~0);
+	uint32_t gpe0_en_r();
+	void gpe0_en_w(offs_t offset, uint32_t data, uint32_t mem_mask = ~0);
+	uint32_t smi_en_r();
+	void smi_en_w(offs_t offset, uint32_t data, uint32_t mem_mask = ~0);
+	uint32_t smi_sts_r();
+	void smi_sts_w(offs_t offset, uint32_t data, uint32_t mem_mask = ~0);
+	uint16_t alt_gp_smi_en_r();
+	void alt_gp_smi_en_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	uint16_t alt_gp_smi_sts_r();
+	void alt_gp_smi_sts_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	uint16_t devact_sts_r();
+	void devact_sts_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	uint16_t devtrap_en_r();
+	void devtrap_en_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	uint16_t bus_addr_track_r();
+	uint8_t bus_cyc_track_r();
+
+	uint8_t tco_rld_r();
+	void tco_rld_w(uint8_t data);
+	uint8_t tco_tmr_r();
+	void tco_tmr_w(uint8_t data);
+	uint8_t tco_dat_in_r();
+	void tco_dat_in_w(uint8_t data);
+	uint8_t tco_dat_out_r();
+	void tco_dat_out_w(uint8_t data);
+	uint16_t tco1_sts_r();
+	void tco1_sts_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	uint16_t tco2_sts_r();
+	void tco2_sts_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	uint16_t tco1_cnt_r();
+	void tco1_cnt_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	uint16_t tco2_cnt_r();
+	void tco2_cnt_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	uint8_t tco_message1_r();
+	void tco_message1_w(uint8_t data);
+	uint8_t tco_message2_r();
+	void tco_message2_w(uint8_t data);
+	uint8_t tco_wdstatus_r();
+	void tco_wdstatus_w(uint8_t data);
+	uint8_t sw_irq_gen_r();
+	void sw_irq_gen_w(uint8_t data);
 };
 
-extern const device_type LPC_ACPI;
+DECLARE_DEVICE_TYPE(LPC_ACPI, lpc_acpi_device)
 
-#endif
+#endif // MAME_MACHINE_LPC_ACPI_H

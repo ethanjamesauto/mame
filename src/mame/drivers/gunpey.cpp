@@ -1,12 +1,16 @@
 // license:LGPL-2.1+
-// copyright-holders:Angelo Salese, Tomasz Slanina, David Haywood, Luca Elia
+// copyright-holders:Angelo Salese, Tomasz Slanina, David Haywood, Luca Elia, Morten Shearman Kirkegaard
 /********************************************************************************************
 
     Gunpey (c) 2000 Banpresto
 
     TODO:
-    - compression scheme used by the Axell video chip, game is playable but several gfxs are
-      still broken.
+    - Framebuffer is actually in the same DRAM as the blitter data gets copied to, not a
+      separate RAM.  It (and the double buffered copy) appear near the top right of the
+      framebuffer, so there are likely registers to control this that need finding.
+    - Other sprite modes supported by the video chip (not used here?)
+    - Check zooming precision against hardware
+    - Cleanup (still a lot of debug code in here)
 
 =============================================================================================
 ASM code study:
@@ -190,93 +194,224 @@ Release:                         November 1999
 
 #include "emu.h"
 #include "cpu/nec/nec.h"
+#include "machine/timer.h"
 #include "sound/okim6295.h"
 #include "sound/ymz280b.h"
+#include "emupal.h"
+#include "screen.h"
+#include "speaker.h"
+
+namespace {
+
+struct state_s
+{
+	unsigned char *buf;
+	unsigned char bits;
+	int num_bits;
+	unsigned char colour[16];
+	int basex;
+	int ix, iy, iw;
+	int dx, dy;
+	int ow, oh;
+	int ox, oy;
+
+	void set_o(unsigned char v);
+	unsigned char get_o(int x, int y) const;
+
+	static void hn_bytes_new_colour(state_s &s, unsigned char v, int n);
+	static void hn_bytes_prev_colour(state_s &s, unsigned char v, int n);
+	static void hn_copy_directly(state_s &s, unsigned char v, int n);
+	static void hn_copy_plus_one(state_s &s, unsigned char v, int n);
+	static void hn_copy_minus_one(state_s &s, unsigned char v, int n);
+};
+
+
+struct huffman_node_s
+{
+	const char *bits;
+	void (*func)(state_s &, unsigned char, int);
+	int arg0_bits;
+	int arg1_val;
+};
+
+
+constexpr u32 get_video_addr(u16 x, u16 y)
+{
+	return (x & 0x7ff) | (u32(y & 0x7ff) << 11);
+}
 
 
 class gunpey_state : public driver_device
 {
 public:
 	gunpey_state(const machine_config &mconfig, device_type type, const char *tag)
-		: driver_device(mconfig, type, tag),
-		m_maincpu(*this, "maincpu"),
-		m_oki(*this, "oki"),
-		m_wram(*this, "wram"),
-		m_palette(*this, "palette")
-		{ }
+		: driver_device(mconfig, type, tag)
+		, m_maincpu(*this, "maincpu")
+		, m_palette(*this, "palette")
+		, m_oki(*this, "oki")
+		, m_wram(*this, "wram")
+		, m_blit_rom(*this, "blit_rom")
+	{ }
 
-	required_device<cpu_device> m_maincpu;
-	required_device<okim6295_device> m_oki;
-	required_shared_ptr<UINT16> m_wram;
-	required_device<palette_device> m_palette;
+	void gunpey(machine_config &config);
 
-	std::unique_ptr<UINT16[]> m_blit_buffer;
-	UINT16 m_blit_ram[0x10];
-	UINT8 m_irq_cause, m_irq_mask;
-	DECLARE_WRITE8_MEMBER(gunpey_status_w);
-	DECLARE_READ8_MEMBER(gunpey_status_r);
-	DECLARE_READ8_MEMBER(gunpey_inputs_r);
-	DECLARE_WRITE8_MEMBER(gunpey_blitter_w);
-	DECLARE_WRITE8_MEMBER(gunpey_blitter_upper_w);
-	DECLARE_WRITE8_MEMBER(gunpey_blitter_upper2_w);
-	DECLARE_WRITE8_MEMBER(gunpey_output_w);
-	DECLARE_WRITE16_MEMBER(gunpey_vram_bank_w);
-	DECLARE_WRITE16_MEMBER(gunpey_vregs_addr_w);
-	DECLARE_DRIVER_INIT(gunpey);
+protected:
+	virtual void machine_start() override;
 	virtual void video_start() override;
-	UINT32 screen_update_gunpey(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
-	TIMER_DEVICE_CALLBACK_MEMBER(gunpey_scanline);
+
+private:
+	// memory handlers
+	void status_w(offs_t offset, u8 data);
+	u8 status_r(offs_t offset);
+	u8 inputs_r(offs_t offset);
+	void blitter_w(offs_t offset, u8 data);
+	void blitter_upper_w(offs_t offset, u8 data);
+	void blitter_upper2_w(offs_t offset, u8 data);
+	void output_w(u8 data);
+	void vram_bank_w(offs_t offset, u16 data, u16 mem_mask = ~0);
+	void vregs_addr_w(offs_t offset, u16 data, u16 mem_mask = ~0);
+
+	// video related
+	u32 screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
+	TIMER_DEVICE_CALLBACK_MEMBER(scanline);
+
+	// draw functions
+	bool draw_gfx(bitmap_ind16 &bitmap, const rectangle &cliprect, int count, u8 scene_gradient);
+	void draw_pixel_clut(bitmap_ind16 &bitmap, const rectangle &cliprect, int x, int xi, int y, int yi, u8 pix, int color, int alpha, u8 scene_gradient);
+	void draw_pixel(bitmap_ind16 &bitmap, const rectangle &cliprect, int x, int xi, int y, int yi, u16 color_data, int alpha, u8 scene_gradient);
+
+	// internal states
+	//std::unique_ptr<u16[]> m_blit_buffer;
+	std::unique_ptr<u8[]> m_vram;
+	u16 m_vram_bank = 0;
+	u16 m_vreg_addr = 0;
+
+	// blitter related
+	u8 m_blit_ram[0x10] = {0};
+	int m_srcx = 0;
+	int m_srcxbase = 0;
+	int m_srcxcount = 0;
+	int m_srcy = 0;
+	int m_srcycount = 0;
+	int m_ysize = 0;
+	int m_xsize = 0;
+	int m_dstx = 0;
+	int m_dsty = 0;
+	int m_dstxbase = 0;
+	int m_dstxcount = 0;
+	int m_dstycount = 0;
+	bool write_dest_byte(u8 usedata);
+
+	// blitter timers
+	emu_timer *m_blitter_end_timer;
 	TIMER_CALLBACK_MEMBER(blitter_end);
-	void gunpey_irq_check(UINT8 irq_type);
-	UINT8 draw_gfx(bitmap_ind16 &bitmap,const rectangle &cliprect,int count,UINT8 scene_gradient);
-	UINT16 m_vram_bank;
-	UINT16 m_vreg_addr;
 
-	UINT8* m_blit_rom;
-	UINT8* m_blit_rom2;
+	// decompressor functions
+	u8 get_vrom_byte(int x, int y);
+	bool decompress_sprite(unsigned char *buf, int ix, int iy, int ow, int oh, int dx, int dy);
+	bool next_node(const huffman_node_s **res, state_s *s);
+	int get_next_bit(state_s *s);
 
-	UINT8* m_vram;
+	// interrupt functions
+	u8 m_irq_cause = 0, m_irq_mask = 0;
+	void irq_check(u8 irq_type);
 
-	// work variables for the decompression
-	int m_srcx;
-	int m_srcxbase;
-	int m_scrxcount;
-	int m_srcy;
-	int m_srcycount;
-	UINT8 m_sourcewide;
-	int m_ysize;
-	int m_xsize;
-	int m_dstx;
-	int m_dsty;
-	int m_dstxbase;
-	int m_dstxcount;
-	int m_dstycount;
-	bool m_out_of_data;
+	// devices
+	required_device<cpu_device> m_maincpu;
+	required_device<palette_device> m_palette;
+	required_device<okim6295_device> m_oki;
 
-	int m_latched_bits_left;
-	UINT8 m_latched_byte;
-	int m_zero_bit_count;
+	// shared pointers
+	required_shared_ptr<u16> m_wram;
 
-	void get_stream_next_byte(void);
-	int get_stream_bit(void);
-	UINT32 gunpey_state_get_stream_bits(int bits);
+	// memory regions
+	required_region_ptr<u8> m_blit_rom;
 
-	int write_dest_byte(UINT8 usedata);
-	//UINT16 main_m_vram[0x800][0x800];
+	// address spaces
+	void io_map(address_map &map);
+	void mem_map(address_map &map);
 };
 
 
-void gunpey_state::video_start()
+void gunpey_state::machine_start()
 {
-	m_blit_buffer = std::make_unique<UINT16[]>(512*512);
+	m_irq_cause = 0;
+	m_irq_mask = 0;
+
+	save_item(NAME(m_irq_cause));
+	save_item(NAME(m_irq_mask));
 }
 
-UINT8 gunpey_state::draw_gfx(bitmap_ind16 &bitmap,const rectangle &cliprect,int count,UINT8 scene_gradient)
+void gunpey_state::video_start()
 {
-	int x,y;
-	int bpp_sel;
-	int color;
+	// assumes it can make an address mask from m_blit_rom.length() - 1
+	assert(!(m_blit_rom.length() & (m_blit_rom.length() - 1)));
 
+	// initialize VRAM
+	//m_blit_buffer = std::make_unique<u16[]>(512*512);
+	m_vram = std::make_unique<u8[]>(0x400000);
+	std::fill_n(&m_vram[0], 0x400000, 0xff);
+
+	m_blitter_end_timer = machine().scheduler().timer_alloc(timer_expired_delegate(FUNC(gunpey_state::blitter_end), this));
+
+	save_item(NAME(m_vram_bank));
+	save_item(NAME(m_vreg_addr));
+	save_item(NAME(m_blit_ram));
+	save_item(NAME(m_srcx));
+	save_item(NAME(m_srcxbase));
+	save_item(NAME(m_srcxcount));
+	save_item(NAME(m_srcy));
+	save_item(NAME(m_srcycount));
+	save_item(NAME(m_ysize));
+	save_item(NAME(m_xsize));
+	save_item(NAME(m_dstx));
+	save_item(NAME(m_dsty));
+	save_item(NAME(m_dstxbase));
+	save_item(NAME(m_dstxcount));
+	save_item(NAME(m_dstycount));
+	save_pointer(NAME(m_vram), 0x400000);
+}
+
+void gunpey_state::draw_pixel_clut(bitmap_ind16 &bitmap, const rectangle &cliprect, int x, int xi, int y, int yi, u8 pix, int color, int alpha, u8 scene_gradient)
+{
+	color += u32(pix);
+
+	// get palette
+	const u32 col_offs = get_video_addr((color & 0xff) << 1, (color >> 8));
+	const u16 color_data = (m_vram[col_offs]) | (m_vram[col_offs + 1] << 8);
+
+	draw_pixel(bitmap, cliprect, x, xi, y, yi, color_data, alpha, scene_gradient);
+}
+
+void gunpey_state::draw_pixel(bitmap_ind16 &bitmap, const rectangle &cliprect, int x, int xi, int y, int yi, u16 color_data, int alpha, u8 scene_gradient)
+{
+	if (!(color_data & 0x8000))
+	{
+		if (scene_gradient & 0x40)
+		{
+			s16 r = BIT(color_data, 10, 5);
+			s16 g = BIT(color_data,  5, 5);
+			s16 b = BIT(color_data,  0, 5);
+			r = std::max(0, r - (scene_gradient & 0x1f));
+			g = std::max(0, g - (scene_gradient & 0x1f));
+			b = std::max(0, b - (scene_gradient & 0x1f));
+
+			color_data = (color_data & 0x8000) | (r << 10) | (g << 5) | (b << 0);
+		}
+
+		if (cliprect.contains(x + xi, y + yi))
+		{
+			if (alpha == 0x00) // a value of 0x00 is solid
+				bitmap.pix(y + yi, x + xi) = color_data & 0x7fff;
+			else
+				bitmap.pix(y + yi, x + xi) = alpha_blend_r16(color_data, bitmap.pix(y + yi, x + xi), alpha) & 0x7fff;
+		}
+	}
+}
+
+bool gunpey_state::draw_gfx(bitmap_ind16 &bitmap, const rectangle &cliprect, int count, u8 scene_gradient)
+{
+	const int ZOOM_SHIFT = 15;
 	// there doesn't seem to be a specific bit to mark compressed sprites (we currently have a hack to look at the first byte of the data)
 	// do they get decompressed at blit time instead? of are there other registers we need to look at
 
@@ -302,334 +437,180 @@ UINT8 gunpey_state::draw_gfx(bitmap_ind16 &bitmap,const rectangle &cliprect,int 
 	// t = transparency / alpha related? (0x10 on player cursor, 0xf when swapping, other values at other times..)
 	const int debug = 0;
 
-	if(!(m_wram[count+0] & 1))
+	if (!(m_wram[count + 0] & 1))
 	{
-		x = (m_wram[count+3] >> 8) | ((m_wram[count+4] & 0x03) << 8);
-		y = (m_wram[count+4] >> 8) | ((m_wram[count+4] & 0x30) << 4);
-		UINT8 zoomheight = (m_wram[count+5] >> 8);
-		UINT8 zoomwidth = (m_wram[count+5] & 0xff);
-		bpp_sel = (m_wram[count+0] & 0x18);
-		color = (m_wram[count+0] >> 8);
+		int x                = (m_wram[count + 3] >> 8) | ((m_wram[count + 4] & 0x03) << 8);
+		int y                = (m_wram[count + 4] >> 8) | ((m_wram[count + 4] & 0x30) << 4);
+		const u32 zoomheight = (m_wram[count + 5] >> 8);
+		const u32 zoomwidth  = (m_wram[count + 5] & 0xff);
+		const int bpp_sel    = (m_wram[count + 0] & 0x18);
+		int color            = (m_wram[count + 0] >> 8);
 
-		x-=0x160;
-		y-=0x188;
+		x -= 0x160;
+		y -= 0x188;
 
-		UINT8 sourcewidth  = (m_wram[count+6] & 0xff);
-		UINT8 sourceheight = (m_wram[count+7] >> 8);
-		int xsource = ((m_wram[count+2] & 0x003f) << 5) | ((m_wram[count+1] & 0xf800) >> 11);
-		int ysource = ((m_wram[count+3] & 0x001f) << 6) | ((m_wram[count+2] & 0xfc00) >> 10);
+		const u32 sourcewidth  = (m_wram[count + 6] & 0xff) << ZOOM_SHIFT;
+		const u32 sourceheight = (m_wram[count + 7] >> 8) << ZOOM_SHIFT;
+		const int xsource = ((m_wram[count + 2] & 0x003f) << 5) | ((m_wram[count + 1] & 0xf800) >> 11);
+		const int ysource = ((m_wram[count + 3] & 0x001f) << 6) | ((m_wram[count + 2] & 0xfc00) >> 10);
 
-		int alpha =  m_wram[count+1] & 0x1f;
+		int alpha = (m_wram[count + 1] & 0x1f) << 3;
 
+		u32 widthstep = 1 << ZOOM_SHIFT;
+		u32 heightstep = 1 << ZOOM_SHIFT;
 
-		UINT16 unused;
-		if (debug) printf("sprite %04x %04x %04x %04x %04x %04x %04x %04x\n", m_wram[count+0], m_wram[count+1], m_wram[count+2], m_wram[count+3], m_wram[count+4], m_wram[count+5], m_wram[count+6], m_wram[count+7]);
+		if (zoomwidth) widthstep = sourcewidth / zoomwidth;
+		if (zoomheight) heightstep = sourceheight / zoomheight;
 
-		unused = m_wram[count+0]&~0xff98; if (unused) printf("unused bits set in word 0 - %04x\n", unused);
-		unused = m_wram[count+1]&~0xf89f; if (unused) printf("unused bits set in word 1 - %04x\n", unused);
-		unused = m_wram[count+2]&~0xfc3f; if (unused) printf("unused bits set in word 2 - %04x\n", unused);
-		unused = m_wram[count+3]&~0xff1f; if (unused) printf("unused bits set in word 3 - %04x\n", unused);
-		unused = m_wram[count+4]&~0xff77; if (unused) printf("unused bits set in word 4 - %04x\n", unused);
-		unused = m_wram[count+5]&~0xffff; if (unused) printf("unused bits set in word 5 - %04x\n", unused);
-		unused = m_wram[count+6]&~0x00ff; if (unused) printf("unused bits set in word 6 - %04x\n", unused);
-		unused = m_wram[count+7]&~0xff00; if (unused) printf("unused bits set in word 7 - %04x\n", unused);
+		u16 unused;
+		if (debug) logerror("sprite %04x %04x %04x %04x %04x %04x %04x %04x\n", m_wram[count + 0], m_wram[count + 1], m_wram[count + 2], m_wram[count + 3], m_wram[count + 4], m_wram[count + 5], m_wram[count + 6], m_wram[count + 7]);
 
-		if ((zoomwidth != sourcewidth) || (zoomheight != sourceheight))
+		unused = m_wram[count + 0] & ~0xff98; if (unused) logerror("unused bits set in word 0 - %04x\n", unused);
+		unused = m_wram[count + 1] & ~0xf89f; if (unused) logerror("unused bits set in word 1 - %04x\n", unused);
+		unused = m_wram[count + 2] & ~0xfc3f; if (unused) logerror("unused bits set in word 2 - %04x\n", unused);
+		unused = m_wram[count + 3] & ~0xff1f; if (unused) logerror("unused bits set in word 3 - %04x\n", unused);
+		unused = m_wram[count + 4] & ~0xff77; if (unused) logerror("unused bits set in word 4 - %04x\n", unused);
+		unused = m_wram[count + 5] & ~0xffff; if (unused) logerror("unused bits set in word 5 - %04x\n", unused);
+		unused = m_wram[count + 6] & ~0x00ff; if (unused) logerror("unused bits set in word 6 - %04x\n", unused);
+		unused = m_wram[count + 7] & ~0xff00; if (unused) logerror("unused bits set in word 7 - %04x\n", unused);
+
+		if (((zoomwidth << ZOOM_SHIFT) != sourcewidth) || ((zoomheight << ZOOM_SHIFT) != sourceheight))
 		{
-			//printf("zoomed widths %02x %02x heights %02x %02x\n", sourcewidth, zoomwidth, sourceheight, zoomheight);
+		//  logerror("sw %08x zw %08x sh %08x zh %08x heightstep %08x widthstep %08x \n", sourcewidth, zoomwidth << ZOOM_SHIFT, sourceheight, zoomheight << ZOOM_SHIFT, heightstep, widthstep );
 		}
 
-		if(bpp_sel == 0x00)  // 4bpp
+		if (bpp_sel == 0x00)  // 4bpp
 		{
-			for(int yi=0;yi<sourceheight;yi++)
+			color <<= 4;
+			int ysourceoff = 0;
+			for (int yi = 0; yi < zoomheight; yi++)
 			{
-				for(int xi=0;xi<sourcewidth/2;xi++)
+				const int yi2 = ysourceoff >> ZOOM_SHIFT;
+				int xsourceoff = 0;
+
+				for (int xi = 0; xi < zoomwidth; xi++)
 				{
-					UINT8 data = m_vram[((((ysource+yi)&0x7ff)*0x800) + ((xsource+xi)&0x7ff))];
-					UINT8 pix;
-					UINT32 col_offs;
-					UINT16 color_data;
+					const int xi2 = xsourceoff >> ZOOM_SHIFT;
 
-					pix = (data & 0x0f);
-					col_offs = ((pix + color*0x10) & 0xff) << 1;
-					col_offs+= ((pix + color*0x10) >> 8)*0x800;
-					color_data = (m_vram[col_offs])|(m_vram[col_offs+1]<<8);
+					const u8 data = m_vram[get_video_addr(xsource + (xi2 >> 1), ysource + yi2)];
 
-					if(!(color_data & 0x8000))
-					{
-						if(scene_gradient & 0x40)
-						{
-							int r,g,b;
-
-							r = (color_data & 0x7c00) >> 10;
-							g = (color_data & 0x03e0) >> 5;
-							b = (color_data & 0x001f) >> 0;
-							r-= (scene_gradient & 0x1f);
-							g-= (scene_gradient & 0x1f);
-							b-= (scene_gradient & 0x1f);
-							if(r < 0) r = 0;
-							if(g < 0) g = 0;
-							if(b < 0) b = 0;
-
-							color_data = (color_data & 0x8000) | (r << 10) | (g << 5) | (b << 0);
-						}
-
-						if(cliprect.contains(x+(xi*2), y+yi))
-						{
-							if (alpha==0x00) // a value of 0x00 is solid
-							{
-								bitmap.pix16(y+yi, x+(xi*2)) = color_data & 0x7fff;
-							}
-							else
-							{
-								UINT16 basecolor = bitmap.pix16(y+yi, x+(xi*2));
-								int base_r = ((basecolor >> 10)&0x1f)*alpha;
-								int base_g = ((basecolor >> 5)&0x1f)*alpha;
-								int base_b = ((basecolor >> 0)&0x1f)*alpha;
-								int r = ((color_data & 0x7c00) >> 10)*(0x1f-alpha);
-								int g = ((color_data & 0x03e0) >> 5)*(0x1f-alpha);
-								int b = ((color_data & 0x001f) >> 0)*(0x1f-alpha);
-								r = (base_r+r)/0x1f;
-								g = (base_g+g)/0x1f;
-								b = (base_b+b)/0x1f;
-								color_data = (color_data & 0x8000) | (r << 10) | (g << 5) | (b << 0);
-								bitmap.pix16(y+yi, x+(xi*2)) = color_data & 0x7fff;
-							}
-						}
-					}
-
-					pix = (data & 0xf0)>>4;
-					col_offs = ((pix + color*0x10) & 0xff) << 1;
-					col_offs+= ((pix + color*0x10) >> 8)*0x800;
-					color_data = (m_vram[col_offs])|(m_vram[col_offs+1]<<8);
-
-					if(!(color_data & 0x8000))
-					{
-						if(scene_gradient & 0x40)
-						{
-							int r,g,b;
-
-							r = (color_data & 0x7c00) >> 10;
-							g = (color_data & 0x03e0) >> 5;
-							b = (color_data & 0x001f) >> 0;
-							r-= (scene_gradient & 0x1f);
-							g-= (scene_gradient & 0x1f);
-							b-= (scene_gradient & 0x1f);
-							if(r < 0) r = 0;
-							if(g < 0) g = 0;
-							if(b < 0) b = 0;
-
-							color_data = (color_data & 0x8000) | (r << 10) | (g << 5) | (b << 0);
-						}
-
-						if(cliprect.contains(x+1+(xi*2),y+yi))
-						{
-							if (alpha==0x00) // a value of 0x00 is solid
-							{
-								bitmap.pix16(y+yi, x+1+(xi*2)) = color_data & 0x7fff;
-							}
-							else
-							{
-								UINT16 basecolor = bitmap.pix16(y+yi, x+1+(xi*2));
-								int base_r = ((basecolor >> 10)&0x1f)*alpha;
-								int base_g = ((basecolor >> 5)&0x1f)*alpha;
-								int base_b = ((basecolor >> 0)&0x1f)*alpha;
-								int r = ((color_data & 0x7c00) >> 10)*(0x1f-alpha);
-								int g = ((color_data & 0x03e0) >> 5)*(0x1f-alpha);
-								int b = ((color_data & 0x001f) >> 0)*(0x1f-alpha);
-								r = (base_r+r)/0x1f;
-								g = (base_g+g)/0x1f;
-								b = (base_b+b)/0x1f;
-								color_data = (color_data & 0x8000) | (r << 10) | (g << 5) | (b << 0);
-								bitmap.pix16(y+yi, x+1+(xi*2)) = color_data & 0x7fff;
-							}
-
-						}
-
-					}
+					draw_pixel_clut(bitmap, cliprect, x, xi, y, yi, BIT(data, BIT(xi2, 0) << 2, 4), color, alpha, scene_gradient);
+					xsourceoff += widthstep;
 				}
+				ysourceoff += heightstep;
 			}
 		}
-		else if(bpp_sel == 0x08) // 6bpp
+		else if (bpp_sel == 0x08) // 6bpp
 		{
-			printf("6bpp\n");
-			#if 0
-			for(int yi=0;yi<sourceheight;yi++)
-			{
-				for(int xi=0;xi<sourcewidth;xi++)
-				{
-					UINT8 data = m_vram[((((ysource+yi)&0x7ff)*0x800) + ((xsource+xi)&0x7ff))];
-					UINT8 pix;
-					UINT32 col_offs;
-					UINT16 color_data;
-
-					pix = (data & 0x3f);
-					if(cliprect.contains(x+xi, y+yi))
-						bitmap.pix16(y+yi, x+xi) = pix + color*64;
-				}
-			}
-			#endif
+			// not used by Gunpey?
+			logerror("6bpp\n");
 		}
-		else if(bpp_sel == 0x10) // 8bpp
+		else if (bpp_sel == 0x10) // 8bpp
 		{
-			for(int yi=0;yi<sourceheight;yi++)
+			color <<= 8;
+			int ysourceoff = 0;
+			for (int yi = 0; yi < zoomheight; yi++)
 			{
-				for(int xi=0;xi<sourcewidth;xi++)
+				const int yi2 = ysourceoff >> ZOOM_SHIFT;
+				int xsourceoff = 0;
+
+				for (int xi = 0; xi < zoomwidth; xi++)
 				{
-					UINT8 data = m_vram[((((ysource+yi)&0x7ff)*0x800) + ((xsource+xi)&0x7ff))];
-					UINT8 pix;
-					UINT32 col_offs;
-					UINT16 color_data;
+					const int xi2 = xsourceoff >> ZOOM_SHIFT;
 
-					pix = (data & 0xff);
-					col_offs = ((pix + color*0x100) & 0xff) << 1;
-					col_offs+= ((pix + color*0x100) >> 8)*0x800;
-					color_data = (m_vram[col_offs])|(m_vram[col_offs+1]<<8);
+					const u8 data = m_vram[get_video_addr(xsource + xi2, ysource + yi2)];
 
-					if(!(color_data & 0x8000))
-					{
-						if(scene_gradient & 0x40)
-						{
-							int r,g,b;
-
-							r = (color_data & 0x7c00) >> 10;
-							g = (color_data & 0x03e0) >> 5;
-							b = (color_data & 0x001f) >> 0;
-							r-= (scene_gradient & 0x1f);
-							g-= (scene_gradient & 0x1f);
-							b-= (scene_gradient & 0x1f);
-							if(r < 0) r = 0;
-							if(g < 0) g = 0;
-							if(b < 0) b = 0;
-
-							color_data = (color_data & 0x8000) | (r << 10) | (g << 5) | (b << 0);
-						}
-
-
-
-						if(cliprect.contains(x+xi,y+yi))
-						{
-							if (alpha==0x00) // a value of 0x00 is solid
-							{
-								bitmap.pix16(y+yi, x+xi) = color_data & 0x7fff;
-							}
-							else
-							{
-								UINT16 basecolor = bitmap.pix16(y+yi, x+xi);
-								int base_r = ((basecolor >> 10)&0x1f)*alpha;
-								int base_g = ((basecolor >> 5)&0x1f)*alpha;
-								int base_b = ((basecolor >> 0)&0x1f)*alpha;
-								int r = ((color_data & 0x7c00) >> 10)*(0x1f-alpha);
-								int g = ((color_data & 0x03e0) >> 5)*(0x1f-alpha);
-								int b = ((color_data & 0x001f) >> 0)*(0x1f-alpha);
-								r = (base_r+r)/0x1f;
-								g = (base_g+g)/0x1f;
-								b = (base_b+b)/0x1f;
-								color_data = (color_data & 0x8000) | (r << 10) | (g << 5) | (b << 0);
-								bitmap.pix16(y+yi, x+xi) = color_data & 0x7fff;
-							}
-
-						}
-
-					}
+					draw_pixel_clut(bitmap, cliprect, x, xi, y, yi, data, color, alpha, scene_gradient);
+					xsourceoff += widthstep;
 				}
+				ysourceoff += heightstep;
 			}
 		}
-		else if(bpp_sel == 0x18) // RGB32k
+		else if (bpp_sel == 0x18) // RGB32k
 		{
-			printf("32k\n");
+			// not used by Gunpey?
+			logerror("32k\n");
 			// ...
 		}
 	}
 
-	return m_wram[count+0] & 0x80;
+	return m_wram[count + 0] & 0x80;
 }
 
-UINT32 gunpey_state::screen_update_gunpey(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+u32 gunpey_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
-	//UINT16 *blit_buffer = m_blit_buffer;
-	UINT16 vram_bank = m_vram_bank & 0x7fff;
-	UINT16 vreg_addr = m_vreg_addr & 0x7fff;
-	UINT8 end_mark;
-	int count;
-	int scene_index;
+	//u16 *blit_buffer = m_blit_buffer;
+	const u16 vram_bank = m_vram_bank & 0x7fff;
+	const u16 vreg_addr = m_vreg_addr & 0x7fff;
 
 	bitmap.fill(m_palette->pen(0), cliprect); //black pen
 
-	if((!(m_vreg_addr & 0x8000)) || (!(m_vram_bank & 0x8000)))
+	if ((!(m_vreg_addr & 0x8000)) || (!(m_vram_bank & 0x8000)))
 		return 0;
 
-	for(scene_index = vreg_addr/2;scene_index<(vreg_addr+0x400)/2;scene_index+=0x10/2)
+	for (int scene_index = vreg_addr / 2; scene_index < (vreg_addr + 0x400) / 2; scene_index += 0x10 / 2)
 	{
-		UINT16 start_offs;
-		UINT16 end_offs;
-		UINT8 scene_end_mark;
-		UINT8 scene_enabled;
-		UINT8 scene_gradient;
+		const u16 start_offs = (vram_bank + (m_wram[scene_index + 5] << 8)) / 2;
+		const u16 end_offs = (vram_bank + (m_wram[scene_index + 5] << 8) + 0x1000) / 2; //safety check
+		const bool scene_end_mark = m_wram[scene_index + 0] & 0x80;
+		const bool scene_enabled = m_wram[scene_index + 0] & 0x01;
+		const u8 scene_gradient = m_wram[scene_index + 1] & 0xff;
 
-		start_offs = (vram_bank+(m_wram[scene_index+5] << 8))/2;
-		end_offs = (vram_bank+(m_wram[scene_index+5] << 8)+0x1000)/2; //safety check
-		scene_end_mark = m_wram[scene_index+0] & 0x80;
-		scene_enabled = m_wram[scene_index+0] & 0x01;
-		scene_gradient = m_wram[scene_index+1] & 0xff;
+//      logerror("%08x: %08x %08x %08x %08x | %08x %08x %08x %08x\n",scene_index,m_wram[scene_index + 0],m_wram[scene_index + 1],m_wram[scene_index + 2],m_wram[scene_index + 3],
+//                                                  m_wram[scene_index + 4],m_wram[scene_index + 5],m_wram[scene_index + 6],m_wram[scene_index + 7]);
 
-//      printf("%08x: %08x %08x %08x %08x | %08x %08x %08x %08x\n",scene_index,m_wram[scene_index+0],m_wram[scene_index+1],m_wram[scene_index+2],m_wram[scene_index+3],
-//                                                  m_wram[scene_index+4],m_wram[scene_index+5],m_wram[scene_index+6],m_wram[scene_index+7]);
-
-		if(scene_enabled)
+		if (scene_enabled)
 		{
-			for(count = start_offs;count<end_offs;count+=0x10/2)
+			for (int count = start_offs; count < end_offs; count += 0x10 / 2)
 			{
-				end_mark = draw_gfx(bitmap,cliprect,count,scene_gradient);
-
-				if(end_mark == 0x80)
+				if (draw_gfx(bitmap, cliprect, count, scene_gradient))
 					break;
 			}
 		}
 
-		if(scene_end_mark == 0x80)
+		if (scene_end_mark)
 			break;
 	}
 
 	return 0;
 }
 
-void gunpey_state::gunpey_irq_check(UINT8 irq_type)
+void gunpey_state::irq_check(u8 irq_type)
 {
 	m_irq_cause |= irq_type;
 
-	if(m_irq_cause & m_irq_mask)
-		m_maincpu->set_input_line_and_vector(0, HOLD_LINE, 0x200/4);
+	if (m_irq_cause & m_irq_mask)
+		m_maincpu->set_input_line_and_vector(0, HOLD_LINE, 0x200/4); // V30
 	else
-		m_maincpu->set_input_line_and_vector(0, CLEAR_LINE, 0x200/4);
+		m_maincpu->set_input_line_and_vector(0, CLEAR_LINE, 0x200/4); // V30
 }
 
-WRITE8_MEMBER(gunpey_state::gunpey_status_w)
+void gunpey_state::status_w(offs_t offset, u8 data)
 {
-	if(offset == 1)
+	if (offset == 1)
 	{
 		m_irq_cause &= ~data;
-		gunpey_irq_check(0);
+		irq_check(0);
 	}
 
-	if(offset == 0)
+	if (offset == 0)
 	{
 		m_irq_mask = data;
-		gunpey_irq_check(0);
+		irq_check(0);
 	}
 }
 
-READ8_MEMBER(gunpey_state::gunpey_status_r)
+u8 gunpey_state::status_r(offs_t offset)
 {
-	if(offset == 1)
+	if (offset == 1)
 		return m_irq_cause;
 
 	return m_irq_mask;
 }
 
-READ8_MEMBER(gunpey_state::gunpey_inputs_r)
+u8 gunpey_state::inputs_r(offs_t offset)
 {
-	switch(offset+0x7f40)
+	switch (offset + 0x7f40)
 	{
 		case 0x7f40: return ioport("DSW1")->read();
 		case 0x7f41: return ioport("DSW2")->read();
@@ -643,579 +624,346 @@ READ8_MEMBER(gunpey_state::gunpey_inputs_r)
 
 TIMER_CALLBACK_MEMBER(gunpey_state::blitter_end)
 {
-	gunpey_irq_check(4);
+	irq_check(4);
 }
 
-void gunpey_state::get_stream_next_byte(void)
-{
-	// check if we need to move on to the next row of the source bitmap
-	// to get the data requested
 
-	if (m_scrxcount==m_sourcewide)
-	{
-		m_scrxcount = 0;
-		m_srcx = m_srcxbase;
-		m_srcy++; m_srcycount++;
-	}
-
-	m_latched_byte = m_blit_rom[(((m_srcy)&0x7ff)*0x800)+((m_srcx)&0x7ff)];
-	if (!m_out_of_data) m_blit_rom2[(((m_srcy)&0x7ff)*0x800)+((m_srcx)&0x7ff)] = 0x77; // debug
-
-	m_latched_bits_left = 8;
-
-	// increase counters
-	m_srcx++; m_scrxcount++;
-}
-
-int gunpey_state::get_stream_bit(void)
-{
-	if (m_latched_bits_left==0)
-	{
-		get_stream_next_byte();
-	}
-
-	m_latched_bits_left--;
-
-	int bit = (m_latched_byte >> (7-m_latched_bits_left))&1;
-
-	if (bit==0) m_zero_bit_count++;
-	else m_zero_bit_count=0;
-
-	return bit;
-}
-
-UINT32 gunpey_state::gunpey_state_get_stream_bits(int bits)
-{
-	UINT32 output = 0;
-	for (int i=0;i<bits;i++)
-	{
-		output = output<<1;
-		output |= get_stream_bit();
-	}
-
-	return output;
-}
-
-int gunpey_state::write_dest_byte(UINT8 usedata)
+bool gunpey_state::write_dest_byte(u8 usedata)
 {
 	// write the byte we and to destination and increase our counters
-	m_vram[(((m_dsty)&0x7ff)*0x800)+((m_dstx)&0x7ff)] = usedata;
+	m_vram[get_video_addr(m_dstx, m_dsty)] = usedata;
 
 	// increase destination counter and check if we've filled our destination rectangle
 	m_dstx++; m_dstxcount++;
-	if (m_dstxcount==m_xsize)
+	if (m_dstxcount == m_xsize)
 	{
 		m_dstxcount = 0;
 		m_dstx = m_dstxbase;
 		m_dsty++; m_dstycount++;
-		if (m_dstycount==m_ysize)
+		if (m_dstycount == m_ysize)
+			return true;
+	}
+
+	return false;
+}
+
+
+inline u8 gunpey_state::get_vrom_byte(int x, int y)
+{
+	return m_blit_rom[get_video_addr(x, y) & (m_blit_rom.length() - 1)];
+}
+
+inline int gunpey_state::get_next_bit(state_s *s)
+{
+	if (s->num_bits == 0)
+	{
+		if (s->ix >= s->basex + s->iw)
 		{
-			return -1;
+			s->ix = s->basex;
+			s->iy++;
+		}
+		s->bits = get_vrom_byte(s->ix, s->iy);
+		s->ix++;
+		s->num_bits = 8;
+	}
+
+	int res = 1 & s->bits;
+
+	s->bits >>= 1;
+	s->num_bits--;
+
+	return res;
+}
+
+
+void state_s::set_o(unsigned char v)
+{
+	assert(ox >= 0);
+	assert(ox < ow);
+	assert(ox < 256);
+	assert(oy >= 0);
+	assert(oy < oh);
+	assert(oy < 256);
+
+	unsigned char a = v;
+	for (int i = 0; i < std::size(colour); i++)
+	{
+		unsigned char b = colour[i];
+		colour[i] = a;
+		a = b;
+		if (a == v)
+			break;
+	}
+
+	buf[get_video_addr(dx + (ox++), dy + oy)] = v;
+}
+
+
+unsigned char state_s::get_o(int x, int y) const
+{
+	assert(x >= 0);
+	assert(x < ow);
+	assert(x < 256);
+	assert(y >= 0);
+	assert(y < oh);
+	assert(y < 256);
+
+	return buf[get_video_addr(dx + x, dy + y)];
+}
+
+
+void state_s::hn_bytes_new_colour(state_s &s, unsigned char v, int n)
+{
+	for (int i = 0; i < n; i++)
+		s.set_o(v);
+}
+
+
+void state_s::hn_bytes_prev_colour(state_s &s, unsigned char v, int n)
+{
+	int c = s.colour[v];
+
+	for (int i = 0; i < n; i++)
+		s.set_o(c);
+}
+
+
+void state_s::hn_copy_directly(state_s &s, unsigned char v, int n)
+{
+	for (int i = 0; i < n; i++)
+	{
+		if ((s.ox / 12) & 1)
+			s.set_o(s.get_o(s.ox, s.oy + 1));
+		else
+			s.set_o(s.get_o(s.ox, s.oy - 1));
+	}
+}
+
+
+
+void state_s::hn_copy_plus_one(state_s &s, unsigned char v, int n)
+{
+	for (int i = 0; i < n; i++)
+	{
+		if ((s.ox / 12) & 1)
+			s.set_o(s.get_o(s.ox + 1, s.oy + 1));
+		else
+			s.set_o(s.get_o(s.ox + 1, s.oy - 1));
+	}
+}
+
+
+void state_s::hn_copy_minus_one(state_s &s, unsigned char v, int n)
+{
+	for (int i = 0; i < n; i++)
+	{
+		if ((s.ox / 12) & 1)
+			s.set_o(s.get_o(s.ox - 1, s.oy + 1));
+		else
+			s.set_o(s.get_o(s.ox - 1, s.oy - 1));
+	}
+}
+
+
+static const huffman_node_s hn[] = {
+	{ "11",                 state_s::hn_bytes_new_colour,   8,  1 },
+	{ "10111",              state_s::hn_bytes_new_colour,   8,  2 },
+	{ "10110011",           state_s::hn_bytes_new_colour,   8,  3 },
+	{ "1010011000",         state_s::hn_bytes_new_colour,   8,  4 },
+	{ "1010101010000",      state_s::hn_bytes_new_colour,   8,  5 },
+	{ "101010001011110",    state_s::hn_bytes_new_colour,   8,  6 },
+	{ "101010010101110",    state_s::hn_bytes_new_colour,   8,  7 },
+	{ "101010010101111",    state_s::hn_bytes_new_colour,   8,  8 },
+	{ "101010010101100",    state_s::hn_bytes_new_colour,   8,  9 },
+	{ "10101000101100",     state_s::hn_bytes_new_colour,   8, 10 },
+	{ "101010010101101",    state_s::hn_bytes_new_colour,   8, 11 },
+	{ "10101000101101",     state_s::hn_bytes_new_colour,   8, 12 },
+	{ "0",                  state_s::hn_bytes_prev_colour,  4,  1 },
+	{ "100",                state_s::hn_bytes_prev_colour,  4,  2 },
+	{ "101011",             state_s::hn_bytes_prev_colour,  4,  3 },
+	{ "1010010",            state_s::hn_bytes_prev_colour,  4,  4 },
+	{ "101010100",          state_s::hn_bytes_prev_colour,  4,  5 },
+	{ "1010100100",         state_s::hn_bytes_prev_colour,  4,  6 },
+	{ "10101010110",        state_s::hn_bytes_prev_colour,  4,  7 },
+	{ "10100111000",        state_s::hn_bytes_prev_colour,  4,  8 },
+	{ "101010101001",       state_s::hn_bytes_prev_colour,  4,  9 },
+	{ "101001111000",       state_s::hn_bytes_prev_colour,  4, 10 },
+	{ "101010010100",       state_s::hn_bytes_prev_colour,  4, 11 },
+	{ "1010011001",         state_s::hn_bytes_prev_colour,  4, 12 },
+	{ "101101",             state_s::hn_copy_directly,      0,  2 },
+	{ "10101011",           state_s::hn_copy_directly,      0,  3 },
+	{ "101010011",          state_s::hn_copy_directly,      0,  4 },
+	{ "101001101",          state_s::hn_copy_directly,      0,  5 },
+	{ "1010011111",         state_s::hn_copy_directly,      0,  6 },
+	{ "1010100011",         state_s::hn_copy_directly,      0,  7 },
+	{ "10101000100",        state_s::hn_copy_directly,      0,  8 },
+	{ "101010101111",       state_s::hn_copy_directly,      0,  9 },
+	{ "101001110010",       state_s::hn_copy_directly,      0, 10 },
+	{ "1010011100111",      state_s::hn_copy_directly,      0, 11 },
+	{ "101100101",          state_s::hn_copy_directly,      0, 12 },
+	{ "1011000",            state_s::hn_copy_plus_one,      0,  2 },
+	{ "101010000",          state_s::hn_copy_plus_one,      0,  3 },
+	{ "10101001011",        state_s::hn_copy_plus_one,      0,  4 },
+	{ "101010001010",       state_s::hn_copy_plus_one,      0,  5 },
+	{ "1010101011101",      state_s::hn_copy_plus_one,      0,  6 },
+	{ "1010101011100",      state_s::hn_copy_plus_one,      0,  7 },
+	{ "1010011110010",      state_s::hn_copy_plus_one,      0,  8 },
+	{ "10101000101110",     state_s::hn_copy_plus_one,      0,  9 },
+	{ "101010001011111",    state_s::hn_copy_plus_one,      0, 10 },
+	{ "1010011110011",      state_s::hn_copy_plus_one,      0, 11 },
+	{ "101000",             state_s::hn_copy_minus_one,     0,  2 },
+	{ "101100100",          state_s::hn_copy_minus_one,     0,  3 },
+	{ "1010011101",         state_s::hn_copy_minus_one,     0,  4 },
+	{ "10101010101",        state_s::hn_copy_minus_one,     0,  5 },
+	{ "101001111011",       state_s::hn_copy_minus_one,     0,  6 },
+	{ "101001111010",       state_s::hn_copy_minus_one,     0,  7 },
+	{ "1010101010001",      state_s::hn_copy_minus_one,     0,  8 },
+	{ "1010011100110",      state_s::hn_copy_minus_one,     0,  9 },
+	{ "10101001010101",     state_s::hn_copy_minus_one,     0, 10 },
+	{ "10101001010100",     state_s::hn_copy_minus_one,     0, 11 },
+	{ nullptr,              nullptr,                        0,  0 },
+};
+
+
+bool gunpey_state::next_node(const huffman_node_s **res, state_s *s)
+{
+	char bits[128];
+
+	memset(bits, 0, sizeof(bits));
+
+	for (int i = 0; i < sizeof(bits) - 1; i++)
+	{
+		bits[i] = '0' + get_next_bit(s);
+
+		for (int j = 0;; j++)
+		{
+			if (!hn[j].bits)
+				return true;
+
+			if (strncmp(bits, hn[j].bits, i + 1) == 0)
+			{
+				if (!hn[j].bits[i + 1])
+				{
+					*res = &hn[j];
+					return false;
+				}
+				break;
+			}
 		}
 	}
 
-	return 1;
+	return true;
 }
 
-/*
-the very first transfer, which might be 100% blank data looks like this.. are the 239 repeats significant (our screen height is 240..  239 is 16x15 - 1)
- and this same data block occurs 6 times in the transfer.  Maximum draw size is 256x256.. (but I'm not sure this gets drawn)
- the value that repeats (110010110) is quite common in other blocks of more noisy data too.
-
-this is sprite 959 in test mode, as you can see below the sprite size is 27 ef (== 0x50 0xf0)
-
-
-02 08 00 8c|6c 06 73 06|80 03 00 00|27 00 ef 00
-data:
- 000101010 001011011 1111111
-
- (this is 239 (0xef) repeats)
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101
-
- 101001 1001 0000
-
- (this is 239 repeats)
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101
-
-
- 101001 1001 0000
-
- (this is 239 repeats)
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
-
- 101001 1001 0000
-
- (this is 239 repeats)
- 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
-
- 101001 1001 0000
-
- (this is 239 repeats)
- 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
-
- 101001 1001 0000
-
- (this is 239 repeats)
-
- 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
-
- (then what happens?! is this part of the same sprite or just running past the end of the compressed source block?)
- (this is also a repeat of 239 values, but this time 11 bit ones)
-
- 101001110000000
-
- 10101000100 10101000100 10101000100 10101000100 10101000100 10101000100
- 10101000100 10101000100 10101000100 10101000100 10101000100 10101000100
- 10101000100 10101000100 10101000100 10101000100 10101000100 10101000100
- 10101000100 10101000100 10101000100 10101000100 10101000100 10101000100
- 10101000100 10101000100 10101000100 10101000100 10101000100 10101000100
- 10101000100 10101000100 10101000100 10101000100 10101000100 10101000100
- 10101000100 10101000100 10101000100 10101000100 10101000100 10101000100
- 10101000100 10101000100 10101000100 10101000100 10101000100 10101000100
- 10101000100 10101000100 10101000100 10101000100 10101000100 10101000100
- 10101000100 10101000100 10101000100 10101000100 10101000100 10101000100
- 10101000100 10101000100 10101000100 10101000100 10101000100 10101000100
- 10101000100 10101000100 10101000100 10101000100 10101000100 10101000100
- 10101000100 10101000100 10101000100 10101000100 10101000100 10101000100
- 10101000100 10101000100 10101000100 10101000100 10101000100 10101000100
- 10101000100 10101000100 10101000100 10101000100 10101000100 10101000100
- 10101000100 10101000100 10101000100 10101000100 10101000100 10101000100
- 10101000100 10101000100 10101000100 10101000100 10101000100 10101000100
- 10101000100 10101000100 10101000100 10101000100 10101000100 10101000100
- 10101000100 10101000100 10101000100 10101000100 10101000100 10101000100
- 10101000100 10101000100 10101000100 10101000100 10101000100 10101000100
- 10101000100 10101000100 10101000100 10101000100 10101000100 10101000100
- 10101000100 10101000100 10101000100 10101000100 10101000100 10101000100
- 10101000100 10101000100 10101000100 10101000100 10101000100 10101000100
- 10101000100 10101000100 10101000100 10101000100 10101000100 10101000100
- 10101000100 10101000100 10101000100 10101000100 10101000100 10101000100
- 10101000100 10101000100 10101000100 10101000100 10101000100 10101000100
- 10101000100 10101000100 10101000100 10101000100 10101000100 10101000100
- 10101000100 10101000100 10101000100 10101000100 10101000100 10101000100
- 10101000100 10101000100 10101000100 10101000100 10101000100 10101000100
- 10101000100 10101000100 10101000100 10101000100 10101000100 10101000100
- 10101000100 10101000100 10101000100 10101000100 10101000100 10101000100
- 10101000100 10101000100 10101000100 10101000100 10101000100 10101000100
- 10101000100 10101000100 10101000100 10101000100 10101000100 10101000100
- 10101000100 10101000100 10101000100 10101000100 10101000100 10101000100
- 10101000100 10101000100 10101000100 10101000100 10101000100 10101000100
- 10101000100 10101000100 10101000100 10101000100 10101000100 10101000100
- 10101000100 10101000100 10101000100 10101000100 10101000100 10101000100
- 10101000100 10101000100 10101000100 10101000100 10101000100 10101000100
- 10101000100 10101000100 10101000100 10101000100 10101000100 10101000100
- 10101000100 10101000100 10101000100 10101000100 10101000100
-
-
-
- 219 in char test
-
-02 08 00 8c|8a 03 78 00|90 01 e0 02|17 00 27 00
-data: 000101 010 001011 010 000011
-
-(40 (0x28) 'repeat' values, last one is different)
- 1101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 10110010
- 1101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 10110010
- 1101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 10110010
- 1101100101 101100101 101100101 101100101 101100101 101100101
-
- 10100110010000
-
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101
-
- 101001 1001 0000 << this string again before repeating data..
- (39 (0x27) repeat)
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101
-
- 101001 1001 0000 << this string again before repeating data..
- (39 (0x27) 'repeat' values, last one is different)
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101
-
- 000000 000000
-
-
- 378 - might be interesting, is text, not pasting here.
-
-
- 703 - another (mostly) blank?
-
- 02 08 00 8c|1a 00 3f 03|90 01 e0 02|23 00 67 00
-data: 000101 001100 10000
-
-(0x67 repeats...)
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101
-
- 101001 1001 0000   << this.. again
-
- (0x67 repeats...)
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101
-
- 101001 1001 0000
-
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101
-
- 1010011001 0000
-
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101
-
- 10100111111111000000101000110000110010100010100111110100010110100100101101101010101100000101111100110010101110001010100011001000110010101011
- 101100101
- 10101000111001100101010111010011111001001001000011001010001010011111010001011010010010 110110100 110010000
-
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
-
- 10100110010000
-
- 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101
-
- 101001 1001 0000
-
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 101100101 101100101 101100101 101100101 101100101 101100101 101100101
- 000000 000000
-
-
-
-  thoughts:
-
-  where there are repeating values of 101100101 they tend to be in blocks the same (or a very similar) size to the HEIGHT (y-size) of the object with a different (often
-  common '101001100 10000') value between them.. which can throw out the stream alignment.. this separator CAN vary in both content and length..
-
- not all data is 9-bit, some blocks are made of 11-bit repeating values, see first example.
-
-
-
-02 08 00 8c|90 03 78 00|90 01 e0 02|17 00 27 00
-data:
-00010101 00010110 10000 0111
-101100101  101100101  101100101  101100101  101100101  101100101  101100101  101100101
-101100101  101100101  101100101  101100101  101100101  101100101  101100101  101100101
-101100101  101100101  101100101  101100101  101100101  101100101  101100101  101100101
-101100101  101100101  101100101  101100101  101100101  101100101  101100101  101100101
-101100101  101100101  101100101  101100101  101100101  101100101  101100101
-101001100 10000
-101100101  101100101  101100101  101100101  101100101  101100101  101100101  101100101
-101100101  101100101  101100101  101100101  101100101  101100101  101100101  101100101
-101100101  101100101  101100101  101100101  101100101  101100101  101100101  101100101
-101100101  101100101  101100101  101100101  101100101  101100101  101100101  101100101
-101100101  101100101  101100101  101100101  101100101  101100101  101100101
-101001100 10000
-101100101  101100101  101100101  101100101  101100101  101100101  101100101  101100101
-101100101  101100101  101100101  101100101  101100101  101100101  101100101  101100101
-101100101  101100101  101100101  101100101  101100101  101100101  101100101  101100101
-101100101  101100101  101100101  101100101  101100101  101100101  101100101  101100101
-101100101  101100101  101100101  101100101  101100101  101100101  101100101
-101001100 10000
-101100101  101100101  101100101  101100101  101100101  101100101  101100101  101100101
-101100101  101100101  101100101  101100101  101100101  101100101  101100101  101100101
-101100101  101100101  101100101  101100101  101100101  101100101  101100101  101100101
-101100101  101100101  101100101  101100101  101100101  101100101  101100101  101100101
-101100101  101100101  101100101  101100101  101100101  101100101  101100101
-00000000000000
-
-
-02 08 00 8c|18 04 f0 00|90 01 e0 02|17 00 27 00
-data:
-00010101 00010110 10111 1011
-(then same as above)
-
-
-
-02 08 00 8c|a2 03 d0 04|90 01 e0 02|03 00 07 00
-data:
-
-000101010 010101110 101101001 101001100 010001011 111110100 101110000 110001000
-101101101 101010001 101011100 110111110 011111100 101101011 010110111 011000110
-000011110 101100110 000011011 101100011 100100001 111111000 111111001 101001011
-111101101 011100001 100001011 000110011 101010110 010001011 101001100 110111001
-011100011 101100000 001101000 111001011 001111110 011110011 111110101 110110110
-111111111 011010000 010101101 110010101 111100001 110101000 110111100 001100011
-001101111 001001000 000000000
-ooutcount was 51
-
-
- */
-
-
-//#define SHOW_COMPRESSED_DATA_DEBUG
-
-
-
-WRITE8_MEMBER(gunpey_state::gunpey_blitter_w)
+bool gunpey_state::decompress_sprite(unsigned char *buf, int ix, int iy, int ow, int oh, int dx, int dy)
 {
-	UINT16 *blit_ram = m_blit_ram;
+	const huffman_node_s *n;
+	state_s s;
+	unsigned char v;
+	int eol;
 
-	//printf("gunpey_blitter_w offset %01x data %02x\n", offset,data);
+	s.buf = buf;
+	s.num_bits = 0;
 
-	blit_ram[offset] = data;
+	memset(s.colour, 0, sizeof(s.colour));
 
-	if(offset == 0 && data == 2) // blitter trigger, 0->1 transition
+	s.basex = ix;
+
+	s.ix = ix;
+	s.iy = iy;
+	s.iw = get_vrom_byte(s.ix++, s.iy) + 1;
+	s.dx = dx;
+	s.dy = dy;
+
+	s.ow = ow;
+	s.oh = oh;
+	s.ox = 0;
+	s.oy = 0;
+
+	int temp;
+	temp = get_next_bit(&s);
+	temp |= get_next_bit(&s) << 1;
+	temp |= get_next_bit(&s) << 2;
+	assert(temp == 0);
+
+	while (s.ox < s.ow)
 	{
-		m_srcx = blit_ram[0x04]+(blit_ram[0x05]<<8);
-		m_srcy = blit_ram[0x06]+(blit_ram[0x07]<<8);
-		m_dstx = blit_ram[0x08]+(blit_ram[0x09]<<8);
-		m_dsty = blit_ram[0x0a]+(blit_ram[0x0b]<<8);
-		m_xsize = blit_ram[0x0c]+1;
-		m_ysize = blit_ram[0x0e]+1;
-		int rle = blit_ram[0x01];
+		if (next_node(&n, &s))
+			return true;
 
-		m_dstx<<=1;
-		m_xsize<<=1;
+		v = 0;
+		for (int i = 0; i < n->arg0_bits; i++)
+			v |= get_next_bit(&s) << i;
 
-		if(rle)
+		n->func(s, v, n->arg1_val);
+
+		if ((s.ox % 12) == 0)
 		{
-			if(rle == 8)
+			s.ox -= 12;
+			if ((s.ox / 12) & 1)
+				s.oy -= 1;
+			else
+				s.oy += 1;
+
+			eol = 1;
+		}
+		else if (s.ox == s.ow)
+		{
+			s.ox -= s.ow % 12;
+			if ((s.ox / 12) & 1)
+				s.oy -= 1;
+			else
+				s.oy += 1;
+
+			eol = 1;
+		}
+		else
+			eol = 0;
+
+		if (eol)
+		{
+			if ((s.oy == s.oh) || (s.oy == -1))
 			{
-				// compressed stream format:
-				//
-				// byte 0 = source width   (data is often stored in fairly narrow columns)
+				s.ox += 12;
+				if ((s.ox / 12) & 1)
+					s.oy -= 1;
+				else
+					s.oy += 1;
+			}
+		}
+	}
 
-#ifdef SHOW_COMPRESSED_DATA_DEBUG
-				printf("%02x %02x %02x %02x|%02x %02x %02x %02x|%02x %02x %02x %02x|%02x %02x %02x %02x\n"
-					,blit_ram[0],blit_ram[1],blit_ram[2],blit_ram[3]
-					,blit_ram[4],blit_ram[5],blit_ram[6],blit_ram[7]
-					,blit_ram[8],blit_ram[9],blit_ram[0xa],blit_ram[0xb]
-					,blit_ram[0xc],blit_ram[0xd],blit_ram[0xe],blit_ram[0xf]);
-				int count = 0;
-				printf("data: ");
-				int linespacer = 0;
-#endif
+	return false;
+}
 
+void gunpey_state::blitter_w(offs_t offset, u8 data)
+{
+	//logerror("blitter_w offset %01x data %02x\n", offset, data);
 
-				m_dstxbase = m_dstx;
-				m_dstxcount = 0;
-				m_dstycount = 0;
-				m_srcxbase = m_srcx;
-				m_scrxcount = 0;
-				m_srcycount = 0;
+	m_blit_ram[offset] = data;
 
-				m_sourcewide = m_blit_rom[(((m_srcy)&0x7ff)*0x800)+((m_srcx)&0x7ff)]+1;
-				m_srcx++;m_scrxcount++; // we don't want to decode the width as part of the data stream..
-				m_latched_bits_left = 0;
-				m_zero_bit_count = 0;
+	if ((offset == 0) && (data == 2)) // blitter trigger, 0->1 transition
+	{
+		m_srcx = m_blit_ram[0x04] | (m_blit_ram[0x05] << 8);
+		m_srcy = m_blit_ram[0x06] | (m_blit_ram[0x07] << 8);
+		m_dstx = m_blit_ram[0x08] | (m_blit_ram[0x09] << 8);
+		m_dsty = m_blit_ram[0x0a] | (m_blit_ram[0x0b] << 8);
+		m_xsize = m_blit_ram[0x0c] + 1;
+		m_ysize = m_blit_ram[0x0e] + 1;
+		int compression = m_blit_ram[0x01];
 
-				m_out_of_data = false;
+		m_dstx <<= 1;
+		m_xsize <<= 1;
 
-				for (;;)
-				{
-					int test = gunpey_state_get_stream_bits(2);
-					int data;
-					int getbits = 1;
-					// don't think this is right.. just keeps some streams in alignment, see 959 in char test for example
-					if (test==0x0)
-					{
-						getbits = 4;
-					}
-					else if (test==0x1)
-					{
-						getbits = 1;
-					}
-					else if (test==0x2)
-					{
-						getbits = 2;
-					}
-					else if (test==0x3)
-					{
-						getbits = 7;
-					}
-					data = gunpey_state_get_stream_bits(getbits);
-
-					// hack, really I imagine there is exactly enough compressed data to fill the dest bitmap area when decompressed, but to stop us
-					// overrunning into reading other data we terminate on a 0000, which doesn't seem likely to be compressed data.
-					if (m_zero_bit_count>=16)
-						m_out_of_data = true;
-
-
-
-					UINT8 usedata = 0xff;
-					if (!m_out_of_data)
-					{
-						#ifdef SHOW_COMPRESSED_DATA_DEBUG
-						//if (count<512)
-						{
-							{
-								if (test==0x0)
-								{
-									printf("00");
-								}
-								else if (test==0x1)
-								{
-									printf("01");
-								}
-								else if (test==0x2)
-								{
-									printf("10");
-								}
-								else if (test==0x3)
-								{
-									printf("11");
-								}
-
-								for (int z=0;z<getbits;z++)
-								{
-									printf("%d", (data>>((getbits-1)-z))&1);
-								}
-
-								linespacer++;
-								if ((linespacer%16) == 0) printf("\n");
-
-								printf(" ");
-
-							}
-							count++;
-						}
-						#endif
-
-						usedata = data;
-					}
-					else
-						usedata = 0x44;
-
-					if ((write_dest_byte(usedata))==-1)
-						break;
-
-				}
-
-#ifdef SHOW_COMPRESSED_DATA_DEBUG
-				printf("\n");
-#endif
-
+		if (compression)
+		{
+			if (compression == 8)
+			{
+				if (decompress_sprite(m_vram.get(), m_srcx, m_srcy, m_xsize, m_ysize, m_dstx, m_dsty))
+					logerror("[-] Failed to decompress sprite at %04x %04x\n", m_srcx, m_srcy);
 			}
 			else
-				printf("unknown RLE mode %02x\n",rle);
+				logerror("unknown compression mode %02x\n",compression);
 		}
 		else
 		{
@@ -1223,93 +971,87 @@ WRITE8_MEMBER(gunpey_state::gunpey_blitter_w)
 			m_dstxcount = 0;
 			m_dstycount = 0;
 			m_srcxbase = m_srcx;
-			m_scrxcount = 0;
+			m_srcxcount = 0;
 			m_srcycount = 0;
 
 			for (;;)
 			{
-				UINT8 usedata = m_blit_rom[(((m_srcy)&0x7ff)*0x800)+((m_srcx)&0x7ff)];
-				m_blit_rom2[(((m_srcy)&0x7ff)*0x800)+((m_srcx)&0x7ff)] = 0x44; // debug
-				m_srcx++; m_scrxcount++;
-				if (m_scrxcount==m_xsize)
+				u8 usedata = m_blit_rom[get_video_addr(m_srcx, m_srcy)];
+				m_srcx++; m_srcxcount++;
+				if (m_srcxcount == m_xsize)
 				{
-					m_scrxcount = 0;
+					m_srcxcount = 0;
 					m_srcx = m_srcxbase;
 					m_srcy++; m_srcycount++;
 				}
 
-				if ((write_dest_byte(usedata))==-1)
+				if (write_dest_byte(usedata))
 					break;
 			}
 		}
 
-		machine().scheduler().timer_set(m_maincpu->cycles_to_attotime(m_xsize*m_ysize), timer_expired_delegate(FUNC(gunpey_state::blitter_end),this));
-
-
-/*
-
-*/
+		m_blitter_end_timer->adjust(m_maincpu->cycles_to_attotime(m_xsize * m_ysize));
 	}
 }
 
-WRITE8_MEMBER(gunpey_state::gunpey_blitter_upper_w)
+void gunpey_state::blitter_upper_w(offs_t offset, u8 data)
 {
-	//printf("gunpey_blitter_upper_w %02x %02x\n", offset, data);
-
+	//logerror("blitter_upper_w %02x %02x\n", offset, data);
 }
 
-WRITE8_MEMBER(gunpey_state::gunpey_blitter_upper2_w)
+void gunpey_state::blitter_upper2_w(offs_t offset, u8 data)
 {
-	//printf("gunpey_blitter_upper2_w %02x %02x\n", offset, data);
-
+	//logerror("blitter_upper2_w %02x %02x\n", offset, data);
 }
 
 
-WRITE8_MEMBER(gunpey_state::gunpey_output_w)
+void gunpey_state::output_w(u8 data)
 {
 	//bit 0 is coin counter
 //  popmessage("%02x",data);
 
-	m_oki->set_bank_base(((data & 0x70)>>4) * 0x40000);
+	m_oki->set_rom_bank((data & 0x70) >> 4);
 }
 
-WRITE16_MEMBER(gunpey_state::gunpey_vram_bank_w)
+void gunpey_state::vram_bank_w(offs_t offset, u16 data, u16 mem_mask)
 {
 	COMBINE_DATA(&m_vram_bank);
 }
 
-WRITE16_MEMBER(gunpey_state::gunpey_vregs_addr_w)
+void gunpey_state::vregs_addr_w(offs_t offset, u16 data, u16 mem_mask)
 {
 	COMBINE_DATA(&m_vreg_addr);
 }
 
 /***************************************************************************************/
 
-static ADDRESS_MAP_START( mem_map, AS_PROGRAM, 16, gunpey_state )
-	AM_RANGE(0x00000, 0x0ffff) AM_RAM AM_SHARE("wram")
-//  AM_RANGE(0x50000, 0x500ff) AM_RAM
-//  AM_RANGE(0x50100, 0x502ff) AM_NOP
-	AM_RANGE(0x80000, 0xfffff) AM_ROM
-ADDRESS_MAP_END
+void gunpey_state::mem_map(address_map &map)
+{
+	map(0x00000, 0x0ffff).ram().share(m_wram);
+//  map(0x50000, 0x500ff).ram();
+//  map(0x50100, 0x502ff).noprw();
+	map(0x80000, 0xfffff).rom();
+}
 
-static ADDRESS_MAP_START( io_map, AS_IO, 16, gunpey_state )
-	AM_RANGE(0x7f40, 0x7f45) AM_READ8(gunpey_inputs_r,0xffff)
+void gunpey_state::io_map(address_map &map)
+{
+	map(0x7f40, 0x7f45).r(FUNC(gunpey_state::inputs_r));
 
-	AM_RANGE(0x7f48, 0x7f49) AM_WRITE8(gunpey_output_w,0x00ff)
-	AM_RANGE(0x7f80, 0x7f81) AM_DEVREADWRITE8("ymz", ymz280b_device, read, write, 0xffff)
+	map(0x7f48, 0x7f48).w(FUNC(gunpey_state::output_w));
+	map(0x7f80, 0x7f81).rw("ymz", FUNC(ymz280b_device::read), FUNC(ymz280b_device::write));
 
-	AM_RANGE(0x7f88, 0x7f89) AM_DEVREADWRITE8("oki", okim6295_device, read, write, 0x00ff)
+	map(0x7f88, 0x7f88).rw(m_oki, FUNC(okim6295_device::read), FUNC(okim6295_device::write));
 
-	AM_RANGE(0x7fc8, 0x7fc9) AM_READWRITE8(gunpey_status_r,  gunpey_status_w, 0xffff )
-	AM_RANGE(0x7fd0, 0x7fdf) AM_WRITE8(gunpey_blitter_w, 0xffff )
-	AM_RANGE(0x7fe0, 0x7fe5) AM_WRITE8(gunpey_blitter_upper_w, 0xffff )
-	AM_RANGE(0x7ff0, 0x7ff5) AM_WRITE8(gunpey_blitter_upper2_w, 0xffff )
+	map(0x7fc8, 0x7fc9).rw(FUNC(gunpey_state::status_r), FUNC(gunpey_state::status_w));
+	map(0x7fd0, 0x7fdf).w(FUNC(gunpey_state::blitter_w));
+	map(0x7fe0, 0x7fe5).w(FUNC(gunpey_state::blitter_upper_w));
+	map(0x7ff0, 0x7ff5).w(FUNC(gunpey_state::blitter_upper2_w));
 
-	//AM_RANGE(0x7FF0, 0x7FF1) AM_RAM
-	AM_RANGE(0x7fec, 0x7fed) AM_WRITE(gunpey_vregs_addr_w)
-	AM_RANGE(0x7fee, 0x7fef) AM_WRITE(gunpey_vram_bank_w)
+	//map(0x7ff0, 0x7ff1).ram();
+	map(0x7fec, 0x7fed).w(FUNC(gunpey_state::vregs_addr_w));
+	map(0x7fee, 0x7fef).w(FUNC(gunpey_state::vram_bank_w));
 
-ADDRESS_MAP_END
+}
 
 
 /***************************************************************************************/
@@ -1404,77 +1146,55 @@ INPUT_PORTS_END
 0x40 almost certainly vblank (reads inputs)
 0x80
 */
-TIMER_DEVICE_CALLBACK_MEMBER(gunpey_state::gunpey_scanline)
+TIMER_DEVICE_CALLBACK_MEMBER(gunpey_state::scanline)
 {
 	int scanline = param;
 
-	if(scanline == 240)
+	if (scanline == 240)
 	{
-		//printf("frame\n");
-		gunpey_irq_check(0x50);
+		//logerror("frame\n");
+		irq_check(0x50);
 	}
 }
 
-
-
-
-
-// this isn't a real decode as such, but the graphic data is all stored in pages 2048 bytes wide at varying BPP levelsl, some (BG data) compressed with what is likely a lossy scheme
-// palette data is in here too, the blocks at the bottom right of all this?
-static GFXLAYOUT_RAW( gunpey, 2048, 1, 2048*8, 2048*8 )
-
-static GFXDECODE_START( gunpey )
-	GFXDECODE_ENTRY( "blit_data", 0, gunpey,     0x0000, 0x1 )
-	GFXDECODE_ENTRY( "blit_data2", 0, gunpey,     0x0000, 0x1 )
-	GFXDECODE_ENTRY( "vram", 0, gunpey,     0x0000, 0x1 )
-GFXDECODE_END
-
-
-
 /***************************************************************************************/
-static MACHINE_CONFIG_START( gunpey, gunpey_state )
-
+void gunpey_state::gunpey(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", V30, 57242400 / 4)
-	MCFG_CPU_PROGRAM_MAP(mem_map)
-	MCFG_CPU_IO_MAP(io_map)
-	MCFG_TIMER_DRIVER_ADD_SCANLINE("scantimer", gunpey_state, gunpey_scanline, "screen", 0, 1)
+	V30(config, m_maincpu, 57242400 / 4);
+	m_maincpu->set_addrmap(AS_PROGRAM, &gunpey_state::mem_map);
+	m_maincpu->set_addrmap(AS_IO, &gunpey_state::io_map);
+	TIMER(config, "scantimer").configure_scanline(FUNC(gunpey_state::scanline), "screen", 0, 1);
 
 	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_RAW_PARAMS(57242400/8, 442, 0, 320, 264, 0, 240) /* just to get ~60 Hz */
-	MCFG_SCREEN_UPDATE_DRIVER(gunpey_state, screen_update_gunpey)
-	MCFG_SCREEN_PALETTE("palette")
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_RASTER));
+	screen.set_raw(57242400/8, 442, 0, 320, 264, 0, 240); /* just to get ~60 Hz */
+	screen.set_screen_update(FUNC(gunpey_state::screen_update));
+	screen.set_palette(m_palette);
 
-	MCFG_PALETTE_ADD_RRRRRGGGGGBBBBB("palette")
-	MCFG_GFXDECODE_ADD("gfxdecode", "palette", gunpey)
+	PALETTE(config, m_palette, palette_device::RGB_555);
 
-	MCFG_SPEAKER_STANDARD_STEREO("lspeaker","rspeaker")
+	SPEAKER(config, "lspeaker").front_left();
+	SPEAKER(config, "rspeaker").front_right();
 
-	MCFG_OKIM6295_ADD("oki", XTAL_16_9344MHz / 8, OKIM6295_PIN7_LOW)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "lspeaker", 0.25)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "rspeaker", 0.25)
+	OKIM6295(config, m_oki, XTAL(16'934'400) / 8, okim6295_device::PIN7_LOW);
+	m_oki->add_route(ALL_OUTPUTS, "lspeaker", 0.125);
+	m_oki->add_route(ALL_OUTPUTS, "rspeaker", 0.125);
 
-	MCFG_SOUND_ADD("ymz", YMZ280B, XTAL_16_9344MHz)
-	MCFG_SOUND_ROUTE(0, "lspeaker", 0.25)
-	MCFG_SOUND_ROUTE(1, "rspeaker", 0.25)
-MACHINE_CONFIG_END
-
+	ymz280b_device &ymz(YMZ280B(config, "ymz", XTAL(16'934'400)));
+	ymz.add_route(0, "lspeaker", 0.25);
+	ymz.add_route(1, "rspeaker", 0.25);
+}
 
 /***************************************************************************************/
 
 ROM_START( gunpey )
 	ROM_REGION( 0x100000, "maincpu", 0 ) /* V30 code */
-	ROM_LOAD16_BYTE( "gp_rom1.021",  0x00000, 0x80000, CRC(07a589a7) SHA1(06c4140ffd5f74b3d3ddfc424f43fcd08d903490) )
-	ROM_LOAD16_BYTE( "gp_rom2.022",  0x00001, 0x80000, CRC(f66bc4cf) SHA1(54931d878d228c535b9e2bf22a0a3e41756f0fe5) )
+	ROM_LOAD16_BYTE( "gp_rom1.021",  0x00000, 0x80000, CRC(07a589a7) SHA1(06c4140ffd5f74b3d3ddfc424f43fcd08d903490) ) // Gunpey(AC) -Release-
+	ROM_LOAD16_BYTE( "gp_rom2.022",  0x00001, 0x80000, CRC(f66bc4cf) SHA1(54931d878d228c535b9e2bf22a0a3e41756f0fe5) ) // Jan 17 2000 19:10:22 (J)
 
-	ROM_REGION( 0x400000, "blit_data", 0 )
+	ROM_REGION( 0x400000, "blit_rom", 0 )
 	ROM_LOAD( "gp_rom3.025",  0x00000, 0x400000,  CRC(f2d1f9f0) SHA1(0d20301fd33892074508b9d127456eae80cc3a1c) )
-	ROM_REGION( 0x400000, "blit_data2", 0 ) // debug test
-	ROM_COPY( "blit_data", 0x00000, 0x00000, 0x400000 )
-
-
-	ROM_REGION( 0x400000, "vram", ROMREGION_ERASEFF )
 
 	ROM_REGION( 0x400000, "ymz", 0 )
 	ROM_LOAD( "gp_rom4.525",  0x000000, 0x400000, CRC(78dd1521) SHA1(91d2046c60e3db348f29f776def02e3ef889f2c1) ) // 11xxxxxxxxxxxxxxxxxxxx = 0xFF
@@ -1483,15 +1203,6 @@ ROM_START( gunpey )
 	ROM_LOAD( "gp_rom5.622",  0x000000, 0x400000,  CRC(f79903e0) SHA1(4fd50b4138e64a48ec1504eb8cd172a229e0e965)) // 1xxxxxxxxxxxxxxxxxxxxx = 0xFF
 ROM_END
 
+} // anonymous namespace
 
-
-DRIVER_INIT_MEMBER(gunpey_state,gunpey)
-{
-	m_blit_rom = memregion("blit_data")->base();
-	m_blit_rom2 = memregion("blit_data2")->base();
-
-	m_vram = memregion("vram")->base();
-	// ...
-}
-
-GAME( 2000, gunpey, 0, gunpey, gunpey, gunpey_state, gunpey,    ROT0, "Banpresto", "Gunpey (Japan)",MACHINE_NOT_WORKING|MACHINE_IMPERFECT_GRAPHICS)
+GAME( 2000, gunpey, 0, gunpey, gunpey, gunpey_state, empty_init, ROT0, "Bandai / Banpresto", "Gunpey (Japan)", 0 )

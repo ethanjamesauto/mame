@@ -31,36 +31,35 @@
 
 ***************************************************************************/
 
-PALETTE_INIT_MEMBER(thepit_state, thepit)
+void thepit_state::thepit_palette(palette_device &palette) const
 {
-	const UINT8 *color_prom = memregion("proms")->base();
-	int i;
+	uint8_t const *const color_prom = memregion("proms")->base();
 
-	for (i = 0; i < 32; i++)
+	for (int i = 0; i < 32; i++)
 	{
-		int bit0, bit1, bit2, r, g, b;
+		int bit0, bit1, bit2;
 
-		bit0 = (color_prom[i] >> 0) & 0x01;
-		bit1 = (color_prom[i] >> 1) & 0x01;
-		bit2 = (color_prom[i] >> 2) & 0x01;
-		r = 0x21 * bit0 + 0x47 * bit1 + 0x97 * bit2;
+		bit0 = BIT(color_prom[i], 0);
+		bit1 = BIT(color_prom[i], 1);
+		bit2 = BIT(color_prom[i], 2);
+		int const r = 0x21 * bit0 + 0x47 * bit1 + 0x97 * bit2;
 
-		bit0 = (color_prom[i] >> 3) & 0x01;
-		bit1 = (color_prom[i] >> 4) & 0x01;
-		bit2 = (color_prom[i] >> 5) & 0x01;
-		g = 0x21 * bit0 + 0x47 * bit1 + 0x97 * bit2;
+		bit0 = BIT(color_prom[i], 3);
+		bit1 = BIT(color_prom[i], 4);
+		bit2 = BIT(color_prom[i], 5);
+		int const g = 0x21 * bit0 + 0x47 * bit1 + 0x97 * bit2;
 
 		bit0 = 0;
-		bit1 = (color_prom[i] >> 6) & 0x01;
-		bit2 = (color_prom[i] >> 7) & 0x01;
-		b = 0x21 * bit0 + 0x47 * bit1 + 0x97 * bit2;
+		bit1 = BIT(color_prom[i], 6);
+		bit2 = BIT(color_prom[i], 7);
+		int const b = 0x21 * bit0 + 0x47 * bit1 + 0x97 * bit2;
 
 		palette.set_pen_color(i, rgb_t(r, g, b));
 	}
 
-	/* allocate primary colors for the background and foreground
-	   this is wrong, but I don't know where to pick the colors from */
-	for (i = 0; i < 8; i++)
+	// allocate primary colors for the background and foreground
+	// this is wrong, but I don't know where to pick the colors from
+	for (int i = 0; i < 8; i++)
 		palette.set_pen_color(i + 32, pal1bit(i >> 2), pal1bit(i >> 1), pal1bit(i >> 0));
 }
 
@@ -72,23 +71,22 @@ PALETTE_INIT_MEMBER(thepit_state, thepit)
 
 ***************************************************************************/
 
-PALETTE_INIT_MEMBER(thepit_state,suprmous)
+void thepit_state::suprmous_palette(palette_device &palette) const
 {
-	const UINT8 *color_prom = memregion("proms")->base();
-	int i;
+	uint8_t const *const color_prom = memregion("proms")->base();
 
-	for (i = 0; i < 32; i++)
+	for (int i = 0; i < 32; i++)
 	{
-		UINT8 b = BITSWAP8(color_prom[i + 0x00], 0, 1, 2, 3, 4, 5, 6, 7);
-		UINT8 g = BITSWAP8(color_prom[i + 0x20], 0, 1, 2, 3, 4, 5, 6, 7);
-		UINT8 r = (b>>5&7)<<2 | (g>>6&3);
+		uint8_t const b = bitswap<8>(color_prom[i + 0x00], 0, 1, 2, 3, 4, 5, 6, 7);
+		uint8_t const g = bitswap<8>(color_prom[i + 0x20], 0, 1, 2, 3, 4, 5, 6, 7);
+		uint8_t const r = (b>>5&7)<<2 | (g>>6&3);
 
 		palette.set_pen_color(i, pal5bit(r), pal5bit(g), pal4bit(b));
 	}
 
-	/* allocate primary colors for the background and foreground
-	   this is wrong, but I don't know where to pick the colors from */
-	for (i = 0; i < 8; i++)
+	// allocate primary colors for the background and foreground
+	// this is wrong, but I don't know where to pick the colors from
+	for (int i = 0; i < 8; i++)
 		palette.set_pen_color(i + 32, pal1bit(i >> 2), pal1bit(i >> 1), pal1bit(i >> 0));
 }
 
@@ -102,7 +100,7 @@ PALETTE_INIT_MEMBER(thepit_state,suprmous)
 
 TILE_GET_INFO_MEMBER(thepit_state::solid_get_tile_info)
 {
-	UINT8 back_color = (m_colorram[tile_index] & 0x70) >> 4;
+	uint8_t back_color = (m_colorram[tile_index] & 0x70) >> 4;
 	int priority = (back_color != 0) && ((m_colorram[tile_index] & 0x80) == 0);
 	tileinfo.pen_data = m_dummy_tile.get();
 	tileinfo.palette_base = back_color + 32;
@@ -112,9 +110,9 @@ TILE_GET_INFO_MEMBER(thepit_state::solid_get_tile_info)
 
 TILE_GET_INFO_MEMBER(thepit_state::get_tile_info)
 {
-	UINT8 fore_color = m_colorram[tile_index] % m_gfxdecode->gfx(0)->colors();
-	UINT8 code = m_videoram[tile_index];
-	SET_TILE_INFO_MEMBER(2 * m_graphics_bank, code, fore_color, 0);
+	uint8_t fore_color = m_colorram[tile_index] % m_gfxdecode->gfx(0)->colors();
+	uint8_t code = m_videoram[tile_index];
+	tileinfo.set(2 * m_graphics_bank, code, fore_color, 0);
 }
 
 
@@ -127,15 +125,15 @@ TILE_GET_INFO_MEMBER(thepit_state::get_tile_info)
 
 void thepit_state::video_start()
 {
-	m_solid_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(thepit_state::solid_get_tile_info),this),TILEMAP_SCAN_ROWS,8,8,32,32);
+	m_solid_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(thepit_state::solid_get_tile_info)), TILEMAP_SCAN_ROWS, 8,8, 32,32);
 
-	m_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(thepit_state::get_tile_info),this),TILEMAP_SCAN_ROWS,8,8,32,32);
+	m_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(thepit_state::get_tile_info)), TILEMAP_SCAN_ROWS, 8,8, 32,32);
 	m_tilemap->set_transparent_pen(0);
 
 	m_solid_tilemap->set_scroll_cols(32);
 	m_tilemap->set_scroll_cols(32);
 
-	m_dummy_tile = make_unique_clear<UINT8[]>(8*8);
+	m_dummy_tile = make_unique_clear<uint8_t[]>(8*8);
 
 	m_graphics_bank = 0;    /* only used in intrepid */
 
@@ -152,14 +150,14 @@ void thepit_state::video_start()
  *
  *************************************/
 
-WRITE8_MEMBER(thepit_state::videoram_w)
+void thepit_state::videoram_w(offs_t offset, uint8_t data)
 {
 	m_videoram[offset] = data;
 	m_tilemap->mark_tile_dirty(offset);
 }
 
 
-WRITE8_MEMBER(thepit_state::colorram_w)
+void thepit_state::colorram_w(offs_t offset, uint8_t data)
 {
 	m_colorram[offset] = data;
 	m_tilemap->mark_tile_dirty(offset);
@@ -167,13 +165,11 @@ WRITE8_MEMBER(thepit_state::colorram_w)
 }
 
 
-WRITE8_MEMBER(thepit_state::flip_screen_x_w)
+WRITE_LINE_MEMBER(thepit_state::flip_screen_x_w)
 {
-	int flip;
+	m_flip_x = state;
 
-	m_flip_x = data & 0x01;
-
-	flip = m_flip_x ? TILEMAP_FLIPX : 0;
+	int flip = m_flip_x ? TILEMAP_FLIPX : 0;
 	if (m_flip_y)
 		flip |= TILEMAP_FLIPY ;
 
@@ -183,13 +179,11 @@ WRITE8_MEMBER(thepit_state::flip_screen_x_w)
 }
 
 
-WRITE8_MEMBER(thepit_state::flip_screen_y_w)
+WRITE_LINE_MEMBER(thepit_state::flip_screen_y_w)
 {
-	int flip;
+	m_flip_y = state;
 
-	m_flip_y = data & 0x01;
-
-	flip = m_flip_x ? TILEMAP_FLIPX : 0;
+	int flip = m_flip_x ? TILEMAP_FLIPX : 0;
 	if (m_flip_y)
 		flip |= TILEMAP_FLIPY ;
 
@@ -199,18 +193,15 @@ WRITE8_MEMBER(thepit_state::flip_screen_y_w)
 }
 
 
-WRITE8_MEMBER(thepit_state::intrepid_graphics_bank_w)
+WRITE_LINE_MEMBER(thepit_state::intrepid_graphics_bank_w)
 {
-	if (m_graphics_bank != (data & 0x01))
-	{
-		m_graphics_bank = data & 0x01;
+	m_graphics_bank = state;
 
-		m_tilemap->mark_all_dirty();
-	}
+	m_tilemap->mark_all_dirty();
 }
 
 
-READ8_MEMBER(thepit_state::input_port_0_r)
+uint8_t thepit_state::input_port_0_r()
 {
 	/* Read either the real or the fake input ports depending on the
 	   horizontal flip switch. (This is how the real PCB does it) */
@@ -238,7 +229,7 @@ void thepit_state::draw_sprites(bitmap_ind16 &bitmap, const rectangle &cliprect,
 	{
 		if (((m_spriteram[offs + 2] & 0x08) >> 3) == priority_to_draw)
 		{
-			UINT8 y, x, flipx, flipy;
+			uint8_t y, x, flipx, flipy;
 
 			if ((m_spriteram[offs + 0] == 0) || (m_spriteram[offs + 3] == 0))
 			{
@@ -283,7 +274,7 @@ void thepit_state::draw_sprites(bitmap_ind16 &bitmap, const rectangle &cliprect,
 }
 
 
-UINT32 thepit_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t thepit_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	const rectangle spritevisiblearea(2*8+1, 32*8-1, 2*8, 30*8-1);
 	const rectangle spritevisibleareaflipx(0*8, 30*8-2, 2*8, 30*8-1);
@@ -318,7 +309,7 @@ UINT32 thepit_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, 
 	return 0;
 }
 
-UINT32 thepit_state::screen_update_desertdan(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t thepit_state::screen_update_desertdan(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	offs_t offs;
 	const rectangle spritevisiblearea(0*8+1, 24*8-1, 2*8, 30*8-1);

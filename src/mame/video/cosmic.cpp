@@ -2,7 +2,7 @@
 // copyright-holders:Nicola Salmoria, Lee Taylor
 /***************************************************************************
 
- cosmic.c
+ cosmic.cpp
 
  emulation of video hardware of cosmic machines of 1979-1980(ish)
 
@@ -12,13 +12,13 @@
 #include "includes/cosmic.h"
 
 
-WRITE8_MEMBER(cosmic_state::cosmic_color_register_w)
+void cosmic_state::cosmic_color_register_w(offs_t offset, uint8_t data)
 {
 	m_color_registers[offset] = data ? 1 : 0;
 }
 
 
-pen_t cosmic_state::panic_map_color( UINT8 x, UINT8 y )
+pen_t cosmic_state::panic_map_color( uint8_t x, uint8_t y )
 {
 	offs_t offs = (m_color_registers[0] << 9) | (m_color_registers[2] << 10) | ((x >> 4) << 5) | (y >> 3);
 	pen_t pen = memregion("user1")->base()[offs];
@@ -29,7 +29,7 @@ pen_t cosmic_state::panic_map_color( UINT8 x, UINT8 y )
 	return pen & 0x0f;
 }
 
-pen_t cosmic_state::cosmica_map_color( UINT8 x, UINT8 y )
+pen_t cosmic_state::cosmica_map_color( uint8_t x, uint8_t y )
 {
 	offs_t offs = (m_color_registers[0] << 9) | ((x >> 4) << 5) | (y >> 3);
 	pen_t pen = memregion("user1")->base()[offs];
@@ -40,16 +40,7 @@ pen_t cosmic_state::cosmica_map_color( UINT8 x, UINT8 y )
 	return pen & 0x07;
 }
 
-pen_t cosmic_state::cosmicg_map_color( UINT8 x, UINT8 y )
-{
-	offs_t offs = (m_color_registers[0] << 8) | (m_color_registers[1] << 9) | ((y >> 4) << 4) | (x >> 4);
-	pen_t pen = memregion("user1")->base()[offs];
-
-	/* the upper 4 bits are for cocktail mode support */
-	return pen & 0x0f;
-}
-
-pen_t cosmic_state::magspot_map_color( UINT8 x, UINT8 y )
+pen_t cosmic_state::magspot_map_color( uint8_t x, uint8_t y )
 {
 	offs_t offs = (m_color_registers[0] << 9) | ((x >> 3) << 4) | (y >> 4);
 	pen_t pen = memregion("user1")->base()[offs];
@@ -73,31 +64,27 @@ pen_t cosmic_state::magspot_map_color( UINT8 x, UINT8 y )
  * (1k to ground) so second version of table has blue set to 2/3
  */
 
-PALETTE_INIT_MEMBER(cosmic_state,panic)
+void cosmic_state::panic_palette(palette_device &palette)
 {
-	const UINT8 *color_prom = memregion("proms")->base();
-	int i;
+	uint8_t const *const color_prom = memregion("proms")->base();
 
-	/* create a lookup table for the palette */
-	for (i = 0; i < 0x10; i++)
+	// create a lookup table for the palette
+	for (int i = 0; i < 0x10; i++)
 	{
-		int r = pal1bit(i >> 0);
-		int g = pal1bit(i >> 1);
-		int b = ((i & 0x0c) == 0x08) ? 0xaa : pal1bit(i >> 2);
+		int const r = pal1bit(i >> 0);
+		int const g = pal1bit(i >> 1);
+		int const b = ((i & 0x0c) == 0x08) ? 0xaa : pal1bit(i >> 2);
 
 		palette.set_indirect_color(i, rgb_t(r, g, b));
 	}
 
-	/* background uses colors 0x00-0x0f */
-	for (i = 0; i < 0x0f; i++)
+	// background uses colors 0x00-0x0f
+	for (int i = 0; i < 0x0f; i++)
 		palette.set_pen_indirect(i, i);
 
-	/* sprites use colors 0x00-0x07 */
-	for (i = 0x10; i < 0x30; i++)
-	{
-		UINT8 ctabentry = color_prom[i - 0x10] & 0x07;
-		palette.set_pen_indirect(i, ctabentry);
-	}
+	// sprites use colors 0x00-0x07
+	for (int i = 0; i < 0x20; i++)
+		palette.set_pen_indirect(i + 0x10, color_prom[i] & 0x07);
 
 	m_map_color = &cosmic_state::panic_map_color;
 }
@@ -112,123 +99,80 @@ PALETTE_INIT_MEMBER(cosmic_state,panic)
  *
  */
 
-PALETTE_INIT_MEMBER(cosmic_state,cosmica)
+void cosmic_state::cosmica_palette(palette_device &palette)
 {
-	const UINT8 *color_prom = memregion("proms")->base();
-	int i;
+	uint8_t const *const color_prom = memregion("proms")->base();
 
-	/* create a lookup table for the palette */
-	for (i = 0; i < 0x08; i++)
-	{
-		rgb_t color = rgb_t(pal1bit(i >> 0), pal1bit(i >> 1), pal1bit(i >> 2));
-		palette.set_indirect_color(i, color);
-	}
+	// create a lookup table for the palette
+	for (int i = 0; i < 0x08; i++)
+		palette.set_indirect_color(i, rgb_t(pal1bit(i >> 0), pal1bit(i >> 1), pal1bit(i >> 2)));
 
-	/* background and sprites use colors 0x00-0x07 */
-	for (i = 0; i < 0x08; i++)
+	// background and sprites use colors 0x00-0x07
+	for (int i = 0; i < 0x08; i++)
 		palette.set_pen_indirect(i, i);
 
-	for (i = 0x08; i < 0x28; i++)
+	for (int i = 0; i < 0x20; i++)
 	{
-		UINT8 ctabentry;
-
-		ctabentry = (color_prom[i - 0x08] >> 0) & 0x07;
-		palette.set_pen_indirect(i + 0x00, ctabentry);
-
-		ctabentry = (color_prom[i - 0x08] >> 4) & 0x07;
-		palette.set_pen_indirect(i + 0x20, ctabentry);
+		palette.set_pen_indirect(i + 0x08, (color_prom[i] >> 0) & 0x07);
+		palette.set_pen_indirect(i + 0x28, (color_prom[i] >> 4) & 0x07);
 	}
 
 	m_map_color = &cosmic_state::cosmica_map_color;
 }
 
 
-/*
- * Cosmic guerilla table setup
- *
- * Use AA for normal, FF for Full Red
- * Bit 0 = R, bit 1 = G, bit 2 = B, bit 4 = High Red
- *
- * It's possible that the background is dark gray and not black, as the
- * resistor chain would never drop to zero, Anybody know ?
- */
-PALETTE_INIT_MEMBER(cosmic_state,cosmicg)
+void cosmic_state::magspot_palette(palette_device &palette)
 {
-	int i;
+	uint8_t const *const color_prom = memregion("proms")->base();
 
-	for (i = 0; i < palette.entries(); i++)
+	// create a lookup table for the palette
+	for (int i = 0; i < 0x10; i++)
 	{
-		int r = (i > 8) ? 0xff : 0xaa * ((i >> 0) & 1);
-		int g = 0xaa * ((i >> 1) & 1);
-		int b = 0xaa * ((i >> 2) & 1);
-
-		palette.set_pen_color(i, rgb_t(r, g, b));
-	}
-
-	m_map_color = &cosmic_state::cosmicg_map_color;
-}
-
-
-PALETTE_INIT_MEMBER(cosmic_state,magspot)
-{
-	const UINT8 *color_prom = memregion("proms")->base();
-	int i;
-
-	/* create a lookup table for the palette */
-	for (i = 0; i < 0x10; i++)
-	{
-		int r = ((i & 0x09) == 0x08) ? 0xaa : pal1bit(i >> 0);
-		int g = pal1bit(i >> 1);
-		int b = pal1bit(i >> 2);
+		int const r = ((i & 0x09) == 0x08) ? 0xaa : pal1bit(i >> 0);
+		int const g = pal1bit(i >> 1);
+		int const b = pal1bit(i >> 2);
 
 		palette.set_indirect_color(i, rgb_t(r, g, b));
 	}
 
-	/* background uses colors 0x00-0x0f */
-	for (i = 0; i < 0x0f; i++)
+	// background uses colors 0x00-0x0f
+	for (int i = 0; i < 0x0f; i++)
 		palette.set_pen_indirect(i, i);
 
-	/* sprites use colors 0x00-0x0f */
-	for (i = 0x10; i < 0x30; i++)
-	{
-		UINT8 ctabentry = color_prom[i - 0x10] & 0x0f;
-		palette.set_pen_indirect(i, ctabentry);
-	}
+	// sprites use colors 0x00-0x0f
+	for (int i = 0; i < 0x20; i++)
+		palette.set_pen_indirect(i + 0x10, color_prom[i] & 0x0f);
 
 	m_map_color = &cosmic_state::magspot_map_color;
 	m_magspot_pen_mask = 0x0f;
 }
 
 
-PALETTE_INIT_MEMBER(cosmic_state,nomnlnd)
+void cosmic_state::nomnlnd_palette(palette_device &palette)
 {
-	const UINT8 *color_prom = memregion("proms")->base();
-	int i;
+	uint8_t const *const color_prom = memregion("proms")->base();
 
-	/* create a lookup table for the palette */
-	for (i = 0; i < 0x10; i++)
+	// create a lookup table for the palette
+	for (int i = 0; i < 0x10; i++)
 	{
-		rgb_t color = rgb_t(pal1bit(i >> 0), pal1bit(i >> 1), pal1bit(i >> 2));
+		rgb_t const color = rgb_t(pal1bit(i >> 0), pal1bit(i >> 1), pal1bit(i >> 2));
 		palette.set_indirect_color(i, color);
 	}
 
-	/* background uses colors 0x00-0x07 */
-	for (i = 0; i < 0x07; i++)
+	// background uses colors 0x00-0x07
+	for (int i = 0; i < 0x07; i++)
 		palette.set_pen_indirect(i, i);
 
-	/* sprites use colors 0x00-0x07 */
-	for (i = 0x10; i < 0x30; i++)
-	{
-		UINT8 ctabentry = color_prom[i - 0x10] & 0x07;
-		palette.set_pen_indirect(i, ctabentry);
-	}
+	// sprites use colors 0x00-0x07 */
+	for (int i = 0; i < 0x20; i++)
+		palette.set_pen_indirect(i + 0x10, color_prom[i] & 0x07);
 
 	m_map_color = &cosmic_state::magspot_map_color;
 	m_magspot_pen_mask = 0x07;
 }
 
 
-WRITE8_MEMBER(cosmic_state::cosmic_background_enable_w)
+void cosmic_state::cosmic_background_enable_w(uint8_t data)
 {
 	m_background_enable = data;
 }
@@ -236,26 +180,23 @@ WRITE8_MEMBER(cosmic_state::cosmic_background_enable_w)
 
 void cosmic_state::draw_bitmap( bitmap_ind16 &bitmap, const rectangle &cliprect )
 {
-	offs_t offs;
-
-	for (offs = 0; offs < m_videoram.bytes(); offs++)
+	for (offs_t offs = 0; offs < m_videoram.bytes(); offs++)
 	{
-		int i;
-		UINT8 data = m_videoram[offs];
+		uint8_t data = m_videoram[offs];
 
-		UINT8 x = offs << 3;
-		UINT8 y = offs >> 5;
+		uint8_t x = offs << 3;
+		uint8_t const y = offs >> 5;
 
 		pen_t pen = (this->*m_map_color)(x, y);
 
-		for (i = 0; i < 8; i++)
+		for (int i = 0; i < 8; i++)
 		{
 			if (data & 0x80)
 			{
 				if (flip_screen())
-					bitmap.pix16(255-y, 255-x) = pen;
+					bitmap.pix(255-y, 255-x) = pen;
 				else
-					bitmap.pix16(y, x) = pen;
+					bitmap.pix(y, x) = pen;
 			}
 
 			x++;
@@ -300,20 +241,20 @@ void cosmic_state::draw_sprites( bitmap_ind16 &bitmap, const rectangle &cliprect
 
 void cosmic_state::cosmica_draw_starfield( screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect )
 {
-	UINT8 y = 0;
-	UINT8 map = 0;
-	UINT8 *PROM = memregion("user2")->base();
+	uint8_t y = 0;
+	uint8_t map = 0;
+	uint8_t *PROM = memregion("user2")->base();
 
 	while (1)
 	{
 		int va  =  y       & 0x01;
 		int vb  = (y >> 1) & 0x01;
 
-		UINT8 x = 0;
+		uint8_t x = 0;
 
 		while (1)
 		{
-			UINT8 x1;
+			uint8_t x1;
 			int hc, hb_;
 
 			if (flip_screen())
@@ -334,7 +275,7 @@ void cosmic_state::cosmica_draw_starfield( screen_device &screen, bitmap_ind16 &
 				/* RGB order is reversed -- bit 7=R, 6=G, 5=B */
 				int col = (map >> 7) | ((map >> 5) & 0x02) | ((map >> 3) & 0x04);
 
-				bitmap.pix16(y, x) = col;
+				bitmap.pix(y, x) = col;
 			}
 
 			x++;
@@ -349,23 +290,20 @@ void cosmic_state::cosmica_draw_starfield( screen_device &screen, bitmap_ind16 &
 
 void cosmic_state::devzone_draw_grid( bitmap_ind16 &bitmap, const rectangle &cliprect )
 {
-	UINT8 y;
-	UINT8 *horz_PROM = memregion("user2")->base();
-	UINT8 *vert_PROM = memregion("user3")->base();
+	uint8_t const *const horz_PROM = memregion("user2")->base();
+	uint8_t const *const vert_PROM = memregion("user3")->base();
 	offs_t horz_addr = 0;
 
-	UINT8 count = 0;
-	UINT8 horz_data = 0;
-	UINT8 vert_data;
+	uint8_t count = 0;
+	uint8_t horz_data = 0;
+	uint8_t vert_data;
 
-	for (y = 32; y < 224; y++)
+	for (int y = 32; y < 224; y++)
 	{
-		UINT8 x = 0;
+		uint8_t x = 0;
 
 		while (1)
 		{
-			int x1;
-
 			/* for the vertical lines, each bit indicates
 			   if there should be a line at the x position */
 			vert_data = vert_PROM[x >> 3];
@@ -382,15 +320,15 @@ void cosmic_state::devzone_draw_grid( bitmap_ind16 &bitmap, const rectangle &cli
 			if (count == 0)
 				horz_data = horz_PROM[horz_addr++];
 
-			for (x1 = 0; x1 < 8; x1++)
+			for (int x1 = 0; x1 < 8; x1++)
 			{
 				if (!(vert_data & horz_data & 0x80))    /* NAND gate */
 				{
 					/* blue */
 					if (flip_screen())
-						bitmap.pix16(255-y, 255-x) = 4;
+						bitmap.pix(255-y, 255-x) = 4;
 					else
-						bitmap.pix16(y, x) = 4;
+						bitmap.pix(y, x) = 4;
 				}
 
 				horz_data = (horz_data << 1) | 0x01;
@@ -407,9 +345,9 @@ void cosmic_state::devzone_draw_grid( bitmap_ind16 &bitmap, const rectangle &cli
 
 void cosmic_state::nomnlnd_draw_background( screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect )
 {
-	UINT8 y = 0;
-	UINT8 water = screen.frame_number();
-	UINT8 *PROM = memregion("user2")->base();
+	uint8_t y = 0;
+	uint8_t water = screen.frame_number();
+	uint8_t *PROM = memregion("user2")->base();
 
 	/* all positioning is via logic gates:
 
@@ -454,7 +392,7 @@ void cosmic_state::nomnlnd_draw_background( screen_device &screen, bitmap_ind16 
 		int vc_ = (y >> 6) & 0x01;
 		int vd_ =  y >> 7;
 
-		UINT8 x = 0;
+		uint8_t x = 0;
 
 		while (1)
 		{
@@ -474,8 +412,8 @@ void cosmic_state::nomnlnd_draw_background( screen_device &screen, bitmap_ind16 
 					offs_t offs = ((x >> 3) & 0x03) | ((y & 0x1f) << 2) |
 									(flip_screen() ? 0x80 : 0);
 
-					UINT8 plane1 = PROM[offs         ] << (x & 0x07);
-					UINT8 plane2 = PROM[offs | 0x0400] << (x & 0x07);
+					uint8_t plane1 = PROM[offs         ] << (x & 0x07);
+					uint8_t plane2 = PROM[offs | 0x0400] << (x & 0x07);
 
 					plane1 >>= 7;
 					plane2 >>= 7;
@@ -492,8 +430,8 @@ void cosmic_state::nomnlnd_draw_background( screen_device &screen, bitmap_ind16 
 				{
 					offs_t offs = hd | (water << 1) | 0x0200;
 
-					UINT8 plane1 = PROM[offs         ] << (x & 0x07);
-					UINT8 plane2 = PROM[offs | 0x0400] << (x & 0x07);
+					uint8_t plane1 = PROM[offs         ] << (x & 0x07);
+					uint8_t plane2 = PROM[offs | 0x0400] << (x & 0x07);
 
 					plane1 >>= 7;
 					plane2 >>= 7;
@@ -507,9 +445,9 @@ void cosmic_state::nomnlnd_draw_background( screen_device &screen, bitmap_ind16 
 			if (color != 0)
 			{
 				if (flip_screen())
-					bitmap.pix16(255-y, 255-x) = color;
+					bitmap.pix(255-y, 255-x) = color;
 				else
-					bitmap.pix16(y, x) = color;
+					bitmap.pix(y, x) = color;
 			}
 
 			x++;
@@ -527,15 +465,7 @@ void cosmic_state::nomnlnd_draw_background( screen_device &screen, bitmap_ind16 
 }
 
 
-UINT32 cosmic_state::screen_update_cosmicg(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
-{
-	bitmap.fill(0, cliprect);
-	draw_bitmap(bitmap, cliprect);
-	return 0;
-}
-
-
-UINT32 cosmic_state::screen_update_panic(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t cosmic_state::screen_update_panic(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	bitmap.fill(0, cliprect);
 	draw_bitmap(bitmap, cliprect);
@@ -544,7 +474,7 @@ UINT32 cosmic_state::screen_update_panic(screen_device &screen, bitmap_ind16 &bi
 }
 
 
-UINT32 cosmic_state::screen_update_cosmica(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t cosmic_state::screen_update_cosmica(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	bitmap.fill(0, cliprect);
 	cosmica_draw_starfield(screen, bitmap, cliprect);
@@ -554,7 +484,7 @@ UINT32 cosmic_state::screen_update_cosmica(screen_device &screen, bitmap_ind16 &
 }
 
 
-UINT32 cosmic_state::screen_update_magspot(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t cosmic_state::screen_update_magspot(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	bitmap.fill(0, cliprect);
 	draw_bitmap(bitmap, cliprect);
@@ -563,7 +493,7 @@ UINT32 cosmic_state::screen_update_magspot(screen_device &screen, bitmap_ind16 &
 }
 
 
-UINT32 cosmic_state::screen_update_devzone(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t cosmic_state::screen_update_devzone(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	bitmap.fill(0, cliprect);
 
@@ -576,7 +506,7 @@ UINT32 cosmic_state::screen_update_devzone(screen_device &screen, bitmap_ind16 &
 }
 
 
-UINT32 cosmic_state::screen_update_nomnlnd(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t cosmic_state::screen_update_nomnlnd(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	/* according to the video summation logic on pg4, the trees and river
 	   have the highest priority */

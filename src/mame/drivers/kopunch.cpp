@@ -32,9 +32,11 @@
 ********************************************************/
 
 #include "emu.h"
+#include "includes/kopunch.h"
+
 #include "cpu/i8085/i8085.h"
 #include "machine/i8255.h"
-#include "includes/kopunch.h"
+#include "screen.h"
 
 
 /********************************************************
@@ -43,24 +45,18 @@
 
 ********************************************************/
 
-INTERRUPT_GEN_MEMBER(kopunch_state::vblank_interrupt)
-{
-	device.execute().set_input_line(I8085_RST75_LINE, ASSERT_LINE);
-	device.execute().set_input_line(I8085_RST75_LINE, CLEAR_LINE);
-}
-
 INPUT_CHANGED_MEMBER(kopunch_state::left_coin_inserted)
 {
 	// left coin insertion causes a rst6.5 (vector 0x34)
 	if (newval)
-		m_maincpu->set_input_line(I8085_RST65_LINE, HOLD_LINE);
+		m_maincpu->set_input_line(I8085_RST65_LINE, ASSERT_LINE);
 }
 
 INPUT_CHANGED_MEMBER(kopunch_state::right_coin_inserted)
 {
 	// right coin insertion causes a rst5.5 (vector 0x2c)
 	if (newval)
-		m_maincpu->set_input_line(I8085_RST55_LINE, HOLD_LINE);
+		m_maincpu->set_input_line(I8085_RST55_LINE, ASSERT_LINE);
 }
 
 
@@ -70,21 +66,23 @@ INPUT_CHANGED_MEMBER(kopunch_state::right_coin_inserted)
 
 ********************************************************/
 
-static ADDRESS_MAP_START( kopunch_map, AS_PROGRAM, 8, kopunch_state )
-	AM_RANGE(0x0000, 0x1fff) AM_ROM
-	AM_RANGE(0x2000, 0x23ff) AM_RAM
-	AM_RANGE(0x6000, 0x63ff) AM_RAM_WRITE(vram_fg_w) AM_SHARE("vram_fg")
-	AM_RANGE(0x7000, 0x70ff) AM_RAM_WRITE(vram_bg_w) AM_SHARE("vram_bg")
-	AM_RANGE(0x7100, 0x73ff) AM_RAM // unused vram
-	AM_RANGE(0x7400, 0x7bff) AM_RAM // more unused vram? or accidental writes?
-ADDRESS_MAP_END
+void kopunch_state::kopunch_map(address_map &map)
+{
+	map(0x0000, 0x1fff).rom();
+	map(0x2000, 0x23ff).ram();
+	map(0x6000, 0x63ff).ram().w(FUNC(kopunch_state::vram_fg_w)).share("vram_fg");
+	map(0x7000, 0x70ff).ram().w(FUNC(kopunch_state::vram_bg_w)).share("vram_bg");
+	map(0x7100, 0x73ff).ram(); // unused vram
+	map(0x7400, 0x7bff).ram(); // more unused vram? or accidental writes?
+}
 
-static ADDRESS_MAP_START( kopunch_io_map, AS_IO, 8, kopunch_state )
-	AM_RANGE(0x30, 0x33) AM_DEVREADWRITE("ppi8255_0", i8255_device, read, write)
-	AM_RANGE(0x34, 0x37) AM_DEVREADWRITE("ppi8255_1", i8255_device, read, write)
-	AM_RANGE(0x38, 0x3b) AM_DEVREADWRITE("ppi8255_2", i8255_device, read, write)
-	AM_RANGE(0x3c, 0x3f) AM_DEVREADWRITE("ppi8255_3", i8255_device, read, write)
-ADDRESS_MAP_END
+void kopunch_state::kopunch_io_map(address_map &map)
+{
+	map(0x30, 0x33).rw("ppi8255_0", FUNC(i8255_device::read), FUNC(i8255_device::write));
+	map(0x34, 0x37).rw("ppi8255_1", FUNC(i8255_device::read), FUNC(i8255_device::write));
+	map(0x38, 0x3b).rw("ppi8255_2", FUNC(i8255_device::read), FUNC(i8255_device::write));
+	map(0x3c, 0x3f).rw("ppi8255_3", FUNC(i8255_device::read), FUNC(i8255_device::write));
+}
 
 
 
@@ -94,13 +92,13 @@ ADDRESS_MAP_END
 
 ********************************************************/
 
-READ8_MEMBER(kopunch_state::sensors1_r)
+uint8_t kopunch_state::sensors1_r()
 {
 	// punch strength low bits
 	return machine().rand();
 }
 
-READ8_MEMBER(kopunch_state::sensors2_r)
+uint8_t kopunch_state::sensors2_r()
 {
 	// d0-d2: punch strength high bits
 	// d3: coin 2
@@ -111,15 +109,18 @@ READ8_MEMBER(kopunch_state::sensors2_r)
 	return (machine().rand() & 0x07) | ioport("SYSTEM")->read();
 }
 
-WRITE8_MEMBER(kopunch_state::lamp_w)
+void kopunch_state::lamp_w(uint8_t data)
 {
-	set_led_status(machine(), 0, ~data & 0x80);
+	m_lamp = BIT(~data, 7);
 }
 
-WRITE8_MEMBER(kopunch_state::coin_w)
+void kopunch_state::coin_w(uint8_t data)
 {
-	coin_counter_w(machine(), 0, ~data & 0x80);
-	coin_counter_w(machine(), 1, ~data & 0x40);
+	// toggles from FF to 00 to FF after output mode is configured, so probably no coin counters here
+	if (!BIT(data, 7))
+		m_maincpu->set_input_line(I8085_RST65_LINE, CLEAR_LINE);
+	if (!BIT(data, 6))
+		m_maincpu->set_input_line(I8085_RST55_LINE, CLEAR_LINE);
 
 //  if ((data & 0x3f) != 0x3e)
 //      printf("port 34 = %02x   ",data);
@@ -143,11 +144,11 @@ static INPUT_PORTS_START( kopunch )
 	PORT_BIT( 0x80, IP_ACTIVE_LOW, IPT_UNKNOWN ) // related to above startbuttons
 
 	PORT_START("SYSTEM")
-	PORT_BIT( 0x07, IP_ACTIVE_HIGH, IPT_SPECIAL ) // punch strength (high 3 bits)
+	PORT_BIT( 0x07, IP_ACTIVE_HIGH, IPT_CUSTOM ) // punch strength (high 3 bits)
 	PORT_BIT( 0x08, IP_ACTIVE_LOW, IPT_COIN2 ) PORT_CHANGED_MEMBER(DEVICE_SELF, kopunch_state, right_coin_inserted, 0)
-	PORT_BIT( 0x10, IP_ACTIVE_LOW, IPT_SPECIAL ) // sensor
-	PORT_BIT( 0x20, IP_ACTIVE_LOW, IPT_SPECIAL ) // sensor
-	PORT_BIT( 0x40, IP_ACTIVE_LOW, IPT_SPECIAL ) // sensor
+	PORT_BIT( 0x10, IP_ACTIVE_LOW, IPT_CUSTOM ) // sensor
+	PORT_BIT( 0x20, IP_ACTIVE_LOW, IPT_CUSTOM ) // sensor
+	PORT_BIT( 0x40, IP_ACTIVE_LOW, IPT_CUSTOM ) // sensor
 	PORT_BIT( 0x80, IP_ACTIVE_LOW, IPT_COIN1 ) PORT_CHANGED_MEMBER(DEVICE_SELF, kopunch_state, left_coin_inserted, 0)
 
 	PORT_START("DSW")
@@ -210,7 +211,7 @@ static const gfx_layout bg_layout =
 	8*8
 };
 
-static GFXDECODE_START( kopunch )
+static GFXDECODE_START( gfx_kopunch )
 	GFXDECODE_ENTRY( "gfx1", 0, fg_layout, 0, 1 )
 	GFXDECODE_ENTRY( "gfx2", 0, bg_layout, 0, 1 )
 GFXDECODE_END
@@ -218,6 +219,8 @@ GFXDECODE_END
 
 void kopunch_state::machine_start()
 {
+	m_lamp.resolve();
+
 	// zerofill
 	m_gfxbank = 0;
 	m_scrollx = 0;
@@ -227,55 +230,54 @@ void kopunch_state::machine_start()
 	save_item(NAME(m_scrollx));
 }
 
-static MACHINE_CONFIG_START( kopunch, kopunch_state )
-
+void kopunch_state::kopunch(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", I8085A, 4000000) // 4 MHz?
-	MCFG_CPU_PROGRAM_MAP(kopunch_map)
-	MCFG_CPU_IO_MAP(kopunch_io_map)
-	MCFG_CPU_VBLANK_INT_DRIVER("screen", kopunch_state, vblank_interrupt)
+	I8085A(config, m_maincpu, 4000000); // 4 MHz?
+	m_maincpu->set_addrmap(AS_PROGRAM, &kopunch_state::kopunch_map);
+	m_maincpu->set_addrmap(AS_IO, &kopunch_state::kopunch_io_map);
 
-	MCFG_DEVICE_ADD("ppi8255_0", I8255A, 0)
+	i8255_device &ppi0(I8255A(config, "ppi8255_0"));
 	// $30 - always $9b (PPI mode 0, ports A & B & C as input)
-	MCFG_I8255_IN_PORTA_CB(IOPORT("P1"))
-	MCFG_I8255_IN_PORTB_CB(READ8(kopunch_state, sensors1_r))
-	MCFG_I8255_IN_PORTC_CB(READ8(kopunch_state, sensors2_r))
+	ppi0.in_pa_callback().set_ioport("P1");
+	ppi0.in_pb_callback().set(FUNC(kopunch_state::sensors1_r));
+	ppi0.in_pc_callback().set(FUNC(kopunch_state::sensors2_r));
 
-	MCFG_DEVICE_ADD("ppi8255_1", I8255A, 0)
+	i8255_device &ppi1(I8255A(config, "ppi8255_1"));
 	// $34 - always $80 (PPI mode 0, ports A & B & C as output)
-	MCFG_I8255_OUT_PORTA_CB(WRITE8(kopunch_state, coin_w))
-	MCFG_I8255_OUT_PORTB_CB(LOGGER("PPI8255 - unmapped write port B", 0))
-	MCFG_I8255_OUT_PORTC_CB(LOGGER("PPI8255 - unmapped write port C", 0))
+	ppi1.out_pa_callback().set(FUNC(kopunch_state::coin_w));
+	ppi1.out_pb_callback().set_log("PPI8255 - unmapped write port B");
+	ppi1.out_pc_callback().set_log("PPI8255 - unmapped write port C");
 
-	MCFG_DEVICE_ADD("ppi8255_2", I8255A, 0)
+	i8255_device &ppi2(I8255A(config, "ppi8255_2"));
 	// $38 - always $89 (PPI mode 0, ports A & B as output, port C as input)
-	MCFG_I8255_OUT_PORTA_CB(WRITE8(kopunch_state, lamp_w))
-	MCFG_I8255_OUT_PORTB_CB(LOGGER("PPI8255 - unmapped write port B", 0))
-	MCFG_I8255_IN_PORTC_CB(IOPORT("DSW"))
+	ppi2.out_pa_callback().set(FUNC(kopunch_state::lamp_w));
+	ppi2.out_pb_callback().set_log("PPI8255 - unmapped write port B");
+	ppi2.in_pc_callback().set_ioport("DSW");
 
-	MCFG_DEVICE_ADD("ppi8255_3", I8255A, 0)
+	i8255_device &ppi3(I8255A(config, "ppi8255_3"));
 	// $3c - always $88 (PPI mode 0, ports A & B & lower C as output, upper C as input)
-	MCFG_I8255_OUT_PORTA_CB(WRITE8(kopunch_state, scroll_x_w))
-	MCFG_I8255_OUT_PORTB_CB(WRITE8(kopunch_state, scroll_y_w))
-	MCFG_I8255_IN_PORTC_CB(IOPORT("P2"))
-	MCFG_I8255_OUT_PORTC_CB(WRITE8(kopunch_state, gfxbank_w))
+	ppi3.out_pa_callback().set(FUNC(kopunch_state::scroll_x_w));
+	ppi3.out_pb_callback().set(FUNC(kopunch_state::scroll_y_w));
+	ppi3.in_pc_callback().set_ioport("P2");
+	ppi3.out_pc_callback().set(FUNC(kopunch_state::gfxbank_w));
 
 	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_REFRESH_RATE(60)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(0))
-	MCFG_SCREEN_SIZE(32*8, 32*8)
-	MCFG_SCREEN_VISIBLE_AREA(0*8, 32*8-1, 2*8, 28*8-1)
-	MCFG_SCREEN_UPDATE_DRIVER(kopunch_state, screen_update_kopunch)
-	MCFG_SCREEN_PALETTE("palette")
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_RASTER));
+	screen.set_refresh_hz(60);
+	screen.set_vblank_time(ATTOSECONDS_IN_USEC(0));
+	screen.set_size(32*8, 32*8);
+	screen.set_visarea(0*8, 32*8-1, 2*8, 28*8-1);
+	screen.set_screen_update(FUNC(kopunch_state::screen_update_kopunch));
+	screen.set_palette("palette");
+	screen.screen_vblank().set_inputline(m_maincpu, I8085_RST75_LINE);
 
-	MCFG_GFXDECODE_ADD("gfxdecode", "palette", kopunch)
-	MCFG_PALETTE_ADD("palette", 8)
-	MCFG_PALETTE_INIT_OWNER(kopunch_state, kopunch)
+	GFXDECODE(config, m_gfxdecode, "palette", gfx_kopunch);
+	PALETTE(config, "palette", FUNC(kopunch_state::kopunch_palette), 8);
 
 	/* sound hardware */
 	// ...
-MACHINE_CONFIG_END
+}
 
 
 
@@ -310,4 +312,4 @@ ROM_START( kopunch )
 ROM_END
 
 
-GAME( 1981, kopunch, 0, kopunch, kopunch, driver_device, 0, ROT270, "Sega", "KO Punch", MACHINE_NO_SOUND | MACHINE_NOT_WORKING | MACHINE_MECHANICAL | MACHINE_SUPPORTS_SAVE )
+GAME( 1981, kopunch, 0, kopunch, kopunch, kopunch_state, empty_init, ROT270, "Sega", "KO Punch", MACHINE_NO_SOUND | MACHINE_NOT_WORKING | MACHINE_MECHANICAL | MACHINE_SUPPORTS_SAVE )

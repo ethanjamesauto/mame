@@ -9,53 +9,47 @@
 
 ***************************************************************************/
 
-#ifndef __H8_SCI_H__
-#define __H8_SCI_H__
+#ifndef MAME_CPU_H8_H8_SCI_H
+#define MAME_CPU_H8_H8_SCI_H
+
+#pragma once
 
 #include "h8.h"
 #include "h8_intc.h"
 
-#define MCFG_H8_SCI_ADD( _tag, intc, eri, rxi, txi, tei ) \
-	MCFG_DEVICE_ADD( _tag, H8_SCI, 0 ) \
-	downcast<h8_sci_device *>(device)->set_info(intc, eri, rxi, txi, tei);
-
-#define MCFG_H8_SCI_SET_EXTERNAL_CLOCK_PERIOD(_period) \
-	downcast<h8_sci_device *>(device)->set_external_clock_period(_period);
-
-#define MCFG_H8_SCI_TX_CALLBACK(_devcb) \
-	devcb = &h8_sci_device::set_tx_cb(*device, DEVCB_##_devcb);
-
-#define MCFG_H8_SCI_CLK_CALLBACK(_devcb) \
-	devcb = &h8_sci_device::set_clk_cb(*device, DEVCB_##_devcb);
-
 class h8_sci_device : public device_t {
 public:
-	h8_sci_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	h8_sci_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
+	h8_sci_device(const machine_config &mconfig, const char *tag, device_t *owner, const char *intc, int eri, int rxi, int txi, int tei)
+		: h8_sci_device(mconfig, tag, owner, 0)
+	{
+		set_info(intc, eri, rxi, txi, tei);
+	}
 
 	void set_info(const char *intc, int eri, int rxi, int txi, int tei);
 	void set_external_clock_period(const attotime &_period);
 
-	DECLARE_WRITE8_MEMBER(smr_w);
-	DECLARE_READ8_MEMBER(smr_r);
-	DECLARE_WRITE8_MEMBER(brr_w);
-	DECLARE_READ8_MEMBER(brr_r);
-	DECLARE_WRITE8_MEMBER(scr_w);
-	DECLARE_READ8_MEMBER(scr_r);
-	DECLARE_WRITE8_MEMBER(tdr_w);
-	DECLARE_READ8_MEMBER(tdr_r);
-	DECLARE_WRITE8_MEMBER(ssr_w);
-	DECLARE_READ8_MEMBER(ssr_r);
-	DECLARE_READ8_MEMBER(rdr_r);
-	DECLARE_WRITE8_MEMBER(scmr_w);
-	DECLARE_READ8_MEMBER(scmr_r);
+	void smr_w(uint8_t data);
+	uint8_t smr_r();
+	void brr_w(uint8_t data);
+	uint8_t brr_r();
+	void scr_w(uint8_t data);
+	uint8_t scr_r();
+	void tdr_w(uint8_t data);
+	uint8_t tdr_r();
+	void ssr_w(uint8_t data);
+	uint8_t ssr_r();
+	uint8_t rdr_r();
+	void scmr_w(uint8_t data);
+	uint8_t scmr_r();
 
 	DECLARE_WRITE_LINE_MEMBER(rx_w);
 	DECLARE_WRITE_LINE_MEMBER(clk_w);
 
-	template<class _Object> static devcb_base &set_tx_cb(device_t &device, _Object object) { return downcast<h8_sci_device &>(device).tx_cb.set_callback(object); }
-	template<class _Object> static devcb_base &set_clk_cb(device_t &device, _Object object) { return downcast<h8_sci_device &>(device).clk_cb.set_callback(object); }
+	auto tx_handler() { return tx_cb.bind(); }
+	auto clk_handler() { return clk_cb.bind(); }
 
-	UINT64 internal_update(UINT64 current_time);
+	uint64_t internal_update(uint64_t current_time);
 
 protected:
 	enum {
@@ -121,9 +115,10 @@ protected:
 	int tx_state, rx_state, tx_bit, rx_bit, clock_state, clock_mode, tx_parity, rx_parity, ext_clock_counter;
 	bool clock_value, ext_clock_value, rx_value;
 
-	UINT8 rdr, tdr, smr, scr, ssr, brr, rsr, tsr;
-	UINT64 clock_base, divider;
+	uint8_t rdr, tdr, smr, scr, ssr, brr, rsr, tsr;
+	uint64_t clock_base, divider;
 
+	std::string last_clock_message;
 
 	virtual void device_start() override;
 	virtual void device_reset() override;
@@ -142,6 +137,6 @@ protected:
 	bool has_recv_error() const;
 };
 
-extern const device_type H8_SCI;
+DECLARE_DEVICE_TYPE(H8_SCI, h8_sci_device)
 
-#endif
+#endif // MAME_CPU_H8_H8_SCI_H

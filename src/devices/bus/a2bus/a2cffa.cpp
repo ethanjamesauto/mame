@@ -2,7 +2,7 @@
 // copyright-holders:R. Belmont
 /*********************************************************************
 
-    a2cffa.c
+    a2cffa.cpp
 
     Implementation of Rich Dreher's IDE/CompactFlash card
     for the Apple II.
@@ -11,34 +11,20 @@
 
 *********************************************************************/
 
+#include "emu.h"
 #include "a2cffa.h"
-#include "includes/apple2.h"
-#include "machine/ataintf.h"
 #include "imagedev/harddriv.h"
 #include "softlist.h"
-
-/***************************************************************************
-    PARAMETERS
-***************************************************************************/
-
-#define LOG_A2CFFA  1
 
 //**************************************************************************
 //  GLOBAL VARIABLES
 //**************************************************************************
 
-const device_type A2BUS_CFFA2 = &device_creator<a2bus_cffa2_device>;
-const device_type A2BUS_CFFA2_6502 = &device_creator<a2bus_cffa2_6502_device>;
+DEFINE_DEVICE_TYPE(A2BUS_CFFA2,      a2bus_cffa2_device,      "a2cffa2",  "CFFA 2.0 Compact Flash (65C02 firmware, www.dreher.net)")
+DEFINE_DEVICE_TYPE(A2BUS_CFFA2_6502, a2bus_cffa2_6502_device, "a2cffa02", "CFFA 2.0 Compact Flash (6502 firmware, www.dreher.net)")
 
 #define CFFA2_ROM_REGION  "cffa2_rom"
 #define CFFA2_ATA_TAG     "cffa2_ata"
-
-MACHINE_CONFIG_FRAGMENT( cffa2 )
-	MCFG_ATA_INTERFACE_ADD(CFFA2_ATA_TAG, ata_devices, "hdd", nullptr, false)
-
-// not yet, the core explodes
-//  MCFG_SOFTWARE_LIST_ADD("hdd_list", "apple2gs_hdd")
-MACHINE_CONFIG_END
 
 ROM_START( cffa2 )
 	ROM_REGION(0x1000, CFFA2_ROM_REGION, 0)
@@ -55,25 +41,27 @@ ROM_END
 ***************************************************************************/
 
 //-------------------------------------------------
-//  machine_config_additions - device-specific
-//  machine configurations
+//  device_add_mconfig - add device configuration
 //-------------------------------------------------
 
-machine_config_constructor a2bus_cffa2000_device::device_mconfig_additions() const
+void a2bus_cffa2000_device::device_add_mconfig(machine_config &config)
 {
-	return MACHINE_CONFIG_NAME( cffa2 );
+	ATA_INTERFACE(config, m_ata).options(ata_devices, "hdd", "hdd", false);
+
+// not yet, the core explodes
+//  SOFTWARE_LIST(config, "hdd_list").set_original("apple2gs_hdd");
 }
 
 //-------------------------------------------------
 //  rom_region - device-specific ROM region
 //-------------------------------------------------
 
-const rom_entry *a2bus_cffa2000_device::device_rom_region() const
+const tiny_rom_entry *a2bus_cffa2000_device::device_rom_region() const
 {
 	return ROM_NAME( cffa2 );
 }
 
-const rom_entry *a2bus_cffa2_6502_device::device_rom_region() const
+const tiny_rom_entry *a2bus_cffa2_6502_device::device_rom_region() const
 {
 	return ROM_NAME( cffa2_6502 );
 }
@@ -83,21 +71,21 @@ const rom_entry *a2bus_cffa2_6502_device::device_rom_region() const
 //  LIVE DEVICE
 //**************************************************************************
 
-a2bus_cffa2000_device::a2bus_cffa2000_device(const machine_config &mconfig, device_type type, const char *name, const char *tag, device_t *owner, UINT32 clock, const char *shortname, const char *source) :
-	device_t(mconfig, type, name, tag, owner, clock, shortname, source),
+a2bus_cffa2000_device::a2bus_cffa2000_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock) :
+	device_t(mconfig, type, tag, owner, clock),
 	device_a2bus_card_interface(mconfig, *this),
 	m_ata(*this, CFFA2_ATA_TAG), m_rom(nullptr), m_lastdata(0), m_lastreaddata(0), m_writeprotect(false), m_inwritecycle(false)
 {
 }
 
-a2bus_cffa2_device::a2bus_cffa2_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock) :
-	a2bus_cffa2000_device(mconfig, A2BUS_CFFA2, "CFFA2000 Compact Flash (65C02 firmware, www.dreher.net)", tag, owner, clock, "a2cffa2", __FILE__),
+a2bus_cffa2_device::a2bus_cffa2_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock) :
+	a2bus_cffa2000_device(mconfig, A2BUS_CFFA2, tag, owner, clock),
 	device_nvram_interface(mconfig, *this)
 {
 }
 
-a2bus_cffa2_6502_device::a2bus_cffa2_6502_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock) :
-	a2bus_cffa2000_device(mconfig, A2BUS_CFFA2, "CFFA2000 Compact Flash (6502 firmware, www.dreher.net)", tag, owner, clock, "a2cffa02", __FILE__),
+a2bus_cffa2_6502_device::a2bus_cffa2_6502_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock) :
+	a2bus_cffa2000_device(mconfig, A2BUS_CFFA2_6502, tag, owner, clock),
 	device_nvram_interface(mconfig, *this)
 {
 }
@@ -108,9 +96,6 @@ a2bus_cffa2_6502_device::a2bus_cffa2_6502_device(const machine_config &mconfig, 
 
 void a2bus_cffa2000_device::device_start()
 {
-	// set_a2bus_device makes m_slot valid
-	set_a2bus_device();
-
 	m_rom = device().machine().root_device().memregion(this->subtag(CFFA2_ROM_REGION).c_str())->base();
 
 	// patch default setting so slave device is enabled and up to 13 devices on both connectors
@@ -135,7 +120,7 @@ void a2bus_cffa2000_device::device_reset()
     read_c0nx - called for reads from this card's c0nx space
 -------------------------------------------------*/
 
-UINT8 a2bus_cffa2000_device::read_c0nx(address_space &space, UINT8 offset)
+uint8_t a2bus_cffa2000_device::read_c0nx(uint8_t offset)
 {
 	switch (offset)
 	{
@@ -154,7 +139,7 @@ UINT8 a2bus_cffa2000_device::read_c0nx(address_space &space, UINT8 offset)
 			// Apple /// driver uses sta $c080,x when writing, which causes spurious reads of c088
 			if (!m_inwritecycle)
 			{
-				m_lastreaddata = m_ata->read_cs0(space, offset - 8, 0xffff);
+				m_lastreaddata = m_ata->cs0_r(offset - 8);
 			}
 			return m_lastreaddata & 0xff;
 
@@ -165,7 +150,7 @@ UINT8 a2bus_cffa2000_device::read_c0nx(address_space &space, UINT8 offset)
 		case 0xd:
 		case 0xe:
 		case 0xf:
-			return m_ata->read_cs0(space, offset-8, 0xff);
+			return m_ata->cs0_r(offset-8, 0xff);
 	}
 
 	return 0xff;
@@ -176,7 +161,7 @@ UINT8 a2bus_cffa2000_device::read_c0nx(address_space &space, UINT8 offset)
     write_c0nx - called for writes to this card's c0nx space
 -------------------------------------------------*/
 
-void a2bus_cffa2000_device::write_c0nx(address_space &space, UINT8 offset, UINT8 data)
+void a2bus_cffa2000_device::write_c0nx(uint8_t offset, uint8_t data)
 {
 	m_inwritecycle = false;
 
@@ -201,7 +186,7 @@ void a2bus_cffa2000_device::write_c0nx(address_space &space, UINT8 offset, UINT8
 			m_lastdata &= 0xff00;
 			m_lastdata |= data;
 //          printf("%02x to 8, m_lastdata = %x\n", data, m_lastdata);
-			m_ata->write_cs0(space, offset-8, m_lastdata, 0xffff);
+			m_ata->cs0_w(offset-8, m_lastdata);
 			break;
 
 		case 9:
@@ -211,7 +196,7 @@ void a2bus_cffa2000_device::write_c0nx(address_space &space, UINT8 offset, UINT8
 		case 0xd:
 		case 0xe:
 		case 0xf:
-			m_ata->write_cs0(space, offset-8, data, 0xff);
+			m_ata->cs0_w(offset-8, data, 0xff);
 			break;
 	}
 }
@@ -220,9 +205,9 @@ void a2bus_cffa2000_device::write_c0nx(address_space &space, UINT8 offset, UINT8
     read_cnxx - called for reads from this card's cnxx space
 -------------------------------------------------*/
 
-UINT8 a2bus_cffa2000_device::read_cnxx(address_space &space, UINT8 offset)
+uint8_t a2bus_cffa2000_device::read_cnxx(uint8_t offset)
 {
-	int slotimg = m_slot * 0x100;
+	int const slotimg = slotno() * 0x100;
 
 	// ROM contains a CnXX image for each of slots 1-7
 	return m_eeprom[offset+slotimg];
@@ -232,16 +217,15 @@ UINT8 a2bus_cffa2000_device::read_cnxx(address_space &space, UINT8 offset)
     read_c800 - called for reads from this card's c800 space
 -------------------------------------------------*/
 
-UINT8 a2bus_cffa2000_device::read_c800(address_space &space, UINT16 offset)
+uint8_t a2bus_cffa2000_device::read_c800(uint16_t offset)
 {
 	return m_eeprom[offset+0x800];
 }
 
-void a2bus_cffa2000_device::write_c800(address_space &space, UINT16 offset, UINT8 data)
+void a2bus_cffa2000_device::write_c800(uint16_t offset, uint8_t data)
 {
 	if (!m_writeprotect)
 	{
-//      printf("Write %02x to EEPROM at %x (PC=%x)\n", data, offset, space.device().safe_pc());
 		m_eeprom[offset + 0x800] = data;
 	}
 }

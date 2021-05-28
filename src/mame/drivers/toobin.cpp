@@ -12,6 +12,9 @@
     Known bugs:
         * none at this time
 
+    The video sync chain is almost identical to System 2, though many other
+    hardware aspects are very different.
+
 ****************************************************************************
 
     Memory map (TBA)
@@ -20,11 +23,14 @@
 
 
 #include "emu.h"
-#include "cpu/m68000/m68000.h"
-#include "machine/atarigen.h"
 #include "includes/toobin.h"
 
-#define MASTER_CLOCK        XTAL_32MHz
+#include "cpu/m68000/m68000.h"
+#include "machine/eeprompar.h"
+#include "machine/watchdog.h"
+#include "speaker.h"
+
+static constexpr XTAL MASTER_CLOCK = 32_MHz_XTAL;
 
 
 
@@ -34,17 +40,15 @@
  *
  *************************************/
 
-void toobin_state::update_interrupts()
+TIMER_CALLBACK_MEMBER(toobin_state::scanline_interrupt)
 {
-	m_maincpu->set_input_line(1, m_scanline_int_state ? ASSERT_LINE : CLEAR_LINE);
-	m_maincpu->set_input_line(2, m_sound_int_state ? ASSERT_LINE : CLEAR_LINE);
-	m_maincpu->set_input_line(3, m_scanline_int_state && m_sound_int_state ? ASSERT_LINE : CLEAR_LINE);
+	m_maincpu->set_input_line(M68K_IRQ_IPL0, ASSERT_LINE);
+	m_scanline_interrupt_timer->adjust(m_screen->frame_period());
 }
 
-
-MACHINE_RESET_MEMBER(toobin_state,toobin)
+void toobin_state::machine_start()
 {
-	atarigen_state::machine_reset();
+	m_scanline_interrupt_timer = machine().scheduler().timer_alloc(timer_expired_delegate(FUNC(toobin_state::scanline_interrupt), this));
 }
 
 
@@ -55,7 +59,7 @@ MACHINE_RESET_MEMBER(toobin_state,toobin)
  *
  *************************************/
 
-WRITE16_MEMBER(toobin_state::interrupt_scan_w)
+void toobin_state::interrupt_scan_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	int oldword = m_interrupt_scan[offset];
 	int newword = oldword;
@@ -65,8 +69,13 @@ WRITE16_MEMBER(toobin_state::interrupt_scan_w)
 	if (oldword != newword)
 	{
 		m_interrupt_scan[offset] = newword;
-		scanline_int_set(*m_screen, newword & 0x1ff);
+		m_scanline_interrupt_timer->adjust(m_screen->time_until_pos(newword & 0x1ff));
 	}
+}
+
+void toobin_state::scanline_int_ack_w(uint16_t data)
+{
+	m_maincpu->set_input_line(M68K_IRQ_IPL0, CLEAR_LINE);
 }
 
 
@@ -78,30 +87,31 @@ WRITE16_MEMBER(toobin_state::interrupt_scan_w)
  *************************************/
 
 /* full address map decoded from schematics */
-static ADDRESS_MAP_START( main_map, AS_PROGRAM, 16, toobin_state )
-	ADDRESS_MAP_GLOBAL_MASK(0xc7ffff)
-	AM_RANGE(0x000000, 0x07ffff) AM_ROM
-	AM_RANGE(0xc00000, 0xc07fff) AM_RAM_DEVWRITE("playfield", tilemap_device, write) AM_SHARE("playfield")
-	AM_RANGE(0xc08000, 0xc097ff) AM_MIRROR(0x046000) AM_RAM_DEVWRITE("alpha", tilemap_device, write) AM_SHARE("alpha")
-	AM_RANGE(0xc09800, 0xc09fff) AM_MIRROR(0x046000) AM_RAM AM_SHARE("mob")
-	AM_RANGE(0xc10000, 0xc107ff) AM_MIRROR(0x047800) AM_RAM_WRITE(paletteram_w) AM_SHARE("paletteram")
-	AM_RANGE(0xff6000, 0xff6001) AM_READNOP     /* who knows? read at controls time */
-	AM_RANGE(0xff8000, 0xff8001) AM_MIRROR(0x4500fe) AM_WRITE(watchdog_reset16_w)
-	AM_RANGE(0xff8100, 0xff8101) AM_MIRROR(0x4500fe) AM_DEVWRITE8("jsa", atari_jsa_i_device, main_command_w, 0x00ff)
-	AM_RANGE(0xff8300, 0xff8301) AM_MIRROR(0x45003e) AM_WRITE(intensity_w)
-	AM_RANGE(0xff8340, 0xff8341) AM_MIRROR(0x45003e) AM_WRITE(interrupt_scan_w) AM_SHARE("interrupt_scan")
-	AM_RANGE(0xff8380, 0xff8381) AM_MIRROR(0x45003e) AM_RAM_WRITE(slip_w) AM_SHARE("mob:slip")
-	AM_RANGE(0xff83c0, 0xff83c1) AM_MIRROR(0x45003e) AM_WRITE(scanline_int_ack_w)
-	AM_RANGE(0xff8400, 0xff8401) AM_MIRROR(0x4500fe) AM_DEVWRITE("jsa", atari_jsa_i_device, sound_reset_w)
-	AM_RANGE(0xff8500, 0xff8501) AM_MIRROR(0x4500fe) AM_DEVWRITE("eeprom", atari_eeprom_device, unlock_write)
-	AM_RANGE(0xff8600, 0xff8601) AM_MIRROR(0x4500fe) AM_WRITE(xscroll_w) AM_SHARE("xscroll")
-	AM_RANGE(0xff8700, 0xff8701) AM_MIRROR(0x4500fe) AM_WRITE(yscroll_w) AM_SHARE("yscroll")
-	AM_RANGE(0xff8800, 0xff8801) AM_MIRROR(0x4507fe) AM_READ_PORT("FF8800")
-	AM_RANGE(0xff9000, 0xff9001) AM_MIRROR(0x4507fe) AM_READ_PORT("FF9000")
-	AM_RANGE(0xff9800, 0xff9801) AM_MIRROR(0x4507fe) AM_DEVREAD8("jsa", atari_jsa_i_device, main_response_r, 0x00ff)
-	AM_RANGE(0xffa000, 0xffafff) AM_MIRROR(0x451000) AM_DEVREADWRITE8("eeprom", atari_eeprom_device, read, write, 0x00ff)
-	AM_RANGE(0xffc000, 0xffffff) AM_MIRROR(0x450000) AM_RAM
-ADDRESS_MAP_END
+void toobin_state::main_map(address_map &map)
+{
+	map.global_mask(0xc7ffff);
+	map(0x000000, 0x07ffff).rom();
+	map(0xc00000, 0xc07fff).ram().w(m_playfield_tilemap, FUNC(tilemap_device::write16)).share("playfield");
+	map(0xc08000, 0xc097ff).mirror(0x046000).ram().w(m_alpha_tilemap, FUNC(tilemap_device::write16)).share("alpha");
+	map(0xc09800, 0xc09fff).mirror(0x046000).ram().share("mob");
+	map(0xc10000, 0xc107ff).mirror(0x047800).ram().w(FUNC(toobin_state::paletteram_w)).share("paletteram");
+	map(0x826000, 0x826001).mirror(0x4500fe).nopr();     /* who knows? read at controls time */
+	map(0x828000, 0x828001).mirror(0x4500fe).w("watchdog", FUNC(watchdog_timer_device::reset16_w));
+	map(0x828101, 0x828101).mirror(0x4500fe).w(m_jsa, FUNC(atari_jsa_i_device::main_command_w));
+	map(0x828300, 0x828301).mirror(0x45003e).w(FUNC(toobin_state::intensity_w));
+	map(0x828340, 0x828341).mirror(0x45003e).w(FUNC(toobin_state::interrupt_scan_w)).share("interrupt_scan");
+	map(0x828380, 0x828381).mirror(0x45003e).ram().w(FUNC(toobin_state::slip_w)).share("mob:slip");
+	map(0x8283c0, 0x8283c1).mirror(0x45003e).w(FUNC(toobin_state::scanline_int_ack_w));
+	map(0x828400, 0x828401).mirror(0x4500fe).w(m_jsa, FUNC(atari_jsa_i_device::sound_reset_w));
+	map(0x828500, 0x828501).mirror(0x4500fe).w("eeprom", FUNC(eeprom_parallel_28xx_device::unlock_write16));
+	map(0x828600, 0x828601).mirror(0x4500fe).w(FUNC(toobin_state::xscroll_w)).share("xscroll");
+	map(0x828700, 0x828701).mirror(0x4500fe).w(FUNC(toobin_state::yscroll_w)).share("yscroll");
+	map(0x828800, 0x828801).mirror(0x4507fe).portr("FF8800");
+	map(0x829000, 0x829001).mirror(0x4507fe).portr("FF9000");
+	map(0x829801, 0x829801).mirror(0x4507fe).r(m_jsa, FUNC(atari_jsa_i_device::main_response_r));
+	map(0x82a000, 0x82afff).mirror(0x451000).rw("eeprom", FUNC(eeprom_parallel_28xx_device::read), FUNC(eeprom_parallel_28xx_device::write)).umask16(0x00ff);
+	map(0x82c000, 0x82ffff).mirror(0x450000).ram();
+}
 
 
 
@@ -179,7 +189,7 @@ static const gfx_layout molayout =
 };
 
 
-static GFXDECODE_START( toobin )
+static GFXDECODE_START( gfx_toobin )
 	GFXDECODE_ENTRY( "gfx1", 0, pflayout,     0, 16 )
 	GFXDECODE_ENTRY( "gfx2", 0, molayout,   256, 16 )
 	GFXDECODE_ENTRY( "gfx3", 0, anlayout,   512, 64 )
@@ -193,43 +203,43 @@ GFXDECODE_END
  *
  *************************************/
 
-static MACHINE_CONFIG_START( toobin, toobin_state )
-
+void toobin_state::toobin(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", M68010, MASTER_CLOCK/4)
-	MCFG_CPU_PROGRAM_MAP(main_map)
+	m68010_device &maincpu(M68010(config, m_maincpu, MASTER_CLOCK/4));
+	maincpu.set_addrmap(AS_PROGRAM, &toobin_state::main_map);
+	maincpu.disable_interrupt_mixer();
 
-	MCFG_MACHINE_RESET_OVERRIDE(toobin_state,toobin)
+	EEPROM_2804(config, "eeprom").lock_after_write(true);
 
-	MCFG_ATARI_EEPROM_2804_ADD("eeprom")
-
-	MCFG_WATCHDOG_VBLANK_INIT(8)
+	WATCHDOG_TIMER(config, "watchdog").set_vblank_count(m_screen, 8);
 
 	/* video hardware */
-	MCFG_TILEMAP_ADD_STANDARD("playfield", "gfxdecode", 4, toobin_state, get_playfield_tile_info, 8,8, SCAN_ROWS, 128,64)
-	MCFG_TILEMAP_ADD_STANDARD_TRANSPEN("alpha", "gfxdecode", 2, toobin_state, get_alpha_tile_info, 8,8, SCAN_ROWS, 64,48, 0)
-	MCFG_ATARI_MOTION_OBJECTS_ADD("mob", "screen", toobin_state::s_mob_config)
-	MCFG_ATARI_MOTION_OBJECTS_GFXDECODE("gfxdecode")
+	TILEMAP(config, m_playfield_tilemap, m_gfxdecode, 4, 8,8, TILEMAP_SCAN_ROWS, 128,64).set_info_callback(FUNC(toobin_state::get_playfield_tile_info));
+	TILEMAP(config, m_alpha_tilemap, m_gfxdecode, 2, 8,8, TILEMAP_SCAN_ROWS, 64,48, 0).set_info_callback(FUNC(toobin_state::get_alpha_tile_info));
 
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_VIDEO_ATTRIBUTES(VIDEO_UPDATE_BEFORE_VBLANK)
-	MCFG_SCREEN_RAW_PARAMS(MASTER_CLOCK/2, 640, 0, 512, 416, 0, 384)
-	MCFG_SCREEN_UPDATE_DRIVER(toobin_state, screen_update)
+	ATARI_MOTION_OBJECTS(config, m_mob, 0, m_screen, toobin_state::s_mob_config);
+	m_mob->set_gfxdecode(m_gfxdecode);
 
-	MCFG_GFXDECODE_ADD("gfxdecode", "palette", toobin)
-	MCFG_PALETTE_ADD("palette", 1024)
+	SCREEN(config, m_screen, SCREEN_TYPE_RASTER);
+	m_screen->set_video_attributes(VIDEO_UPDATE_BEFORE_VBLANK);
+	m_screen->set_raw(MASTER_CLOCK/2, 640, 0, 512, 416, 0, 384);
+	m_screen->set_screen_update(FUNC(toobin_state::screen_update));
 
-	MCFG_VIDEO_START_OVERRIDE(toobin_state,toobin)
+	GFXDECODE(config, m_gfxdecode, m_palette, gfx_toobin);
+	PALETTE(config, m_palette).set_entries(1024);
 
 	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_STEREO("lspeaker", "rspeaker")
+	SPEAKER(config, "lspeaker").front_left();
+	SPEAKER(config, "rspeaker").front_right();
 
-	MCFG_ATARI_JSA_I_ADD("jsa", WRITELINE(atarigen_state, sound_int_write_line))
-	MCFG_ATARI_JSA_TEST_PORT("FF9000", 12)
-	MCFG_SOUND_ROUTE(0, "lspeaker", 1.0)
-	MCFG_SOUND_ROUTE(1, "rspeaker", 1.0)
-	MCFG_DEVICE_REMOVE("jsa:tms")
-MACHINE_CONFIG_END
+	ATARI_JSA_I(config, m_jsa, 0);
+	m_jsa->main_int_cb().set_inputline(m_maincpu, M68K_IRQ_IPL1);
+	m_jsa->test_read_cb().set_ioport("FF9000").bit(12);
+	m_jsa->add_route(0, "lspeaker", 1.0);
+	m_jsa->add_route(1, "rspeaker", 1.0);
+	config.device_remove("jsa:tms");
+}
 
 
 
@@ -250,9 +260,8 @@ ROM_START( toobin )
 	ROM_LOAD16_BYTE( "1136-5j.061",  0x060000, 0x010000, CRC(5ae3eeac) SHA1(583b6c3f61e8ad4d98449205fedecf3e21ee993c) )
 	ROM_LOAD16_BYTE( "1140-5f.061",  0x060001, 0x010000, CRC(dacbbd94) SHA1(0e3a93f439ff9f3dd57ee13604be02e9c74c8eec) )
 
-	ROM_REGION( 0x14000, "jsa:cpu", 0 ) /* 64k for 6502 code */
-	ROM_LOAD( "1141-2k.061",  0x010000, 0x004000, CRC(c0dcce1a) SHA1(285c13f08020cf5827eca2afcc2fa8a3a0a073e0) )
-	ROM_CONTINUE(             0x004000, 0x00c000 )
+	ROM_REGION( 0x10000, "jsa:cpu", 0 ) /* 64k for 6502 code */
+	ROM_LOAD( "1141-2k.061",  0x00000, 0x10000, CRC(c0dcce1a) SHA1(285c13f08020cf5827eca2afcc2fa8a3a0a073e0) )
 
 	ROM_REGION( 0x080000, "gfx1", 0 )
 	ROM_LOAD( "1101-1a.061",  0x000000, 0x010000, CRC(02696f15) SHA1(51856c331c45d287e574e2e4013b62a6472ad720) )
@@ -306,9 +315,8 @@ ROM_START( toobine )
 	ROM_LOAD16_BYTE( "1136-5j.061",  0x060000, 0x010000, CRC(5ae3eeac) SHA1(583b6c3f61e8ad4d98449205fedecf3e21ee993c) )
 	ROM_LOAD16_BYTE( "1140-5f.061",  0x060001, 0x010000, CRC(dacbbd94) SHA1(0e3a93f439ff9f3dd57ee13604be02e9c74c8eec) )
 
-	ROM_REGION( 0x14000, "jsa:cpu", 0 ) /* 64k for 6502 code */
-	ROM_LOAD( "1141-2k.061",  0x010000, 0x004000, CRC(c0dcce1a) SHA1(285c13f08020cf5827eca2afcc2fa8a3a0a073e0) )
-	ROM_CONTINUE(             0x004000, 0x00c000 )
+	ROM_REGION( 0x10000, "jsa:cpu", 0 ) /* 64k for 6502 code */
+	ROM_LOAD( "1141-2k.061",  0x00000, 0x10000, CRC(c0dcce1a) SHA1(285c13f08020cf5827eca2afcc2fa8a3a0a073e0) )
 
 	ROM_REGION( 0x080000, "gfx1", 0 )
 	ROM_LOAD( "1101-1a.061",  0x000000, 0x010000, CRC(02696f15) SHA1(51856c331c45d287e574e2e4013b62a6472ad720) )
@@ -362,9 +370,8 @@ ROM_START( toobing )
 	ROM_LOAD16_BYTE( "1136-5j.061",  0x060000, 0x010000, CRC(5ae3eeac) SHA1(583b6c3f61e8ad4d98449205fedecf3e21ee993c) )
 	ROM_LOAD16_BYTE( "1140-5f.061",  0x060001, 0x010000, CRC(dacbbd94) SHA1(0e3a93f439ff9f3dd57ee13604be02e9c74c8eec) )
 
-	ROM_REGION( 0x14000, "jsa:cpu", 0 ) /* 64k for 6502 code */
-	ROM_LOAD( "1141-2k.061",  0x010000, 0x004000, CRC(c0dcce1a) SHA1(285c13f08020cf5827eca2afcc2fa8a3a0a073e0) )
-	ROM_CONTINUE(             0x004000, 0x00c000 )
+	ROM_REGION( 0x10000, "jsa:cpu", 0 ) /* 64k for 6502 code */
+	ROM_LOAD( "1141-2k.061",  0x00000, 0x10000, CRC(c0dcce1a) SHA1(285c13f08020cf5827eca2afcc2fa8a3a0a073e0) )
 
 	ROM_REGION( 0x080000, "gfx1", 0 )
 	ROM_LOAD( "1101-1a.061",  0x000000, 0x010000, CRC(02696f15) SHA1(51856c331c45d287e574e2e4013b62a6472ad720) )
@@ -418,9 +425,8 @@ ROM_START( toobin2e )
 	ROM_LOAD16_BYTE( "1136-5j.061",  0x060000, 0x010000, CRC(5ae3eeac) SHA1(583b6c3f61e8ad4d98449205fedecf3e21ee993c) )
 	ROM_LOAD16_BYTE( "1140-5f.061",  0x060001, 0x010000, CRC(dacbbd94) SHA1(0e3a93f439ff9f3dd57ee13604be02e9c74c8eec) )
 
-	ROM_REGION( 0x14000, "jsa:cpu", 0 ) /* 64k for 6502 code */
-	ROM_LOAD( "1141-2k.061",  0x010000, 0x004000, CRC(c0dcce1a) SHA1(285c13f08020cf5827eca2afcc2fa8a3a0a073e0) )
-	ROM_CONTINUE(             0x004000, 0x00c000 )
+	ROM_REGION( 0x10000, "jsa:cpu", 0 ) /* 64k for 6502 code */
+	ROM_LOAD( "1141-2k.061",  0x00000, 0x10000, CRC(c0dcce1a) SHA1(285c13f08020cf5827eca2afcc2fa8a3a0a073e0) )
 
 	ROM_REGION( 0x080000, "gfx1", 0 )
 	ROM_LOAD( "1101-1a.061",  0x000000, 0x010000, CRC(02696f15) SHA1(51856c331c45d287e574e2e4013b62a6472ad720) )
@@ -474,9 +480,8 @@ ROM_START( toobin2 )
 	ROM_LOAD16_BYTE( "1136-5j.061",  0x060000, 0x010000, CRC(5ae3eeac) SHA1(583b6c3f61e8ad4d98449205fedecf3e21ee993c) )
 	ROM_LOAD16_BYTE( "1140-5f.061",  0x060001, 0x010000, CRC(dacbbd94) SHA1(0e3a93f439ff9f3dd57ee13604be02e9c74c8eec) )
 
-	ROM_REGION( 0x14000, "jsa:cpu", 0 ) /* 64k for 6502 code */
-	ROM_LOAD( "1141-2k.061",  0x010000, 0x004000, CRC(c0dcce1a) SHA1(285c13f08020cf5827eca2afcc2fa8a3a0a073e0) )
-	ROM_CONTINUE(             0x004000, 0x00c000 )
+	ROM_REGION( 0x10000, "jsa:cpu", 0 ) /* 64k for 6502 code */
+	ROM_LOAD( "1141-2k.061",  0x00000, 0x10000, CRC(c0dcce1a) SHA1(285c13f08020cf5827eca2afcc2fa8a3a0a073e0) )
 
 	ROM_REGION( 0x080000, "gfx1", 0 )
 	ROM_LOAD( "1101-1a.061",  0x000000, 0x010000, CRC(02696f15) SHA1(51856c331c45d287e574e2e4013b62a6472ad720) )
@@ -530,9 +535,8 @@ ROM_START( toobin1 )
 	ROM_LOAD16_BYTE( "1136-5j.061",  0x060000, 0x010000, CRC(5ae3eeac) SHA1(583b6c3f61e8ad4d98449205fedecf3e21ee993c) )
 	ROM_LOAD16_BYTE( "1140-5f.061",  0x060001, 0x010000, CRC(dacbbd94) SHA1(0e3a93f439ff9f3dd57ee13604be02e9c74c8eec) )
 
-	ROM_REGION( 0x14000, "jsa:cpu", 0 ) /* 64k for 6502 code */
-	ROM_LOAD( "1141-2k.061",  0x010000, 0x004000, CRC(c0dcce1a) SHA1(285c13f08020cf5827eca2afcc2fa8a3a0a073e0) )
-	ROM_CONTINUE(             0x004000, 0x00c000 )
+	ROM_REGION( 0x10000, "jsa:cpu", 0 ) /* 64k for 6502 code */
+	ROM_LOAD( "1141-2k.061",  0x00000, 0x10000, CRC(c0dcce1a) SHA1(285c13f08020cf5827eca2afcc2fa8a3a0a073e0) )
 
 	ROM_REGION( 0x080000, "gfx1", 0 )
 	ROM_LOAD( "1101-1a.061",  0x000000, 0x010000, CRC(02696f15) SHA1(51856c331c45d287e574e2e4013b62a6472ad720) )
@@ -581,9 +585,9 @@ ROM_END
  *
  *************************************/
 
-GAME( 1988, toobin,   0,      toobin, toobin, driver_device, 0, ROT270, "Atari Games", "Toobin' (rev 3)", MACHINE_SUPPORTS_SAVE )
-GAME( 1988, toobine,  toobin, toobin, toobin, driver_device, 0, ROT270, "Atari Games", "Toobin' (Europe, rev 3)", MACHINE_SUPPORTS_SAVE )
-GAME( 1988, toobing,  toobin, toobin, toobin, driver_device, 0, ROT270, "Atari Games", "Toobin' (German, rev 3)", MACHINE_SUPPORTS_SAVE )
-GAME( 1988, toobin2,  toobin, toobin, toobin, driver_device, 0, ROT270, "Atari Games", "Toobin' (rev 2)", MACHINE_SUPPORTS_SAVE )
-GAME( 1988, toobin2e, toobin, toobin, toobin, driver_device, 0, ROT270, "Atari Games", "Toobin' (Europe, rev 2)", MACHINE_SUPPORTS_SAVE )
-GAME( 1988, toobin1,  toobin, toobin, toobin, driver_device, 0, ROT270, "Atari Games", "Toobin' (rev 1)", MACHINE_SUPPORTS_SAVE )
+GAME( 1988, toobin,   0,      toobin, toobin, toobin_state, empty_init, ROT270, "Atari Games", "Toobin' (rev 3)", MACHINE_SUPPORTS_SAVE )
+GAME( 1988, toobine,  toobin, toobin, toobin, toobin_state, empty_init, ROT270, "Atari Games", "Toobin' (Europe, rev 3)", MACHINE_SUPPORTS_SAVE )
+GAME( 1988, toobing,  toobin, toobin, toobin, toobin_state, empty_init, ROT270, "Atari Games", "Toobin' (German, rev 3)", MACHINE_SUPPORTS_SAVE )
+GAME( 1988, toobin2,  toobin, toobin, toobin, toobin_state, empty_init, ROT270, "Atari Games", "Toobin' (rev 2)", MACHINE_SUPPORTS_SAVE )
+GAME( 1988, toobin2e, toobin, toobin, toobin, toobin_state, empty_init, ROT270, "Atari Games", "Toobin' (Europe, rev 2)", MACHINE_SUPPORTS_SAVE )
+GAME( 1988, toobin1,  toobin, toobin, toobin, toobin_state, empty_init, ROT270, "Atari Games", "Toobin' (rev 1)", MACHINE_SUPPORTS_SAVE )

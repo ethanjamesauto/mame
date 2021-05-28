@@ -5,14 +5,24 @@
   Nintendo Donkey Kong hardware
 
 ***************************************************************************/
+#ifndef MAME_INCLUDES_DKONG_H
+#define MAME_INCLUDES_DKONG_H
 
-#include "sound/discrete.h"
-#include "machine/eepromser.h"
-#include "machine/tms6100.h"
+#pragma once
+
 #include "cpu/m6502/n2a03.h"
-#include "machine/latch8.h"
-#include "machine/z80dma.h"
+#include "cpu/mcs48/mcs48.h"
+#include "machine/eepromser.h"
 #include "machine/i8257.h"
+#include "machine/latch8.h"
+#include "machine/tms6100.h"
+#include "machine/watchdog.h"
+#include "machine/z80dma.h"
+#include "sound/discrete.h"
+#include "sound/tms5110.h"
+#include "emupal.h"
+#include "screen.h"
+#include "tilemap.h"
 
 
 /*
@@ -40,7 +50,7 @@
  * 256VF is not being used, so counting is from 248...255, 0...255, ....
  */
 
-#define MASTER_CLOCK            XTAL_61_44MHz
+#define MASTER_CLOCK            XTAL(61'440'000)
 #define CLOCK_1H                (MASTER_CLOCK / 5 / 4)
 #define CLOCK_16H               (CLOCK_1H / 16)
 #define CLOCK_1VF               ((CLOCK_16H) / 12 / 2)
@@ -54,7 +64,7 @@
 #define VBSTART                 (240)
 #define VBEND                   (16)
 
-#define I8035_CLOCK             (XTAL_6MHz)
+#define I8035_CLOCK             (XTAL(6'000'000))
 
 /****************************************************************************
  * CONSTANTS
@@ -94,96 +104,145 @@ class dkong_state : public driver_device
 {
 public:
 	dkong_state(const machine_config &mconfig, device_type type, const char *tag)
-		: driver_device(mconfig, type, tag),
-		m_maincpu(*this, "maincpu"),
-		m_soundcpu(*this, "soundcpu"),
-		m_eeprom(*this, "eeprom"),
-		m_dev_n2a03a(*this, "n2a03a"),
-		m_dev_n2a03b(*this, "n2a03b"),
-		m_dev_vp2(*this, "virtual_p2"),
-		m_dev_6h(*this, "ls259.6h"),
-		m_discrete(*this, "discrete"),
-		m_video_ram(*this,"video_ram"),
-		m_sprite_ram(*this,"sprite_ram"),
-		m_vidhw(DKONG_BOARD),
-		m_sig30Hz(0),
-		m_blue_level(0),
-		m_cv1(0),
-		m_cv2(0),
-		m_vg1(0),
-		m_vg2(0),
-		m_vg3(0),
-		m_cv3(0),
-		m_cv4(0),
-		m_gfxdecode(*this, "gfxdecode"),
-		m_screen(*this, "screen"),
-		m_palette(*this, "palette"),
-		m_z80dma(*this, "z80dma"),
-		m_dma8257(*this, "dma8257")
-	{ }
+		: driver_device(mconfig, type, tag)
+		, m_maincpu(*this, "maincpu")
+		, m_soundcpu(*this, "soundcpu")
+		, m_eeprom(*this, "eeprom")
+		, m_dev_n2a03a(*this, "n2a03a")
+		, m_dev_n2a03b(*this, "n2a03b")
+		, m_dev_vp2(*this, "virtual_p2")
+		, m_dev_6h(*this, "ls259.6h")
+		, m_ls175_3d(*this, "ls175.3d")
+		, m_discrete(*this, "discrete")
+		, m_m58817(*this, "tms")
+		, m_watchdog(*this, "watchdog")
+		, m_video_ram(*this,"video_ram")
+		, m_sprite_ram(*this,"sprite_ram")
+		, m_snd_rom(*this, "soundcpu")
+		, m_vidhw(DKONG_BOARD)
+		, m_sig30Hz(0)
+		, m_star_ff(0)
+		, m_blue_level(0)
+		, m_cv1(0)
+		, m_cv2(0)
+		, m_vg1(0)
+		, m_vg2(0)
+		, m_vg3(0)
+		, m_cv3(0)
+		, m_cv4(0)
+		, m_vc17(0)
+		, m_pixelcnt(0)
+		, m_gfxdecode(*this, "gfxdecode")
+		, m_screen(*this, "screen")
+		, m_palette(*this, "palette")
+		, m_z80dma(*this, "z80dma")
+		, m_dma8257(*this, "dma8257")
+		, m_bank1(*this, "bank1")
+		, m_bank2(*this, "bank2")
+	{
+	}
 
+	void dkong_base(machine_config &config);
+	void dk_braze(machine_config &config);
+	void dkj_braze(machine_config &config);
+	void ddk_braze(machine_config &config);
+	void dk3_braze(machine_config &config);
+	void strtheat(machine_config &config);
+	void spclforc(machine_config &config);
+	void s2650(machine_config &config);
+	void dkongjr(machine_config &config);
+	void radarscp1(machine_config &config);
+	void drktnjr(machine_config &config);
+	void dkong2b(machine_config &config);
+	void drakton(machine_config &config);
+	void radarscp(machine_config &config);
+	void pestplce(machine_config &config);
+	void herbiedk(machine_config &config);
+	void dkong3(machine_config &config);
+	void dkong3b(machine_config &config);
+	void radarscp_audio(machine_config &config);
+	void dkong2b_audio(machine_config &config);
+	void dkongjr_audio(machine_config &config);
+	void dkong3_audio(machine_config &config);
+	void radarscp1_audio(machine_config &config);
+
+	void init_strtheat();
+	void init_herodk();
+	void init_dkingjr();
+	void init_drakton();
+	void init_dkonghs();
+	void init_dkongx();
+	void init_dkong3hs();
+
+	DECLARE_WRITE_LINE_MEMBER(dk_braze_a15);
+
+private:
 	/* devices */
 	required_device<cpu_device> m_maincpu;
-	optional_device<cpu_device> m_soundcpu;
+	optional_device<mcs48_cpu_device> m_soundcpu;
 	optional_device<eeprom_serial_93cxx_device> m_eeprom;
 	optional_device<n2a03_device> m_dev_n2a03a; /* dkong3 */
 	optional_device<n2a03_device> m_dev_n2a03b; /* dkong3 */
 	optional_device<latch8_device> m_dev_vp2;   /* dkong2, virtual port 2 */
 	optional_device<latch8_device> m_dev_6h;    /* dkong2 */
+	optional_device<latch8_device> m_ls175_3d;  /* dkong2b_audio */
 	optional_device<discrete_device> m_discrete;
+	optional_device<m58817_device> m_m58817;    /* radarscp1 */
+	optional_device<watchdog_timer_device> m_watchdog;
 
 	/* memory pointers */
-	required_shared_ptr<UINT8> m_video_ram;
-	required_shared_ptr<UINT8> m_sprite_ram;
+	required_shared_ptr<uint8_t> m_video_ram;
+	required_shared_ptr<uint8_t> m_sprite_ram;
 
 	/* machine states */
-	UINT8               m_hardware_type;
-	UINT8               m_nmi_mask;
+	uint8_t               m_hardware_type;
+	uint8_t               m_nmi_mask;
 
-	std::unique_ptr<UINT8[]> m_decrypted;
+	std::unique_ptr<uint8_t[]> m_decrypted;
+
 	/* sound state */
-	const UINT8       *m_snd_rom;
+	optional_region_ptr<uint8_t>  m_snd_rom;
 
 	/* video state */
 	tilemap_t           *m_bg_tilemap;
 
 	bitmap_ind16  m_bg_bits;
-	const UINT8 *     m_color_codes;
+	const uint8_t *     m_color_codes;
 	emu_timer *       m_scanline_timer;
-	INT8              m_vidhw;          /* Selected video hardware RS Conversion / TKG04 */
+	int8_t              m_vidhw;          /* Selected video hardware RS Conversion / TKG04 */
 
 	/* radar scope */
 
-	UINT8 *           m_gfx4;
-	UINT8 *           m_gfx3;
+	uint8_t *           m_gfx4;
+	uint8_t *           m_gfx3;
 	int               m_gfx3_len;
 
-	UINT8             m_sig30Hz;
-	UINT8             m_lfsr_5I;
-	UINT8             m_grid_sig;
-	UINT8             m_rflip_sig;
-	UINT8             m_star_ff;
-	UINT8             m_blue_level;
+	uint8_t             m_sig30Hz;
+	uint8_t             m_lfsr_5I;
+	uint8_t             m_grid_sig;
+	uint8_t             m_rflip_sig;
+	uint8_t             m_star_ff;
+	uint8_t             m_blue_level;
 	double            m_cd4049_a;
 	double            m_cd4049_b;
 
 	/* Specific states */
-	INT8              m_decrypt_counter;
+	int8_t              m_decrypt_counter;
 
 	/* 2650 protection */
-	UINT8             m_protect_type;
-	UINT8             m_hunchloopback;
-	UINT8             m_prot_cnt;
-	UINT8             m_main_fo;
+	uint8_t             m_protect_type;
+	uint8_t             m_hunchloopback;
+	uint8_t             m_prot_cnt;
+	uint8_t             m_main_fo;
 
 	/* Save state relevant */
-	UINT8             m_gfx_bank;
-	UINT8             m_palette_bank;
-	UINT8             m_grid_on;
-	UINT16            m_grid_col;
-	UINT8             m_sprite_bank;
-	UINT8             m_dma_latch;
-	UINT8             m_flip;
+	uint8_t             m_gfx_bank;
+	uint8_t             m_palette_bank;
+	uint8_t             m_grid_on;
+	uint16_t            m_grid_col;
+	uint8_t             m_sprite_bank;
+	uint8_t             m_dma_latch;
+	uint8_t             m_flip;
 
 	/* radarscp_step */
 	double m_cv1;
@@ -201,99 +260,103 @@ public:
 	required_device<palette_device> m_palette;
 	optional_device<z80dma_device> m_z80dma;
 	optional_device<i8257_device> m_dma8257;
+	memory_bank_creator m_bank1;
+	memory_bank_creator m_bank2;
 
 	/* radarscp_scanline */
 	int m_counter;
 
 	/* reverse address lookup map - hunchbkd */
-	INT16             m_rev_map[0x200];
-	DECLARE_READ8_MEMBER(hb_dma_read_byte);
-	DECLARE_WRITE8_MEMBER(hb_dma_write_byte);
-	DECLARE_WRITE8_MEMBER(dkong3_coin_counter_w);
-	DECLARE_READ8_MEMBER(dkong_in2_r);
-	DECLARE_READ8_MEMBER(dkongjr_in2_r);
-	DECLARE_READ8_MEMBER(s2650_mirror_r);
-	DECLARE_WRITE8_MEMBER(s2650_mirror_w);
-	DECLARE_READ8_MEMBER(epos_decrypt_rom);
-	DECLARE_WRITE8_MEMBER(s2650_data_w);
+	int16_t             m_rev_map[0x200];
+	uint8_t hb_dma_read_byte(offs_t offset);
+	void hb_dma_write_byte(offs_t offset, uint8_t data);
+	void dkong3_coin_counter_w(offs_t offset, uint8_t data);
+	uint8_t dkong_in2_r(offs_t offset);
+	uint8_t epos_decrypt_rom(offs_t offset);
+	void s2650_data_w(uint8_t data);
 	DECLARE_WRITE_LINE_MEMBER(s2650_fo_w);
-	DECLARE_READ8_MEMBER(s2650_port0_r);
-	DECLARE_READ8_MEMBER(s2650_port1_r);
-	DECLARE_WRITE8_MEMBER(dkong3_2a03_reset_w);
-	DECLARE_READ8_MEMBER(strtheat_inputport_0_r);
-	DECLARE_READ8_MEMBER(strtheat_inputport_1_r);
-	DECLARE_WRITE8_MEMBER(nmi_mask_w);
-	DECLARE_WRITE8_MEMBER(braze_a15_w);
-	DECLARE_WRITE8_MEMBER(dkong_videoram_w);
-	DECLARE_WRITE8_MEMBER(dkongjr_gfxbank_w);
-	DECLARE_WRITE8_MEMBER(dkong3_gfxbank_w);
-	DECLARE_WRITE8_MEMBER(dkong_palettebank_w);
-	DECLARE_WRITE8_MEMBER(radarscp_grid_enable_w);
-	DECLARE_WRITE8_MEMBER(radarscp_grid_color_w);
-	DECLARE_WRITE8_MEMBER(dkong_flipscreen_w);
-	DECLARE_WRITE8_MEMBER(dkong_spritebank_w);
-	DECLARE_WRITE8_MEMBER(dkong_voice_w);
-	DECLARE_WRITE8_MEMBER(dkong_audio_irq_w);
-	DECLARE_READ8_MEMBER(p8257_ctl_r);
-	DECLARE_WRITE8_MEMBER(p8257_ctl_w);
-	DECLARE_WRITE8_MEMBER(p8257_drq_w);
-	DECLARE_WRITE8_MEMBER(dkong_z80dma_rdy_w);
-	DECLARE_READ8_MEMBER(braze_eeprom_r);
-	DECLARE_WRITE8_MEMBER(braze_eeprom_w);
-	DECLARE_DRIVER_INIT(strtheat);
-	DECLARE_DRIVER_INIT(herodk);
-	DECLARE_DRIVER_INIT(dkingjr);
-	DECLARE_DRIVER_INIT(drakton);
-	DECLARE_DRIVER_INIT(dkongx);
+	uint8_t s2650_port0_r();
+	uint8_t s2650_port1_r();
+	void dkong3_2a03_reset_w(uint8_t data);
+	uint8_t strtheat_inputport_0_r();
+	uint8_t strtheat_inputport_1_r();
+	void nmi_mask_w(uint8_t data);
+	void dk_braze_a15_w(uint8_t data);
+	void dkong_videoram_w(offs_t offset, uint8_t data);
+	void dkongjr_gfxbank_w(uint8_t data);
+	void dkong3_gfxbank_w(uint8_t data);
+	void dkong_palettebank_w(offs_t offset, uint8_t data);
+	void radarscp_grid_enable_w(uint8_t data);
+	void radarscp_grid_color_w(uint8_t data);
+	void dkong_flipscreen_w(uint8_t data);
+	void dkong_spritebank_w(uint8_t data);
+	void dkong_voice_w(uint8_t data);
+	void dkong_audio_irq_w(uint8_t data);
+	uint8_t p8257_ctl_r();
+	void p8257_ctl_w(uint8_t data);
+	void p8257_drq_w(uint8_t data);
+	void dkong_z80dma_rdy_w(uint8_t data);
+	uint8_t braze_eeprom_r();
+	void braze_eeprom_w(uint8_t data);
 	TILE_GET_INFO_MEMBER(dkong_bg_tile_info);
 	TILE_GET_INFO_MEMBER(radarscp1_bg_tile_info);
 	DECLARE_MACHINE_START(dkong2b);
 	DECLARE_MACHINE_RESET(dkong);
+	DECLARE_MACHINE_RESET(ddk);
 	DECLARE_VIDEO_START(dkong);
 	DECLARE_VIDEO_START(dkong_base);
-	DECLARE_PALETTE_INIT(dkong2b);
+	void dkong2b_palette(palette_device &palette);
 	DECLARE_MACHINE_START(dkong3);
-	DECLARE_PALETTE_INIT(dkong3);
+	void dkong3_palette(palette_device &palette);
 	DECLARE_MACHINE_START(radarscp);
-	DECLARE_PALETTE_INIT(radarscp);
+	void radarscp_palette(palette_device &palette);
 	DECLARE_MACHINE_START(radarscp1);
-	DECLARE_PALETTE_INIT(radarscp1);
+	void radarscp1_palette(palette_device &palette);
 	DECLARE_MACHINE_START(s2650);
 	DECLARE_MACHINE_RESET(strtheat);
 	DECLARE_MACHINE_RESET(drakton);
-	DECLARE_WRITE8_MEMBER(M58817_command_w);
-	DECLARE_READ8_MEMBER(M58817_status_r);
-	DECLARE_READ8_MEMBER(dkong_voice_status_r);
-	DECLARE_READ8_MEMBER(dkong_tune_r);
-	DECLARE_WRITE8_MEMBER(dkong_p1_w);
-	UINT32 screen_update_dkong(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
-	UINT32 screen_update_pestplce(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
-	UINT32 screen_update_spclforc(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
-	INTERRUPT_GEN_MEMBER(s2650_interrupt);
-	INTERRUPT_GEN_MEMBER(vblank_irq);
+	void m58817_command_w(uint8_t data);
+	uint8_t dkong_voice_status_r();
+	uint8_t dkong_tune_r(offs_t offset);
+	void dkong_p1_w(uint8_t data);
+	uint32_t screen_update_dkong(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
+	uint32_t screen_update_pestplce(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
+	uint32_t screen_update_spclforc(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
+	DECLARE_WRITE_LINE_MEMBER(s2650_interrupt);
+	DECLARE_WRITE_LINE_MEMBER(vblank_irq);
 	TIMER_CALLBACK_MEMBER(scanline_callback);
 	DECLARE_WRITE_LINE_MEMBER(busreq_w);
 
-	void braze_decrypt_rom(UINT8 *dest);
-	void drakton_decrypt_rom(UINT8 mod, int offs, int *bs);
-	DECLARE_READ8_MEMBER(memory_read_byte);
-	DECLARE_WRITE8_MEMBER(memory_write_byte);
+	void braze_decrypt_rom(uint8_t *dest);
+	void dk_braze_decrypt();
+	void drakton_decrypt_rom(uint8_t mod, int offs, int *bs);
+	uint8_t memory_read_byte(offs_t offset);
+	void memory_write_byte(offs_t offset, uint8_t data);
 	double CD4049(double x);
+
+	void dkong3_io_map(address_map &map);
+	void dkong3_map(address_map &map);
+	void dkong3_sound1_map(address_map &map);
+	void dkong3_sound2_map(address_map &map);
+	void dkong_map(address_map &map);
+	void dkong_sound_io_map(address_map &map);
+	void dkong_sound_map(address_map &map);
+	void dkongjr_map(address_map &map);
+	void dkongjr_sound_io_map(address_map &map);
+	void epos_readport(address_map &map);
+	void radarscp1_sound_io_map(address_map &map);
+	void s2650_data_map(address_map &map);
+	void s2650_io_map(address_map &map);
+	void s2650_map(address_map &map);
 
 private:
 	// video/dkong.c
 	void radarscp_step(int line_cnt);
 	void radarscp_scanline(int scanline);
 	void check_palette(void);
-	void draw_sprites(bitmap_ind16 &bitmap, const rectangle &cliprect, UINT32 mask_bank, UINT32 shift_bits);
+	void draw_sprites(bitmap_ind16 &bitmap, const rectangle &cliprect, uint32_t mask_bank, uint32_t shift_bits);
 	void radarscp_draw_background(bitmap_ind16 &bitmap, const rectangle &cliprect);
 
 };
 
-/*----------- defined in audio/dkong.c -----------*/
-
-MACHINE_CONFIG_EXTERN( radarscp_audio );
-MACHINE_CONFIG_EXTERN( dkong2b_audio );
-MACHINE_CONFIG_EXTERN( dkongjr_audio );
-MACHINE_CONFIG_EXTERN( dkong3_audio );
-MACHINE_CONFIG_EXTERN( radarscp1_audio );
+#endif // MAME_INCLUDES_DKONG_H

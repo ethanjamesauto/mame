@@ -4,35 +4,19 @@
 	*                 Texas Instruments TMS32010 DSP Emulator                  *
 	*                                                                          *
 	*                  Copyright Tony La Porta                                 *
-	*      You are not allowed to distribute this software commercially.       *
-	*                      Written for the MAME project.                       *
-	*                                                                          *
 	*                                                                          *
 	*      Note :  This is a word based microcontroller, with addressing       *
 	*              architecture based on the Harvard addressing scheme.        *
 	*                                                                          *
 	\**************************************************************************/
 
+#ifndef MAME_CPU_TMS32010_TMS32010_H
+#define MAME_CPU_TMS32010_TMS32010_H
+
 #pragma once
-
-#ifndef __TMS32010_H__
-#define __TMS32010_H__
-
-
-
-
-/****************************************************************************
- * Use this in the I/O port address fields of your driver for the BIO pin
- * i.e,
- *  AM_RANGE(TMS32010_BIO, TMS32010_BIO) AM_READ(twincobr_bio_line_r)
- */
-
-#define TMS32010_BIO            0x10        /* BIO input */
-
 
 #define TMS32010_INT_PENDING    0x80000000
 #define TMS32010_INT_NONE       0
-
 
 enum
 {
@@ -51,83 +35,89 @@ class tms32010_device : public cpu_device
 {
 public:
 	// construction/destruction
-	tms32010_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
-	tms32010_device(const machine_config &mconfig, device_type type, const char *name, const char *tag, device_t *owner, UINT32 clock, const char *shortname, const char *source, int addr_mask);
+	tms32010_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
+	// configuration helpers
+	auto bio() { return m_bio_in.bind(); }
+
+	void tms32010_ram(address_map &map);
+	void tms32015_ram(address_map &map);
 protected:
+	tms32010_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock, address_map_constructor data_map, int addr_mask);
+
 	// device-level overrides
 	virtual void device_start() override;
 	virtual void device_reset() override;
 
 	// device_execute_interface overrides
-	virtual UINT32 execute_min_cycles() const override { return 1; }
-	virtual UINT32 execute_max_cycles() const override { return 3; }
-	virtual UINT32 execute_input_lines() const override { return 1; }
+	virtual uint32_t execute_min_cycles() const noexcept override { return 1; }
+	virtual uint32_t execute_max_cycles() const noexcept override { return 3; }
+	virtual uint32_t execute_input_lines() const noexcept override { return 1; }
 	virtual void execute_run() override;
 	virtual void execute_set_input(int inputnum, int state) override;
-	virtual UINT64 execute_clocks_to_cycles(UINT64 clocks) const override { return (clocks + 4 - 1) / 4; }
-	virtual UINT64 execute_cycles_to_clocks(UINT64 cycles) const override { return (cycles * 4); }
+	virtual uint64_t execute_clocks_to_cycles(uint64_t clocks) const noexcept override { return (clocks + 4 - 1) / 4; }
+	virtual uint64_t execute_cycles_to_clocks(uint64_t cycles) const noexcept override { return (cycles * 4); }
 
 	// device_memory_interface overrides
-	virtual const address_space_config *memory_space_config(address_spacenum spacenum = AS_0) const override { return (spacenum == AS_PROGRAM) ? &m_program_config : ( (spacenum == AS_IO) ? &m_io_config : ( (spacenum == AS_DATA) ? &m_data_config : nullptr ) ); }
+	virtual space_config_vector memory_space_config() const override;
 
 	// device_state_interface overrides
-	void state_string_export(const device_state_entry &entry, std::string &str) override;
+	virtual void state_string_export(const device_state_entry &entry, std::string &str) const override;
 
 	// device_disasm_interface overrides
-	virtual UINT32 disasm_min_opcode_bytes() const override { return 2; }
-	virtual UINT32 disasm_max_opcode_bytes() const override { return 4; }
-	virtual offs_t disasm_disassemble(char *buffer, offs_t pc, const UINT8 *oprom, const UINT8 *opram, UINT32 options) override;
+	virtual std::unique_ptr<util::disasm_interface> create_disassembler() override;
 
 private:
 	address_space_config m_program_config;
 	address_space_config m_data_config;
 	address_space_config m_io_config;
 
+	devcb_read_line m_bio_in;
+
 	typedef void ( tms32010_device::*opcode_func ) ();
 	struct tms32010_opcode
 	{
-		UINT8       cycles;
+		uint8_t       cycles;
 		opcode_func function;
 	};
 	static const tms32010_opcode s_opcode_main[256];
 	static const tms32010_opcode s_opcode_7F[32];
 
 	/******************** CPU Internal Registers *******************/
-	UINT16  m_PC;
-	UINT16  m_PREVPC;     /* previous program counter */
-	UINT16  m_STR;
+	uint16_t  m_PC;
+	uint16_t  m_PREVPC;     /* previous program counter */
+	uint16_t  m_STR;
 	PAIR    m_ACC;
 	PAIR    m_ALU;
 	PAIR    m_Preg;
-	UINT16  m_Treg;
-	UINT16  m_AR[2];
-	UINT16  m_STACK[4];
+	uint16_t  m_Treg;
+	uint16_t  m_AR[2];
+	uint16_t  m_STACK[4];
 
 	PAIR    m_opcode;
 	int     m_INTF;       /* Pending Interrupt flag */
 	int     m_icount;
 	PAIR    m_oldacc;
-	UINT16  m_memaccess;
+	uint16_t  m_memaccess;
 	int     m_addr_mask;
 
-	address_space *m_program;
-	direct_read_data *m_direct;
-	address_space *m_data;
-	address_space *m_io;
+	memory_access<12, 1, -1, ENDIANNESS_BIG>::cache m_cache;
+	memory_access<12, 1, -1, ENDIANNESS_BIG>::specific m_program;
+	memory_access< 8, 1, -1, ENDIANNESS_BIG>::specific m_data;
+	memory_access< 4, 1, -1, ENDIANNESS_BIG>::specific m_io;
 
-	inline void CLR(UINT16 flag);
-	inline void SET_FLAG(UINT16 flag);
-	inline void CALCULATE_ADD_OVERFLOW(INT32 addval);
-	inline void CALCULATE_SUB_OVERFLOW(INT32 subval);
-	inline UINT16 POP_STACK();
-	inline void PUSH_STACK(UINT16 data);
+	inline void CLR(uint16_t flag);
+	inline void SET_FLAG(uint16_t flag);
+	inline void CALCULATE_ADD_OVERFLOW(int32_t addval);
+	inline void CALCULATE_SUB_OVERFLOW(int32_t subval);
+	inline uint16_t POP_STACK();
+	inline void PUSH_STACK(uint16_t data);
 	inline void UPDATE_AR();
 	inline void UPDATE_ARP();
-	inline void getdata(UINT8 shift,UINT8 signext);
-	inline void putdata(UINT16 data);
-	inline void putdata_sar(UINT8 data);
-	inline void putdata_sst(UINT16 data);
+	inline void getdata(uint8_t shift,uint8_t signext);
+	inline void putdata(uint16_t data);
+	inline void putdata_sar(uint8_t data);
+	inline void putdata_sst(uint16_t data);
 	void opcodes_7F();
 	void illegal();
 	void abst();
@@ -194,7 +184,6 @@ private:
 	void zals();
 	inline int add_branch_cycle();
 	int Ext_IRQ();
-
 };
 
 
@@ -202,7 +191,7 @@ class tms32015_device : public tms32010_device
 {
 public:
 	// construction/destruction
-	tms32015_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	tms32015_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 };
 
 
@@ -210,13 +199,13 @@ class tms32016_device : public tms32010_device
 {
 public:
 	// construction/destruction
-	tms32016_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	tms32016_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 };
 
 
-extern const device_type TMS32010;
-extern const device_type TMS32015;
-extern const device_type TMS32016;
+DECLARE_DEVICE_TYPE(TMS32010, tms32010_device)
+DECLARE_DEVICE_TYPE(TMS32015, tms32015_device)
+DECLARE_DEVICE_TYPE(TMS32016, tms32016_device)
 
 
-#endif  /* __TMS32010_H__ */
+#endif // MAME_CPU_TMS32010_TMS32010_H

@@ -1,4 +1,4 @@
-// license:???
+// license:GPL-2.0+
 // copyright-holders:Jarek Burczynski
 /*
 *   Video Driver for Forty-Love
@@ -7,46 +7,6 @@
 #include "emu.h"
 #include "includes/40love.h"
 
-
-/*
-*   color prom decoding
-*/
-
-PALETTE_INIT_MEMBER(fortyl_state, fortyl)
-{
-	const UINT8 *color_prom = memregion("proms")->base();
-	int i;
-
-	for (i = 0; i < palette.entries(); i++)
-	{
-		int bit0, bit1, bit2, bit3, r, g, b;
-
-		/* red component */
-		bit0 = (color_prom[0] >> 0) & 0x01;
-		bit1 = (color_prom[0] >> 1) & 0x01;
-		bit2 = (color_prom[0] >> 2) & 0x01;
-		bit3 = (color_prom[0] >> 3) & 0x01;
-		r = 0x0e * bit0 + 0x1f * bit1 + 0x43 * bit2 + 0x8f * bit3;
-
-		/* green component */
-		bit0 = (color_prom[palette.entries()] >> 0) & 0x01;
-		bit1 = (color_prom[palette.entries()] >> 1) & 0x01;
-		bit2 = (color_prom[palette.entries()] >> 2) & 0x01;
-		bit3 = (color_prom[palette.entries()] >> 3) & 0x01;
-		g = 0x0e * bit0 + 0x1f * bit1 + 0x43 * bit2 + 0x8f * bit3;
-
-		/* blue component */
-		bit0 = (color_prom[2*palette.entries()] >> 0) & 0x01;
-		bit1 = (color_prom[2*palette.entries()] >> 1) & 0x01;
-		bit2 = (color_prom[2*palette.entries()] >> 2) & 0x01;
-		bit3 = (color_prom[2*palette.entries()] >> 3) & 0x01;
-		b = 0x0e * bit0 + 0x1f * bit1 + 0x43 * bit2 + 0x8f * bit3;
-
-		palette.set_pen_color(i, rgb_t(r,g,b));
-
-		color_prom++;
-	}
-}
 
 /***************************************************************************
 
@@ -76,9 +36,9 @@ TILE_GET_INFO_MEMBER(fortyl_state::get_bg_tile_info)
 		code = (code & 0x3f) | tile_l_bank | 0x100;
 	code |= tile_h_bank;
 
-	SET_TILE_INFO_MEMBER(0,
+	tileinfo.set(0,
 			code,
-			tile_attrib & 0x07,
+			(tile_attrib & 0x07) | ((m_color_bank == true) ? 0x20 : 0),
 			0);
 }
 
@@ -103,13 +63,13 @@ void fortyl_state::redraw_pixels()
 
 void fortyl_state::video_start()
 {
-	m_pixram1 = make_unique_clear<UINT8[]>(0x4000);
-	m_pixram2 = make_unique_clear<UINT8[]>(0x4000);
+	m_pixram1 = make_unique_clear<uint8_t[]>(0x4000);
+	m_pixram2 = make_unique_clear<uint8_t[]>(0x4000);
 
 	m_tmp_bitmap1 = std::make_unique<bitmap_ind16>(256, 256);
 	m_tmp_bitmap2 = std::make_unique<bitmap_ind16>(256, 256);
 
-	m_bg_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(fortyl_state::get_bg_tile_info),this), TILEMAP_SCAN_ROWS, 8, 8, 64, 32);
+	m_bg_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(fortyl_state::get_bg_tile_info)), TILEMAP_SCAN_ROWS, 8, 8, 64, 32);
 
 	m_xoffset = 128;    // this never changes
 
@@ -118,8 +78,8 @@ void fortyl_state::video_start()
 
 	save_item(NAME(m_flipscreen));
 	save_item(NAME(m_pix_color));
-	save_pointer(NAME(m_pixram1.get()), 0x4000);
-	save_pointer(NAME(m_pixram2.get()), 0x4000);
+	save_pointer(NAME(m_pixram1), 0x4000);
+	save_pointer(NAME(m_pixram2), 0x4000);
 	save_item(NAME(*m_tmp_bitmap1));
 	save_item(NAME(*m_tmp_bitmap2));
 	save_item(NAME(m_pixram_sel));
@@ -149,12 +109,30 @@ void fortyl_state::fortyl_set_scroll_x( int offset )
 	m_bg_tilemap->set_scrollx(offset / 2, x);
 }
 
-WRITE8_MEMBER(fortyl_state::fortyl_pixram_sel_w)
+/*!
+ @brief various video related outputs
+ --x- ---- Screen disable bit
+ ---- x--- Global screen color bank
+ ---- -x-- Pix RAM color bank select
+ ---- ---x Flip Screen set
+ */
+void fortyl_state::fortyl_pixram_sel_w(uint8_t data)
 {
 	int offs;
 	int f = data & 0x01;
+	bool cur_col_bank = bool(data & 8);
+
+	if(data & 0xd2)
+		popmessage("pixram sel = %02x, contact MAMEdev",data);
 
 	m_pixram_sel = (data & 0x04) >> 2;
+	m_screen_disable = bool(data & 0x20); // Undoukai
+
+	if(cur_col_bank != m_color_bank)
+	{
+		m_color_bank = cur_col_bank;
+		redraw_pixels();
+	}
 
 	if (m_flipscreen != f)
 	{
@@ -167,7 +145,7 @@ WRITE8_MEMBER(fortyl_state::fortyl_pixram_sel_w)
 	}
 }
 
-READ8_MEMBER(fortyl_state::fortyl_pixram_r)
+uint8_t fortyl_state::fortyl_pixram_r(offs_t offset)
 {
 	if (m_pixram_sel)
 		return m_pixram2[offset];
@@ -177,33 +155,20 @@ READ8_MEMBER(fortyl_state::fortyl_pixram_r)
 
 void fortyl_state::fortyl_plot_pix( int offset )
 {
-	int x, y, i, c, d1, d2;
+	const int x = (offset & 0x1f) * 8;
+	const int y = (offset >> 5) & 0xff;
 
-	x = (offset & 0x1f) * 8;
-	y = (offset >> 5) & 0xff;
+	const int d1 = (m_pixram_sel ? m_pixram2 : m_pixram1)[offset];
+	const int d2 = (m_pixram_sel ? m_pixram2 : m_pixram1)[offset + 0x2000];
 
-	if (m_pixram_sel)
+	for (int i = 0; i < 8; i++)
 	{
-		d1 = m_pixram2[offset];
-		d2 = m_pixram2[offset + 0x2000];
-	}
-	else
-	{
-		d1 = m_pixram1[offset];
-		d2 = m_pixram1[offset + 0x2000];
-	}
-
-	for (i = 0; i < 8; i++)
-	{
-		c = ((d2 >> i) & 1) + ((d1 >> i) & 1) * 2;
-		if (m_pixram_sel)
-			m_tmp_bitmap2->pix16(y, x + i) = m_pix_color[c];
-		else
-			m_tmp_bitmap1->pix16(y, x + i) = m_pix_color[c];
+		const int c = BIT(d2, i) | (BIT(d1, i) << 1);
+		(m_pixram_sel ? m_tmp_bitmap2 : m_tmp_bitmap1)->pix(y, x + i) = m_pix_color[c] | (m_color_bank ? 0x200 : 0);
 	}
 }
 
-WRITE8_MEMBER(fortyl_state::fortyl_pixram_w)
+void fortyl_state::fortyl_pixram_w(offs_t offset, uint8_t data)
 {
 	if (m_pixram_sel)
 		m_pixram2[offset] = data;
@@ -214,18 +179,18 @@ WRITE8_MEMBER(fortyl_state::fortyl_pixram_w)
 }
 
 
-WRITE8_MEMBER(fortyl_state::fortyl_bg_videoram_w)
+void fortyl_state::fortyl_bg_videoram_w(offs_t offset, uint8_t data)
 {
 	m_videoram[offset] = data;
 	m_bg_tilemap->mark_tile_dirty(offset);
 }
 
-READ8_MEMBER(fortyl_state::fortyl_bg_videoram_r)
+uint8_t fortyl_state::fortyl_bg_videoram_r(offs_t offset)
 {
 	return m_videoram[offset];
 }
 
-WRITE8_MEMBER(fortyl_state::fortyl_bg_colorram_w)
+void fortyl_state::fortyl_bg_colorram_w(offs_t offset, uint8_t data)
 {
 	if (m_colorram[offset] != data)
 	{
@@ -239,7 +204,7 @@ WRITE8_MEMBER(fortyl_state::fortyl_bg_colorram_w)
 	}
 }
 
-READ8_MEMBER(fortyl_state::fortyl_bg_colorram_r)
+uint8_t fortyl_state::fortyl_bg_colorram_r(offs_t offset)
 {
 	return m_colorram[offset];
 }
@@ -267,8 +232,8 @@ spriteram format (4 bytes per sprite):
 
 void fortyl_state::draw_sprites( bitmap_ind16 &bitmap, const rectangle &cliprect )
 {
-	UINT8 *spriteram = m_spriteram;
-	UINT8 *spriteram_2 = m_spriteram2;
+	uint8_t *spriteram = m_spriteram;
+	uint8_t *spriteram_2 = m_spriteram2;
 	int offs;
 
 	/* spriteram #1 */
@@ -287,7 +252,7 @@ void fortyl_state::draw_sprites( bitmap_ind16 &bitmap, const rectangle &cliprect
 		code = (spriteram[offs + 1] & 0x3f) + ((spriteram[offs + 2] & 0x18) << 3);
 		flipx = ((spriteram[offs + 1] & 0x40) >> 6) ^ m_flipscreen;
 		flipy = ((spriteram[offs + 1] & 0x80) >> 7) ^ m_flipscreen;
-		color = (spriteram[offs + 2] & 0x07) + 0x08;
+		color = (spriteram[offs + 2] & 0x07) + 0x08; // TODO: color bank here too? Check Undoukai
 
 		if (spriteram[offs + 2] & 0xe0)
 			color = machine().rand() & 0xf;
@@ -347,8 +312,14 @@ void fortyl_state::draw_pixram( bitmap_ind16 &bitmap, const rectangle &cliprect 
 		copybitmap(bitmap, *m_tmp_bitmap2, f, f, m_xoffset, 0, cliprect);
 }
 
-UINT32 fortyl_state::screen_update_fortyl(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t fortyl_state::screen_update_fortyl(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
+	if(m_screen_disable == true)
+	{
+		bitmap.fill(m_palette->black_pen(), cliprect);
+		return 0;
+	}
+
 	draw_pixram(bitmap, cliprect);
 
 	m_bg_tilemap->set_scrolldy(- m_video_ctrl[1] + 1, - m_video_ctrl[1] - 1 );

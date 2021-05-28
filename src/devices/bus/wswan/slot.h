@@ -1,7 +1,73 @@
 // license:BSD-3-Clause
 // copyright-holders:Wilbert Pol
-#ifndef __WS_SLOT_H
-#define __WS_SLOT_H
+/***************************************************************************
+ Bandai WonderSwan cartridge slot
+
+ 48-pin single-sided PCB edge connector
+
+ The SoC maps the following ranges to the cartridge slot:
+ * Memory  0x10000-0x1ffff  8-bit read/write (typically used for cartridge SRAM)
+                            3-cycle access on WonderSwan, 1-cycle access on WonderSwan Color
+ * Memory  0x20000-0xfffff  16-bit read-only (writes not emitted)
+ * I/O     0xc0-0xff
+
+ Pin  Name  Notes
+   1  GND
+   2  A15
+   3  A10
+   4  A11
+   5  A9
+   6  A8
+   7  A13
+   8  A14
+   9  A12
+  10  A7
+  11  A6
+  12  A5
+  13  A4
+  14  D15
+  15  D14
+  16  D7
+  17  D6
+  18  D5
+  19  D4
+  20  D3
+  21  D2
+  22  D1
+  23  D0
+  24  +3.3V
+  25  +3.3V
+  26  A0
+  27  A1
+  28  A2
+  29  A3
+  30  A19
+  31  A18
+  32  A17
+  33  A16
+  34  D8
+  35  D9
+  36  D10
+  37  D11
+  38  D12
+  39  D13
+  40  /RESET
+  41  ?       input used while authenticating cartridge
+  42  IO/M    low when accessing I/O ports
+  43  /RD
+  44  /WR
+  45  /CART   low when accessing cartridge
+  46  INT     usually used for RTC alarm interrupt
+  47  CLK     384 kHz on WonderSwan
+  48  GND
+ ***************************************************************************/
+#ifndef MAME_BUS_WSWAN_SLOT_H
+#define MAME_BUS_WSWAN_SLOT_H
+
+#pragma once
+
+#include "softlist_dev.h"
+
 
 /***************************************************************************
  TYPE DEFINITIONS
@@ -13,48 +79,49 @@ enum
 {
 	WS_STD = 0,
 	WS_SRAM,
-	WS_EEPROM
+	WS_EEPROM,
+	WWITCH
 };
 
 
 // ======================> device_ws_cart_interface
 
-class device_ws_cart_interface : public device_slot_card_interface
+class device_ws_cart_interface : public device_interface
 {
 public:
 	// construction/destruction
-	device_ws_cart_interface(const machine_config &mconfig, device_t &device);
 	virtual ~device_ws_cart_interface();
 
 	// reading and writing
-	virtual DECLARE_READ8_MEMBER(read_rom20) { return 0xff; }
-	virtual DECLARE_READ8_MEMBER(read_rom30) { return 0xff; }
-	virtual DECLARE_READ8_MEMBER(read_rom40) { return 0xff; }
-	virtual DECLARE_READ8_MEMBER(read_ram) { return 0xff; }
-	virtual DECLARE_WRITE8_MEMBER(write_ram) {}
-	virtual DECLARE_READ8_MEMBER(read_io) { return 0xff; }
-	virtual DECLARE_WRITE8_MEMBER(write_io) {}
+	virtual u16 read_rom20(offs_t offset, u16 mem_mask) { return 0xffff; }
+	virtual u16 read_rom30(offs_t offset, u16 mem_mask) { return 0xffff; }
+	virtual u16 read_rom40(offs_t offset, u16 mem_mask) { return 0xffff; }
+	virtual u16 read_ram(offs_t offset, u16 mem_mask) { return 0xffff; }
+	virtual void write_ram(offs_t offset, u16 data, u16 mem_mask) {}
+	virtual u16 read_io(offs_t offset, u16 mem_mask) { return 0xffff; }
+	virtual void write_io(offs_t offset, u16 data, u16 mem_mask) { }
 
-	void rom_alloc(UINT32 size, const char *tag);
-	void nvram_alloc(UINT32 size);
-	UINT8* get_rom_base() { return m_rom; }
-	UINT8* get_nvram_base() { return &m_nvram[0]; }
-	UINT32 get_rom_size() { return m_rom_size; }
-	UINT32 get_nvram_size() { return m_nvram.size(); }
+	void rom_alloc(u32 size, const char *tag);
+	void nvram_alloc(u32 size);
+	u16* get_rom_base() { return m_rom; }
+	uint8_t* get_nvram_base() { return &m_nvram[0]; }
+	uint32_t get_rom_size() { return m_rom_size; }
+	uint32_t get_nvram_size() { return m_nvram.size(); }
 
-	void save_nvram()   { device().save_item(NAME(m_nvram)); }
+	void save_nvram() { device().save_item(NAME(m_nvram)); }
 	void set_has_rtc(bool val) { m_has_rtc = val; }
-	void set_is_rotated(bool val) { m_is_rotated = val; }
-	int get_is_rotated() { return m_is_rotated ? 1 : 0; }
 
 protected:
+	device_ws_cart_interface(const machine_config &mconfig, device_t &device);
+
 	// internal state
-	UINT8 *m_rom;
-	UINT32 m_rom_size;
-	dynamic_buffer m_nvram;
+	u16 *m_rom;
+	u32 m_rom_size;
+	std::vector<u8> m_nvram;
+	u32 m_nvram_size;
 	int m_bank_mask;
 
-	bool m_has_rtc, m_is_rotated;
+	bool m_has_rtc;
 };
 
 
@@ -62,61 +129,68 @@ protected:
 
 class ws_cart_slot_device : public device_t,
 								public device_image_interface,
-								public device_slot_interface
+								public device_single_card_slot_interface<device_ws_cart_interface>
 {
 public:
 	// construction/destruction
-	ws_cart_slot_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	template <typename T>
+	ws_cart_slot_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock, T &&opts, const char *dflt)
+		: ws_cart_slot_device(mconfig, tag, owner, clock)
+	{
+		option_reset();
+		opts(*this);
+		set_default_option(dflt);
+		set_fixed(false);
+	}
+	ws_cart_slot_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
 	virtual ~ws_cart_slot_device();
 
-	// device-level overrides
-	virtual void device_start() override;
-	virtual void device_config_complete() override;
-
 	// image-level overrides
-	virtual bool call_load() override;
+	virtual image_init_result call_load() override;
 	virtual void call_unload() override;
-	virtual bool call_softlist_load(software_list_device &swlist, const char *swname, const rom_entry *start_entry) override;
+
+	virtual iodevice_t image_type() const noexcept override { return IO_CARTSLOT; }
+	virtual bool is_readable()  const noexcept override { return true; }
+	virtual bool is_writeable() const noexcept override { return false; }
+	virtual bool is_creatable() const noexcept override { return false; }
+	virtual bool must_be_loaded() const noexcept override { return true; }
+	virtual bool is_reset_on_load() const noexcept override { return true; }
+	virtual const char *image_interface() const noexcept override { return "wswan_cart"; }
+	virtual const char *file_extensions() const noexcept override { return "ws,wsc,bin"; }
+
+	// slot interface overrides
+	virtual std::string get_default_card_software(get_default_card_software_hook &hook) const override;
 
 	int get_type() { return m_type; }
-	int get_is_rotated() { return m_cart->get_is_rotated(); }
-	int get_cart_type(UINT8 *ROM, UINT32 len, UINT32 &nvram_len);
-	void internal_header_logging(UINT8 *ROM, UINT32 offs, UINT32 len);
+	int get_cart_type(const u16 *ROM, u32 len, u32 &nvram_len) const;
+	void internal_header_logging(const u16 *ROM, u32 offs, u32 len);
 
 	void save_nvram()   { if (m_cart && m_cart->get_nvram_size()) m_cart->save_nvram(); }
 
-	virtual iodevice_t image_type() const override { return IO_CARTSLOT; }
-	virtual bool is_readable()  const override { return 1; }
-	virtual bool is_writeable() const override { return 0; }
-	virtual bool is_creatable() const override { return 0; }
-	virtual bool must_be_loaded() const override { return 1; }
-	virtual bool is_reset_on_load() const override { return 1; }
-	virtual const option_guide *create_option_guide() const override { return nullptr; }
-	virtual const char *image_interface() const override { return "wswan_cart"; }
-	virtual const char *file_extensions() const override { return "ws,wsc,bin"; }
-
-	// slot interface overrides
-	virtual void get_default_card_software(std::string &result) override;
-
 	// reading and writing
-	virtual DECLARE_READ8_MEMBER(read_rom20);
-	virtual DECLARE_READ8_MEMBER(read_rom30);
-	virtual DECLARE_READ8_MEMBER(read_rom40);
-	virtual DECLARE_READ8_MEMBER(read_ram);
-	virtual DECLARE_WRITE8_MEMBER(write_ram);
-	virtual DECLARE_READ8_MEMBER(read_io);
-	virtual DECLARE_WRITE8_MEMBER(write_io);
+	virtual u16 read_rom20(offs_t offset, u16 mem_mask);
+	virtual u16 read_rom30(offs_t offset, u16 mem_mask);
+	virtual u16 read_rom40(offs_t offset, u16 mem_mask);
+	virtual u16 read_ram(offs_t offset, u16 mem_mask);
+	virtual void write_ram(offs_t offset, u16 data, u16 mem_mask);
+	virtual u16 read_io(offs_t offset, u16 mem_mask);
+	virtual void write_io(offs_t offset, u16 data, u16 mem_mask);
 
 protected:
+	// device-level overrides
+	virtual void device_start() override;
+
+	// device_image_interface implementation
+	virtual const software_list_loader &get_software_list_loader() const override { return rom_software_list_loader::instance(); }
 
 	int m_type;
-	device_ws_cart_interface*       m_cart;
+	device_ws_cart_interface* m_cart;
 };
 
 
 
 // device type definition
-extern const device_type WS_CART_SLOT;
+DECLARE_DEVICE_TYPE(WS_CART_SLOT, ws_cart_slot_device)
 
 
 /***************************************************************************
@@ -125,7 +199,4 @@ extern const device_type WS_CART_SLOT;
 
 #define WSSLOT_ROM_REGION_TAG ":cart:rom"
 
-#define MCFG_WSWAN_CARTRIDGE_ADD(_tag,_slot_intf,_def_slot) \
-	MCFG_DEVICE_ADD(_tag, WS_CART_SLOT, 0) \
-	MCFG_DEVICE_SLOT_INTERFACE(_slot_intf, _def_slot, false)
-#endif
+#endif // MAME_BUS_WSWAN_SLOT_H

@@ -23,12 +23,11 @@
 
 **********************************************************************/
 
+#ifndef MAME_VIDEO_CRT9021_H
+#define MAME_VIDEO_CRT9021_H
+
 #pragma once
 
-#ifndef __CRT9021__
-#define __CRT9021__
-
-#include "emu.h"
 
 
 
@@ -36,54 +35,48 @@
 //  INTERFACE CONFIGURATION MACROS
 //**************************************************************************
 
-#define CRT9021_DRAW_CHARACTER_MEMBER(_name) void _name(bitmap_rgb32 &bitmap, int y, int x, UINT8 video, int intout)
-
-
-#define MCFG_CRT9021_DRAW_CHARACTER_CALLBACK_OWNER(_class, _method) \
-	crt9021_t::static_set_display_callback(*device, crt9021_draw_character_delegate(&_class::_method, #_class "::" #_method, downcast<_class *>(owner)));
+#define CRT9021_DRAW_CHARACTER_MEMBER(_name) void _name(bitmap_rgb32 &bitmap, int y, int x, uint8_t video, int intout)
 
 
 //**************************************************************************
 //  TYPE DEFINITIONS
 //**************************************************************************
 
-typedef device_delegate<void (bitmap_rgb32 &bitmap, int y, int x, UINT8 video, int intout)> crt9021_draw_character_delegate;
 
+// ======================> crt9021_device
 
-// ======================> crt9021_t
-
-class crt9021_t :  public device_t,
-					public device_video_interface
+class crt9021_device : public device_t, public device_video_interface
 {
 public:
+	typedef device_delegate<void (bitmap_rgb32 &bitmap, int y, int x, uint8_t video, int intout)> draw_character_delegate;
+
 	// construction/destruction
-	crt9021_t(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	crt9021_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
-	static void static_set_display_callback(device_t &device, crt9021_draw_character_delegate callback) { downcast<crt9021_t &>(device).m_display_cb = callback; }
+	template <typename... T> void set_display_callback(T &&... args) { m_display_cb.set(std::forward<T>(args)...); }
 
-	void write(UINT8 data) { m_data = data; }
-	DECLARE_WRITE8_MEMBER( write ) { write(data); }
-	DECLARE_WRITE_LINE_MEMBER( ms0_w ) { m_ms0 = state; }
-	DECLARE_WRITE_LINE_MEMBER( ms1_w ) { m_ms1 = state; }
-	DECLARE_WRITE_LINE_MEMBER( revid_w ) { m_revid = state; }
-	DECLARE_WRITE_LINE_MEMBER( chabl_w ) { m_chabl = state; }
-	DECLARE_WRITE_LINE_MEMBER( blink_w ) { m_blink = state; }
-	DECLARE_WRITE_LINE_MEMBER( intin_w ) { m_intin = state; }
-	DECLARE_WRITE_LINE_MEMBER( atten_w ) { m_atten = state; }
-	DECLARE_WRITE_LINE_MEMBER( cursor_w ) { m_cursor = state; }
-	DECLARE_WRITE_LINE_MEMBER( retbl_w ) { m_retbl = state; }
-	DECLARE_WRITE_LINE_MEMBER( ld_sh_w );
-	DECLARE_WRITE_LINE_MEMBER( sld_w ) { m_sld = state; }
-	DECLARE_WRITE_LINE_MEMBER( slg_w ) { m_slg = state; }
-	DECLARE_WRITE_LINE_MEMBER( blc_w ) { m_blc = state; }
-	DECLARE_WRITE_LINE_MEMBER( bkc_w ) { m_bkc = state; }
-	DECLARE_WRITE_LINE_MEMBER( sl0_w ) { m_sl0 = state; }
-	DECLARE_WRITE_LINE_MEMBER( sl1_w ) { m_sl1 = state; }
-	DECLARE_WRITE_LINE_MEMBER( sl2_w ) { m_sl2 = state; }
-	DECLARE_WRITE_LINE_MEMBER( sl3_w ) { m_sl3 = state; }
-	DECLARE_WRITE_LINE_MEMBER( vsync_w );
+	void write(uint8_t data) { m_data = data; }
+	void ms0_w(int state) { m_ms0 = state; }
+	void ms1_w(int state) { m_ms1 = state; }
+	void revid_w(int state) { m_revid = state; }
+	void chabl_w(int state) { m_chabl = state; }
+	void blink_w(int state) { m_blink = state; }
+	void intin_w(int state) { m_intin = state; }
+	void atten_w(int state) { m_atten = state; }
+	void cursor_w(int state) { m_cursor = state; }
+	void retbl_w(int state) { m_retbl = state; }
+	void ld_sh_w(int state);
+	void sld_w(int state) { m_sld = state; }
+	void slg_w(int state) { m_slg = state; }
+	void blc_w(int state) { m_blc = state; }
+	void bkc_w(int state) { m_bkc = state; }
+	void sl0_w(int state) { m_sl0 = state; }
+	void sl1_w(int state) { m_sl1 = state; }
+	void sl2_w(int state) { m_sl2 = state; }
+	void sl3_w(int state) { m_sl3 = state; }
+	void vsync_w(int state);
 
-	UINT32 screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect);
+	uint32_t screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect);
 
 protected:
 	// device-level overrides
@@ -98,12 +91,12 @@ private:
 		MS_UNDERLINE
 	};
 
-	crt9021_draw_character_delegate m_display_cb;
+	draw_character_delegate m_display_cb;
 
 	bitmap_rgb32 m_bitmap;
 
 	// inputs
-	UINT8 m_data;
+	uint8_t m_data;
 	int m_ms0;
 	int m_ms1;
 	int m_revid;
@@ -125,15 +118,13 @@ private:
 	int m_vsync;
 
 	// outputs
-	UINT8 m_sr;
+	uint8_t m_sr;
 	int m_intout;
 	int m_sl;
 };
 
 
 // device type definition
-extern const device_type CRT9021;
+DECLARE_DEVICE_TYPE(CRT9021, crt9021_device)
 
-
-
-#endif
+#endif // MAME_VIDEO_CRT9021_H

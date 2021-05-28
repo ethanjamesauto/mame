@@ -6,12 +6,11 @@
 
 **********************************************************************/
 
+#ifndef MAME_BUS_S100_NSMDSAD_H
+#define MAME_BUS_S100_NSMDSAD_H
+
 #pragma once
 
-#ifndef __S100_MDS_AD__
-#define __S100_MDS_AD__
-
-#include "emu.h"
 #include "s100.h"
 #include "imagedev/floppy.h"
 
@@ -28,23 +27,22 @@ class s100_mds_ad_device : public device_t,
 {
 public:
 	// construction/destruction
-	s100_mds_ad_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
-
-	// optional information overrides
-	virtual const rom_entry *device_rom_region() const override;
-	virtual machine_config_constructor device_mconfig_additions() const override;
+	s100_mds_ad_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
 protected:
 	// device-level overrides
 	virtual void device_start() override;
 	virtual void device_reset() override;
 
+	// optional information overrides
+	virtual const tiny_rom_entry *device_rom_region() const override;
+	virtual void device_add_mconfig(machine_config &config) override;
+
 	// device_s100_card_interface overrides
-	virtual UINT8 s100_smemr_r(address_space &space, offs_t offset) override;
+	virtual uint8_t s100_smemr_r(offs_t offset) override;
 
 private:
-	required_device<floppy_connector> m_floppy0;
-	required_device<floppy_connector> m_floppy1;
+	required_device_array<floppy_connector, 2> m_floppy;
 	required_memory_region m_dsel_rom;
 	required_memory_region m_dpgm_rom;
 	required_memory_region m_dwe_rom;
@@ -52,8 +50,6 @@ private:
 
 
 // device type definition
-extern const device_type S100_MDS_AD;
+DECLARE_DEVICE_TYPE(S100_MDS_AD, s100_mds_ad_device)
 
-
-
-#endif
+#endif // MAME_BUS_S100_NSMDSAD_H

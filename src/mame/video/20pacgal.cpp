@@ -10,6 +10,7 @@
 
 #include "emu.h"
 #include "includes/20pacgal.h"
+#include "screen.h"
 
 
 #define SCREEN_HEIGHT   (224)
@@ -24,67 +25,64 @@
  *
  *************************************/
 
-void _20pacgal_state::get_pens(pen_t *pens)
+void _20pacgal_state::get_pens()
 {
-	offs_t offs;
-	UINT8 *color_prom = memregion("proms")->base() + (NUM_PENS * m_game_selected);
+	// TODO: Accurate palette when prom doesn't exist
+	uint8_t const *color_prom = m_proms->base() + (NUM_PENS * m_game_selected);
 
-	for (offs = 0; offs < NUM_PENS ;offs++)
+	for (offs_t offs = 0; offs < NUM_PENS; offs++)
 	{
-		int bit0,bit1,bit2,r,g,b;
+		int bit0, bit1, bit2;
 
-		/* red component */
+		// red component
 		bit0 = (*color_prom >> 0) & 0x01;
 		bit1 = (*color_prom >> 1) & 0x01;
 		bit2 = (*color_prom >> 2) & 0x01;
-		r = 0x21 * bit0 + 0x47 * bit1 + 0x97 * bit2;
+		int const r = 0x21 * bit0 + 0x47 * bit1 + 0x97 * bit2;
 
-		/* green component */
+		// green component
 		bit0 = (*color_prom >> 3) & 0x01;
 		bit1 = (*color_prom >> 4) & 0x01;
 		bit2 = (*color_prom >> 5) & 0x01;
-		g = 0x21 * bit0 + 0x47 * bit1 + 0x97 * bit2;
+		int const g = 0x21 * bit0 + 0x47 * bit1 + 0x97 * bit2;
 
-		/* blue component */
+		// blue component
 		bit0 = 0;
 		bit1 = (*color_prom >> 6) & 0x01;
 		bit2 = (*color_prom >> 7) & 0x01;
-		b = 0x21 * bit0 + 0x47 * bit1 + 0x97 * bit2;
+		int const b = 0x21 * bit0 + 0x47 * bit1 + 0x97 * bit2;
 
-		pens[offs] = rgb_t(r, g, b);
+		m_palette->set_pen_color(offs, rgb_t(r, g, b));
 
 		color_prom++;
 	}
-	/* Star field */
+}
 
-	/* palette for the stars */
-	for (offs = 0;offs < 64;offs++)
+void _20pacgal_state::starpal_init(palette_device &palette) const
+{
+	// Star field
+
+	// palette for the stars
+	for (offs_t offs = 0; offs < 64; offs++)
 	{
-		int bits,r,g,b;
-		static const int map[4] = { 0x00, 0x47, 0x97 ,0xde };
+		static constexpr int map[4] = { 0x00, 0x47, 0x97 ,0xde };
 
-		bits = (offs >> 0) & 0x03;
-		r = map[bits];
-		bits = (offs >> 2) & 0x03;
-		g = map[bits];
-		bits = (offs >> 4) & 0x03;
-		b = map[bits];
+		int const r = map[(offs >> 0) & 0x03];
+		int const g = map[(offs >> 2) & 0x03];
+		int const b = map[(offs >> 4) & 0x03];
 
-		pens[NUM_PENS + offs] = rgb_t(r, g, b);
+		palette.set_pen_color(NUM_PENS + offs, rgb_t(r, g, b));
 	}
 }
 
 
 void _20pacgal_state::do_pen_lookup(bitmap_rgb32 &bitmap, const rectangle &cliprect)
 {
-	int y, x;
-	pen_t pens[NUM_PENS + NUM_STAR_PENS];
+	const pen_t *pen = m_palette->pens();
 
-	get_pens(pens);
-
-	for (y = cliprect.min_y; y <= cliprect.max_y; y++)
-		for(x = cliprect.min_x; x <= cliprect.max_x; x++)
-			bitmap.pix32(y, x) = pens[bitmap.pix32(y, x)];
+	for (int y = cliprect.min_y; y <= cliprect.max_y; y++)
+		for(int x = cliprect.min_x; x <= cliprect.max_x; x++)
+			bitmap.pix(y, x) = pen[bitmap.pix(y, x)];
 }
 
 
@@ -95,8 +93,8 @@ void _20pacgal_state::do_pen_lookup(bitmap_rgb32 &bitmap, const rectangle &clipr
  *
  *************************************/
 
-void _20pacgal_state::draw_sprite(bitmap_rgb32 &bitmap, int y, int x,
-						UINT8 code, UINT8 color, int flip_y, int flip_x)
+void _20pacgal_state::draw_sprite(bitmap_rgb32 &bitmap, const rectangle &cliprect, int y, int x,
+						uint8_t code, uint8_t color, int flip_y, int flip_x)
 {
 	int sy;
 
@@ -114,10 +112,10 @@ void _20pacgal_state::draw_sprite(bitmap_rgb32 &bitmap, int y, int x,
 	{
 		int x_sav = x;
 
-		if ((y >= 0) && (y < SCREEN_HEIGHT))
+		if ((y >= cliprect.min_y) && (y <= cliprect.max_y))
 		{
 			int sx;
-			UINT32 data;
+			uint32_t data;
 
 			offs_t gfx_offs = ((code & 0x7f) << 6) | (sy << 2);
 
@@ -132,16 +130,16 @@ void _20pacgal_state::draw_sprite(bitmap_rgb32 &bitmap, int y, int x,
 			/* for each pixel in the row */
 			for (sx = 0; sx < 0x10; sx++)
 			{
-				if ((x >= 0) && (x < SCREEN_WIDTH))
+				if ((x >= cliprect.min_x) && (x <= cliprect.max_x))
 				{
 					offs_t pen = (data & 0xc0000000) >> 30;
-					UINT8 col;
+					uint8_t col;
 
 					col = m_sprite_color_lookup[pen_base | pen] & 0x0f;
 
 					/* pen bits A0-A3 */
 					if (col)
-						bitmap.pix32(y, x) = (bitmap.pix32(y, x) & 0xff0) | col;
+						bitmap.pix(y, x) = (bitmap.pix(y, x) & 0xff0) | col;
 				}
 
 				/* next pixel */
@@ -165,7 +163,7 @@ void _20pacgal_state::draw_sprite(bitmap_rgb32 &bitmap, int y, int x,
 }
 
 
-void _20pacgal_state::draw_sprites(bitmap_rgb32 &bitmap)
+void _20pacgal_state::draw_sprites(bitmap_rgb32 &bitmap, const rectangle &cliprect)
 {
 	int offs;
 
@@ -178,8 +176,8 @@ void _20pacgal_state::draw_sprites(bitmap_rgb32 &bitmap)
 		};
 		int x, y;
 
-		UINT8 code = m_sprite_ram[offs + 0x000];
-		UINT8 color = m_sprite_ram[offs + 0x001];
+		uint8_t code = m_sprite_ram[offs + 0x000];
+		uint8_t color = m_sprite_ram[offs + 0x001];
 
 		int sx = m_sprite_ram[offs + 0x081] - 41 + 0x100*(m_sprite_ram[offs + 0x101] & 3);
 		int sy = 256 - m_sprite_ram[offs + 0x080] + 1;
@@ -201,7 +199,7 @@ void _20pacgal_state::draw_sprites(bitmap_rgb32 &bitmap)
 
 		for (y = 0; y <= size_y; y++)
 			for (x = 0; x <= size_x; x++)
-				draw_sprite(bitmap,
+				draw_sprite(bitmap, cliprect,
 							sy + (16 * y), sx + (16 * x),
 							code + code_offs[y ^ (size_y * flip_y)][x ^ (size_x * flip_x)],
 							color,
@@ -217,7 +215,7 @@ void _20pacgal_state::draw_sprites(bitmap_rgb32 &bitmap)
  *
  *************************************/
 
-void _20pacgal_state::draw_chars(bitmap_rgb32 &bitmap)
+void _20pacgal_state::draw_chars(bitmap_rgb32 &bitmap, const rectangle &cliprect)
 {
 	offs_t offs;
 
@@ -229,8 +227,8 @@ void _20pacgal_state::draw_chars(bitmap_rgb32 &bitmap)
 		int sy;
 		int y, x;
 
-		UINT8 *gfx = &m_char_gfx_ram.target()[m_video_ram[0x0000 | offs] << 4];
-		UINT32 color_base = (m_video_ram[0x0400 | offs] & 0x3f) << 2;
+		uint8_t *gfx = &m_char_gfx_ram.target()[m_video_ram[0x0000 | offs] << 4];
+		uint32_t color_base = (m_video_ram[0x0400 | offs] & 0x3f) << 2;
 
 		/* map the offset to (x, y) character coordinates */
 		if ((offs & 0x03c0) == 0)
@@ -267,27 +265,33 @@ void _20pacgal_state::draw_chars(bitmap_rgb32 &bitmap)
 			int sx;
 			int x_sav = x;
 
-			UINT16 data = (gfx[8] << 8) | gfx[0];
-
-			/* for each pixel in the row */
-			for (sx = 0; sx < 8; sx++)
+			if ((y >= cliprect.min_y) && (y <= cliprect.max_y))
 			{
-				UINT32 col = ((data & 0x8000) >> 14) | ((data & 0x0800) >> 11);
+				uint16_t data = (gfx[8] << 8) | gfx[0];
 
-				/* pen bits A4-A11 */
-				if ( col != 0 )
-					bitmap.pix32(y, x) = (color_base | col) << 4;
+				/* for each pixel in the row */
+				for (sx = 0; sx < 8; sx++)
+				{
+					if ((x >= cliprect.min_x) && (x <= cliprect.max_x))
+					{
+						uint32_t col = ((data & 0x8000) >> 14) | ((data & 0x0800) >> 11);
 
-				/* next pixel */
-				if (flip)
-					x = x - 1;
-				else
-					x = x + 1;
+						/* pen bits A4-A11 */
+						if ( col != 0 )
+							bitmap.pix(y, x) = (color_base | col) << 4;
 
-				if (sx == 0x03)
-					data = data << 5;
-				else
-					data = data << 1;
+						/* next pixel */
+						if (flip)
+							x = x - 1;
+						else
+							x = x + 1;
+
+						if (sx == 0x03)
+							data = data << 5;
+						else
+							data = data << 1;
+					}
+				}
 			}
 
 			/* next row */
@@ -356,10 +360,10 @@ void _20pacgal_state::draw_stars(bitmap_rgb32 &bitmap, const rectangle &cliprect
 	if ( (m_stars_ctrl[0] >> 5) & 1 )
 	{
 		int clock;
-		UINT16 lfsr =   m_stars_seed[0] + m_stars_seed[1]*256;
-		UINT8 feedback = (m_stars_ctrl[0] >> 6) & 1;
-		UINT16 star_seta = (m_stars_ctrl[0] >> 3) & 0x01;
-		UINT16 star_setb = (m_stars_ctrl[0] >> 3) & 0x02;
+		uint16_t lfsr =   m_stars_seed[0] + m_stars_seed[1]*256;
+		uint8_t feedback = (m_stars_ctrl[0] >> 6) & 1;
+		uint16_t star_seta = (m_stars_ctrl[0] >> 3) & 0x01;
+		uint16_t star_setb = (m_stars_ctrl[0] >> 3) & 0x02;
 		int cnt = 0;
 
 		/* This is a guess based on galaga star sets */
@@ -394,7 +398,7 @@ void _20pacgal_state::draw_stars(bitmap_rgb32 &bitmap, const rectangle &cliprect
 			if (((lfsr & 0xffc0) == star_seta) || ((lfsr & 0xffc0) == star_setb))
 			{
 				if (y >= cliprect.min_y && y <= cliprect.max_y)
-					bitmap.pix32(y, x) = NUM_PENS + (lfsr & 0x3f);
+					bitmap.pix(y, x) = NUM_PENS + (lfsr & 0x3f);
 				cnt++;
 			}
 		}
@@ -408,17 +412,31 @@ void _20pacgal_state::draw_stars(bitmap_rgb32 &bitmap, const rectangle &cliprect
  *
  *************************************/
 
-UINT32 _20pacgal_state::screen_update_20pacgal(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
+uint32_t _20pacgal_state::screen_update_20pacgal(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
 {
 	bitmap.fill(0, cliprect);
 	draw_stars(bitmap,cliprect);
-	draw_chars(bitmap);
-	draw_sprites(bitmap);
+	draw_chars(bitmap, cliprect);
+	draw_sprites(bitmap, cliprect);
 	do_pen_lookup(bitmap, cliprect);
 
 	return 0;
 }
 
+
+void _20pacgal_state::video_start()
+{
+	m_sprite_gfx_ram = make_unique_clear<uint8_t[]>(0x2000);
+	m_sprite_ram = make_unique_clear<uint8_t[]>(0x180);
+	m_sprite_color_lookup = make_unique_clear<uint8_t[]>(0x100);
+
+	save_pointer(NAME(m_sprite_gfx_ram), 0x2000);
+	save_pointer(NAME(m_sprite_ram), 0x180);
+	save_pointer(NAME(m_sprite_color_lookup), 0x100);
+
+	if (m_proms != nullptr)
+		get_pens();
+}
 
 
 /*************************************
@@ -427,11 +445,15 @@ UINT32 _20pacgal_state::screen_update_20pacgal(screen_device &screen, bitmap_rgb
  *
  *************************************/
 
-MACHINE_CONFIG_FRAGMENT( 20pacgal_video )
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_REFRESH_RATE(60)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(0))
-	MCFG_SCREEN_SIZE(SCREEN_WIDTH, SCREEN_HEIGHT)
-	MCFG_SCREEN_VISIBLE_AREA(0, SCREEN_WIDTH - 1, 0, SCREEN_HEIGHT - 1)
-	MCFG_SCREEN_UPDATE_DRIVER(_20pacgal_state, screen_update_20pacgal)
-MACHINE_CONFIG_END
+void _20pacgal_state::_20pacgal_video(machine_config &config)
+{
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_RASTER));
+	screen.set_refresh_hz(60);
+	screen.set_vblank_time(ATTOSECONDS_IN_USEC(0));
+	screen.set_size(SCREEN_WIDTH, SCREEN_HEIGHT);
+	screen.set_visarea(0, SCREEN_WIDTH - 1, 0, SCREEN_HEIGHT - 1);
+	screen.set_screen_update(FUNC(_20pacgal_state::screen_update_20pacgal));
+	screen.screen_vblank().set(FUNC(_20pacgal_state::vblank_irq));
+
+	PALETTE(config, m_palette, FUNC(_20pacgal_state::starpal_init), NUM_PENS + NUM_PENS);
+}

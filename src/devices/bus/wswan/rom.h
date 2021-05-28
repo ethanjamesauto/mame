@@ -1,7 +1,7 @@
 // license:BSD-3-Clause
 // copyright-holders:Wilbert Pol
-#ifndef __WS_ROM_H
-#define __WS_ROM_H
+#ifndef MAME_BUS_WSWAN_ROM_H
+#define MAME_BUS_WSWAN_ROM_H
 
 #include "slot.h"
 
@@ -13,37 +13,40 @@ class ws_rom_device : public device_t,
 {
 public:
 	// construction/destruction
-	ws_rom_device(const machine_config &mconfig, device_type type, const char *name, const char *tag, device_t *owner, UINT32 clock, const char *shortname, const char *source);
-	ws_rom_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	ws_rom_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
+
+	// reading and writing
+	virtual u16 read_rom20(offs_t offset, u16 mem_mask) override;
+	virtual u16 read_rom30(offs_t offset, u16 mem_mask) override;
+	virtual u16 read_rom40(offs_t offset, u16 mem_mask) override;
+	virtual u16 read_io(offs_t offset, u16 mem_mask) override;
+	virtual void write_io(offs_t offset, u16 data, u16 mem_mask) override;
+
+protected:
+	static constexpr device_timer_id TIMER_RTC = 0;
+
+	ws_rom_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, u32 clock);
 
 	// device-level overrides
 	virtual void device_start() override;
 	virtual void device_reset() override;
 	virtual void device_timer(emu_timer &timer, device_timer_id id, int param, void *ptr) override;
 
-	// reading and writing
-	virtual DECLARE_READ8_MEMBER(read_rom20) override;
-	virtual DECLARE_READ8_MEMBER(read_rom30) override;
-	virtual DECLARE_READ8_MEMBER(read_rom40) override;
-	virtual DECLARE_READ8_MEMBER(read_io) override;
-	virtual DECLARE_WRITE8_MEMBER(write_io) override;
-
-protected:
-	UINT8 m_io_regs[0x10];
-	UINT32 m_base20, m_base30, m_base40;
+	u16 m_io_regs[8];
+	u32 m_base20, m_base30, m_base40;
+	u32 m_rom_mask;
 
 	// RTC
-	UINT8   m_rtc_setting;    /* Timer setting byte */
-	UINT8   m_rtc_year;       /* Year */
-	UINT8   m_rtc_month;      /* Month */
-	UINT8   m_rtc_day;        /* Day */
-	UINT8   m_rtc_day_of_week;    /* Day of the week */
-	UINT8   m_rtc_hour;       /* Hour, high bit = 0 => AM, high bit = 1 => PM */
-	UINT8   m_rtc_minute;     /* Minute */
-	UINT8   m_rtc_second;     /* Second */
-	UINT8   m_rtc_index;      /* index for reading/writing of current of alarm time */
+	u8   m_rtc_setting;    /* Timer setting byte */
+	u8   m_rtc_year;       /* Year */
+	u8   m_rtc_month;      /* Month */
+	u8   m_rtc_day;        /* Day */
+	u8   m_rtc_day_of_week;    /* Day of the week */
+	u8   m_rtc_hour;       /* Hour, high bit = 0 => AM, high bit = 1 => PM */
+	u8   m_rtc_minute;     /* Minute */
+	u8   m_rtc_second;     /* Second */
+	u8   m_rtc_index;      /* index for reading/writing of current of alarm time */
 
-	static const device_timer_id TIMER_RTC = 0;
 	emu_timer *rtc_timer;
 };
 
@@ -54,19 +57,22 @@ class ws_rom_sram_device : public ws_rom_device
 {
 public:
 	// construction/destruction
-	ws_rom_sram_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	ws_rom_sram_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
+
+	// reading and writing
+	virtual u16 read_ram(offs_t offset, u16 mem_mask) override;
+	virtual void write_ram(offs_t offset, u16 data, u16 mem_mask) override;
+	virtual void write_io(offs_t offset, u16 data, u16 mem_mask) override;
+
+protected:
+	ws_rom_sram_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, u32 clock);
 
 	// device-level overrides
 	virtual void device_start() override;
 	virtual void device_reset() override;
 
-	// reading and writing
-	virtual DECLARE_READ8_MEMBER(read_ram) override;
-	virtual DECLARE_WRITE8_MEMBER(write_ram) override;
-	virtual DECLARE_WRITE8_MEMBER(write_io) override;
-
 private:
-	UINT32 m_nvram_base;
+	u32 m_nvram_base;
 };
 
 
@@ -76,30 +82,61 @@ class ws_rom_eeprom_device : public ws_rom_device
 {
 public:
 	// construction/destruction
-	ws_rom_eeprom_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	ws_rom_eeprom_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
 
+	// reading and writing
+	virtual u16 read_io(offs_t offset, u16 mem_mask) override;
+	virtual void write_io(offs_t offset, u16 data, u16 mem_mask) override;
+
+protected:
 	// device-level overrides
 	virtual void device_start() override;
 	virtual void device_reset() override;
 
-	// reading and writing
-	virtual DECLARE_READ8_MEMBER(read_io) override;
-	virtual DECLARE_WRITE8_MEMBER(write_io) override;
-
 private:
-	UINT8   m_eeprom_mode;       /* eeprom mode */
-	UINT16  m_eeprom_address;    /* Read/write address */
-	UINT8   m_eeprom_command;    /* Commands: 00, 01, 02, 03, 04, 08, 0C */
-	UINT8   m_eeprom_start;      /* start bit */
-	UINT8   m_eeprom_write_enabled;  /* write enabled yes/no */
+	u8   m_eeprom_mode;       /* eeprom mode */
+	u16  m_eeprom_address;    /* Read/write address */
+	u8   m_eeprom_command;    /* Commands: 00, 01, 02, 03, 04, 08, 0C */
+	u8   m_eeprom_start;      /* start bit */
+	u8   m_eeprom_write_enabled;  /* write enabled yes/no */
 };
 
 
+class ws_wwitch_device : public ws_rom_sram_device
+{
+public:
+	// construction/destruction
+	ws_wwitch_device(const machine_config &mconfig, const char *tag, device_t *owner, u32 clock);
+
+	// reading and writing
+	virtual u16 read_ram(offs_t offset, u16 mem_mask) override;
+	virtual void write_ram(offs_t offset, u16 data, u16 mem_mask) override;
+
+protected:
+	// device-level overrides
+	virtual void device_start() override;
+	virtual void device_reset() override;
+
+private:
+	enum {
+		READ_MODE = 0,
+		COMMAND_MODE
+	};
+	u8 m_flash_seq;
+	u8 m_flash_command;
+	bool m_write_flash;
+	bool m_writing_flash;
+	bool m_write_resetting;
+	u8 m_flash_mode;
+	u8 m_flash_status;
+	u8 m_flash_count;
+};
+
 
 // device type definition
-extern const device_type WS_ROM_STD;
-extern const device_type WS_ROM_SRAM;
-extern const device_type WS_ROM_EEPROM;
+DECLARE_DEVICE_TYPE(WS_ROM_STD,    ws_rom_device)
+DECLARE_DEVICE_TYPE(WS_ROM_SRAM,   ws_rom_sram_device)
+DECLARE_DEVICE_TYPE(WS_ROM_EEPROM, ws_rom_eeprom_device)
+DECLARE_DEVICE_TYPE(WS_ROM_WWITCH, ws_wwitch_device)
 
-
-#endif
+#endif // MAME_BUS_WSWAN_ROM_H

@@ -1,4 +1,4 @@
-// license:???
+// license:BSD-3-Clause
 // copyright-holders:Stefan Jokisch
 /***************************************************************************
 
@@ -8,6 +8,7 @@
 
 #include "emu.h"
 #include "cpu/s2650/s2650.h"
+#include "screen.h"
 
 
 class embargo_state : public driver_device
@@ -18,22 +19,28 @@ public:
 		m_videoram(*this, "videoram"),
 		m_maincpu(*this, "maincpu") { }
 
+	void embargo(machine_config &config);
+
+private:
 	/* memory pointers */
-	required_shared_ptr<UINT8> m_videoram;
+	required_shared_ptr<uint8_t> m_videoram;
 
 	/* misc */
-	UINT8    m_dial_enable_1;
-	UINT8    m_dial_enable_2;
-	UINT8    m_input_select;
-	DECLARE_READ8_MEMBER(input_port_bit_r);
-	DECLARE_READ8_MEMBER(dial_r);
-	DECLARE_WRITE8_MEMBER(port_1_w);
-	DECLARE_WRITE8_MEMBER(port_2_w);
-	DECLARE_WRITE8_MEMBER(input_select_w);
+	uint8_t    m_dial_enable_1;
+	uint8_t    m_dial_enable_2;
+	uint8_t    m_input_select;
+	uint8_t input_port_bit_r();
+	uint8_t dial_r();
+	void port_1_w(uint8_t data);
+	void port_2_w(uint8_t data);
+	void input_select_w(uint8_t data);
 	virtual void machine_start() override;
 	virtual void machine_reset() override;
-	UINT32 screen_update_embargo(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect);
+	uint32_t screen_update_embargo(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect);
 	required_device<cpu_device> m_maincpu;
+	void main_data_map(address_map &map);
+	void main_io_map(address_map &map);
+	void main_map(address_map &map);
 };
 
 
@@ -43,25 +50,21 @@ public:
  *
  *************************************/
 
-UINT32 embargo_state::screen_update_embargo(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
+uint32_t embargo_state::screen_update_embargo(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
 {
-	offs_t offs;
-
-	for (offs = 0; offs < m_videoram.bytes(); offs++)
+	for (offs_t offs = 0; offs < m_videoram.bytes(); offs++)
 	{
-		int i;
+		uint8_t x = offs << 3;
+		uint8_t const y = offs >> 5;
+		uint8_t data = m_videoram[offs];
 
-		UINT8 x = offs << 3;
-		UINT8 y = offs >> 5;
-		UINT8 data = m_videoram[offs];
-
-		for (i = 0; i < 8; i++)
+		for (int i = 0; i < 8; i++)
 		{
-			pen_t pen = (data & 0x01) ? rgb_t::white : rgb_t::black;
-			bitmap.pix32(y, x) = pen;
+			pen_t pen = (data & 0x01) ? rgb_t::white() : rgb_t::black();
+			bitmap.pix(y, x) = pen;
 
-			data = data >> 1;
-			x = x + 1;
+			data >>= 1;
+			x++;
 		}
 	}
 
@@ -76,25 +79,25 @@ UINT32 embargo_state::screen_update_embargo(screen_device &screen, bitmap_rgb32 
  *
  *************************************/
 
-READ8_MEMBER(embargo_state::input_port_bit_r)
+uint8_t embargo_state::input_port_bit_r()
 {
 	return (ioport("IN1")->read() << (7 - m_input_select)) & 0x80;
 }
 
 
-READ8_MEMBER(embargo_state::dial_r)
+uint8_t embargo_state::dial_r()
 {
-	UINT8 lo = 0;
-	UINT8 hi = 0;
+	uint8_t lo = 0;
+	uint8_t hi = 0;
 
-	UINT8 mapped_lo = 0;
-	UINT8 mapped_hi = 0;
+	uint8_t mapped_lo = 0;
+	uint8_t mapped_hi = 0;
 
 	int i;
 
 	/* game reads 4 bits per dial and maps them onto clock directions */
 
-	static const UINT8 map[] =
+	static const uint8_t map[] =
 	{
 		0x00, 0x0b, 0x01, 0x02, 0x04, 0x04, 0x02, 0x03,
 		0x09, 0x0a, 0x08, 0x09, 0x08, 0x05, 0x07, 0x06
@@ -132,19 +135,19 @@ READ8_MEMBER(embargo_state::dial_r)
 }
 
 
-WRITE8_MEMBER(embargo_state::port_1_w)
+void embargo_state::port_1_w(uint8_t data)
 {
 	m_dial_enable_1 = data & 0x01; /* other bits unknown */
 }
 
 
-WRITE8_MEMBER(embargo_state::port_2_w)
+void embargo_state::port_2_w(uint8_t data)
 {
 	m_dial_enable_2 = data & 0x01; /* other bits unknown */
 }
 
 
-WRITE8_MEMBER(embargo_state::input_select_w)
+void embargo_state::input_select_w(uint8_t data)
 {
 	m_input_select = data & 0x07;
 }
@@ -157,11 +160,12 @@ WRITE8_MEMBER(embargo_state::input_select_w)
  *
  *************************************/
 
-static ADDRESS_MAP_START( main_map, AS_PROGRAM, 8, embargo_state )
-	AM_RANGE(0x0000, 0x0fff) AM_ROM
-	AM_RANGE(0x1e00, 0x1fff) AM_RAM
-	AM_RANGE(0x2000, 0x3fff) AM_RAM AM_SHARE("videoram")
-ADDRESS_MAP_END
+void embargo_state::main_map(address_map &map)
+{
+	map(0x0000, 0x0fff).rom();
+	map(0x1e00, 0x1fff).ram();
+	map(0x2000, 0x3fff).ram().share("videoram");
+}
 
 
 
@@ -171,13 +175,18 @@ ADDRESS_MAP_END
  *
  *************************************/
 
-static ADDRESS_MAP_START( main_io_map, AS_IO, 8, embargo_state )
-	AM_RANGE(0x01, 0x01) AM_READ_PORT("IN0") AM_WRITE(port_1_w)
-	AM_RANGE(0x02, 0x02) AM_READWRITE(dial_r, port_2_w)
-	AM_RANGE(0x03, 0x03) AM_WRITENOP /* always 0xFE */
-	AM_RANGE(S2650_DATA_PORT, S2650_DATA_PORT) AM_READ_PORT("IN2")
-	AM_RANGE(S2650_CTRL_PORT, S2650_CTRL_PORT) AM_READWRITE(input_port_bit_r, input_select_w)
-ADDRESS_MAP_END
+void embargo_state::main_io_map(address_map &map)
+{
+	map(0x01, 0x01).portr("IN0").w(FUNC(embargo_state::port_1_w));
+	map(0x02, 0x02).rw(FUNC(embargo_state::dial_r), FUNC(embargo_state::port_2_w));
+	map(0x03, 0x03).nopw(); /* always 0xFE */
+}
+
+void embargo_state::main_data_map(address_map &map)
+{
+	map(S2650_DATA_PORT, S2650_DATA_PORT).portr("IN2");
+	map(S2650_CTRL_PORT, S2650_CTRL_PORT).rw(FUNC(embargo_state::input_port_bit_r), FUNC(embargo_state::input_select_w));
+}
 
 
 
@@ -253,22 +262,21 @@ void embargo_state::machine_reset()
  *
  *************************************/
 
-static MACHINE_CONFIG_START( embargo, embargo_state )
-
+void embargo_state::embargo(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", S2650, 625000)
-	MCFG_CPU_PROGRAM_MAP(main_map)
-	MCFG_CPU_IO_MAP(main_io_map)
-
+	S2650(config, m_maincpu, 625000);
+	m_maincpu->set_addrmap(AS_PROGRAM, &embargo_state::main_map);
+	m_maincpu->set_addrmap(AS_IO, &embargo_state::main_io_map);
+	m_maincpu->set_addrmap(AS_DATA, &embargo_state::main_data_map);
 
 	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_SIZE(256, 256)
-	MCFG_SCREEN_VISIBLE_AREA(0, 255, 0, 239)
-	MCFG_SCREEN_REFRESH_RATE(60)
-	MCFG_SCREEN_UPDATE_DRIVER(embargo_state, screen_update_embargo)
-
-MACHINE_CONFIG_END
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_RASTER));
+	screen.set_size(256, 256);
+	screen.set_visarea(0, 255, 0, 239);
+	screen.set_refresh_hz(60);
+	screen.set_screen_update(FUNC(embargo_state::screen_update_embargo));
+}
 
 
 
@@ -298,4 +306,4 @@ ROM_END
  *
  *************************************/
 
-GAME( 1977, embargo, 0, embargo, embargo, driver_device, 0, ROT0, "Cinematronics", "Embargo", MACHINE_NO_SOUND | MACHINE_SUPPORTS_SAVE )
+GAME( 1977, embargo, 0, embargo, embargo, embargo_state, empty_init, ROT0, "Cinematronics", "Embargo", MACHINE_NO_SOUND | MACHINE_SUPPORTS_SAVE )

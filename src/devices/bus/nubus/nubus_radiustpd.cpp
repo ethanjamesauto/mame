@@ -12,19 +12,14 @@
 
 #include "emu.h"
 #include "nubus_radiustpd.h"
+#include "screen.h"
+
 
 #define RADIUSTPD_SCREEN_NAME "tpd_screen"
 #define RADIUSTPD_ROM_REGION  "tpd_rom"
 
 #define VRAM_SIZE   (0x40000)   // 256k.  1152x880 1 bit per pixel fits nicely.
 
-MACHINE_CONFIG_FRAGMENT( radiustpd )
-	MCFG_SCREEN_ADD( RADIUSTPD_SCREEN_NAME, RASTER)
-	MCFG_SCREEN_UPDATE_DEVICE(DEVICE_SELF, nubus_radiustpd_device, screen_update)
-	MCFG_SCREEN_SIZE(1280, 960)
-	MCFG_SCREEN_REFRESH_RATE(70)
-	MCFG_SCREEN_VISIBLE_AREA(0, 1152-1, 0, 880-1)
-MACHINE_CONFIG_END
 
 ROM_START( radiustpd )
 	ROM_REGION(0x8000, RADIUSTPD_ROM_REGION, 0)
@@ -35,24 +30,25 @@ ROM_END
 //  GLOBAL VARIABLES
 //**************************************************************************
 
-const device_type NUBUS_RADIUSTPD = &device_creator<nubus_radiustpd_device>;
+DEFINE_DEVICE_TYPE(NUBUS_RADIUSTPD, nubus_radiustpd_device, "nb_rtpd", "Radius Two Page Display video card")
 
 
 //-------------------------------------------------
-//  machine_config_additions - device-specific
-//  machine configurations
+//  device_add_mconfig - add device configuration
 //-------------------------------------------------
 
-machine_config_constructor nubus_radiustpd_device::device_mconfig_additions() const
+void nubus_radiustpd_device::device_add_mconfig(machine_config &config)
 {
-	return MACHINE_CONFIG_NAME( radiustpd );
+	screen_device &screen(SCREEN(config, RADIUSTPD_SCREEN_NAME, SCREEN_TYPE_RASTER));
+	screen.set_screen_update(FUNC(nubus_radiustpd_device::screen_update));
+	screen.set_raw(99.522_MHz_XTAL, 1536, 0, 1152, 900, 0, 880); // 64.79 kHz horizontal, 72 Hz refresh
 }
 
 //-------------------------------------------------
 //  rom_region - device-specific ROM region
 //-------------------------------------------------
 
-const rom_entry *nubus_radiustpd_device::device_rom_region() const
+const tiny_rom_entry *nubus_radiustpd_device::device_rom_region() const
 {
 	return ROM_NAME( radiustpd );
 }
@@ -65,22 +61,20 @@ const rom_entry *nubus_radiustpd_device::device_rom_region() const
 //  nubus_radiustpd_device - constructor
 //-------------------------------------------------
 
-nubus_radiustpd_device::nubus_radiustpd_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock) :
-		device_t(mconfig, NUBUS_RADIUSTPD, "Radius Two Page Display video card", tag, owner, clock, "nb_rtpd", __FILE__),
-		device_video_interface(mconfig, *this),
-		device_nubus_card_interface(mconfig, *this), m_vram32(nullptr), m_mode(0), m_vbl_disable(0), m_toggle(0), m_count(0), m_clutoffs(0), m_timer(nullptr)
+nubus_radiustpd_device::nubus_radiustpd_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock) :
+	nubus_radiustpd_device(mconfig, NUBUS_RADIUSTPD, tag, owner, clock)
 {
-	m_assembled_tag = std::string(tag).append(":").append(RADIUSTPD_SCREEN_NAME);
-	m_screen_tag = m_assembled_tag.c_str();
+	(void)m_toggle;
+	(void)&m_colors[0];
 }
 
-nubus_radiustpd_device::nubus_radiustpd_device(const machine_config &mconfig, device_type type, const char *name, const char *tag, device_t *owner, UINT32 clock, const char *shortname, const char *source) :
-		device_t(mconfig, type, name, tag, owner, clock, shortname, source),
-		device_video_interface(mconfig, *this),
-		device_nubus_card_interface(mconfig, *this), m_vram32(nullptr), m_mode(0), m_vbl_disable(0), m_toggle(0), m_count(0), m_clutoffs(0), m_timer(nullptr)
+nubus_radiustpd_device::nubus_radiustpd_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock) :
+	device_t(mconfig, type, tag, owner, clock),
+	device_video_interface(mconfig, *this),
+	device_nubus_card_interface(mconfig, *this),
+	m_vram32(nullptr), m_mode(0), m_vbl_disable(0), m_toggle(0), m_count(0), m_clutoffs(0), m_timer(nullptr)
 {
-	m_assembled_tag = std::string(tag).append(":").append(RADIUSTPD_SCREEN_NAME);
-	m_screen_tag = m_assembled_tag.c_str();
+	set_screen(*this, RADIUSTPD_SCREEN_NAME);
 }
 
 //-------------------------------------------------
@@ -89,10 +83,8 @@ nubus_radiustpd_device::nubus_radiustpd_device(const machine_config &mconfig, de
 
 void nubus_radiustpd_device::device_start()
 {
-	UINT32 slotspace;
+	uint32_t slotspace;
 
-	// set_nubus_device makes m_slot valid
-	set_nubus_device();
 	install_declaration_rom(this, RADIUSTPD_ROM_REGION, true, true);
 
 	slotspace = get_slotspace();
@@ -100,15 +92,15 @@ void nubus_radiustpd_device::device_start()
 	printf("[radiustpd %p] slotspace = %x\n", (void *)this, slotspace);
 
 	m_vram.resize(VRAM_SIZE);
-	m_vram32 = (UINT32 *)&m_vram[0];
+	m_vram32 = (uint32_t *)&m_vram[0];
 
-	m_nubus->install_device(slotspace, slotspace+VRAM_SIZE-1, read32_delegate(FUNC(nubus_radiustpd_device::vram_r), this), write32_delegate(FUNC(nubus_radiustpd_device::vram_w), this));
-	m_nubus->install_device(slotspace+0x900000, slotspace+VRAM_SIZE-1+0x900000, read32_delegate(FUNC(nubus_radiustpd_device::vram_r), this), write32_delegate(FUNC(nubus_radiustpd_device::vram_w), this));
-	m_nubus->install_device(slotspace+0x80000, slotspace+0xeffff, read32_delegate(FUNC(nubus_radiustpd_device::radiustpd_r), this), write32_delegate(FUNC(nubus_radiustpd_device::radiustpd_w), this));
-	m_nubus->install_device(slotspace+0x980000, slotspace+0x9effff, read32_delegate(FUNC(nubus_radiustpd_device::radiustpd_r), this), write32_delegate(FUNC(nubus_radiustpd_device::radiustpd_w), this));
+	nubus().install_device(slotspace, slotspace+VRAM_SIZE-1, read32s_delegate(*this, FUNC(nubus_radiustpd_device::vram_r)), write32s_delegate(*this, FUNC(nubus_radiustpd_device::vram_w)));
+	nubus().install_device(slotspace+0x900000, slotspace+VRAM_SIZE-1+0x900000, read32s_delegate(*this, FUNC(nubus_radiustpd_device::vram_r)), write32s_delegate(*this, FUNC(nubus_radiustpd_device::vram_w)));
+	nubus().install_device(slotspace+0x80000, slotspace+0xeffff, read32s_delegate(*this, FUNC(nubus_radiustpd_device::radiustpd_r)), write32s_delegate(*this, FUNC(nubus_radiustpd_device::radiustpd_w)));
+	nubus().install_device(slotspace+0x980000, slotspace+0x9effff, read32s_delegate(*this, FUNC(nubus_radiustpd_device::radiustpd_r)), write32s_delegate(*this, FUNC(nubus_radiustpd_device::radiustpd_w)));
 
 	m_timer = timer_alloc(0, nullptr);
-	m_timer->adjust(m_screen->time_until_pos(479, 0), 0);
+	m_timer->adjust(screen().time_until_pos(479, 0), 0);
 }
 
 //-------------------------------------------------
@@ -136,7 +128,7 @@ void nubus_radiustpd_device::device_timer(emu_timer &timer, device_timer_id tid,
 		raise_slot_irq();
 	}
 
-	m_timer->adjust(m_screen->time_until_pos(479, 0), 0);
+	m_timer->adjust(screen().time_until_pos(479, 0), 0);
 }
 
 /***************************************************************************
@@ -145,41 +137,37 @@ void nubus_radiustpd_device::device_timer(emu_timer &timer, device_timer_id tid,
 
 ***************************************************************************/
 
-UINT32 nubus_radiustpd_device::screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
+uint32_t nubus_radiustpd_device::screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
 {
-	UINT32 *scanline;
-	int x, y;
-	UINT8 pixels, *vram;
+	uint8_t const *const vram = &m_vram[0x200];
 
-	vram = &m_vram[0x200];
-
-	for (y = 0; y < 880; y++)
+	for (int y = 0; y < 880; y++)
 	{
-		scanline = &bitmap.pix32(y);
-		for (x = 0; x < 1152/8; x++)
+		uint32_t *scanline = &bitmap.pix(y);
+		for (int x = 0; x < 1152/8; x++)
 		{
-			pixels = vram[(y * (1152/8)) + (BYTE4_XOR_BE(x))];
+			uint8_t const pixels = vram[(y * (1152/8)) + (BYTE4_XOR_BE(x))];
 
-			*scanline++ = m_palette[((pixels>>7)&0x1)];
-			*scanline++ = m_palette[((pixels>>6)&0x1)];
-			*scanline++ = m_palette[((pixels>>5)&0x1)];
-			*scanline++ = m_palette[((pixels>>4)&0x1)];
-			*scanline++ = m_palette[((pixels>>3)&0x1)];
-			*scanline++ = m_palette[((pixels>>2)&0x1)];
-			*scanline++ = m_palette[((pixels>>1)&0x1)];
-			*scanline++ = m_palette[(pixels&1)];
+			*scanline++ = m_palette[BIT(pixels, 7)];
+			*scanline++ = m_palette[BIT(pixels, 6)];
+			*scanline++ = m_palette[BIT(pixels, 5)];
+			*scanline++ = m_palette[BIT(pixels, 4)];
+			*scanline++ = m_palette[BIT(pixels, 3)];
+			*scanline++ = m_palette[BIT(pixels, 2)];
+			*scanline++ = m_palette[BIT(pixels, 1)];
+			*scanline++ = m_palette[BIT(pixels, 0)];
 		}
 	}
 
 	return 0;
 }
 
-WRITE32_MEMBER( nubus_radiustpd_device::radiustpd_w )
+void nubus_radiustpd_device::radiustpd_w(offs_t offset, uint32_t data, uint32_t mem_mask)
 {
 //  printf("TPD: write %08x to %x, mask %08x\n", data, offset, mem_mask);
 }
 
-READ32_MEMBER( nubus_radiustpd_device::radiustpd_r )
+uint32_t nubus_radiustpd_device::radiustpd_r(offs_t offset, uint32_t mem_mask)
 {
 //  printf("TPD: read @ %x, mask %08x\n", offset, mem_mask);
 
@@ -202,13 +190,13 @@ READ32_MEMBER( nubus_radiustpd_device::radiustpd_r )
 	return 0;
 }
 
-WRITE32_MEMBER( nubus_radiustpd_device::vram_w )
+void nubus_radiustpd_device::vram_w(offs_t offset, uint32_t data, uint32_t mem_mask)
 {
 	data ^= 0xffffffff;
 	COMBINE_DATA(&m_vram32[offset]);
 }
 
-READ32_MEMBER( nubus_radiustpd_device::vram_r )
+uint32_t nubus_radiustpd_device::vram_r(offs_t offset, uint32_t mem_mask)
 {
 	return m_vram32[offset] ^ 0xffffffff;
 }

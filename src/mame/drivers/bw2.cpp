@@ -24,8 +24,10 @@
 
 ***************************************************************************/
 
+#include "emu.h"
 #include "includes/bw2.h"
 #include "bus/rs232/rs232.h"
+#include "screen.h"
 #include "softlist.h"
 
 
@@ -57,11 +59,11 @@ enum
 //  read -
 //-------------------------------------------------
 
-READ8_MEMBER( bw2_state::read )
+uint8_t bw2_state::read(offs_t offset)
 {
 	int rom = 1, vram = 1, ram1 = 1, ram2 = 1, ram3 = 1, ram4 = 1, ram5 = 1, ram6 = 1;
 
-	UINT8 data = 0xff;
+	uint8_t data = 0xff;
 
 	switch (m_bank)
 	{
@@ -78,51 +80,35 @@ READ8_MEMBER( bw2_state::read )
 	if (offset < 0x8000)
 	{
 		if (!rom)
-		{
 			data = m_rom->base()[offset & 0x3fff];
-		}
 
 		if (!vram)
-		{
 			data = m_video_ram[offset & 0x3fff];
-		}
 
 		if (!ram1)
-		{
 			data = m_ram->pointer()[offset];
-		}
 
 		if (!ram2 && HAS_KB_OF_RAM(96))
-		{
 			data = m_ram->pointer()[0x10000 | offset];
-		}
 
 		if (!ram3 && HAS_KB_OF_RAM(128))
-		{
 			data = m_ram->pointer()[0x18000 | offset];
-		}
 
 		if (!ram4 && HAS_KB_OF_RAM(160))
-		{
 			data = m_ram->pointer()[0x20000 | offset];
-		}
 
 		if (!ram5 && HAS_KB_OF_RAM(192))
-		{
 			data = m_ram->pointer()[0x28000 | offset];
-		}
 
 		if (!ram6 && HAS_KB_OF_RAM(224))
-		{
 			data = m_ram->pointer()[0x30000 | offset];
-		}
 	}
 	else
 	{
 		data = m_ram->pointer()[offset];
 	}
 
-	return m_exp->cd_r(space, offset, data, ram2, ram3, ram4, ram5, ram6);
+	return m_exp->cd_r(offset, data, ram2, ram3, ram4, ram5, ram6);
 }
 
 
@@ -130,7 +116,7 @@ READ8_MEMBER( bw2_state::read )
 //  write -
 //-------------------------------------------------
 
-WRITE8_MEMBER( bw2_state::write )
+void bw2_state::write(offs_t offset, uint8_t data)
 {
 	int vram = 1, ram1 = 1, ram2 = 1, ram3 = 1, ram4 = 1, ram5 = 1, ram6 = 1;
 
@@ -148,46 +134,32 @@ WRITE8_MEMBER( bw2_state::write )
 	if (offset < 0x8000)
 	{
 		if (!vram)
-		{
 			m_video_ram[offset & 0x3fff] = data;
-		}
 
 		if (!ram1)
-		{
 			m_ram->pointer()[offset] = data;
-		}
 
 		if (!ram2 && HAS_KB_OF_RAM(96))
-		{
 			m_ram->pointer()[0x10000 | offset] = data;
-		}
 
 		if (!ram3 && HAS_KB_OF_RAM(128))
-		{
 			m_ram->pointer()[0x18000 | offset] = data;
-		}
 
 		if (!ram4 && HAS_KB_OF_RAM(160))
-		{
 			m_ram->pointer()[0x20000 | offset] = data;
-		}
 
 		if (!ram5 && HAS_KB_OF_RAM(192))
-		{
 			m_ram->pointer()[0x28000 | offset] = data;
-		}
 
 		if (!ram6 && HAS_KB_OF_RAM(224))
-		{
 			m_ram->pointer()[0x30000 | offset] = data;
-		}
 	}
 	else
 	{
 		m_ram->pointer()[offset] = data;
 	}
 
-	m_exp->cd_w(space, offset, data, ram2, ram3, ram4, ram5, ram6);
+	m_exp->cd_w(offset, data, ram2, ram3, ram4, ram5, ram6);
 }
 
 
@@ -200,39 +172,41 @@ WRITE8_MEMBER( bw2_state::write )
 //  ADDRESS_MAP( bw2_mem )
 //-------------------------------------------------
 
-static ADDRESS_MAP_START( bw2_mem, AS_PROGRAM, 8, bw2_state )
-	ADDRESS_MAP_UNMAP_HIGH
-	AM_RANGE(0x0000, 0xffff) AM_READWRITE(read, write)
-ADDRESS_MAP_END
+void bw2_state::bw2_mem(address_map &map)
+{
+	map.unmap_value_high();
+	map(0x0000, 0xffff).rw(FUNC(bw2_state::read), FUNC(bw2_state::write));
+}
 
 
 //-------------------------------------------------
 //  ADDRESS_MAP( bw2_io )
 //-------------------------------------------------
 
-static ADDRESS_MAP_START( bw2_io, AS_IO, 8, bw2_state )
-	ADDRESS_MAP_UNMAP_HIGH
-	ADDRESS_MAP_GLOBAL_MASK(0xff)
-	AM_RANGE(0x00, 0x03) AM_DEVREADWRITE(I8255A_TAG, i8255_device, read, write)
-	AM_RANGE(0x10, 0x13) AM_DEVREADWRITE(I8253_TAG, pit8253_device, read, write)
-	AM_RANGE(0x20, 0x21) AM_DEVICE(MSM6255_TAG, msm6255_device, map)
-	AM_RANGE(0x30, 0x3f) AM_DEVREADWRITE(BW2_EXPANSION_SLOT_TAG, bw2_expansion_slot_device, slot_r, slot_w)
-	AM_RANGE(0x40, 0x40) AM_DEVREADWRITE(I8251_TAG, i8251_device, data_r, data_w)
-	AM_RANGE(0x41, 0x41) AM_DEVREADWRITE(I8251_TAG, i8251_device, status_r, control_w)
-	AM_RANGE(0x50, 0x50) AM_DEVWRITE("cent_data_out", output_latch_device, write)
-	AM_RANGE(0x60, 0x63) AM_DEVREADWRITE(WD2797_TAG, wd2797_t, read, write)
-	AM_RANGE(0x70, 0x7f) AM_DEVREADWRITE(BW2_EXPANSION_SLOT_TAG, bw2_expansion_slot_device, modsel_r, modsel_w)
-ADDRESS_MAP_END
+void bw2_state::bw2_io(address_map &map)
+{
+	map.unmap_value_high();
+	map.global_mask(0xff);
+	map(0x00, 0x03).rw(I8255A_TAG, FUNC(i8255_device::read), FUNC(i8255_device::write));
+	map(0x10, 0x13).rw(m_pit, FUNC(pit8253_device::read), FUNC(pit8253_device::write));
+	map(0x20, 0x21).m(m_lcdc, FUNC(msm6255_device::map));
+	map(0x30, 0x3f).rw(m_exp, FUNC(bw2_expansion_slot_device::slot_r), FUNC(bw2_expansion_slot_device::slot_w));
+	map(0x40, 0x41).rw(m_uart, FUNC(i8251_device::read), FUNC(i8251_device::write));
+	map(0x50, 0x50).w("cent_data_out", FUNC(output_latch_device::write));
+	map(0x60, 0x63).rw(m_fdc, FUNC(wd2797_device::read), FUNC(wd2797_device::write));
+	map(0x70, 0x7f).rw(m_exp, FUNC(bw2_expansion_slot_device::modsel_r), FUNC(bw2_expansion_slot_device::modsel_w));
+}
 
 
 //-------------------------------------------------
 //  ADDRESS_MAP( lcdc_map )
 //-------------------------------------------------
 
-static ADDRESS_MAP_START( lcdc_map, AS_0, 8, bw2_state )
-	ADDRESS_MAP_GLOBAL_MASK(0x3fff)
-	AM_RANGE(0x0000, 0x3fff) AM_RAM AM_SHARE("videoram")
-ADDRESS_MAP_END
+void bw2_state::lcdc_map(address_map &map)
+{
+	map.global_mask(0x3fff);
+	map(0x0000, 0x3fff).ram().share("videoram");
+}
 
 
 
@@ -335,14 +309,14 @@ static INPUT_PORTS_START( bw2 )
 	PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_QUOTE) PORT_CHAR('@') PORT_CHAR('`')
 	PORT_BIT(0x02, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_P) PORT_CHAR('p') PORT_CHAR('P')
 	PORT_BIT(0x04, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_UP) PORT_CHAR(UCHAR_MAMEKEY(UP))
-	PORT_BIT(0x08, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_C) PORT_CHAR('c') PORT_CHAR('C')
+	PORT_BIT(0x08, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_C) PORT_CHAR('c') PORT_CHAR('C') PORT_CHAR(3)
 	PORT_BIT(0x10, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_D) PORT_CHAR('d') PORT_CHAR('D')
 	PORT_BIT(0x20, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_E) PORT_CHAR('e') PORT_CHAR('E')
 	PORT_BIT(0x40, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_4) PORT_CHAR('4') PORT_CHAR('$')
 	PORT_BIT(0x80, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_F3) PORT_CHAR(UCHAR_MAMEKEY(F3))
 
 	PORT_START("Y7")
-	PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_LCONTROL) PORT_CHAR(UCHAR_MAMEKEY(LCONTROL))
+	PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_LCONTROL) PORT_CHAR(UCHAR_SHIFT_2)
 	PORT_BIT(0x02, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_MINUS) PORT_CHAR('-') PORT_CHAR('=')
 	PORT_BIT(0x04, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_BACKSLASH) PORT_CHAR('\\') PORT_CHAR('|')
 	PORT_BIT(0x08, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_X) PORT_CHAR('x') PORT_CHAR('X')
@@ -396,7 +370,7 @@ WRITE_LINE_MEMBER( bw2_state::write_centronics_busy )
 //  I8255A interface
 //-------------------------------------------------
 
-WRITE8_MEMBER( bw2_state::ppi_pa_w )
+void bw2_state::ppi_pa_w(uint8_t data)
 {
 	/*
 
@@ -426,7 +400,7 @@ WRITE8_MEMBER( bw2_state::ppi_pa_w )
 	m_centronics->write_strobe(BIT(data, 7));
 }
 
-READ8_MEMBER( bw2_state::ppi_pb_r )
+uint8_t bw2_state::ppi_pb_r()
 {
 	/*
 
@@ -441,26 +415,17 @@ READ8_MEMBER( bw2_state::ppi_pb_r )
 
 	*/
 
-	UINT8 data = 0xff;
+	uint8_t data = 0xff;
 
-	switch (m_kb)
+	if (m_kb < 10)
 	{
-	case 0: data = m_y0->read(); break;
-	case 1: data = m_y1->read(); break;
-	case 2: data = m_y2->read(); break;
-	case 3: data = m_y3->read(); break;
-	case 4: data = m_y4->read(); break;
-	case 5: data = m_y5->read(); break;
-	case 6: data = m_y6->read(); break;
-	case 7: data = m_y7->read(); break;
-	case 8: data = m_y8->read(); break;
-	case 9: data = m_y9->read(); break;
+		data = m_y[m_kb]->read();
 	}
 
 	return data;
 }
 
-WRITE8_MEMBER( bw2_state::ppi_pc_w )
+void bw2_state::ppi_pc_w(uint8_t data)
 {
 	/*
 
@@ -474,7 +439,7 @@ WRITE8_MEMBER( bw2_state::ppi_pc_w )
 	m_bank = data & 0x07;
 }
 
-READ8_MEMBER( bw2_state::ppi_pc_r )
+uint8_t bw2_state::ppi_pc_r()
 {
 	/*
 
@@ -485,7 +450,7 @@ READ8_MEMBER( bw2_state::ppi_pc_r )
 
 	*/
 
-	UINT8 data = 0;
+	uint8_t data = m_bank;
 
 	// centronics busy
 	data |= m_centronics_busy << 4;
@@ -494,7 +459,7 @@ READ8_MEMBER( bw2_state::ppi_pc_r )
 	data |= m_mfdbk << 5;
 
 	// write protect
-	if (m_floppy) data |= m_floppy->wpt_r() << 7;
+	if (m_floppy) data |= !m_floppy->wpt_r() << 7;
 
 	return data;
 }
@@ -502,12 +467,6 @@ READ8_MEMBER( bw2_state::ppi_pc_r )
 //-------------------------------------------------
 //  pit8253_config pit_intf
 //-------------------------------------------------
-
-WRITE_LINE_MEMBER( bw2_state::pit_out0_w )
-{
-	m_uart->write_txc(state);
-	m_uart->write_rxc(state);
-}
 
 WRITE_LINE_MEMBER( bw2_state::mtron_w )
 {
@@ -536,13 +495,16 @@ WRITE_LINE_MEMBER( bw2_state::fdc_drq_w )
 	}
 }
 
-FLOPPY_FORMATS_MEMBER( bw2_state::floppy_formats )
-	FLOPPY_BW2_FORMAT
-FLOPPY_FORMATS_END
+void bw2_state::floppy_formats(format_registration &fr)
+{
+	fr.add_mfm_containers();
+	fr.add(FLOPPY_BW2_FORMAT);
+}
 
-static SLOT_INTERFACE_START( bw2_floppies )
-	SLOT_INTERFACE( "35dd", FLOPPY_35_DD ) // Teac FD-35
-SLOT_INTERFACE_END
+static void bw2_floppies(device_slot_interface &device)
+{
+	device.option_add("35dd", FLOPPY_35_DD); // Teac FD-35
+}
 
 
 
@@ -551,7 +513,7 @@ SLOT_INTERFACE_END
 //**************************************************************************
 
 
-PALETTE_INIT_MEMBER(bw2_state, bw2)
+void bw2_state::bw2_palette(palette_device &palette) const
 {
 	palette.set_pen_color(0, 0xa5, 0xad, 0xa5);
 	palette.set_pen_color(1, 0x31, 0x39, 0x10);
@@ -579,75 +541,75 @@ void bw2_state::machine_start()
 //**************************************************************************
 
 //-------------------------------------------------
-//  MACHINE_CONFIG( bw2 )
+//  machine_config( bw2 )
 //-------------------------------------------------
 
-static MACHINE_CONFIG_START( bw2, bw2_state )
+void bw2_state::bw2(machine_config &config)
+{
 	// basic machine hardware
-	MCFG_CPU_ADD(Z80_TAG, Z80, XTAL_16MHz/4)
-	MCFG_CPU_PROGRAM_MAP(bw2_mem)
-	MCFG_CPU_IO_MAP(bw2_io)
+	Z80(config, m_maincpu, 16_MHz_XTAL / 4);
+	m_maincpu->set_addrmap(AS_PROGRAM, &bw2_state::bw2_mem);
+	m_maincpu->set_addrmap(AS_IO, &bw2_state::bw2_io);
 
 	// video hardware
-	MCFG_DEFAULT_LAYOUT(layout_lcd)
-	MCFG_SCREEN_ADD(SCREEN_TAG, LCD)
-	MCFG_SCREEN_REFRESH_RATE(60)
-	MCFG_SCREEN_UPDATE_DEVICE( MSM6255_TAG, msm6255_device, screen_update )
-	MCFG_SCREEN_SIZE(640, 200)
-	MCFG_SCREEN_VISIBLE_AREA(0, 640-1, 0, 200-1)
-	MCFG_SCREEN_PALETTE("palette")
-	MCFG_PALETTE_ADD("palette", 2)
-	MCFG_PALETTE_INIT_OWNER(bw2_state, bw2)
+	screen_device &screen(SCREEN(config, SCREEN_TAG, SCREEN_TYPE_LCD));
+	screen.set_refresh_hz(60);
+	screen.set_screen_update(MSM6255_TAG, FUNC(msm6255_device::screen_update));
+	screen.set_size(640, 200);
+	screen.set_visarea(0, 640-1, 0, 200-1);
+	screen.set_palette("palette");
+
+	PALETTE(config, "palette", FUNC(bw2_state::bw2_palette), 2);
 
 	// devices
-	MCFG_DEVICE_ADD(I8253_TAG, PIT8253, 0)
-	MCFG_PIT8253_CLK0(XTAL_16MHz/4) // 8251 USART TXC, RXC
-	MCFG_PIT8253_OUT0_HANDLER(WRITELINE(bw2_state, pit_out0_w))
-	MCFG_PIT8253_CLK1(11000) // LCD controller
-	MCFG_PIT8253_OUT1_HANDLER(DEVWRITELINE(I8253_TAG, pit8253_device, write_clk2))
-	MCFG_PIT8253_CLK2(0) // Floppy /MTRON
-	MCFG_PIT8253_OUT2_HANDLER(WRITELINE(bw2_state, mtron_w))
+	PIT8253(config, m_pit, 0);
+	m_pit->set_clk<0>(16_MHz_XTAL / 4); // 8251 USART TXC, RXC
+	m_pit->out_handler<0>().set(m_uart, FUNC(i8251_device::write_txc));
+	m_pit->out_handler<0>().append(m_uart, FUNC(i8251_device::write_rxc));
+	m_pit->set_clk<1>(11000); // LCD controller
+	m_pit->out_handler<1>().set(m_pit, FUNC(pit8253_device::write_clk2));
+	m_pit->set_clk<2>(0); // Floppy /MTRON
+	m_pit->out_handler<2>().set(FUNC(bw2_state::mtron_w));
 
-	MCFG_DEVICE_ADD(I8255A_TAG, I8255A, 0)
-	MCFG_I8255_OUT_PORTA_CB(WRITE8(bw2_state, ppi_pa_w))
-	MCFG_I8255_IN_PORTB_CB(READ8(bw2_state, ppi_pb_r))
-	MCFG_I8255_IN_PORTC_CB(READ8(bw2_state, ppi_pc_r))
-	MCFG_I8255_OUT_PORTC_CB(WRITE8(bw2_state, ppi_pc_w))
+	i8255_device &ppi(I8255A(config, I8255A_TAG));
+	ppi.out_pa_callback().set(FUNC(bw2_state::ppi_pa_w));
+	ppi.in_pb_callback().set(FUNC(bw2_state::ppi_pb_r));
+	ppi.in_pc_callback().set(FUNC(bw2_state::ppi_pc_r));
+	ppi.out_pc_callback().set(FUNC(bw2_state::ppi_pc_w));
 
-	MCFG_DEVICE_ADD(MSM6255_TAG, MSM6255, XTAL_16MHz)
-	MCFG_DEVICE_ADDRESS_MAP(AS_0, lcdc_map)
-	MCFG_VIDEO_SET_SCREEN(SCREEN_TAG)
+	MSM6255(config, m_lcdc, 16_MHz_XTAL);
+	m_lcdc->set_addrmap(0, &bw2_state::lcdc_map);
+	m_lcdc->set_screen(SCREEN_TAG);
 
-	MCFG_CENTRONICS_ADD(CENTRONICS_TAG, centronics_devices, "printer")
-	MCFG_CENTRONICS_BUSY_HANDLER(WRITELINE(bw2_state, write_centronics_busy))
+	CENTRONICS(config, m_centronics, centronics_devices, "printer");
+	m_centronics->busy_handler().set(FUNC(bw2_state::write_centronics_busy));
 
-	MCFG_CENTRONICS_OUTPUT_LATCH_ADD("cent_data_out", CENTRONICS_TAG)
+	output_latch_device &latch(OUTPUT_LATCH(config, "cent_data_out"));
+	m_centronics->set_output_latch(latch);
 
-	MCFG_DEVICE_ADD(I8251_TAG, I8251, 0)
-	MCFG_I8251_TXD_HANDLER(DEVWRITELINE(RS232_TAG, rs232_port_device, write_txd))
-	MCFG_I8251_DTR_HANDLER(DEVWRITELINE(RS232_TAG, rs232_port_device, write_dtr))
-	MCFG_I8251_RTS_HANDLER(DEVWRITELINE(RS232_TAG, rs232_port_device, write_rts))
+	I8251(config, m_uart, 0);
+	m_uart->txd_handler().set(RS232_TAG, FUNC(rs232_port_device::write_txd));
+	m_uart->dtr_handler().set(RS232_TAG, FUNC(rs232_port_device::write_dtr));
+	m_uart->rts_handler().set(RS232_TAG, FUNC(rs232_port_device::write_rts));
 
-	MCFG_RS232_PORT_ADD(RS232_TAG, default_rs232_devices, nullptr)
-	MCFG_RS232_RXD_HANDLER(DEVWRITELINE(I8251_TAG, i8251_device, write_rxd))
-	MCFG_RS232_DSR_HANDLER(DEVWRITELINE(I8251_TAG, i8251_device, write_dsr))
+	rs232_port_device &rs232(RS232_PORT(config, RS232_TAG, default_rs232_devices, nullptr));
+	rs232.rxd_handler().set(m_uart, FUNC(i8251_device::write_rxd));
+	rs232.dsr_handler().set(m_uart, FUNC(i8251_device::write_dsr));
 
-	MCFG_WD2797_ADD(WD2797_TAG, XTAL_16MHz/16)
-	MCFG_WD_FDC_INTRQ_CALLBACK(INPUTLINE(Z80_TAG, INPUT_LINE_IRQ0))
-	MCFG_WD_FDC_DRQ_CALLBACK(WRITELINE(bw2_state, fdc_drq_w))
+	WD2797(config, m_fdc, 16_MHz_XTAL / 16);
+	m_fdc->intrq_wr_callback().set_inputline(m_maincpu, INPUT_LINE_IRQ0);
+	m_fdc->drq_wr_callback().set(FUNC(bw2_state::fdc_drq_w));
 
-	MCFG_FLOPPY_DRIVE_ADD(WD2797_TAG":0", bw2_floppies, "35dd", bw2_state::floppy_formats)
-	MCFG_FLOPPY_DRIVE_ADD(WD2797_TAG":1", bw2_floppies, nullptr,   bw2_state::floppy_formats)
-	MCFG_BW2_EXPANSION_SLOT_ADD(BW2_EXPANSION_SLOT_TAG, XTAL_16MHz, bw2_expansion_cards, nullptr)
+	FLOPPY_CONNECTOR(config, WD2797_TAG":0", bw2_floppies, "35dd", bw2_state::floppy_formats);
+	FLOPPY_CONNECTOR(config, WD2797_TAG":1", bw2_floppies, nullptr, bw2_state::floppy_formats);
+	BW2_EXPANSION_SLOT(config, m_exp, 16_MHz_XTAL, bw2_expansion_cards, nullptr);
 
 	// software list
-	MCFG_SOFTWARE_LIST_ADD("flop_list","bw2")
+	SOFTWARE_LIST(config, "flop_list").set_original("bw2");
 
 	// internal ram
-	MCFG_RAM_ADD(RAM_TAG)
-	MCFG_RAM_DEFAULT_SIZE("64K")
-	MCFG_RAM_EXTRA_OPTIONS("96K,128K,160K,192K,224K")
-MACHINE_CONFIG_END
+	RAM(config, RAM_TAG).set_default_size("64K").set_extra_options("96K,128K,160K,192K,224K");
+}
 
 
 
@@ -663,9 +625,9 @@ ROM_START( bw2 )
 	ROM_REGION( 0x1000, Z80_TAG, 0 )
 	ROM_DEFAULT_BIOS( "v20" )
 	ROM_SYSTEM_BIOS( 0, "v12", "BW 2 v1.2" )
-	ROMX_LOAD( "bw2-12.ic8", 0x0000, 0x1000, CRC(0ab42d10) SHA1(430b232631eee9b715151b8d191b7eb9449ac513), ROM_BIOS(1) )
+	ROMX_LOAD( "bw2-12.ic8", 0x0000, 0x1000, CRC(0ab42d10) SHA1(430b232631eee9b715151b8d191b7eb9449ac513), ROM_BIOS(0) )
 	ROM_SYSTEM_BIOS( 1, "v20", "BW 2 v2.0" )
-	ROMX_LOAD( "bw2-20.ic8", 0x0000, 0x1000, CRC(86f36471) SHA1(a3e2ba4edd50ff8424bb0675bdbb3b9f13c04c9d), ROM_BIOS(2) )
+	ROMX_LOAD( "bw2-20.ic8", 0x0000, 0x1000, CRC(86f36471) SHA1(a3e2ba4edd50ff8424bb0675bdbb3b9f13c04c9d), ROM_BIOS(1) )
 ROM_END
 
 
@@ -674,5 +636,5 @@ ROM_END
 //  SYSTEM DRIVERS
 //**************************************************************************
 
-//    YEAR  NAME    PARENT  COMPAT  MACHINE     INPUT   INIT                        COMPANY             FULLNAME            FLAGS
-COMP( 1985, bw2,    0,      0,      bw2,        bw2,    driver_device,      0,      "Bondwell Holding", "Bondwell Model 2", MACHINE_NO_SOUND_HW )
+//    YEAR  NAME  PARENT  COMPAT  MACHINE  INPUT   CLASS      INIT        COMPANY             FULLNAME            FLAGS
+COMP( 1985, bw2,  0,      0,      bw2,     bw2,    bw2_state, empty_init, "Bondwell Holding", "Bondwell Model 2", MACHINE_NO_SOUND_HW )

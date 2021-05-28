@@ -6,8 +6,10 @@
 
 ***************************************************************************/
 
-#ifndef __MPEG_AUDIO_H__
-#define __MPEG_AUDIO_H__
+#ifndef MAME_SOUND_MPEG_AUDIO_H
+#define MAME_SOUND_MPEG_AUDIO_H
+
+#pragma once
 
 class mpeg_audio {
 public:
@@ -54,9 +56,6 @@ public:
 	// Clear audio buffer
 	void clear();
 
-	// Change the base pointer
-	void set_base(const void *base);
-
 private:
 	struct limit_hit {};
 
@@ -77,7 +76,7 @@ private:
 	static const band_info band_infos[18];
 	static const double synthesis_filter[512];
 
-	const UINT8 *base;
+	const uint8_t *base;
 	int accepted, position_align;
 
 	int sampling_rate, last_frame_number;
@@ -93,8 +92,7 @@ private:
 	double subbuffer[2][32];
 	double audio_buffer[2][32*32];
 	int audio_buffer_pos[2];
-
-	int master_pos;
+	double m_cos_cache[32][32];
 
 	int current_pos, current_limit;
 
@@ -111,7 +109,6 @@ private:
 	void build_amplitudes();
 	void build_next_segments(int step);
 	void retrieve_subbuffer(int step);
-	void handle_block(int &pos);
 	void idct32(const double *input, double *output);
 	void resynthesis(const double *input, double *output);
 	void scale_and_clamp(const double *input, short *output, int step);
@@ -131,4 +128,4 @@ private:
 	}
 };
 
-#endif
+#endif // MAME_SOUND_MPEG_AUDIO_H

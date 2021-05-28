@@ -1,7 +1,15 @@
 // license:BSD-3-Clause
 // copyright-holders:Ryan Holtz,ImJezze
 //-----------------------------------------------------------------------------
-// Scanline & Shadowmask Effect
+// Shadowmask Effect
+//-----------------------------------------------------------------------------
+
+#define MONOCHROME 1
+#define DICHROME 2
+#define TRICHROME 3
+
+//-----------------------------------------------------------------------------
+// Sampler Definitions
 //-----------------------------------------------------------------------------
 
 texture DiffuseTexture;
@@ -60,61 +68,43 @@ struct PS_INPUT
 // Constants
 //-----------------------------------------------------------------------------
 
-static const float PI = 3.1415927f;
+static const float PI = 3.1415927;
+static const float HalfPI = PI * 0.5;
 
 //-----------------------------------------------------------------------------
-// Functions
+// Shadowmask Vertex Shader
 //-----------------------------------------------------------------------------
 
-bool xor(bool a, bool b)
-{
-	return (a || b) && !(a && b);
-}
+uniform float2 ScreenDims;
+uniform float2 SourceDims;
+uniform float2 TargetDims;
+uniform float2 TargetScale;
+uniform float2 QuadDims;
 
-//-----------------------------------------------------------------------------
-// Scanline & Shadowmask Vertex Shader
-//-----------------------------------------------------------------------------
+uniform float2 ShadowDims = float2(32.0, 32.0); // size of the shadow texture (extended to power-of-two size)
+uniform float2 ShadowUVOffset = float2(0.0, 0.0);
 
-uniform float2 ScreenDims; // size of the window or fullscreen
-uniform float2 SourceDims; // size of the texture in power-of-two size
-uniform float2 SourceRect; // size of the uv rectangle
-uniform float2 TargetDims; // size of the target surface
-
-uniform float2 ShadowDims = float2(32.0f, 32.0f); // size of the shadow texture (extended to power-of-two size)
-uniform float2 ShadowUVOffset = float2(0.0f, 0.0f);
-
-uniform bool OrientationSwapXY = false; // false landscape, true portrait for default screen orientation
-uniform bool RotationSwapXY = false; // swapped default screen orientation due to screen rotation
+uniform bool SwapXY = false;
 
 uniform bool PrepareBloom = false; // disables some effects for rendering bloom textures
-uniform bool PrepareVector = false;
-uniform bool PrepareRaster = false;
+uniform bool VectorScreen = false;
 
 VS_OUTPUT vs_main(VS_INPUT Input)
 {
 	VS_OUTPUT Output = (VS_OUTPUT)0;
 
-	float2 shadowUVOffset = ShadowUVOffset;
-	shadowUVOffset = xor(OrientationSwapXY, RotationSwapXY)
-		? shadowUVOffset.yx
-		: shadowUVOffset.xy;
-
-	float2 ScreenCoordOffset = 0.0f;
-	ScreenCoordOffset += shadowUVOffset;
-
-	Output.ScreenCoord = Input.Position.xy;
-	Output.ScreenCoord += ScreenCoordOffset;
-
-	Output.Position = float4(Input.Position.xyz, 1.0f);
+	Output.Position = float4(Input.Position.xyz, 1.0);
 	Output.Position.xy /= ScreenDims;
-	Output.Position.y = 1.0f - Output.Position.y; // flip y
-	Output.Position.xy -= 0.5f; // center
-	Output.Position.xy *= 2.0f; // zoom
+	Output.Position.y = 1.0 - Output.Position.y; // flip y
+	Output.Position.xy -= 0.5; // center
+	Output.Position.xy *= 2.0; // zoom
 
-	Output.TexCoord = PrepareVector
-		? Input.Position.xy / ScreenDims
-		: Input.TexCoord;
-	Output.TexCoord += 0.5f / TargetDims; // half texel offset correction (DX9)
+	Output.TexCoord = Input.TexCoord;
+	Output.TexCoord += PrepareBloom
+		? 0.0               // use half texel offset (DX9) to do the blur for first bloom layer
+		: 0.5 / TargetDims; // fix half texel offset (DX9)
+
+	Output.ScreenCoord = Input.Position.xy / ScreenDims;
 
 	Output.Color = Input.Color;
 
@@ -122,102 +112,108 @@ VS_OUTPUT vs_main(VS_INPUT Input)
 }
 
 //-----------------------------------------------------------------------------
-// Post-Processing Pixel Shader
+// Shadowmask Pixel Shader
 //-----------------------------------------------------------------------------
 
-uniform float2 ScreenScale = float2(1.0f, 1.0f);
-uniform float2 ScreenOffset = float2(0.0f, 0.0f);
+uniform float HumBarDesync = 60.0 / 59.94 - 1.0; // difference between the 59.94 Hz field rate and 60 Hz line frequency (NTSC)
+uniform float HumBarAlpha = 0.0;
 
-uniform float ScanlineAlpha = 1.0f;
-uniform float ScanlineScale = 1.0f;
-uniform float ScanlineBrightScale = 1.0f;
-uniform float ScanlineBrightOffset = 1.0f;
-uniform float ScanlineOffset = 1.0f;
-uniform float ScanlineHeight = 1.0f;
+uniform float TimeMilliseconds = 0.0;
 
-uniform float ShadowAlpha = 0.0f;
-uniform float2 ShadowCount = float2(6.0f, 6.0f);
-uniform float2 ShadowUV = float2(0.25f, 0.25f);
+uniform float2 ScreenScale = float2(1.0, 1.0);
+uniform float2 ScreenOffset = float2(0.0, 0.0);
 
-uniform float3 Power = float3(1.0f, 1.0f, 1.0f);
-uniform float3 Floor = float3(0.0f, 0.0f, 0.0f);
+uniform float3 BackColor = float3(0.0, 0.0, 0.0);
 
-float2 GetAdjustedCoords(float2 coord, float2 centerOffset)
+uniform int ShadowTileMode = 0; // 0 based on screen (quad) dimension, 1 based on source dimension
+uniform float ShadowAlpha = 0.0;
+uniform float2 ShadowCount = float2(6.0, 6.0);
+uniform float2 ShadowUV = float2(0.25, 0.25);
+
+uniform float3 Power = float3(1.0, 1.0, 1.0);
+uniform float3 Floor = float3(0.0, 0.0, 0.0);
+
+uniform int ChromaMode = 3;
+uniform float3 ConversionGain = float3(0.0, 0.0, 0.0);
+
+float2 GetAdjustedCoords(float2 coord)
 {
 	// center coordinates
-	coord -= centerOffset;
+	coord -= 0.5;
 
 	// apply screen scale
-	coord /= ScreenScale;
+	coord *= ScreenScale;
 
 	// un-center coordinates
-	coord += centerOffset;
+	coord += 0.5;
 
 	// apply screen offset
-	coord += (centerOffset * 2.0) * ScreenOffset;
+	coord += ScreenOffset;
 
 	return coord;
 }
 
+float2 GetShadowCoord(float2 TargetCoord, float2 SourceCoord)
+{
+	// base-target dimensions (without oversampling)
+	float2 BaseTargetDims = TargetDims / TargetScale;
+	BaseTargetDims = SwapXY
+		? BaseTargetDims.yx
+		: BaseTargetDims.xy;
+
+	float2 canvasCoord = ShadowTileMode == 0
+		? TargetCoord + ShadowUVOffset / BaseTargetDims
+		: SourceCoord + ShadowUVOffset / SourceDims;
+	float2 canvasTexelDims = ShadowTileMode == 0
+		? 1.0 / BaseTargetDims
+		: 1.0 / SourceDims;
+
+	float2 shadowDims = ShadowDims;
+	float2 shadowUV = ShadowUV;
+	float2 shadowCount = ShadowCount;
+
+	// swap x/y in screen mode (not source mode)
+	canvasCoord = ShadowTileMode == 0 && SwapXY
+		? canvasCoord.yx
+		: canvasCoord.xy;
+
+	// swap x/y in screen mode (not source mode)
+	shadowCount = ShadowTileMode == 0 && SwapXY
+		? shadowCount.yx
+		: shadowCount.xy;
+
+	float2 shadowTile = canvasTexelDims * shadowCount;
+
+	float2 shadowFrac = frac(canvasCoord / shadowTile);
+
+	// swap x/y in screen mode (not source mode)
+	shadowFrac = ShadowTileMode == 0 && SwapXY
+		? shadowFrac.yx
+		: shadowFrac.xy;
+
+	float2 shadowCoord = (shadowFrac * shadowUV);
+	shadowCoord += ShadowTileMode == 0
+		? 0.5 / shadowDims // fix half texel offset (DX9)
+		: 0.0;
+
+	return shadowCoord;
+}
+
 float4 ps_main(PS_INPUT Input) : COLOR
 {
-	float2 ScreenTexelDims = 1.0f / ScreenDims;
-
-	float2 HalfSourceRect = PrepareVector
-		? float2(0.5f, 0.5f)
-		: SourceRect * 0.5f;
-
-	float2 ScreenCoord = Input.ScreenCoord / ScreenDims;
-	float2 BaseCoord = GetAdjustedCoords(Input.TexCoord, HalfSourceRect);
+	float2 ScreenCoord = Input.ScreenCoord;
+	float2 BaseCoord = GetAdjustedCoords(Input.TexCoord);
 
 	// Color
 	float4 BaseColor = tex2D(DiffuseSampler, BaseCoord);
-	BaseColor.a = 1.0f;
+	BaseColor.a = 1.0;
 
-	if (BaseCoord.x < 0.0f || BaseCoord.y < 0.0f)
+	// clip border
+	if (BaseCoord.x < 0.0 || BaseCoord.y < 0.0 ||
+		BaseCoord.x > 1.0 || BaseCoord.y > 1.0)
 	{
-		BaseColor.rgb = 0.0f;
-	}
-
-	// Mask Simulation (may not affect bloom)
-	if (!PrepareBloom)
-	{
-		float2 shadowDims = ShadowDims;
-		shadowDims = xor(OrientationSwapXY, RotationSwapXY)
-			? shadowDims.yx
-			: shadowDims.xy;
-
-		float2 shadowUV = ShadowUV;
-		// shadowUV = xor(OrientationSwapXY, RotationSwapXY)
-			// ? shadowUV.yx
-			// : shadowUV.xy;
-
-		float2 screenCoord = ScreenCoord;
-		screenCoord = xor(OrientationSwapXY, RotationSwapXY)
-			? screenCoord.yx
-			: screenCoord.xy;
-
-		float2 shadowCount = ShadowCount;
-		shadowCount = xor(OrientationSwapXY, RotationSwapXY)
-			? shadowCount.yx
-			: shadowCount.xy;
-
-		float2 shadowTile = (ScreenTexelDims * shadowCount);
-		shadowTile = xor(OrientationSwapXY, RotationSwapXY)
-			? shadowTile.yx
-			: shadowTile.xy;
-
-		float2 ShadowFrac = frac(screenCoord / shadowTile);
-		float2 ShadowCoord = (ShadowFrac * shadowUV);
-		ShadowCoord += 0.5f / shadowDims; // half texel offset
-		// ShadowCoord = xor(OrientationSwapXY, RotationSwapXY)
-			// ? ShadowCoord.yx
-			// : ShadowCoord.xy;
-
-		float3 ShadowColor = tex2D(ShadowSampler, ShadowCoord).rgb;
-		ShadowColor = lerp(1.0f, ShadowColor, ShadowAlpha);
-
-		BaseColor.rgb *= ShadowColor;
+		// we don't use the clip function, because we don't clear the render target before
+		return float4(0.0, 0.0, 0.0, 1.0);
 	}
 
 	// Color Compression (may not affect bloom)
@@ -232,41 +228,50 @@ float4 ps_main(PS_INPUT Input) : COLOR
 	BaseColor.g = pow(BaseColor.g, Power.g);
 	BaseColor.b = pow(BaseColor.b, Power.b);
 
-	// Scanline Simulation (may not affect bloom)
-	if (!PrepareBloom)
+	// Hum Bar Simulation (may not affect vector screen)
+	if (!PrepareBloom && !VectorScreen && HumBarAlpha > 0.0)
 	{
-		// Scanline Simulation (only for raster screen)
-		if (PrepareRaster)
-		{
-			float InnerSine = BaseCoord.y * ScanlineScale * SourceDims.y;
-			float ScanJitter = ScanlineOffset * SourceDims.y;
-			float ScanBrightMod = sin(InnerSine * PI + ScanJitter);
-			float3 ScanColor = lerp(1.0f, (pow(ScanBrightMod * ScanBrightMod, ScanlineHeight) * ScanlineBrightScale + 1.0f + ScanlineBrightOffset) * 0.5f, ScanlineAlpha);
-
-			BaseColor.rgb *= ScanColor;
-		}
+		float HumBarStep = frac(TimeMilliseconds * HumBarDesync);
+		float HumBarBrightness = 1.0 - frac(BaseCoord.y + HumBarStep) * HumBarAlpha;
+		BaseColor.rgb *= HumBarBrightness;
 	}
 
-	// Output
-	float4 Output = PrepareVector
-		? BaseColor * (Input.Color + float4(1.0f, 1.0f, 1.0f, 0.0f))
-		: BaseColor * Input.Color;
-	Output.a = 1.0f;
+	// Mask Simulation (may not affect bloom)
+	if (!PrepareBloom && ShadowAlpha > 0.0)
+	{
+		float2 ShadowCoord = GetShadowCoord(ScreenCoord, BaseCoord);
 
-	return Output;
+		float4 ShadowColor = tex2D(ShadowSampler, ShadowCoord);
+		float3 ShadowMaskColor = lerp(1.0, ShadowColor.rgb, ShadowAlpha);
+		float ShadowMaskClear = (1.0 - ShadowColor.a) * ShadowAlpha;
+
+		// apply shadow mask color
+		BaseColor.rgb *= ShadowMaskColor;
+		// clear shadow mask by background color
+		BaseColor.rgb = lerp(BaseColor.rgb, BackColor, ShadowMaskClear);
+	}
+
+	// Preparation for phosphor color conversion
+	if (ChromaMode == MONOCHROME) {
+		BaseColor.r = dot(ConversionGain, BaseColor.rgb);
+		BaseColor.gb = float2(BaseColor.r, BaseColor.r);
+	} else if (ChromaMode == DICHROME) {
+		BaseColor.r = dot(ConversionGain.rg, BaseColor.rg);
+		BaseColor.g = BaseColor.r;
+	}
+
+	return BaseColor;
 }
 
 //-----------------------------------------------------------------------------
-// Scanline & Shadowmask Effect
+// Shadowmask Technique
 //-----------------------------------------------------------------------------
 
-technique ScanMaskTechnique
+technique DefaultTechnique
 {
 	pass Pass0
 	{
 		Lighting = FALSE;
-
-		Sampler[0] = <DiffuseSampler>;
 
 		VertexShader = compile vs_3_0 vs_main();
 		PixelShader = compile ps_3_0 ps_main();

@@ -1,17 +1,18 @@
 // license:GPL-2.0+
 // copyright-holders:Juergen Buchmueller, Frank Palazzolo, Sean Riddle
+#include "emu.h"
 #include "includes/channelf.h"
 
-static const rgb_t channelf_palette[] =
+static constexpr rgb_t channelf_pens[] =
 {
-	rgb_t(0x10, 0x10, 0x10), /* black */
-	rgb_t(0xfd, 0xfd, 0xfd), /* white */
-	rgb_t(0xff, 0x31, 0x53), /* red   */
-	rgb_t(0x02, 0xcc, 0x5d), /* green */
-	rgb_t(0x4b, 0x3f, 0xf3), /* blue  */
-	rgb_t(0xe0, 0xe0, 0xe0), /* ltgray  */
-	rgb_t(0x91, 0xff, 0xa6), /* ltgreen */
-	rgb_t(0xce, 0xd0, 0xff)  /* ltblue  */
+	{ 0x10, 0x10, 0x10 }, // black
+	{ 0xfd, 0xfd, 0xfd }, // white
+	{ 0xff, 0x31, 0x53 }, // red
+	{ 0x02, 0xcc, 0x5d }, // green
+	{ 0x4b, 0x3f, 0xf3 }, // blue
+	{ 0xe0, 0xe0, 0xe0 }, // ltgray
+	{ 0x91, 0xff, 0xa6 }, // ltgreen
+	{ 0xce, 0xd0, 0xff }  // ltblue
 };
 
 #define BLACK   0
@@ -23,7 +24,7 @@ static const rgb_t channelf_palette[] =
 #define LTGREEN 6
 #define LTBLUE  7
 
-static const UINT16 colormap[] = {
+static const uint16_t colormap[] = {
 	BLACK,   WHITE, WHITE, WHITE,
 	LTBLUE,  BLUE,  RED,   GREEN,
 	LTGRAY,  BLUE,  RED,   GREEN,
@@ -31,9 +32,9 @@ static const UINT16 colormap[] = {
 };
 
 /* Initialise the palette */
-PALETTE_INIT_MEMBER(channelf_state, channelf)
+void channelf_state::channelf_palette(palette_device &palette) const
 {
-	palette.set_pen_colors(0, channelf_palette, ARRAY_LENGTH(channelf_palette));
+	palette.set_pen_colors(0, channelf_pens);
 }
 
 void channelf_state::video_start()
@@ -49,20 +50,18 @@ int channelf_state::recalc_palette_offset(int reg1, int reg2)
 	return ((reg2&0x2)|(reg1>>1)) << 2;
 }
 
-UINT32 channelf_state::screen_update_channelf(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t channelf_state::screen_update_channelf(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
-	UINT8 y,col;
-	UINT16 ma=0,x;
-	int palette_offset;
+	uint16_t ma=0;
 
-	for(y = 0; y < 64; y++ )
+	for (uint8_t y = 0; y < 64; y++ )
 	{
-		UINT16 *p = &bitmap.pix16(y);
-		palette_offset = recalc_palette_offset(m_p_videoram[y*128+125]&3, m_p_videoram[y*128+126]&3);
+		uint16_t *p = &bitmap.pix(y);
+		int const palette_offset = recalc_palette_offset(m_p_videoram[y*128+125]&3, m_p_videoram[y*128+126]&3);
 
-		for (x = ma; x < ma + 128; x++)
+		for (uint16_t x = ma; x < ma + 128; x++)
 		{
-			col = palette_offset+(m_p_videoram[x|(y<<7)]&3);
+			uint8_t const col = palette_offset+(m_p_videoram[x|(y<<7)]&3);
 			*p++ = colormap[col];
 		}
 		ma+=128;

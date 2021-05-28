@@ -20,7 +20,7 @@
 
   Thanks Zwaxy for the timer info. */
 
-READ8_MEMBER(dday_state::dday_countdown_timer_r)
+uint8_t dday_state::dday_countdown_timer_r()
 {
 	return ((m_timer_value / 10) << 4) | (m_timer_value % 10);
 }
@@ -37,7 +37,7 @@ void dday_state::start_countdown_timer()
 {
 	m_timer_value = 0;
 
-	machine().scheduler().timer_pulse(attotime::from_seconds(1), timer_expired_delegate(FUNC(dday_state::countdown_timer_callback),this));
+	m_countdown_timer->adjust(attotime::from_seconds(1), 0, attotime::from_seconds(1));
 }
 
 
@@ -47,28 +47,26 @@ void dday_state::start_countdown_timer()
 
 ***************************************************************************/
 
-PALETTE_INIT_MEMBER(dday_state, dday)
+void dday_state::dday_palette(palette_device &palette) const
 {
-	const UINT8 *color_prom = memregion("proms")->base();
-	int i;
+	uint8_t const *const color_prom = memregion("proms")->base();
 
 	palette.set_shadow_factor(1.0 / 8);
 
-	/* create a lookup table for the palette */
-	for (i = 0; i < 0x100; i++)
+	// create a lookup table for the palette
+	for (int i = 0; i < 0x100; i++)
 	{
-		int r = pal4bit(color_prom[i + 0x000]);
-		int g = pal4bit(color_prom[i + 0x100]);
-		int b = pal4bit(color_prom[i + 0x200]);
+		int const r = pal4bit(color_prom[i + 0x000]);
+		int const g = pal4bit(color_prom[i + 0x100]);
+		int const b = pal4bit(color_prom[i + 0x200]);
 
 		palette.set_indirect_color(i, rgb_t(r, g, b));
 	}
 
-	for (i = 0; i < 0x100; i++)
+	for (int i = 0; i < 0x100; i++)
 		palette.set_pen_indirect(i, i);
 
-	/* HACK!!! This table is handgenerated, but it matches the screenshot.
-	   I have no clue how it really works */
+	// HACK!!! This table is handgenerated, but it matches the screenshot.  I have no clue how it really works
 	palette.set_pen_indirect(0*8+0+0, 0x00);
 	palette.set_pen_indirect(0*8+0+1, 0x01);
 	palette.set_pen_indirect(0*8+0+2, 0x15);
@@ -154,7 +152,7 @@ TILE_GET_INFO_MEMBER(dday_state::get_bg_tile_info)
 	int code;
 
 	code = m_bgvideoram[tile_index];
-	SET_TILE_INFO_MEMBER(0, code, code >> 5, 0);
+	tileinfo.set(0, code, code >> 5, 0);
 }
 
 TILE_GET_INFO_MEMBER(dday_state::get_fg_tile_info)
@@ -163,7 +161,7 @@ TILE_GET_INFO_MEMBER(dday_state::get_fg_tile_info)
 
 	flipx = m_colorram[tile_index & 0x03e0] & 0x01;
 	code = m_fgvideoram[flipx ? tile_index ^ 0x1f : tile_index];
-	SET_TILE_INFO_MEMBER(2, code, code >> 5, flipx ? TILE_FLIPX : 0);
+	tileinfo.set(2, code, code >> 5, flipx ? TILE_FLIPX : 0);
 }
 
 TILE_GET_INFO_MEMBER(dday_state::get_text_tile_info)
@@ -171,13 +169,13 @@ TILE_GET_INFO_MEMBER(dday_state::get_text_tile_info)
 	int code;
 
 	code = m_textvideoram[tile_index];
-	SET_TILE_INFO_MEMBER(1, code, code >> 5, 0);
+	tileinfo.set(1, code, code >> 5, 0);
 }
 
 TILE_GET_INFO_MEMBER(dday_state::get_sl_tile_info)
 {
 	int code, sl_flipx, flipx;
-	UINT8* sl_map;
+	uint8_t* sl_map;
 
 	sl_map = &memregion("user1")->base()[(m_sl_image & 0x07) * 0x0200];
 
@@ -193,7 +191,7 @@ TILE_GET_INFO_MEMBER(dday_state::get_sl_tile_info)
 		/* no mirroring, draw dark spot */
 		code = 1;
 
-	SET_TILE_INFO_MEMBER(3, code & 0x3f, 0, flipx ? TILE_FLIPX : 0);
+	tileinfo.set(3, code & 0x3f, 0, flipx ? TILE_FLIPX : 0);
 }
 
 
@@ -205,10 +203,10 @@ TILE_GET_INFO_MEMBER(dday_state::get_sl_tile_info)
 
 void dday_state::video_start()
 {
-	m_bg_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(dday_state::get_bg_tile_info),this), TILEMAP_SCAN_ROWS, 8, 8, 32, 32);
-	m_fg_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(dday_state::get_fg_tile_info),this), TILEMAP_SCAN_ROWS, 8, 8, 32, 32);
-	m_text_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(dday_state::get_text_tile_info),this), TILEMAP_SCAN_ROWS, 8, 8, 32, 32);
-	m_sl_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(dday_state::get_sl_tile_info),this), TILEMAP_SCAN_ROWS, 8, 8, 32, 32);
+	m_bg_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(dday_state::get_bg_tile_info)), TILEMAP_SCAN_ROWS, 8, 8, 32, 32);
+	m_fg_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(dday_state::get_fg_tile_info)), TILEMAP_SCAN_ROWS, 8, 8, 32, 32);
+	m_text_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(dday_state::get_text_tile_info)), TILEMAP_SCAN_ROWS, 8, 8, 32, 32);
+	m_sl_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(dday_state::get_sl_tile_info)), TILEMAP_SCAN_ROWS, 8, 8, 32, 32);
 
 	m_screen->register_screen_bitmap(m_main_bitmap);
 
@@ -216,47 +214,47 @@ void dday_state::video_start()
 	m_fg_tilemap->set_transparent_pen(0);
 	m_text_tilemap->set_transparent_pen(0);
 
+	m_countdown_timer = machine().scheduler().timer_alloc(timer_expired_delegate(FUNC(dday_state::countdown_timer_callback), this));
+
 	start_countdown_timer();
 }
 
-WRITE8_MEMBER(dday_state::dday_bgvideoram_w)
+void dday_state::dday_bgvideoram_w(offs_t offset, uint8_t data)
 {
 	m_bgvideoram[offset] = data;
 	m_bg_tilemap->mark_tile_dirty(offset);
 }
 
-WRITE8_MEMBER(dday_state::dday_fgvideoram_w)
+void dday_state::dday_fgvideoram_w(offs_t offset, uint8_t data)
 {
 	m_fgvideoram[offset] = data;
 	m_fg_tilemap->mark_tile_dirty(offset);
 	m_fg_tilemap->mark_tile_dirty(offset ^ 0x1f);  /* for flipx case */
 }
 
-WRITE8_MEMBER(dday_state::dday_textvideoram_w)
+void dday_state::dday_textvideoram_w(offs_t offset, uint8_t data)
 {
 	m_textvideoram[offset] = data;
 	m_text_tilemap->mark_tile_dirty(offset);
 }
 
-WRITE8_MEMBER(dday_state::dday_colorram_w)
+void dday_state::dday_colorram_w(offs_t offset, uint8_t data)
 {
-	int i;
-
 	offset &= 0x03e0;
 
 	m_colorram[offset & 0x3e0] = data;
 
-	for (i = 0; i < 0x20; i++)
+	for (int i = 0; i < 0x20; i++)
 		m_fg_tilemap->mark_tile_dirty(offset + i);
 }
 
-READ8_MEMBER(dday_state::dday_colorram_r)
+uint8_t dday_state::dday_colorram_r(offs_t offset)
 {
 	return m_colorram[offset & 0x03e0];
 }
 
 
-WRITE8_MEMBER(dday_state::dday_sl_control_w)
+void dday_state::dday_sl_control_w(uint8_t data)
 {
 	if (m_sl_image != data)
 	{
@@ -266,21 +264,21 @@ WRITE8_MEMBER(dday_state::dday_sl_control_w)
 }
 
 
-WRITE8_MEMBER(dday_state::dday_control_w)
+void dday_state::dday_control_w(uint8_t data)
 {
 	//if (data & 0xac)  logerror("Control = %02X\n", data & 0xac);
 
 	/* bit 0 is coin counter 1 */
-	coin_counter_w(machine(), 0, data & 0x01);
+	machine().bookkeeping().coin_counter_w(0, data & 0x01);
 
 	/* bit 1 is coin counter 2 */
-	coin_counter_w(machine(), 1, data & 0x02);
+	machine().bookkeeping().coin_counter_w(1, data & 0x02);
 
 	/* bit 4 is sound enable */
 	if (!(data & 0x10) && (m_control & 0x10))
 		m_ay1->reset();
 
-	machine().sound().system_enable(data & 0x10);
+	machine().sound().system_mute(!BIT(data, 4));
 
 	/* bit 6 is search light enable */
 	m_sl_enable = data & 0x40;
@@ -294,7 +292,7 @@ WRITE8_MEMBER(dday_state::dday_control_w)
 
 ***************************************************************************/
 
-UINT32 dday_state::screen_update_dday(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t dday_state::screen_update_dday(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	m_bg_tilemap->draw(screen, m_main_bitmap, cliprect, TILEMAP_DRAW_LAYER1, 0);
 	m_fg_tilemap->draw(screen, m_main_bitmap, cliprect, 0, 0);
@@ -304,19 +302,17 @@ UINT32 dday_state::screen_update_dday(screen_device &screen, bitmap_ind16 &bitma
 	if (m_sl_enable)
 	{
 		/* apply shadow */
-		int x, y;
-
 		bitmap_ind16 &sl_bitmap = m_sl_tilemap->pixmap();
 
-		for (x = cliprect.min_x; x <= cliprect.max_x; x++)
-			for (y = cliprect.min_y; y <= cliprect.max_y; y++)
+		for (int x = cliprect.min_x; x <= cliprect.max_x; x++)
+			for (int y = cliprect.min_y; y <= cliprect.max_y; y++)
 			{
-				UINT16 src_pixel = m_main_bitmap.pix16(y, x);
+				uint16_t src_pixel = m_main_bitmap.pix(y, x);
 
-				if (sl_bitmap.pix16(y, x) == 0xff)
+				if (sl_bitmap.pix(y, x) == 0xff)
 					src_pixel += m_palette->entries();
 
-				bitmap.pix16(y, x) = src_pixel;
+				bitmap.pix(y, x) = src_pixel;
 			}
 	}
 	else

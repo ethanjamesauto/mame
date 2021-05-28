@@ -1,9 +1,11 @@
 // license:BSD-3-Clause
 // copyright-holders:Curt Coder
+#ifndef MAME_INCLUDES_PROF180X_H
+#define MAME_INCLUDES_PROF180X_H
+
 #pragma once
 
-#ifndef __PROF180X__
-#define __PROF180X__
+#include "bus/centronics/ctronics.h"
 
 #define HD64180_TAG             "hd64180"
 #define FDC9268_TAG             "fdc9268"
@@ -16,33 +18,44 @@ class prof180x_state : public driver_device
 {
 public:
 	prof180x_state(const machine_config &mconfig, device_type type, const char *tag)
-		: driver_device(mconfig, type, tag),
-		m_centronics(*this, CENTRONICS_TAG)
+		: driver_device(mconfig, type, tag)
+		, m_centronics(*this, CENTRONICS_TAG)
 	{
 	}
 
+	void prof180x(machine_config &config);
+
+private:
 	required_device<centronics_device> m_centronics;
 
 	virtual void machine_start() override;
 	virtual void machine_reset() override;
 
-	DECLARE_READ8_MEMBER( read );
-	DECLARE_WRITE8_MEMBER( write );
+	uint8_t read(offs_t offset);
+	void write(offs_t offset, uint8_t data);
 
-	DECLARE_WRITE8_MEMBER( flr_w );
-	DECLARE_READ8_MEMBER( status0_r );
-	DECLARE_READ8_MEMBER( status1_r );
-	DECLARE_READ8_MEMBER( status_r );
+	uint8_t status0_r();
+	uint8_t status1_r();
+	uint8_t status_r(offs_t offset);
 
-	void ls259_w(int flag, int value);
+	DECLARE_WRITE_LINE_MEMBER(c0_flag_w);
+	DECLARE_WRITE_LINE_MEMBER(c1_flag_w);
+	DECLARE_WRITE_LINE_MEMBER(c2_flag_w);
+	DECLARE_WRITE_LINE_MEMBER(mini_flag_w);
+	DECLARE_WRITE_LINE_MEMBER(mm0_flag_w);
+	DECLARE_WRITE_LINE_MEMBER(rtc_ce_w);
+	DECLARE_WRITE_LINE_MEMBER(peps_flag_w);
+	DECLARE_WRITE_LINE_MEMBER(mm1_flag_w);
 
-	UINT32 screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect);
+	uint32_t screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect);
 
 	int m_c0;
 	int m_c1;
 	int m_c2;
 	int m_mm0;
 	int m_mm1;
+	void prof180x_io(address_map &map);
+	void prof180x_mem(address_map &map);
 };
 
-#endif
+#endif // MAME_INCLUDES_PROF180X_H

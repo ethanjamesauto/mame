@@ -7,9 +7,14 @@
     Phill Harvey-Smith
     2009-11-29.
 */
-#include "emu.h"
+#ifndef MAME_INCLUDES_RMNIMBUS_H
+#define MAME_INCLUDES_RMNIMBUS_H
+
+#pragma once
+
 #include "cpu/i86/i186.h"
-#include "machine/z80dart.h"
+#include "cpu/mcs51/mcs51.h"
+#include "machine/z80sio.h"
 #include "machine/wd_fdc.h"
 #include "bus/scsi/scsi.h"
 #include "machine/6522via.h"
@@ -18,6 +23,8 @@
 #include "sound/ay8910.h"
 #include "sound/msm5205.h"
 #include "bus/centronics/ctronics.h"
+#include "emupal.h"
+#include "screen.h"
 
 #define MAINCPU_TAG "maincpu"
 #define IOCPU_TAG   "iocpu"
@@ -53,7 +60,8 @@ class rmnimbus_state : public driver_device
 public:
 	rmnimbus_state(const machine_config &mconfig, device_type type, const char *tag) :
 		driver_device(mconfig, type, tag),
-		m_maincpu(*this, "maincpu"),
+		m_maincpu(*this, MAINCPU_TAG),
+		m_iocpu(*this, IOCPU_TAG),
 		m_msm(*this, MSM5205_TAG),
 		m_scsibus(*this, SCSIBUS_TAG),
 		m_ram(*this, RAM_TAG),
@@ -75,9 +83,20 @@ public:
 	{
 	}
 
+	static constexpr feature_type imperfect_features() { return feature::MOUSE; }
+
+	void nimbus(machine_config &config);
+
+	uint32_t m_debug_machine;
+
+	void decode_subbios(device_t *device, offs_t pc, uint8_t raw_flag);
+	void decode_dos21(device_t *device, offs_t pc);
+
+private:
 	required_device<i80186_cpu_device> m_maincpu;
+	required_device<i8031_device> m_iocpu;
 	required_device<msm5205_device> m_msm;
-	required_device<SCSI_PORT_DEVICE> m_scsibus;
+	required_device<scsi_port_device> m_scsibus;
 	required_device<ram_device> m_ram;
 	required_device<eeprom_serial_93cxx_device> m_eeprom;
 	required_device<via6522_device> m_via;
@@ -86,8 +105,8 @@ public:
 	required_device<output_latch_device> m_scsi_data_out;
 	required_device<input_buffer_device> m_scsi_data_in;
 	required_device<output_latch_device> m_scsi_ctrl_out;
-	required_device<wd2793_t> m_fdc;
-	required_device<z80sio2_device> m_z80sio;
+	required_device<wd2793_device> m_fdc;
+	required_device<z80sio_device> m_z80sio;
 	required_device<screen_device> m_screen;
 	required_ioport m_io_config;
 	required_ioport m_io_joystick0;
@@ -97,46 +116,47 @@ public:
 
 	bitmap_ind16 m_video_mem;
 
-	UINT32 m_debug_machine;
-	UINT8 m_mcu_reg080;
-	UINT8 m_iou_reg092;
-	UINT8 m_last_playmode;
-	UINT8 m_ay8910_a;
-	UINT16 m_x, m_y, m_yline;
-	UINT8 m_colours, m_mode, m_op;
-	UINT32 m_debug_video;
-	UINT8 m_vector;
-	UINT8 m_eeprom_bits;
-	UINT8 m_eeprom_state;
+	uint8_t m_mcu_reg080;
+	uint8_t m_iou_reg092;
+	uint8_t m_last_playmode;
+	uint8_t m_ay8910_a;
+	uint16_t m_x, m_y, m_yline;
+	uint8_t m_colours, m_mode, m_op;
+	uint32_t m_debug_video;
+	uint8_t m_vector;
+	uint8_t m_eeprom_bits;
+	uint8_t m_eeprom_state;
 
-	DECLARE_READ8_MEMBER(nimbus_mcu_r);
-	DECLARE_WRITE8_MEMBER(nimbus_mcu_w);
-	DECLARE_READ8_MEMBER(scsi_r);
-	DECLARE_WRITE8_MEMBER(scsi_w);
-	DECLARE_WRITE8_MEMBER(fdc_ctl_w);
-	DECLARE_READ8_MEMBER(nimbus_pc8031_r);
-	DECLARE_WRITE8_MEMBER(nimbus_pc8031_w);
-	DECLARE_READ8_MEMBER(nimbus_pc8031_iou_r);
-	DECLARE_WRITE8_MEMBER(nimbus_pc8031_iou_w);
-	DECLARE_READ8_MEMBER(nimbus_pc8031_port_r);
-	DECLARE_WRITE8_MEMBER(nimbus_pc8031_port_w);
-	DECLARE_READ8_MEMBER(nimbus_iou_r);
-	DECLARE_WRITE8_MEMBER(nimbus_iou_w);
-	DECLARE_WRITE8_MEMBER(nimbus_sound_ay8910_porta_w);
-	DECLARE_WRITE8_MEMBER(nimbus_sound_ay8910_portb_w);
-	DECLARE_READ8_MEMBER(nimbus_mouse_js_r);
-	DECLARE_WRITE8_MEMBER(nimbus_mouse_js_w);
-	DECLARE_READ16_MEMBER(nimbus_video_io_r);
-	DECLARE_WRITE16_MEMBER(nimbus_video_io_w);
+	uint8_t nimbus_mcu_r();
+	void nimbus_mcu_w(uint8_t data);
+	uint8_t scsi_r(offs_t offset);
+	void scsi_w(offs_t offset, uint8_t data);
+	void fdc_ctl_w(uint8_t data);
+	uint8_t nimbus_pc8031_r(offs_t offset);
+	void nimbus_pc8031_w(offs_t offset, uint8_t data);
+	uint8_t nimbus_pc8031_iou_r(offs_t offset);
+	void nimbus_pc8031_iou_w(offs_t offset, uint8_t data);
+	uint8_t nimbus_pc8031_port1_r();
+	void nimbus_pc8031_port1_w(uint8_t data);
+	uint8_t nimbus_pc8031_port3_r();
+	void nimbus_pc8031_port3_w(uint8_t data);
+	uint8_t nimbus_iou_r(offs_t offset);
+	void nimbus_iou_w(offs_t offset, uint8_t data);
+	void nimbus_sound_ay8910_porta_w(uint8_t data);
+	void nimbus_sound_ay8910_portb_w(uint8_t data);
+	uint8_t nimbus_mouse_js_r();
+	void nimbus_mouse_js_w(uint8_t data);
+	uint16_t nimbus_video_io_r(offs_t offset, uint16_t mem_mask = ~0);
+	void nimbus_video_io_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
 	virtual void machine_start() override;
 	virtual void machine_reset() override;
 	virtual void video_start() override;
 	virtual void video_reset() override;
-	UINT32 screen_update_nimbus(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
+	uint32_t screen_update_nimbus(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
 	DECLARE_WRITE_LINE_MEMBER(sio_interrupt);
 	DECLARE_WRITE_LINE_MEMBER(nimbus_fdc_intrq_w);
 	DECLARE_WRITE_LINE_MEMBER(nimbus_fdc_drq_w);
-	DECLARE_WRITE8_MEMBER(nimbus_via_write_portb);
+	void nimbus_via_write_portb(uint8_t data);
 	DECLARE_WRITE_LINE_MEMBER(write_scsi_bsy);
 	DECLARE_WRITE_LINE_MEMBER(write_scsi_cd);
 	DECLARE_WRITE_LINE_MEMBER(write_scsi_io);
@@ -145,23 +165,22 @@ public:
 	DECLARE_WRITE_LINE_MEMBER(nimbus_msm5205_vck);
 	DECLARE_WRITE_LINE_MEMBER(write_scsi_iena);
 
-	UINT8 get_pixel(UINT16 x, UINT16 y);
-	UINT16 read_pixel_line(UINT16 x, UINT16 y, UINT8 pixels, UINT8 bpp);
-	UINT16 read_pixel_data(UINT16 x, UINT16 y);
-	void set_pixel(UINT16 x, UINT16 y, UINT8 colour);
-	void set_pixel40(UINT16 x, UINT16 y, UINT8 colour);
-	void write_pixel_line(UINT16 x, UINT16 y, UINT16, UINT8 pixels, UINT8 bpp);
-	void move_pixel_line(UINT16 x, UINT16 y, UINT8 width);
-	void write_pixel_data(UINT16 x, UINT16 y, UINT16    data);
-	void change_palette(UINT8 bank, UINT16 colours);
-	void external_int(UINT8 vector, bool state);
-	DECLARE_READ8_MEMBER(cascade_callback);
+	uint8_t get_pixel(uint16_t x, uint16_t y);
+	uint16_t read_pixel_line(uint16_t x, uint16_t y, uint8_t pixels, uint8_t bpp);
+	uint16_t read_pixel_data(uint16_t x, uint16_t y);
+	void set_pixel(uint16_t x, uint16_t y, uint8_t colour);
+	void set_pixel40(uint16_t x, uint16_t y, uint8_t colour);
+	void write_pixel_line(uint16_t x, uint16_t y, uint16_t, uint8_t pixels, uint8_t bpp);
+	void move_pixel_line(uint16_t x, uint16_t y, uint8_t width);
+	void write_pixel_data(uint16_t x, uint16_t y, uint16_t    data);
+	void change_palette(uint8_t bank, uint16_t colours);
+	void external_int(uint8_t vector, bool state);
+	uint8_t cascade_callback();
 	void nimbus_bank_memory();
 	void memory_reset();
 	void fdc_reset();
-	UINT8 fdc_driveno(UINT8 drivesel);
+	uint8_t fdc_driveno(uint8_t drivesel);
 	void hdc_reset();
-	void hdc_ctrl_write(UINT8 data);
 	void hdc_post_rw();
 	void hdc_drq(bool state);
 	void pc8031_reset();
@@ -188,35 +207,53 @@ public:
 	// Static data related to Floppy and SCSI hard disks
 	struct
 	{
-		UINT8   reg400;
+		uint8_t   reg400;
 	} m_nimbus_drives;
 
-	/* 8031 Peripheral controler */
+	/* 8031 Peripheral controller */
 	struct
 	{
-		UINT8   ipc_in;
-		UINT8   ipc_out;
-		UINT8   status_in;
-		UINT8   status_out;
+		uint8_t   ipc_in;
+		uint8_t   ipc_out;
+		uint8_t   status_in;
+		uint8_t   status_out;
 	} m_ipc_interface;
 
 	/* Mouse/Joystick */
 	struct
 	{
-		UINT8   m_mouse_px;
-		UINT8   m_mouse_py;
+		uint8_t   m_mouse_px;
+		uint8_t   m_mouse_py;
 
-		UINT8   m_mouse_x;
-		UINT8   m_mouse_y;
-		UINT8   m_mouse_pc;
-		UINT8   m_mouse_pcx;
-		UINT8   m_mouse_pcy;
+		uint8_t   m_mouse_x;
+		uint8_t   m_mouse_y;
+		uint8_t   m_mouse_pc;
+		uint8_t   m_mouse_pcx;
+		uint8_t   m_mouse_pcy;
 
-		UINT8   m_intstate_x;
-		UINT8   m_intstate_y;
+		uint8_t   m_intstate_x;
+		uint8_t   m_intstate_y;
 
-		UINT8   m_reg0a4;
+		uint8_t   m_reg0a4;
 
 		emu_timer   *m_mouse_timer;
 	} m_nimbus_mouse;
+
+	void nimbus_io(address_map &map);
+	void nimbus_iocpu_io(address_map &map);
+	void nimbus_iocpu_mem(address_map &map);
+	void nimbus_mem(address_map &map);
+
+	void decode_dssi_none(uint16_t ds, uint16_t si, uint8_t raw_flag);
+	void decode_dssi_generic(uint16_t ds, uint16_t si, uint8_t raw_flag);
+	void decode_dssi_f_fill_area(uint16_t ds, uint16_t si, uint8_t raw_flag);
+	void decode_dssi_f_plot_character_string(uint16_t ds, uint16_t si, uint8_t raw_flag);
+	void decode_dssi_f_set_new_clt(uint16_t ds, uint16_t si, uint8_t raw_flag);
+	void decode_dssi_f_plonk_char(uint16_t ds, uint16_t si, uint8_t raw_flag);
+	void decode_dssi_f_rw_sectors(uint16_t ds, uint16_t si, uint8_t raw_flag);
+
+	void debug_command(int ref, const std::vector<std::string> &params);
+	void video_debug(int ref, const std::vector<std::string> &params);
 };
+
+#endif // MAME_INCLUDES_RMNIMBUS_H

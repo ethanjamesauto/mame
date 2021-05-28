@@ -1,26 +1,28 @@
 // license:BSD-3-Clause
 // copyright-holders:Curt Coder
+#ifndef MAME_INCLUDES_V1050_H
+#define MAME_INCLUDES_V1050_H
+
 #pragma once
 
-#ifndef __V1050__
-#define __V1050__
-
-#include "emu.h"
 #include "cpu/z80/z80.h"
 #include "cpu/m6502/m6502.h"
 #include "bus/centronics/ctronics.h"
 #include "bus/scsi/s1410.h"
+#include "imagedev/floppy.h"
 #include "machine/clock.h"
 #include "machine/i8214.h"
 #include "machine/i8251.h"
 #include "machine/i8255.h"
 #include "machine/msm58321.h"
 #include "machine/ram.h"
+#include "machine/timer.h"
 #include "bus/scsi/scsi.h"
 #include "bus/scsi/scsihd.h"
 #include "machine/v1050kb.h"
 #include "machine/wd_fdc.h"
 #include "video/mc6845.h"
+#include "emupal.h"
 
 #define SCREEN_TAG              "screen"
 
@@ -49,20 +51,20 @@
 #define V1050_VIDEORAM_SIZE     0x8000
 #define V1050_VIDEORAM_MASK     0x7fff
 
-#define INT_RS_232          0x01
-#define INT_WINCHESTER      0x02
-#define INT_KEYBOARD        0x04
-#define INT_FLOPPY          0x08
-#define INT_VSYNC           0x10
-#define INT_DISPLAY         0x20
-#define INT_EXPANSION_B     0x40
-#define INT_EXPANSION_A     0x80
+#define INT_RS_232          0
+#define INT_WINCHESTER      1
+#define INT_KEYBOARD        2
+#define INT_FLOPPY          3
+#define INT_VSYNC           4
+#define INT_DISPLAY         5
+#define INT_EXPANSION_B     6
+#define INT_EXPANSION_A     7
 
 class v1050_state : public driver_device
 {
 public:
-	v1050_state(const machine_config &mconfig, device_type type, const char *tag)
-		: driver_device(mconfig, type, tag),
+	v1050_state(const machine_config &mconfig, device_type type, const char *tag) :
+		driver_device(mconfig, type, tag),
 		m_maincpu(*this, Z80_TAG),
 		m_subcpu(*this, M6502_TAG),
 		m_pic(*this, UPB8214_TAG),
@@ -89,46 +91,50 @@ public:
 		m_sasi_ctrl_in(*this, "scsi_ctrl_in"),
 		m_rom(*this, Z80_TAG),
 		m_video_ram(*this, "video_ram"),
-		m_attr_ram(*this, "attr_ram"),
+		m_attr_ram(*this, "attr_ram", V1050_VIDEORAM_SIZE, ENDIANNESS_LITTLE),
+		m_int_mask(0),
+		m_int_state(0),
+		m_fdc_irq(0),
+		m_fdc_drq(0),
 		m_rtc_ppi_pa(0),
 		m_rtc_ppi_pc(0)
 	{
 	}
 
-	DECLARE_READ8_MEMBER( kb_data_r );
-	DECLARE_READ8_MEMBER( kb_status_r );
-	DECLARE_WRITE8_MEMBER( v1050_i8214_w );
-	DECLARE_READ8_MEMBER( vint_clr_r );
-	DECLARE_WRITE8_MEMBER( vint_clr_w );
-	DECLARE_READ8_MEMBER( dint_clr_r );
-	DECLARE_WRITE8_MEMBER( dint_clr_w );
-	DECLARE_WRITE8_MEMBER( bank_w );
-	DECLARE_WRITE8_MEMBER( dint_w );
-	DECLARE_WRITE8_MEMBER( dvint_clr_w );
-	DECLARE_READ8_MEMBER( keyboard_r );
-	DECLARE_WRITE8_MEMBER( keyboard_w );
-	DECLARE_WRITE8_MEMBER( p2_w );
-	DECLARE_WRITE8_MEMBER( misc_ppi_pa_w );
-	DECLARE_WRITE8_MEMBER( misc_ppi_pc_w );
-	DECLARE_READ8_MEMBER( rtc_ppi_pa_r );
-	DECLARE_WRITE8_MEMBER( rtc_ppi_pa_w );
-	DECLARE_WRITE8_MEMBER( rtc_ppi_pb_w );
-	DECLARE_READ8_MEMBER( rtc_ppi_pc_r );
-	DECLARE_WRITE8_MEMBER( rtc_ppi_pc_w );
+	void v1050(machine_config &config);
+	void v1050_video(machine_config &config);
+
+private:
+	uint8_t kb_data_r();
+	uint8_t kb_status_r();
+	void v1050_i8214_w(uint8_t data);
+	uint8_t vint_clr_r();
+	void vint_clr_w(uint8_t data);
+	uint8_t dint_clr_r();
+	void dint_clr_w(uint8_t data);
+	void bank_w(uint8_t data);
+	void dint_w(uint8_t data);
+	void dvint_clr_w(uint8_t data);
+	void misc_ppi_pa_w(uint8_t data);
+	void misc_ppi_pc_w(uint8_t data);
+	uint8_t rtc_ppi_pa_r();
+	void rtc_ppi_pa_w(uint8_t data);
+	void rtc_ppi_pb_w(uint8_t data);
+	uint8_t rtc_ppi_pc_r();
+	void rtc_ppi_pc_w(uint8_t data);
 	DECLARE_WRITE_LINE_MEMBER( kb_rxrdy_w );
 	DECLARE_WRITE_LINE_MEMBER( sio_rxrdy_w );
 	DECLARE_WRITE_LINE_MEMBER( sio_txrdy_w );
 	DECLARE_WRITE_LINE_MEMBER( fdc_intrq_w );
 	DECLARE_WRITE_LINE_MEMBER( fdc_drq_w );
-	DECLARE_READ8_MEMBER( attr_r );
-	DECLARE_WRITE8_MEMBER( attr_w );
-	DECLARE_READ8_MEMBER( videoram_r );
-	DECLARE_WRITE8_MEMBER( videoram_w );
+	uint8_t attr_r();
+	void attr_w(uint8_t data);
+	uint8_t videoram_r(offs_t offset);
+	void videoram_w(offs_t offset, uint8_t data);
 	DECLARE_WRITE_LINE_MEMBER( crtc_vs_w );
-	DECLARE_WRITE8_MEMBER(sasi_data_w);
+	void sasi_data_w(uint8_t data);
 	DECLARE_WRITE_LINE_MEMBER(write_sasi_io);
-	DECLARE_READ8_MEMBER( sasi_status_r );
-	DECLARE_WRITE8_MEMBER( sasi_ctrl_w );
+	void sasi_ctrl_w(uint8_t data);
 
 	WRITE_LINE_MEMBER( rtc_ppi_pa_0_w ){ m_rtc_ppi_pa = (m_rtc_ppi_pa & ~(1 << 0)) | ((state & 1) << 0); }
 	WRITE_LINE_MEMBER( rtc_ppi_pa_1_w ){ m_rtc_ppi_pa = (m_rtc_ppi_pa & ~(1 << 1)) | ((state & 1) << 1); }
@@ -142,9 +148,9 @@ public:
 	DECLARE_WRITE_LINE_MEMBER(write_keyboard_clock);
 	DECLARE_WRITE_LINE_MEMBER(write_sio_clock);
 	DECLARE_WRITE_LINE_MEMBER(pic_int_w);
-	DECLARE_WRITE8_MEMBER(disp_ppi_pc_w);
-	DECLARE_WRITE8_MEMBER(m6502_ppi_pc_w);
-	DECLARE_READ8_MEMBER(misc_ppi_pc_r);
+	void disp_ppi_pc_w(uint8_t data);
+	void m6502_ppi_pc_w(uint8_t data);
+	uint8_t misc_ppi_pc_r();
 	IRQ_CALLBACK_MEMBER(v1050_int_ack);
 
 	DECLARE_WRITE_LINE_MEMBER(write_centronics_busy);
@@ -152,20 +158,21 @@ public:
 
 	MC6845_UPDATE_ROW(crtc_update_row);
 
-protected:
+	void v1050_crt_mem(address_map &map);
+	void v1050_io(address_map &map);
+	void v1050_mem(address_map &map);
+
 	virtual void machine_start() override;
 	virtual void machine_reset() override;
 
 	virtual void video_start() override;
 
-private:
 	void bankswitch();
 	void update_fdc();
-	void set_interrupt(UINT8 mask, int state);
+	void set_interrupt(int line, int state);
 	void scan_keyboard();
 	void set_baud_sel(int sel);
 
-public: // HACK for MC6845
 	required_device<cpu_device> m_maincpu;
 	required_device<cpu_device> m_subcpu;
 	required_device<i8214_device> m_pic;
@@ -174,7 +181,7 @@ public: // HACK for MC6845
 	required_device<msm58321_device> m_rtc;
 	required_device<i8251_device> m_uart_kb;
 	required_device<i8251_device> m_uart_sio;
-	required_device<mb8877_t> m_fdc;
+	required_device<mb8877_device> m_fdc;
 	required_device<mc6845_device> m_crtc;
 	required_device<palette_device> m_palette;
 	required_device<centronics_device> m_centronics;
@@ -186,24 +193,24 @@ public: // HACK for MC6845
 	required_device<clock_device> m_clock_sio;
 	required_device<timer_device> m_timer_ack;
 	required_device<timer_device> m_timer_rst;
-	required_device<SCSI_PORT_DEVICE> m_sasibus;
+	required_device<scsi_port_device> m_sasibus;
 	required_device<output_latch_device> m_sasi_data_out;
 	required_device<input_buffer_device> m_sasi_data_in;
 	required_device<input_buffer_device> m_sasi_ctrl_in;
 	required_memory_region m_rom;
-	required_shared_ptr<UINT8> m_video_ram;
-	optional_shared_ptr<UINT8> m_attr_ram;
+	required_shared_ptr<uint8_t> m_video_ram;
+	memory_share_creator<uint8_t> m_attr_ram;
 
 	// interrupt state
-	UINT8 m_int_mask;           // interrupt mask
-	UINT8 m_int_state;          // interrupt status
+	uint8_t m_int_mask;           // interrupt mask
+	uint8_t m_int_state;
 	int m_f_int_enb;            // floppy interrupt enable
 	bool m_fdc_irq;
 	bool m_fdc_drq;
 
 	// keyboard state
-	UINT8 m_keylatch;           // keyboard row select
-	UINT8 m_keydata;
+	uint8_t m_keylatch;           // keyboard row select
+	uint8_t m_keydata;
 	int m_keyavail;
 
 	// serial state
@@ -212,24 +219,20 @@ public: // HACK for MC6845
 	int m_baud_sel;             // baud select
 
 	// memory state
-	UINT8 m_bank;               // bank register
+	uint8_t m_bank;               // bank register
 
 	// video state
-	UINT8 m_attr;               // attribute latch
+	uint8_t m_attr;               // attribute latch
 
 	// sasi state
-	UINT8 m_sasi_data;
+	uint8_t m_sasi_data;
 	int m_sasi_data_enable;
 
-	UINT8 m_rtc_ppi_pa;
-	UINT8 m_rtc_ppi_pc;
+	uint8_t m_rtc_ppi_pa;
+	uint8_t m_rtc_ppi_pc;
 
 	int m_centronics_busy;
 	int m_centronics_perror;
 };
 
-//----------- defined in video/v1050.c -----------
-
-MACHINE_CONFIG_EXTERN( v1050_video );
-
-#endif
+#endif // MAME_INCLUDES_V1050_H

@@ -45,17 +45,17 @@ K053246_CB_MEMBER(simpsons_state::sprite_callback)
 
 ***************************************************************************/
 
-READ8_MEMBER(simpsons_state::simpsons_k052109_r)
+uint8_t simpsons_state::simpsons_k052109_r(offs_t offset)
 {
-	return m_k052109->read(space, offset + 0x2000);
+	return m_k052109->read(offset + 0x2000);
 }
 
-WRITE8_MEMBER(simpsons_state::simpsons_k052109_w)
+void simpsons_state::simpsons_k052109_w(offs_t offset, uint8_t data)
 {
-	m_k052109->write(space, offset + 0x2000, data);
+	m_k052109->write(offset + 0x2000, data);
 }
 
-READ8_MEMBER(simpsons_state::simpsons_k053247_r)
+uint8_t simpsons_state::simpsons_k053247_r(offs_t offset)
 {
 	int offs = offset >> 1;
 
@@ -65,7 +65,7 @@ READ8_MEMBER(simpsons_state::simpsons_k053247_r)
 		return(m_spriteram[offs] >> 8);
 }
 
-WRITE8_MEMBER(simpsons_state::simpsons_k053247_w)
+void simpsons_state::simpsons_k053247_w(offs_t offset, uint8_t data)
 {
 	int offs = offset >> 1;
 
@@ -77,8 +77,11 @@ WRITE8_MEMBER(simpsons_state::simpsons_k053247_w)
 
 void simpsons_state::simpsons_video_banking( int bank )
 {
-	m_bank0000->set_bank(bank & 1);
-	m_bank2000->set_bank((bank >> 1) & 1);
+	if(bank & 1)
+		m_palette_view.select(0);
+	else
+		m_palette_view.disable();
+	m_video_view.select((bank >> 1) & 1);
 }
 
 
@@ -89,24 +92,24 @@ void simpsons_state::simpsons_video_banking( int bank )
 
 ***************************************************************************/
 
-UINT32 simpsons_state::screen_update_simpsons(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t simpsons_state::screen_update_simpsons(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	int layer[3], bg_colorbase;
 
-	bg_colorbase = m_k053251->get_palette_index(K053251_CI0);
-	m_sprite_colorbase = m_k053251->get_palette_index(K053251_CI1);
-	m_layer_colorbase[0] = m_k053251->get_palette_index(K053251_CI2);
-	m_layer_colorbase[1] = m_k053251->get_palette_index(K053251_CI3);
-	m_layer_colorbase[2] = m_k053251->get_palette_index(K053251_CI4);
+	bg_colorbase = m_k053251->get_palette_index(k053251_device::CI0);
+	m_sprite_colorbase = m_k053251->get_palette_index(k053251_device::CI1);
+	m_layer_colorbase[0] = m_k053251->get_palette_index(k053251_device::CI2);
+	m_layer_colorbase[1] = m_k053251->get_palette_index(k053251_device::CI3);
+	m_layer_colorbase[2] = m_k053251->get_palette_index(k053251_device::CI4);
 
 	m_k052109->tilemap_update();
 
 	layer[0] = 0;
-	m_layerpri[0] = m_k053251->get_priority(K053251_CI2);
+	m_layerpri[0] = m_k053251->get_priority(k053251_device::CI2);
 	layer[1] = 1;
-	m_layerpri[1] = m_k053251->get_priority(K053251_CI3);
+	m_layerpri[1] = m_k053251->get_priority(k053251_device::CI3);
 	layer[2] = 2;
-	m_layerpri[2] = m_k053251->get_priority(K053251_CI4);
+	m_layerpri[2] = m_k053251->get_priority(k053251_device::CI4);
 
 	konami_sortlayers3(layer, m_layerpri);
 

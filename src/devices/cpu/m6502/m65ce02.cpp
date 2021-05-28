@@ -10,22 +10,23 @@
 
 #include "emu.h"
 #include "m65ce02.h"
+#include "m65ce02d.h"
 
-const device_type M65CE02 = &device_creator<m65ce02_device>;
+DEFINE_DEVICE_TYPE(M65CE02, m65ce02_device, "m65ce02", "CSG 65CE02")
 
-m65ce02_device::m65ce02_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock) :
-	m65c02_device(mconfig, M65CE02, "M65CE02", tag, owner, clock, "m65ce02", __FILE__), TMP3(0), Z(0), B(0)
+m65ce02_device::m65ce02_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock) :
+	m65ce02_device(mconfig, M65CE02, tag, owner, clock)
 {
 }
 
-m65ce02_device::m65ce02_device(const machine_config &mconfig, device_type type, const char *name, const char *tag, device_t *owner, UINT32 clock, const char *shortname, const char *source) :
-	m65c02_device(mconfig, type, name, tag, owner, clock, shortname, source), TMP3(0), Z(0), B(0)
+m65ce02_device::m65ce02_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock) :
+	m65c02_device(mconfig, type, tag, owner, clock), TMP3(0), Z(0), B(0)
 {
 }
 
-offs_t m65ce02_device::disasm_disassemble(char *buffer, offs_t pc, const UINT8 *oprom, const UINT8 *opram, UINT32 options)
+std::unique_ptr<util::disasm_interface> m65ce02_device::create_disassembler()
 {
-	return disassemble_generic(buffer, pc, oprom, opram, options, disasm_entries);
+	return std::make_unique<m65ce02_disassembler>();
 }
 
 void m65ce02_device::init()
@@ -43,10 +44,7 @@ void m65ce02_device::init()
 
 void m65ce02_device::device_start()
 {
-	if(direct_disabled)
-		mintf = new mi_default_nd;
-	else
-		mintf = new mi_default_normal;
+	mintf = std::make_unique<mi_default>();
 
 	init();
 }
@@ -71,16 +69,12 @@ void m65ce02_device::state_import(const device_state_entry &entry)
 	}
 }
 
-void m65ce02_device::state_export(const device_state_entry &entry)
-{
-}
-
-void m65ce02_device::state_string_export(const device_state_entry &entry, std::string &str)
+void m65ce02_device::state_string_export(const device_state_entry &entry, std::string &str) const
 {
 	switch(entry.index()) {
 	case STATE_GENFLAGS:
 	case M6502_P:
-		strprintf(str, "%c%c%c%c%c%c%c",
+		str = string_format("%c%c%c%c%c%c%c",
 						P & F_N ? 'N' : '.',
 						P & F_V ? 'V' : '.',
 						P & F_E ? 'E' : '.',
@@ -90,9 +84,9 @@ void m65ce02_device::state_string_export(const device_state_entry &entry, std::s
 						P & F_C ? 'C' : '.');
 		break;
 	case M65CE02_B:
-		strprintf(str, "%02x", B >> 8);
+		str = string_format("%02x", B >> 8);
 		break;
 	}
 }
 
-#include "cpu/m6502/m65ce02.inc"
+#include "cpu/m6502/m65ce02.hxx"

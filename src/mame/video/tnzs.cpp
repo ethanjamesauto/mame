@@ -31,31 +31,27 @@
 
 ***************************************************************************/
 
-PALETTE_INIT_MEMBER(tnzs_state,arknoid2)
+void tnzs_base_state::prompalette(palette_device &palette) const
 {
-	const UINT8 *color_prom = memregion("proms")->base();
-	int i, col;
+	uint8_t const *const color_prom = memregion("proms")->base();
 
-	for (i = 0; i < palette.entries(); i++)
+	for (int i = 0; i < palette.entries(); i++)
 	{
-		col = (color_prom[i] << 8) + color_prom[i + 512];
+		int const col = (color_prom[i] << 8) + color_prom[i + 512];
 		palette.set_pen_color(i, pal5bit(col >> 10), pal5bit(col >> 5), pal5bit(col >> 0));
 	}
 }
 
 
-UINT32 tnzs_state::screen_update_tnzs(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t tnzs_base_state::screen_update_tnzs(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	bitmap.fill(0x1f0, cliprect);
 
-	m_seta001->set_fg_yoffsets( -0x12, 0x0e );
-	m_seta001->set_bg_yoffsets( 0x1, -0x1 );
-
-	m_seta001->draw_sprites(screen, bitmap, cliprect, 0x800, 0 );
+	m_seta001->draw_sprites(screen, bitmap, cliprect, 0x800);
 	return 0;
 }
 
-void tnzs_state::screen_eof_tnzs(screen_device &screen, bool state)
+WRITE_LINE_MEMBER(tnzs_base_state::screen_vblank_tnzs)
 {
 	// rising edge
 	if (state)

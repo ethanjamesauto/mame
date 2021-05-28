@@ -7,7 +7,7 @@ Truco Clemente (c) 1991 Miky SRL
 driver by Ernesto Corvi
 
 Notes:
-- After one game you can't play anymore.
+- Sloppy coin insertion, needs to stay high for 60 Hz wtf?
 - Audio is almost there.
 - I think this runs on a heavily modified PacMan type of board.
 
@@ -35,11 +35,16 @@ Daughterboard: Custom made, plugged in the 2 roms and Z80 mainboard sockets.
 ***************************************************************************/
 
 #include "emu.h"
-#include "cpu/z80/z80.h"
-#include "sound/dac.h"
 #include "includes/trucocl.h"
 
-WRITE8_MEMBER(trucocl_state::irq_enable_w)
+#include "cpu/z80/z80.h"
+#include "machine/watchdog.h"
+#include "screen.h"
+#include "speaker.h"
+
+
+// TODO: doesn't seem suited to neither irq nor nmi
+void trucocl_state::irq_enable_w(uint8_t data)
 {
 	m_irq_mask = (data & 1) ^ 1;
 }
@@ -50,17 +55,17 @@ void trucocl_state::device_timer(emu_timer &timer, device_timer_id id, int param
 	switch (id)
 	{
 	case TIMER_DAC_IRQ:
-		m_maincpu->set_input_line(INPUT_LINE_NMI, PULSE_LINE);
+		m_maincpu->pulse_input_line(INPUT_LINE_NMI, attotime::zero);
 		break;
 	default:
-		assert_always(FALSE, "Unknown id in trucocl_state::device_timer");
+		throw emu_fatalerror("Unknown id in trucocl_state::device_timer");
 	}
 }
 
 
-WRITE8_MEMBER(trucocl_state::audio_dac_w)
+void trucocl_state::audio_dac_w(uint8_t data)
 {
-	UINT8 *rom = memregion("maincpu")->base();
+	uint8_t *rom = memregion("maincpu")->base();
 	int dac_address = ( data & 0xf0 ) << 8;
 	int sel = ( ( (~data) >> 1 ) & 2 ) | ( data & 1 );
 
@@ -82,22 +87,28 @@ WRITE8_MEMBER(trucocl_state::audio_dac_w)
 
 	dac_address += 0x10000;
 
-	m_dac->write_unsigned8( rom[dac_address+m_cur_dac_address_index] );
+	m_dac->write(rom[dac_address+m_cur_dac_address_index]);
 
-	timer_set( attotime::from_hz( 16000 ), TIMER_DAC_IRQ);
+	m_dac_irq_timer->adjust(attotime::from_hz( 16000 ));
 }
 
-static ADDRESS_MAP_START( main_map, AS_PROGRAM, 8, trucocl_state )
-	AM_RANGE(0x0000, 0x3fff) AM_ROM
-	AM_RANGE(0x4000, 0x43ff) AM_RAM_WRITE(trucocl_videoram_w) AM_SHARE("videoram")
-	AM_RANGE(0x4400, 0x47ff) AM_RAM_WRITE(trucocl_colorram_w) AM_SHARE("colorram")
-	AM_RANGE(0x4c00, 0x4fff) AM_RAM
-	AM_RANGE(0x5000, 0x5000) AM_WRITE(irq_enable_w)
-	AM_RANGE(0x5000, 0x503f) AM_READ_PORT("IN0")
-	AM_RANGE(0x5080, 0x5080) AM_WRITE(audio_dac_w)
-	AM_RANGE(0x50c0, 0x50c0) AM_WRITE(watchdog_reset_w)
-	AM_RANGE(0x8000, 0xffff) AM_ROM
-ADDRESS_MAP_END
+void trucocl_state::main_map(address_map &map)
+{
+	map(0x0000, 0x3fff).rom();
+	map(0x4000, 0x43ff).ram().w(FUNC(trucocl_state::trucocl_videoram_w)).share("videoram");
+	map(0x4400, 0x47ff).ram().w(FUNC(trucocl_state::trucocl_colorram_w)).share("colorram");
+	map(0x4800, 0x4fff).ram();
+	map(0x5000, 0x5000).w(FUNC(trucocl_state::irq_enable_w));
+	map(0x5000, 0x503f).portr("IN0");
+	map(0x5080, 0x5080).portr("DSW").w(FUNC(trucocl_state::audio_dac_w));
+	map(0x50c0, 0x50c0).w("watchdog", FUNC(watchdog_timer_device::reset_w));
+	map(0x8000, 0xffff).rom();
+}
+
+void trucocl_state::main_io(address_map &map)
+{
+	map(0x0000, 0xffff).nopr(); // read then always discarded?
+}
 
 static INPUT_PORTS_START( trucocl )
 	PORT_START("IN0")
@@ -106,9 +117,36 @@ static INPUT_PORTS_START( trucocl )
 	PORT_BIT( 0x04, IP_ACTIVE_LOW, IPT_JOYSTICK_RIGHT ) PORT_8WAY
 	PORT_BIT( 0x08, IP_ACTIVE_LOW, IPT_JOYSTICK_DOWN ) PORT_8WAY
 	PORT_BIT( 0x10, IP_ACTIVE_LOW, IPT_UNKNOWN )
-	PORT_BIT( 0x20, IP_ACTIVE_LOW, IPT_COIN1 )
+	PORT_BIT( 0x20, IP_ACTIVE_LOW, IPT_COIN1 ) //PORT_IMPULSE(60)
 	PORT_BIT( 0x40, IP_ACTIVE_LOW, IPT_UNKNOWN )
 	PORT_BIT( 0x80, IP_ACTIVE_LOW, IPT_BUTTON1 ) PORT_IMPULSE(2)
+
+	PORT_START("DSW")
+	PORT_DIPNAME( 0x01, 0x01, "Enable BGM fanfare" ) // enables extra BGMs on attract mode
+	PORT_DIPSETTING(    0x00, DEF_STR( No ) )
+	PORT_DIPSETTING(    0x01, DEF_STR( Yes ) )
+	PORT_DIPNAME( 0x02, 0x00, "Nudity" )
+	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
+	PORT_DIPSETTING(    0x02, DEF_STR( On ) )
+	// TODO: more are tested ingame
+	PORT_DIPNAME( 0x04, 0x00, DEF_STR( Unknown ) )
+	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
+	PORT_DIPSETTING(    0x04, DEF_STR( On ) )
+	PORT_DIPNAME( 0x08, 0x00, DEF_STR( Unknown ) )
+	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
+	PORT_DIPSETTING(    0x08, DEF_STR( On ) )
+	PORT_DIPNAME( 0x10, 0x00, DEF_STR( Unknown ) )
+	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
+	PORT_DIPSETTING(    0x10, DEF_STR( On ) )
+	PORT_DIPNAME( 0x20, 0x00, DEF_STR( Unknown ) )
+	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
+	PORT_DIPSETTING(    0x20, DEF_STR( On ) )
+	PORT_DIPNAME( 0x40, 0x00, DEF_STR( Unknown ) )
+	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
+	PORT_DIPSETTING(    0x40, DEF_STR( On ) )
+	PORT_DIPNAME( 0x80, 0x00, DEF_STR( Unknown ) )
+	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
+	PORT_DIPSETTING(    0x80, DEF_STR( On ) )
 INPUT_PORTS_END
 
 
@@ -125,43 +163,49 @@ static const gfx_layout tilelayout =
 
 
 
-static GFXDECODE_START( trucocl )
-	GFXDECODE_ENTRY( "gfx1", 0,         tilelayout,      0, 2 )
+static GFXDECODE_START( gfx_trucocl )
+	GFXDECODE_ENTRY( "gfx1", 0,       tilelayout,      0, 2 )
 	GFXDECODE_ENTRY( "gfx1", 0x10000, tilelayout,      0, 2 )
 GFXDECODE_END
 
-INTERRUPT_GEN_MEMBER(trucocl_state::trucocl_interrupt)
+void trucocl_state::machine_reset()
 {
-	if(m_irq_mask)
-		device.execute().set_input_line(0, HOLD_LINE);
-
+	// ...
 }
 
-static MACHINE_CONFIG_START( trucocl, trucocl_state )
+INTERRUPT_GEN_MEMBER(trucocl_state::trucocl_interrupt)
+{
+//  if(m_irq_mask)
+		device.execute().set_input_line(0, HOLD_LINE);
+}
+
+void trucocl_state::trucocl(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", Z80, 18432000/6)
-	MCFG_CPU_PROGRAM_MAP(main_map)
-	MCFG_CPU_VBLANK_INT_DRIVER("screen", trucocl_state,  trucocl_interrupt)
+	Z80(config, m_maincpu, 18432000/6);
+	m_maincpu->set_addrmap(AS_PROGRAM, &trucocl_state::main_map);
+	m_maincpu->set_addrmap(AS_IO, &trucocl_state::main_io);
+	m_maincpu->set_vblank_int("screen", FUNC(trucocl_state::trucocl_interrupt));
+
+	WATCHDOG_TIMER(config, "watchdog");
 
 	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_REFRESH_RATE(60)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(0))
-	MCFG_SCREEN_SIZE(32*8, 32*8)
-	MCFG_SCREEN_VISIBLE_AREA(0*8, 32*8-1, 0*8, 32*8-1)
-	MCFG_SCREEN_UPDATE_DRIVER(trucocl_state, screen_update_trucocl)
-	MCFG_SCREEN_PALETTE("palette")
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_RASTER));
+	screen.set_refresh_hz(60);
+	screen.set_vblank_time(ATTOSECONDS_IN_USEC(0));
+	screen.set_size(32*8, 32*8);
+	screen.set_visarea(0*8, 32*8-1, 0*8, 32*8-1);
+	screen.set_screen_update(FUNC(trucocl_state::screen_update_trucocl));
+	screen.set_palette("palette");
 
-	MCFG_GFXDECODE_ADD("gfxdecode", "palette", trucocl)
-	MCFG_PALETTE_ADD("palette", 32)
-	MCFG_PALETTE_INIT_OWNER(trucocl_state, trucocl)
+	GFXDECODE(config, m_gfxdecode, "palette", gfx_trucocl);
+	PALETTE(config, "palette", FUNC(trucocl_state::trucocl_palette), 32);
 
 	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_MONO("mono")
+	SPEAKER(config, "speaker").front_center();
 
-	MCFG_DAC_ADD("dac")
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 1.0)
-MACHINE_CONFIG_END
+	DAC_8BIT_R2R(config, "dac", 0).add_route(ALL_OUTPUTS, "speaker", 0.5); // unknown DAC
+}
 
 /***************************************************************************
 
@@ -188,15 +232,16 @@ ROM_END
  *
  *************************************/
 
-DRIVER_INIT_MEMBER(trucocl_state,trucocl)
+void trucocl_state::init_trucocl()
 {
 	m_cur_dac_address = -1;
 	m_cur_dac_address_index = 0;
+
+	m_dac_irq_timer = timer_alloc(TIMER_DAC_IRQ);
 }
 
 
 
 /******************************************************************************/
-/*    YEAR   NAME     PARENT  MACHINE  INPUT    INIT     MONITOR  */
-
-GAME( 1991, trucocl,  0,      trucocl, trucocl, trucocl_state, trucocl, ROT0, "Miky SRL", "Truco Clemente", MACHINE_IMPERFECT_SOUND | MACHINE_NOT_WORKING )
+//    YEAR  NAME      PARENT  MACHINE  INPUT    STATE          INIT          MONITOR
+GAME( 1991, trucocl,  0,      trucocl, trucocl, trucocl_state, init_trucocl, ROT0, "Miky SRL", "Truco Clemente", MACHINE_IMPERFECT_SOUND | MACHINE_NOT_WORKING )

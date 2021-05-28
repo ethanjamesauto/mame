@@ -2,7 +2,7 @@
 // copyright-holders:Kevin Thacker
 /***************************************************************************
 
-  timex.c
+  timex.cpp
 
   Functions to emulate the video hardware of the Timex ZX Spectrum clones.
 
@@ -17,21 +17,35 @@
 
 #include "emu.h"
 #include "includes/spectrum.h"
+#include "includes/timex.h"
 #include "machine/ram.h"
 
-inline void spectrum_state::spectrum_plot_pixel(bitmap_ind16 &bitmap, int x, int y, UINT32 color)
+inline void tc2048_state::spectrum_plot_pixel(bitmap_ind16 &bitmap, int x, int y, uint32_t color)
 {
-	bitmap.pix16(y, x) = (UINT16)color;
+	bitmap.pix(y, x) = (uint16_t)color;
 }
 
 /* Update FLASH status for ts2068. Assumes flash update every 1/2s. */
-VIDEO_START_MEMBER(spectrum_state,ts2068)
+void ts2068_state::video_start()
 {
-	VIDEO_START_CALL_MEMBER( spectrum );
 	m_frame_invert_count = 30;
+
+	m_frame_number = 0;
+	m_flash_invert = 0;
+
+	m_previous_border_x = 0;
+	m_previous_border_y = 0;
+	m_screen->register_screen_bitmap(m_border_bitmap);
+	m_previous_screen_x = 0;
+	m_previous_screen_y = 0;
+	m_screen->register_screen_bitmap(m_screen_bitmap);
+
+	m_screen_location = m_video_ram;
+
+	m_irq_off_timer = timer_alloc(TIMER_IRQ_OFF);
 }
 
-void spectrum_state::screen_eof_timex(screen_device &screen, bool state)
+WRITE_LINE_MEMBER(tc2048_state::screen_vblank_timex)
 {
 	// rising edge
 	if (state)
@@ -72,7 +86,7 @@ void spectrum_state::screen_eof_timex(screen_device &screen, bool state)
  *******************************************************************/
 
 /* Draw a scanline in TS2068/TC2048 hires mode (code modified from COUPE.C) */
-void spectrum_state::ts2068_hires_scanline(bitmap_ind16 &bitmap, int y, int borderlines)
+void tc2048_state::hires_scanline(bitmap_ind16 &bitmap, int y, int borderlines)
 {
 	int x,b,scrx,scry;
 	unsigned short ink,pap;
@@ -117,7 +131,7 @@ void spectrum_state::ts2068_hires_scanline(bitmap_ind16 &bitmap, int y, int bord
 }
 
 /* Draw a scanline in TS2068/TC2048 64-column mode */
-void spectrum_state::ts2068_64col_scanline(bitmap_ind16 &bitmap, int y, int borderlines, unsigned short inkcolor)
+void tc2048_state::_64col_scanline(bitmap_ind16 &bitmap, int y, int borderlines, unsigned short inkcolor)
 {
 	int x,b,scrx,scry;
 	unsigned char *scr1, *scr2;
@@ -151,7 +165,7 @@ void spectrum_state::ts2068_64col_scanline(bitmap_ind16 &bitmap, int y, int bord
 }
 
 /* Draw a scanline in TS2068/TC2048 lores (normal Spectrum) mode */
-void spectrum_state::ts2068_lores_scanline(bitmap_ind16 &bitmap, int y, int borderlines, int screen)
+void tc2048_state::lores_scanline(bitmap_ind16 &bitmap, int y, int borderlines, int screen)
 {
 	int x,b,scrx,scry;
 	unsigned short ink,pap;
@@ -195,7 +209,7 @@ void spectrum_state::ts2068_lores_scanline(bitmap_ind16 &bitmap, int y, int bord
 	}
 }
 
-UINT32 spectrum_state::screen_update_ts2068(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t ts2068_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	/* for now TS2068 will do a full-refresh */
 	int count;
@@ -208,33 +222,33 @@ UINT32 spectrum_state::screen_update_ts2068(screen_device &screen, bitmap_ind16 
 		/* 64 Column mode */
 		unsigned short inkcolor = (m_port_ff_data & 0x38) >> 3;
 		for (count = 0; count < 192; count++)
-			ts2068_64col_scanline(bitmap, count, TS2068_TOP_BORDER, inkcolor);
+			_64col_scanline(bitmap, count, TS2068_TOP_BORDER, inkcolor);
 	}
 	else if ((m_port_ff_data & 7) == 2)
 	{
 		/* Extended Color mode */
 		for (count = 0; count < 192; count++)
-			ts2068_hires_scanline(bitmap, count, TS2068_TOP_BORDER);
+			hires_scanline(bitmap, count, TS2068_TOP_BORDER);
 	}
 	else if ((m_port_ff_data & 7) == 1)
 	{
 		/* Screen 6000-7aff */
 		for (count = 0; count < 192; count++)
-			ts2068_lores_scanline(bitmap, count, TS2068_TOP_BORDER, 1);
+			lores_scanline(bitmap, count, TS2068_TOP_BORDER, 1);
 	}
 	else
 	{
 		/* Screen 4000-5aff */
 		for (count = 0; count < 192; count++)
-			ts2068_lores_scanline(bitmap, count, TS2068_TOP_BORDER, 0);
+			lores_scanline(bitmap, count, TS2068_TOP_BORDER, 0);
 	}
 
 	return 0;
 }
 
-UINT32 spectrum_state::screen_update_tc2048(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t tc2048_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
-	/* for now TS2068 will do a full-refresh */
+	/* for now TC2048 will do a full-refresh */
 	int count;
 
 	if (m_border_bitmap.valid())
@@ -245,25 +259,25 @@ UINT32 spectrum_state::screen_update_tc2048(screen_device &screen, bitmap_ind16 
 		/* 64 Column mode */
 		unsigned short inkcolor = (m_port_ff_data & 0x38) >> 3;
 		for (count = 0; count < 192; count++)
-			ts2068_64col_scanline(bitmap, count, SPEC_TOP_BORDER, inkcolor);
+			_64col_scanline(bitmap, count, SPEC_TOP_BORDER, inkcolor);
 	}
 	else if ((m_port_ff_data & 7) == 2)
 	{
 		/* Extended Color mode */
 		for (count = 0; count < 192; count++)
-			ts2068_hires_scanline(bitmap, count, SPEC_TOP_BORDER);
+			hires_scanline(bitmap, count, SPEC_TOP_BORDER);
 	}
 	else if ((m_port_ff_data & 7) == 1)
 	{
 		/* Screen 6000-7aff */
 		for (count = 0; count < 192; count++)
-			ts2068_lores_scanline(bitmap, count, SPEC_TOP_BORDER, 1);
+			lores_scanline(bitmap, count, SPEC_TOP_BORDER, 1);
 	}
 	else
 	{
 		/* Screen 4000-5aff */
 		for (count = 0; count < 192; count++)
-			ts2068_lores_scanline(bitmap, count, SPEC_TOP_BORDER, 0);
+			lores_scanline(bitmap, count, SPEC_TOP_BORDER, 0);
 	}
 
 	return 0;

@@ -6,6 +6,7 @@
 
 **********************************************************************/
 
+#include "emu.h"
 #include "multitap.h"
 #include "joypad.h"
 #include "twintap.h"
@@ -14,7 +15,7 @@
 //  DEVICE DEFINITIONS
 //**************************************************************************
 
-const device_type SNES_MULTITAP = &device_creator<snes_multitap_device>;
+DEFINE_DEVICE_TYPE(SNES_MULTITAP, snes_multitap_device, "snes_multitap", "Nintendo SNES / SFC Multitap Adapter")
 
 
 static INPUT_PORTS_START( snes_multitap )
@@ -35,27 +36,23 @@ ioport_constructor snes_multitap_device::device_input_ports() const
 }
 
 
-static SLOT_INTERFACE_START( snes_multitap )
-	SLOT_INTERFACE("joypad", SNES_JOYPAD)
-	SLOT_INTERFACE("twintap", SNES_TWINTAP)
-SLOT_INTERFACE_END
-
-static MACHINE_CONFIG_FRAGMENT( multi5p )
-	MCFG_SNES_CONTROL_PORT_ADD("port1", snes_multitap, "joypad")
-	MCFG_SNES_CONTROL_PORT_ADD("port2", snes_multitap, "joypad")
-	MCFG_SNES_CONTROL_PORT_ADD("port3", snes_multitap, "joypad")
-	MCFG_SNES_CONTROL_PORT_ADD("port4", snes_multitap, "joypad")
-MACHINE_CONFIG_END
-
-
-//-------------------------------------------------
-//  machine_config_additions - device-specific
-//  machine configurations
-//-------------------------------------------------
-
-machine_config_constructor snes_multitap_device::device_mconfig_additions() const
+static void snes_multitap(device_slot_interface &device)
 {
-	return MACHINE_CONFIG_NAME( multi5p );
+	device.option_add("joypad", SNES_JOYPAD);
+	device.option_add("twintap", SNES_TWINTAP);
+}
+
+
+//-------------------------------------------------
+//  device_add_mconfig - add device configuration
+//-------------------------------------------------
+
+void snes_multitap_device::device_add_mconfig(machine_config &config)
+{
+	SNES_CONTROL_PORT(config, m_port1, snes_multitap, "joypad");
+	SNES_CONTROL_PORT(config, m_port2, snes_multitap, "joypad");
+	SNES_CONTROL_PORT(config, m_port3, snes_multitap, "joypad");
+	SNES_CONTROL_PORT(config, m_port4, snes_multitap, "joypad");
 }
 
 
@@ -67,8 +64,8 @@ machine_config_constructor snes_multitap_device::device_mconfig_additions() cons
 //  snes_multitap_device - constructor
 //-------------------------------------------------
 
-snes_multitap_device::snes_multitap_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock) :
-	device_t(mconfig, SNES_MULTITAP, "Nintendo SNES / SFC Multitap Adapter", tag, owner, clock, "snes_multitap", __FILE__),
+snes_multitap_device::snes_multitap_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock) :
+	device_t(mconfig, SNES_MULTITAP, tag, owner, clock),
 	device_snes_control_port_interface(mconfig, *this),
 	m_port1(*this, "port1"),
 	m_port2(*this, "port2"),
@@ -112,9 +109,9 @@ void snes_multitap_device::port_poll()
 //  read
 //-------------------------------------------------
 
-UINT8 snes_multitap_device::read_pin4()
+uint8_t snes_multitap_device::read_pin4()
 {
-	UINT8 ret = 0;
+	uint8_t ret = 0;
 
 	if (m_cfg->read() == 0) // 4P
 		ret |= m_select ? m_port1->read_pin4() : m_port3->read_pin4();
@@ -124,9 +121,9 @@ UINT8 snes_multitap_device::read_pin4()
 	return ret;
 }
 
-UINT8 snes_multitap_device::read_pin5()
+uint8_t snes_multitap_device::read_pin5()
 {
-	UINT8 ret = 0;
+	uint8_t ret = 0;
 
 	if (m_cfg->read() == 0) // 4P
 		ret |= m_select ? m_port2->read_pin4() : m_port4->read_pin4();
@@ -137,7 +134,7 @@ UINT8 snes_multitap_device::read_pin5()
 //  write
 //-------------------------------------------------
 
-void snes_multitap_device::write_strobe(UINT8 data)
+void snes_multitap_device::write_strobe(uint8_t data)
 {
 	m_port1->write_strobe(data);
 	if (m_cfg->read() == 0) // 4P
@@ -148,7 +145,7 @@ void snes_multitap_device::write_strobe(UINT8 data)
 	}
 }
 
-void snes_multitap_device::write_pin6(UINT8 data)
+void snes_multitap_device::write_pin6(uint8_t data)
 {
 	m_select = data & 1;
 }

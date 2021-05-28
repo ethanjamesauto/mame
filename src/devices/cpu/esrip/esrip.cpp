@@ -2,7 +2,7 @@
 // copyright-holders:Philip Bennett
 /***************************************************************************
 
-    esrip.c
+    esrip.cpp
 
     Implementation of the Entertainment Sciences
     AM29116-based Real Time Image Processor
@@ -10,15 +10,18 @@
 ***************************************************************************/
 
 #include "emu.h"
-#include "debugger.h"
 #include "esrip.h"
+#include "esripdsm.h"
+
+#include "debugger.h"
+#include "screen.h"
 
 
 /***************************************************************************
     CONSTANTS
 ***************************************************************************/
 
-#define IPT_RAM_SIZE    (8192 * sizeof(UINT16))
+#define IPT_RAM_SIZE    (8192 * sizeof(uint16_t))
 
 
 /***************************************************************************
@@ -65,7 +68,7 @@
     PUBLIC FUNCTIONS
 ***************************************************************************/
 
-UINT8 esrip_device::get_rip_status()
+uint8_t esrip_device::get_rip_status()
 {
 	return m_status_out;
 }
@@ -182,18 +185,19 @@ void esrip_device::device_start()
 	/* Register configuration structure callbacks */
 	m_fdt_r.resolve_safe(0);
 	m_fdt_w.resolve_safe();
-	m_lbrm = (UINT8*)machine().root_device().memregion(m_lbrm_prom)->base();
+	m_lbrm = (uint8_t*)machine().root_device().memregion(m_lbrm_prom)->base();
 	m_status_in.resolve_safe(0);
-	m_draw.bind_relative_to(*owner());
+	m_draw.resolve();
 
 	/* Allocate image pointer table RAM */
 	m_ipt_ram.resize(IPT_RAM_SIZE/2);
 
-	m_program = &space(AS_PROGRAM);
-	m_direct = &m_program->direct();
+	space(AS_PROGRAM).cache(m_cache);
+	space(AS_PROGRAM).specific(m_program);
 
 	// register our state for the debugger
 	state_add(STATE_GENPC,     "GENPC",     m_rip_pc).noshow();
+	state_add(STATE_GENPCBASE, "CURPC",     m_rip_pc).noshow();
 	state_add(STATE_GENFLAGS,  "GENFLAGS",  m_status).callimport().callexport().formatstr("%8s").noshow();
 	state_add(ESRIP_PC,        "PC:",       m_rip_pc).mask(0xffff);
 	state_add(ESRIP_ACC,       "ACC:",      m_acc).mask(0xffff);
@@ -293,7 +297,7 @@ void esrip_device::device_start()
 	save_item(NAME(m_ipt_ram));
 
 	// set our instruction counter
-	m_icountptr = &m_icount;
+	set_icountptr(m_icount);
 	m_icount = 0;
 }
 
@@ -331,17 +335,15 @@ void esrip_device::device_stop()
 
 //-------------------------------------------------
 //  memory_space_config - return the configuration
-//  of the specified address space, or NULL if
+//  of the specified address space, or nullptr if
 //  the space doesn't exist
 //-------------------------------------------------
 
-const address_space_config *esrip_device::memory_space_config(address_spacenum spacenum) const
+device_memory_interface::space_config_vector esrip_device::memory_space_config() const
 {
-	if (spacenum == AS_PROGRAM)
-	{
-		return &m_program_config;
-	}
-	return nullptr;
+	return space_config_vector {
+		std::make_pair(AS_PROGRAM, &m_program_config),
+	};
 }
 
 
@@ -350,12 +352,12 @@ const address_space_config *esrip_device::memory_space_config(address_spacenum s
 //  for the debugger
 //-------------------------------------------------
 
-void esrip_device::state_string_export(const device_state_entry &entry, std::string &str)
+void esrip_device::state_string_export(const device_state_entry &entry, std::string &str) const
 {
 	switch (entry.index())
 	{
 		case STATE_GENFLAGS:
-			strprintf(str, "%c%c%c%c%c%c%c%c%c",
+			str = string_format("%c%c%c%c%c%c%c%c%c",
 				(m_status & 0x80) ? '3' : '.',
 				(m_status & 0x40) ? '2' : '.',
 				(m_status & 0x20) ? '1' : '.',
@@ -371,60 +373,36 @@ void esrip_device::state_string_export(const device_state_entry &entry, std::str
 
 
 //-------------------------------------------------
-//  disasm_min_opcode_bytes - return the length
-//  of the shortest instruction, in bytes
-//-------------------------------------------------
-
-UINT32 esrip_device::disasm_min_opcode_bytes() const
-{
-	return 8;
-}
-
-
-//-------------------------------------------------
-//  disasm_max_opcode_bytes - return the length
-//  of the longest instruction, in bytes
-//-------------------------------------------------
-
-UINT32 esrip_device::disasm_max_opcode_bytes() const
-{
-	return 8;
-}
-
-
-//-------------------------------------------------
-//  disasm_disassemble - call the disassembly
+//  disassemble - call the disassembly
 //  helper function
 //-------------------------------------------------
 
-offs_t esrip_device::disasm_disassemble(char *buffer, offs_t pc, const UINT8 *oprom, const UINT8 *opram, UINT32 options)
+std::unique_ptr<util::disasm_interface> esrip_device::create_disassembler()
 {
-	extern CPU_DISASSEMBLE( esrip );
-	return CPU_DISASSEMBLE_NAME(esrip)(this, buffer, pc, oprom, opram, options);
+	return std::make_unique<esrip_disassembler>();
 }
-
 
 /***************************************************************************
     PRIVATE FUNCTIONS
 ***************************************************************************/
 
-int esrip_device::get_hblank()
+int esrip_device::get_hblank() const
 {
-	return machine().first_screen()->hblank();
+	return m_screen->hblank();
 }
 
 /* Return the state of the LBRM line (Y-scaling related) */
-int esrip_device::get_lbrm()
+int esrip_device::get_lbrm() const
 {
 	int addr = ((m_y_scale & 0x3f) << 3) | ((m_line_latch >> 3) & 7);
 	int sel = (m_line_latch & 7);
 
-	UINT8 val = m_lbrm[addr];
+	uint8_t val = m_lbrm[addr];
 
 	return (val >> sel) & 1;
 }
 
-int esrip_device::check_jmp(UINT8 jmp_ctrl)
+int esrip_device::check_jmp(uint8_t jmp_ctrl) const
 {
 	int ret = 0;
 
@@ -467,37 +445,37 @@ int esrip_device::check_jmp(UINT8 jmp_ctrl)
 }
 
 
-void esrip_device::calc_z_flag(UINT16 res)
+void esrip_device::calc_z_flag(uint16_t res)
 {
 	m_new_status &= ~Z_FLAG;
 	m_new_status |= (res == 0);
 }
 
-void esrip_device::calc_c_flag_add(UINT16 a, UINT16 b)
+void esrip_device::calc_c_flag_add(uint16_t a, uint16_t b)
 {
 	m_new_status &= ~C_FLAG;
-	m_new_status |= ((UINT16)(b) > (UINT16)(~(a))) ? 2 : 0;
+	m_new_status |= ((uint16_t)(b) > (uint16_t)(~(a))) ? 2 : 0;
 }
 
-void esrip_device::calc_c_flag_sub(UINT16 a, UINT16 b)
+void esrip_device::calc_c_flag_sub(uint16_t a, uint16_t b)
 {
 	m_new_status &= ~C_FLAG;
-	m_new_status |= ((UINT16)(b) <= (UINT16)(a)) ? 2 : 0;
+	m_new_status |= ((uint16_t)(b) <= (uint16_t)(a)) ? 2 : 0;
 }
 
-void esrip_device::calc_n_flag(UINT16 res)
+void esrip_device::calc_n_flag(uint16_t res)
 {
 	m_new_status &= ~N_FLAG;
 	m_new_status |= (res & 0x8000) ? 4 : 0;
 }
 
-void esrip_device::calc_v_flag_add(UINT16 a, UINT16 b, UINT32 r)
+void esrip_device::calc_v_flag_add(uint16_t a, uint16_t b, uint32_t r)
 {
 	m_new_status &= ~V_FLAG;
 	m_new_status |= ((a ^ r) & (b ^ r) & 0x8000) ? 8 : 0;
 }
 
-void esrip_device::calc_v_flag_sub(UINT16 a, UINT16 b, UINT32 r)
+void esrip_device::calc_v_flag_sub(uint16_t a, uint16_t b, uint32_t r)
 {
 	m_new_status &= ~V_FLAG;
 	m_new_status |= ((a ^ b) & (r ^ b) & 0x8000) ? 8 : 0;
@@ -544,9 +522,9 @@ enum
 	SORR  = 0xb
 };
 
-UINT16 esrip_device::sor_op(UINT16 r, UINT16 opcode)
+uint16_t esrip_device::sor_op(uint16_t r, uint16_t opcode)
 {
-	UINT32 res = 0;
+	uint32_t res = 0;
 
 	switch (opcode)
 	{
@@ -590,11 +568,11 @@ UINT16 esrip_device::sor_op(UINT16 r, UINT16 opcode)
 	return res & 0xffff;
 }
 
-void esrip_device::sor(UINT16 inst)
+void esrip_device::sor(uint16_t inst)
 {
-	UINT16  r = 0;
-	UINT16  dst = 0;
-	UINT16  res = 0;
+	uint16_t  r = 0;
+	uint16_t  dst = 0;
+	uint16_t  res = 0;
 
 	if (BYTE_MODE)
 	{
@@ -662,10 +640,10 @@ enum
 	NRAS = 5
 };
 
-void esrip_device::sonr(UINT16 inst)
+void esrip_device::sonr(uint16_t inst)
 {
-	UINT16  r = 0;
-	UINT16  res = 0;
+	uint16_t  r = 0;
+	uint16_t  res = 0;
 
 	switch ((inst >> 5) & 0xf)
 	{
@@ -726,9 +704,9 @@ enum
 	EXNOR = 0xb
 };
 
-UINT16 esrip_device::tor_op(UINT16 r, UINT16 s, int opcode)
+uint16_t esrip_device::tor_op(uint16_t r, uint16_t s, int opcode)
 {
-	UINT32 res = 0;
+	uint32_t res = 0;
 
 	switch (opcode)
 	{
@@ -824,12 +802,12 @@ UINT16 esrip_device::tor_op(UINT16 r, UINT16 s, int opcode)
 	return res & 0xffff;
 }
 
-void esrip_device::tor1(UINT16 inst)
+void esrip_device::tor1(uint16_t inst)
 {
-	UINT16 r = 0;
-	UINT16 s = 0;
-	UINT16 dst = 0;
-	UINT16  res = 0;
+	uint16_t r = 0;
+	uint16_t s = 0;
+	uint16_t dst = 0;
+	uint16_t  res = 0;
 
 	enum
 	{
@@ -921,11 +899,11 @@ void esrip_device::tor1(UINT16 inst)
 	m_result = res;
 }
 
-void esrip_device::tor2(UINT16 inst)
+void esrip_device::tor2(uint16_t inst)
 {
-	UINT16 r = 0;
-	UINT16 s = 0;
-	UINT32 res = 0;
+	uint16_t r = 0;
+	uint16_t s = 0;
+	uint32_t res = 0;
 
 	enum
 	{
@@ -981,7 +959,7 @@ void esrip_device::tor2(UINT16 inst)
 	m_result = res;
 }
 
-void esrip_device::tonr(UINT16 inst)
+void esrip_device::tonr(uint16_t inst)
 {
 	enum
 	{
@@ -990,9 +968,9 @@ void esrip_device::tonr(UINT16 inst)
 		TODI  = 0x5
 	};
 
-	UINT16 r = 0;
-	UINT16 s = 0;
-	UINT16  res = 0;
+	uint16_t r = 0;
+	uint16_t s = 0;
+	uint16_t  res = 0;
 
 	switch (SRC)
 	{
@@ -1054,7 +1032,7 @@ void esrip_device::tonr(UINT16 inst)
  *
  *************************************/
 
-void esrip_device::bonr(UINT16 inst)
+void esrip_device::bonr(uint16_t inst)
 {
 	enum
 	{
@@ -1074,7 +1052,7 @@ void esrip_device::bonr(UINT16 inst)
 		LDC2NY = 0x17
 	};
 
-	UINT16  res = 0;
+	uint16_t  res = 0;
 
 	switch (inst & 0x1f)
 	{
@@ -1105,8 +1083,8 @@ void esrip_device::bonr(UINT16 inst)
 		}
 		case A2NA:
 		{
-			UINT16 r = m_acc;
-			UINT16 s = 1 << N;
+			uint16_t r = m_acc;
+			uint16_t s = 1 << N;
 			res = r + s;
 			calc_z_flag(res);
 			calc_n_flag(res);
@@ -1117,8 +1095,8 @@ void esrip_device::bonr(UINT16 inst)
 		}
 		case S2NA:
 		{
-			UINT16 r = m_acc;
-			UINT16 s = 1 << N;
+			uint16_t r = m_acc;
+			uint16_t s = 1 << N;
 			res = r - s;
 			calc_z_flag(res);
 			calc_n_flag(res);
@@ -1139,7 +1117,7 @@ void esrip_device::bonr(UINT16 inst)
 
 		case SETND:
 		{
-			UINT16 r = m_d_latch;
+			uint16_t r = m_d_latch;
 			res = r | (1 << N);
 			m_d_latch = res;
 
@@ -1164,8 +1142,8 @@ void esrip_device::bonr(UINT16 inst)
 
 		case A2NDY:
 		{
-			UINT16 r = m_d_latch;
-			UINT16 s = 1 << N;
+			uint16_t r = m_d_latch;
+			uint16_t s = 1 << N;
 			res = r + s;
 
 			calc_z_flag(res);
@@ -1182,7 +1160,7 @@ void esrip_device::bonr(UINT16 inst)
 	m_result = res;
 }
 
-void esrip_device::bor1(UINT16 inst)
+void esrip_device::bor1(uint16_t inst)
 {
 	enum
 	{
@@ -1191,7 +1169,7 @@ void esrip_device::bor1(UINT16 inst)
 		TSTNR  = 0xf
 	};
 
-	UINT16  res = 0;
+	uint16_t  res = 0;
 
 	switch ((inst >> 5) & 0xf)
 	{
@@ -1226,7 +1204,7 @@ void esrip_device::bor1(UINT16 inst)
 	m_result = res;
 }
 
-void esrip_device::bor2(UINT16 inst)
+void esrip_device::bor2(uint16_t inst)
 {
 	enum
 	{
@@ -1236,7 +1214,7 @@ void esrip_device::bor2(UINT16 inst)
 		S2NR   = 0xf
 	};
 
-	UINT32 res = 0;
+	uint32_t res = 0;
 
 	switch ((inst >> 5) & 0xf)
 	{
@@ -1256,8 +1234,8 @@ void esrip_device::bor2(UINT16 inst)
 		}
 		case A2NR:
 		{
-			UINT16 r = m_ram[RAM_ADDR];
-			UINT16 s = 1 << N;
+			uint16_t r = m_ram[RAM_ADDR];
+			uint16_t s = 1 << N;
 
 			res = r + s;
 			calc_v_flag_add(r, s, res);
@@ -1268,8 +1246,8 @@ void esrip_device::bor2(UINT16 inst)
 		}
 		case S2NR:
 		{
-			UINT16 r = m_ram[RAM_ADDR];
-			UINT16 s = 1 << N;
+			uint16_t r = m_ram[RAM_ADDR];
+			uint16_t s = 1 << N;
 
 			res = r - s;
 			calc_v_flag_sub(r, s, res);
@@ -1293,7 +1271,7 @@ void esrip_device::bor2(UINT16 inst)
  *************************************/
 
 /* TODO Combine these */
-void esrip_device::rotr1(UINT16 inst)
+void esrip_device::rotr1(uint16_t inst)
 {
 	enum
 	{
@@ -1302,9 +1280,9 @@ void esrip_device::rotr1(UINT16 inst)
 		RTRR = 0xf
 	};
 
-	UINT16  u = 0;
-	UINT16  dst = 0;
-	UINT16  res = 0;
+	uint16_t  u = 0;
+	uint16_t  dst = 0;
+	uint16_t  res = 0;
 	int     n = N;
 
 	switch ((inst >> 5) & 0xf)
@@ -1329,7 +1307,7 @@ void esrip_device::rotr1(UINT16 inst)
 	m_result = res;
 }
 
-void esrip_device::rotr2(UINT16 inst)
+void esrip_device::rotr2(uint16_t inst)
 {
 	enum
 	{
@@ -1337,8 +1315,8 @@ void esrip_device::rotr2(UINT16 inst)
 		RTDR = 1
 	};
 
-	UINT16  u = 0;
-	UINT16  res = 0;
+	uint16_t  u = 0;
+	uint16_t  res = 0;
 
 	switch ((inst >> 5) & 0xf)
 	{
@@ -1356,7 +1334,7 @@ void esrip_device::rotr2(UINT16 inst)
 	m_result = res;
 }
 
-void esrip_device::rotnr(UINT16 inst)
+void esrip_device::rotnr(uint16_t inst)
 {
 	enum
 	{
@@ -1366,9 +1344,9 @@ void esrip_device::rotnr(UINT16 inst)
 		RTAA = 0x1d
 	};
 
-	UINT16  u = 0;
-	UINT16  res = 0;
-	UINT16  dst = 0;
+	uint16_t  u = 0;
+	uint16_t  res = 0;
+	uint16_t  dst = 0;
 
 	switch (inst & 0x1f)
 	{
@@ -1401,7 +1379,7 @@ void esrip_device::rotnr(UINT16 inst)
  *
  *************************************/
 
-void esrip_device::rotc(UINT16 inst)
+void esrip_device::rotc(uint16_t inst)
 {
 	UNHANDLED;
 }
@@ -1412,7 +1390,7 @@ void esrip_device::rotc(UINT16 inst)
  *
  *************************************/
 
-void esrip_device::rotm(UINT16 inst)
+void esrip_device::rotm(uint16_t inst)
 {
 	UNHANDLED;
 }
@@ -1423,12 +1401,12 @@ void esrip_device::rotm(UINT16 inst)
  *
  *************************************/
 
-void esrip_device::prt(UINT16 inst)
+void esrip_device::prt(uint16_t inst)
 {
 	UNHANDLED;
 }
 
-void esrip_device::prtnr(UINT16 inst)
+void esrip_device::prtnr(uint16_t inst)
 {
 	UNHANDLED;
 }
@@ -1440,12 +1418,12 @@ void esrip_device::prtnr(UINT16 inst)
  *
  *************************************/
 
-void esrip_device::crcf(UINT16 inst)
+void esrip_device::crcf(uint16_t inst)
 {
 	UNHANDLED;
 }
 
-void esrip_device::crcr(UINT16 inst)
+void esrip_device::crcr(uint16_t inst)
 {
 	UNHANDLED;
 }
@@ -1471,9 +1449,9 @@ enum
 #define SET_LINK_flag(x)    (m_new_status &= ~L_FLAG); \
 							(m_new_status |= x ? L_FLAG : 0)
 
-UINT16 esrip_device::shift_op(UINT16 u, int opcode)
+uint16_t esrip_device::shift_op(uint16_t u, int opcode)
 {
-	UINT32 res = 0;
+	uint32_t res = 0;
 
 	switch (opcode)
 	{
@@ -1516,7 +1494,7 @@ UINT16 esrip_device::shift_op(UINT16 u, int opcode)
 	return res;
 }
 
-void esrip_device::shftr(UINT16 inst)
+void esrip_device::shftr(uint16_t inst)
 {
 	enum
 	{
@@ -1524,8 +1502,8 @@ void esrip_device::shftr(UINT16 inst)
 		SHDR = 7
 	};
 
-	UINT16  u = 0;
-	UINT16  res = 0;
+	uint16_t  u = 0;
+	uint16_t  res = 0;
 
 	switch ((inst >> 9) & 0xf)
 	{
@@ -1541,7 +1519,7 @@ void esrip_device::shftr(UINT16 inst)
 	m_result = res;
 }
 
-void esrip_device::shftnr(UINT16 inst)
+void esrip_device::shftnr(uint16_t inst)
 {
 	enum
 	{
@@ -1549,8 +1527,8 @@ void esrip_device::shftnr(UINT16 inst)
 		SHD = 7
 	};
 
-	UINT16  u = 0;
-	UINT16  res = 0;
+	uint16_t  u = 0;
+	uint16_t  res = 0;
 
 	switch ((inst >> 9) & 0xf)
 	{
@@ -1577,12 +1555,12 @@ void esrip_device::shftnr(UINT16 inst)
  *
  *************************************/
 
-void esrip_device::svstr(UINT16 inst)
+void esrip_device::svstr(uint16_t inst)
 {
 	UNHANDLED;
 }
 
-void esrip_device::rstst(UINT16 inst)
+void esrip_device::rstst(uint16_t inst)
 {
 	enum
 	{
@@ -1605,7 +1583,7 @@ void esrip_device::rstst(UINT16 inst)
 	m_result = 0;
 }
 
-void esrip_device::setst(UINT16 inst)
+void esrip_device::setst(uint16_t inst)
 {
 	enum
 	{
@@ -1628,7 +1606,7 @@ void esrip_device::setst(UINT16 inst)
 	m_result = 0xffff;
 }
 
-void esrip_device::test(UINT16 inst)
+void esrip_device::test(uint16_t inst)
 {
 	enum
 	{
@@ -1646,7 +1624,7 @@ void esrip_device::test(UINT16 inst)
 		TF3  = 0x16
 	};
 
-	UINT32 res = 0;
+	uint32_t res = 0;
 
 	switch (inst & 0x1f)
 	{
@@ -1675,7 +1653,7 @@ void esrip_device::test(UINT16 inst)
  *
  *************************************/
 
-void esrip_device::nop(UINT16 inst)
+void esrip_device::nop(uint16_t inst)
 {
 	m_result = 0xff;    // Undefined
 }
@@ -1684,19 +1662,21 @@ void esrip_device::nop(UINT16 inst)
 //  DEVICE INTERFACE
 //**************************************************************************
 
-const device_type ESRIP = &device_creator<esrip_device>;
+DEFINE_DEVICE_TYPE(ESRIP, esrip_device, "esrip", "Entertainment Sciences RIP")
 
 //-------------------------------------------------
 //  esrip_device - constructor
 //-------------------------------------------------
 
-esrip_device::esrip_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: cpu_device(mconfig, ESRIP, "ESRIP", tag, owner, clock, "esrip", __FILE__),
-		m_program_config("program", ENDIANNESS_BIG, 64, 9, -3),
-		m_fdt_r(*this),
-		m_fdt_w(*this),
-		m_status_in(*this),
-		m_lbrm_prom(nullptr)
+esrip_device::esrip_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: cpu_device(mconfig, ESRIP, tag, owner, clock)
+	, m_program_config("program", ENDIANNESS_BIG, 64, 9, -3)
+	, m_fdt_r(*this)
+	, m_fdt_w(*this)
+	, m_status_in(*this)
+	, m_draw(*this)
+	, m_screen(*this, finder_base::DUMMY_TAG)
+	, m_lbrm_prom(nullptr)
 {
 	// build the opcode table
 	for (int op = 0; op < 24; op++)
@@ -1719,7 +1699,7 @@ const esrip_device::ophandler esrip_device::s_opcodetable[24] =
 };
 
 
-void esrip_device::am29116_execute(UINT16 inst, int _sre)
+void esrip_device::am29116_execute(uint16_t inst, int _sre)
 {
 	/* Status register shadow */
 	m_new_status = m_status;
@@ -1745,7 +1725,7 @@ void esrip_device::am29116_execute(UINT16 inst, int _sre)
 //  cycles it takes for one instruction to execute
 //-------------------------------------------------
 
-UINT32 esrip_device::execute_min_cycles() const
+uint32_t esrip_device::execute_min_cycles() const noexcept
 {
 	return 1;
 }
@@ -1756,7 +1736,7 @@ UINT32 esrip_device::execute_min_cycles() const
 //  cycles it takes for one instruction to execute
 //-------------------------------------------------
 
-UINT32 esrip_device::execute_max_cycles() const
+uint32_t esrip_device::execute_max_cycles() const noexcept
 {
 	return 1;
 }
@@ -1767,7 +1747,7 @@ UINT32 esrip_device::execute_max_cycles() const
 //  input/interrupt lines
 //-------------------------------------------------
 
-UINT32 esrip_device::execute_input_lines() const
+uint32_t esrip_device::execute_input_lines() const noexcept
 {
 	return 0;
 }
@@ -1786,26 +1766,26 @@ void esrip_device::execute_set_input(int inputnum, int state)
 void esrip_device::execute_run()
 {
 	int calldebugger = (machine().debug_flags & DEBUG_FLAG_ENABLED) != 0;
-	UINT8 status;
+	uint8_t status;
 
 	/* I think we can get away with placing this outside of the loop */
-	status = m_status_in(*m_program, 0);
+	status = m_status_in();
 
 	/* Core execution loop */
 	do
 	{
-		UINT64  inst;
-		UINT8   next_pc;
-		UINT16  x_bus = 0;
-		UINT16  ipt_bus = 0;
-		UINT16  y_bus = 0;
+		uint64_t  inst;
+		uint8_t   next_pc;
+		uint16_t  x_bus = 0;
+		uint16_t  ipt_bus = 0;
+		uint16_t  y_bus = 0;
 
 		int yoe = _BIT(m_l5, 1);
 		int bl46 = BIT(m_l4, 6);
 		int bl44 = BIT(m_l4, 4);
 
-		UINT32 in_h;
-		UINT32 in_l;
+		uint32_t in_h;
+		uint32_t in_l;
 
 		if (m_fig_cycles)
 		{
@@ -1822,7 +1802,7 @@ void esrip_device::execute_run()
 
 			/* FDT RAM: /Enable, Direction and /RAM OE */
 			else if (!bl44 && !_BIT(m_l2, 3) && bl46)
-				y_bus = m_fdt_r(*m_program, m_fdt_cnt, 0xffff);
+				y_bus = m_fdt_r(m_fdt_cnt);
 
 			/* IPT RAM: /Enable and /READ */
 			else if (!_BIT(m_l2, 6) && !_BIT(m_l4, 5))
@@ -1849,7 +1829,7 @@ void esrip_device::execute_run()
 
 		/* FDT RAM */
 		if (!bl44)
-			x_bus = m_fdt_r(*m_program, m_fdt_cnt, 0xffff);
+			x_bus = m_fdt_r(m_fdt_cnt);
 
 		/* Buffer is enabled - write direction */
 		else if (!BIT(m_l2, 3) && !bl46)
@@ -1874,7 +1854,7 @@ void esrip_device::execute_run()
 
 		/* Write FDT RAM: /Enable, Direction and WRITE */
 		if (!BIT(m_l2, 3) && !bl46 && !BIT(m_l4, 3))
-			m_fdt_w(*m_program, m_fdt_cnt, x_bus, 0xffff);
+			m_fdt_w(m_fdt_cnt, x_bus);
 
 		/* Write IPT RAM: /Enable and /WR */
 		if (!BIT(m_l2, 7) && !BIT(m_l4, 5))
@@ -1900,7 +1880,7 @@ void esrip_device::execute_run()
 		m_pl7 = m_l7;
 
 		/* Latch instruction */
-		inst = m_direct->read_qword(RIP_PC << 3);
+		inst = m_cache.read_qword(RIP_PC);
 
 		in_h = inst >> 32;
 		in_l = inst & 0xffffffff;
@@ -1974,7 +1954,7 @@ void esrip_device::execute_run()
 			m_ipt_cnt = (m_ipt_cnt + 1) & 0x1fff;
 
 		if (calldebugger)
-			debugger_instruction_hook(this, RIP_PC);
+			debugger_instruction_hook(RIP_PC);
 
 		m_pc = next_pc;
 		m_rip_pc = (m_pc | ((m_status_out & 1) << 8));

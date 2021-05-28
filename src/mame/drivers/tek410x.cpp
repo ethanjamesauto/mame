@@ -19,31 +19,61 @@
 
 #include "emu.h"
 #include "cpu/i86/i186.h"
+#include "machine/i8255.h"
+#include "machine/mc68681.h"
+#include "video/crt9007.h"
+#include "emupal.h"
+#include "screen.h"
 
-#define I80188_TAG "i80188"
-#define SCREEN_TAG "screen"
 
 class tek4107a_state : public driver_device
 {
 public:
 	tek4107a_state(const machine_config &mconfig, device_type type, const char *tag)
-		: driver_device(mconfig, type, tag) { }
+		: driver_device(mconfig, type, tag)
+		, m_vpac(*this, "vpac")
+	{ }
 
+	void tek4109a(machine_config &config);
+	void tek4107a(machine_config &config);
+
+protected:
 	virtual void machine_start() override;
-
 	virtual void video_start() override;
-	UINT32 screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect);
+
+private:
+	u32 screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect);
+
+	u8 vpac_r(offs_t offset);
+
+	void tek4107a_io(address_map &map);
+	void tek4107a_mem(address_map &map);
+
+	required_device<crt9007_device> m_vpac;
 };
+
+u8 tek4107a_state::vpac_r(offs_t offset)
+{
+	return m_vpac->read(offset + 0x20);
+}
 
 /* Memory Maps */
 
-static ADDRESS_MAP_START( tek4107a_mem, AS_PROGRAM, 8, tek4107a_state )
-	AM_RANGE(0x00000, 0xbffff) AM_RAM
-	AM_RANGE(0xc0000, 0xfffff) AM_ROM AM_REGION(I80188_TAG, 0)
-ADDRESS_MAP_END
+void tek4107a_state::tek4107a_mem(address_map &map)
+{
+	map(0x00000, 0x7ffff).ram();
+	map(0x80000, 0xbffff).rom().region("firmware", 0);
+	map(0xf0000, 0xfffff).rom().region("firmware", 0x30000);
+}
 
-static ADDRESS_MAP_START( tek4107a_io, AS_IO, 8, tek4107a_state )
-ADDRESS_MAP_END
+void tek4107a_state::tek4107a_io(address_map &map)
+{
+	map(0x0000, 0x001f).rw("duart0", FUNC(scn2681_device::read), FUNC(scn2681_device::write)).umask16(0x00ff);
+	map(0x0000, 0x001f).rw("duart1", FUNC(scn2681_device::read), FUNC(scn2681_device::write)).umask16(0xff00);
+	map(0x0080, 0x00bf).r(FUNC(tek4107a_state::vpac_r)).w(m_vpac, FUNC(crt9007_device::write)).umask16(0x00ff);
+	map(0x00ce, 0x00cf).ram();
+	map(0x0100, 0x0107).rw("ppi", FUNC(i8255_device::read), FUNC(i8255_device::write)).umask16(0xff00);
+}
 
 /* Input Ports */
 
@@ -56,7 +86,7 @@ void tek4107a_state::video_start()
 {
 }
 
-UINT32 tek4107a_state::screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
+u32 tek4107a_state::screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
 {
 	return 0;
 }
@@ -72,7 +102,7 @@ static const gfx_layout tek4107a_charlayout =
 	16*8
 };
 
-static GFXDECODE_START( tek4107a )
+static GFXDECODE_START( gfx_tek4107a )
 	GFXDECODE_ENTRY( "chargen", 0x0000, tek4107a_charlayout, 0, 1 )
 GFXDECODE_END
 
@@ -84,34 +114,48 @@ void tek4107a_state::machine_start()
 
 /* Machine Driver */
 
-static MACHINE_CONFIG_START( tek4107a, tek4107a_state )
+void tek4107a_state::tek4107a(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD(I80188_TAG, I80188, 21000000)
-	MCFG_CPU_PROGRAM_MAP(tek4107a_mem)
-	MCFG_CPU_IO_MAP(tek4107a_io)
+	i80186_cpu_device &maincpu(I80186(config, "maincpu", 21000000));
+	maincpu.set_addrmap(AS_PROGRAM, &tek4107a_state::tek4107a_mem);
+	maincpu.set_addrmap(AS_IO, &tek4107a_state::tek4107a_io);
 
 	/* video hardware */
-	MCFG_SCREEN_ADD(SCREEN_TAG, RASTER)
-	MCFG_SCREEN_REFRESH_RATE(50)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(2500)) /* not accurate */
-	MCFG_SCREEN_UPDATE_DRIVER(tek4107a_state, screen_update)
-	MCFG_SCREEN_SIZE(640, 480)
-	MCFG_SCREEN_VISIBLE_AREA(0, 640-1, 0, 480-1)
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_RASTER));
+	screen.set_raw(25200000, 800, 0, 640, 525, 0, 480);
+	screen.set_screen_update(FUNC(tek4107a_state::screen_update));
 
-	MCFG_PALETTE_ADD("palette", 64)
-	MCFG_GFXDECODE_ADD("gfxdecode", "palette", tek4107a)
-MACHINE_CONFIG_END
+	scn2681_device &duart0(SCN2681(config, "duart0", 3686400));
+	duart0.irq_cb().set("maincpu", FUNC(i80186_cpu_device::int0_w));
+	duart0.outport_cb().set_inputline("maincpu", INPUT_LINE_NMI).bit(5).invert(); // RxRDYB
 
-static MACHINE_CONFIG_DERIVED( tek4109a, tek4107a )
+	scn2681_device &duart1(SCN2681(config, "duart1", 3686400));
+	duart1.irq_cb().set("maincpu", FUNC(i80186_cpu_device::int2_w));
+
+	I8255(config, "ppi").in_pb_callback().set_constant(0x30);
+
+	CRT9007(config, m_vpac, 25200000 / 8);
+	m_vpac->set_screen("screen");
+	m_vpac->set_character_width(8);
+	m_vpac->int_callback().set("maincpu", FUNC(i80186_cpu_device::int1_w));
+
+	PALETTE(config, "palette").set_entries(64);
+	GFXDECODE(config, "gfxdecode", "palette", gfx_tek4107a);
+}
+
+void tek4107a_state::tek4109a(machine_config &config)
+{
+	tek4107a(config);
+
 	/* video hardware */
-	MCFG_PALETTE_MODIFY("palette")
-	MCFG_PALETTE_ENTRIES(4096)
-MACHINE_CONFIG_END
+	subdevice<palette_device>("palette")->set_entries(4096);
+}
 
 /* ROMs */
 
 ROM_START( tek4107a )
-	ROM_REGION( 0x40000, I80188_TAG, 0 )
+	ROM_REGION16_LE( 0x40000, "firmware", 0 )
 	ROM_LOAD16_BYTE( "160-2379-03.u60",  0x00000, 0x8000, NO_DUMP )
 	ROM_LOAD16_BYTE( "160-2380-03.u160", 0x00001, 0x8000, NO_DUMP )
 	ROM_LOAD16_BYTE( "160-2377-03.u70",  0x10000, 0x8000, NO_DUMP )
@@ -126,8 +170,8 @@ ROM_START( tek4107a )
 ROM_END
 
 ROM_START( tek4109a )
-	// another set with 160-32xx-03 v10.5 labels exists: http://picasaweb.google.com/glen.slick/Tektronix4107A#5300179291078507810
-	ROM_REGION( 0x40000, I80188_TAG, 0 )
+	// another set with 160-32xx-03 v10.5 labels exists
+	ROM_REGION16_LE( 0x40000, "firmware", 0 )
 	ROM_LOAD16_BYTE( "160-3283-02 v8.2.u60",  0x00000, 0x8000, CRC(2a821db6) SHA1(b4d8b74bd9fe43885dcdc4efbdd1eebb96e32060) )
 	ROM_LOAD16_BYTE( "160-3284-02 v8.2.u160", 0x00001, 0x8000, CRC(ee567b01) SHA1(67b1b0648cfaa28d57473bcc45358ff2bf986acf) )
 	ROM_LOAD16_BYTE( "160-3281-02 v8.2.u70",  0x10000, 0x8000, CRC(e2713328) SHA1(b0bb3471539ef24d79b18d0e33bc148ed27d0ec4) )
@@ -143,6 +187,6 @@ ROM_END
 
 /* System Drivers */
 
-/*    YEAR  NAME        PARENT      COMPAT  MACHINE     INPUT       INIT    COMPANY         FULLNAME            FLAGS */
-COMP( 1983, tek4107a,   0,          0,      tek4107a,   tek4107a, driver_device,   0,    "Tektronix", "Tektronix 4107A", MACHINE_NOT_WORKING | MACHINE_NO_SOUND )
-COMP( 1983, tek4109a,   tek4107a,   0,      tek4109a,   tek4107a, driver_device,   0,    "Tektronix", "Tektronix 4109A", MACHINE_NOT_WORKING | MACHINE_NO_SOUND )
+//    YEAR  NAME      PARENT    COMPAT  MACHINE   INPUT     CLASS           INIT        COMPANY      FULLNAME           FLAGS
+COMP( 1983, tek4107a, 0,        0,      tek4107a, tek4107a, tek4107a_state, empty_init, "Tektronix", "Tektronix 4107A", MACHINE_NOT_WORKING | MACHINE_NO_SOUND )
+COMP( 1983, tek4109a, tek4107a, 0,      tek4109a, tek4107a, tek4107a_state, empty_init, "Tektronix", "Tektronix 4109A", MACHINE_NOT_WORKING | MACHINE_NO_SOUND )

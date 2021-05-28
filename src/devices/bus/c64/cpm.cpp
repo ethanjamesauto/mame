@@ -16,6 +16,7 @@
 
 */
 
+#include "emu.h"
 #include "cpm.h"
 
 
@@ -32,46 +33,38 @@
 //  DEVICE DEFINITIONS
 //**************************************************************************
 
-const device_type C64_CPM = &device_creator<c64_cpm_cartridge_device>;
+DEFINE_DEVICE_TYPE(C64_CPM, c64_cpm_cartridge_device, "c64_cpm", "C64 CP/M cartridge")
 
 
 //-------------------------------------------------
 //  ADDRESS_MAP( z80_mem )
 //-------------------------------------------------
 
-static ADDRESS_MAP_START( z80_mem, AS_PROGRAM, 8, c64_cpm_cartridge_device )
-	AM_RANGE(0x0000, 0xffff) AM_READWRITE(dma_r, dma_w)
-ADDRESS_MAP_END
+void c64_cpm_cartridge_device::z80_mem(address_map &map)
+{
+	map(0x0000, 0xffff).rw(FUNC(c64_cpm_cartridge_device::dma_r), FUNC(c64_cpm_cartridge_device::dma_w));
+}
 
 
 //-------------------------------------------------
 //  ADDRESS_MAP( z80_io )
 //-------------------------------------------------
 
-static ADDRESS_MAP_START( z80_io, AS_IO, 8, c64_cpm_cartridge_device )
-	AM_RANGE(0x0000, 0xffff) AM_READWRITE(dma_r, dma_w)
-ADDRESS_MAP_END
-
-
-//-------------------------------------------------
-//  MACHINE_CONFIG_FRAGMENT( c64_cpm )
-//-------------------------------------------------
-
-static MACHINE_CONFIG_FRAGMENT( c64_cpm )
-	MCFG_CPU_ADD(Z80_TAG, Z80, 3000000)
-	MCFG_CPU_PROGRAM_MAP(z80_mem)
-	MCFG_CPU_IO_MAP(z80_io)
-MACHINE_CONFIG_END
-
-
-//-------------------------------------------------
-//  machine_config_additions - device-specific
-//  machine configurations
-//-------------------------------------------------
-
-machine_config_constructor c64_cpm_cartridge_device::device_mconfig_additions() const
+void c64_cpm_cartridge_device::z80_io(address_map &map)
 {
-	return MACHINE_CONFIG_NAME( c64_cpm );
+	map(0x0000, 0xffff).rw(FUNC(c64_cpm_cartridge_device::dma_r), FUNC(c64_cpm_cartridge_device::dma_w));
+}
+
+
+//-------------------------------------------------
+//  device_add_mconfig - add device configuration
+//-------------------------------------------------
+
+void c64_cpm_cartridge_device::device_add_mconfig(machine_config &config)
+{
+	Z80(config, m_maincpu, 3000000);
+	m_maincpu->set_addrmap(AS_PROGRAM, &c64_cpm_cartridge_device::z80_mem);
+	m_maincpu->set_addrmap(AS_IO, &c64_cpm_cartridge_device::z80_io);
 }
 
 
@@ -129,8 +122,8 @@ inline void c64_cpm_cartridge_device::update_signals()
 //  c64_cpm_cartridge_device - constructor
 //-------------------------------------------------
 
-c64_cpm_cartridge_device::c64_cpm_cartridge_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock) :
-	device_t(mconfig, C64_CPM, "C64 CP/M cartridge", tag, owner, clock, "c64_cpm", __FILE__),
+c64_cpm_cartridge_device::c64_cpm_cartridge_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock) :
+	device_t(mconfig, C64_CPM, tag, owner, clock),
 	device_c64_expansion_card_interface(mconfig, *this),
 	m_maincpu(*this, Z80_TAG),
 	m_enabled(0),
@@ -168,7 +161,7 @@ void c64_cpm_cartridge_device::device_reset()
 //  c64_cd_w - cartridge data write
 //-------------------------------------------------
 
-void c64_cpm_cartridge_device::c64_cd_w(address_space &space, offs_t offset, UINT8 data, int sphi2, int ba, int roml, int romh, int io1, int io2)
+void c64_cpm_cartridge_device::c64_cd_w(offs_t offset, uint8_t data, int sphi2, int ba, int roml, int romh, int io1, int io2)
 {
 	if (!io1)
 	{
@@ -200,15 +193,15 @@ int c64_cpm_cartridge_device::c64_game_r(offs_t offset, int sphi2, int ba, int r
 //  dma_r -
 //-------------------------------------------------
 
-READ8_MEMBER( c64_cpm_cartridge_device::dma_r )
+uint8_t c64_cpm_cartridge_device::dma_r(offs_t offset)
 {
-	UINT8 data = 0xff;
+	uint8_t data = 0xff;
 
 	if (m_enabled)
 	{
 		offs_t addr = (offset + 0x1000) & 0xffff;
 
-		data = m_slot->dma_cd_r(space, addr);
+		data = m_slot->dma_cd_r(addr);
 	}
 
 	return data;
@@ -219,12 +212,12 @@ READ8_MEMBER( c64_cpm_cartridge_device::dma_r )
 //  dma_w -
 //-------------------------------------------------
 
-WRITE8_MEMBER( c64_cpm_cartridge_device::dma_w )
+void c64_cpm_cartridge_device::dma_w(offs_t offset, uint8_t data)
 {
 	if (m_enabled)
 	{
 		offs_t addr = (offset + 0x1000) & 0xffff;
 
-		m_slot->dma_cd_w(space, addr, data);
+		m_slot->dma_cd_w(addr, data);
 	}
 }

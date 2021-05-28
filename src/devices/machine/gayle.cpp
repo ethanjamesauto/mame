@@ -8,6 +8,7 @@
 
 ***************************************************************************/
 
+#include "emu.h"
 #include "gayle.h"
 
 
@@ -22,7 +23,7 @@
 //  DEVICE DEFINITIONS
 //**************************************************************************
 
-const device_type GAYLE = &device_creator<gayle_device>;
+DEFINE_DEVICE_TYPE(GAYLE, gayle_device, "gayle", "Amiga GAYLE")
 
 
 //**************************************************************************
@@ -33,8 +34,8 @@ const device_type GAYLE = &device_creator<gayle_device>;
 //  gayle_device - constructor
 //-------------------------------------------------
 
-gayle_device::gayle_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock) :
-	device_t(mconfig, GAYLE, "GAYLE", tag, owner, clock, "gayle", __FILE__),
+gayle_device::gayle_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock) :
+	device_t(mconfig, GAYLE, tag, owner, clock),
 	m_int2_w(*this),
 	m_cs0_read(*this),
 	m_cs0_write(*this),
@@ -43,16 +44,6 @@ gayle_device::gayle_device(const machine_config &mconfig, const char *tag, devic
 	m_gayle_id(0xff),
 	m_gayle_id_count(0)
 {
-}
-
-//-------------------------------------------------
-//  set_id - set gayle id
-//-------------------------------------------------
-
-void gayle_device::set_id(device_t &device, UINT8 id)
-{
-	gayle_device &gayle = downcast<gayle_device &>(device);
-	gayle.m_gayle_id = id;
 }
 
 //-------------------------------------------------
@@ -67,6 +58,9 @@ void gayle_device::device_start()
 	m_cs0_write.resolve_safe();
 	m_cs1_read.resolve_safe(0xffff);
 	m_cs1_write.resolve_safe();
+
+	save_item(NAME(m_gayle_id_count));
+	save_item(NAME(m_gayle_reg));
 }
 
 //-------------------------------------------------
@@ -86,13 +80,13 @@ void gayle_device::device_reset()
 //  IMPLEMENTATION
 //**************************************************************************
 
-READ16_MEMBER( gayle_device::gayle_r )
+uint16_t gayle_device::gayle_r(offs_t offset, uint16_t mem_mask)
 {
-	UINT16 data = 0xffff;
+	uint16_t data = 0xffff;
 	offset <<= 1;
 
 	// swap
-	mem_mask = (mem_mask << 8) | (mem_mask >> 8);
+	mem_mask = swapendian_int16(mem_mask);
 
 	if (BIT(offset, 15))
 	{
@@ -109,9 +103,9 @@ READ16_MEMBER( gayle_device::gayle_r )
 		if (!BIT(offset, 14))
 		{
 			if (BIT(offset, 13))
-				data = m_cs0_read(space, (offset >> 2) & 0x07, mem_mask);
+				data = m_cs0_read((offset >> 2) & 0x07, mem_mask);
 			else
-				data = m_cs1_read(space, (offset >> 2) & 0x07, mem_mask);
+				data = m_cs1_read((offset >> 2) & 0x07, mem_mask);
 		}
 	}
 
@@ -119,18 +113,18 @@ READ16_MEMBER( gayle_device::gayle_r )
 		logerror("gayle_r(%06x): %04x & %04x\n", offset, data, mem_mask);
 
 	// swap data
-	data = (data << 8) | (data >> 8);
+	data = swapendian_int16(data);
 
 	return data;
 }
 
-WRITE16_MEMBER( gayle_device::gayle_w )
+void gayle_device::gayle_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	offset <<= 1;
 
 	// swap
-	mem_mask = (mem_mask << 8) | (mem_mask >> 8);
-	data = ((data << 8) | (data >> 8)) & mem_mask;
+	mem_mask = swapendian_int16(mem_mask);
+	data = swapendian_int16(data) & mem_mask;
 
 	if (VERBOSE)
 		logerror("gayle_w(%06x): %04x & %04x\n", offset, data, mem_mask);
@@ -159,9 +153,9 @@ WRITE16_MEMBER( gayle_device::gayle_w )
 		if (!BIT(offset, 14))
 		{
 			if (BIT(offset, 13))
-				m_cs0_write(space, (offset >> 2) & 0x07, data, mem_mask);
+				m_cs0_write((offset >> 2) & 0x07, data, mem_mask);
 			else
-				m_cs1_write(space, (offset >> 2) & 0x07, data, mem_mask);
+				m_cs1_write((offset >> 2) & 0x07, data, mem_mask);
 		}
 	}
 }
@@ -186,9 +180,9 @@ WRITE_LINE_MEMBER( gayle_device::ide_interrupt_w )
 		m_int2_w(BIT(m_gayle_reg[GAYLE_CS], 7));
 }
 
-READ16_MEMBER( gayle_device::gayle_id_r )
+uint16_t gayle_device::gayle_id_r(offs_t offset, uint16_t mem_mask)
 {
-	UINT16 data = 0xffff;
+	uint16_t data;
 
 	if (ACCESSING_BITS_8_15)
 		data = ((m_gayle_id << m_gayle_id_count++) & 0x80) << 8;
@@ -201,7 +195,7 @@ READ16_MEMBER( gayle_device::gayle_id_r )
 	return data;
 }
 
-WRITE16_MEMBER( gayle_device::gayle_id_w )
+void gayle_device::gayle_id_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	if (VERBOSE)
 		logerror("gayle_id_w(%06x): %04x & %04x (id=%02x)\n", offset, data, mem_mask, m_gayle_id);

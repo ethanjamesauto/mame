@@ -26,35 +26,29 @@ two 6809s and as the reset generator for the entire system.
 #include "machine/c117.h"
 
 
-const device_type NAMCO_C117 = &device_creator<namco_c117_device>;
+DEFINE_DEVICE_TYPE(NAMCO_C117, namco_c117_device, "namco_c117", "Namco C117 MMU")
 
 
 //-------------------------------------------------
 //  namco_c117_device - constructor
 //-------------------------------------------------
 
-namco_c117_device::namco_c117_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock)
-	: device_t(mconfig, NAMCO_C117, "Namco C117 MMU", tag, owner, clock, "namco_c117", __FILE__),
+namco_c117_device::namco_c117_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock) :
+	device_t(mconfig, NAMCO_C117, tag, owner, clock),
 	device_memory_interface(mconfig, *this),
 	m_subres_cb(*this),
 	m_program_config("program", ENDIANNESS_BIG, 8, 23),
-	m_maincpu_tag(nullptr),
-	m_subcpu_tag(nullptr)
+	m_cpuexec{ { *this, finder_base::DUMMY_TAG }, { *this, finder_base::DUMMY_TAG } },
+	m_watchdog(*this, "watchdog")
 {
 }
 
-//-------------------------------------------------
-//  set_cpu_tags - set the tags of the two CPUs
-//  connected to the device
-//-------------------------------------------------
-
-void namco_c117_device::set_cpu_tags(device_t &device, const char *maintag, const char *subtag)
+device_memory_interface::space_config_vector namco_c117_device::memory_space_config() const
 {
-	namco_c117_device &c117 = downcast<namco_c117_device &>(device);
-	c117.m_maincpu_tag = maintag;
-	c117.m_subcpu_tag = subtag;
+	return space_config_vector {
+		std::make_pair(AS_PROGRAM, &m_program_config)
+	};
 }
-
 
 //-------------------------------------------------
 //  device_start - device-specific startup
@@ -64,15 +58,10 @@ void namco_c117_device::device_start()
 {
 	m_subres_cb.resolve_safe();
 
-	m_program = &space(AS_PROGRAM);
+	space(AS_PROGRAM).specific(m_program);
 
-	cpu_device *maincpu = siblingdevice<cpu_device>(m_maincpu_tag);
-	cpu_device *subcpu = siblingdevice<cpu_device>(m_subcpu_tag);
-
-	m_cpuexec[0] = maincpu;
-	m_cpuexec[1] = subcpu;
-	m_cpudirect[0] = &maincpu->space(AS_PROGRAM).direct();
-	m_cpudirect[1] = &subcpu->space(AS_PROGRAM).direct();
+	m_cpuexec[0]->space(AS_PROGRAM).cache(m_cpucache[0]);
+	m_cpuexec[1]->space(AS_PROGRAM).cache(m_cpucache[1]);
 
 	memset(&m_offsets, 0, sizeof(m_offsets));
 	m_subres = m_wdog = 0;
@@ -97,39 +86,46 @@ void namco_c117_device::device_reset()
 	m_offsets[1][0] = 0x0180 * 0x2000; // bank0 = 0x180(RAM) - evidence: wldcourt
 	m_offsets[1][7] = 0x03ff * 0x2000; // bank7 = 0x3ff(PRG7)
 
-	m_cpudirect[0]->force_update();
-	m_cpudirect[1]->force_update();
-
 	m_subres = m_wdog = 0;
 	m_subres_cb(ASSERT_LINE);
 
 	// reset the main CPU so it picks up the reset vector from the correct bank
-	m_cpuexec[0]->set_input_line(INPUT_LINE_RESET, PULSE_LINE);
+	m_cpuexec[0]->pulse_input_line(INPUT_LINE_RESET, attotime::zero);
 }
 
 
-READ8_MEMBER(namco_c117_device::main_r)
+//-------------------------------------------------
+//  device_add_mconfig - add device configuration
+//-------------------------------------------------
+
+void namco_c117_device::device_add_mconfig(machine_config &config)
 {
-	return m_program->read_byte(remap(0, offset));
+	WATCHDOG_TIMER(config, m_watchdog);
 }
 
-READ8_MEMBER(namco_c117_device::sub_r)
+
+uint8_t namco_c117_device::main_r(offs_t offset)
 {
-	return m_program->read_byte(remap(1, offset));
+	return m_program.read_byte(remap(0, offset));
 }
 
-WRITE8_MEMBER(namco_c117_device::main_w)
+uint8_t namco_c117_device::sub_r(offs_t offset)
+{
+	return m_program.read_byte(remap(1, offset));
+}
+
+void namco_c117_device::main_w(offs_t offset, uint8_t data)
 {
 	if (offset < 0xe000)
-		m_program->write_byte(remap(0, offset), data);
+		m_program.write_byte(remap(0, offset), data);
 	else
 		register_w(0, offset, data);
 }
 
-WRITE8_MEMBER(namco_c117_device::sub_w)
+void namco_c117_device::sub_w(offs_t offset, uint8_t data)
 {
 	if (offset < 0xe000)
-		m_program->write_byte(remap(1, offset), data);
+		m_program.write_byte(remap(1, offset), data);
 	else
 		register_w(1, offset, data);
 }
@@ -137,13 +133,13 @@ WRITE8_MEMBER(namco_c117_device::sub_w)
 // FIXME: the sound CPU watchdog is probably in CUS121, and definitely isn't in CUS117
 // however, until the watchdog is a device and it's possible to have two independent
 // watchdogs in a machine, it's easiest to handle it here
-WRITE8_MEMBER(namco_c117_device::sound_watchdog_w)
+void namco_c117_device::sound_watchdog_w(uint8_t data)
 {
 	kick_watchdog(2);
 }
 
 
-void namco_c117_device::register_w(int whichcpu, offs_t offset, UINT8 data)
+void namco_c117_device::register_w(int whichcpu, offs_t offset, uint8_t data)
 {
 	int reg = (offset >> 9) & 0xf;
 	bool unknown_reg = false;
@@ -188,10 +184,7 @@ void namco_c117_device::register_w(int whichcpu, offs_t offset, UINT8 data)
 			break;
 		case 14: // FC00 - set initial ROM bank for sub CPU
 			if (whichcpu == 0)
-			{
 				m_offsets[1][7] = 0x600000 | (data * 0x2000);
-				m_cpudirect[1]->force_update();
-			}
 			else
 				unknown_reg = true;
 			break;
@@ -199,20 +192,18 @@ void namco_c117_device::register_w(int whichcpu, offs_t offset, UINT8 data)
 			unknown_reg = true;
 	}
 	if (unknown_reg)
-		logerror("'%s' writing to unknown CUS117 register %04X = %02X\n", (whichcpu ? m_subcpu_tag : m_maincpu_tag), offset, data);
+		logerror("'%s' writing to unknown CUS117 register %04X = %02X\n", m_cpuexec[whichcpu].finder_tag(), offset, data);
 }
 
-void namco_c117_device::bankswitch(int whichcpu, int whichbank, int a0, UINT8 data)
+void namco_c117_device::bankswitch(int whichcpu, int whichbank, int a0, uint8_t data)
 {
-	UINT32 &bank = m_offsets[whichcpu][whichbank];
+	uint32_t &bank = m_offsets[whichcpu][whichbank];
 
 	// even writes set a22-a21; odd writes set a20-a13
 	if (a0 == 0)
 		bank = (bank & 0x1fe000) | ((data & 0x03) * 0x200000);
 	else
 		bank = (bank & 0x600000) | (data * 0x2000);
-
-	m_cpudirect[whichcpu]->force_update();
 }
 
 void namco_c117_device::kick_watchdog(int whichcpu)
@@ -225,6 +216,6 @@ void namco_c117_device::kick_watchdog(int whichcpu)
 	if (m_wdog == ALL_CPU_MASK || !m_subres)
 	{
 		m_wdog = 0;
-		machine().watchdog_reset();
+		m_watchdog->watchdog_reset();
 	}
 }

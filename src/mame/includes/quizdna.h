@@ -1,5 +1,9 @@
 // license:BSD-3-Clause
 // copyright-holders:Uki
+
+#include "emupal.h"
+#include "tilemap.h"
+
 class quizdna_state : public driver_device
 {
 public:
@@ -11,32 +15,37 @@ public:
 		m_spriteram(*this, "spriteram"),
 		m_generic_paletteram_8(*this, "paletteram") { }
 
+	void gakupara(machine_config &config);
+	void quizdna(machine_config &config);
+	void gekiretu(machine_config &config);
+
+private:
 	required_device<cpu_device> m_maincpu;
 	required_device<gfxdecode_device> m_gfxdecode;
 	required_device<palette_device> m_palette;
 
-	required_shared_ptr<UINT8> m_spriteram;
-	required_shared_ptr<UINT8> m_generic_paletteram_8;
+	required_shared_ptr<uint8_t> m_spriteram;
+	required_shared_ptr<uint8_t> m_generic_paletteram_8;
 
-	std::unique_ptr<UINT8[]> m_bg_ram;
-	std::unique_ptr<UINT8[]> m_fg_ram;
+	std::unique_ptr<uint8_t[]> m_bg_ram;
+	std::unique_ptr<uint8_t[]> m_fg_ram;
 	tilemap_t *m_bg_tilemap;
 	tilemap_t *m_fg_tilemap;
-	UINT8 m_bg_xscroll[2];
+	uint8_t m_bg_xscroll[2];
 	int m_flipscreen;
 	int m_video_enable;
 
 	// common
-	DECLARE_WRITE8_MEMBER(bg_ram_w);
-	DECLARE_WRITE8_MEMBER(fg_ram_w);
-	DECLARE_WRITE8_MEMBER(bg_yscroll_w);
-	DECLARE_WRITE8_MEMBER(bg_xscroll_w);
-	DECLARE_WRITE8_MEMBER(screen_ctrl_w);
-	DECLARE_WRITE8_MEMBER(paletteram_xBGR_RRRR_GGGG_BBBB_w);
-	DECLARE_WRITE8_MEMBER(rombank_w);
+	void bg_ram_w(offs_t offset, uint8_t data);
+	void fg_ram_w(offs_t offset, uint8_t data);
+	void bg_yscroll_w(uint8_t data);
+	void bg_xscroll_w(offs_t offset, uint8_t data);
+	void screen_ctrl_w(uint8_t data);
+	void paletteram_xBGR_RRRR_GGGG_BBBB_w(offs_t offset, uint8_t data);
+	void rombank_w(uint8_t data);
 
 	// game specific
-	DECLARE_WRITE8_MEMBER(gekiretu_rombank_w);
+	void gekiretu_rombank_w(uint8_t data);
 
 	TILE_GET_INFO_MEMBER(get_bg_tile_info);
 	TILE_GET_INFO_MEMBER(get_fg_tile_info);
@@ -44,6 +53,11 @@ public:
 	virtual void machine_start() override;
 	virtual void video_start() override;
 
-	UINT32 screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
+	uint32_t screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
 	void draw_sprites(bitmap_ind16 &bitmap, const rectangle &cliprect);
+	void gakupara_io_map(address_map &map);
+	void gekiretu_io_map(address_map &map);
+	void gekiretu_map(address_map &map);
+	void quizdna_io_map(address_map &map);
+	void quizdna_map(address_map &map);
 };

@@ -28,26 +28,44 @@
 ***************************************************************************/
 
 #include "emu.h"
-#include "cpu/z80/z80.h"
-#include "sound/ay8910.h"
 #include "includes/hanaawas.h"
 
-READ8_MEMBER(hanaawas_state::hanaawas_input_port_0_r)
+#include "cpu/z80/z80.h"
+#include "sound/ay8910.h"
+#include "screen.h"
+#include "speaker.h"
+
+
+uint8_t hanaawas_state::hanaawas_input_port_0_r()
 {
 	int i, ordinal = 0;
-	UINT16 buttons = 0;
+	uint16_t buttons = 0;
+
+	// TODO: key matrix seems identical to speedatk.cpp, needs merging
+	if(m_coin_impulse > 0)
+	{
+		m_coin_impulse--;
+		return 0x80;
+	}
+
+	if((ioport("COINS")->read() & 1) || (ioport("COINS")->read() & 2))
+	{
+		m_coin_impulse = m_coin_settings*2;
+		m_coin_impulse--;
+		return 0x80;
+	}
 
 	switch (m_mux)
 	{
-	case 1: /* start buttons */
-		buttons = ioport("START")->read();
-		break;
-	case 2: /* player 1 buttons */
-		buttons = ioport("P1")->read();
-		break;
-	case 4: /* player 2 buttons */
-		buttons = ioport("P2")->read();
-		break;
+		case 1: /* start buttons */
+			buttons = ioport("START")->read();
+			break;
+		case 2: /* player 1 buttons */
+			buttons = ioport("P1")->read();
+			break;
+		case 4: /* player 2 buttons */
+			buttons = ioport("P2")->read();
+			break;
 	}
 
 
@@ -62,39 +80,51 @@ READ8_MEMBER(hanaawas_state::hanaawas_input_port_0_r)
 		}
 	}
 
-	return (ioport("IN0")->read() & 0xf0) | ordinal;
+	return ordinal;
 }
 
-WRITE8_MEMBER(hanaawas_state::hanaawas_inputs_mux_w)
+void hanaawas_state::hanaawas_inputs_mux_w(uint8_t data)
 {
 	m_mux = data;
 }
 
-static ADDRESS_MAP_START( hanaawas_map, AS_PROGRAM, 8, hanaawas_state )
-	AM_RANGE(0x0000, 0x2fff) AM_ROM
-	AM_RANGE(0x4000, 0x4fff) AM_ROM
-	AM_RANGE(0x6000, 0x6fff) AM_ROM
-	AM_RANGE(0x8000, 0x83ff) AM_RAM_WRITE(hanaawas_videoram_w) AM_SHARE("videoram")
-	AM_RANGE(0x8400, 0x87ff) AM_RAM_WRITE(hanaawas_colorram_w) AM_SHARE("colorram")
-	AM_RANGE(0x8800, 0x8bff) AM_RAM
-ADDRESS_MAP_END
+void hanaawas_state::irq_ack_w(uint8_t data)
+{
+	m_maincpu->set_input_line(0,CLEAR_LINE);
+}
+
+void hanaawas_state::key_matrix_status_w(uint8_t data)
+{
+	if((data & 0xf0) == 0x40) //coinage setting command
+		m_coin_settings = data & 0xf;
+}
+
+void hanaawas_state::hanaawas_map(address_map &map)
+{
+	map(0x0000, 0x2fff).rom();
+	map(0x4000, 0x4fff).rom();
+	map(0x6000, 0x6fff).rom();
+	map(0x8000, 0x83ff).ram().w(FUNC(hanaawas_state::hanaawas_videoram_w)).share("videoram");
+	map(0x8400, 0x87ff).ram().w(FUNC(hanaawas_state::hanaawas_colorram_w)).share("colorram");
+	map(0x8800, 0x8bff).ram();
+	map(0xb000, 0xb000).w(FUNC(hanaawas_state::irq_ack_w));
+}
 
 
-static ADDRESS_MAP_START( io_map, AS_IO, 8, hanaawas_state )
-	ADDRESS_MAP_GLOBAL_MASK(0xff)
-	AM_RANGE(0x00, 0x00) AM_READWRITE(hanaawas_input_port_0_r, hanaawas_inputs_mux_w)
-	AM_RANGE(0x01, 0x01) AM_READNOP /* it must return 0 */
-	AM_RANGE(0x10, 0x10) AM_DEVREAD("aysnd", ay8910_device, data_r)
-	AM_RANGE(0x10, 0x11) AM_DEVWRITE("aysnd", ay8910_device, address_data_w)
-ADDRESS_MAP_END
+void hanaawas_state::io_map(address_map &map)
+{
+	map.global_mask(0xff);
+	map(0x00, 0x00).rw(FUNC(hanaawas_state::hanaawas_input_port_0_r), FUNC(hanaawas_state::hanaawas_inputs_mux_w));
+	map(0x01, 0x01).nopr().w(FUNC(hanaawas_state::key_matrix_status_w)); /* r bit 1: status ready, presumably of the input mux device / w = configure device? */
+	map(0x10, 0x10).r("aysnd", FUNC(ay8910_device::data_r));
+	map(0x10, 0x11).w("aysnd", FUNC(ay8910_device::address_data_w));
+	map(0xc0, 0xc0).nopw(); // watchdog
+}
 
 static INPUT_PORTS_START( hanaawas )
-	PORT_START("IN0")
-	PORT_BIT( 0x0f, IP_ACTIVE_HIGH, IPT_SPECIAL )
-	PORT_BIT( 0x10, IP_ACTIVE_HIGH, IPT_UNKNOWN )
-	PORT_BIT( 0x20, IP_ACTIVE_HIGH, IPT_UNKNOWN )
-	PORT_BIT( 0x40, IP_ACTIVE_HIGH, IPT_UNKNOWN )
-	PORT_BIT( 0x80, IP_ACTIVE_HIGH, IPT_COIN1 ) PORT_IMPULSE(1)
+	PORT_START("COINS")
+	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_COIN1 ) PORT_IMPULSE(1)
+	PORT_BIT( 0x02, IP_ACTIVE_HIGH, IPT_COIN2 ) PORT_IMPULSE(1)
 
 	PORT_START("DSW")
 	PORT_DIPNAME( 0x01, 0x00, DEF_STR( Unknown ) )
@@ -167,7 +197,7 @@ static const gfx_layout name =                      \
 GFX( charlayout_1bpp, 0x2000*8+4, 0x2000*8+4, 0x2000*8+4 )
 GFX( charlayout_3bpp, 0x2000*8,   0,          4          )
 
-static GFXDECODE_START( hanaawas )
+static GFXDECODE_START( gfx_hanaawas )
 	GFXDECODE_ENTRY( "gfx1", 0, charlayout_1bpp, 0, 32 )
 	GFXDECODE_ENTRY( "gfx1", 0, charlayout_3bpp, 0, 32 )
 GFXDECODE_END
@@ -176,44 +206,45 @@ GFXDECODE_END
 void hanaawas_state::machine_start()
 {
 	save_item(NAME(m_mux));
+	save_item(NAME(m_coin_settings));
+	save_item(NAME(m_coin_impulse));
 }
 
 void hanaawas_state::machine_reset()
 {
 	m_mux = 0;
+	m_coin_impulse = 0;
 }
 
-static MACHINE_CONFIG_START( hanaawas, hanaawas_state )
-
+void hanaawas_state::hanaawas(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", Z80,18432000/6) /* 3.072 MHz ??? */
-	MCFG_CPU_PROGRAM_MAP(hanaawas_map)
-	MCFG_CPU_IO_MAP(io_map)
-	MCFG_CPU_VBLANK_INT_DRIVER("screen", hanaawas_state,  irq0_line_hold)
+	Z80(config, m_maincpu, 18432000/6); /* 3.072 MHz ??? */
+	m_maincpu->set_addrmap(AS_PROGRAM, &hanaawas_state::hanaawas_map);
+	m_maincpu->set_addrmap(AS_IO, &hanaawas_state::io_map);
+	m_maincpu->set_vblank_int("screen", FUNC(hanaawas_state::irq0_line_assert));
 
 
 	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_REFRESH_RATE(60)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(2500) /* not accurate */)
-	MCFG_SCREEN_SIZE(32*8, 32*8)
-	MCFG_SCREEN_VISIBLE_AREA(0*8, 32*8-1, 0*8, 32*8-1)
-	MCFG_SCREEN_UPDATE_DRIVER(hanaawas_state, screen_update_hanaawas)
-	MCFG_SCREEN_PALETTE("palette")
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_RASTER));
+	screen.set_refresh_hz(60);
+	screen.set_vblank_time(ATTOSECONDS_IN_USEC(2500) /* not accurate */);
+	screen.set_size(32*8, 32*8);
+	screen.set_visarea(0*8, 32*8-1, 0*8, 32*8-1);
+	screen.set_screen_update(FUNC(hanaawas_state::screen_update_hanaawas));
+	screen.set_palette("palette");
 
-	MCFG_GFXDECODE_ADD("gfxdecode", "palette", hanaawas)
-	MCFG_PALETTE_ADD("palette", 32*8)
-	MCFG_PALETTE_INDIRECT_ENTRIES(16)
-	MCFG_PALETTE_INIT_OWNER(hanaawas_state, hanaawas)
+	GFXDECODE(config, m_gfxdecode, "palette", gfx_hanaawas);
+	PALETTE(config, "palette", FUNC(hanaawas_state::hanaawas_palette), 32 * 8, 16);
 
 	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_MONO("mono")
+	SPEAKER(config, "mono").front_center();
 
-	MCFG_SOUND_ADD("aysnd", AY8910, 18432000/12)
-	MCFG_AY8910_PORT_A_READ_CB(IOPORT("DSW"))
-	MCFG_AY8910_PORT_B_WRITE_CB(WRITE8(hanaawas_state, hanaawas_portB_w))
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.50)
-MACHINE_CONFIG_END
+	ay8910_device &aysnd(AY8910(config, "aysnd", 18432000/12));
+	aysnd.port_a_read_callback().set_ioport("DSW");
+	aysnd.port_b_write_callback().set(FUNC(hanaawas_state::hanaawas_portB_w));
+	aysnd.add_route(ALL_OUTPUTS, "mono", 0.50);
+}
 
 
 /***************************************************************************
@@ -242,4 +273,4 @@ ROM_START( hanaawas )
 ROM_END
 
 
-GAME( 1982, hanaawas, 0, hanaawas, hanaawas, driver_device, 0, ROT0, "Seta Kikaku, Ltd.", "Hana Awase", MACHINE_SUPPORTS_SAVE )
+GAME( 1982, hanaawas, 0, hanaawas, hanaawas, hanaawas_state, empty_init, ROT0, "Seta Kikaku, Ltd.", "Hana Awase", MACHINE_SUPPORTS_SAVE )

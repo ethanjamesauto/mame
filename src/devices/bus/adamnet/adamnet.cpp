@@ -6,6 +6,7 @@
 
 **********************************************************************/
 
+#include "emu.h"
 #include "adamnet.h"
 
 
@@ -14,8 +15,8 @@
 //  GLOBAL VARIABLES
 //**************************************************************************
 
-const device_type ADAMNET = &device_creator<adamnet_device>;
-const device_type ADAMNET_SLOT = &device_creator<adamnet_slot_device>;
+DEFINE_DEVICE_TYPE(ADAMNET,      adamnet_device,      "adamnet",      "ADAMnet bus")
+DEFINE_DEVICE_TYPE(ADAMNET_SLOT, adamnet_slot_device, "adamnet_slot", "ADAMnet slot")
 
 
 
@@ -27,8 +28,8 @@ const device_type ADAMNET_SLOT = &device_creator<adamnet_slot_device>;
 //  device_adamnet_card_interface - constructor
 //-------------------------------------------------
 
-device_adamnet_card_interface::device_adamnet_card_interface(const machine_config &mconfig, device_t &device)
-	: device_slot_card_interface(mconfig, device),
+device_adamnet_card_interface::device_adamnet_card_interface(const machine_config &mconfig, device_t &device) :
+	device_interface(device, "adamnet"),
 	m_bus(nullptr)
 {
 }
@@ -51,9 +52,10 @@ device_adamnet_card_interface::~device_adamnet_card_interface()
 //-------------------------------------------------
 //  adamnet_slot_device - constructor
 //-------------------------------------------------
-adamnet_slot_device::adamnet_slot_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock) :
-	device_t(mconfig, ADAMNET_SLOT, "ADAMnet slot", tag, owner, clock, "adamnet_slot", __FILE__),
-	device_slot_interface(mconfig, *this), m_bus(nullptr)
+adamnet_slot_device::adamnet_slot_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock) :
+	device_t(mconfig, ADAMNET_SLOT, tag, owner, clock),
+	device_single_card_slot_interface<device_adamnet_card_interface>(mconfig, *this),
+	m_bus(*this, finder_base::DUMMY_TAG)
 {
 }
 
@@ -64,9 +66,8 @@ adamnet_slot_device::adamnet_slot_device(const machine_config &mconfig, const ch
 
 void adamnet_slot_device::device_start()
 {
-	m_bus = machine().device<adamnet_device>(ADAMNET_TAG);
-	device_adamnet_card_interface *dev = dynamic_cast<device_adamnet_card_interface *>(get_card_device());
-	if (dev) m_bus->add_device(get_card_device());
+	device_adamnet_card_interface *dev = get_card_device();
+	if (dev) m_bus->add_device(&dev->device());
 }
 
 
@@ -79,8 +80,8 @@ void adamnet_slot_device::device_start()
 //  adamnet_device - constructor
 //-------------------------------------------------
 
-adamnet_device::adamnet_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock) :
-	device_t(mconfig, ADAMNET, "ADAMnet bus", tag, owner, clock, "adamnet", __FILE__),
+adamnet_device::adamnet_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock) :
+	device_t(mconfig, ADAMNET, tag, owner, clock),
 	m_txd(1),
 	m_reset(CLEAR_LINE)
 {
@@ -112,7 +113,7 @@ void adamnet_device::device_stop()
 
 void adamnet_device::add_device(device_t *target)
 {
-	auto entry = global_alloc(daisy_entry(target));
+	auto entry = new daisy_entry(target);
 
 	entry->m_interface->m_bus = this;
 
@@ -256,10 +257,11 @@ WRITE_LINE_MEMBER( adamnet_device::reset_w )
 #include "printer.h"
 #include "spi.h"
 
-SLOT_INTERFACE_START( adamnet_devices )
-	SLOT_INTERFACE("ddp", ADAM_DDP)
-	SLOT_INTERFACE("fdc", ADAM_FDC)
-	SLOT_INTERFACE("kb", ADAM_KB)
-	SLOT_INTERFACE("prn", ADAM_PRN)
-	SLOT_INTERFACE("spi", ADAM_SPI)
-SLOT_INTERFACE_END
+void adamnet_devices(device_slot_interface &device)
+{
+	device.option_add("ddp", ADAM_DDP);
+	device.option_add("fdc", ADAM_FDC);
+	device.option_add("kb", ADAM_KB);
+	device.option_add("prn", ADAM_PRN);
+	device.option_add("spi", ADAM_SPI);
+}

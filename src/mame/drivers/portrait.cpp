@@ -23,9 +23,14 @@ Pierpaolo Prazzoli, xx-07-2004
    ON    ON -> camera test
 
 TODO:
- - add sound
- - add colors
- - fix sprites positions
+ - add sound;
+ - add colors (maybe not RGB555);
+ - fix sprites positions (zooming?);
+ - video priority bits;
+ - offset background scrolling positions (i.e. monkey climbing on trees);
+ - camera device (type?);
+ - misc unknown input/outputs;
+
 
 RAM Location 9240: Controls what level you are on: 0-3 (for each scene)
 
@@ -86,59 +91,66 @@ DM81LS95 = TriState buffer
 **************************************************************************/
 
 #include "emu.h"
-#include "cpu/z80/z80.h"
-#include "cpu/mcs48/mcs48.h"
-#include "machine/nvram.h"
 #include "includes/portrait.h"
 
-WRITE8_MEMBER(portrait_state::ctrl_w)
+#include "cpu/z80/z80.h"
+#include "cpu/mcs48/mcs48.h"
+#include "machine/gen_latch.h"
+#include "machine/nvram.h"
+#include "screen.h"
+#include "speaker.h"
+
+
+void portrait_state::ctrl_w(uint8_t data)
 {
 	/* bits 4 and 5 are unknown */
 
-	coin_counter_w(machine(), 0, data & 0x01);
-	coin_counter_w(machine(), 1, data & 0x02);
-	coin_counter_w(machine(), 2, data & 0x04);
+	machine().bookkeeping().coin_counter_w(0, data & 0x01);
+	machine().bookkeeping().coin_counter_w(1, data & 0x02);
+	machine().bookkeeping().coin_counter_w(2, data & 0x04);
 
 	/* the 2 lamps near the camera */
-	set_led_status(machine(), 0, data & 0x08);
-	set_led_status(machine(), 1, data & 0x40);
+	m_lamps[0] = BIT(data, 3);
+	m_lamps[1] = BIT(data, 6);
 
 	/* shows the black and white photo from the camera */
-	output_set_value("photo", (data >> 7) & 1);
+	output().set_value("photo", (data >> 7) & 1);
 }
 
-WRITE8_MEMBER(portrait_state::positive_scroll_w)
+void portrait_state::positive_scroll_w(uint8_t data)
 {
 	m_scroll = data;
 }
 
-WRITE8_MEMBER(portrait_state::negative_scroll_w)
+void portrait_state::negative_scroll_w(uint8_t data)
 {
 	m_scroll = - (data ^ 0xff);
 }
 
-static ADDRESS_MAP_START( portrait_map, AS_PROGRAM, 8, portrait_state )
-	AM_RANGE(0x0000, 0x7fff) AM_ROM
-	AM_RANGE(0x8000, 0x87ff) AM_RAM_WRITE(bgvideo_write) AM_SHARE("bgvideoram")
-	AM_RANGE(0x8800, 0x8fff) AM_RAM_WRITE(fgvideo_write) AM_SHARE("fgvideoram")
-	AM_RANGE(0x9000, 0x91ff) AM_RAM AM_SHARE("spriteram")
-	AM_RANGE(0x9200, 0x97ff) AM_RAM
-	AM_RANGE(0xa000, 0xa000) AM_WRITE(soundlatch_byte_w)
-	AM_RANGE(0xa010, 0xa010) AM_WRITENOP // ?
-	AM_RANGE(0xa000, 0xa000) AM_READ_PORT("DSW1")
-	AM_RANGE(0xa004, 0xa004) AM_READ_PORT("DSW2")
-	AM_RANGE(0xa008, 0xa008) AM_READ_PORT("SYSTEM") AM_WRITE(ctrl_w)
-	AM_RANGE(0xa010, 0xa010) AM_READ_PORT("INPUTS")
-	AM_RANGE(0xa018, 0xa018) AM_READNOP AM_WRITE(positive_scroll_w)
-	AM_RANGE(0xa019, 0xa019) AM_WRITE(negative_scroll_w)
-	AM_RANGE(0xa800, 0xa83f) AM_RAM AM_SHARE("nvram")
-	AM_RANGE(0xffff, 0xffff) AM_READNOP
-ADDRESS_MAP_END
+void portrait_state::portrait_map(address_map &map)
+{
+	map(0x0000, 0x7fff).rom();
+	map(0x8000, 0x87ff).ram().w(FUNC(portrait_state::bgvideo_write)).share("bgvideoram");
+	map(0x8800, 0x8fff).ram().w(FUNC(portrait_state::fgvideo_write)).share("fgvideoram");
+	map(0x9000, 0x91ff).ram().share("spriteram");
+	map(0x9200, 0x97ff).ram();
+	map(0xa000, 0xa000).w("soundlatch", FUNC(generic_latch_8_device::write));
+	map(0xa010, 0xa010).nopw(); // ?
+	map(0xa000, 0xa000).portr("DSW1");
+	map(0xa004, 0xa004).portr("DSW2");
+	map(0xa008, 0xa008).portr("SYSTEM").w(FUNC(portrait_state::ctrl_w));
+	map(0xa010, 0xa010).portr("INPUTS");
+	map(0xa018, 0xa018).nopr().w(FUNC(portrait_state::positive_scroll_w));
+	map(0xa019, 0xa019).w(FUNC(portrait_state::negative_scroll_w));
+	map(0xa800, 0xa83f).ram().share("nvram");
+	map(0xffff, 0xffff).nopr();
+}
 
 
-static ADDRESS_MAP_START( portrait_sound_map, AS_PROGRAM, 8, portrait_state )
-	AM_RANGE(0x0000, 0x0fff) AM_ROM
-ADDRESS_MAP_END
+void portrait_state::portrait_sound_map(address_map &map)
+{
+	map(0x0000, 0x0fff).rom();
+}
 
 
 static INPUT_PORTS_START( portrait )
@@ -237,40 +249,40 @@ static const gfx_layout tile_layout =
 	8*16 /* character offset */
 };
 
-static GFXDECODE_START( portrait )
+static GFXDECODE_START( gfx_portrait )
 	GFXDECODE_ENTRY( "gfx1", 0x00000, tile_layout, 0, 0x800/8 )
 GFXDECODE_END
 
 
-static MACHINE_CONFIG_START( portrait, portrait_state )
-	MCFG_CPU_ADD("maincpu", Z80, 4000000)     /* 4 MHz ? */
-	MCFG_CPU_PROGRAM_MAP(portrait_map)
-	MCFG_CPU_VBLANK_INT_DRIVER("screen", portrait_state,  irq0_line_hold)
+void portrait_state::portrait(machine_config &config)
+{
+	Z80(config, m_maincpu, 4000000);     /* 4 MHz ? */
+	m_maincpu->set_addrmap(AS_PROGRAM, &portrait_state::portrait_map);
+	m_maincpu->set_vblank_int("screen", FUNC(portrait_state::irq0_line_hold));
 
-	MCFG_CPU_ADD("audiocpu", I8039, 3120000)  /* ? */
-	MCFG_CPU_PROGRAM_MAP(portrait_sound_map)
+	i8039_device &audiocpu(I8039(config, "audiocpu", 3120000));  /* ? */
+	audiocpu.set_addrmap(AS_PROGRAM, &portrait_state::portrait_sound_map);
 
+	NVRAM(config, "nvram", nvram_device::DEFAULT_ALL_0);
 
-	MCFG_NVRAM_ADD_0FILL("nvram")
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_RASTER));
+	screen.set_refresh_hz(50);
+	screen.set_vblank_time(ATTOSECONDS_IN_USEC(0));
+	screen.set_size(64*8, 64*8);
+	screen.set_visarea(0*8, 54*8-1, 0*8, 40*8-1);
+	screen.set_screen_update(FUNC(portrait_state::screen_update));
+	screen.set_palette(m_palette);
 
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_REFRESH_RATE(50)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(0))
-	MCFG_SCREEN_SIZE(64*8, 64*8)
-	MCFG_SCREEN_VISIBLE_AREA(0*8, 54*8-1, 0*8, 40*8-1)
-	MCFG_SCREEN_UPDATE_DRIVER(portrait_state, screen_update)
-	MCFG_SCREEN_PALETTE("palette")
-
-	MCFG_GFXDECODE_ADD("gfxdecode", "palette", portrait)
-	MCFG_PALETTE_ADD("palette", 0x800)
-	MCFG_PALETTE_INDIRECT_ENTRIES(0x40)
-	MCFG_PALETTE_INIT_OWNER(portrait_state, portrait)
+	GFXDECODE(config, m_gfxdecode, m_palette, gfx_portrait);
+	PALETTE(config, m_palette, FUNC(portrait_state::portrait_palette), 0x800, 0x40);
 
 	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_MONO("mono")
-	MCFG_SOUND_ADD("tms", TMS5200, 640000)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 1.0)
-MACHINE_CONFIG_END
+	SPEAKER(config, "mono").front_center();
+
+	GENERIC_LATCH_8(config, "soundlatch");
+
+	TMS5200(config, m_tms, 640000).add_route(ALL_OUTPUTS, "mono", 1.0);
+}
 
 
 ROM_START( portrait )
@@ -325,7 +337,7 @@ ROM_START( portraita )
 	ROM_LOAD( "port_w.bin",  0x0000, 0x0800, CRC(d3a4e950) SHA1(0a399d43c7690d568874f3b1d55135f803fc223f) )
 	ROM_LOAD( "port_ma.bin", 0x0800, 0x0800, CRC(ee242e4f) SHA1(fb67e0d136927e04f4fa819f684c97b0d52ee48c) )
 
-	ROM_REGION( 0x20000, "gfx1", ROMREGION_INVERT )
+	ROM_REGION( 0x20000, "gfx1", 0 )
 	ROM_LOAD( "port_00.a1", 0x00000, 0x2000, CRC(eb3e1c12) SHA1(2d38b66f52546b40553244c8a5c961279559f5b6) ) /*bit plane 1*/
 	ROM_LOAD( "port_10.b1", 0x02000, 0x2000, CRC(0f44e377) SHA1(1955f9f4deab2166f637f43c1f326bd65fc90f6a) ) /*bit plane 1*/
 	ROM_LOAD( "port_02.d1", 0x04000, 0x2000, CRC(bd93a3f9) SHA1(9cb479b8840cafd6043ff0cb9d5ca031dcd332ba) ) /*bit plane 2*/
@@ -382,5 +394,5 @@ ROM_END
 
 
 
-GAME( 1983, portrait, 0,        portrait, portrait, driver_device,  0, ROT270, "Olympia", "Portraits (set 1)", MACHINE_NO_SOUND | MACHINE_IMPERFECT_GRAPHICS | MACHINE_WRONG_COLORS | MACHINE_SUPPORTS_SAVE )
-GAME( 1983, portraita,portrait, portrait, portrait, driver_device,  0, ROT270, "Olympia", "Portraits (set 2)", MACHINE_NO_SOUND | MACHINE_IMPERFECT_GRAPHICS | MACHINE_WRONG_COLORS | MACHINE_SUPPORTS_SAVE )
+GAME( 1983, portrait, 0,        portrait, portrait, portrait_state, empty_init, ROT270, "Olympia", "Portraits (set 1)", MACHINE_NOT_WORKING | MACHINE_NO_SOUND | MACHINE_IMPERFECT_GRAPHICS | MACHINE_WRONG_COLORS | MACHINE_SUPPORTS_SAVE )
+GAME( 1983, portraita,portrait, portrait, portrait, portrait_state, empty_init, ROT270, "Olympia", "Portraits (set 2)", MACHINE_NOT_WORKING | MACHINE_NO_SOUND | MACHINE_IMPERFECT_GRAPHICS | MACHINE_WRONG_COLORS | MACHINE_SUPPORTS_SAVE )

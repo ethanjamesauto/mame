@@ -11,47 +11,55 @@
 #include "machine/s3c2440.h"
 #include "machine/smartmed.h"
 #include "sound/dac.h"
-#include "rendlay.h"
+#include "screen.h"
+#include "speaker.h"
+
 
 #define VERBOSE_LEVEL ( 0 )
 
 class mini2440_state : public driver_device
 {
 public:
-	mini2440_state(const machine_config &mconfig, device_type type, const char *tag)
-		: driver_device(mconfig, type, tag),
+	mini2440_state(const machine_config &mconfig, device_type type, const char *tag) :
+		driver_device(mconfig, type, tag),
 		m_maincpu(*this, "maincpu"),
 		m_s3c2440(*this, "s3c2440"),
 		m_nand(*this, "nand"),
-		m_dac1(*this, "dac1"),
-		m_dac2(*this, "dac2"),
+		m_ldac(*this, "ldac"),
+		m_rdac(*this, "rdac"),
 		m_penx(*this, "PENX"),
 		m_peny(*this, "PENY") { }
 
+	void mini2440(machine_config &config);
+
+	void init_mini2440();
+
+	DECLARE_INPUT_CHANGED_MEMBER(mini2440_input_changed);
+
+private:
 	required_device<cpu_device> m_maincpu;
 	required_device<s3c2440_device> m_s3c2440;
 	required_device<nand_device> m_nand;
-	required_device<dac_device> m_dac1;
-	required_device<dac_device> m_dac2;
+	required_device<dac_word_interface> m_ldac;
+	required_device<dac_word_interface> m_rdac;
 	required_ioport m_penx;
 	required_ioport m_peny;
 
-	UINT32 m_port[9];
-	DECLARE_DRIVER_INIT(mini2440);
+	uint32_t m_port[9];
 	virtual void machine_start() override;
 	virtual void machine_reset() override;
-	DECLARE_INPUT_CHANGED_MEMBER(mini2440_input_changed);
 	inline void verboselog(int n_level, const char *s_fmt, ...) ATTR_PRINTF(3,4);
-	DECLARE_READ32_MEMBER(s3c2440_gpio_port_r);
-	DECLARE_WRITE32_MEMBER(s3c2440_gpio_port_w);
-	DECLARE_READ32_MEMBER(s3c2440_core_pin_r);
-	DECLARE_WRITE8_MEMBER(s3c2440_nand_command_w );
-	DECLARE_WRITE8_MEMBER(s3c2440_nand_address_w );
-	DECLARE_READ8_MEMBER(s3c2440_nand_data_r );
-	DECLARE_WRITE8_MEMBER(s3c2440_nand_data_w );
-	DECLARE_WRITE16_MEMBER(s3c2440_i2s_data_w );
-	DECLARE_READ32_MEMBER(s3c2440_adc_data_r );
+	uint32_t s3c2440_gpio_port_r(offs_t offset);
+	void s3c2440_gpio_port_w(offs_t offset, uint32_t data);
+	uint32_t s3c2440_core_pin_r(offs_t offset);
+	void s3c2440_nand_command_w(uint8_t data);
+	void s3c2440_nand_address_w(uint8_t data);
+	uint8_t s3c2440_nand_data_r();
+	void s3c2440_nand_data_w(uint8_t data);
+	void s3c2440_i2s_data_w(offs_t offset, uint16_t data);
+	uint32_t s3c2440_adc_data_r(offs_t offset);
 
+	void mini2440_map(address_map &map);
 };
 
 inline void mini2440_state::verboselog(int n_level, const char *s_fmt, ...)
@@ -73,9 +81,9 @@ inline void mini2440_state::verboselog(int n_level, const char *s_fmt, ...)
 
 // GPIO
 
-READ32_MEMBER(mini2440_state::s3c2440_gpio_port_r)
+uint32_t mini2440_state::s3c2440_gpio_port_r(offs_t offset)
 {
-	UINT32 data = m_port[offset];
+	uint32_t data = m_port[offset];
 	switch (offset)
 	{
 		case S3C2440_GPIO_PORT_G :
@@ -90,8 +98,12 @@ READ32_MEMBER(mini2440_state::s3c2440_gpio_port_r)
 	return data;
 }
 
-WRITE32_MEMBER(mini2440_state::s3c2440_gpio_port_w)
+void mini2440_state::s3c2440_gpio_port_w(offs_t offset, uint32_t data)
 {
+	// tout2/gb2 -> uda1341ts l3mode
+	// tout3/gb3 -> uda1341ts l3data
+	// tclk0/gb4 -> uda1341ts l3clock
+
 	m_port[offset] = data;
 	switch (offset)
 	{
@@ -115,7 +127,7 @@ NCON: NAND flash memory selection (Normal / Advance)
 
 */
 
-READ32_MEMBER(mini2440_state::s3c2440_core_pin_r)
+uint32_t mini2440_state::s3c2440_core_pin_r(offs_t offset)
 {
 	int data = 0;
 	switch (offset)
@@ -129,41 +141,41 @@ READ32_MEMBER(mini2440_state::s3c2440_core_pin_r)
 
 // NAND
 
-WRITE8_MEMBER(mini2440_state::s3c2440_nand_command_w )
+void mini2440_state::s3c2440_nand_command_w(uint8_t data)
 {
 	m_nand->command_w(data);
 }
 
-WRITE8_MEMBER(mini2440_state::s3c2440_nand_address_w )
+void mini2440_state::s3c2440_nand_address_w(uint8_t data)
 {
 	m_nand->address_w(data);
 }
 
-READ8_MEMBER(mini2440_state::s3c2440_nand_data_r )
+uint8_t mini2440_state::s3c2440_nand_data_r()
 {
 	return m_nand->data_r();
 }
 
-WRITE8_MEMBER(mini2440_state::s3c2440_nand_data_w )
+void mini2440_state::s3c2440_nand_data_w(uint8_t data)
 {
 	m_nand->data_w(data);
 }
 
 // I2S
 
-WRITE16_MEMBER(mini2440_state::s3c2440_i2s_data_w )
+void mini2440_state::s3c2440_i2s_data_w(offs_t offset, uint16_t data)
 {
 	if ( offset )
-		m_dac1->write_signed16(data + 0x8000);
+		m_ldac->write(data);
 	else
-		m_dac2->write_signed16(data + 0x8000);
+		m_rdac->write(data);
 }
 
 // ADC
 
-READ32_MEMBER(mini2440_state::s3c2440_adc_data_r )
+uint32_t mini2440_state::s3c2440_adc_data_r(offs_t offset)
 {
-	UINT32 data = 0;
+	uint32_t data = 0;
 	switch (offset)
 	{
 		case 2 + 0 : data = m_penx->read(); break;
@@ -197,61 +209,61 @@ void mini2440_state::machine_reset()
     ADDRESS MAPS
 ***************************************************************************/
 
-static ADDRESS_MAP_START( mini2440_map, AS_PROGRAM, 32, mini2440_state )
-//  AM_RANGE(0x00000000, 0x001fffff) AM_ROM
-	AM_RANGE(0x30000000, 0x37ffffff) AM_RAM
-ADDRESS_MAP_END
+void mini2440_state::mini2440_map(address_map &map)
+{
+//  map(0x00000000, 0x001fffff).rom();
+	map(0x30000000, 0x37ffffff).ram();
+}
 
 /***************************************************************************
     MACHINE DRIVERS
 ***************************************************************************/
 
-DRIVER_INIT_MEMBER(mini2440_state,mini2440)
+void mini2440_state::init_mini2440()
 {
 	// do nothing
 }
 
-static MACHINE_CONFIG_START( mini2440, mini2440_state )
-	MCFG_CPU_ADD("maincpu", ARM920T, 400000000)
-	MCFG_CPU_PROGRAM_MAP(mini2440_map)
+void mini2440_state::mini2440(machine_config &config)
+{
+	ARM920T(config, m_maincpu, 400000000);
+	m_maincpu->set_addrmap(AS_PROGRAM, &mini2440_state::mini2440_map);
 
-	MCFG_PALETTE_ADD("palette", 32768)
+	PALETTE(config, "palette").set_entries(32768);
 
-	MCFG_SCREEN_ADD("screen", LCD)
-	MCFG_SCREEN_REFRESH_RATE(60)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(2500)) /* not accurate */
-	MCFG_SCREEN_SIZE(1024, 768)
-	MCFG_SCREEN_VISIBLE_AREA(0, 239, 0, 319)
-	MCFG_DEFAULT_LAYOUT(layout_lcd)
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_LCD));
+	screen.set_refresh_hz(60);
+	screen.set_vblank_time(ATTOSECONDS_IN_USEC(2500)); /* not accurate */
+	screen.set_size(1024, 768);
+	screen.set_visarea(0, 239, 0, 319);
+	screen.set_screen_update("s3c2440", FUNC(s3c2440_device::screen_update));
 
-	MCFG_SCREEN_UPDATE_DEVICE("s3c2440", s3c2440_device, screen_update)
+	SPEAKER(config, "lspeaker").front_left();
+	SPEAKER(config, "rspeaker").front_right();
+	UDA1341TS(config, m_ldac, 0).add_route(ALL_OUTPUTS, "lspeaker", 1.0); // uda1341ts.u12
+	UDA1341TS(config, m_rdac, 0).add_route(ALL_OUTPUTS, "rspeaker", 1.0); // uda1341ts.u12
 
-	MCFG_SPEAKER_STANDARD_STEREO("lspeaker", "rspeaker")
-	MCFG_SOUND_ADD("dac1", DAC, 0)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "lspeaker", 1.0)
-	MCFG_SOUND_ADD("dac2", DAC, 0)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "rspeaker", 1.0)
+	S3C2440(config, m_s3c2440, 12000000);
+	m_s3c2440->set_palette_tag("palette");
+	m_s3c2440->set_screen_tag("screen");
+	m_s3c2440->core_pin_r_callback().set(FUNC(mini2440_state::s3c2440_core_pin_r));
+	m_s3c2440->gpio_port_r_callback().set(FUNC(mini2440_state::s3c2440_gpio_port_r));
+	m_s3c2440->gpio_port_w_callback().set(FUNC(mini2440_state::s3c2440_gpio_port_w));
+	m_s3c2440->adc_data_r_callback().set(FUNC(mini2440_state::s3c2440_adc_data_r));
+	m_s3c2440->i2s_data_w_callback().set(FUNC(mini2440_state::s3c2440_i2s_data_w));
+	m_s3c2440->nand_command_w_callback().set(FUNC(mini2440_state::s3c2440_nand_command_w));
+	m_s3c2440->nand_address_w_callback().set(FUNC(mini2440_state::s3c2440_nand_address_w));
+	m_s3c2440->nand_data_r_callback().set(FUNC(mini2440_state::s3c2440_nand_data_r));
+	m_s3c2440->nand_data_w_callback().set(FUNC(mini2440_state::s3c2440_nand_data_w));
 
-	MCFG_DEVICE_ADD("s3c2440", S3C2440, 12000000)
-	MCFG_S3C2440_PALETTE("palette")
-	MCFG_S3C2440_CORE_PIN_R_CB(READ32(mini2440_state, s3c2440_core_pin_r))
-	MCFG_S3C2440_GPIO_PORT_R_CB(READ32(mini2440_state, s3c2440_gpio_port_r))
-	MCFG_S3C2440_GPIO_PORT_W_CB(WRITE32(mini2440_state, s3c2440_gpio_port_w))
-	MCFG_S3C2440_ADC_DATA_R_CB(READ32(mini2440_state, s3c2440_adc_data_r))
-	MCFG_S3C2440_I2S_DATA_W_CB(WRITE16(mini2440_state, s3c2440_i2s_data_w))
-	MCFG_S3C2440_NAND_COMMAND_W_CB(WRITE8(mini2440_state, s3c2440_nand_command_w))
-	MCFG_S3C2440_NAND_ADDRESS_W_CB(WRITE8(mini2440_state, s3c2440_nand_address_w))
-	MCFG_S3C2440_NAND_DATA_R_CB(READ8(mini2440_state, s3c2440_nand_data_r))
-	MCFG_S3C2440_NAND_DATA_W_CB(WRITE8(mini2440_state, s3c2440_nand_data_w))
-
-	MCFG_DEVICE_ADD("nand", NAND, 0)
-	MCFG_NAND_TYPE(NAND_CHIP_K9F1G08U0B)
-	MCFG_NAND_RNB_CALLBACK(DEVWRITELINE("s3c2440", s3c2440_device, frnb_w))
-MACHINE_CONFIG_END
+	NAND(config, m_nand, 0);
+	m_nand->set_nand_type(nand_device::chip::K9F1G08U0B);
+	m_nand->rnb_wr_callback().set(m_s3c2440, FUNC(s3c2440_device::frnb_w));
+}
 
 static INPUT_PORTS_START( mini2440 )
 	PORT_START( "PENB" )
-	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_BUTTON1 ) PORT_NAME("Pen Button") PORT_CHANGED_MEMBER(DEVICE_SELF, mini2440_state, mini2440_input_changed, NULL) PORT_PLAYER(1)
+	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_BUTTON1 ) PORT_NAME("Pen Button") PORT_CHANGED_MEMBER(DEVICE_SELF, mini2440_state, mini2440_input_changed, 0) PORT_PLAYER(1)
 	PORT_START( "PENX" )
 	PORT_BIT( 0x3ff, 0x200, IPT_LIGHTGUN_X ) PORT_NAME("Pen X") PORT_MINMAX(80, 950) PORT_SENSITIVITY(50) PORT_CROSSHAIR(X, 1.0, 0.0, 0) PORT_KEYDELTA(30) PORT_PLAYER(1)
 	PORT_START( "PENY" )
@@ -265,11 +277,11 @@ INPUT_PORTS_END
 ROM_START( mini2440 )
 	ROM_REGION( 0x8400000, "nand", 0 )
 	ROM_SYSTEM_BIOS( 0, "linux", "Linux 2.6.29.4-FriendlyARM + Qtopia 2.2.0 (2009/07/08)" )
-	ROMX_LOAD( "linux.bin", 0, 0x8400000, CRC(7c98b249) SHA1(7c2e76edcbbcbfc3f3b0e53fb42d3e5c96e9a9fb), ROM_BIOS(1) )
+	ROMX_LOAD( "linux.bin", 0, 0x8400000, CRC(7c98b249) SHA1(7c2e76edcbbcbfc3f3b0e53fb42d3e5c96e9a9fb), ROM_BIOS(0) )
 	ROM_SYSTEM_BIOS( 1, "wince", "Windows Embedded CE 6.00 (2011/03/14)" )
-	ROMX_LOAD( "wince.bin", 0, 0x8400000, CRC(6acd56b8) SHA1(d039968820348fb1169827fa12b38b94e80a076f), ROM_BIOS(2) )
+	ROMX_LOAD( "wince.bin", 0, 0x8400000, CRC(6acd56b8) SHA1(d039968820348fb1169827fa12b38b94e80a076f), ROM_BIOS(1) )
 	ROM_SYSTEM_BIOS( 2, "android", "Android 1.5 (2009/05/13)" )
-	ROMX_LOAD( "android.bin", 0, 0x8400000, CRC(4721837d) SHA1(88fcf553b106d9fc624c9615d9c1da9c705ccb46), ROM_BIOS(3) )
+	ROMX_LOAD( "android.bin", 0, 0x8400000, CRC(4721837d) SHA1(88fcf553b106d9fc624c9615d9c1da9c705ccb46), ROM_BIOS(2) )
 ROM_END
 
-COMP(2009, mini2440, 0, 0, mini2440, mini2440, mini2440_state, mini2440, "FriendlyARM", "Mini2440", 0)
+COMP(2009, mini2440, 0, 0, mini2440, mini2440, mini2440_state, init_mini2440, "FriendlyARM", "Mini2440", 0)

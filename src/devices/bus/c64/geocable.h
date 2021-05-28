@@ -6,13 +6,12 @@
 
 **********************************************************************/
 
+#ifndef MAME_BUS_C64_GEOCABLE_H
+#define MAME_BUS_C64_GEOCABLE_H
+
 #pragma once
 
-#ifndef __C64_GEOCABLE__
-#define __C64_GEOCABLE__
 
-
-#include "emu.h"
 #include "user.h"
 #include "bus/centronics/ctronics.h"
 
@@ -24,19 +23,18 @@
 
 // ======================> c64_geocable_device
 
-class c64_geocable_device : public device_t,
-	public device_pet_user_port_interface
+class c64_geocable_device : public device_t, public device_pet_user_port_interface
 {
 public:
 	// construction/destruction
-	c64_geocable_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
-
-	// optional information overrides
-	virtual machine_config_constructor device_mconfig_additions() const override;
+	c64_geocable_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
 protected:
 	// device-level overrides
 	virtual void device_start() override;
+
+	// optional information overrides
+	virtual void device_add_mconfig(machine_config &config) override;
 
 	// device_pet_user_port_interface overrides
 	virtual DECLARE_WRITE_LINE_MEMBER(input_c) override { m_centronics->write_data0(state); }
@@ -51,13 +49,11 @@ protected:
 
 private:
 	required_device<centronics_device> m_centronics;
-
-	void update_output();
 };
 
 
 // device type definition
-extern const device_type C64_GEOCABLE;
+DECLARE_DEVICE_TYPE(C64_GEOCABLE, c64_geocable_device)
 
 
-#endif
+#endif // MAME_BUS_C64_GEOCABLE_H

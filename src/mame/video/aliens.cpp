@@ -1,7 +1,9 @@
 // license:BSD-3-Clause
 // copyright-holders:Manuel Abadia
+
 #include "emu.h"
 #include "includes/aliens.h"
+#include "screen.h"
 
 /***************************************************************************
 
@@ -51,7 +53,7 @@ K051960_CB_MEMBER(aliens_state::sprite_callback)
 
 ***************************************************************************/
 
-UINT32 aliens_state::screen_update_aliens(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t aliens_state::screen_update_aliens(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	m_k052109->tilemap_update();
 

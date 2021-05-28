@@ -10,40 +10,38 @@
 #include "includes/renegade.h"
 
 
-WRITE8_MEMBER(renegade_state::bg_videoram_w)
+void renegade_state::bg_videoram_w(offs_t offset, uint8_t data)
 {
 	m_bg_videoram[offset] = data;
-	offset = offset % (64 * 16);
-	m_bg_tilemap->mark_tile_dirty(offset);
+	m_bg_tilemap->mark_tile_dirty(offset & 0x3ff);
 }
 
-WRITE8_MEMBER(renegade_state::fg_videoram_w)
+void renegade_state::fg_videoram_w(offs_t offset, uint8_t data)
 {
 	m_fg_videoram[offset] = data;
-	offset = offset % (32 * 32);
-	m_fg_tilemap->mark_tile_dirty(offset);
+	m_fg_tilemap->mark_tile_dirty(offset & 0x3ff);
 }
 
-WRITE8_MEMBER(renegade_state::flipscreen_w)
+void renegade_state::flipscreen_w(uint8_t data)
 {
 	flip_screen_set(~data & 0x01);
 }
 
-WRITE8_MEMBER(renegade_state::scroll_lsb_w)
+void renegade_state::scroll_lsb_w(uint8_t data)
 {
 	m_scrollx = (m_scrollx & 0xff00) | data;
 }
 
-WRITE8_MEMBER(renegade_state::scroll_msb_w)
+void renegade_state::scroll_msb_w(uint8_t data)
 {
 	m_scrollx = (m_scrollx & 0xff) | (data << 8);
 }
 
 TILE_GET_INFO_MEMBER(renegade_state::get_bg_tilemap_info)
 {
-	const UINT8 *source = &m_bg_videoram[tile_index];
-	UINT8 attributes = source[0x400]; /* CCC??BBB */
-	SET_TILE_INFO_MEMBER(1 + (attributes & 0x7),
+	const uint8_t *source = &m_bg_videoram[tile_index];
+	uint8_t attributes = source[0x400]; /* CCC??BBB */
+	tileinfo.set(1 + (attributes & 0x7),
 		source[0],
 		attributes >> 5,
 		0);
@@ -51,35 +49,38 @@ TILE_GET_INFO_MEMBER(renegade_state::get_bg_tilemap_info)
 
 TILE_GET_INFO_MEMBER(renegade_state::get_fg_tilemap_info)
 {
-	const UINT8 *source = &m_fg_videoram[tile_index];
-	UINT8 attributes = source[0x400];
-	SET_TILE_INFO_MEMBER(0,
-		(attributes & 3) * 256 + source[0],
+	const uint8_t *source = &m_fg_videoram[tile_index];
+	uint8_t attributes = source[0x400];
+	tileinfo.set(0,
+		((attributes & 3) << 8) | source[0],
 		attributes >> 6,
 		0);
 }
 
 void renegade_state::video_start()
 {
-	m_bg_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(renegade_state::get_bg_tilemap_info),this), TILEMAP_SCAN_ROWS,      16, 16, 64, 16);
-	m_fg_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(renegade_state::get_fg_tilemap_info),this), TILEMAP_SCAN_ROWS,   8, 8, 32, 32);
+	m_bg_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(renegade_state::get_bg_tilemap_info)), TILEMAP_SCAN_ROWS, 16, 16, 64, 16);
+	m_fg_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(renegade_state::get_fg_tilemap_info)), TILEMAP_SCAN_ROWS,  8,  8, 32, 32);
 
 	m_fg_tilemap->set_transparent_pen(0);
 	m_bg_tilemap->set_scrolldx(256, 0);
+	m_fg_tilemap->set_scrolldy(10, 10);
+	m_bg_tilemap->set_scrolldy(10, 10);
 
 	save_item(NAME(m_scrollx));
 }
 
 void renegade_state::draw_sprites(bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
-	UINT8 *source = m_spriteram;
-	UINT8 *finish = source + 96 * 4;
+	uint8_t *source = m_spriteram;
+	uint8_t *finish = source + 96 * 4;
 
 	while (source < finish)
 	{
-		int sy = 240 - source[0];
+		// reference: stage 1 boss in kuniokun is aligned with the train door
+		int sy = 234 - source[0];
 
-		if (sy >= 16)
+		//if (sy >= 0)
 		{
 			int attributes = source[1]; /* SFCCBBBB */
 			int sx = source[3];
@@ -90,19 +91,21 @@ void renegade_state::draw_sprites(bitmap_ind16 &bitmap, const rectangle &cliprec
 
 			if (sx > 248)
 				sx -= 256;
+			// wrap-around (stage 2 bike tires)
+			if (sy < 0)
+				sy += 256;
 
 			if (flip_screen())
 			{
 				sx = 240 - sx;
-				sy = 240 - sy;
+				sy = 260 - sy;
 				xflip = !xflip;
 			}
 
 			if (attributes & 0x80) /* big sprite */
 			{
-				sprite_number &= ~1;
 				m_gfxdecode->gfx(sprite_bank)->transpen(bitmap,cliprect,
-					sprite_number + 1,
+					sprite_number | 1,
 					color,
 					xflip, flip_screen(),
 					sx, sy + (flip_screen() ? -16 : 16), 0);
@@ -121,7 +124,7 @@ void renegade_state::draw_sprites(bitmap_ind16 &bitmap, const rectangle &cliprec
 	}
 }
 
-UINT32 renegade_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t renegade_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	m_bg_tilemap->set_scrollx(0, m_scrollx);
 	m_bg_tilemap->draw(screen, bitmap, cliprect, 0 , 0);

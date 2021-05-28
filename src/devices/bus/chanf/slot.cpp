@@ -7,7 +7,6 @@
 
  ***********************************************************************************************************/
 
-
 #include "emu.h"
 #include "slot.h"
 
@@ -15,7 +14,7 @@
 //  GLOBAL VARIABLES
 //**************************************************************************
 
-const device_type CHANF_CART_SLOT = &device_creator<channelf_cart_slot_device>;
+DEFINE_DEVICE_TYPE(CHANF_CART_SLOT, channelf_cart_slot_device, "chanf_cart_slot", "Fairchild Channel F Cartridge Slot")
 
 //**************************************************************************
 //    Channel F cartridges Interface
@@ -25,10 +24,10 @@ const device_type CHANF_CART_SLOT = &device_creator<channelf_cart_slot_device>;
 //  device_channelf_cart_interface - constructor
 //-------------------------------------------------
 
-device_channelf_cart_interface::device_channelf_cart_interface(const machine_config &mconfig, device_t &device)
-	: device_slot_card_interface(mconfig, device),
-		m_rom(nullptr),
-		m_rom_size(0)
+device_channelf_cart_interface::device_channelf_cart_interface(const machine_config &mconfig, device_t &device) :
+	device_interface(device, "chanfcart"),
+	m_rom(nullptr),
+	m_rom_size(0)
 {
 }
 
@@ -45,7 +44,7 @@ device_channelf_cart_interface::~device_channelf_cart_interface()
 //  rom_alloc - alloc the space for the cart
 //-------------------------------------------------
 
-void device_channelf_cart_interface::rom_alloc(UINT32 size, const char *tag)
+void device_channelf_cart_interface::rom_alloc(uint32_t size, const char *tag)
 {
 	if (m_rom == nullptr)
 	{
@@ -59,7 +58,7 @@ void device_channelf_cart_interface::rom_alloc(UINT32 size, const char *tag)
 //  ram_alloc - alloc the space for the ram
 //-------------------------------------------------
 
-void device_channelf_cart_interface::ram_alloc(UINT32 size)
+void device_channelf_cart_interface::ram_alloc(uint32_t size)
 {
 	m_ram.resize(size);
 }
@@ -72,11 +71,11 @@ void device_channelf_cart_interface::ram_alloc(UINT32 size)
 //-------------------------------------------------
 //  channelf_cart_slot_device - constructor
 //-------------------------------------------------
-channelf_cart_slot_device::channelf_cart_slot_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock) :
-						device_t(mconfig, CHANF_CART_SLOT, "Fairchild Channel F Cartridge Slot", tag, owner, clock, "cf_cart_slot", __FILE__),
-						device_image_interface(mconfig, *this),
-						device_slot_interface(mconfig, *this),
-						m_type(CF_CHESS), m_cart(nullptr)
+channelf_cart_slot_device::channelf_cart_slot_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock) :
+	device_t(mconfig, CHANF_CART_SLOT, tag, owner, clock),
+	device_image_interface(mconfig, *this),
+	device_single_card_slot_interface<device_channelf_cart_interface>(mconfig, *this),
+	m_type(CF_CHESS), m_cart(nullptr)
 {
 }
 
@@ -95,19 +94,7 @@ channelf_cart_slot_device::~channelf_cart_slot_device()
 
 void channelf_cart_slot_device::device_start()
 {
-	m_cart = dynamic_cast<device_channelf_cart_interface *>(get_card_device());
-}
-
-//-------------------------------------------------
-//  device_config_complete - perform any
-//  operations now that the configuration is
-//  complete
-//-------------------------------------------------
-
-void channelf_cart_slot_device::device_config_complete()
-{
-	// set brief and instance name
-	update_names();
+	m_cart = get_card_device();
 }
 
 
@@ -136,7 +123,7 @@ static int chanf_get_pcb_id(const char *slot)
 {
 	for (auto & elem : slot_list)
 	{
-		if (!core_stricmp(elem.slot_option, slot))
+		if (!strcmp(elem.slot_option, slot))
 			return elem.pcb_id;
 	}
 
@@ -159,19 +146,19 @@ static const char *chanf_get_slot(int type)
  call load
  -------------------------------------------------*/
 
-bool channelf_cart_slot_device::call_load()
+image_init_result channelf_cart_slot_device::call_load()
 {
 	if (m_cart)
 	{
-		UINT32 len = (software_entry() == nullptr) ? length() : get_software_region_length("rom");
+		uint32_t len = !loaded_through_softlist() ? length() : get_software_region_length("rom");
 		m_cart->rom_alloc(len, tag());
 
-		if (software_entry() == nullptr)
+		if (!loaded_through_softlist())
 			fread(m_cart->get_rom_base(), len);
 		else
 			memcpy(m_cart->get_rom_base(), get_software_region("rom"), len);
 
-		if (software_entry() == nullptr)
+		if (!loaded_through_softlist())
 		{
 			// we default to "chess" slot because some homebrew programs have been written to run
 			// on PCBs with RAM at $2000-$2800 as Saba Schach!
@@ -194,35 +181,23 @@ bool channelf_cart_slot_device::call_load()
 
 		//printf("Type: %s\n", chanf_get_slot(m_type));
 
-		return IMAGE_INIT_PASS;
+		return image_init_result::PASS;
 	}
 
-	return IMAGE_INIT_PASS;
+	return image_init_result::PASS;
 }
-
-
-/*-------------------------------------------------
- call softlist load
- -------------------------------------------------*/
-
-bool channelf_cart_slot_device::call_softlist_load(software_list_device &swlist, const char *swname, const rom_entry *start_entry)
-{
-	load_software_part_region(*this, swlist, swname, start_entry);
-	return TRUE;
-}
-
 
 
 /*-------------------------------------------------
  get default card software
  -------------------------------------------------*/
 
-void channelf_cart_slot_device::get_default_card_software(std::string &result)
+std::string channelf_cart_slot_device::get_default_card_software(get_default_card_software_hook &hook) const
 {
-	if (open_image_file(mconfig().options()))
+	if (hook.image_file())
 	{
-		const char *slot_string = "chess";
-		UINT32 len = core_fsize(m_file);
+		const char *slot_string;
+		uint32_t len = hook.image_file()->size();
 		int type;
 
 		if (len == 0x40000)
@@ -233,22 +208,20 @@ void channelf_cart_slot_device::get_default_card_software(std::string &result)
 		slot_string = chanf_get_slot(type);
 
 		//printf("type: %s\n", slot_string);
-		clear();
 
-		result.assign(slot_string);
-		return;
+		return std::string(slot_string);
 	}
-	software_get_default_slot(result, "chess");
+	return software_get_default_slot("chess");
 }
 
 /*-------------------------------------------------
  read
  -------------------------------------------------*/
 
-READ8_MEMBER(channelf_cart_slot_device::read_rom)
+uint8_t channelf_cart_slot_device::read_rom(offs_t offset)
 {
 	if (m_cart)
-		return m_cart->read_rom(space, offset);
+		return m_cart->read_rom(offset);
 	else
 		return 0xff;
 }
@@ -257,10 +230,10 @@ READ8_MEMBER(channelf_cart_slot_device::read_rom)
  read
  -------------------------------------------------*/
 
-READ8_MEMBER(channelf_cart_slot_device::read_ram)
+uint8_t channelf_cart_slot_device::read_ram(offs_t offset)
 {
 	if (m_cart)
-		return m_cart->read_ram(space, offset);
+		return m_cart->read_ram(offset);
 	else
 		return 0xff;
 }
@@ -269,18 +242,18 @@ READ8_MEMBER(channelf_cart_slot_device::read_ram)
  write
  -------------------------------------------------*/
 
-WRITE8_MEMBER(channelf_cart_slot_device::write_ram)
+void channelf_cart_slot_device::write_ram(offs_t offset, uint8_t data)
 {
 	if (m_cart)
-		m_cart->write_ram(space, offset, data);
+		m_cart->write_ram(offset, data);
 }
 
 /*-------------------------------------------------
  write
  -------------------------------------------------*/
 
-WRITE8_MEMBER(channelf_cart_slot_device::write_bank)
+void channelf_cart_slot_device::write_bank(uint8_t data)
 {
 	if (m_cart)
-		m_cart->write_bank(space, offset, data);
+		m_cart->write_bank(data);
 }

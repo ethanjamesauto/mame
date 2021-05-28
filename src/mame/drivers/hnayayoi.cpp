@@ -21,28 +21,37 @@ Year + Game                 Board
 ---------------------------------------
 
 Notes:
-- In service mode, press "analyzer" (0) and "test" (F1) to see a gfx test
+- In service mode, press "analyzer" (0) and "test" (F2) to see a gfx test
 
 - hnfubuki doesn't have a service mode dip, press "analyzer" instead
 
 - untoucha doesn't have it either; press "test" during boot for one kind
   of service menu, "analyzer" at any other time for another menu (including
   dip switch settings)
+  Note: screen asking to press test during boot does not show if machine contains credits.
 
 TODO:
-- dips/inputs for all games
+- dips/inputs for some games
+- untoucha: player high scores are lost when resetting
+
+15-July 2016 - DIPs added to untoucha [theguru]
 
 ****************************************************************************/
 
 #include "emu.h"
-#include "cpu/z80/z80.h"
-#include "sound/2203intf.h"
-#include "sound/msm5205.h"
-#include "machine/nvram.h"
 #include "includes/hnayayoi.h"
 
+#include "cpu/z80/z80.h"
+#include "sound/msm5205.h"
+#include "sound/ymopn.h"
+#include "machine/clock.h"
+#include "machine/nvram.h"
+#include "video/mc6845.h"
+#include "screen.h"
+#include "speaker.h"
 
-READ8_MEMBER(hnayayoi_state::keyboard_0_r)
+
+uint8_t hnayayoi_state::keyboard_0_r()
 {
 	int res = 0x3f;
 	int i;
@@ -57,113 +66,121 @@ READ8_MEMBER(hnayayoi_state::keyboard_0_r)
 	return res;
 }
 
-READ8_MEMBER(hnayayoi_state::keyboard_1_r)
+uint8_t hnayayoi_state::keyboard_1_r()
 {
 	/* Player 2 not supported */
 	return 0x3f;
 }
 
-WRITE8_MEMBER(hnayayoi_state::keyboard_w)
+void hnayayoi_state::keyboard_w(uint8_t data)
 {
 	m_keyb = data;
 }
 
 
-WRITE8_MEMBER(hnayayoi_state::adpcm_data_w)
+void hnayayoi_state::adpcm_data_w(uint8_t data)
 {
 	m_msm->data_w(data);
 }
 
-WRITE8_MEMBER(hnayayoi_state::adpcm_vclk_w)
-{
-	m_msm->vclk_w(data & 1);
-}
 
-WRITE8_MEMBER(hnayayoi_state::adpcm_reset_w)
+WRITE_LINE_MEMBER(hnayayoi_state::coin_counter_w)
 {
-	m_msm->reset_w(data & 1);
-}
-
-WRITE8_MEMBER(hnayayoi_state::adpcm_reset_inv_w)
-{
-	m_msm->reset_w(~data & 1);
+	machine().bookkeeping().coin_counter_w(0, state);
 }
 
 
-static ADDRESS_MAP_START( hnayayoi_map, AS_PROGRAM, 8, hnayayoi_state )
-	AM_RANGE(0x0000, 0x77ff) AM_ROM
-	AM_RANGE(0x7800, 0x7fff) AM_RAM AM_SHARE("nvram")
-	AM_RANGE(0x8000, 0xffff) AM_ROM
-ADDRESS_MAP_END
+WRITE_LINE_MEMBER(hnayayoi_state::nmi_enable_w)
+{
+	m_nmi_enable = state;
+	if (!state)
+		m_maincpu->set_input_line(INPUT_LINE_NMI, CLEAR_LINE);
+}
 
-static ADDRESS_MAP_START( hnayayoi_io_map, AS_IO, 8, hnayayoi_state )
-	ADDRESS_MAP_GLOBAL_MASK(0xff)
-	AM_RANGE(0x00, 0x01) AM_DEVWRITE("ymsnd", ym2203_device, write)
-	AM_RANGE(0x02, 0x03) AM_DEVREAD("ymsnd", ym2203_device, read)
-	AM_RANGE(0x04, 0x04) AM_READ_PORT("DSW3")
-	AM_RANGE(0x06, 0x06) AM_WRITE(adpcm_data_w)
-//  AM_RANGE(0x08, 0x08) AM_WRITENOP // CRT Controller
-//  AM_RANGE(0x09, 0x09) AM_WRITENOP // CRT Controller
-	AM_RANGE(0x0a, 0x0a) AM_WRITE(dynax_blitter_rev1_start_w)
-	AM_RANGE(0x0c, 0x0c) AM_WRITE(dynax_blitter_rev1_clear_w)
-	AM_RANGE(0x23, 0x23) AM_WRITE(adpcm_vclk_w)
-	AM_RANGE(0x24, 0x24) AM_WRITE(adpcm_reset_w)
-	AM_RANGE(0x40, 0x40) AM_WRITE(keyboard_w)
-	AM_RANGE(0x41, 0x41) AM_READ(keyboard_0_r)
-	AM_RANGE(0x42, 0x42) AM_READ(keyboard_1_r)
-	AM_RANGE(0x43, 0x43) AM_READ_PORT("COIN")
-	AM_RANGE(0x60, 0x61) AM_WRITE(hnayayoi_palbank_w)
-	AM_RANGE(0x62, 0x67) AM_WRITE(dynax_blitter_rev1_param_w)
-ADDRESS_MAP_END
 
-static ADDRESS_MAP_START( hnfubuki_map, AS_PROGRAM, 8, hnayayoi_state )
-	AM_RANGE(0x0000, 0x77ff) AM_ROM
-	AM_RANGE(0x7800, 0x7fff) AM_RAM AM_SHARE("nvram")
-	AM_RANGE(0x8000, 0xfeff) AM_ROM
-	AM_RANGE(0xff00, 0xff01) AM_DEVWRITE("ymsnd", ym2203_device, write)
-	AM_RANGE(0xff02, 0xff03) AM_DEVREAD("ymsnd", ym2203_device, read)
-	AM_RANGE(0xff04, 0xff04) AM_READ_PORT("DSW3")
-	AM_RANGE(0xff06, 0xff06) AM_WRITE(adpcm_data_w)
-//  AM_RANGE(0xff08, 0xff08) AM_WRITENOP // CRT Controller
-//  AM_RANGE(0xff09, 0xff09) AM_WRITENOP // CRT Controller
-	AM_RANGE(0xff0a, 0xff0a) AM_WRITE(dynax_blitter_rev1_start_w)
-	AM_RANGE(0xff0c, 0xff0c) AM_WRITE(dynax_blitter_rev1_clear_w)
-	AM_RANGE(0xff23, 0xff23) AM_WRITE(adpcm_vclk_w)
-	AM_RANGE(0xff24, 0xff24) AM_WRITE(adpcm_reset_inv_w)
-	AM_RANGE(0xff40, 0xff40) AM_WRITE(keyboard_w)
-	AM_RANGE(0xff41, 0xff41) AM_READ(keyboard_0_r)
-	AM_RANGE(0xff42, 0xff42) AM_READ(keyboard_1_r)
-	AM_RANGE(0xff43, 0xff43) AM_READ_PORT("COIN")
-	AM_RANGE(0xff60, 0xff61) AM_WRITE(hnayayoi_palbank_w)
-	AM_RANGE(0xff62, 0xff67) AM_WRITE(dynax_blitter_rev1_param_w)
-ADDRESS_MAP_END
+WRITE_LINE_MEMBER(hnayayoi_state::nmi_clock_w)
+{
+	if (m_nmi_enable)
+		m_maincpu->set_input_line(INPUT_LINE_NMI, state);
+}
 
-static ADDRESS_MAP_START( untoucha_map, AS_PROGRAM, 8, hnayayoi_state )
-	AM_RANGE(0x0000, 0x77ff) AM_ROM
-	AM_RANGE(0x7800, 0x7fff) AM_RAM AM_SHARE("nvram")
-	AM_RANGE(0x8000, 0xffff) AM_ROM
-ADDRESS_MAP_END
 
-static ADDRESS_MAP_START( untoucha_io_map, AS_IO, 8, hnayayoi_state )
-	ADDRESS_MAP_GLOBAL_MASK(0xff)
-	AM_RANGE(0x10, 0x10) AM_DEVWRITE("ymsnd", ym2203_device, control_port_w)
-	AM_RANGE(0x11, 0x11) AM_DEVREAD("ymsnd", ym2203_device, status_port_r)
-//  AM_RANGE(0x12, 0x12) AM_WRITENOP // CRT Controller
-	AM_RANGE(0x13, 0x13) AM_WRITE(adpcm_data_w)
-	AM_RANGE(0x14, 0x14) AM_READ_PORT("COIN")
-	AM_RANGE(0x15, 0x15) AM_READ(keyboard_1_r)
-	AM_RANGE(0x16, 0x16) AM_READ(keyboard_0_r)  // bit 7 = blitter busy flag
-	AM_RANGE(0x17, 0x17) AM_WRITE(keyboard_w)
-	AM_RANGE(0x18, 0x19) AM_WRITE(hnayayoi_palbank_w)
-	AM_RANGE(0x1a, 0x1f) AM_WRITE(dynax_blitter_rev1_param_w)
-	AM_RANGE(0x20, 0x20) AM_WRITE(dynax_blitter_rev1_clear_w)
-	AM_RANGE(0x28, 0x28) AM_WRITE(dynax_blitter_rev1_start_w)
-	AM_RANGE(0x31, 0x31) AM_WRITE(adpcm_vclk_w)
-	AM_RANGE(0x32, 0x32) AM_WRITE(adpcm_reset_inv_w)
-	AM_RANGE(0x50, 0x50) AM_DEVWRITE("ymsnd", ym2203_device, write_port_w)
-	AM_RANGE(0x51, 0x51) AM_DEVREAD("ymsnd", ym2203_device, read_port_r)
-//  AM_RANGE(0x52, 0x52) AM_WRITENOP // CRT Controller
-ADDRESS_MAP_END
+void hnayayoi_state::hnayayoi_map(address_map &map)
+{
+	map(0x0000, 0x77ff).rom();
+	map(0x7800, 0x7fff).ram().share("nvram");
+	map(0x8000, 0xffff).rom();
+}
+
+void hnayayoi_state::hnayayoi_io_map(address_map &map)
+{
+	map.global_mask(0xff);
+	map(0x00, 0x01).w("ymsnd", FUNC(ym2203_device::write));
+	map(0x02, 0x03).r("ymsnd", FUNC(ym2203_device::read));
+	map(0x04, 0x04).portr("DSW3");
+	map(0x06, 0x06).w(FUNC(hnayayoi_state::adpcm_data_w));
+	map(0x08, 0x08).w("crtc", FUNC(hd6845s_device::address_w));
+	map(0x09, 0x09).w("crtc", FUNC(hd6845s_device::register_w));
+	map(0x0a, 0x0a).w(FUNC(hnayayoi_state::dynax_blitter_rev1_start_w));
+	map(0x0c, 0x0c).w(FUNC(hnayayoi_state::dynax_blitter_rev1_clear_w));
+	map(0x20, 0x27).w(m_mainlatch, FUNC(ls259_device::write_d0));
+	map(0x40, 0x40).w(FUNC(hnayayoi_state::keyboard_w));
+	map(0x41, 0x41).r(FUNC(hnayayoi_state::keyboard_0_r));
+	map(0x42, 0x42).r(FUNC(hnayayoi_state::keyboard_1_r));
+	map(0x43, 0x43).portr("COIN");
+	map(0x60, 0x61).w(FUNC(hnayayoi_state::hnayayoi_palbank_w));
+	map(0x62, 0x67).w(FUNC(hnayayoi_state::dynax_blitter_rev1_param_w));
+}
+
+void hnayayoi_state::hnfubuki_map(address_map &map)
+{
+	map(0x0000, 0x77ff).rom();
+	map(0x7800, 0x7fff).ram().share("nvram");
+	map(0x8000, 0xfeff).rom();
+	map(0xff00, 0xff01).w("ymsnd", FUNC(ym2203_device::write));
+	map(0xff02, 0xff03).r("ymsnd", FUNC(ym2203_device::read));
+	map(0xff04, 0xff04).portr("DSW3");
+	map(0xff06, 0xff06).w(FUNC(hnayayoi_state::adpcm_data_w));
+	map(0xff08, 0xff08).w("crtc", FUNC(hd6845s_device::address_w));
+	map(0xff09, 0xff09).w("crtc", FUNC(hd6845s_device::register_w));
+	map(0xff0a, 0xff0a).w(FUNC(hnayayoi_state::dynax_blitter_rev1_start_w));
+	map(0xff0c, 0xff0c).w(FUNC(hnayayoi_state::dynax_blitter_rev1_clear_w));
+	map(0xff20, 0xff27).w(m_mainlatch, FUNC(ls259_device::write_d0));
+	map(0xff40, 0xff40).w(FUNC(hnayayoi_state::keyboard_w));
+	map(0xff41, 0xff41).r(FUNC(hnayayoi_state::keyboard_0_r));
+	map(0xff42, 0xff42).r(FUNC(hnayayoi_state::keyboard_1_r));
+	map(0xff43, 0xff43).portr("COIN");
+	map(0xff60, 0xff61).w(FUNC(hnayayoi_state::hnayayoi_palbank_w));
+	map(0xff62, 0xff67).w(FUNC(hnayayoi_state::dynax_blitter_rev1_param_w));
+}
+
+void hnayayoi_state::untoucha_map(address_map &map)
+{
+	map(0x0000, 0x77ff).rom();
+	map(0x7800, 0x7fff).ram().share("nvram");
+	map(0x8000, 0xffff).rom();
+}
+
+void hnayayoi_state::untoucha_io_map(address_map &map)
+{
+	map.global_mask(0xff);
+	map(0x10, 0x10).w("ymsnd", FUNC(ym2203_device::address_w));
+	map(0x11, 0x11).r("ymsnd", FUNC(ym2203_device::status_r));
+	map(0x12, 0x12).w("crtc", FUNC(hd6845s_device::address_w));
+	map(0x13, 0x13).w(FUNC(hnayayoi_state::adpcm_data_w));
+	map(0x14, 0x14).portr("COIN");
+	map(0x15, 0x15).r(FUNC(hnayayoi_state::keyboard_1_r));
+	map(0x16, 0x16).r(FUNC(hnayayoi_state::keyboard_0_r));  // bit 7 = blitter busy flag
+	map(0x17, 0x17).w(FUNC(hnayayoi_state::keyboard_w));
+	map(0x18, 0x19).w(FUNC(hnayayoi_state::hnayayoi_palbank_w));
+	map(0x1a, 0x1f).w(FUNC(hnayayoi_state::dynax_blitter_rev1_param_w));
+	map(0x20, 0x20).w(FUNC(hnayayoi_state::dynax_blitter_rev1_clear_w));
+	map(0x28, 0x28).w(FUNC(hnayayoi_state::dynax_blitter_rev1_start_w));
+	map(0x30, 0x37).w(m_mainlatch, FUNC(ls259_device::write_d0));
+	map(0x50, 0x50).w("ymsnd", FUNC(ym2203_device::data_w));
+	map(0x51, 0x51).r("ymsnd", FUNC(ym2203_device::data_r));
+	map(0x52, 0x52).w("crtc", FUNC(hd6845s_device::register_w));
+}
 
 static INPUT_PORTS_START( hf_keyboard )
 	PORT_START("KEY0")
@@ -212,85 +229,86 @@ INPUT_PORTS_END
 
 static INPUT_PORTS_START( hnayayoi )
 	PORT_START("DSW1")  /* DSW1 */
-	PORT_DIPNAME( 0x01, 0x01, DEF_STR( Unknown ) )
+	PORT_DIPNAME( 0x01, 0x01, DEF_STR( Unknown ) )     PORT_DIPLOCATION( "SW 1:8" )
 	PORT_DIPSETTING(    0x01, DEF_STR( Off ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
-	PORT_DIPNAME( 0x02, 0x02, DEF_STR( Unknown ) )
+	PORT_DIPNAME( 0x02, 0x02, DEF_STR( Unknown ) )     PORT_DIPLOCATION( "SW 1:7" )
 	PORT_DIPSETTING(    0x02, DEF_STR( Off ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
-	PORT_DIPNAME( 0x04, 0x04, DEF_STR( Unknown ) )
+	PORT_DIPNAME( 0x04, 0x04, DEF_STR( Unknown ) )     PORT_DIPLOCATION( "SW 1:6" )
 	PORT_DIPSETTING(    0x04, DEF_STR( Off ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
-	PORT_DIPNAME( 0x08, 0x08, DEF_STR( Unknown ) )
+	PORT_DIPNAME( 0x08, 0x08, DEF_STR( Unknown ) )     PORT_DIPLOCATION( "SW 1:5" )
 	PORT_DIPSETTING(    0x08, DEF_STR( Off ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
-	PORT_DIPNAME( 0x10, 0x10, DEF_STR( Unknown ) )
+	PORT_DIPNAME( 0x10, 0x10, DEF_STR( Unknown ) )     PORT_DIPLOCATION( "SW 1:4" )
 	PORT_DIPSETTING(    0x10, DEF_STR( Off ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
-	PORT_DIPNAME( 0x20, 0x20, DEF_STR( Unknown ) )
+	PORT_DIPNAME( 0x20, 0x20, DEF_STR( Unknown ) )     PORT_DIPLOCATION( "SW 1:3" )
 	PORT_DIPSETTING(    0x20, DEF_STR( Off ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
-	PORT_DIPNAME( 0x40, 0x40, DEF_STR( Unknown ) )
+	PORT_DIPNAME( 0x40, 0x40, DEF_STR( Unknown ) )     PORT_DIPLOCATION( "SW 1:2" )
 	PORT_DIPSETTING(    0x40, DEF_STR( Off ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
-	PORT_DIPNAME( 0x80, 0x80, DEF_STR( Unknown ) )
+	PORT_DIPNAME( 0x80, 0x80, DEF_STR( Unknown ) )     PORT_DIPLOCATION( "SW 1:1" )
 	PORT_DIPSETTING(    0x80, DEF_STR( Off ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
 
 	PORT_START("DSW2")  /* DSW2 */
-	PORT_DIPNAME( 0x01, 0x01, DEF_STR( Unknown ) )
+	PORT_DIPNAME( 0x01, 0x01, DEF_STR( Unknown ) )     PORT_DIPLOCATION( "SW 2:8" )
 	PORT_DIPSETTING(    0x01, DEF_STR( Off ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
-	PORT_DIPNAME( 0x02, 0x02, DEF_STR( Unknown ) )
+	PORT_DIPNAME( 0x02, 0x02, DEF_STR( Unknown ) )     PORT_DIPLOCATION( "SW 2:7" )
 	PORT_DIPSETTING(    0x02, DEF_STR( Off ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
-	PORT_DIPNAME( 0x04, 0x04, DEF_STR( Unknown ) )
+	PORT_DIPNAME( 0x04, 0x04, DEF_STR( Unknown ) )     PORT_DIPLOCATION( "SW 2:6" )
 	PORT_DIPSETTING(    0x04, DEF_STR( Off ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
-	PORT_DIPNAME( 0x08, 0x08, DEF_STR( Unknown ) )
+	PORT_DIPNAME( 0x08, 0x08, DEF_STR( Unknown ) )     PORT_DIPLOCATION( "SW 2:5" )
 	PORT_DIPSETTING(    0x08, DEF_STR( Off ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
-	PORT_DIPNAME( 0x10, 0x10, DEF_STR( Unknown ) )
+	PORT_DIPNAME( 0x10, 0x10, DEF_STR( Unknown ) )     PORT_DIPLOCATION( "SW 2:4" )
 	PORT_DIPSETTING(    0x10, DEF_STR( Off ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
-	PORT_DIPNAME( 0x20, 0x20, DEF_STR( Unknown ) )
+	PORT_DIPNAME( 0x20, 0x20, DEF_STR( Unknown ) )     PORT_DIPLOCATION( "SW 2:3" )
 	PORT_DIPSETTING(    0x20, DEF_STR( Off ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
-	PORT_DIPNAME( 0x40, 0x40, DEF_STR( Unknown ) )
+	PORT_DIPNAME( 0x40, 0x40, DEF_STR( Unknown ) )     PORT_DIPLOCATION( "SW 2:2" )
 	PORT_DIPSETTING(    0x40, DEF_STR( Off ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
-	PORT_DIPNAME( 0x80, 0x80, DEF_STR( Unknown ) )
+	PORT_DIPNAME( 0x80, 0x80, DEF_STR( Unknown ) )     PORT_DIPLOCATION( "SW 2:1" )
 	PORT_DIPSETTING(    0x80, DEF_STR( Off ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
 
 	PORT_START("DSW3")  /* DSW3 */
-	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_SPECIAL )   // blitter busy flag
-	PORT_SERVICE( 0x02, IP_ACTIVE_LOW )
-	PORT_DIPNAME( 0x04, 0x04, DEF_STR( Unknown ) )
+	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_CUSTOM )   // blitter busy flag
+	PORT_DIPNAME( 0x02, 0x02, DEF_STR( Service_Mode ) )  PORT_DIPLOCATION( "SW 3:7" )
+	PORT_DIPSETTING(    0x02, DEF_STR( Off ) )
+	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
+	PORT_DIPNAME( 0x04, 0x04, DEF_STR( Unknown ) )       PORT_DIPLOCATION( "SW 3:6" )
 	PORT_DIPSETTING(    0x04, DEF_STR( Off ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
-	PORT_DIPNAME( 0x08, 0x08, DEF_STR( Unknown ) )
+	PORT_DIPNAME( 0x08, 0x08, DEF_STR( Unknown ) )       PORT_DIPLOCATION( "SW 3:5" )
 	PORT_DIPSETTING(    0x08, DEF_STR( Off ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
-	PORT_DIPNAME( 0x10, 0x10, DEF_STR( Unknown ) )
+	PORT_DIPNAME( 0x10, 0x10, DEF_STR( Unknown ) )       PORT_DIPLOCATION( "SW 3:4" )
 	PORT_DIPSETTING(    0x10, DEF_STR( Off ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
-	PORT_DIPNAME( 0x20, 0x20, DEF_STR( Unknown ) )
+	PORT_DIPNAME( 0x20, 0x20, DEF_STR( Unknown ) )       PORT_DIPLOCATION( "SW 3:3" )
 	PORT_DIPSETTING(    0x20, DEF_STR( Off ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
-	PORT_DIPNAME( 0x40, 0x40, DEF_STR( Unknown ) )
-	PORT_DIPSETTING(    0x40, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
-	PORT_DIPNAME( 0x80, 0x80, DEF_STR( Unknown ) )
-	PORT_DIPSETTING(    0x80, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
+	PORT_DIPNAME( 0xc0, 0xc0, DEF_STR( Coin_A ) )        PORT_DIPLOCATION( "SW 3:2,1" ) // coin B is always 10*coin A
+	PORT_DIPSETTING(    0xc0, DEF_STR( 1C_1C ) )
+	PORT_DIPSETTING(    0x80, DEF_STR( 1C_2C ) )
+	PORT_DIPSETTING(    0x40, DEF_STR( 1C_5C ) )
+	PORT_DIPSETTING(    0x00, DEF_STR( 1C_5C ) )
 
 	PORT_START("COIN")  /* COIN */
 	PORT_BIT( 0x01, IP_ACTIVE_LOW, IPT_UNUSED )
 	PORT_BIT( 0x02, IP_ACTIVE_LOW, IPT_UNUSED )
-	PORT_BIT( 0x04, IP_ACTIVE_LOW, IPT_SERVICE ) PORT_NAME(DEF_STR( Test )) PORT_CODE(KEYCODE_F1)   /* Test */
-	PORT_BIT( 0x08, IP_ACTIVE_LOW, IPT_SERVICE2 )   /* Analizer (Statistics) */
-	PORT_BIT( 0x10, IP_ACTIVE_LOW, IPT_UNUSED )
+	PORT_BIT( 0x04, IP_ACTIVE_LOW, IPT_SERVICE ) PORT_NAME(DEF_STR( Test )) // there is also a dip switch
+	PORT_BIT( 0x08, IP_ACTIVE_LOW, IPT_SERVICE2 )  PORT_NAME("Analizer")
+	PORT_BIT( 0x10, IP_ACTIVE_LOW, IPT_UNKNOWN ) // "Non Use" in service mode
 	PORT_BIT( 0x20, IP_ACTIVE_LOW, IPT_COIN2 )  /* "Note" ("Paper Money") = 10 Credits */
 	PORT_BIT( 0x40, IP_ACTIVE_LOW, IPT_COIN1 ) PORT_IMPULSE(2)
 	PORT_BIT( 0x80, IP_ACTIVE_LOW, IPT_SERVICE1 )
@@ -352,7 +370,7 @@ static INPUT_PORTS_START( hnfubuki )
 	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
 
 	PORT_START("DSW3")  /* DSW3 */
-	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_SPECIAL )   // blitter busy flag
+	PORT_BIT( 0x01, IP_ACTIVE_HIGH, IPT_CUSTOM )   // blitter busy flag
 	PORT_DIPNAME( 0x02, 0x02, DEF_STR( Unknown ) )
 	PORT_DIPSETTING(    0x02, DEF_STR( Off ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
@@ -378,9 +396,9 @@ static INPUT_PORTS_START( hnfubuki )
 	PORT_START("COIN")  /* COIN */
 	PORT_BIT( 0x01, IP_ACTIVE_LOW, IPT_UNUSED )
 	PORT_BIT( 0x02, IP_ACTIVE_LOW, IPT_UNUSED )
-	PORT_BIT( 0x04, IP_ACTIVE_LOW, IPT_SERVICE ) PORT_NAME(DEF_STR( Test )) PORT_CODE(KEYCODE_F1)   /* Test */
-	PORT_BIT( 0x08, IP_ACTIVE_LOW, IPT_SERVICE2 )   /* Analizer (Statistics) */
-	PORT_BIT( 0x10, IP_ACTIVE_LOW, IPT_UNUSED )
+	PORT_BIT( 0x04, IP_ACTIVE_LOW, IPT_SERVICE ) PORT_NAME(DEF_STR( Test ))
+	PORT_BIT( 0x08, IP_ACTIVE_LOW, IPT_SERVICE2 )  PORT_NAME("Analizer")
+	PORT_BIT( 0x10, IP_ACTIVE_LOW, IPT_MEMORY_RESET )
 	PORT_BIT( 0x20, IP_ACTIVE_LOW, IPT_COIN2 )  /* "Note" ("Paper Money") = 10 Credits */
 	PORT_BIT( 0x40, IP_ACTIVE_LOW, IPT_COIN1 ) PORT_IMPULSE(2)
 	PORT_BIT( 0x80, IP_ACTIVE_LOW, IPT_SERVICE1 )
@@ -391,64 +409,61 @@ INPUT_PORTS_END
 
 static INPUT_PORTS_START( untoucha )
 	PORT_START("DSW1")  /* DSW1 */
-	PORT_DIPNAME( 0x01, 0x01, DEF_STR( Unknown ) )
-	PORT_DIPSETTING(    0x01, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
-	PORT_DIPNAME( 0x02, 0x02, DEF_STR( Unknown ) )
-	PORT_DIPSETTING(    0x02, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
-	PORT_DIPNAME( 0x04, 0x04, DEF_STR( Unknown ) )
-	PORT_DIPSETTING(    0x04, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
-	PORT_DIPNAME( 0x08, 0x08, DEF_STR( Unknown ) )
-	PORT_DIPSETTING(    0x08, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
-	PORT_DIPNAME( 0x10, 0x10, DEF_STR( Unknown ) )
-	PORT_DIPSETTING(    0x10, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
-	PORT_DIPNAME( 0x20, 0x20, DEF_STR( Unknown ) )
-	PORT_DIPSETTING(    0x20, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
-	PORT_DIPNAME( 0x40, 0x40, DEF_STR( Unknown ) )
-	PORT_DIPSETTING(    0x40, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
-	PORT_DIPNAME( 0x80, 0x80, DEF_STR( Unknown ) )
-	PORT_DIPSETTING(    0x80, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
+	PORT_DIPNAME( 0x01, 0x01, "Double-Up Difficulty" )     PORT_DIPLOCATION("SW1:8")
+	PORT_DIPSETTING(    0x01, "Normal" )
+	PORT_DIPSETTING(    0x00, "Difficult" )
+	PORT_DIPNAME( 0x06, 0x06, "Stage-Up Difficulty" )      PORT_DIPLOCATION("SW1:6,7")
+	PORT_DIPSETTING(    0x02, DEF_STR( Easy ) )
+	PORT_DIPSETTING(    0x06, DEF_STR( Medium ) )
+	PORT_DIPSETTING(    0x04, DEF_STR( Hard ) )
+	PORT_DIPSETTING(    0x00, DEF_STR( Hardest ) )
+	PORT_DIPNAME( 0x18, 0x18, DEF_STR( Difficulty ) )      PORT_DIPLOCATION("SW1:4,5")
+	PORT_DIPSETTING(    0x08, DEF_STR( Easy ) )
+	PORT_DIPSETTING(    0x18, DEF_STR( Medium ) )
+	PORT_DIPSETTING(    0x10, DEF_STR( Hard ) )
+	PORT_DIPSETTING(    0x00, DEF_STR( Hardest ) )
+	PORT_DIPNAME( 0x60, 0x60, "Score Limit" )              PORT_DIPLOCATION("SW1:2,3")
+	PORT_DIPSETTING(    0x60, "200, 1000, 10000, 70000" )
+	PORT_DIPSETTING(    0x40, "250, 2000, 10000, 70000" )
+	PORT_DIPSETTING(    0x20, "500, 5000, 10000, 70000" )
+	PORT_DIPSETTING(    0x00, "1000, 5000, 10000, 70000" )
+	PORT_DIPNAME( 0x80, 0x80, "Stages" )                   PORT_DIPLOCATION("SW1:1")
+	PORT_DIPSETTING(    0x80, "4" )
+	PORT_DIPSETTING(    0x00, "3" )          /* nudity only seems to show when Stages = 3? */
 
 	PORT_START("DSW2")  /* DSW2 */
-	PORT_DIPNAME( 0x01, 0x01, DEF_STR( Unknown ) )
-	PORT_DIPSETTING(    0x01, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
-	PORT_DIPNAME( 0x02, 0x02, DEF_STR( Unknown ) )
-	PORT_DIPSETTING(    0x02, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
-	PORT_DIPNAME( 0x04, 0x04, DEF_STR( Unknown ) )
-	PORT_DIPSETTING(    0x04, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
-	PORT_DIPNAME( 0x08, 0x08, DEF_STR( Unknown ) )
-	PORT_DIPSETTING(    0x08, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
-	PORT_DIPNAME( 0x10, 0x10, DEF_STR( Unknown ) )
-	PORT_DIPSETTING(    0x10, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
-	PORT_DIPNAME( 0x20, 0x20, DEF_STR( Unknown ) )
-	PORT_DIPSETTING(    0x20, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
-	PORT_DIPNAME( 0x40, 0x40, DEF_STR( Unknown ) )
-	PORT_DIPSETTING(    0x40, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
-	PORT_DIPNAME( 0x80, 0x80, DEF_STR( Unknown ) )
-	PORT_DIPSETTING(    0x80, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
+	PORT_DIPNAME( 0x80, 0x80, DEF_STR( Demo_Sounds ) )     PORT_DIPLOCATION("SW2:1")
+	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
+	PORT_DIPSETTING(    0x80, DEF_STR( On ) )
+	PORT_DIPNAME( 0x40, 0x40, "Speech" )                   PORT_DIPLOCATION("SW2:2")
+	PORT_DIPSETTING(    0x40, DEF_STR( On ) )
+	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
+	PORT_DIPNAME( 0x20, 0x20, "Unknown (Aumit?)" )         PORT_DIPLOCATION("SW2:3")
+	PORT_DIPSETTING(    0x20, DEF_STR( Off ) )             /* DIPSW sheet says 'AUMIT CUT WHEN ON' */
+	PORT_DIPSETTING(    0x00, DEF_STR( On ) )              /* Maybe it is Audit, but where/what?   */
+	PORT_DIPNAME( 0x10, 0x10, "Auto Hold" )                PORT_DIPLOCATION("SW2:4")
+	PORT_DIPSETTING(    0x10, DEF_STR( On ) )
+	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
+	PORT_DIPNAME( 0x08, 0x08, "Coin 2 (Credits)" )         PORT_DIPLOCATION("SW2:5")
+	PORT_DIPSETTING(    0x08, "1 Coin/5 Credits" )
+	PORT_DIPSETTING(    0x00, "1 Coin/8 Credits" )
+	PORT_DIPNAME( 0x07, 0x07, "Coin 1 (Score)" )           PORT_DIPLOCATION("SW2:6,7,8")
+	PORT_DIPSETTING(    0x01, "1 Coin/75 Score" )
+	PORT_DIPSETTING(    0x02, "1 Coin/50 Score" )
+	PORT_DIPSETTING(    0x03, "1 Coin/20 Score" )
+	PORT_DIPSETTING(    0x04, "1 Coin/15 Score" )
+	PORT_DIPSETTING(    0x07, "1 Coin/25 Score" )
+	PORT_DIPSETTING(    0x05, "1 Coin/10 Score" )
+	PORT_DIPSETTING(    0x06, "1 Coin/5 Score" )
+	PORT_DIPSETTING(    0x00, "1 Coin/100 Score" )
 
 	PORT_START("COIN")  /* COIN */
 	PORT_BIT( 0x01, IP_ACTIVE_LOW, IPT_UNUSED )
 	PORT_BIT( 0x02, IP_ACTIVE_LOW, IPT_UNUSED )
-	PORT_BIT( 0x04, IP_ACTIVE_LOW, IPT_SERVICE ) PORT_NAME(DEF_STR(Test)) PORT_CODE(KEYCODE_F1) /* Test */
-	PORT_BIT( 0x08, IP_ACTIVE_LOW, IPT_SERVICE2 )   /* Analizer (Statistics) */
-	PORT_BIT( 0x10, IP_ACTIVE_LOW, IPT_UNUSED )
-	PORT_BIT( 0x20, IP_ACTIVE_LOW, IPT_COIN2 )  /* "Note" ("Paper Money") = 10 Credits */
+	PORT_BIT( 0x04, IP_ACTIVE_LOW, IPT_SERVICE ) PORT_NAME(DEF_STR( Test ))
+	PORT_BIT( 0x08, IP_ACTIVE_LOW, IPT_SERVICE2 )  PORT_NAME("Analizer")
+	PORT_BIT( 0x10, IP_ACTIVE_LOW, IPT_MEMORY_RESET )
+	PORT_BIT( 0x20, IP_ACTIVE_LOW, IPT_COIN2 )  /* "Note" ("Paper Money") = 5 or 8 Credits */
 	PORT_BIT( 0x40, IP_ACTIVE_LOW, IPT_COIN1 ) PORT_IMPULSE(2)
 	PORT_BIT( 0x80, IP_ACTIVE_LOW, IPT_SERVICE1 )
 
@@ -492,7 +507,7 @@ static INPUT_PORTS_START( untoucha )
 	PORT_BIT( 0x01, IP_ACTIVE_LOW, IPT_UNKNOWN )
 	PORT_BIT( 0x02, IP_ACTIVE_LOW, IPT_GAMBLE_D_UP )
 	PORT_BIT( 0x04, IP_ACTIVE_LOW, IPT_UNKNOWN )
-	PORT_BIT( 0x08, IP_ACTIVE_LOW, IPT_OTHER ) PORT_NAME("Flip Flop") PORT_CODE(KEYCODE_F)
+	PORT_BIT( 0x08, IP_ACTIVE_LOW, IPT_OTHER ) PORT_NAME("Flip Flop") PORT_CODE(KEYCODE_F) /* what does this do? */
 	PORT_BIT( 0x10, IP_ACTIVE_LOW, IPT_UNKNOWN )
 	PORT_BIT( 0x20, IP_ACTIVE_LOW, IPT_UNKNOWN )
 	PORT_BIT( 0xc0, IP_ACTIVE_LOW, IPT_UNUSED )
@@ -513,13 +528,11 @@ void hnayayoi_state::machine_start()
 	save_item(NAME(m_blit_dest));
 	save_item(NAME(m_blit_src));
 	save_item(NAME(m_keyb));
+	save_item(NAME(m_nmi_enable));
 }
 
 void hnayayoi_state::machine_reset()
 {
-	/* start with the MSM5205 reset */
-	m_msm->reset_w(1);
-
 	m_palbank = 0;
 	m_blit_layer = 0;
 	m_blit_dest = 0;
@@ -528,58 +541,79 @@ void hnayayoi_state::machine_reset()
 }
 
 
-static MACHINE_CONFIG_START( hnayayoi, hnayayoi_state )
-
+void hnayayoi_state::hnayayoi(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", Z80, 20000000/4 )        /* 5 MHz ???? */
-	MCFG_CPU_PROGRAM_MAP(hnayayoi_map)
-	MCFG_CPU_IO_MAP(hnayayoi_io_map)
-	MCFG_CPU_VBLANK_INT_DRIVER("screen", hnayayoi_state,  irq0_line_hold)
-	MCFG_CPU_PERIODIC_INT_DRIVER(hnayayoi_state, nmi_line_pulse,  8000)
+	Z80(config, m_maincpu, 20000000/4);     /* 5 MHz ???? */
+	m_maincpu->set_addrmap(AS_PROGRAM, &hnayayoi_state::hnayayoi_map);
+	m_maincpu->set_addrmap(AS_IO, &hnayayoi_state::hnayayoi_io_map);
 
+	CLOCK(config, "nmiclock", 8000).signal_handler().set(FUNC(hnayayoi_state::nmi_clock_w));
 
-	MCFG_NVRAM_ADD_0FILL("nvram")
+	NVRAM(config, "nvram", nvram_device::DEFAULT_ALL_0);
+
+	LS259(config, m_mainlatch);
+	m_mainlatch->q_out_cb<0>().set(FUNC(hnayayoi_state::coin_counter_w));
+	m_mainlatch->q_out_cb<2>().set(m_msm, FUNC(msm5205_device::reset_w)).invert();
+	m_mainlatch->q_out_cb<3>().set(m_msm, FUNC(msm5205_device::vclk_w));
+	m_mainlatch->q_out_cb<4>().set(FUNC(hnayayoi_state::nmi_enable_w)).invert();
 
 	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_REFRESH_RATE(60)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(2500) /* not accurate */)
-	MCFG_SCREEN_SIZE(512, 256)
-	MCFG_SCREEN_VISIBLE_AREA(0, 512-1, 0, 256-1)
-	MCFG_SCREEN_UPDATE_DRIVER(hnayayoi_state, screen_update_hnayayoi)
-	MCFG_SCREEN_PALETTE("palette")
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_RASTER));
+	screen.set_raw(20_MHz_XTAL / 2, 632, 0, 512, 263, 0, 243);
+	screen.set_screen_update("crtc", FUNC(hd6845s_device::screen_update));
 
-	MCFG_PALETTE_ADD_RRRRGGGGBBBB_PROMS("palette", 256)
+	PALETTE(config, m_palette, palette_device::RGB_444_PROMS, "proms", 256);
+
+	hd6845s_device &crtc(HD6845S(config, "crtc", 20_MHz_XTAL / 8));
+	crtc.set_screen("screen");
+	crtc.set_char_width(4);
+	crtc.set_show_border_area(false);
+	crtc.out_vsync_callback().set_inputline(m_maincpu, 0);
+	crtc.set_update_row_callback(FUNC(hnayayoi_state::hnayayoi_update_row));
 
 	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_MONO("mono")
+	SPEAKER(config, "mono").front_center();
 
-	MCFG_SOUND_ADD("ymsnd", YM2203, 20000000/8)
-	MCFG_YM2203_IRQ_HANDLER(WRITELINE(hnayayoi_state, irqhandler))
-	MCFG_AY8910_PORT_A_READ_CB(IOPORT("DSW1"))
-	MCFG_AY8910_PORT_B_READ_CB(IOPORT("DSW2"))
-	MCFG_SOUND_ROUTE(0, "mono", 0.25)
-	MCFG_SOUND_ROUTE(1, "mono", 0.25)
-	MCFG_SOUND_ROUTE(2, "mono", 0.25)
-	MCFG_SOUND_ROUTE(3, "mono", 0.80)
+	ym2203_device &ymsnd(YM2203(config, "ymsnd", 20000000/8));
+	ymsnd.irq_handler().set(FUNC(hnayayoi_state::irqhandler));
+	ymsnd.port_a_read_callback().set_ioport("DSW1");
+	ymsnd.port_b_read_callback().set_ioport("DSW2");
+	ymsnd.add_route(0, "mono", 0.25);
+	ymsnd.add_route(1, "mono", 0.25);
+	ymsnd.add_route(2, "mono", 0.25);
+	ymsnd.add_route(3, "mono", 0.80);
 
-	MCFG_SOUND_ADD("msm", MSM5205, 384000)
-	MCFG_MSM5205_PRESCALER_SELECTOR(MSM5205_SEX_4B)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 1.0)
-MACHINE_CONFIG_END
+	MSM5205(config, m_msm, 384000);
+	m_msm->set_prescaler_selector(msm5205_device::SEX_4B);
+	m_msm->add_route(ALL_OUTPUTS, "mono", 1.0);
+}
 
-static MACHINE_CONFIG_DERIVED( hnfubuki, hnayayoi )
-	MCFG_CPU_MODIFY("maincpu")
-	MCFG_CPU_PROGRAM_MAP(hnfubuki_map)
-MACHINE_CONFIG_END
+void hnayayoi_state::hnfubuki(machine_config &config)
+{
+	hnayayoi(config);
+	m_maincpu->set_addrmap(AS_PROGRAM, &hnayayoi_state::hnfubuki_map);
+	m_maincpu->set_addrmap(AS_IO, address_map_constructor());
 
-static MACHINE_CONFIG_DERIVED( untoucha, hnayayoi )
-	MCFG_CPU_MODIFY("maincpu")
-	MCFG_CPU_PROGRAM_MAP(untoucha_map)
-	MCFG_CPU_IO_MAP(untoucha_io_map)
+	// D5
+	m_mainlatch->q_out_cb<4>().set(FUNC(hnayayoi_state::nmi_enable_w));
+}
+
+void hnayayoi_state::untoucha(machine_config &config)
+{
+	hnayayoi(config);
+	m_maincpu->set_addrmap(AS_PROGRAM, &hnayayoi_state::untoucha_map);
+	m_maincpu->set_addrmap(AS_IO, &hnayayoi_state::untoucha_io_map);
+
+	m_mainlatch->q_out_cb<1>().set(m_msm, FUNC(msm5205_device::vclk_w));
+	m_mainlatch->q_out_cb<2>().set(FUNC(hnayayoi_state::nmi_enable_w));
+	m_mainlatch->q_out_cb<3>().set(m_msm, FUNC(msm5205_device::reset_w)).invert();
+	m_mainlatch->q_out_cb<4>().set_nop(); // ?
+
+	subdevice<hd6845s_device>("crtc")->set_update_row_callback(FUNC(hnayayoi_state::untoucha_update_row));
 
 	MCFG_VIDEO_START_OVERRIDE(hnayayoi_state,untoucha)
-MACHINE_CONFIG_END
+}
 
 
 /***************************************************************************
@@ -646,33 +680,31 @@ ROM_START( untoucha )
 ROM_END
 
 
-DRIVER_INIT_MEMBER(hnayayoi_state,hnfubuki)
+void hnayayoi_state::init_hnfubuki()
 {
-	UINT8 *rom = memregion("gfx1")->base();
+	uint8_t *rom = memregion("gfx1")->base();
 	int len = memregion("gfx1")->bytes();
-	int i, j;
 
 	/* interestingly, the blitter data has a slight encryption */
-
 	/* swap address bits 4 and 5 */
-	for (i = 0; i < len; i += 0x40)
+	for (int i = 0; i < len; i += 0x40)
 	{
-		for (j = 0; j < 0x10; j++)
+		for (int j = 0; j < 0x10; j++)
 		{
-			UINT8 t = rom[i + j + 0x10];
+			uint8_t t = rom[i + j + 0x10];
 			rom[i + j + 0x10] = rom[i + j + 0x20];
 			rom[i + j + 0x20] = t;
 		}
 	}
 
 	/* swap data bits 0 and 1 */
-	for (i = 0; i < len; i++)
+	for (int i = 0; i < len; i++)
 	{
-		rom[i] = BITSWAP8(rom[i],7,6,5,4,3,2,0,1);
+		rom[i] = bitswap<8>(rom[i],7,6,5,4,3,2,0,1);
 	}
 }
 
 
-GAME( 1987, hnayayoi, 0,        hnayayoi, hnayayoi, driver_device, 0,        ROT0, "Dyna Electronics", "Hana Yayoi (Japan)", MACHINE_SUPPORTS_SAVE )
-GAME( 1987, hnfubuki, hnayayoi, hnfubuki, hnfubuki, hnayayoi_state, hnfubuki, ROT0, "Dynax", "Hana Fubuki [BET] (Japan)", MACHINE_SUPPORTS_SAVE )
-GAME( 1987, untoucha, 0,        untoucha, untoucha, driver_device, 0,        ROT0, "Dynax", "Untouchable (Japan)", MACHINE_SUPPORTS_SAVE )
+GAME( 1987, hnayayoi, 0,        hnayayoi, hnayayoi, hnayayoi_state, empty_init,    ROT0, "Dyna Electronics", "Hana Yayoi (Japan)",        MACHINE_SUPPORTS_SAVE )
+GAME( 1987, hnfubuki, hnayayoi, hnfubuki, hnfubuki, hnayayoi_state, init_hnfubuki, ROT0, "Dynax",            "Hana Fubuki [BET] (Japan)", MACHINE_SUPPORTS_SAVE )
+GAME( 1987, untoucha, 0,        untoucha, untoucha, hnayayoi_state, empty_init,    ROT0, "Dynax",            "Untouchable (Ver. 2.10)",   MACHINE_SUPPORTS_SAVE )

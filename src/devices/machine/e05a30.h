@@ -5,62 +5,28 @@
  *
  */
 
-#ifndef __E05A30_H__
-#define __E05A30_H__
+#ifndef MAME_MACHINE_E05A30_H
+#define MAME_MACHINE_E05A30_H
 
-/***************************************************************************
-    DEVICE CONFIGURATION MACROS
-***************************************************************************/
-
-#define MCFG_E05A30_PRINTHEAD_CALLBACK(_write) \
-	devcb = &e05a30_device::set_printhead_wr_callback(*device, DEVCB_##_write);
-
-#define MCFG_E05A30_PF_STEPPER_CALLBACK(_write) \
-	devcb = &e05a30_device::set_pf_stepper_wr_callback(*device, DEVCB_##_write);
-
-#define MCFG_E05A30_CR_STEPPER_CALLBACK(_write) \
-	devcb = &e05a30_device::set_cr_stepper_wr_callback(*device, DEVCB_##_write);
-
-#define MCFG_E05A30_READY_CALLBACK(_write) \
-	devcb = &e05a30_device::set_ready_wr_callback(*device, DEVCB_##_write);
-
-#define MCFG_E05A30_CENTRONICS_ACK_CALLBACK(_write) \
-	devcb = &e05a30_device::set_centronics_ack_wr_callback(*device, DEVCB_##_write);
-
-#define MCFG_E05A30_CENTRONICS_BUSY_CALLBACK(_write) \
-	devcb = &e05a30_device::set_centronics_busy_wr_callback(*device, DEVCB_##_write);
-
-#define MCFG_E05A30_CENTRONICS_PERROR_CALLBACK(_write) \
-	devcb = &e05a30_device::set_centronics_perror_wr_callback(*device, DEVCB_##_write);
-
-#define MCFG_E05A30_CENTRONICS_FAULT_CALLBACK(_write) \
-	devcb = &e05a30_device::set_centronics_fault_wr_callback(*device, DEVCB_##_write);
-
-#define MCFG_E05A30_CENTRONICS_SELECT_CALLBACK(_write) \
-	devcb = &e05a30_device::set_centronics_select_wr_callback(*device, DEVCB_##_write);
-
-/***************************************************************************
-    TYPE DEFINITIONS
-***************************************************************************/
+#pragma once
 
 class e05a30_device : public device_t
 {
 public:
-	e05a30_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
-	~e05a30_device() {}
+	e05a30_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
-	template<class _Object> static devcb_base &set_printhead_wr_callback(device_t &device, _Object object) { return downcast<e05a30_device &>(device).m_write_printhead.set_callback(object); }
-	template<class _Object> static devcb_base &set_pf_stepper_wr_callback(device_t &device, _Object object) { return downcast<e05a30_device &>(device).m_write_pf_stepper.set_callback(object); }
-	template<class _Object> static devcb_base &set_cr_stepper_wr_callback(device_t &device, _Object object) { return downcast<e05a30_device &>(device).m_write_cr_stepper.set_callback(object); }
-	template<class _Object> static devcb_base &set_ready_wr_callback(device_t &device, _Object object) { return downcast<e05a30_device &>(device).m_write_ready.set_callback(object); }
-	template<class _Object> static devcb_base &set_centronics_ack_wr_callback(device_t &device, _Object object) { return downcast<e05a30_device &>(device).m_write_centronics_ack.set_callback(object); }
-	template<class _Object> static devcb_base &set_centronics_busy_wr_callback(device_t &device, _Object object) { return downcast<e05a30_device &>(device).m_write_centronics_busy.set_callback(object); }
-	template<class _Object> static devcb_base &set_centronics_perror_wr_callback(device_t &device, _Object object) { return downcast<e05a30_device &>(device).m_write_centronics_perror.set_callback(object); }
-	template<class _Object> static devcb_base &set_centronics_fault_wr_callback(device_t &device, _Object object) { return downcast<e05a30_device &>(device).m_write_centronics_fault.set_callback(object); }
-	template<class _Object> static devcb_base &set_centronics_select_wr_callback(device_t &device, _Object object) { return downcast<e05a30_device &>(device).m_write_centronics_select.set_callback(object); }
+	auto printhead() { return m_write_printhead.bind(); }
+	auto pf_stepper() { return m_write_pf_stepper.bind(); }
+	auto cr_stepper() { return m_write_cr_stepper.bind(); }
+	auto ready() { return m_write_ready.bind(); }
+	auto centronics_ack() { return m_write_centronics_ack.bind(); }
+	auto centronics_busy() { return m_write_centronics_busy.bind(); }
+	auto centronics_perror() { return m_write_centronics_perror.bind(); }
+	auto centronics_fault() { return m_write_centronics_fault.bind(); }
+	auto centronics_select() { return m_write_centronics_select.bind(); }
 
-	DECLARE_WRITE8_MEMBER( write );
-	DECLARE_READ8_MEMBER( read );
+	void write(offs_t offset, uint8_t data);
+	uint8_t read(offs_t offset);
 
 	/* Centronics stuff */
 	DECLARE_WRITE_LINE_MEMBER( centronics_input_strobe );
@@ -72,6 +38,8 @@ public:
 	DECLARE_WRITE_LINE_MEMBER( centronics_input_data5 ) { if (state) m_centronics_data |= 0x20; else m_centronics_data &= ~0x20; }
 	DECLARE_WRITE_LINE_MEMBER( centronics_input_data6 ) { if (state) m_centronics_data |= 0x40; else m_centronics_data &= ~0x40; }
 	DECLARE_WRITE_LINE_MEMBER( centronics_input_data7 ) { if (state) m_centronics_data |= 0x80; else m_centronics_data &= ~0x80; }
+
+		int ready_led() { return !m_centronics_busy; }
 
 protected:
 	// device-level overrides
@@ -90,26 +58,27 @@ private:
 	devcb_write_line m_write_centronics_fault;
 	devcb_write_line m_write_centronics_select;
 
-	void update_printhead(int pos, UINT8 data);
-	void update_pf_stepper(UINT8 data);
-	void update_cr_stepper(UINT8 data);
+	void update_printhead(int pos, uint8_t data);
+	void update_pf_stepper(uint8_t data);
+	void update_cr_stepper(uint8_t data);
 
 	/* port 0x05 and 0x06 (9-bit) */
-	UINT16 m_printhead;
+	uint16_t m_printhead;
 	/* port 0x07 (4-bit) */
-	UINT8 m_pf_stepper;
+	uint8_t m_pf_stepper;
 	/* port 0x08 (4-bit) */
-	UINT8 m_cr_stepper;
+	uint8_t m_cr_stepper;
 
 	/* Centronics stuff */
-	UINT8 m_centronics_data;
+	uint8_t m_centronics_data;
 	int m_centronics_busy;
 	int m_centronics_nack;
-	UINT8 m_centronics_strobe;
-	UINT8 m_centronics_data_latch;
-	UINT8 m_centronics_data_latched;
+	uint8_t m_centronics_strobe;
+	uint8_t m_centronics_data_latch;
+	uint8_t m_centronics_data_latched;
+	uint32_t m_c000_shift_register;
 };
 
-extern const device_type E05A30;
+DECLARE_DEVICE_TYPE(E05A30, e05a30_device)
 
-#endif /* __E05A30_H__ */
+#endif // MAME_MACHINE_E05A30_H

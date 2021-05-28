@@ -1,81 +1,76 @@
-// license:???
-// copyright-holders:Paul Leaman, Miguel Angel Horna
+// license:BSD-3-Clause
+// copyright-holders:Vas Crabb
 /*********************************************************
 
-    Capcom Q-Sound system
+    Capcom System QSound™
 
 *********************************************************/
+#ifndef MAME_SOUND_QSOUND_H
+#define MAME_SOUND_QSOUND_H
 
 #pragma once
 
-#ifndef __QSOUND_H__
-#define __QSOUND_H__
-
+#include "dirom.h"
 #include "cpu/dsp16/dsp16.h"
 
-#define QSOUND_CLOCK 4000000    /* default 4MHz clock (60MHz/15?) */
 
-
-//**************************************************************************
-//  INTERFACE CONFIGURATION MACROS
-//**************************************************************************
-
-#define MCFG_QSOUND_ADD(_tag, _clock) \
-	MCFG_DEVICE_ADD(_tag, QSOUND, _clock)
-#define MCFG_QSOUND_REPLACE(_tag, _clock) \
-	MCFG_DEVICE_REPLACE(_tag, QSOUND, _clock)
-
-
-// ======================> qsound_device
-
-class qsound_device : public device_t,
-						public device_sound_interface
+class qsound_device : public device_t, public device_sound_interface, public device_rom_interface<24>
 {
 public:
-	qsound_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
-	~qsound_device() { }
+	// default 60MHz clock (divided by 2 for DSP core clock, and then by 1248 for sample rate)
+	qsound_device(machine_config const &mconfig, char const *tag, device_t *owner, u32 clock = 60'000'000);
 
-	DECLARE_WRITE8_MEMBER(qsound_w);
-	DECLARE_READ8_MEMBER(qsound_r);
+	void qsound_w(offs_t offset, u8 data);
+	u8 qsound_r();
 
 protected:
-	// device-level overrides
-	const rom_entry *device_rom_region() const override;
-	machine_config_constructor device_mconfig_additions() const override;
+	// device_t implementation
+	tiny_rom_entry const *device_rom_region() const override;
+	virtual void device_add_mconfig(machine_config &config) override;
 	virtual void device_start() override;
+	virtual void device_clock_changed() override;
+	virtual void device_reset() override;
 
-	// sound stream update overrides
-	virtual void sound_stream_update(sound_stream &stream, stream_sample_t **inputs, stream_sample_t **outputs, int samples) override;
+	// device_sound_interface implementation
+	virtual void sound_stream_update(sound_stream &stream, std::vector<read_stream_view> const &inputs, std::vector<write_stream_view> &outputs) override;
+
+	// device_rom_interface implementation
+	virtual void rom_bank_updated() override;
+
+	void dsp_io_map(address_map &map);
 
 private:
-	struct qsound_channel
-	{
-		UINT32 bank;        // bank
-		UINT32 address;     // start/cur address
-		UINT16 loop;        // loop address
-		UINT16 end;         // end address
-		UINT32 freq;        // frequency
-		UINT16 vol;         // master volume
+	// DSP ROM access
+	u16 dsp_sample_r(offs_t offset);
+	void dsp_pio_w(offs_t offset, u16 data);
 
-		// work variables
-		bool enabled;       // key on / key off
-		int lvol;           // left volume
-		int rvol;           // right volume
-		UINT32 step_ptr;    // current offset counter
-	} m_channel[16];
+	// for synchronised DSP communication
+	DECLARE_WRITE_LINE_MEMBER(dsp_ock_w);
+	u16 dsp_pio_r();
+	void set_dsp_ready(void *ptr, s32 param);
+	void set_cmd(void *ptr, s32 param);
 
-	required_device<dsp16_device> m_cpu;
-	required_region_ptr<INT8> m_sample_rom;
+	// MAME resources
+	required_device<dsp16_device_base> m_dsp;
+	sound_stream *m_stream;
 
-	int m_pan_table[33];    // pan volume table
-	UINT16 m_data;          // register latch data
-	sound_stream *m_stream; // audio stream
+	// DSP communication
+	u16 m_rom_bank, m_rom_offset;
+	u16 m_cmd_addr, m_cmd_data, m_new_data;
+	u8  m_cmd_pending, m_dsp_ready;
 
-	inline INT8 read_sample(UINT32 offset) { return m_sample_rom[offset & m_sample_rom.mask()]; }
-	void write_data(UINT8 address, UINT16 data);
+	// serial sample recovery
+	s16 m_samples[2];
+	u16 m_sr, m_fsr;
+	u8 m_ock, m_old, m_ready, m_channel;
 };
 
-extern const device_type QSOUND;
+DECLARE_DEVICE_TYPE(QSOUND, qsound_device)
 
+#if !defined(QSOUND_LLE) // && 0
+#include "qsoundhle.h"
+#define qsound_device qsound_hle_device
+#define QSOUND QSOUND_HLE
+#endif // QSOUND_LLE
 
-#endif /* __QSOUND_H__ */
+#endif // MAME_SOUND_QSOUND_H

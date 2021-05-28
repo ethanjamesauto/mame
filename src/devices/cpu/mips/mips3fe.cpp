@@ -11,6 +11,7 @@
 #include "emu.h"
 #include "mips3fe.h"
 #include "mips3com.h"
+#include "ps2vu.h"
 
 
 //**************************************************************************
@@ -21,7 +22,7 @@
 //  mips3_frontend - constructor
 //-------------------------------------------------
 
-mips3_frontend::mips3_frontend(mips3_device *mips3, UINT32 window_start, UINT32 window_end, UINT32 max_sequence)
+mips3_frontend::mips3_frontend(mips3_device *mips3, uint32_t window_start, uint32_t window_end, uint32_t max_sequence)
 	: drc_frontend(*mips3, window_start, window_end, max_sequence),
 		m_mips3(mips3)
 {
@@ -35,7 +36,7 @@ mips3_frontend::mips3_frontend(mips3_device *mips3, UINT32 window_start, UINT32 
 
 bool mips3_frontend::describe(opcode_desc &desc, const opcode_desc *prev)
 {
-	UINT32 op, opswitch;
+	uint32_t op, opswitch;
 
 	// compute the physical PC
 	assert((desc.physpc & 3) == 0);
@@ -49,7 +50,7 @@ bool mips3_frontend::describe(opcode_desc &desc, const opcode_desc *prev)
 
 	// fetch the opcode
 	assert((desc.physpc & 3) == 0);
-	op = desc.opptr.l[0] = m_mips3->m_direct->read_dword(desc.physpc);
+	op = desc.opptr.l[0] = m_mips3->m_pr32(desc.physpc);
 
 	// all instructions are 4 bytes and default to a single cycle each
 	desc.length = 4;
@@ -154,6 +155,7 @@ bool mips3_frontend::describe(opcode_desc &desc, const opcode_desc *prev)
 		case 0x22:  // LWL
 		case 0x26:  // LWR
 			desc.regin[0] |= REGFLAG_R(RTREG);
+			[[fallthrough]];
 		case 0x20:  // LB
 		case 0x21:  // LH
 		case 0x23:  // LW
@@ -216,6 +218,7 @@ bool mips3_frontend::describe(opcode_desc &desc, const opcode_desc *prev)
 		case 0x33:  // PREF
 			if (m_mips3->m_flavor < mips3_device::MIPS3_TYPE_MIPS_IV)
 				return false;
+			[[fallthrough]];
 		case 0x2f:  // CACHE
 			// effective no-op
 			return true;
@@ -230,7 +233,7 @@ bool mips3_frontend::describe(opcode_desc &desc, const opcode_desc *prev)
 //  single instruction in the 'special' group
 //-------------------------------------------------
 
-bool mips3_frontend::describe_special(UINT32 op, opcode_desc &desc)
+bool mips3_frontend::describe_special(uint32_t op, opcode_desc &desc)
 {
 	switch (op & 63)
 	{
@@ -252,6 +255,7 @@ bool mips3_frontend::describe_special(UINT32 op, opcode_desc &desc)
 			if (m_mips3->m_flavor < mips3_device::MIPS3_TYPE_MIPS_IV)
 				return false;
 			desc.regin[0] |= REGFLAG_R(RDREG);
+			[[fallthrough]];
 		case 0x04:  // SLLV
 		case 0x06:  // SRLV
 		case 0x07:  // SRAV
@@ -315,13 +319,13 @@ bool mips3_frontend::describe_special(UINT32 op, opcode_desc &desc)
 			return true;
 
 		case 0x10:  // MFHI
-			desc.regin[0] |= REGFLAG_HI;
+			desc.regin[2] |= REGFLAG_HI;
 			desc.regout[0] |= REGFLAG_R(RDREG);
 			return true;
 
 		case 0x11:  // MTHI
 			desc.regin[0] |= REGFLAG_R(RSREG);
-			desc.regout[0] |= REGFLAG_HI;
+			desc.regout[2] |= REGFLAG_HI;
 			return true;
 
 		case 0x12:  // MFLO
@@ -381,7 +385,7 @@ bool mips3_frontend::describe_special(UINT32 op, opcode_desc &desc)
 //  single instruction in the 'regimm' group
 //-------------------------------------------------
 
-bool mips3_frontend::describe_regimm(UINT32 op, opcode_desc &desc)
+bool mips3_frontend::describe_regimm(uint32_t op, opcode_desc &desc)
 {
 	switch (RTREG)
 	{
@@ -438,7 +442,7 @@ bool mips3_frontend::describe_regimm(UINT32 op, opcode_desc &desc)
 //  instruction in the IDT-specific group
 //-------------------------------------------------
 
-bool mips3_frontend::describe_idt(UINT32 op, opcode_desc &desc)
+bool mips3_frontend::describe_idt(uint32_t op, opcode_desc &desc)
 {
 	// only on the R4650
 	if (m_mips3->m_flavor != mips3_device::MIPS3_TYPE_R4650)
@@ -469,7 +473,7 @@ bool mips3_frontend::describe_idt(UINT32 op, opcode_desc &desc)
 //  single instruction in the COP0 group
 //-------------------------------------------------
 
-bool mips3_frontend::describe_cop0(UINT32 op, opcode_desc &desc)
+bool mips3_frontend::describe_cop0(uint32_t op, opcode_desc &desc)
 {
 	// any COP0 instruction can potentially cause an exception
 	desc.flags |= OPFLAG_CAN_CAUSE_EXCEPTION;
@@ -544,7 +548,7 @@ bool mips3_frontend::describe_cop0(UINT32 op, opcode_desc &desc)
 //  single instruction in the COP1 group
 //-------------------------------------------------
 
-bool mips3_frontend::describe_cop1(UINT32 op, opcode_desc &desc)
+bool mips3_frontend::describe_cop1(uint32_t op, opcode_desc &desc)
 {
 	// any COP1 instruction can potentially cause an exception
 //  desc.flags |= OPFLAG_CAN_CAUSE_EXCEPTION;
@@ -595,6 +599,7 @@ bool mips3_frontend::describe_cop1(UINT32 op, opcode_desc &desc)
 				case 0x13:  // MOVN - MIPS IV
 					if (m_mips3->m_flavor < mips3_device::MIPS3_TYPE_MIPS_IV)
 						return false;
+					[[fallthrough]];
 				case 0x00:  // ADD
 				case 0x01:  // SUB
 				case 0x02:  // MUL
@@ -607,6 +612,7 @@ bool mips3_frontend::describe_cop1(UINT32 op, opcode_desc &desc)
 				case 0x16:  // RSQRT - MIPS IV
 					if (m_mips3->m_flavor < mips3_device::MIPS3_TYPE_MIPS_IV)
 						return false;
+					[[fallthrough]];
 				case 0x04:  // SQRT
 				case 0x05:  // ABS
 				case 0x06:  // MOV
@@ -662,7 +668,7 @@ bool mips3_frontend::describe_cop1(UINT32 op, opcode_desc &desc)
 //  single instruction in the COP1X group
 //-------------------------------------------------
 
-bool mips3_frontend::describe_cop1x(UINT32 op, opcode_desc &desc)
+bool mips3_frontend::describe_cop1x(uint32_t op, opcode_desc &desc)
 {
 	// any COP1 instruction can potentially cause an exception
 //  desc.flags |= OPFLAG_CAN_CAUSE_EXCEPTION;
@@ -705,7 +711,7 @@ bool mips3_frontend::describe_cop1x(UINT32 op, opcode_desc &desc)
 //  single instruction in the COP2 group
 //-------------------------------------------------
 
-bool mips3_frontend::describe_cop2(UINT32 op, opcode_desc &desc)
+bool mips3_frontend::describe_cop2(uint32_t op, opcode_desc &desc)
 {
 	// any COP2 instruction can potentially cause an exception
 	desc.flags |= OPFLAG_CAN_CAUSE_EXCEPTION;

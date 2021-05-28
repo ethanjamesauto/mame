@@ -1,16 +1,40 @@
 // license:BSD-3-Clause
-// copyright-holders:Miodrag Milanovic
-#ifndef THOM_DSK
-#define THOM_DSK
+// copyright-holders:Olivier Galibert
+#ifndef MAME_FORMATS_THOM_DSK_H
+#define MAME_FORMATS_THOM_DSK_H
 
-#include "flopimg.h"
+#pragma once
 
-/* recognized image formats:
-   - .fd    one-side 5"1/4 (single and double density), 3"1/2
-   - .qd    one-side QDD
-   - .sap   one-side double-density 5"1/4, 3"1/2
-*/
+#include "wd177x_dsk.h"
 
-LEGACY_FLOPPY_OPTIONS_EXTERN(thomson);
+class thomson_525_format : public wd177x_format
+{
+public:
+  thomson_525_format();
 
-#endif
+  virtual const char *name() const override;
+  virtual const char *description() const override;
+  virtual const char *extensions() const override;
+
+private:
+  static const format formats[];
+};
+
+class thomson_35_format : public wd177x_format
+{
+public:
+  thomson_35_format();
+
+  virtual const char *name() const override;
+  virtual const char *description() const override;
+  virtual const char *extensions() const override;
+
+private:
+  static const format formats[];
+};
+
+
+extern const floppy_format_type FLOPPY_THOMSON_525_FORMAT;
+extern const floppy_format_type FLOPPY_THOMSON_35_FORMAT;
+
+#endif // MAME_FORMATS_THOM_DSK_H

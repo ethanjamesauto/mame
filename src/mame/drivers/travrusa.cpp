@@ -9,7 +9,7 @@ Shot Rider                 (c) 1984 Seibu Kaihatsu / Sigma
 driver by
 Lee Taylor
 John Clegg
-Tomasz Slanina  dox@space.pl
+Tomasz Slanina
 
 Notes:
 - I haven't understood how char/sprite priority works. This is used for
@@ -38,7 +38,7 @@ PCB layout:
 
                       2764 2764 2764
 --------------------------------------------------
-  C  - conector
+  C  - connector
   P  - proms
   E  - connector for  big black epoxy block
   D  - dips
@@ -51,26 +51,29 @@ and 2764 eprom (swapped D3/D4 and D5/D6 data lines)
 ****************************************************************************/
 
 #include "emu.h"
-#include "cpu/z80/z80.h"
-#include "audio/irem.h"
 #include "includes/travrusa.h"
+#include "audio/irem.h"
+
+#include "cpu/z80/z80.h"
+#include "screen.h"
 
 
-static ADDRESS_MAP_START( main_map, AS_PROGRAM, 8, travrusa_state )
-	AM_RANGE(0x0000, 0x7fff) AM_ROM
-	AM_RANGE(0x8000, 0x8fff) AM_RAM_WRITE(travrusa_videoram_w) AM_SHARE("videoram")
-	AM_RANGE(0x9000, 0x9000) AM_WRITE(travrusa_scroll_x_low_w)
-	AM_RANGE(0xa000, 0xa000) AM_WRITE(travrusa_scroll_x_high_w)
-	AM_RANGE(0xc800, 0xc9ff) AM_WRITEONLY AM_SHARE("spriteram")
-	AM_RANGE(0xd000, 0xd000) AM_DEVWRITE("irem_audio", irem_audio_device, cmd_w)
-	AM_RANGE(0xd001, 0xd001) AM_WRITE(travrusa_flipscreen_w)    /* + coin counters - not written by shtrider */
-	AM_RANGE(0xd000, 0xd000) AM_READ_PORT("SYSTEM")     /* IN0 */
-	AM_RANGE(0xd001, 0xd001) AM_READ_PORT("P1")         /* IN1 */
-	AM_RANGE(0xd002, 0xd002) AM_READ_PORT("P2")         /* IN2 */
-	AM_RANGE(0xd003, 0xd003) AM_READ_PORT("DSW1")       /* DSW1 */
-	AM_RANGE(0xd004, 0xd004) AM_READ_PORT("DSW2")       /* DSW2 */
-	AM_RANGE(0xe000, 0xefff) AM_RAM
-ADDRESS_MAP_END
+void travrusa_state::main_map(address_map &map)
+{
+	map(0x0000, 0x7fff).rom();
+	map(0x8000, 0x8fff).ram().w(FUNC(travrusa_state::travrusa_videoram_w)).share("videoram");
+	map(0x9000, 0x9000).w(FUNC(travrusa_state::travrusa_scroll_x_low_w));
+	map(0xa000, 0xa000).w(FUNC(travrusa_state::travrusa_scroll_x_high_w));
+	map(0xc800, 0xc9ff).writeonly().share("spriteram");
+	map(0xd000, 0xd000).w("irem_audio", FUNC(irem_audio_device::cmd_w));
+	map(0xd001, 0xd001).w(FUNC(travrusa_state::travrusa_flipscreen_w));    /* + coin counters - not written by shtrider */
+	map(0xd000, 0xd000).portr("SYSTEM");     /* IN0 */
+	map(0xd001, 0xd001).portr("P1");         /* IN1 */
+	map(0xd002, 0xd002).portr("P2");         /* IN2 */
+	map(0xd003, 0xd003).portr("DSW1");       /* DSW1 */
+	map(0xd004, 0xd004).portr("DSW2");       /* DSW2 */
+	map(0xe000, 0xefff).ram();
+}
 
 static INPUT_PORTS_START( travrusa )
 	PORT_START("SYSTEM")
@@ -285,12 +288,12 @@ static const gfx_layout shtrider_spritelayout =
 	32*8
 };
 
-static GFXDECODE_START( travrusa )
+static GFXDECODE_START( gfx_travrusa )
 	GFXDECODE_ENTRY( "gfx1", 0, charlayout,      0, 16 )
 	GFXDECODE_ENTRY( "gfx2", 0, spritelayout, 16*8, 16 )
 GFXDECODE_END
 
-static GFXDECODE_START( shtrider )
+static GFXDECODE_START( gfx_shtrider )
 	GFXDECODE_ENTRY( "gfx1", 0, charlayout,               0, 16 )
 	GFXDECODE_ENTRY( "gfx2", 0, shtrider_spritelayout, 16*8, 16 )
 GFXDECODE_END
@@ -301,50 +304,49 @@ void travrusa_state::machine_reset()
 	m_scrollx[1] = 0;
 }
 
-static MACHINE_CONFIG_START( travrusa, travrusa_state )
-
+void travrusa_state::travrusa(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", Z80, 4000000)   /* 4 MHz (?) */
-	MCFG_CPU_PROGRAM_MAP(main_map)
-	MCFG_CPU_VBLANK_INT_DRIVER("screen", travrusa_state,  irq0_line_hold)
-
+	Z80(config, m_maincpu, 4000000);   /* 4 MHz (?) */
+	m_maincpu->set_addrmap(AS_PROGRAM, &travrusa_state::main_map);
 
 	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_REFRESH_RATE(56.75)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(1790)   /* accurate frequency, measured on a Moon Patrol board, is 56.75Hz. */)
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_RASTER));
+	screen.set_refresh_hz(56.75);
+	screen.set_vblank_time(ATTOSECONDS_IN_USEC(1790)   /* accurate frequency, measured on a Moon Patrol board, is 56.75Hz. */);
 				/* the Lode Runner manual (similar but different hardware) */
 				/* talks about 55Hz and 1790ms vblank duration. */
-	MCFG_SCREEN_SIZE(32*8, 32*8)
-	MCFG_SCREEN_VISIBLE_AREA(1*8, 31*8-1, 0*8, 32*8-1)
-	MCFG_SCREEN_UPDATE_DRIVER(travrusa_state, screen_update_travrusa)
-	MCFG_SCREEN_PALETTE("palette")
+	screen.set_size(32*8, 32*8);
+	screen.set_visarea(1*8, 31*8-1, 0*8, 32*8-1);
+	screen.set_screen_update(FUNC(travrusa_state::screen_update_travrusa));
+	screen.set_palette(m_palette);
+	// Race start countdown in shtrider needs multiple interrupts per frame to sync, mustache.cpp has the same, and is also a Seibu game
+	screen.screen_vblank().set_inputline(m_maincpu, INPUT_LINE_IRQ0);
 
-	MCFG_GFXDECODE_ADD("gfxdecode", "palette", travrusa)
-
-	MCFG_PALETTE_ADD("palette", 16*8+16*8)
-	MCFG_PALETTE_INDIRECT_ENTRIES(128+16)
-	MCFG_PALETTE_INIT_OWNER(travrusa_state, travrusa)
+	GFXDECODE(config, m_gfxdecode, m_palette, gfx_travrusa);
+	PALETTE(config, m_palette, FUNC(travrusa_state::travrusa_palette), 16*8+16*8, 128+16);
 
 	/* sound hardware */
-	//MCFG_FRAGMENT_ADD(m52_sound_c_audio)
-	MCFG_DEVICE_ADD("irem_audio", IREM_M52_SOUNDC_AUDIO, 0)
+	//m52_sound_c_audio(config);
+	IREM_M52_SOUNDC_AUDIO(config, "irem_audio", 0);
+}
 
-MACHINE_CONFIG_END
-
-static MACHINE_CONFIG_DERIVED( shtrider, travrusa )
-
-	/* video hardware */
-	MCFG_GFXDECODE_MODIFY("gfxdecode", shtrider)
-	MCFG_PALETTE_MODIFY("palette")
-	MCFG_PALETTE_INIT_OWNER(travrusa_state,shtrider)
-MACHINE_CONFIG_END
-
-static MACHINE_CONFIG_DERIVED( shtriderb, travrusa )
+void travrusa_state::shtrider(machine_config &config)
+{
+	travrusa(config);
 
 	/* video hardware */
-	MCFG_GFXDECODE_MODIFY("gfxdecode", shtrider)
-MACHINE_CONFIG_END
+	m_gfxdecode->set_info(gfx_shtrider);
+	m_palette->set_init(FUNC(travrusa_state::shtrider_palette));
+}
+
+void travrusa_state::shtriderb(machine_config &config)
+{
+	travrusa(config);
+
+	/* video hardware */
+	m_gfxdecode->set_info(gfx_shtrider);
+}
 
 /***************************************************************************
 
@@ -406,6 +408,32 @@ ROM_START( travrusab )
 	ROM_LOAD( "tbp24s10.3",   0x0220, 0x0100, CRC(76062638) SHA1(7378a26cf455d9d3df90929dc665870514c34b54) ) /* sprite lookup table */
 ROM_END
 
+ROM_START( travrusab2 ) // all ROMs match travrusa but the ones where differently stated
+	ROM_REGION( 0x10000, "maincpu", 0 )
+	ROM_LOAD( "0.2m3", 0x0000, 0x2000, CRC(c96e81ac) SHA1(5b01269ce05604239b14ba7eaab8250c8ff17591) ) // unique
+	ROM_LOAD( "5.2l3", 0x2000, 0x2000, CRC(145d6b34) SHA1(c9e2bd1d3e62c496e4c5057c4012b069dfcf592d) )
+	ROM_LOAD( "6.2k3", 0x4000, 0x2000, CRC(e1b51383) SHA1(34f4476c1bcc28c53c8ffa7b614f443a329aae13) )
+	ROM_LOAD( "7.2j3", 0x6000, 0x2000, CRC(ab8a3a33) SHA1(e332b6e727083cf508ccec721ce42ccc3aa54e91) ) // same as mototour
+
+	ROM_REGION( 0x8000, "irem_audio:iremsound", 0 )
+	ROM_LOAD( "4.1a1", 0x7000, 0x1000, CRC(a02ad8a0) SHA1(aff80b506dbecabed2a36eb743693940f6a22d16) )
+
+	ROM_REGION( 0x06000, "gfx1", 0 )
+	ROM_LOAD( "1.1e3", 0x0000, 0x2000, CRC(aa8994dd) SHA1(9b326ce52a03d723e5c3c1b5fd4aa8fa7f70f904) )
+	ROM_LOAD( "2.1c3", 0x2000, 0x2000, CRC(3a046dd1) SHA1(65c1dd1c0b5fb72ac5c04e11a577308245e4b312) )
+	ROM_LOAD( "3.1a3", 0x4000, 0x2000, CRC(1cc3d3f4) SHA1(e7ee365d43d783cb6b7df37c6edeadbed35318d9) )
+
+	ROM_REGION( 0x06000, "gfx2", 0 )
+	ROM_LOAD( "8.3n3",  0x0000, 0x2000, CRC(3e2c7a6b) SHA1(abc9eeb656ab6ed5f14e10fc988f75f21ccf037a) )
+	ROM_LOAD( "9.3m3",  0x2000, 0x2000, CRC(13be6a14) SHA1(47861910fe4c46cd72634cf7d834be2da2a0a4f9) )
+	ROM_LOAD( "10.3k3", 0x4000, 0x2000, CRC(6fcc9fdb) SHA1(88f878b9ebf07c5a16f8cb742016cac971ed3f10) )
+
+	ROM_REGION( 0x0320, "proms", 0 )
+	ROM_LOAD( "6349-2.1k2",    0x0000, 0x0200, CRC(c9724350) SHA1(1fac20cdc0a53d94e8f67b49d7dd71d1b9f1f7ef) ) // character palette - last $100 are unused
+	ROM_LOAD( "tbp18s030.3f1", 0x0200, 0x0020, CRC(a1130007) SHA1(9deb0eed75dd06e86f83c819a3393158be7c9dce) ) // sprite palette
+	ROM_LOAD( "mb7052.3h2",    0x0220, 0x0100, CRC(76062638) SHA1(7378a26cf455d9d3df90929dc665870514c34b54) ) // sprite lookup table
+ROM_END
+
 ROM_START( motorace )
 	ROM_REGION( 0x12000, "maincpu", 0 )
 	ROM_LOAD( "mr.cpu",       0x0000, 0x2000, CRC(89030b0c) SHA1(dec4209385bbccff4a3c0d93d6507110ef841331) )    /* encrypted */
@@ -434,11 +462,11 @@ ROM_END
 
 /*
 
-Moto tour is a Tecfri's licensed version of Traverse usa/Zippy Race from Irem
+Moto Tour is a Tecfri licensed version of Traverse USA/Zippy Race from Irem
 
-This version don't have de MSM5202 but still having the sounds produced bt 5202 with a lower quality, I guess it converts the sound data to analog in some way, also this version is unprotected, doesn't have the epoxy block.
+This version doesn't have the MSM5202 but still has the sounds produced by the 5202 with a lower quality, I guess it converts the sound data to analog in some way, also this version is unprotected, doesn't have the epoxy block.
 
-Unfortunately the eproms labels have dissapeared, so I name it similar to Traverse usa but with the letters mt (Moto Tour)
+Unfortunately the eprom's labels have disappeared, so I name it similar to Traverse USA but with the letters mt (Moto Tour)
 
 Rom Info
 
@@ -574,51 +602,49 @@ ROM_START( shtriderb )
 	ROM_LOAD( "prom2.12.h2",  0x0220, 0x0100, CRC(5db47092) SHA1(8e234ee88143755a4fd5ec86a03b55be5f9c5db8) )
 ROM_END
 
-DRIVER_INIT_MEMBER(travrusa_state,motorace)
+void travrusa_state::init_motorace()
 {
-	int A, j;
-	UINT8 *rom = memregion("maincpu")->base();
-	dynamic_buffer buffer(0x2000);
-
+	uint8_t *rom = memregion("maincpu")->base();
+	uint8_t buffer[0x2000];
 	memcpy(&buffer[0], rom, 0x2000);
 
 	/* The first CPU ROM has the address and data lines scrambled */
-	for (A = 0; A < 0x2000; A++)
+	for (int A = 0; A < 0x2000; A++)
 	{
-		j = BITSWAP16(A,15,14,13,9,7,5,3,1,12,10,8,6,4,2,0,11);
-		rom[j] = BITSWAP8(buffer[A],2,7,4,1,6,3,0,5);
+		int j = bitswap<16>(A,15,14,13,9,7,5,3,1,12,10,8,6,4,2,0,11);
+		rom[j] = bitswap<8>(buffer[A],2,7,4,1,6,3,0,5);
 	}
 }
 
-DRIVER_INIT_MEMBER(travrusa_state,shtridra)
+void travrusa_state::init_shtridra()
 {
-	int A;
-	UINT8 *rom = memregion("maincpu")->base();
+	uint8_t *rom = memregion("maincpu")->base();
 
 	/* D3/D4  and  D5/D6 swapped */
-	for (A = 0; A < 0x2000; A++)
-		rom[A] = BITSWAP8(rom[A],7,5,6,3,4,2,1,0);
+	for (int A = 0; A < 0x2000; A++)
+		rom[A] = bitswap<8>(rom[A],7,5,6,3,4,2,1,0);
 }
 
-READ8_MEMBER(travrusa_state::shtridrb_port11_r)
+uint8_t travrusa_state::shtridrb_port11_r()
 {
-	printf("shtridrb_port11_r %04x\n", space.device().safe_pc());
+	printf("shtridrb_port11_r %04x\n", m_maincpu->pc());
 	// reads, masks with 0xa8, checks for 0x88, resets game if not happy with value?
 	return 0x88;
 }
 
 
-DRIVER_INIT_MEMBER(travrusa_state, shtridrb)
+void travrusa_state::init_shtridrb()
 {
-	m_maincpu->space(AS_IO).install_read_handler(0x11, 0x11, 0x0000, 0xff00, read8_delegate(FUNC(travrusa_state::shtridrb_port11_r),this));
+	m_maincpu->space(AS_IO).install_read_handler(0x11, 0x11, 0, 0xff00, 0, read8smo_delegate(*this, FUNC(travrusa_state::shtridrb_port11_r)));
 }
 
 
-GAME( 1983, travrusa, 0,        travrusa, travrusa, driver_device, 0,         ROT270, "Irem",                    "Traverse USA / Zippy Race", MACHINE_SUPPORTS_SAVE )
-GAME( 1983, travrusab,travrusa, travrusa, travrusa, driver_device, 0,         ROT270, "bootleg (I.P.)",          "Traverse USA (bootleg)", MACHINE_SUPPORTS_SAVE )
-GAME( 1983, mototour, travrusa, travrusa, travrusa, driver_device, 0,         ROT270, "Irem (Tecfri license)",   "MotoTour / Zippy Race (Tecfri license)", MACHINE_SUPPORTS_SAVE )
-GAME( 1983, motorace, travrusa, travrusa, motorace, travrusa_state, motorace, ROT270, "Irem (Williams license)", "MotoRace USA", MACHINE_SUPPORTS_SAVE )
+GAME( 1983, travrusa,   0,        travrusa, travrusa, travrusa_state, empty_init,    ROT270,                    "Irem",                           "Traverse USA / Zippy Race", MACHINE_SUPPORTS_SAVE )
+GAME( 1983, travrusab,  travrusa, travrusa, travrusa, travrusa_state, empty_init,    ROT270,                    "bootleg (I.P.)",                 "Traverse USA (bootleg, set 1)", MACHINE_SUPPORTS_SAVE )
+GAME( 1983, travrusab2, travrusa, travrusa, travrusa, travrusa_state, empty_init,    ROT270,                    "bootleg",                        "Traverse USA (bootleg, set 2)", MACHINE_SUPPORTS_SAVE ) // still shows both Irem and Tecfri
+GAME( 1983, mototour,   travrusa, travrusa, travrusa, travrusa_state, empty_init,    ROT270,                    "Irem (Tecfri license)",          "MotoTour / Zippy Race (Tecfri license)", MACHINE_SUPPORTS_SAVE )
+GAME( 1983, motorace,   travrusa, travrusa, motorace, travrusa_state, init_motorace, ROT270,                    "Irem (Williams license)",        "MotoRace USA", MACHINE_SUPPORTS_SAVE )
 
-GAME( 1985, shtrider, 0,        shtrider, shtrider, driver_device, 0,         ROT270|ORIENTATION_FLIP_X, "Seibu Kaihatsu",                 "Shot Rider", MACHINE_SUPPORTS_SAVE ) // possible bootleg
-GAME( 1984, shtridera,shtrider, shtrider, shtrider, travrusa_state, shtridra, ROT270|ORIENTATION_FLIP_X, "Seibu Kaihatsu (Sigma license)", "Shot Rider (Sigma license)", MACHINE_SUPPORTS_SAVE )
-GAME( 1985, shtriderb,shtrider, shtriderb,shtrider, travrusa_state, shtridrb, ROT270|ORIENTATION_FLIP_X, "bootleg",                        "Shot Rider (bootleg)", MACHINE_SUPPORTS_SAVE ) // resets when you attempt to start a game?
+GAME( 1985, shtrider,   0,        shtrider, shtrider, travrusa_state, empty_init,    ROT270|ORIENTATION_FLIP_X, "Seibu Kaihatsu",                 "Shot Rider", MACHINE_SUPPORTS_SAVE ) // possible bootleg
+GAME( 1984, shtridera,  shtrider, shtrider, shtrider, travrusa_state, init_shtridra, ROT270|ORIENTATION_FLIP_X, "Seibu Kaihatsu (Sigma license)", "Shot Rider (Sigma license)", MACHINE_SUPPORTS_SAVE )
+GAME( 1985, shtriderb,  shtrider, shtriderb,shtrider, travrusa_state, init_shtridrb, ROT270|ORIENTATION_FLIP_X, "bootleg",                        "Shot Rider (bootleg)", MACHINE_SUPPORTS_SAVE ) // resets when you attempt to start a game?

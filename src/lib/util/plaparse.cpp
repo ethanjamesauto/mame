@@ -2,7 +2,7 @@
 // copyright-holders:Aaron Giles, hap
 /***************************************************************************
 
-    plaparse.h
+    plaparse.cpp
 
     Simple parser for Berkeley standard PLA files into raw fusemaps.
     It supports no more than one output matrix, and is limited to
@@ -10,12 +10,12 @@
 
 ***************************************************************************/
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <ctype.h>
-#include "jedparse.h"
 #include "plaparse.h"
+
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <cctype>
 
 
 
@@ -33,11 +33,11 @@
 
 struct parse_info
 {
-	UINT32  inputs;     /* number of input columns */
-	UINT32  outputs;    /* number of output columns */
-	UINT32  terms;      /* number of terms */
-	UINT32  xorval[JED_MAX_FUSES/64];   /* output polarity */
-	UINT32  xorptr;
+	uint32_t  inputs;     /* number of input columns */
+	uint32_t  outputs;    /* number of output columns */
+	uint32_t  terms;      /* number of terms */
+	uint32_t  xorval[JED_MAX_FUSES/64];   /* output polarity */
+	uint32_t  xorptr;
 };
 
 
@@ -61,9 +61,9 @@ static bool iscrlf(char c)
     character stream
 -------------------------------------------------*/
 
-static UINT32 suck_number(const UINT8 **src, const UINT8 *srcend)
+static uint32_t suck_number(const uint8_t **src, const uint8_t *srcend)
 {
-	UINT32 value = 0;
+	uint32_t value = 0;
 
 	// find first digit
 	while (*src < srcend && !iscrlf(**src) && !isdigit(**src))
@@ -89,10 +89,10 @@ static UINT32 suck_number(const UINT8 **src, const UINT8 *srcend)
     process_terms - process input/output matrix
 -------------------------------------------------*/
 
-static bool process_terms(jed_data *data, const UINT8 **src, const UINT8 *srcend, parse_info *pinfo)
+static bool process_terms(jed_data *data, const uint8_t **src, const uint8_t *srcend, parse_info *pinfo)
 {
-	UINT32 curinput = 0;
-	UINT32 curoutput = 0;
+	uint32_t curinput = 0;
+	uint32_t curoutput = 0;
 	bool outputs = false;
 
 	// symbols for 0, 1, dont_care, no_meaning
@@ -195,7 +195,7 @@ static bool process_terms(jed_data *data, const UINT8 **src, const UINT8 *srcend
     process_field - process a single field
 -------------------------------------------------*/
 
-static bool process_field(jed_data *data, const UINT8 **src, const UINT8 *srcend, parse_info *pinfo)
+static bool process_field(jed_data *data, const uint8_t **src, const uint8_t *srcend, parse_info *pinfo)
 {
 	// valid keywords
 	static const char *const keywords[] = { "i", "o", "p", "phase", "e", "\0" };
@@ -212,18 +212,18 @@ static bool process_field(jed_data *data, const UINT8 **src, const UINT8 *srcend
 
 	// find keyword
 	char dest[0x10];
-	memset(dest, 0, ARRAY_LENGTH(dest));
-	const UINT8 *seek = *src;
+	memset(dest, 0, sizeof(dest));
+	const uint8_t *seek = *src;
 	int destptr = 0;
 
-	while (seek < srcend && isalpha(*seek) && destptr < ARRAY_LENGTH(dest) - 1)
+	while (seek < srcend && isalpha(*seek) && destptr < sizeof(dest) - 1)
 	{
 		dest[destptr] = tolower(*seek);
 		seek++;
 		destptr++;
 	}
 
-	UINT8 find = 0;
+	uint8_t find = 0;
 	while (strlen(keywords[find]) && strcmp(dest, keywords[find]))
 		find++;
 
@@ -308,8 +308,8 @@ static bool process_field(jed_data *data, const UINT8 **src, const UINT8 *srcend
 
 int pla_parse(const void *data, size_t length, jed_data *result)
 {
-	const UINT8 *src = (const UINT8 *)data;
-	const UINT8 *srcend = src + length;
+	const auto *src = (const uint8_t *)data;
+	const uint8_t *srcend = src + length;
 
 	parse_info pinfo;
 	memset(&pinfo, 0, sizeof(pinfo));

@@ -2,6 +2,9 @@
 // copyright-holders:Curt Coder
 /*
 
+PET = Personal Electronic Transactor
+
+
 http://www.6502.org/users/andre/petindex/boards.html
 
 Static Board (PET 2001)
@@ -149,13 +152,312 @@ ROM sockets:  UA3   2K or 4K character
 
 */
 
-#include "includes/pet.h"
-#include "bus/ieee488/c2040.h"
-#include "machine/cbm_snqk.h"
+#include "emu.h"
+#include "emupal.h"
+#include "screen.h"
 #include "softlist.h"
+#include "speaker.h"
+#include "bus/generic/slot.h"
+#include "bus/generic/carts.h"
+#include "bus/ieee488/c2040.h"
+#include "bus/ieee488/c8050.h"
+#include "bus/ieee488/ieee488.h"
+#include "bus/pet/cass.h"
+#include "bus/pet/exp.h"
+#include "bus/pet/user.h"
+#include "cpu/m6502/m6502.h"
+#include "imagedev/snapquik.h"
+#include "machine/6522via.h"
+#include "machine/6821pia.h"
+#include "machine/cbm_snqk.h"
+#include "machine/input_merger.h"
+#include "machine/pla.h"
+#include "machine/ram.h"
+#include "machine/timer.h"
+#include "sound/spkrdev.h"
+#include "video/mc6845.h"
+
+#define M6502_TAG       "f3"
+#define M6522_TAG       "a5"
+#define M6520_1_TAG     "g8"
+#define M6520_2_TAG     "b8"
+#define MC6845_TAG      "ub13"
+#define SCREEN_TAG      "screen"
+#define PLA1_TAG        "ue6"
+#define PLA2_TAG        "ue5"
+#define PET_USER_PORT_TAG "user"
+
+class pet_state : public driver_device
+{
+public:
+	pet_state(const machine_config &mconfig, device_type type, const char *tag) :
+		driver_device(mconfig, type, tag),
+		m_maincpu(*this, M6502_TAG),
+		m_via(*this, M6522_TAG),
+		m_pia1(*this, M6520_1_TAG),
+		m_pia2(*this, M6520_2_TAG),
+		m_crtc(*this, MC6845_TAG),
+		m_screen(*this, SCREEN_TAG),
+		m_ieee(*this, IEEE488_TAG),
+		m_palette(*this, "palette"),
+		m_cassette(*this, PET_DATASSETTE_PORT_TAG),
+		m_cassette2(*this, PET_DATASSETTE_PORT2_TAG),
+		m_exp(*this, PET_EXPANSION_SLOT_TAG),
+		m_user(*this, PET_USER_PORT_TAG),
+		m_speaker(*this, "speaker"),
+		m_cart_9000(*this, "cart_9000"),
+		m_cart_a000(*this, "cart_a000"),
+		m_cart_b000(*this, "cart_b000"),
+		m_ram(*this, RAM_TAG),
+		m_rom(*this, M6502_TAG),
+		m_char_rom(*this, "charom"),
+		m_video_ram(*this, "video_ram", 0x800, ENDIANNESS_LITTLE),
+		m_row(*this, "ROW%u", 0),
+		m_lock(*this, "LOCK"),
+		m_sync_timer(nullptr),
+		m_sync_period(attotime::zero),
+		m_key(0),
+		m_sync(0),
+		m_graphic(0),
+		m_blanktv(0),
+		m_user_diag(1)
+	{ }
+
+	void base_pet_devices(machine_config &config, const char *default_drive);
+	void _4k(machine_config &config);
+	void _8k(machine_config &config);
+	void _16k(machine_config &config);
+	void _32k(machine_config &config);
+	void pet(machine_config &config);
+	void pet2001n(machine_config &config, bool with_b000 = true);
+	void pet2001n8(machine_config &config);
+	void cbm3032(machine_config &config);
+	void pet20018(machine_config &config);
+	void pet2001n16(machine_config &config);
+	void cbm3016(machine_config &config);
+	void cbm3000(machine_config &config);
+	void cbm4000(machine_config &config);
+	void cbm4032f(machine_config &config);
+	void cbm4032(machine_config &config);
+	void cbm4016(machine_config &config);
+	void cbm3008(machine_config &config);
+	void pet2001(machine_config &config);
+	void pet2001n32(machine_config &config);
+
+	uint8_t read(offs_t offset);
+	void write(offs_t offset, uint8_t data);
+
+	void via_pa_w(uint8_t data);
+	uint8_t via_pb_r();
+	void via_pb_w(uint8_t data);
+	DECLARE_WRITE_LINE_MEMBER( via_ca2_w );
+	DECLARE_WRITE_LINE_MEMBER( via_cb2_w );
+
+	uint8_t pia1_pa_r();
+	uint8_t pia1_pb_r();
+	void pia1_pa_w(uint8_t data);
+	DECLARE_WRITE_LINE_MEMBER( pia1_ca2_w );
+
+	DECLARE_WRITE_LINE_MEMBER( user_diag_w );
+
+	MC6845_BEGIN_UPDATE( pet_begin_update );
+	MC6845_UPDATE_ROW( pet40_update_row );
+
+	TIMER_CALLBACK_MEMBER( sync_tick );
+
+	DECLARE_QUICKLOAD_LOAD_MEMBER(quickload_pet);
+
+	uint32_t screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect);
+
+	DECLARE_MACHINE_START( pet40 );
+	DECLARE_MACHINE_RESET( pet40 );
+
+	void pet2001_mem(address_map &map);
+
+protected:
+	required_device<m6502_device> m_maincpu;
+	required_device<via6522_device> m_via;
+	required_device<pia6821_device> m_pia1;
+	required_device<pia6821_device> m_pia2;
+	optional_device<mc6845_device> m_crtc;
+	required_device<screen_device> m_screen;
+	required_device<ieee488_device> m_ieee;
+	required_device<palette_device> m_palette;
+	required_device<pet_datassette_port_device> m_cassette;
+	required_device<pet_datassette_port_device> m_cassette2;
+	required_device<pet_expansion_slot_device> m_exp;
+	required_device<pet_user_port_device> m_user;
+	optional_device<speaker_sound_device> m_speaker;
+	optional_device<generic_slot_device> m_cart_9000;
+	optional_device<generic_slot_device> m_cart_a000;
+	optional_device<generic_slot_device> m_cart_b000;
+	required_device<ram_device> m_ram;
+	required_memory_region m_rom;
+	required_memory_region m_char_rom;
+	memory_share_creator<uint8_t> m_video_ram;
+	required_ioport_array<10> m_row;
+	required_ioport m_lock;
+
+	emu_timer *m_sync_timer;
+	attotime m_sync_period;
+
+	DECLARE_MACHINE_START( pet );
+	DECLARE_MACHINE_START( pet2001 );
+	DECLARE_MACHINE_RESET( pet );
+
+	void update_speaker();
+
+	enum
+	{
+		SEL0 = 0,
+		SEL1,
+		SEL2,
+		SEL3,
+		SEL4,
+		SEL5,
+		SEL6,
+		SEL7,
+		SEL8,
+		SEL9,
+		SELA,
+		SELB,
+		SELC,
+		SELD,
+		SELE,
+		SELF
+	};
+
+	// keyboard state
+	uint8_t m_key;
+
+	// video state
+	int m_sync;
+	int m_graphic;
+	int m_blanktv;
+	int m_video_ram_size;
+
+	// sound state
+	int m_via_cb2;
+	int m_pia1_pa7;
+
+	uint8_t m_via_pa;
+
+	int m_user_diag;
+};
 
 
-static void cbm_pet_quick_sethiaddress( address_space &space, UINT16 hiaddress )
+class pet2001b_state : public pet_state
+{
+public:
+	pet2001b_state(const machine_config &mconfig, device_type type, const char *tag) :
+		pet_state(mconfig, type, tag)
+	{ }
+
+	void pet2001b(machine_config &config, bool with_b000 = true);
+	void pet2001b32(machine_config &config);
+	void pet4000(machine_config &config);
+	void pet4000b(machine_config &config);
+	void pet4001b(machine_config &config);
+	void pet4032f(machine_config &config);
+	void pet4032b(machine_config &config);
+	void pet4032(machine_config &config);
+	void pet2001b16(machine_config &config);
+	void cbm3032b(machine_config &config);
+	void cbm4000b(machine_config &config);
+	void cbm4032b(machine_config &config);
+	void pet2001b8(machine_config &config);
+	void pet4016(machine_config &config);
+
+protected:
+	uint8_t pia1_pb_r();
+
+};
+
+
+class pet80_state : public pet2001b_state
+{
+public:
+	pet80_state(const machine_config &mconfig, device_type type, const char *tag) :
+		pet2001b_state(mconfig, type, tag)
+	{ }
+
+	void pet80(machine_config &config);
+	void pet8032(machine_config &config);
+
+	DECLARE_MACHINE_START( pet80 );
+	DECLARE_MACHINE_RESET( pet80 );
+
+	MC6845_UPDATE_ROW( cbm8296_update_row );
+
+protected:
+	MC6845_UPDATE_ROW( pet80_update_row );
+};
+
+
+class superpet_state : public pet80_state
+{
+public:
+	superpet_state(const machine_config &mconfig, device_type type, const char *tag)
+		: pet80_state(mconfig, type, tag)
+	{ }
+	void superpet(machine_config &config);
+};
+
+
+class cbm8096_state : public pet80_state
+{
+public:
+	cbm8096_state(const machine_config &mconfig, device_type type, const char *tag) :
+		pet80_state(mconfig, type, tag)
+	{ }
+	void cbm8096(machine_config &config);
+};
+
+
+class cbm8296_state : public pet80_state
+{
+public:
+	cbm8296_state(const machine_config &mconfig, device_type type, const char *tag) :
+		pet80_state(mconfig, type, tag),
+		m_basic_rom(*this, "basic"),
+		m_editor_rom(*this, "editor"),
+		m_ue5_rom(*this, "ue5_eprom"),
+		m_ue6_rom(*this, "ue6_eprom"),
+		m_pla1(*this, PLA1_TAG),
+		m_pla2(*this, PLA2_TAG)
+	{ }
+
+	void cbm8296d(machine_config &config);
+	void cbm8296(machine_config &config);
+
+private:
+	required_memory_region m_basic_rom;
+	required_memory_region m_editor_rom;
+	required_memory_region m_ue5_rom;
+	required_memory_region m_ue6_rom;
+	required_device<pla_device> m_pla1;
+	required_device<pla_device> m_pla2;
+
+	DECLARE_MACHINE_START( cbm8296 );
+	DECLARE_MACHINE_RESET( cbm8296 );
+
+	void read_pla1(offs_t offset, int phi2, int brw, int noscreen, int noio, int ramsela, int ramsel9, int ramon, int norom,
+		int &cswff, int &cs9, int &csa, int &csio, int &cse, int &cskb, int &fa12, int &casena1);
+	void read_pla2(offs_t offset, int phi2, int brw, int casena1, int &endra, int &noscreen, int &casena2, int &fa15);
+
+	void read_pla1_eprom(offs_t offset, int phi2, int brw, int noscreen, int noio, int ramsela, int ramsel9, int ramon, int norom,
+		int &cswff, int &cs9, int &csa, int &csio, int &cse, int &cskb, int &fa12, int &casena1);
+	void read_pla2_eprom(offs_t offset, int phi2, int brw, int casena1, int &endra, int &noscreen, int &casena2, int &fa15);
+
+	uint8_t read(offs_t offset);
+	void write(offs_t offset, uint8_t data);
+
+	uint8_t m_cr;
+	void cbm8296_mem(address_map &map);
+};
+
+
+static void cbm_pet_quick_sethiaddress( address_space &space, uint16_t hiaddress )
 {
 	space.write_byte(0x2e, hiaddress & 0xff);
 	space.write_byte(0x2c, hiaddress & 0xff);
@@ -165,9 +467,9 @@ static void cbm_pet_quick_sethiaddress( address_space &space, UINT16 hiaddress )
 	space.write_byte(0x2b, hiaddress >> 8);
 }
 
-QUICKLOAD_LOAD_MEMBER( pet_state, cbm_pet )
+QUICKLOAD_LOAD_MEMBER(pet_state::quickload_pet)
 {
-	return general_cbm_loadsnap(image, file_type, quickload_size, m_maincpu->space(AS_PROGRAM), 0, cbm_pet_quick_sethiaddress);
+	return general_cbm_loadsnap(image, m_maincpu->space(AS_PROGRAM), 0, cbm_pet_quick_sethiaddress);
 }
 
 
@@ -175,19 +477,6 @@ QUICKLOAD_LOAD_MEMBER( pet_state, cbm_pet )
 //**************************************************************************
 //  INTERRUPTS
 //**************************************************************************
-
-//-------------------------------------------------
-//  check_interrupts -
-//-------------------------------------------------
-
-void pet_state::check_interrupts()
-{
-	int irq = m_via_irq || m_pia1a_irq || m_pia1b_irq || m_pia2a_irq || m_pia2b_irq || m_exp_irq;
-
-	m_maincpu->set_input_line(M6502_IRQ_LINE, irq);
-	m_exp->irq_w(irq);
-}
-
 
 //-------------------------------------------------
 //  update_speaker -
@@ -208,13 +497,13 @@ void pet_state::update_speaker()
 //  read -
 //-------------------------------------------------
 
-READ8_MEMBER( pet_state::read )
+uint8_t pet_state::read(offs_t offset)
 {
 	int sel = offset >> 12;
-	int norom = m_exp->norom_r(space, offset, sel);
-	UINT8 data = 0;
+	int norom = m_exp->norom_r(offset, sel);
+	uint8_t data = 0;
 
-	data = m_exp->read(space, offset, data, sel);
+	data = m_exp->read(offset, data, sel);
 
 	switch (sel)
 	{
@@ -226,14 +515,17 @@ READ8_MEMBER( pet_state::read )
 		break;
 
 	case SEL8:
-		data = m_video_ram[offset & (m_video_ram_size - 1)];
+		if (!(offset & 0x800))
+		{
+			data = m_video_ram[offset & (m_video_ram_size - 1)];
+		}
 		break;
 
 	case SEL9:
 		if (norom)
 		{
 			if (m_cart_9000 && m_cart_9000->exists())
-				data = m_cart_9000->read_rom(space, offset & 0xfff);
+				data = m_cart_9000->read_rom(offset & 0xfff);
 			else
 				data = m_rom->base()[offset - 0x9000];
 		}
@@ -243,7 +535,7 @@ READ8_MEMBER( pet_state::read )
 		if (norom)
 		{
 			if (m_cart_a000 && m_cart_a000->exists())
-				data = m_cart_a000->read_rom(space, offset & 0xfff);
+				data = m_cart_a000->read_rom(offset & 0xfff);
 			else
 				data = m_rom->base()[offset - 0x9000];
 		}
@@ -253,7 +545,7 @@ READ8_MEMBER( pet_state::read )
 		if (norom)
 		{
 			if (m_cart_b000 && m_cart_b000->exists())
-				data = m_cart_b000->read_rom(space, offset & 0xfff);
+				data = m_cart_b000->read_rom(offset & 0xfff);
 			else
 				data = m_rom->base()[offset - 0x9000];
 		}
@@ -273,19 +565,19 @@ READ8_MEMBER( pet_state::read )
 
 			if (BIT(offset, 4))
 			{
-				data &= m_pia1->read(space, offset & 0x03);
+				data &= m_pia1->read(offset & 0x03);
 			}
 			if (BIT(offset, 5))
 			{
-				data &= m_pia2->read(space, offset & 0x03);
+				data &= m_pia2->read(offset & 0x03);
 			}
 			if (BIT(offset, 6))
 			{
-				data &= m_via->read(space, offset & 0x0f);
+				data &= m_via->read(offset & 0x0f);
 			}
 			if (m_crtc && BIT(offset, 7) && BIT(offset, 0))
 			{
-				data &= m_crtc->register_r(space, 0);
+				data &= m_crtc->register_r();
 			}
 		}
 		else if (norom)
@@ -303,11 +595,11 @@ READ8_MEMBER( pet_state::read )
 //  write -
 //-------------------------------------------------
 
-WRITE8_MEMBER( pet_state::write )
+void pet_state::write(offs_t offset, uint8_t data)
 {
 	int sel = offset >> 12;
 
-	m_exp->write(space, offset, data, sel);
+	m_exp->write(offset, data, sel);
 
 	switch (sel)
 	{
@@ -319,7 +611,10 @@ WRITE8_MEMBER( pet_state::write )
 		break;
 
 	case SEL8:
-		m_video_ram[offset & (m_video_ram_size - 1)] = data;
+		if (!(offset & 0x800))
+		{
+			m_video_ram[offset & (m_video_ram_size - 1)] = data;
+		}
 		break;
 
 	case SELE:
@@ -327,25 +622,25 @@ WRITE8_MEMBER( pet_state::write )
 		{
 			if (BIT(offset, 4))
 			{
-				m_pia1->write(space, offset & 0x03, data);
+				m_pia1->write(offset & 0x03, data);
 			}
 			if (BIT(offset, 5))
 			{
-				m_pia2->write(space, offset & 0x03, data);
+				m_pia2->write(offset & 0x03, data);
 			}
 			if (BIT(offset, 6))
 			{
-				m_via->write(space, offset & 0x0f, data);
+				m_via->write(offset & 0x0f, data);
 			}
 			if (m_crtc && BIT(offset, 7))
 			{
 				if (BIT(offset, 0))
 				{
-					m_crtc->register_w(space, 0, data);
+					m_crtc->register_w(data);
 				}
 				else
 				{
-					m_crtc->address_w(space, 0, data);
+					m_crtc->address_w(data);
 				}
 			}
 		}
@@ -360,8 +655,8 @@ WRITE8_MEMBER( pet_state::write )
 void cbm8296_state::read_pla1(offs_t offset, int phi2, int brw, int noscreen, int noio, int ramsela, int ramsel9, int ramon, int norom,
 	int &cswff, int &cs9, int &csa, int &csio, int &cse, int &cskb, int &fa12, int &casena1)
 {
-	UINT32 input = (offset & 0xff00) | phi2 << 7 | brw << 6 | noscreen << 5 | noio << 4 | ramsela << 3 | ramsel9 << 2 | ramon << 1 | norom;
-	UINT32 data = m_pla1->read(input);
+	uint32_t input = (offset & 0xff00) | phi2 << 7 | brw << 6 | noscreen << 5 | noio << 4 | ramsela << 3 | ramsel9 << 2 | ramon << 1 | norom;
+	uint32_t data = m_pla1->read(input);
 
 	cswff = BIT(data, 0);
 	cs9 = BIT(data, 1);
@@ -378,11 +673,11 @@ void cbm8296_state::read_pla1_eprom(offs_t offset, int phi2, int brw, int noscre
 {
 	// PLA-EPROM adapter by Joachim Nemetz (Jogi)
 
-	UINT32 input = (offset & 0xff00) | phi2 << 7 | brw << 6 | noscreen << 5 | noio << 4 | ramsela << 3 | ramsel9 << 2 | ramon << 1 | norom;
-	input = BITSWAP16(input,13,8,9,7,12,14,11,10,6,5,4,3,2,1,0,15);
+	uint32_t input = (offset & 0xff00) | phi2 << 7 | brw << 6 | noscreen << 5 | noio << 4 | ramsela << 3 | ramsel9 << 2 | ramon << 1 | norom;
+	input = bitswap<16>(input,13,8,9,7,12,14,11,10,6,5,4,3,2,1,0,15);
 
-	UINT8 data = m_ue6_rom->base()[input];
-	data = BITSWAP8(data,7,0,1,2,3,4,5,6);
+	uint8_t data = m_ue6_rom->base()[input];
+	data = bitswap<8>(data,7,0,1,2,3,4,5,6);
 
 	cswff = BIT(data, 0);
 	cs9 = BIT(data, 1);
@@ -401,8 +696,8 @@ void cbm8296_state::read_pla1_eprom(offs_t offset, int phi2, int brw, int noscre
 
 void cbm8296_state::read_pla2(offs_t offset, int phi2, int brw, int casena1, int &endra, int &noscreen, int &casena2, int &fa15)
 {
-	UINT32 input = BITSWAP8(m_cr, 0,1,2,3,4,5,6,7) << 8 | ((offset >> 8) & 0xf8) | brw << 2 | phi2 << 1 | casena1;
-	UINT32 data = m_pla2->read(input);
+	uint32_t input = bitswap<8>(m_cr, 0,1,2,3,4,5,6,7) << 8 | ((offset >> 8) & 0xf8) | brw << 2 | phi2 << 1 | casena1;
+	uint32_t data = m_pla2->read(input);
 
 	endra = BIT(data, 4);
 	noscreen = BIT(data, 5);
@@ -414,11 +709,11 @@ void cbm8296_state::read_pla2_eprom(offs_t offset, int phi2, int brw, int casena
 {
 	// PLA-EPROM adapter by Joachim Nemetz (Jogi)
 
-	UINT32 input = BITSWAP8(m_cr, 0,1,2,3,4,5,6,7) << 8 | ((offset >> 8) & 0xf8) | brw << 2 | phi2 << 1 | casena1;
-	input = BITSWAP16(input,13,8,9,7,12,14,11,10,6,5,4,3,2,1,0,15);
+	uint32_t input = bitswap<8>(m_cr, 0,1,2,3,4,5,6,7) << 8 | ((offset >> 8) & 0xf8) | brw << 2 | phi2 << 1 | casena1;
+	input = bitswap<16>(input,13,8,9,7,12,14,11,10,6,5,4,3,2,1,0,15);
 
-	UINT8 data = m_ue5_rom->base()[input];
-	data = BITSWAP8(data,7,0,1,2,3,4,5,6);
+	uint8_t data = m_ue5_rom->base()[input];
+	data = bitswap<8>(data,7,0,1,2,3,4,5,6);
 
 	endra = BIT(data, 4);
 	noscreen = BIT(data, 5);
@@ -431,9 +726,9 @@ void cbm8296_state::read_pla2_eprom(offs_t offset, int phi2, int brw, int casena
 //  read -
 //-------------------------------------------------
 
-READ8_MEMBER( cbm8296_state::read )
+uint8_t cbm8296_state::read(offs_t offset)
 {
-	int norom = m_exp->norom_r(space, offset, offset >> 12) && !BIT(m_cr, 7);
+	int norom = m_exp->norom_r(offset, offset >> 12) && !BIT(m_cr, 7);
 	int phi2 = 1, brw = 1, noscreen = 1, noio = BIT(m_cr, 6);
 	int ramsela = BIT(m_via_pa, 0), ramsel9 = BIT(m_via_pa, 1), ramon = BIT(m_via_pa, 2);
 	int cswff = 1, cs9 = 1, csa = 1, csio = 1, cse = 1, cskb = 1, fa12 = 1, fa15 = 1, casena1 = 1, casena2 = 1, endra = 1;
@@ -448,7 +743,7 @@ READ8_MEMBER( cbm8296_state::read )
 
 	//logerror("%s read  %04x : norom %u noio %u ramsela %u ramsel9 %u ramon %u / cswff %u cs9 %u csa %u csio %u cse %u cskb %u fa12 %u casena1 %u endra %u noscreen %u casena2 %u fa15 %u\n",machine().describe_context(),offset,norom,noio,ramsela,ramsel9,ramon,cswff,cs9,csa,csio,cse,cskb,fa12,casena1,endra,noscreen,casena2,fa15);
 
-	UINT8 data = 0;
+	uint8_t data = 0;
 
 	offs_t drma = fa15 << 15 | (offset & 0x7e00) | BIT(offset, 0) << 8 | (offset & 0x1fe) >> 1;
 
@@ -463,14 +758,14 @@ READ8_MEMBER( cbm8296_state::read )
 	if (!cs9)
 	{
 		if (m_cart_9000 && m_cart_9000->exists())
-			data = m_cart_9000->read_rom(space, offset & 0xfff);
+			data = m_cart_9000->read_rom(offset & 0xfff);
 		else
 			data = m_rom->base()[offset & 0xfff];
 	}
 	if (!csa)
 	{
 		if (m_cart_a000 && m_cart_a000->exists())
-			data = m_cart_a000->read_rom(space, offset & 0xfff);
+			data = m_cart_a000->read_rom(offset & 0xfff);
 		else
 			data = m_rom->base()[0x1000 | (offset & 0xfff)];
 	}
@@ -488,19 +783,19 @@ READ8_MEMBER( cbm8296_state::read )
 
 		if (BIT(offset, 4))
 		{
-			data &= m_pia1->read(space, offset & 0x03);
+			data &= m_pia1->read(offset & 0x03);
 		}
 		if (BIT(offset, 5))
 		{
-			data &= m_pia2->read(space, offset & 0x03);
+			data &= m_pia2->read(offset & 0x03);
 		}
 		if (BIT(offset, 6))
 		{
-			data &= m_via->read(space, offset & 0x0f);
+			data &= m_via->read(offset & 0x0f);
 		}
 		if (BIT(offset, 7) && BIT(offset, 0))
 		{
-			data &= m_crtc->register_r(space, 0);
+			data &= m_crtc->register_r();
 		}
 	}
 
@@ -512,9 +807,9 @@ READ8_MEMBER( cbm8296_state::read )
 //  write -
 //-------------------------------------------------
 
-WRITE8_MEMBER( cbm8296_state::write )
+void cbm8296_state::write(offs_t offset, uint8_t data)
 {
-	int norom = m_exp->norom_r(space, offset, offset >> 12) && !BIT(m_cr, 7);
+	int norom = m_exp->norom_r(offset, offset >> 12) && !BIT(m_cr, 7);
 	int phi2 = 1, brw = 0, noscreen = 1, noio = BIT(m_cr, 6);
 	int ramsela = BIT(m_via_pa, 0), ramsel9 = BIT(m_via_pa, 1), ramon = BIT(m_via_pa, 2);
 	int cswff = 1, cs9 = 1, csa = 1, csio = 1, cse = 1, cskb = 1, fa12 = 1, fa15 = 1, casena1 = 1, casena2 = 1, endra = 1;
@@ -543,25 +838,25 @@ WRITE8_MEMBER( cbm8296_state::write )
 	{
 		if (BIT(offset, 4))
 		{
-			m_pia1->write(space, offset & 0x03, data);
+			m_pia1->write(offset & 0x03, data);
 		}
 		if (BIT(offset, 5))
 		{
-			m_pia2->write(space, offset & 0x03, data);
+			m_pia2->write(offset & 0x03, data);
 		}
 		if (BIT(offset, 6))
 		{
-			m_via->write(space, offset & 0x0f, data);
+			m_via->write(offset & 0x0f, data);
 		}
 		if (BIT(offset, 7))
 		{
 			if (BIT(offset, 0))
 			{
-				m_crtc->register_w(space, 0, data);
+				m_crtc->register_w(data);
 			}
 			else
 			{
-				m_crtc->address_w(space, 0, data);
+				m_crtc->address_w(data);
 			}
 		}
 	}
@@ -577,32 +872,22 @@ WRITE8_MEMBER( cbm8296_state::write )
 //  ADDRESS MAPS
 //**************************************************************************
 
-//-------------------------------------------------
-//  ADDRESS_MAP( pet2001_mem )
-//-------------------------------------------------
-
-static ADDRESS_MAP_START( pet2001_mem, AS_PROGRAM, 8, pet_state )
-	AM_RANGE(0x0000, 0xffff) AM_READWRITE(read, write)
-ADDRESS_MAP_END
+void pet_state::pet2001_mem(address_map &map)
+{
+	map(0x0000, 0xffff).rw(FUNC(pet_state::read), FUNC(pet_state::write));
+}
 
 
-//-------------------------------------------------
-//  ADDRESS_MAP( cbm8296_mem )
-//-------------------------------------------------
-
-static ADDRESS_MAP_START( cbm8296_mem, AS_PROGRAM, 8, cbm8296_state )
-	AM_RANGE(0x0000, 0xffff) AM_READWRITE(read, write)
-ADDRESS_MAP_END
+void cbm8296_state::cbm8296_mem(address_map &map)
+{
+	map(0x0000, 0xffff).rw(FUNC(cbm8296_state::read), FUNC(cbm8296_state::write));
+}
 
 
 
 //**************************************************************************
 //  INPUT PORTS
 //**************************************************************************
-
-//-------------------------------------------------
-//  INPUT_PORTS( pet )
-//-------------------------------------------------
 
 static INPUT_PORTS_START( pet )
 	PORT_START( "ROW0" )
@@ -629,51 +914,51 @@ static INPUT_PORTS_START( pet )
 	PORT_BIT( 0x80, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_9_PAD)      PORT_CHAR('9')
 	PORT_BIT( 0x40, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_7_PAD)      PORT_CHAR('7')
 	PORT_BIT( 0x20, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_NAME("\xE2\x86\x91 Pi") PORT_CODE(KEYCODE_OPENBRACE) PORT_CHAR('^') PORT_CHAR(0x03C0)
-	PORT_BIT( 0x10, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_O)          PORT_CHAR('o') PORT_CHAR('O')
-	PORT_BIT( 0x08, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_U)          PORT_CHAR('u') PORT_CHAR('U')
-	PORT_BIT( 0x04, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_T)          PORT_CHAR('t') PORT_CHAR('T')
-	PORT_BIT( 0x02, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_E)          PORT_CHAR('e') PORT_CHAR('E')
-	PORT_BIT( 0x01, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_Q)          PORT_CHAR('q') PORT_CHAR('Q')
+	PORT_BIT( 0x10, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_O)          PORT_CHAR('O')
+	PORT_BIT( 0x08, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_U)          PORT_CHAR('U')
+	PORT_BIT( 0x04, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_T)          PORT_CHAR('T')
+	PORT_BIT( 0x02, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_E)          PORT_CHAR('E')
+	PORT_BIT( 0x01, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_Q)          PORT_CHAR('Q')
 
 	PORT_START( "ROW3" )
 	PORT_BIT( 0x80, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_SLASH_PAD)  PORT_CHAR('/')
 	PORT_BIT( 0x40, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_8_PAD)      PORT_CHAR('8')
 	PORT_BIT( 0x20, IP_ACTIVE_LOW, IPT_UNUSED )
-	PORT_BIT( 0x10, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_P)          PORT_CHAR('p') PORT_CHAR('P')
-	PORT_BIT( 0x08, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_I)          PORT_CHAR('i') PORT_CHAR('I')
-	PORT_BIT( 0x04, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_Y)          PORT_CHAR('y') PORT_CHAR('Y')
-	PORT_BIT( 0x02, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_R)          PORT_CHAR('r') PORT_CHAR('R')
-	PORT_BIT( 0x01, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_W)          PORT_CHAR('w') PORT_CHAR('W')
+	PORT_BIT( 0x10, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_P)          PORT_CHAR('P')
+	PORT_BIT( 0x08, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_I)          PORT_CHAR('I')
+	PORT_BIT( 0x04, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_Y)          PORT_CHAR('Y')
+	PORT_BIT( 0x02, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_R)          PORT_CHAR('R')
+	PORT_BIT( 0x01, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_W)          PORT_CHAR('W')
 
 	PORT_START( "ROW4" )
 	PORT_BIT( 0x80, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_6_PAD)      PORT_CHAR('6')
 	PORT_BIT( 0x40, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_4_PAD)      PORT_CHAR('4')
 	PORT_BIT( 0x20, IP_ACTIVE_LOW, IPT_UNUSED )
-	PORT_BIT( 0x10, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_L)          PORT_CHAR('l') PORT_CHAR('L')
-	PORT_BIT( 0x08, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_J)          PORT_CHAR('j') PORT_CHAR('J')
-	PORT_BIT( 0x04, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_G)          PORT_CHAR('g') PORT_CHAR('G')
-	PORT_BIT( 0x02, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_D)          PORT_CHAR('d') PORT_CHAR('D')
-	PORT_BIT( 0x01, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_A)          PORT_CHAR('a') PORT_CHAR('A')
+	PORT_BIT( 0x10, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_L)          PORT_CHAR('L')
+	PORT_BIT( 0x08, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_J)          PORT_CHAR('J')
+	PORT_BIT( 0x04, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_G)          PORT_CHAR('G')
+	PORT_BIT( 0x02, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_D)          PORT_CHAR('D')
+	PORT_BIT( 0x01, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_A)          PORT_CHAR('A')
 
 	PORT_START( "ROW5" )
 	PORT_BIT( 0x80, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_ASTERISK)   PORT_CHAR('*')
 	PORT_BIT( 0x40, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_5_PAD)      PORT_CHAR('5')
 	PORT_BIT( 0x20, IP_ACTIVE_LOW, IPT_UNUSED )
 	PORT_BIT( 0x10, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_COLON)      PORT_CHAR(':')
-	PORT_BIT( 0x08, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_K)          PORT_CHAR('k') PORT_CHAR('K')
-	PORT_BIT( 0x04, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_H)          PORT_CHAR('h') PORT_CHAR('H')
-	PORT_BIT( 0x02, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_F)          PORT_CHAR('f') PORT_CHAR('F')
-	PORT_BIT( 0x01, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_S)          PORT_CHAR('s') PORT_CHAR('S')
+	PORT_BIT( 0x08, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_K)          PORT_CHAR('K')
+	PORT_BIT( 0x04, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_H)          PORT_CHAR('H')
+	PORT_BIT( 0x02, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_F)          PORT_CHAR('F')
+	PORT_BIT( 0x01, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_S)          PORT_CHAR('S')
 
 	PORT_START( "ROW6" )
 	PORT_BIT( 0x80, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_3_PAD)      PORT_CHAR('3')
 	PORT_BIT( 0x40, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_1_PAD)      PORT_CHAR('1')
 	PORT_BIT( 0x20, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_NAME("Return") PORT_CODE(KEYCODE_ENTER) PORT_CHAR(13)
 	PORT_BIT( 0x10, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_STOP)       PORT_CHAR(';')
-	PORT_BIT( 0x08, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_M)          PORT_CHAR('m') PORT_CHAR('M')
-	PORT_BIT( 0x04, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_B)          PORT_CHAR('b') PORT_CHAR('B')
-	PORT_BIT( 0x02, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_C)          PORT_CHAR('c') PORT_CHAR('C')
-	PORT_BIT( 0x01, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_Z)          PORT_CHAR('z') PORT_CHAR('Z')
+	PORT_BIT( 0x08, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_M)          PORT_CHAR('M')
+	PORT_BIT( 0x04, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_B)          PORT_CHAR('B')
+	PORT_BIT( 0x02, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_C)          PORT_CHAR('C')
+	PORT_BIT( 0x01, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_Z)          PORT_CHAR('Z')
 
 	PORT_START( "ROW7" )
 	PORT_BIT( 0x80, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_PLUS_PAD)   PORT_CHAR('+')
@@ -681,9 +966,9 @@ static INPUT_PORTS_START( pet )
 	PORT_BIT( 0x20, IP_ACTIVE_LOW, IPT_UNUSED )
 	PORT_BIT( 0x10, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_SLASH)      PORT_CHAR('?')
 	PORT_BIT( 0x08, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_COMMA)      PORT_CHAR(',')
-	PORT_BIT( 0x04, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_N)          PORT_CHAR('n') PORT_CHAR('N')
-	PORT_BIT( 0x02, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_V)          PORT_CHAR('v') PORT_CHAR('V')
-	PORT_BIT( 0x01, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_X)          PORT_CHAR('x') PORT_CHAR('X')
+	PORT_BIT( 0x04, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_N)          PORT_CHAR('N')
+	PORT_BIT( 0x02, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_V)          PORT_CHAR('V')
+	PORT_BIT( 0x01, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_X)          PORT_CHAR('X')
 
 	PORT_START( "ROW8" )
 	PORT_BIT( 0x80, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_CODE(KEYCODE_MINUS_PAD)  PORT_CHAR('-')
@@ -710,10 +995,6 @@ static INPUT_PORTS_START( pet )
 	PORT_BIT( 0x01, IP_ACTIVE_LOW, IPT_KEYBOARD ) PORT_NAME("SHIFT LOCK") PORT_CODE(KEYCODE_CAPSLOCK) PORT_TOGGLE PORT_CHAR(UCHAR_MAMEKEY(CAPSLOCK))
 INPUT_PORTS_END
 
-
-//-------------------------------------------------
-//  INPUT_PORTS( petb )
-//-------------------------------------------------
 
 INPUT_PORTS_START( petb )
 	PORT_START( "ROW0" )
@@ -823,27 +1104,15 @@ INPUT_PORTS_START( petb )
 INPUT_PORTS_END
 
 
-//-------------------------------------------------
-//  INPUT_PORTS( petb_de )
-//-------------------------------------------------
-
 INPUT_PORTS_START( petb_de )
 	PORT_INCLUDE( petb )
 INPUT_PORTS_END
 
 
-//-------------------------------------------------
-//  INPUT_PORTS( petb_fr )
-//-------------------------------------------------
-
 INPUT_PORTS_START( petb_fr )
 	PORT_INCLUDE( petb )
 INPUT_PORTS_END
 
-
-//-------------------------------------------------
-//  INPUT_PORTS( petb_se )
-//-------------------------------------------------
 
 INPUT_PORTS_START( petb_se )
 	PORT_INCLUDE( petb )
@@ -855,14 +1124,7 @@ INPUT_PORTS_END
 //  DEVICE CONFIGURATION
 //**************************************************************************
 
-WRITE_LINE_MEMBER( pet_state::via_irq_w )
-{
-	m_via_irq = state;
-
-	check_interrupts();
-}
-
-WRITE8_MEMBER( pet_state::via_pa_w )
+void pet_state::via_pa_w(uint8_t data)
 {
 	m_user->write_c((data>>0)&1);
 	m_user->write_d((data>>1)&1);
@@ -876,7 +1138,7 @@ WRITE8_MEMBER( pet_state::via_pa_w )
 	m_via_pa = data;
 }
 
-READ8_MEMBER( pet_state::via_pb_r )
+uint8_t pet_state::via_pb_r()
 {
 	/*
 
@@ -893,7 +1155,7 @@ READ8_MEMBER( pet_state::via_pb_r )
 
 	*/
 
-	UINT8 data = 0;
+	uint8_t data = 0;
 
 	// video sync
 	data |= (m_crtc ? m_crtc->vsync_r() : m_sync) << 5;
@@ -906,7 +1168,7 @@ READ8_MEMBER( pet_state::via_pb_r )
 	return data;
 }
 
-WRITE8_MEMBER( pet_state::via_pb_w )
+void pet_state::via_pb_w(uint8_t data)
 {
 	/*
 
@@ -924,8 +1186,8 @@ WRITE8_MEMBER( pet_state::via_pb_w )
 	*/
 
 	// IEEE-488
-	m_ieee->nrfd_w(BIT(data, 1));
-	m_ieee->atn_w(BIT(data, 2));
+	m_ieee->host_nrfd_w(BIT(data, 1));
+	m_ieee->host_atn_w(BIT(data, 2));
 
 	// cassette
 	m_cassette->write(BIT(data, 3));
@@ -947,21 +1209,7 @@ WRITE_LINE_MEMBER( pet_state::via_cb2_w )
 }
 
 
-WRITE_LINE_MEMBER( pet_state::pia1_irqa_w )
-{
-	m_pia1a_irq = state;
-
-	check_interrupts();
-}
-
-WRITE_LINE_MEMBER( pet_state::pia1_irqb_w )
-{
-	m_pia1b_irq = state;
-
-	check_interrupts();
-}
-
-READ8_MEMBER( pet_state::pia1_pa_r )
+uint8_t pet_state::pia1_pa_r()
 {
 	/*
 
@@ -978,7 +1226,7 @@ READ8_MEMBER( pet_state::pia1_pa_r )
 
 	*/
 
-	UINT8 data = 0;
+	uint8_t data = 0;
 
 	// keyboard
 	data |= m_key;
@@ -996,7 +1244,7 @@ READ8_MEMBER( pet_state::pia1_pa_r )
 	return data;
 }
 
-WRITE8_MEMBER( pet_state::pia1_pa_w )
+void pet_state::pia1_pa_w(uint8_t data)
 {
 	/*
 
@@ -1021,43 +1269,43 @@ WRITE8_MEMBER( pet_state::pia1_pa_w )
 	update_speaker();
 }
 
-READ8_MEMBER( pet_state::pia1_pb_r )
+uint8_t pet_state::pia1_pb_r()
 {
-	UINT8 data = 0xff;
+	uint8_t data = 0xff;
 
 	switch (m_key)
 	{
-	case 0: data &= m_row0->read(); break;
-	case 1: data &= m_row1->read(); break;
-	case 2: data &= m_row2->read(); break;
-	case 3: data &= m_row3->read(); break;
-	case 4: data &= m_row4->read(); break;
-	case 5: data &= m_row5->read(); break;
-	case 6: data &= m_row6->read(); break;
-	case 7: data &= m_row7->read(); break;
-	case 8: data &= m_row8->read() & m_lock->read(); break;
-	case 9: data &= m_row9->read(); break;
+	case 0: data &= m_row[0]->read(); break;
+	case 1: data &= m_row[1]->read(); break;
+	case 2: data &= m_row[2]->read(); break;
+	case 3: data &= m_row[3]->read(); break;
+	case 4: data &= m_row[4]->read(); break;
+	case 5: data &= m_row[5]->read(); break;
+	case 6: data &= m_row[6]->read(); break;
+	case 7: data &= m_row[7]->read(); break;
+	case 8: data &= m_row[8]->read() & m_lock->read(); break;
+	case 9: data &= m_row[9]->read(); break;
 	}
 
 	return data;
 }
 
-READ8_MEMBER( pet2001b_state::pia1_pb_r )
+uint8_t pet2001b_state::pia1_pb_r()
 {
-	UINT8 data = 0xff;
+	uint8_t data = 0xff;
 
 	switch (m_key)
 	{
-	case 0: data &= m_row0->read(); break;
-	case 1: data &= m_row1->read(); break;
-	case 2: data &= m_row2->read(); break;
-	case 3: data &= m_row3->read(); break;
-	case 4: data &= m_row4->read(); break;
-	case 5: data &= m_row5->read(); break;
-	case 6: data &= m_row6->read() & m_lock->read(); break;
-	case 7: data &= m_row7->read(); break;
-	case 8: data &= m_row8->read(); break;
-	case 9: data &= m_row9->read(); break;
+	case 0: data &= m_row[0]->read(); break;
+	case 1: data &= m_row[1]->read(); break;
+	case 2: data &= m_row[2]->read(); break;
+	case 3: data &= m_row[3]->read(); break;
+	case 4: data &= m_row[4]->read(); break;
+	case 5: data &= m_row[5]->read(); break;
+	case 6: data &= m_row[6]->read() & m_lock->read(); break;
+	case 7: data &= m_row[7]->read(); break;
+	case 8: data &= m_row[8]->read(); break;
+	case 9: data &= m_row[9]->read(); break;
 	}
 
 	return data;
@@ -1065,25 +1313,11 @@ READ8_MEMBER( pet2001b_state::pia1_pb_r )
 
 WRITE_LINE_MEMBER( pet_state::pia1_ca2_w )
 {
-	m_ieee->eoi_w(state);
+	m_ieee->host_eoi_w(state);
 
 	m_blanktv = state;
 }
 
-
-WRITE_LINE_MEMBER( pet_state::pia2_irqa_w )
-{
-	m_pia2a_irq = state;
-
-	check_interrupts();
-}
-
-WRITE_LINE_MEMBER( pet_state::pia2_irqb_w )
-{
-	m_pia2b_irq = state;
-
-	check_interrupts();
-}
 
 WRITE_LINE_MEMBER( pet_state::user_diag_w )
 {
@@ -1096,11 +1330,7 @@ WRITE_LINE_MEMBER( pet_state::user_diag_w )
 //  VIDEO
 //**************************************************************************
 
-//-------------------------------------------------
-//  TIMER_DEVICE_CALLBACK( sync_tick )
-//-------------------------------------------------
-
-TIMER_DEVICE_CALLBACK_MEMBER( pet_state::sync_tick )
+TIMER_CALLBACK_MEMBER( pet_state::sync_tick )
 {
 	m_sync = !m_sync;
 
@@ -1112,26 +1342,26 @@ TIMER_DEVICE_CALLBACK_MEMBER( pet_state::sync_tick )
 //  SCREEN_UPDATE( pet2001 )
 //-------------------------------------------------
 
-UINT32 pet_state::screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
+uint32_t pet_state::screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
 {
-	const pen_t *pen = m_palette->pens();
+	pen_t const *const pen = m_palette->pens();
 
 	for (int y = 0; y < 200; y++)
 	{
 		for (int sx = 0; sx < 40; sx++)
 		{
-			int sy = y / 8;
-			offs_t video_addr = (sy * 40) + sx;
-			UINT8 lsd = m_video_ram[video_addr];
+			int const sy = y / 8;
+			offs_t const video_addr = (sy * 40) + sx;
+			uint8_t const lsd = m_video_ram[video_addr];
 
-			int ra = y & 0x07;
-			offs_t char_addr = (m_graphic << 10) | ((lsd & 0x7f) << 3) | ra;
-			UINT8 data = m_char_rom->base()[char_addr];
+			int const ra = y & 0x07;
+			offs_t const char_addr = (m_graphic << 10) | ((lsd & 0x7f) << 3) | ra;
+			uint8_t data = m_char_rom->base()[char_addr];
 
 			for (int x = 0; x < 8; x++, data <<= 1)
 			{
-			int color = (BIT(data, 7) ^ BIT(lsd, 7)) && m_blanktv;
-			bitmap.pix32(y, (sx * 8) + x) = pen[color];
+				int const color = (BIT(data, 7) ^ BIT(lsd, 7)) && m_blanktv;
+				bitmap.pix(y, (sx * 8) + x) = pen[color];
 			}
 		}
 	}
@@ -1146,7 +1376,7 @@ UINT32 pet_state::screen_update(screen_device &screen, bitmap_rgb32 &bitmap, con
 
 MC6845_BEGIN_UPDATE( pet_state::pet_begin_update )
 {
-	bitmap.fill(rgb_t::black);
+	bitmap.fill(rgb_t::black(), cliprect);
 }
 
 MC6845_UPDATE_ROW( pet80_state::pet80_update_row )
@@ -1158,8 +1388,8 @@ MC6845_UPDATE_ROW( pet80_state::pet80_update_row )
 
 	for (int column = 0; column < x_count; column++)
 	{
-		UINT8 lsd = 0, data = 0;
-		UINT8 rra = ra & 0x07;
+		uint8_t lsd = 0, data = 0;
+		uint8_t rra = ra & 0x07;
 		int no_row = !(BIT(ra, 3) || BIT(ra, 4));
 		int invert = BIT(ma, 12);
 		int chr_option = BIT(ma, 13);
@@ -1173,8 +1403,8 @@ MC6845_UPDATE_ROW( pet80_state::pet80_update_row )
 
 		for (int bit = 0; bit < 8; bit++, data <<= 1)
 		{
-			int video = (!((BIT(data, 7) ^ BIT(lsd, 7)) && no_row) ^ invert) && de;
-			bitmap.pix32(vbp + y, hbp + x++) = pen[video];
+			int const video = (!((BIT(data, 7) ^ BIT(lsd, 7)) && no_row) ^ invert) && de;
+			bitmap.pix(vbp + y, hbp + x++) = pen[video];
 		}
 
 		// odd character
@@ -1186,8 +1416,8 @@ MC6845_UPDATE_ROW( pet80_state::pet80_update_row )
 
 		for (int bit = 0; bit < 8; bit++, data <<= 1)
 		{
-			int video = (!((BIT(data, 7) ^ BIT(lsd, 7)) && no_row) ^ invert) && de;
-			bitmap.pix32(vbp + y, hbp + x++) = pen[video];
+			int const video = (!((BIT(data, 7) ^ BIT(lsd, 7)) && no_row) ^ invert) && de;
+			bitmap.pix(vbp + y, hbp + x++) = pen[video];
 		}
 	}
 }
@@ -1206,8 +1436,8 @@ MC6845_UPDATE_ROW( pet_state::pet40_update_row )
 
 	for (int column = 0; column < x_count; column++)
 	{
-		UINT8 lsd = 0, data = 0;
-		UINT8 rra = ra & 0x07;
+		uint8_t lsd = 0, data = 0;
+		uint8_t rra = ra & 0x07;
 		int no_row = !(BIT(ra, 3) || BIT(ra, 4));
 		int invert = BIT(ma, 12);
 		int chr_option = BIT(ma, 13);
@@ -1219,8 +1449,8 @@ MC6845_UPDATE_ROW( pet_state::pet40_update_row )
 
 		for (int bit = 0; bit < 8; bit++, data <<= 1)
 		{
-			int video = (!((BIT(data, 7) ^ BIT(lsd, 7)) && no_row) ^ invert) && de;
-			bitmap.pix32(vbp + y, hbp + x++) = pen[video];
+			int const video = (!((BIT(data, 7) ^ BIT(lsd, 7)) && no_row) ^ invert) && de;
+			bitmap.pix(vbp + y, hbp + x++) = pen[video];
 		}
 	}
 }
@@ -1238,8 +1468,8 @@ MC6845_UPDATE_ROW( pet80_state::cbm8296_update_row )
 
 	for (int column = 0; column < x_count; column++)
 	{
-		UINT8 lsd = 0, data = 0;
-		UINT8 rra = ra & 0x07;
+		uint8_t lsd = 0, data = 0;
+		uint8_t rra = ra & 0x07;
 		int no_row = !BIT(ra, 3);
 		int ra4 = BIT(ra, 4);
 		int chr_option = BIT(ma, 13);
@@ -1255,8 +1485,8 @@ MC6845_UPDATE_ROW( pet80_state::cbm8296_update_row )
 
 		for (int bit = 0; bit < 8; bit++, data <<= 1)
 		{
-			int video = (((BIT(data, 7) ^ BIT(lsd, 7)) && no_row) && de);
-			bitmap.pix32(vbp + y, hbp + x++) = pen[video];
+			int const video = (((BIT(data, 7) ^ BIT(lsd, 7)) && no_row) && de);
+			bitmap.pix(vbp + y, hbp + x++) = pen[video];
 		}
 
 		// odd character
@@ -1268,20 +1498,17 @@ MC6845_UPDATE_ROW( pet80_state::cbm8296_update_row )
 
 		for (int bit = 0; bit < 8; bit++, data <<= 1)
 		{
-			int video = (((BIT(data, 7) ^ BIT(lsd, 7)) && no_row) && de);
-			bitmap.pix32(vbp + y, hbp + x++) = pen[video];
+			int const video = (((BIT(data, 7) ^ BIT(lsd, 7)) && no_row) && de);
+			bitmap.pix(vbp + y, hbp + x++) = pen[video];
 		}
 	}
 }
 
 
-//-------------------------------------------------
-//  SLOT_INTERFACE( cbm8296d_ieee488_devices )
-//-------------------------------------------------
-
-SLOT_INTERFACE_START( cbm8296d_ieee488_devices )
-	SLOT_INTERFACE("c8250lp", C8250LP)
-SLOT_INTERFACE_END
+void cbm8296d_ieee488_devices(device_slot_interface &device)
+{
+	device.option_add("c8250lp", C8250LP);
+}
 
 
 
@@ -1289,17 +1516,10 @@ SLOT_INTERFACE_END
 //  MACHINE INITIALIZATION
 //**************************************************************************
 
-//-------------------------------------------------
-//  MACHINE_START( pet )
-//-------------------------------------------------
-
 MACHINE_START_MEMBER( pet_state, pet )
 {
-	// allocate memory
-	m_video_ram.allocate(m_video_ram_size);
-
 	// initialize memory
-	UINT8 data = 0xff;
+	uint8_t data = 0xff;
 
 	for (offs_t offset = 0; offset < m_ram->size(); offset++)
 	{
@@ -1315,24 +1535,17 @@ MACHINE_START_MEMBER( pet_state, pet )
 		if (!(offset % 64)) data ^= 0xff;
 	}
 
+	if (!m_sync_timer)
+		m_sync_timer = machine().scheduler().timer_alloc(timer_expired_delegate(FUNC(pet_state::sync_tick), this));
+
 	// state saving
 	save_item(NAME(m_key));
 	save_item(NAME(m_sync));
 	save_item(NAME(m_graphic));
 	save_item(NAME(m_blanktv));
-	save_item(NAME(m_via_irq));
-	save_item(NAME(m_pia1a_irq));
-	save_item(NAME(m_pia1b_irq));
-	save_item(NAME(m_pia2a_irq));
-	save_item(NAME(m_pia2b_irq));
-	save_item(NAME(m_exp_irq));
 	save_item(NAME(m_user_diag));
 }
 
-
-//-------------------------------------------------
-//  MACHINE_START( pet2001 )
-//-------------------------------------------------
 
 MACHINE_START_MEMBER( pet_state, pet2001 )
 {
@@ -1352,13 +1565,12 @@ MACHINE_RESET_MEMBER( pet_state, pet )
 
 	m_exp->reset();
 
-	m_ieee->ren_w(0);
+	m_ieee->host_ren_w(0);
+
+	if (m_sync_period != attotime::zero)
+		m_sync_timer->adjust(machine().time() + m_sync_period, 0, m_sync_period);
 }
 
-
-//-------------------------------------------------
-//  MACHINE_START( pet40 )
-//-------------------------------------------------
 
 MACHINE_START_MEMBER( pet_state, pet40 )
 {
@@ -1376,10 +1588,6 @@ MACHINE_RESET_MEMBER( pet_state, pet40 )
 }
 
 
-//-------------------------------------------------
-//  MACHINE_START( pet80 )
-//-------------------------------------------------
-
 MACHINE_START_MEMBER( pet80_state, pet80 )
 {
 	m_video_ram_size = 0x800;
@@ -1395,10 +1603,6 @@ MACHINE_RESET_MEMBER( pet80_state, pet80 )
 	m_crtc->reset();
 }
 
-
-//-------------------------------------------------
-//  MACHINE_START( cbm8296 )
-//-------------------------------------------------
 
 MACHINE_START_MEMBER( cbm8296_state, cbm8296 )
 {
@@ -1424,648 +1628,467 @@ MACHINE_RESET_MEMBER( cbm8296_state, cbm8296 )
 //  MACHINE DRIVERS
 //**************************************************************************
 
-//-------------------------------------------------
-//  MACHINE_CONFIG( 4k )
-//-------------------------------------------------
+void pet_state::_4k(machine_config &config)
+{
+	RAM(config, m_ram);
+	m_ram->set_default_size("4K");
+	m_ram->set_extra_options("8K,16K,32K");
+}
 
-static MACHINE_CONFIG_FRAGMENT( 4k )
-	MCFG_RAM_ADD(RAM_TAG)
-	MCFG_RAM_DEFAULT_SIZE("4K")
-	MCFG_RAM_EXTRA_OPTIONS("8K,16K,32K")
-MACHINE_CONFIG_END
+void pet_state::_8k(machine_config &config)
+{
+	RAM(config, m_ram);
+	m_ram->set_default_size("8K");
+	m_ram->set_extra_options("16K,32K");
+}
 
+void pet_state::_16k(machine_config &config)
+{
+	RAM(config, m_ram);
+	m_ram->set_default_size("16K");
+	m_ram->set_extra_options("32K");
+}
 
-//-------------------------------------------------
-//  MACHINE_CONFIG( 8k )
-//-------------------------------------------------
+void pet_state::_32k(machine_config &config)
+{
+	RAM(config, m_ram);
+	m_ram->set_default_size("32K");
+}
 
-static MACHINE_CONFIG_FRAGMENT( 8k )
-	MCFG_RAM_ADD(RAM_TAG)
-	MCFG_RAM_DEFAULT_SIZE("8K")
-	MCFG_RAM_EXTRA_OPTIONS("16K,32K")
-MACHINE_CONFIG_END
+void pet_state::base_pet_devices(machine_config &config, const char *default_drive)
+{
+	input_merger_device &mainirq(INPUT_MERGER_ANY_HIGH(config, "mainirq")); // open collector
+	mainirq.output_handler().set_inputline(m_maincpu, m6502_device::IRQ_LINE);
+	mainirq.output_handler().append(m_exp, FUNC(pet_expansion_slot_device::irq_w));
 
+	PALETTE(config, m_palette, palette_device::MONOCHROME);
 
-//-------------------------------------------------
-//  MACHINE_CONFIG( 8k )
-//-------------------------------------------------
+	MOS6522(config, m_via, XTAL(16'000'000)/16);
+	m_via->readpb_handler().set(FUNC(pet_state::via_pb_r));
+	m_via->writepa_handler().set(FUNC(pet_state::via_pa_w));
+	m_via->writepb_handler().set(FUNC(pet_state::via_pb_w));
+	m_via->ca2_handler().set(FUNC(pet_state::via_ca2_w));
+	m_via->cb2_handler().set(FUNC(pet_state::via_cb2_w));
+	m_via->irq_handler().set("mainirq", FUNC(input_merger_device::in_w<0>));
 
-static MACHINE_CONFIG_FRAGMENT( 16k )
-	MCFG_RAM_ADD(RAM_TAG)
-	MCFG_RAM_DEFAULT_SIZE("16K")
-	MCFG_RAM_EXTRA_OPTIONS("32K")
-MACHINE_CONFIG_END
+	PIA6821(config, m_pia1, 0);
+	m_pia1->readpa_handler().set(FUNC(pet_state::pia1_pa_r));
+	m_pia1->readpb_handler().set(FUNC(pet_state::pia1_pb_r));
+	m_pia1->readca1_handler().set(PET_DATASSETTE_PORT_TAG, FUNC(pet_datassette_port_device::read));
+	m_pia1->writepa_handler().set(FUNC(pet_state::pia1_pa_w));
+	m_pia1->ca2_handler().set(FUNC(pet_state::pia1_ca2_w));
+	m_pia1->cb2_handler().set(PET_DATASSETTE_PORT_TAG, FUNC(pet_datassette_port_device::motor_w));
+	m_pia1->irqa_handler().set("mainirq", FUNC(input_merger_device::in_w<1>));
+	m_pia1->irqb_handler().set("mainirq", FUNC(input_merger_device::in_w<2>));
 
+	PIA6821(config, m_pia2, 0);
+	m_pia2->readpa_handler().set(IEEE488_TAG, FUNC(ieee488_device::dio_r));
+	m_pia2->writepb_handler().set(IEEE488_TAG, FUNC(ieee488_device::host_dio_w));
+	m_pia2->ca2_handler().set(IEEE488_TAG, FUNC(ieee488_device::host_ndac_w));
+	m_pia2->cb2_handler().set(IEEE488_TAG, FUNC(ieee488_device::host_dav_w));
+	m_pia2->irqa_handler().set("mainirq", FUNC(input_merger_device::in_w<3>));
+	m_pia2->irqb_handler().set("mainirq", FUNC(input_merger_device::in_w<4>));
 
-//-------------------------------------------------
-//  MACHINE_CONFIG( 8k )
-//-------------------------------------------------
+	ieee488_slot_device::add_cbm_defaults(config, default_drive);
+	IEEE488(config, m_ieee, 0);
+	m_ieee->srq_callback().set(m_pia2, FUNC(pia6821_device::cb1_w));
+	m_ieee->atn_callback().set(m_pia2, FUNC(pia6821_device::ca1_w));
 
-static MACHINE_CONFIG_FRAGMENT( 32k )
-	MCFG_RAM_ADD(RAM_TAG)
-	MCFG_RAM_DEFAULT_SIZE("32K")
-MACHINE_CONFIG_END
+	PET_DATASSETTE_PORT(config, PET_DATASSETTE_PORT_TAG, cbm_datassette_devices, "c2n").read_handler().set(M6520_1_TAG, FUNC(pia6821_device::ca1_w));
+	PET_DATASSETTE_PORT(config, PET_DATASSETTE_PORT2_TAG, cbm_datassette_devices, nullptr).read_handler().set(M6522_TAG, FUNC(via6522_device::write_cb1));
 
+	PET_EXPANSION_SLOT(config, m_exp, XTAL(16'000'000)/16, pet_expansion_cards, nullptr);
+	m_exp->dma_read_callback().set(FUNC(pet_state::read));
+	m_exp->dma_write_callback().set(FUNC(pet_state::write));
 
-//-------------------------------------------------
-//  MACHINE_CONFIG( pet )
-//-------------------------------------------------
+	PET_USER_PORT(config, m_user, pet_user_port_cards, nullptr);
+	m_user->pb_handler().set(m_via, FUNC(via6522_device::write_ca1));
+	m_user->pc_handler().set(m_via, FUNC(via6522_device::write_pa0));
+	m_user->pd_handler().set(m_via, FUNC(via6522_device::write_pa1));
+	m_user->pe_handler().set(m_via, FUNC(via6522_device::write_pa2));
+	m_user->pf_handler().set(m_via, FUNC(via6522_device::write_pa3));
+	m_user->ph_handler().set(m_via, FUNC(via6522_device::write_pa4));
+	m_user->pj_handler().set(m_via, FUNC(via6522_device::write_pa5));
+	m_user->pk_handler().set(m_via, FUNC(via6522_device::write_pa6));
+	m_user->pl_handler().set(m_via, FUNC(via6522_device::write_pa7));
+	m_user->pm_handler().set(m_via, FUNC(via6522_device::write_cb2));
 
-static MACHINE_CONFIG_START( pet, pet_state )
+	quickload_image_device &quickload(QUICKLOAD(config, "quickload", "p00,prg", CBM_QUICKLOAD_DELAY));
+	quickload.set_load_callback(FUNC(pet_state::quickload_pet));
+	quickload.set_interface("cbm_quik");
+
+	SOFTWARE_LIST(config, "cass_list").set_original("pet_cass");
+	SOFTWARE_LIST(config, "flop_list").set_original("pet_flop");
+	SOFTWARE_LIST(config, "hdd_list").set_original("pet_hdd");
+	SOFTWARE_LIST(config, "quik_list").set_original("pet_quik");
+}
+
+void pet_state::pet(machine_config &config)
+{
+	base_pet_devices(config, "c4040");
+
 	MCFG_MACHINE_START_OVERRIDE(pet_state, pet2001)
 	MCFG_MACHINE_RESET_OVERRIDE(pet_state, pet)
 
 	// basic machine hardware
-	MCFG_CPU_ADD(M6502_TAG, M6502, XTAL_8MHz/8)
-	MCFG_CPU_PROGRAM_MAP(pet2001_mem)
-	MCFG_M6502_DISABLE_DIRECT() // address decoding is 100% dynamic, no RAM/ROM banks
+	M6502(config, m_maincpu, XTAL(8'000'000)/8);
+	m_maincpu->set_addrmap(AS_PROGRAM, &pet_state::pet2001_mem);
 
 	// video hardware
-	MCFG_SCREEN_ADD(SCREEN_TAG, RASTER)
-	MCFG_SCREEN_REFRESH_RATE(60)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(2500))
-	MCFG_SCREEN_SIZE(320, 200)
-	MCFG_SCREEN_VISIBLE_AREA(0, 320-1, 0, 200-1)
-	MCFG_SCREEN_UPDATE_DRIVER(pet_state, screen_update)
-	MCFG_TIMER_DRIVER_ADD_PERIODIC("sync_timer", pet_state, sync_tick, attotime::from_hz(120))
+	SCREEN(config, m_screen, SCREEN_TYPE_RASTER);
+	m_screen->set_color(rgb_t::green());
+	m_screen->set_refresh_hz(60);
+	m_screen->set_vblank_time(ATTOSECONDS_IN_USEC(2500));
+	m_screen->set_size(320, 200);
+	m_screen->set_visarea(0, 320-1, 0, 200-1);
+	m_screen->set_screen_update(FUNC(pet_state::screen_update));
+	m_sync_period = attotime::from_hz(120);
 
-	MCFG_PALETTE_ADD_MONOCHROME_GREEN("palette")
+	m_user->p5_handler().set(FUNC(pet_state::user_diag_w));
+}
 
-	// devices
-	MCFG_DEVICE_ADD(M6522_TAG, VIA6522, XTAL_8MHz/8)
-	MCFG_VIA6522_READPB_HANDLER(READ8(pet_state, via_pb_r))
-	MCFG_VIA6522_WRITEPA_HANDLER(WRITE8(pet_state, via_pa_w))
-	MCFG_VIA6522_WRITEPB_HANDLER(WRITE8(pet_state, via_pb_w))
-	MCFG_VIA6522_CA2_HANDLER(WRITELINE(pet_state, via_ca2_w))
-	MCFG_VIA6522_CB2_HANDLER(WRITELINE(pet_state, via_cb2_w))
-	MCFG_VIA6522_IRQ_HANDLER(WRITELINE(pet_state, via_irq_w))
+void pet_state::pet2001(machine_config &config)
+{
+	pet(config);
+	_4k(config);
+}
 
-	MCFG_DEVICE_ADD(M6520_1_TAG, PIA6821, 0)
-	MCFG_PIA_READPA_HANDLER(READ8(pet_state, pia1_pa_r))
-	MCFG_PIA_READPB_HANDLER(READ8(pet_state, pia1_pb_r))
-	MCFG_PIA_READCA1_HANDLER(DEVREADLINE(PET_DATASSETTE_PORT_TAG, pet_datassette_port_device, read))
-	MCFG_PIA_WRITEPA_HANDLER(WRITE8(pet_state, pia1_pa_w))
-	MCFG_PIA_CA2_HANDLER(WRITELINE(pet_state, pia1_ca2_w))
-	MCFG_PIA_CB2_HANDLER(DEVWRITELINE(PET_DATASSETTE_PORT_TAG, pet_datassette_port_device, motor_w))
-	MCFG_PIA_IRQA_HANDLER(WRITELINE(pet_state, pia1_irqa_w))
-	MCFG_PIA_IRQB_HANDLER(WRITELINE(pet_state, pia1_irqb_w))
+void pet_state::pet20018(machine_config &config)
+{
+	pet(config);
+	_8k(config);
+}
 
-	MCFG_DEVICE_ADD(M6520_2_TAG, PIA6821, 0)
-	MCFG_PIA_READPA_HANDLER(DEVREAD8(IEEE488_TAG, ieee488_device, dio_r))
-	MCFG_PIA_WRITEPB_HANDLER(DEVWRITE8(IEEE488_TAG, ieee488_device, dio_w))
-	MCFG_PIA_CA2_HANDLER(DEVWRITELINE(IEEE488_TAG, ieee488_device, ndac_w))
-	MCFG_PIA_CB2_HANDLER(DEVWRITELINE(IEEE488_TAG, ieee488_device, dav_w))
-	MCFG_PIA_IRQA_HANDLER(WRITELINE(pet_state, pia2_irqa_w))
-	MCFG_PIA_IRQB_HANDLER(WRITELINE(pet_state, pia2_irqb_w))
+void pet_state::pet2001n(machine_config &config, bool with_b000)
+{
+	pet(config);
 
-	MCFG_CBM_IEEE488_ADD("c4040")
-	MCFG_IEEE488_SRQ_CALLBACK(DEVWRITELINE(M6520_2_TAG, pia6821_device, cb1_w))
-	MCFG_IEEE488_ATN_CALLBACK(DEVWRITELINE(M6520_2_TAG, pia6821_device, ca1_w))
-	MCFG_PET_DATASSETTE_PORT_ADD(PET_DATASSETTE_PORT_TAG, cbm_datassette_devices, "c2n", DEVWRITELINE(M6520_1_TAG, pia6821_device, ca1_w))
-	MCFG_PET_DATASSETTE_PORT_ADD(PET_DATASSETTE_PORT2_TAG, cbm_datassette_devices, nullptr, DEVWRITELINE(M6522_TAG, via6522_device, write_cb1))
-	MCFG_PET_EXPANSION_SLOT_ADD(PET_EXPANSION_SLOT_TAG, XTAL_8MHz/8, pet_expansion_cards, nullptr)
-	MCFG_PET_EXPANSION_SLOT_DMA_CALLBACKS(READ8(pet_state, read), WRITE8(pet_state, write))
+	GENERIC_CARTSLOT(config, "cart_9000", generic_linear_slot, "pet_9000_rom", "bin,rom");
+	GENERIC_CARTSLOT(config, "cart_a000", generic_linear_slot, "pet_a000_rom", "bin,rom");
+	if (with_b000)
+		GENERIC_CARTSLOT(config, "cart_b000", generic_linear_slot, "pet_b000_rom", "bin,rom");
 
-	MCFG_PET_USER_PORT_ADD(PET_USER_PORT_TAG, pet_user_port_cards, nullptr)
-	MCFG_PET_USER_PORT_5_HANDLER(WRITELINE(pet_state, user_diag_w))
-	MCFG_PET_USER_PORT_B_HANDLER(DEVWRITELINE(M6522_TAG, via6522_device, write_ca1))
-	MCFG_PET_USER_PORT_C_HANDLER(DEVWRITELINE(M6522_TAG, via6522_device, write_pa0))
-	MCFG_PET_USER_PORT_D_HANDLER(DEVWRITELINE(M6522_TAG, via6522_device, write_pa1))
-	MCFG_PET_USER_PORT_E_HANDLER(DEVWRITELINE(M6522_TAG, via6522_device, write_pa2))
-	MCFG_PET_USER_PORT_F_HANDLER(DEVWRITELINE(M6522_TAG, via6522_device, write_pa3))
-	MCFG_PET_USER_PORT_H_HANDLER(DEVWRITELINE(M6522_TAG, via6522_device, write_pa4))
-	MCFG_PET_USER_PORT_J_HANDLER(DEVWRITELINE(M6522_TAG, via6522_device, write_pa5))
-	MCFG_PET_USER_PORT_K_HANDLER(DEVWRITELINE(M6522_TAG, via6522_device, write_pa6))
-	MCFG_PET_USER_PORT_L_HANDLER(DEVWRITELINE(M6522_TAG, via6522_device, write_pa7))
-	MCFG_PET_USER_PORT_M_HANDLER(DEVWRITELINE(M6522_TAG, via6522_device, write_cb2))
-
-	MCFG_QUICKLOAD_ADD("quickload", pet_state, cbm_pet, "p00,prg", CBM_QUICKLOAD_DELAY_SECONDS)
-
-	// software lists
-	MCFG_SOFTWARE_LIST_ADD("cass_list", "pet_cass")
-	MCFG_SOFTWARE_LIST_ADD("flop_list", "pet_flop")
-	MCFG_SOFTWARE_LIST_ADD("hdd_list", "pet_hdd")
-MACHINE_CONFIG_END
+	SOFTWARE_LIST(config, "rom_list").set_original("pet_rom");
+}
 
 
-//-------------------------------------------------
-//  MACHINE_CONFIG( pet2001 )
-//-------------------------------------------------
+void pet_state::pet2001n8(machine_config &config)
+{
+	pet2001n(config);
+	_8k(config);
+}
 
-static MACHINE_CONFIG_DERIVED( pet2001, pet )
-	MCFG_FRAGMENT_ADD(4k)
-MACHINE_CONFIG_END
+void pet_state::pet2001n16(machine_config &config)
+{
+	pet2001n(config);
+	_16k(config);
+}
 
+void pet_state::pet2001n32(machine_config &config)
+{
+	pet2001n(config);
+	_32k(config);
+}
 
-//-------------------------------------------------
-//  MACHINE_CONFIG( pet20018 )
-//-------------------------------------------------
-
-static MACHINE_CONFIG_DERIVED( pet20018, pet )
-	MCFG_FRAGMENT_ADD(8k)
-MACHINE_CONFIG_END
-
-
-//-------------------------------------------------
-//  MACHINE_CONFIG( pet2001n )
-//-------------------------------------------------
-
-static MACHINE_CONFIG_DERIVED( pet2001n, pet )
-	MCFG_GENERIC_CARTSLOT_ADD("cart_9000", generic_linear_slot, "pet_9000_rom")
-	MCFG_GENERIC_EXTENSIONS("bin,rom")
-
-	MCFG_GENERIC_CARTSLOT_ADD("cart_a000", generic_linear_slot, "pet_a000_rom")
-	MCFG_GENERIC_EXTENSIONS("bin,rom")
-
-	MCFG_GENERIC_CARTSLOT_ADD("cart_b000", generic_linear_slot, "pet_b000_rom")
-	MCFG_GENERIC_EXTENSIONS("bin,rom")
-
-	MCFG_SOFTWARE_LIST_ADD("rom_list", "pet_rom")
-MACHINE_CONFIG_END
-
-
-//-------------------------------------------------
-//  MACHINE_CONFIG( pet2001n8 )
-//-------------------------------------------------
-
-static MACHINE_CONFIG_DERIVED( pet2001n8, pet2001n )
-	MCFG_FRAGMENT_ADD(8k)
-MACHINE_CONFIG_END
-
-
-//-------------------------------------------------
-//  MACHINE_CONFIG( pet2001n16 )
-//-------------------------------------------------
-
-static MACHINE_CONFIG_DERIVED( pet2001n16, pet2001n )
-	MCFG_FRAGMENT_ADD(16k)
-MACHINE_CONFIG_END
-
-
-//-------------------------------------------------
-//  MACHINE_CONFIG( pet2001n32 )
-//-------------------------------------------------
-
-static MACHINE_CONFIG_DERIVED( pet2001n32, pet2001n )
-	MCFG_FRAGMENT_ADD(32k)
-MACHINE_CONFIG_END
-
-
-//-------------------------------------------------
-//  MACHINE_CONFIG( cbm3000 )
-//-------------------------------------------------
-
-static MACHINE_CONFIG_DERIVED( cbm3000, pet2001n )
+void pet_state::cbm3000(machine_config &config)
+{
+	pet2001n(config, false);
 	// video hardware
-	MCFG_SCREEN_MODIFY(SCREEN_TAG)
-	MCFG_SCREEN_REFRESH_RATE(50)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(2500))
-	MCFG_SCREEN_SIZE(320, 200)
-	MCFG_SCREEN_VISIBLE_AREA(0, 320-1, 0, 200-1)
-	MCFG_SCREEN_UPDATE_DRIVER(pet_state, screen_update)
-	MCFG_DEVICE_REMOVE("sync_timer")
-	MCFG_TIMER_DRIVER_ADD_PERIODIC("sync_timer", pet_state, sync_tick, attotime::from_hz(100))
-MACHINE_CONFIG_END
+	m_screen->set_refresh_hz(50);
+	m_screen->set_vblank_time(ATTOSECONDS_IN_USEC(2500));
+	m_screen->set_size(320, 200);
+	m_screen->set_visarea(0, 320-1, 0, 200-1);
+	m_screen->set_screen_update(FUNC(pet_state::screen_update));
+	m_sync_period = attotime::from_hz(100);
+}
 
+void pet_state::cbm3008(machine_config &config)
+{
+	cbm3000(config);
+	_8k(config);
+}
 
-//-------------------------------------------------
-//  MACHINE_CONFIG( cbm3008 )
-//-------------------------------------------------
+void pet_state::cbm3016(machine_config &config)
+{
+	cbm3000(config);
+	_16k(config);
+}
 
-static MACHINE_CONFIG_DERIVED( cbm3008, cbm3000 )
-	MCFG_FRAGMENT_ADD(8k)
-MACHINE_CONFIG_END
+void pet_state::cbm3032(machine_config &config)
+{
+	cbm3000(config);
+	_32k(config);
+}
 
+void pet2001b_state::pet2001b(machine_config &config, bool with_b000)
+{
+	pet2001n(config, with_b000);
+	m_pia1->readpb_handler().set(FUNC(pet2001b_state::pia1_pb_r));
+}
 
-//-------------------------------------------------
-//  MACHINE_CONFIG( cbm3016 )
-//-------------------------------------------------
+void pet2001b_state::pet2001b8(machine_config &config)
+{
+	pet2001b(config);
+	_8k(config);
+}
 
-static MACHINE_CONFIG_DERIVED( cbm3016, cbm3000 )
-	MCFG_FRAGMENT_ADD(16k)
-MACHINE_CONFIG_END
+void pet2001b_state::pet2001b16(machine_config &config)
+{
+	pet2001b(config);
+	_16k(config);
+}
 
+void pet2001b_state::pet2001b32(machine_config &config)
+{
+	pet2001b(config);
+	_32k(config);
+}
 
-//-------------------------------------------------
-//  MACHINE_CONFIG( cbm3032 )
-//-------------------------------------------------
-
-static MACHINE_CONFIG_DERIVED( cbm3032, cbm3000 )
-	MCFG_FRAGMENT_ADD(32k)
-MACHINE_CONFIG_END
-
-
-//-------------------------------------------------
-//  MACHINE_CONFIG( pet2001b )
-//-------------------------------------------------
-
-static MACHINE_CONFIG_DERIVED_CLASS( pet2001b, pet2001n, pet2001b_state )
-	MCFG_DEVICE_MODIFY(M6520_1_TAG)
-	MCFG_PIA_READPB_HANDLER(READ8(pet2001b_state, pia1_pb_r))
-MACHINE_CONFIG_END
-
-
-//-------------------------------------------------
-//  MACHINE_CONFIG( pet2001b8 )
-//-------------------------------------------------
-
-static MACHINE_CONFIG_DERIVED( pet2001b8, pet2001b )
-	MCFG_FRAGMENT_ADD(8k)
-MACHINE_CONFIG_END
-
-
-//-------------------------------------------------
-//  MACHINE_CONFIG( pet2001b16 )
-//-------------------------------------------------
-
-static MACHINE_CONFIG_DERIVED( pet2001b16, pet2001b )
-	MCFG_FRAGMENT_ADD(16k)
-MACHINE_CONFIG_END
-
-
-//-------------------------------------------------
-//  MACHINE_CONFIG( pet2001b32 )
-//-------------------------------------------------
-
-static MACHINE_CONFIG_DERIVED( pet2001b32, pet2001b )
-	MCFG_FRAGMENT_ADD(32k)
-MACHINE_CONFIG_END
-
-
-//-------------------------------------------------
-//  MACHINE_CONFIG( cbm3032b )
-//-------------------------------------------------
-
-static MACHINE_CONFIG_DERIVED( cbm3032b, pet2001b )
+void pet2001b_state::cbm3032b(machine_config &config)
+{
+	pet2001b(config);
 	// video hardware
-	MCFG_SCREEN_MODIFY(SCREEN_TAG)
-	MCFG_SCREEN_REFRESH_RATE(50)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(2500))
-	MCFG_SCREEN_SIZE(320, 200)
-	MCFG_SCREEN_VISIBLE_AREA(0, 320-1, 0, 200-1)
-	MCFG_SCREEN_UPDATE_DRIVER(pet_state, screen_update)
-	MCFG_DEVICE_REMOVE("sync_timer")
-	MCFG_TIMER_DRIVER_ADD_PERIODIC("sync_timer", pet_state, sync_tick, attotime::from_hz(100))
+	m_screen->set_refresh_hz(50);
+	m_screen->set_vblank_time(ATTOSECONDS_IN_USEC(2500));
+	m_screen->set_size(320, 200);
+	m_screen->set_visarea(0, 320-1, 0, 200-1);
+	m_screen->set_screen_update(FUNC(pet_state::screen_update));
+	m_sync_period = attotime::from_hz(100);
 
-	MCFG_FRAGMENT_ADD(32k)
-MACHINE_CONFIG_END
+	_32k(config);
+}
 
+void pet2001b_state::pet4000(machine_config &config)
+{
+	pet2001n(config, false);
+}
 
-//-------------------------------------------------
-//  MACHINE_CONFIG( pet4000 )
-//-------------------------------------------------
-
-static MACHINE_CONFIG_DERIVED( pet4000, pet2001n )
-	MCFG_DEVICE_REMOVE("cart_b000")
-MACHINE_CONFIG_END
-
-
-//-------------------------------------------------
-//  MACHINE_CONFIG( pet4016 )
-//-------------------------------------------------
-
-static MACHINE_CONFIG_DERIVED( pet4016, pet4000 )
+void pet2001b_state::pet4016(machine_config &config)
+{
+	pet4000(config);
 	// RAM not upgradeable
-	MCFG_RAM_ADD(RAM_TAG)
-	MCFG_RAM_DEFAULT_SIZE("16K")
-MACHINE_CONFIG_END
+	RAM(config, m_ram);
+	m_ram->set_default_size("16K");
+}
 
+void pet2001b_state::pet4032(machine_config &config)
+{
+	pet4000(config);
+	_32k(config);
+}
 
-//-------------------------------------------------
-//  MACHINE_CONFIG( pet4032 )
-//-------------------------------------------------
-
-static MACHINE_CONFIG_DERIVED( pet4032, pet4000 )
-	MCFG_FRAGMENT_ADD(32k)
-MACHINE_CONFIG_END
-
-
-//-------------------------------------------------
-//  MACHINE_CONFIG( pet4032f )
-//-------------------------------------------------
-
-static MACHINE_CONFIG_DERIVED( pet4032f, pet4000 )
+void pet2001b_state::pet4032f(machine_config &config)
+{
+	pet4000(config);
 	MCFG_MACHINE_START_OVERRIDE(pet_state, pet40)
 	MCFG_MACHINE_RESET_OVERRIDE(pet_state, pet40)
 
 	// video hardware
-	MCFG_SCREEN_MODIFY(SCREEN_TAG)
-	MCFG_SCREEN_REFRESH_RATE(60)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(2500))
-	MCFG_SCREEN_SIZE(320, 250)
-	MCFG_SCREEN_VISIBLE_AREA(0, 320 - 1, 0, 250 - 1)
-	MCFG_SCREEN_UPDATE_DEVICE(MC6845_TAG, mc6845_device, screen_update)
-	MCFG_DEVICE_REMOVE("sync_timer")
+	m_screen->set_refresh_hz(60);
+	m_screen->set_vblank_time(ATTOSECONDS_IN_USEC(2500));
+	m_screen->set_size(320, 250);
+	m_screen->set_visarea(0, 320 - 1, 0, 250 - 1);
+	m_screen->set_screen_update(MC6845_TAG, FUNC(mc6845_device::screen_update));
+	m_sync_period = attotime::never;
 
-	MCFG_MC6845_ADD(MC6845_TAG, MC6845, SCREEN_TAG, XTAL_16MHz/16)
-	MCFG_MC6845_SHOW_BORDER_AREA(true)
-	MCFG_MC6845_CHAR_WIDTH(8)
-	MCFG_MC6845_BEGIN_UPDATE_CB(pet_state, pet_begin_update)
-	MCFG_MC6845_UPDATE_ROW_CB(pet_state, pet40_update_row)
-	MCFG_MC6845_OUT_VSYNC_CB(DEVWRITELINE(M6520_1_TAG, pia6821_device, cb1_w))
+	MC6845(config, m_crtc, XTAL(16'000'000)/16);
+	m_crtc->set_screen(SCREEN_TAG);
+	m_crtc->set_show_border_area(true);
+	m_crtc->set_char_width(8);
+	m_crtc->set_begin_update_callback(FUNC(pet_state::pet_begin_update));
+	m_crtc->set_update_row_callback(FUNC(pet_state::pet40_update_row));
+	m_crtc->out_vsync_callback().set(M6520_1_TAG, FUNC(pia6821_device::cb1_w));
 
 	// sound hardware
-	MCFG_SPEAKER_STANDARD_MONO("mono")
-	MCFG_SOUND_ADD("speaker", SPEAKER_SOUND, 0)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.25)
+	SPEAKER(config, "mono").front_center();
+	SPEAKER_SOUND(config, m_speaker);
+	m_speaker->add_route(ALL_OUTPUTS, "mono", 0.25);
 
-	MCFG_FRAGMENT_ADD(32k)
-MACHINE_CONFIG_END
+	_32k(config);
+}
 
-
-//-------------------------------------------------
-//  MACHINE_CONFIG( cbm4000 )
-//-------------------------------------------------
-
-static MACHINE_CONFIG_DERIVED( cbm4000, pet2001n )
+void pet_state::cbm4000(machine_config &config)
+{
+	pet2001n(config, false);
 	// video hardware
-	MCFG_SCREEN_MODIFY(SCREEN_TAG)
-	MCFG_SCREEN_REFRESH_RATE(50)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(2500))
-	MCFG_SCREEN_SIZE(320, 200)
-	MCFG_SCREEN_VISIBLE_AREA(0, 320-1, 0, 200-1)
-	MCFG_SCREEN_UPDATE_DRIVER(pet_state, screen_update)
-	MCFG_DEVICE_REMOVE("sync_timer")
-	MCFG_TIMER_DRIVER_ADD_PERIODIC("sync_timer", pet_state, sync_tick, attotime::from_hz(100))
+	m_screen->set_refresh_hz(50);
+	m_screen->set_vblank_time(ATTOSECONDS_IN_USEC(2500));
+	m_screen->set_size(320, 200);
+	m_screen->set_visarea(0, 320-1, 0, 200-1);
+	m_screen->set_screen_update(FUNC(pet_state::screen_update));
+	m_sync_period = attotime::from_hz(100);
+}
 
-	MCFG_DEVICE_REMOVE("cart_b000")
-MACHINE_CONFIG_END
-
-
-//-------------------------------------------------
-//  MACHINE_CONFIG( cbm4016 )
-//-------------------------------------------------
-
-static MACHINE_CONFIG_DERIVED( cbm4016, cbm4000 )
+void pet_state::cbm4016(machine_config &config)
+{
+	cbm4000(config);
 	// RAM not upgradeable
-	MCFG_RAM_ADD(RAM_TAG)
-	MCFG_RAM_DEFAULT_SIZE("16K")
-MACHINE_CONFIG_END
+	RAM(config, m_ram);
+	m_ram->set_default_size("16K");
+}
 
+void pet_state::cbm4032(machine_config &config)
+{
+	cbm4000(config);
+	_32k(config);
+}
 
-//-------------------------------------------------
-//  MACHINE_CONFIG( cbm4032 )
-//-------------------------------------------------
-
-static MACHINE_CONFIG_DERIVED( cbm4032, cbm4000 )
-	MCFG_FRAGMENT_ADD(32k)
-MACHINE_CONFIG_END
-
-
-//-------------------------------------------------
-//  MACHINE_CONFIG( cbm4032f )
-//-------------------------------------------------
-
-static MACHINE_CONFIG_DERIVED( cbm4032f, cbm4000 )
+void pet_state::cbm4032f(machine_config &config)
+{
+	cbm4000(config);
 	MCFG_MACHINE_START_OVERRIDE(pet_state, pet40)
 	MCFG_MACHINE_RESET_OVERRIDE(pet_state, pet40)
 
 	// video hardware
-	MCFG_SCREEN_MODIFY(SCREEN_TAG)
-	MCFG_SCREEN_REFRESH_RATE(50)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(2500))
-	MCFG_SCREEN_SIZE(320, 250)
-	MCFG_SCREEN_VISIBLE_AREA(0, 320 - 1, 0, 250 - 1)
-	MCFG_SCREEN_UPDATE_DEVICE(MC6845_TAG, mc6845_device, screen_update)
-	MCFG_DEVICE_REMOVE("sync_timer")
+	m_screen->set_refresh_hz(50);
+	m_screen->set_vblank_time(ATTOSECONDS_IN_USEC(2500));
+	m_screen->set_size(320, 250);
+	m_screen->set_visarea(0, 320 - 1, 0, 250 - 1);
+	m_screen->set_screen_update(MC6845_TAG, FUNC(mc6845_device::screen_update));
+	m_sync_period = attotime::never;
 
-	MCFG_MC6845_ADD(MC6845_TAG, MC6845, SCREEN_TAG, XTAL_16MHz/16)
-	MCFG_MC6845_SHOW_BORDER_AREA(true)
-	MCFG_MC6845_CHAR_WIDTH(8)
-	MCFG_MC6845_BEGIN_UPDATE_CB(pet_state, pet_begin_update)
-	MCFG_MC6845_UPDATE_ROW_CB(pet_state, pet40_update_row)
-	MCFG_MC6845_OUT_VSYNC_CB(DEVWRITELINE(M6520_1_TAG, pia6821_device, cb1_w))
+	MC6845(config, m_crtc, XTAL(16'000'000)/16);
+	m_crtc->set_screen(SCREEN_TAG);
+	m_crtc->set_show_border_area(true);
+	m_crtc->set_char_width(8);
+	m_crtc->set_begin_update_callback(FUNC(pet_state::pet_begin_update));
+	m_crtc->set_update_row_callback(FUNC(pet_state::pet40_update_row));
+	m_crtc->out_vsync_callback().set(M6520_1_TAG, FUNC(pia6821_device::cb1_w));
 
 	// sound hardware
-	MCFG_SPEAKER_STANDARD_MONO("mono")
-	MCFG_SOUND_ADD("speaker", SPEAKER_SOUND, 0)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.25)
+	SPEAKER(config, "mono").front_center();
+	SPEAKER_SOUND(config, m_speaker);
+	m_speaker->add_route(ALL_OUTPUTS, "mono", 0.25);
 
-	MCFG_FRAGMENT_ADD(32k)
-MACHINE_CONFIG_END
+	_32k(config);
+}
 
+void pet2001b_state::pet4000b(machine_config &config)
+{
+	pet2001b(config, false);
+}
 
-//-------------------------------------------------
-//  MACHINE_CONFIG( pet4000b )
-//-------------------------------------------------
+void pet2001b_state::pet4032b(machine_config &config)
+{
+	pet4000b(config);
+	_32k(config);
+}
 
-static MACHINE_CONFIG_DERIVED( pet4000b, pet2001b )
-	MCFG_DEVICE_REMOVE("cart_b000")
-MACHINE_CONFIG_END
-
-
-//-------------------------------------------------
-//  MACHINE_CONFIG( pet4032b )
-//-------------------------------------------------
-
-static MACHINE_CONFIG_DERIVED( pet4032b, pet4000b )
-	MCFG_FRAGMENT_ADD(32k)
-MACHINE_CONFIG_END
-
-
-//-------------------------------------------------
-//  MACHINE_CONFIG( cbm4000b )
-//-------------------------------------------------
-
-static MACHINE_CONFIG_DERIVED( cbm4000b, pet2001b )
+void pet2001b_state::cbm4000b(machine_config &config)
+{
+	pet2001b(config, false);
 	// video hardware
-	MCFG_SCREEN_MODIFY(SCREEN_TAG)
-	MCFG_SCREEN_REFRESH_RATE(50)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(2500))
-	MCFG_SCREEN_SIZE(320, 200)
-	MCFG_SCREEN_VISIBLE_AREA(0, 320-1, 0, 200-1)
-	MCFG_SCREEN_UPDATE_DRIVER(pet_state, screen_update)
-	MCFG_DEVICE_REMOVE("sync_timer")
-	MCFG_TIMER_DRIVER_ADD_PERIODIC("sync_timer", pet_state, sync_tick, attotime::from_hz(100))
+	m_screen->set_refresh_hz(50);
+	m_screen->set_vblank_time(ATTOSECONDS_IN_USEC(2500));
+	m_screen->set_size(320, 200);
+	m_screen->set_visarea(0, 320-1, 0, 200-1);
+	m_screen->set_screen_update(FUNC(pet_state::screen_update));
+	m_sync_period = attotime::from_hz(100);
+}
 
-	MCFG_DEVICE_REMOVE("cart_b000")
-MACHINE_CONFIG_END
+void pet2001b_state::cbm4032b(machine_config &config)
+{
+	cbm4000b(config);
+	_32k(config);
+}
 
+void pet80_state::pet80(machine_config &config)
+{
+	base_pet_devices(config, "c8050");
 
-//-------------------------------------------------
-//  MACHINE_CONFIG( cbm4032b )
-//-------------------------------------------------
-
-static MACHINE_CONFIG_DERIVED( cbm4032b, cbm4000b )
-	MCFG_FRAGMENT_ADD(32k)
-MACHINE_CONFIG_END
-
-
-//-------------------------------------------------
-//  MACHINE_CONFIG( pet80 )
-//-------------------------------------------------
-
-static MACHINE_CONFIG_START( pet80, pet80_state )
 	MCFG_MACHINE_START_OVERRIDE(pet80_state, pet80)
 	MCFG_MACHINE_RESET_OVERRIDE(pet80_state, pet80)
 
 	// basic machine hardware
-	MCFG_CPU_ADD(M6502_TAG, M6502, XTAL_16MHz/16)
-	MCFG_CPU_PROGRAM_MAP(pet2001_mem)
-	MCFG_M6502_DISABLE_DIRECT() // address decoding is 100% dynamic, no RAM/ROM banks
+	M6502(config, m_maincpu, XTAL(16'000'000)/16);
+	m_maincpu->set_addrmap(AS_PROGRAM, &pet_state::pet2001_mem);
 
 	// video hardware
-	MCFG_SCREEN_ADD(SCREEN_TAG, RASTER)
-	MCFG_SCREEN_REFRESH_RATE(60)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(2500))
-	MCFG_SCREEN_SIZE(640, 250)
-	MCFG_SCREEN_VISIBLE_AREA(0, 640 - 1, 0, 250 - 1)
-	MCFG_SCREEN_UPDATE_DEVICE(MC6845_TAG, mc6845_device, screen_update)
+	screen_device &screen(SCREEN(config, SCREEN_TAG, SCREEN_TYPE_RASTER));
+	screen.set_color(rgb_t::green());
+	screen.set_refresh_hz(60);
+	screen.set_vblank_time(ATTOSECONDS_IN_USEC(2500));
+	screen.set_size(640, 250);
+	screen.set_visarea(0, 640 - 1, 0, 250 - 1);
+	screen.set_screen_update(MC6845_TAG, FUNC(mc6845_device::screen_update));
 
-	MCFG_MC6845_ADD(MC6845_TAG, MC6845, SCREEN_TAG, XTAL_16MHz/16)
-	MCFG_MC6845_SHOW_BORDER_AREA(true)
-	MCFG_MC6845_CHAR_WIDTH(2*8)
-	MCFG_MC6845_BEGIN_UPDATE_CB(pet_state, pet_begin_update)
-	MCFG_MC6845_UPDATE_ROW_CB(pet80_state, pet80_update_row)
-	MCFG_MC6845_OUT_VSYNC_CB(DEVWRITELINE(M6520_1_TAG, pia6821_device, cb1_w))
-
-	MCFG_PALETTE_ADD_MONOCHROME_GREEN("palette")
+	MC6845(config, m_crtc, XTAL(16'000'000)/16);
+	m_crtc->set_screen(SCREEN_TAG);
+	m_crtc->set_show_border_area(true);
+	m_crtc->set_char_width(2*8);
+	m_crtc->set_begin_update_callback(FUNC(pet_state::pet_begin_update));
+	m_crtc->set_update_row_callback(FUNC(pet80_state::pet80_update_row));
+	m_crtc->out_vsync_callback().set(M6520_1_TAG, FUNC(pia6821_device::cb1_w));
 
 	// sound hardware
-	MCFG_SPEAKER_STANDARD_MONO("mono")
-	MCFG_SOUND_ADD("speaker", SPEAKER_SOUND, 0)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.25)
+	SPEAKER(config, "mono").front_center();
+	SPEAKER_SOUND(config, m_speaker);
+	m_speaker->add_route(ALL_OUTPUTS, "mono", 0.25);
 
 	// devices
-	MCFG_DEVICE_ADD(M6522_TAG, VIA6522, XTAL_16MHz/16)
-	MCFG_VIA6522_READPB_HANDLER(READ8(pet_state, via_pb_r))
-	MCFG_VIA6522_WRITEPA_HANDLER(WRITE8(pet_state, via_pa_w))
-	MCFG_VIA6522_WRITEPB_HANDLER(WRITE8(pet_state, via_pb_w))
-	MCFG_VIA6522_CA2_HANDLER(WRITELINE(pet_state, via_ca2_w))
-	MCFG_VIA6522_CB2_HANDLER(WRITELINE(pet_state, via_cb2_w))
-	MCFG_VIA6522_IRQ_HANDLER(WRITELINE(pet_state, via_irq_w))
-
-	MCFG_DEVICE_ADD(M6520_1_TAG, PIA6821, 0)
-	MCFG_PIA_READPA_HANDLER(READ8(pet_state, pia1_pa_r))
-	MCFG_PIA_READPB_HANDLER(READ8(pet_state, pia1_pb_r))
-	MCFG_PIA_READCA1_HANDLER(DEVREADLINE(PET_DATASSETTE_PORT_TAG, pet_datassette_port_device, read))
-	MCFG_PIA_WRITEPA_HANDLER(WRITE8(pet_state, pia1_pa_w))
-	MCFG_PIA_CA2_HANDLER(WRITELINE(pet_state, pia1_ca2_w))
-	MCFG_PIA_CB2_HANDLER(DEVWRITELINE(PET_DATASSETTE_PORT_TAG, pet_datassette_port_device, motor_w))
-	MCFG_PIA_IRQA_HANDLER(WRITELINE(pet_state, pia1_irqa_w))
-	MCFG_PIA_IRQB_HANDLER(WRITELINE(pet_state, pia1_irqb_w))
-
-	MCFG_DEVICE_ADD(M6520_2_TAG, PIA6821, 0)
-	MCFG_PIA_READPA_HANDLER(DEVREAD8(IEEE488_TAG, ieee488_device, dio_r))
-	MCFG_PIA_WRITEPB_HANDLER(DEVWRITE8(IEEE488_TAG, ieee488_device, dio_w))
-	MCFG_PIA_CA2_HANDLER(DEVWRITELINE(IEEE488_TAG, ieee488_device, ndac_w))
-	MCFG_PIA_CB2_HANDLER(DEVWRITELINE(IEEE488_TAG, ieee488_device, dav_w))
-	MCFG_PIA_IRQA_HANDLER(WRITELINE(pet_state, pia2_irqa_w))
-	MCFG_PIA_IRQB_HANDLER(WRITELINE(pet_state, pia2_irqb_w))
-
-	MCFG_CBM_IEEE488_ADD("c8050")
-	MCFG_IEEE488_SRQ_CALLBACK(DEVWRITELINE(M6520_2_TAG, pia6821_device, cb1_w))
-	MCFG_IEEE488_ATN_CALLBACK(DEVWRITELINE(M6520_2_TAG, pia6821_device, ca1_w))
-	MCFG_PET_DATASSETTE_PORT_ADD(PET_DATASSETTE_PORT_TAG, cbm_datassette_devices, "c2n", DEVWRITELINE(M6520_1_TAG, pia6821_device, ca1_w))
-	MCFG_PET_DATASSETTE_PORT_ADD(PET_DATASSETTE_PORT2_TAG, cbm_datassette_devices, nullptr, DEVWRITELINE(M6522_TAG, via6522_device, write_cb1))
-	MCFG_PET_EXPANSION_SLOT_ADD(PET_EXPANSION_SLOT_TAG, XTAL_16MHz/16, pet_expansion_cards, nullptr)
-	MCFG_PET_EXPANSION_SLOT_DMA_CALLBACKS(READ8(pet_state, read), WRITE8(pet_state, write))
-
-	MCFG_PET_USER_PORT_ADD(PET_USER_PORT_TAG, pet_user_port_cards, nullptr)
-	MCFG_PET_USER_PORT_B_HANDLER(DEVWRITELINE(M6522_TAG, via6522_device, write_ca1))
-	MCFG_PET_USER_PORT_C_HANDLER(DEVWRITELINE(M6522_TAG, via6522_device, write_pa0))
-	MCFG_PET_USER_PORT_D_HANDLER(DEVWRITELINE(M6522_TAG, via6522_device, write_pa1))
-	MCFG_PET_USER_PORT_E_HANDLER(DEVWRITELINE(M6522_TAG, via6522_device, write_pa2))
-	MCFG_PET_USER_PORT_F_HANDLER(DEVWRITELINE(M6522_TAG, via6522_device, write_pa3))
-	MCFG_PET_USER_PORT_H_HANDLER(DEVWRITELINE(M6522_TAG, via6522_device, write_pa4))
-	MCFG_PET_USER_PORT_J_HANDLER(DEVWRITELINE(M6522_TAG, via6522_device, write_pa5))
-	MCFG_PET_USER_PORT_K_HANDLER(DEVWRITELINE(M6522_TAG, via6522_device, write_pa6))
-	MCFG_PET_USER_PORT_L_HANDLER(DEVWRITELINE(M6522_TAG, via6522_device, write_pa7))
-	MCFG_PET_USER_PORT_M_HANDLER(DEVWRITELINE(M6522_TAG, via6522_device, write_cb2))
-
-	MCFG_QUICKLOAD_ADD("quickload", pet_state, cbm_pet, "p00,prg", CBM_QUICKLOAD_DELAY_SECONDS)
-
-	MCFG_GENERIC_CARTSLOT_ADD("cart_9000", generic_linear_slot, "pet_9000_rom")
-	MCFG_GENERIC_EXTENSIONS("bin,rom")
-
-	MCFG_GENERIC_CARTSLOT_ADD("cart_a000", generic_linear_slot, "pet_a000_rom")
-	MCFG_GENERIC_EXTENSIONS("bin,rom")
+	GENERIC_CARTSLOT(config, "cart_9000", generic_linear_slot, "pet_9000_rom", "bin,rom");
+	GENERIC_CARTSLOT(config, "cart_a000", generic_linear_slot, "pet_a000_rom", "bin,rom");
 
 	// software lists
-	MCFG_SOFTWARE_LIST_ADD("cass_list", "pet_cass")
-	MCFG_SOFTWARE_LIST_ADD("flop_list", "pet_flop")
-	MCFG_SOFTWARE_LIST_ADD("hdd_list", "pet_hdd")
-	MCFG_SOFTWARE_LIST_ADD("rom_list", "pet_rom")
-MACHINE_CONFIG_END
+	SOFTWARE_LIST(config, "rom_list").set_original("pet_rom");
+}
 
+void pet80_state::pet8032(machine_config &config)
+{
+	pet80(config);
+	_32k(config);
+}
 
-//-------------------------------------------------
-//  MACHINE_CONFIG( pet8032 )
-//-------------------------------------------------
+void superpet_state::superpet(machine_config &config)
+{
+	pet8032(config);
+	m_exp->set_default_option("superpet");
+	SOFTWARE_LIST(config, "flop_list2").set_original("superpet_flop");
+}
 
-static MACHINE_CONFIG_DERIVED( pet8032, pet80 )
-	MCFG_FRAGMENT_ADD(32k)
-MACHINE_CONFIG_END
+void cbm8096_state::cbm8096(machine_config &config)
+{
+	pet80(config);
+	m_exp->set_default_option("64k");
 
+	RAM(config, m_ram);
+	m_ram->set_default_size("96K");
 
-//-------------------------------------------------
-//  MACHINE_CONFIG( superpet )
-//-------------------------------------------------
+	SOFTWARE_LIST(config, "flop_list2").set_original("cbm8096_flop");
+}
 
-static MACHINE_CONFIG_DERIVED_CLASS( superpet, pet8032, superpet_state )
-	MCFG_DEVICE_REMOVE(PET_EXPANSION_SLOT_TAG)
-	MCFG_PET_EXPANSION_SLOT_ADD(PET_EXPANSION_SLOT_TAG, XTAL_16MHz/16, pet_expansion_cards, "superpet")
-	MCFG_PET_EXPANSION_SLOT_DMA_CALLBACKS(READ8(pet_state, read), WRITE8(pet_state, write))
-
-	MCFG_SOFTWARE_LIST_ADD("flop_list2", "superpet_flop")
-MACHINE_CONFIG_END
-
-
-//-------------------------------------------------
-//  MACHINE_CONFIG( cbm8096 )
-//-------------------------------------------------
-
-static MACHINE_CONFIG_DERIVED_CLASS( cbm8096, pet80, cbm8096_state )
-	MCFG_DEVICE_REMOVE(PET_EXPANSION_SLOT_TAG)
-	MCFG_PET_EXPANSION_SLOT_ADD(PET_EXPANSION_SLOT_TAG, XTAL_16MHz/16, pet_expansion_cards, "64k")
-	MCFG_PET_EXPANSION_SLOT_DMA_CALLBACKS(READ8(pet_state, read), WRITE8(pet_state, write))
-
-	MCFG_RAM_ADD(RAM_TAG)
-	MCFG_RAM_DEFAULT_SIZE("96K")
-
-	MCFG_SOFTWARE_LIST_ADD("flop_list2", "cbm8096_flop")
-MACHINE_CONFIG_END
-
-
-//-------------------------------------------------
-//  MACHINE_CONFIG( cbm8296 )
-//-------------------------------------------------
-
-static MACHINE_CONFIG_DERIVED_CLASS( cbm8296, pet80, cbm8296_state )
+void cbm8296_state::cbm8296(machine_config &config)
+{
+	pet80(config);
 	MCFG_MACHINE_START_OVERRIDE(cbm8296_state, cbm8296)
 	MCFG_MACHINE_RESET_OVERRIDE(cbm8296_state, cbm8296)
 
-	MCFG_CPU_MODIFY(M6502_TAG)
-	MCFG_CPU_PROGRAM_MAP(cbm8296_mem)
+	m_maincpu->set_addrmap(AS_PROGRAM, &cbm8296_state::cbm8296_mem);
 
-	MCFG_PLS100_ADD(PLA1_TAG)
-	MCFG_PLS100_ADD(PLA2_TAG)
+	PLS100(config, PLA1_TAG);
+	PLS100(config, PLA2_TAG);
 
-	MCFG_DEVICE_REMOVE(MC6845_TAG)
-	MCFG_MC6845_ADD(MC6845_TAG, MC6845, SCREEN_TAG, XTAL_16MHz/16)
-	MCFG_MC6845_SHOW_BORDER_AREA(true)
-	MCFG_MC6845_CHAR_WIDTH(2*8)
-	MCFG_MC6845_UPDATE_ROW_CB(pet80_state, cbm8296_update_row)
-	MCFG_MC6845_OUT_VSYNC_CB(DEVWRITELINE(M6520_1_TAG, pia6821_device, cb1_w))
+	m_crtc->set_clock(XTAL(16'000'000)/16);
+	m_crtc->set_show_border_area(true);
+	m_crtc->set_char_width(2*8);
+	m_crtc->set_update_row_callback(FUNC(pet80_state::cbm8296_update_row));
+	m_crtc->out_vsync_callback().set(M6520_1_TAG, FUNC(pia6821_device::cb1_w));
 
-	MCFG_DEVICE_MODIFY("ieee8")
-	MCFG_SLOT_DEFAULT_OPTION("c8250")
+	subdevice<ieee488_slot_device>("ieee8")->set_default_option("c8250");
 
-	MCFG_RAM_ADD(RAM_TAG)
-	MCFG_RAM_DEFAULT_SIZE("128K")
+	RAM(config, m_ram);
+	m_ram->set_default_size("128K");
 
-	MCFG_SOFTWARE_LIST_ADD("flop_list2", "cbm8296_flop")
-MACHINE_CONFIG_END
+	SOFTWARE_LIST(config, "flop_list2").set_original("cbm8296_flop");
+}
 
-
-//-------------------------------------------------
-//  MACHINE_CONFIG( cbm8296d )
-//-------------------------------------------------
-
-static MACHINE_CONFIG_DERIVED( cbm8296d, cbm8296 )
-	MCFG_DEVICE_MODIFY("ieee8")
-	MCFG_DEVICE_SLOT_INTERFACE(cbm8296d_ieee488_devices, "c8250lp", false)
-MACHINE_CONFIG_END
+void cbm8296_state::cbm8296d(machine_config &config)
+{
+	cbm8296(config);
+	ieee488_slot_device &ieee8(*subdevice<ieee488_slot_device>("ieee8"));
+	cbm8296d_ieee488_devices(ieee8);
+	ieee8.set_default_option("c8250lp");
+}
 
 
 
@@ -2081,9 +2104,9 @@ ROM_START( pet2001 )
 	ROM_REGION( 0x7000, M6502_TAG, 0 )
 	ROM_DEFAULT_BIOS( "basic1r" )
 	ROM_SYSTEM_BIOS( 0, "basic1o", "Original" )
-	ROMX_LOAD( "901447-01.h1", 0x3000, 0x0800, CRC(a055e33a) SHA1(831db40324113ee996c434d38b4add3fd1f820bd), ROM_BIOS(1) )
+	ROMX_LOAD( "901447-01.h1", 0x3000, 0x0800, CRC(a055e33a) SHA1(831db40324113ee996c434d38b4add3fd1f820bd), ROM_BIOS(0) )
 	ROM_SYSTEM_BIOS( 1, "basic1r", "Revised" )
-	ROMX_LOAD( "901447-09.h1", 0x3000, 0x0800, CRC(03cf16d0) SHA1(1330580c0614d3556a389da4649488ba04a60908), ROM_BIOS(2) )
+	ROMX_LOAD( "901447-09.h1", 0x3000, 0x0800, CRC(03cf16d0) SHA1(1330580c0614d3556a389da4649488ba04a60908), ROM_BIOS(1) )
 	ROM_LOAD( "901447-02.h5", 0x3800, 0x0800, CRC(69fd8a8f) SHA1(70c0f4fa67a70995b168668c957c3fcf2c8641bd) )
 	ROM_LOAD( "901447-03.h2", 0x4000, 0x0800, CRC(d349f2d4) SHA1(4bf2c20c51a63d213886957485ebef336bb803d0) )
 	ROM_LOAD( "901447-04.h6", 0x4800, 0x0800, CRC(850544eb) SHA1(d293972d529023d8fd1f493149e4777b5c253a69) )
@@ -2148,9 +2171,9 @@ ROM_START( pet4016 )
 	ROM_REGION( 0x7000, M6502_TAG, 0 )
 	ROM_DEFAULT_BIOS( "basic4r" )
 	ROM_SYSTEM_BIOS( 0, "basic4", "Original" )
-	ROMX_LOAD( "901465-19.ud5", 0x2000, 0x1000, CRC(3a5f5721) SHA1(bc2b7c99495fea3eda950ee9e3d6cabe448a452b), ROM_BIOS(1) )
+	ROMX_LOAD( "901465-19.ud5", 0x2000, 0x1000, CRC(3a5f5721) SHA1(bc2b7c99495fea3eda950ee9e3d6cabe448a452b), ROM_BIOS(0) )
 	ROM_SYSTEM_BIOS( 1, "basic4r", "Revised" )
-	ROMX_LOAD( "901465-23.ud5", 0x2000, 0x1000, CRC(ae3deac0) SHA1(975ee25e28ff302879424587e5fb4ba19f403adc), ROM_BIOS(2) ) // BASIC 4
+	ROMX_LOAD( "901465-23.ud5", 0x2000, 0x1000, CRC(ae3deac0) SHA1(975ee25e28ff302879424587e5fb4ba19f403adc), ROM_BIOS(1) ) // BASIC 4
 	ROM_LOAD( "901465-20.ud6", 0x3000, 0x1000, CRC(0fc17b9c) SHA1(242f98298931d21eaacb55fe635e44b7fc192b0a) )   // BASIC 4
 	ROM_LOAD( "901465-21.ud7", 0x4000, 0x1000, CRC(36d91855) SHA1(1bb236c72c726e8fb029c68f9bfa5ee803faf0a8) )   // BASIC 4
 	ROM_LOAD( "901447-29.ud8", 0x5000, 0x0800, CRC(e5714d4c) SHA1(e88f56e5c54b0e8d8d4e8cb39a4647c803c1f51c) )   // Screen Editor (40 columns, no CRTC, Normal Keyb)
@@ -2171,9 +2194,9 @@ ROM_START( pet4032f )
 	ROM_REGION( 0x7000, M6502_TAG, 0 )
 	ROM_DEFAULT_BIOS( "basic4r" )
 	ROM_SYSTEM_BIOS( 0, "basic4", "Original" )
-	ROMX_LOAD( "901465-19.ud5", 0x2000, 0x1000, CRC(3a5f5721) SHA1(bc2b7c99495fea3eda950ee9e3d6cabe448a452b), ROM_BIOS(1) )
+	ROMX_LOAD( "901465-19.ud5", 0x2000, 0x1000, CRC(3a5f5721) SHA1(bc2b7c99495fea3eda950ee9e3d6cabe448a452b), ROM_BIOS(0) )
 	ROM_SYSTEM_BIOS( 1, "basic4r", "Revised" )
-	ROMX_LOAD( "901465-23.ud5", 0x2000, 0x1000, CRC(ae3deac0) SHA1(975ee25e28ff302879424587e5fb4ba19f403adc), ROM_BIOS(2) ) // BASIC 4
+	ROMX_LOAD( "901465-23.ud5", 0x2000, 0x1000, CRC(ae3deac0) SHA1(975ee25e28ff302879424587e5fb4ba19f403adc), ROM_BIOS(1) ) // BASIC 4
 	ROM_LOAD( "901465-20.ud6", 0x3000, 0x1000, CRC(0fc17b9c) SHA1(242f98298931d21eaacb55fe635e44b7fc192b0a) )   // BASIC 4
 	ROM_LOAD( "901465-21.ud7", 0x4000, 0x1000, CRC(36d91855) SHA1(1bb236c72c726e8fb029c68f9bfa5ee803faf0a8) )   // BASIC 4
 	ROM_LOAD( "901499-01.ud7", 0x5000, 0x0800, CRC(5f85bdf8) SHA1(8cbf086c1ce4dfb2a2fe24c47476dfb878493dee) )   // Screen Editor (40 columns, CRTC 60Hz, Normal Keyb?)
@@ -2192,9 +2215,9 @@ ROM_START( cbm4016 )
 	ROM_REGION( 0x7000, M6502_TAG, 0 )
 	ROM_DEFAULT_BIOS( "basic4r" )
 	ROM_SYSTEM_BIOS( 0, "basic4", "Original" )
-	ROMX_LOAD( "901465-19.ud5", 0x2000, 0x1000, CRC(3a5f5721) SHA1(bc2b7c99495fea3eda950ee9e3d6cabe448a452b), ROM_BIOS(1) )
+	ROMX_LOAD( "901465-19.ud5", 0x2000, 0x1000, CRC(3a5f5721) SHA1(bc2b7c99495fea3eda950ee9e3d6cabe448a452b), ROM_BIOS(0) )
 	ROM_SYSTEM_BIOS( 1, "basic4r", "Revised" )
-	ROMX_LOAD( "901465-23.ud5", 0x2000, 0x1000, CRC(ae3deac0) SHA1(975ee25e28ff302879424587e5fb4ba19f403adc), ROM_BIOS(2) ) // BASIC 4
+	ROMX_LOAD( "901465-23.ud5", 0x2000, 0x1000, CRC(ae3deac0) SHA1(975ee25e28ff302879424587e5fb4ba19f403adc), ROM_BIOS(1) ) // BASIC 4
 	ROM_LOAD( "901465-20.ud6", 0x3000, 0x1000, CRC(0fc17b9c) SHA1(242f98298931d21eaacb55fe635e44b7fc192b0a) )   // BASIC 4
 	ROM_LOAD( "901465-21.ud7", 0x4000, 0x1000, CRC(36d91855) SHA1(1bb236c72c726e8fb029c68f9bfa5ee803faf0a8) )   // BASIC 4
 	ROM_LOAD( "901447-29.ud8", 0x5000, 0x0800, CRC(e5714d4c) SHA1(e88f56e5c54b0e8d8d4e8cb39a4647c803c1f51c) )   // Screen Editor (40 columns, no CRTC, Normal Keyb)
@@ -2215,9 +2238,9 @@ ROM_START( cbm4032f )
 	ROM_REGION( 0x7000, M6502_TAG, 0 )
 	ROM_DEFAULT_BIOS( "basic4r" )
 	ROM_SYSTEM_BIOS( 0, "basic4", "Original" )
-	ROMX_LOAD( "901465-19.ud5", 0x2000, 0x1000, CRC(3a5f5721) SHA1(bc2b7c99495fea3eda950ee9e3d6cabe448a452b), ROM_BIOS(1) )
+	ROMX_LOAD( "901465-19.ud5", 0x2000, 0x1000, CRC(3a5f5721) SHA1(bc2b7c99495fea3eda950ee9e3d6cabe448a452b), ROM_BIOS(0) )
 	ROM_SYSTEM_BIOS( 1, "basic4r", "Revised" )
-	ROMX_LOAD( "901465-23.ud5", 0x2000, 0x1000, CRC(ae3deac0) SHA1(975ee25e28ff302879424587e5fb4ba19f403adc), ROM_BIOS(2) ) // BASIC 4
+	ROMX_LOAD( "901465-23.ud5", 0x2000, 0x1000, CRC(ae3deac0) SHA1(975ee25e28ff302879424587e5fb4ba19f403adc), ROM_BIOS(1) ) // BASIC 4
 	ROM_LOAD( "901465-20.ud6", 0x3000, 0x1000, CRC(0fc17b9c) SHA1(242f98298931d21eaacb55fe635e44b7fc192b0a) )   // BASIC 4
 	ROM_LOAD( "901465-21.ud7", 0x4000, 0x1000, CRC(36d91855) SHA1(1bb236c72c726e8fb029c68f9bfa5ee803faf0a8) )   // BASIC 4
 	ROM_LOAD( "901498-01.ud7", 0x5000, 0x0800, CRC(3370e359) SHA1(05af284c914d53a52987b5f602466de75765f650) )   // Screen Editor (40 columns, CRTC 50Hz, Normal Keyb?)
@@ -2236,9 +2259,9 @@ ROM_START( pet4032b )
 	ROM_REGION( 0x7000, M6502_TAG, 0 )
 	ROM_DEFAULT_BIOS( "basic4r" )
 	ROM_SYSTEM_BIOS( 0, "basic4", "Original" )
-	ROMX_LOAD( "901465-19.ud5", 0x2000, 0x1000, CRC(3a5f5721) SHA1(bc2b7c99495fea3eda950ee9e3d6cabe448a452b), ROM_BIOS(1) )
+	ROMX_LOAD( "901465-19.ud5", 0x2000, 0x1000, CRC(3a5f5721) SHA1(bc2b7c99495fea3eda950ee9e3d6cabe448a452b), ROM_BIOS(0) )
 	ROM_SYSTEM_BIOS( 1, "basic4r", "Revised" )
-	ROMX_LOAD( "901465-23.ud5", 0x2000, 0x1000, CRC(ae3deac0) SHA1(975ee25e28ff302879424587e5fb4ba19f403adc), ROM_BIOS(2) ) // BASIC 4
+	ROMX_LOAD( "901465-23.ud5", 0x2000, 0x1000, CRC(ae3deac0) SHA1(975ee25e28ff302879424587e5fb4ba19f403adc), ROM_BIOS(1) ) // BASIC 4
 	ROM_LOAD( "901465-20.ud6", 0x3000, 0x1000, CRC(0fc17b9c) SHA1(242f98298931d21eaacb55fe635e44b7fc192b0a) )   // BASIC 4
 	ROM_LOAD( "901465-21.ud7", 0x4000, 0x1000, CRC(36d91855) SHA1(1bb236c72c726e8fb029c68f9bfa5ee803faf0a8) )   // BASIC 4
 	ROM_LOAD( "901474-02.ud8", 0x5000, 0x0800, CRC(75ff4af7) SHA1(0ca5c4e8f532f914cb0bf86ea9900f20f0a655ce) )   // Screen Editor (40 columns, no CRTC, Business Keyb)
@@ -2582,39 +2605,39 @@ ROM_END
 //  SYSTEM DRIVERS
 //**************************************************************************
 
-//    YEAR  NAME        PARENT      COMPAT  MACHINE     INPUT       INIT                COMPANY                         FULLNAME        FLAGS
-COMP( 1977, pet2001,    0,          0,      pet2001,    pet,        driver_device,  0,  "Commodore Business Machines",  "PET 2001-4",   MACHINE_SUPPORTS_SAVE | MACHINE_NO_SOUND_HW )
-COMP( 1977, pet20018,   pet2001,    0,      pet20018,   pet,        driver_device,  0,  "Commodore Business Machines",  "PET 2001-8",   MACHINE_SUPPORTS_SAVE | MACHINE_NO_SOUND_HW )
-COMP( 1979, pet2001n,   0,          0,      pet2001n8,  pet,        driver_device,  0,  "Commodore Business Machines",  "PET 2001-N8",  MACHINE_SUPPORTS_SAVE | MACHINE_NO_SOUND_HW )
-COMP( 1979, pet2001n16, pet2001n,   0,      pet2001n16, pet,        driver_device,  0,  "Commodore Business Machines",  "PET 2001-N16", MACHINE_SUPPORTS_SAVE | MACHINE_NO_SOUND_HW )
-COMP( 1979, pet2001n32, pet2001n,   0,      pet2001n32, pet,        driver_device,  0,  "Commodore Business Machines",  "PET 2001-N32", MACHINE_SUPPORTS_SAVE | MACHINE_NO_SOUND_HW )
-COMP( 1979, cbm3008,    pet2001n,   0,      cbm3008,    pet,        driver_device,  0,  "Commodore Business Machines",  "CBM 3008",     MACHINE_SUPPORTS_SAVE | MACHINE_NO_SOUND_HW )
-COMP( 1979, cbm3016,    pet2001n,   0,      cbm3016,    pet,        driver_device,  0,  "Commodore Business Machines",  "CBM 3016",     MACHINE_SUPPORTS_SAVE | MACHINE_NO_SOUND_HW )
-COMP( 1979, cbm3032,    pet2001n,   0,      cbm3032,    pet,        driver_device,  0,  "Commodore Business Machines",  "CBM 3032",     MACHINE_SUPPORTS_SAVE | MACHINE_NO_SOUND_HW )
-COMP( 1979, pet2001b,   0,          0,      pet2001b8,  petb,       driver_device,  0,  "Commodore Business Machines",  "PET 2001-B8",  MACHINE_SUPPORTS_SAVE | MACHINE_NO_SOUND_HW )
-COMP( 1979, pet2001b16, pet2001b,   0,      pet2001b16, petb,       driver_device,  0,  "Commodore Business Machines",  "PET 2001-B16", MACHINE_SUPPORTS_SAVE | MACHINE_NO_SOUND_HW )
-COMP( 1979, pet2001b32, pet2001b,   0,      pet2001b32, petb,       driver_device,  0,  "Commodore Business Machines",  "PET 2001-B32", MACHINE_SUPPORTS_SAVE | MACHINE_NO_SOUND_HW )
-COMP( 1979, cbm3032b,   pet2001b,   0,      cbm3032b,   petb,       driver_device,  0,  "Commodore Business Machines",  "CBM 3032B",    MACHINE_SUPPORTS_SAVE | MACHINE_NO_SOUND_HW )
-COMP( 1980, pet4016,    0,          0,      pet4016,    pet,        driver_device,  0,  "Commodore Business Machines",  "PET 4016",     MACHINE_SUPPORTS_SAVE | MACHINE_NO_SOUND_HW )
-COMP( 1980, pet4032,    pet4016,    0,      pet4032,    pet,        driver_device,  0,  "Commodore Business Machines",  "PET 4032",     MACHINE_SUPPORTS_SAVE | MACHINE_NO_SOUND_HW )
-COMP( 1980, pet4032f,   pet4016,    0,      pet4032f,   pet,        driver_device,  0,  "Commodore Business Machines",  "PET 4032 (Fat 40)",     MACHINE_SUPPORTS_SAVE )
-COMP( 1980, cbm4016,    pet4016,    0,      cbm4016,    pet,        driver_device,  0,  "Commodore Business Machines",  "CBM 4016",     MACHINE_SUPPORTS_SAVE | MACHINE_NO_SOUND_HW )
-COMP( 1980, cbm4032,    pet4016,    0,      cbm4032,    pet,        driver_device,  0,  "Commodore Business Machines",  "CBM 4032",     MACHINE_SUPPORTS_SAVE | MACHINE_NO_SOUND_HW )
-COMP( 1980, cbm4032f,   pet4016,    0,      cbm4032f,   pet,        driver_device,  0,  "Commodore Business Machines",  "CBM 4032 (Fat 40)",     MACHINE_SUPPORTS_SAVE )
-COMP( 1980, pet4032b,   0,          0,      pet4032b,   petb,       driver_device,  0,  "Commodore Business Machines",  "PET 4032B",    MACHINE_SUPPORTS_SAVE | MACHINE_NO_SOUND_HW )
-COMP( 1980, cbm4032b,   pet4032b,   0,      cbm4032b,   petb,       driver_device,  0,  "Commodore Business Machines",  "CBM 4032B",    MACHINE_SUPPORTS_SAVE | MACHINE_NO_SOUND_HW )
-COMP( 1980, pet8032,    0,          0,      pet8032,    petb,       driver_device,  0,  "Commodore Business Machines",  "PET 8032",     MACHINE_SUPPORTS_SAVE )
-COMP( 1981, cbm8032,    pet8032,    0,      pet8032,    petb,       driver_device,  0,  "Commodore Business Machines",  "CBM 8032",     MACHINE_SUPPORTS_SAVE )
-COMP( 1981, cbm8032_de, pet8032,    0,      pet8032,    petb_de,    driver_device,  0,  "Commodore Business Machines",  "CBM 8032 (Germany)",           MACHINE_SUPPORTS_SAVE )
-COMP( 1981, cbm8032_fr, pet8032,    0,      pet8032,    petb_fr,    driver_device,  0,  "Commodore Business Machines",  "CBM 8032 (France)",            MACHINE_NOT_WORKING | MACHINE_SUPPORTS_SAVE )
-COMP( 1981, cbm8032_se, pet8032,    0,      pet8032,    petb_se,    driver_device,  0,  "Commodore Business Machines",  "CBM 8032 (Sweden/Finland)",    MACHINE_SUPPORTS_SAVE )
-COMP( 1981, superpet,   pet8032,    0,      superpet,   petb,       driver_device,  0,  "Commodore Business Machines",  "SuperPET SP-9000",             MACHINE_NOT_WORKING | MACHINE_SUPPORTS_SAVE )
-COMP( 1981, mmf9000,    pet8032,    0,      superpet,   petb,       driver_device,  0,  "Commodore Business Machines",  "MicroMainFrame 9000",          MACHINE_NOT_WORKING | MACHINE_SUPPORTS_SAVE )
-COMP( 1981, mmf9000_se, pet8032,    0,      superpet,   petb_se,    driver_device,  0,  "Commodore Business Machines",  "MicroMainFrame 9000 (Sweden/Finland)",         MACHINE_NOT_WORKING | MACHINE_SUPPORTS_SAVE )
-COMP( 1981, cbm8096,    pet8032,    0,      cbm8096,    petb,       driver_device,  0,  "Commodore Business Machines",  "CBM 8096",                     MACHINE_SUPPORTS_SAVE )
-COMP( 1984, cbm8296,    0,          0,      cbm8296,    petb,       driver_device,  0,  "Commodore Business Machines",  "CBM 8296",                     MACHINE_SUPPORTS_SAVE )
-COMP( 1984, cbm8296ed,  cbm8296,    0,      cbm8296d,   petb,       driver_device,  0,  "Commodore Business Machines",  "CBM 8296 ExecuDesk",           MACHINE_SUPPORTS_SAVE )
-COMP( 1984, cbm8296d,   cbm8296,    0,      cbm8296d,   petb,       driver_device,  0,  "Commodore Business Machines",  "CBM 8296-D",                   MACHINE_SUPPORTS_SAVE )
-COMP( 1984, cbm8296d_de,cbm8296,    0,      cbm8296d,   petb_de,    driver_device,  0,  "Commodore Business Machines",  "CBM 8296-D (Germany)",         MACHINE_SUPPORTS_SAVE )
-COMP( 1984, cbm8296gd,  cbm8296,    0,      cbm8296d,   petb,       driver_device,  0,  "Commodore Business Machines",  "CBM 8296GD",                   MACHINE_SUPPORTS_SAVE )
-COMP( 1984, cbm8296dgv_de,cbm8296,    0,      cbm8296d,   petb,       driver_device,  0,  "Commodore Business Machines",  "CBM 8296-D GV? (Germany)",        MACHINE_SUPPORTS_SAVE )
+//    YEAR  NAME           PARENT    COMPAT  MACHINE     INPUT    CLASS           INIT        COMPANY                        FULLNAME        FLAGS
+COMP( 1977, pet2001,       0,        0,      pet2001,    pet,     pet_state,      empty_init, "Commodore Business Machines", "PET 2001-4",   MACHINE_SUPPORTS_SAVE | MACHINE_NO_SOUND_HW )
+COMP( 1977, pet20018,      pet2001,  0,      pet20018,   pet,     pet_state,      empty_init, "Commodore Business Machines", "PET 2001-8",   MACHINE_SUPPORTS_SAVE | MACHINE_NO_SOUND_HW )
+COMP( 1979, pet2001n,      0,        0,      pet2001n8,  pet,     pet_state,      empty_init, "Commodore Business Machines", "PET 2001-N8",  MACHINE_SUPPORTS_SAVE | MACHINE_NO_SOUND_HW )
+COMP( 1979, pet2001n16,    pet2001n, 0,      pet2001n16, pet,     pet_state,      empty_init, "Commodore Business Machines", "PET 2001-N16", MACHINE_SUPPORTS_SAVE | MACHINE_NO_SOUND_HW )
+COMP( 1979, pet2001n32,    pet2001n, 0,      pet2001n32, pet,     pet_state,      empty_init, "Commodore Business Machines", "PET 2001-N32", MACHINE_SUPPORTS_SAVE | MACHINE_NO_SOUND_HW )
+COMP( 1979, cbm3008,       pet2001n, 0,      cbm3008,    pet,     pet_state,      empty_init, "Commodore Business Machines", "CBM 3008",     MACHINE_SUPPORTS_SAVE | MACHINE_NO_SOUND_HW )
+COMP( 1979, cbm3016,       pet2001n, 0,      cbm3016,    pet,     pet_state,      empty_init, "Commodore Business Machines", "CBM 3016",     MACHINE_SUPPORTS_SAVE | MACHINE_NO_SOUND_HW )
+COMP( 1979, cbm3032,       pet2001n, 0,      cbm3032,    pet,     pet_state,      empty_init, "Commodore Business Machines", "CBM 3032",     MACHINE_SUPPORTS_SAVE | MACHINE_NO_SOUND_HW )
+COMP( 1979, pet2001b,      0,        0,      pet2001b8,  petb,    pet2001b_state, empty_init, "Commodore Business Machines", "PET 2001-B8",  MACHINE_SUPPORTS_SAVE | MACHINE_NO_SOUND_HW )
+COMP( 1979, pet2001b16,    pet2001b, 0,      pet2001b16, petb,    pet2001b_state, empty_init, "Commodore Business Machines", "PET 2001-B16", MACHINE_SUPPORTS_SAVE | MACHINE_NO_SOUND_HW )
+COMP( 1979, pet2001b32,    pet2001b, 0,      pet2001b32, petb,    pet2001b_state, empty_init, "Commodore Business Machines", "PET 2001-B32", MACHINE_SUPPORTS_SAVE | MACHINE_NO_SOUND_HW )
+COMP( 1979, cbm3032b,      pet2001b, 0,      cbm3032b,   petb,    pet2001b_state, empty_init, "Commodore Business Machines", "CBM 3032B",    MACHINE_SUPPORTS_SAVE | MACHINE_NO_SOUND_HW )
+COMP( 1980, pet4016,       0,        0,      pet4016,    pet,     pet2001b_state, empty_init, "Commodore Business Machines", "PET 4016",     MACHINE_SUPPORTS_SAVE | MACHINE_NO_SOUND_HW )
+COMP( 1980, pet4032,       pet4016,  0,      pet4032,    pet,     pet2001b_state, empty_init, "Commodore Business Machines", "PET 4032",     MACHINE_SUPPORTS_SAVE | MACHINE_NO_SOUND_HW )
+COMP( 1980, pet4032f,      pet4016,  0,      pet4032f,   pet,     pet2001b_state, empty_init, "Commodore Business Machines", "PET 4032 (Fat 40)",     MACHINE_SUPPORTS_SAVE )
+COMP( 1980, cbm4016,       pet4016,  0,      cbm4016,    pet,     pet_state,      empty_init, "Commodore Business Machines", "CBM 4016",     MACHINE_SUPPORTS_SAVE | MACHINE_NO_SOUND_HW )
+COMP( 1980, cbm4032,       pet4016,  0,      cbm4032,    pet,     pet_state,      empty_init, "Commodore Business Machines", "CBM 4032",     MACHINE_SUPPORTS_SAVE | MACHINE_NO_SOUND_HW )
+COMP( 1980, cbm4032f,      pet4016,  0,      cbm4032f,   pet,     pet_state,      empty_init, "Commodore Business Machines", "CBM 4032 (Fat 40)",     MACHINE_SUPPORTS_SAVE )
+COMP( 1980, pet4032b,      0,        0,      pet4032b,   petb,    pet2001b_state, empty_init, "Commodore Business Machines", "PET 4032B",    MACHINE_SUPPORTS_SAVE | MACHINE_NO_SOUND_HW )
+COMP( 1980, cbm4032b,      pet4032b, 0,      cbm4032b,   petb,    pet2001b_state, empty_init, "Commodore Business Machines", "CBM 4032B",    MACHINE_SUPPORTS_SAVE | MACHINE_NO_SOUND_HW )
+COMP( 1980, pet8032,       0,        0,      pet8032,    petb,    pet80_state,    empty_init, "Commodore Business Machines", "PET 8032",     MACHINE_SUPPORTS_SAVE )
+COMP( 1981, cbm8032,       pet8032,  0,      pet8032,    petb,    pet80_state,    empty_init, "Commodore Business Machines", "CBM 8032",     MACHINE_SUPPORTS_SAVE )
+COMP( 1981, cbm8032_de,    pet8032,  0,      pet8032,    petb_de, pet80_state,    empty_init, "Commodore Business Machines", "CBM 8032 (Germany)",        MACHINE_SUPPORTS_SAVE )
+COMP( 1981, cbm8032_fr,    pet8032,  0,      pet8032,    petb_fr, pet80_state,    empty_init, "Commodore Business Machines", "CBM 8032 (France)",         MACHINE_NOT_WORKING | MACHINE_SUPPORTS_SAVE )
+COMP( 1981, cbm8032_se,    pet8032,  0,      pet8032,    petb_se, pet80_state,    empty_init, "Commodore Business Machines", "CBM 8032 (Sweden/Finland)", MACHINE_SUPPORTS_SAVE )
+COMP( 1981, superpet,      pet8032,  0,      superpet,   petb,    superpet_state, empty_init, "Commodore Business Machines", "SuperPET SP-9000",          MACHINE_NOT_WORKING | MACHINE_SUPPORTS_SAVE )
+COMP( 1981, mmf9000,       pet8032,  0,      superpet,   petb,    superpet_state, empty_init, "Commodore Business Machines", "MicroMainFrame 9000",       MACHINE_NOT_WORKING | MACHINE_SUPPORTS_SAVE )
+COMP( 1981, mmf9000_se,    pet8032,  0,      superpet,   petb_se, superpet_state, empty_init, "Commodore Business Machines", "MicroMainFrame 9000 (Sweden/Finland)",         MACHINE_NOT_WORKING | MACHINE_SUPPORTS_SAVE )
+COMP( 1981, cbm8096,       pet8032,  0,      cbm8096,    petb,    cbm8096_state,  empty_init, "Commodore Business Machines", "CBM 8096",     MACHINE_SUPPORTS_SAVE )
+COMP( 1984, cbm8296,       0,        0,      cbm8296,    petb,    cbm8296_state,  empty_init, "Commodore Business Machines", "CBM 8296",     MACHINE_SUPPORTS_SAVE )
+COMP( 1984, cbm8296ed,     cbm8296,  0,      cbm8296d,   petb,    cbm8296_state,  empty_init, "Commodore Business Machines", "CBM 8296 ExecuDesk",        MACHINE_SUPPORTS_SAVE )
+COMP( 1984, cbm8296d,      cbm8296,  0,      cbm8296d,   petb,    cbm8296_state,  empty_init, "Commodore Business Machines", "CBM 8296-D",   MACHINE_SUPPORTS_SAVE )
+COMP( 1984, cbm8296d_de,   cbm8296,  0,      cbm8296d,   petb_de, cbm8296_state,  empty_init, "Commodore Business Machines", "CBM 8296-D (Germany)",      MACHINE_SUPPORTS_SAVE )
+COMP( 1984, cbm8296gd,     cbm8296,  0,      cbm8296d,   petb,    cbm8296_state,  empty_init, "Commodore Business Machines", "CBM 8296GD",   MACHINE_SUPPORTS_SAVE )
+COMP( 1984, cbm8296dgv_de, cbm8296,  0,      cbm8296d,   petb,    cbm8296_state,  empty_init, "Commodore Business Machines", "CBM 8296-D GV? (Germany)",  MACHINE_SUPPORTS_SAVE )

@@ -39,7 +39,10 @@ so levels 0,1,2,5 are unmasked, vectors get set during the sound CPU init code.
 */
 
 
+#include "emu.h"
 #include "includes/hng64.h"
+#include "speaker.h"
+
 
 // save the sound program?
 #define DUMP_SOUNDPRG  0
@@ -51,34 +54,34 @@ so levels 0,1,2,5 are unmasked, vectors get set during the sound CPU init code.
 // if you actually map RAM here on the MIPS side then xrally will upload the actual sound program here and blank out the area where
 // the program would usually be uploaded (and where all other games upload it) this seems to suggest that the area is unmapped on
 // real hardware.
-WRITE32_MEMBER(hng64_state::hng64_soundram2_w)
+void hng64_state::hng64_soundram2_w(uint32_t data)
 {
 }
 
-READ32_MEMBER(hng64_state::hng64_soundram2_r)
+uint32_t hng64_state::hng64_soundram2_r()
 {
 	return 0x0000;
 }
 
 
-WRITE32_MEMBER(hng64_state::hng64_soundram_w)
+void hng64_state::hng64_soundram_w(offs_t offset, uint32_t data, uint32_t mem_mask)
 {
 	//logerror("hng64_soundram_w %08x: %08x %08x\n", offset, data, mem_mask);
 
-	UINT32 mem_mask32 = mem_mask;
-	UINT32 data32 = data;
+	uint32_t mem_mask32 = mem_mask;
+	uint32_t data32 = data;
 
 	/* swap data around.. keep the v53 happy */
 	data = data32 >> 16;
-	data = FLIPENDIAN_INT16(data);
+	data = swapendian_int16(data);
 	mem_mask = mem_mask32 >> 16;
-	mem_mask = FLIPENDIAN_INT16(mem_mask);
+	mem_mask = swapendian_int16(mem_mask);
 	COMBINE_DATA(&m_soundram[offset * 2 + 0]);
 
 	data = data32 & 0xffff;
-	data = FLIPENDIAN_INT16(data);
+	data = swapendian_int16(data);
 	mem_mask = mem_mask32 & 0xffff;
-	mem_mask = FLIPENDIAN_INT16(mem_mask);
+	mem_mask = swapendian_int16(mem_mask);
 	COMBINE_DATA(&m_soundram[offset * 2 + 1]);
 
 	if (DUMP_SOUNDPRG)
@@ -88,11 +91,11 @@ WRITE32_MEMBER(hng64_state::hng64_soundram_w)
 			logerror("dumping sound program in m_soundram\n");
 			FILE *fp;
 			char filename[256];
-			sprintf(filename,"soundram_%s", space.machine().system().name);
+			sprintf(filename,"soundram_%s", machine().system().name);
 			fp=fopen(filename, "w+b");
 			if (fp)
 			{
-				fwrite((UINT8*)m_soundram.get(), 0x80000*4, 1, fp);
+				fwrite((uint8_t*)m_soundram.get(), 0x80000*4, 1, fp);
 				fclose(fp);
 			}
 		}
@@ -100,17 +103,17 @@ WRITE32_MEMBER(hng64_state::hng64_soundram_w)
 }
 
 
-READ32_MEMBER(hng64_state::hng64_soundram_r)
+uint32_t hng64_state::hng64_soundram_r(offs_t offset)
 {
-	UINT16 datalo = m_soundram[offset * 2 + 0];
-	UINT16 datahi = m_soundram[offset * 2 + 1];
+	uint16_t datalo = m_soundram[offset * 2 + 0];
+	uint16_t datahi = m_soundram[offset * 2 + 1];
 
-	return FLIPENDIAN_INT16(datahi) | (FLIPENDIAN_INT16(datalo) << 16);
+	return swapendian_int16(datahi) | (swapendian_int16(datalo) << 16);
 }
 
-WRITE32_MEMBER( hng64_state::hng64_soundcpu_enable_w )
+void hng64_state::hng64_soundcpu_enable_w(offs_t offset, uint32_t data, uint32_t mem_mask)
 {
-	if (mem_mask&0xffff0000)
+	if (ACCESSING_BITS_16_31)
 	{
 		int cmd = data >> 16;
 		// I guess it's only one of the bits, the commands are inverse of each other
@@ -132,9 +135,9 @@ WRITE32_MEMBER( hng64_state::hng64_soundcpu_enable_w )
 		}
 	}
 
-	if (mem_mask&0x0000ffff)
+	if (ACCESSING_BITS_0_15)
 	{
-			logerror("unknown hng64_soundcpu_enable_w %08x %08x\n", data, mem_mask);
+		logerror("unknown hng64_soundcpu_enable_w %08x %08x\n", data, mem_mask);
 	}
 }
 
@@ -145,7 +148,7 @@ WRITE32_MEMBER( hng64_state::hng64_soundcpu_enable_w )
 
 void hng64_state::reset_sound()
 {
-	UINT8 *RAM = (UINT8*)m_soundram.get();
+	uint8_t *RAM = (uint8_t*)m_soundram.get();
 	membank("bank0")->set_base(&RAM[0x1f0000]);
 	membank("bank1")->set_base(&RAM[0x1f0000]);
 	membank("bank2")->set_base(&RAM[0x1f0000]);
@@ -172,57 +175,58 @@ void hng64_state::reset_sound()
 // ----------------------------------------------
 
 
-static ADDRESS_MAP_START( hng_sound_map, AS_PROGRAM, 16, hng64_state )
-	AM_RANGE(0x00000, 0x0ffff) AM_RAMBANK("bank0")
-	AM_RANGE(0x10000, 0x1ffff) AM_RAMBANK("bank1")
-	AM_RANGE(0x20000, 0x2ffff) AM_RAMBANK("bank2")
-	AM_RANGE(0x30000, 0x3ffff) AM_RAMBANK("bank3")
-	AM_RANGE(0x40000, 0x4ffff) AM_RAMBANK("bank4")
-	AM_RANGE(0x50000, 0x5ffff) AM_RAMBANK("bank5")
-	AM_RANGE(0x60000, 0x6ffff) AM_RAMBANK("bank6")
-	AM_RANGE(0x70000, 0x7ffff) AM_RAMBANK("bank7")
-	AM_RANGE(0x80000, 0x8ffff) AM_RAMBANK("bank8")
-	AM_RANGE(0x90000, 0x9ffff) AM_RAMBANK("bank9")
-	AM_RANGE(0xa0000, 0xaffff) AM_RAMBANK("banka")
-	AM_RANGE(0xb0000, 0xbffff) AM_RAMBANK("bankb")
-	AM_RANGE(0xc0000, 0xcffff) AM_RAMBANK("bankc")
-	AM_RANGE(0xd0000, 0xdffff) AM_RAMBANK("bankd")
-	AM_RANGE(0xe0000, 0xeffff) AM_RAMBANK("banke")
-	AM_RANGE(0xf0000, 0xfffff) AM_RAMBANK("bankf")
-ADDRESS_MAP_END
+void hng64_state::hng_sound_map(address_map &map)
+{
+	map(0x00000, 0x0ffff).bankrw("bank0");
+	map(0x10000, 0x1ffff).bankrw("bank1");
+	map(0x20000, 0x2ffff).bankrw("bank2");
+	map(0x30000, 0x3ffff).bankrw("bank3");
+	map(0x40000, 0x4ffff).bankrw("bank4");
+	map(0x50000, 0x5ffff).bankrw("bank5");
+	map(0x60000, 0x6ffff).bankrw("bank6");
+	map(0x70000, 0x7ffff).bankrw("bank7");
+	map(0x80000, 0x8ffff).bankrw("bank8");
+	map(0x90000, 0x9ffff).bankrw("bank9");
+	map(0xa0000, 0xaffff).bankrw("banka");
+	map(0xb0000, 0xbffff).bankrw("bankb");
+	map(0xc0000, 0xcffff).bankrw("bankc");
+	map(0xd0000, 0xdffff).bankrw("bankd");
+	map(0xe0000, 0xeffff).bankrw("banke");
+	map(0xf0000, 0xfffff).bankrw("bankf");
+}
 
-WRITE16_MEMBER(hng64_state::hng64_sound_port_0008_w)
+void hng64_state::hng64_sound_port_0008_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 //  logerror("hng64_sound_port_0008_w %04x %04x\n", data, mem_mask);
 	// seems to one or more of the DMARQ on the V53, writes here when it expects DMA channel 3 to transfer ~0x20 bytes just after startup
 
 	/* TODO: huh? */
-	m_audiocpu->dreq3_w(data&0x1);
-	m_dsp->l7a1045_sound_w(space,8/2,data,mem_mask);
+	m_audiocpu->dreq_w<3>(data&0x1);
+	m_dsp->l7a1045_sound_w(8/2,data,mem_mask);
 //  m_audiocpu->hack_w(1);
 
 }
 
 
-READ16_MEMBER(hng64_state::hng64_sound_port_0008_r)
+uint16_t hng64_state::hng64_sound_port_0008_r(offs_t offset, uint16_t mem_mask)
 {
 	// read in irq5
-	//printf("%08x: hng64_sound_port_0008_r mask (%04x)\n", space.device().safe_pc(), mem_mask);
+	//logerror("%s: hng64_sound_port_0008_r mask (%04x)\n", machine().describe_context(), mem_mask);
 	return 0;
 }
 
 
 
 // but why not just use the V33/V53 XA mode??
-WRITE16_MEMBER(hng64_state::hng64_sound_bank_w)
+void hng64_state::hng64_sound_bank_w(offs_t offset, uint16_t data)
 {
-	logerror("%08x hng64_sound_bank_w? %02x %04x\n", space.device().safe_pc(), offset, data);
+	logerror("%s hng64_sound_bank_w? %02x %04x\n", machine().describe_context(), offset, data);
 	// buriki writes 0x3f to 0x200 before jumping to the low addresses..
 	// where it expects to find data from 0x1f0000
 
 	// the 2 early games don't do this.. maybe all banks actuallly default to that region tho?
 	// the sound code on those games seems buggier anyway.
-	UINT8 *RAM = (UINT8*)m_soundram.get();
+	uint8_t *RAM = (uint8_t*)m_soundram.get();
 
 	int bank = data & 0x1f;
 
@@ -246,24 +250,24 @@ WRITE16_MEMBER(hng64_state::hng64_sound_bank_w)
 }
 
 
-WRITE16_MEMBER(hng64_state::hng64_sound_port_000a_w)
+void hng64_state::hng64_sound_port_000a_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
-	logerror("%08x: hng64_port hng64_sound_port_000a_w %04x mask (%04x)\n",  space.device().safe_pc(), data, mem_mask);
+	logerror("%s: hng64_port hng64_sound_port_000a_w %04x mask (%04x)\n", machine().describe_context(), data, mem_mask);
 }
 
-WRITE16_MEMBER(hng64_state::hng64_sound_port_000c_w)
+void hng64_state::hng64_sound_port_000c_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
-	logerror("%08x: hng64_port hng64_sound_port_000c_w %04x mask (%04x)\n",  space.device().safe_pc(), data, mem_mask);
-}
-
-
-WRITE16_MEMBER(hng64_state::hng64_sound_port_0080_w)
-{
-	logerror("hng64_port 0x0080 %04x\n", data);
+	logerror("%s: hng64_port hng64_sound_port_000c_w %04x mask (%04x)\n", machine().describe_context(), data, mem_mask);
 }
 
 
-WRITE16_MEMBER(hng64_state::sound_comms_w)
+void hng64_state::hng64_sound_port_0080_w(uint16_t data)
+{
+	logerror("%s: hng64_port 0x0080 %04x\n", machine().describe_context(), data);
+}
+
+
+void hng64_state::sound_comms_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	switch(offset*2)
 	{
@@ -284,7 +288,7 @@ WRITE16_MEMBER(hng64_state::sound_comms_w)
 	//printf("SOUND W %02x %04x\n",offset*2,data);
 }
 
-READ16_MEMBER(hng64_state::sound_comms_r)
+uint16_t hng64_state::sound_comms_r(offs_t offset)
 {
 	switch(offset*2)
 	{
@@ -298,32 +302,33 @@ READ16_MEMBER(hng64_state::sound_comms_r)
 	return 0;
 }
 
-static ADDRESS_MAP_START( hng_sound_io, AS_IO, 16, hng64_state )
-	AM_RANGE(0x0000, 0x0007) AM_DEVREADWRITE("l7a1045", l7a1045_sound_device, l7a1045_sound_r, l7a1045_sound_w )
+void hng64_state::hng_sound_io(address_map &map)
+{
+	map(0x0000, 0x0007).rw(m_dsp, FUNC(l7a1045_sound_device::l7a1045_sound_r), FUNC(l7a1045_sound_device::l7a1045_sound_w));
 
-	AM_RANGE(0x0008, 0x0009) AM_READWRITE( hng64_sound_port_0008_r, hng64_sound_port_0008_w )
-	AM_RANGE(0x000a, 0x000b) AM_WRITE( hng64_sound_port_000a_w )
-	AM_RANGE(0x000c, 0x000d) AM_WRITE( hng64_sound_port_000c_w )
+	map(0x0008, 0x0009).rw(FUNC(hng64_state::hng64_sound_port_0008_r), FUNC(hng64_state::hng64_sound_port_0008_w));
+	map(0x000a, 0x000b).w(FUNC(hng64_state::hng64_sound_port_000a_w));
+	map(0x000c, 0x000d).w(FUNC(hng64_state::hng64_sound_port_000c_w));
 
-	AM_RANGE(0x0080, 0x0081) AM_WRITE( hng64_sound_port_0080_w )
+	map(0x0080, 0x0081).w(FUNC(hng64_state::hng64_sound_port_0080_w));
 
-	AM_RANGE(0x0100, 0x010f) AM_READWRITE( sound_comms_r,sound_comms_w )
+	map(0x0100, 0x010f).rw(FUNC(hng64_state::sound_comms_r), FUNC(hng64_state::sound_comms_w));
 
-	AM_RANGE(0x0200, 0x021f) AM_WRITE( hng64_sound_bank_w ) // ??
+	map(0x0200, 0x021f).w(FUNC(hng64_state::hng64_sound_bank_w)); // ??
 
-ADDRESS_MAP_END
+}
 
 WRITE_LINE_MEMBER(hng64_state::dma_hreq_cb)
 {
 	m_audiocpu->hack_w(1);
 }
 
-READ8_MEMBER(hng64_state::dma_memr_cb)
+uint8_t hng64_state::dma_memr_cb(offs_t offset)
 {
-	return m_audiocpu->space(AS_PROGRAM).read_byte(offset);;
+	return m_audiocpu->space(AS_PROGRAM).read_byte(offset);
 }
 
-WRITE8_MEMBER(hng64_state::dma_iow3_cb)
+void hng64_state::dma_iow3_cb(uint8_t data)
 {
 	// currently it reads a block of 0x20 '0x00' values from a very specific block of RAM where there is a 0x20 space in the data and transfers them repeatedly, I assume
 	// this is some kind of buffer for the audio or DSP and eventually will be populated with other values...
@@ -383,22 +388,23 @@ WRITE_LINE_MEMBER(hng64_state::tcu_tm2_cb)
 
 
 
-MACHINE_CONFIG_FRAGMENT( hng64_audio )
-	MCFG_CPU_ADD("audiocpu", V53A, 32000000/2)              // V53A, 16? mhz!
-	MCFG_CPU_PROGRAM_MAP(hng_sound_map)
-	MCFG_CPU_IO_MAP(hng_sound_io)
-	MCFG_V53_DMAU_OUT_HREQ_CB(WRITELINE(hng64_state, dma_hreq_cb))
-	MCFG_V53_DMAU_IN_MEMR_CB(READ8(hng64_state, dma_memr_cb))
-	MCFG_V53_DMAU_OUT_IOW_3_CB(WRITE8(hng64_state,dma_iow3_cb))
+void hng64_state::hng64_audio(machine_config &config)
+{
+	V53A(config, m_audiocpu, 32000000/2);              // V53A, 16? mhz!
+	m_audiocpu->set_addrmap(AS_PROGRAM, &hng64_state::hng_sound_map);
+	m_audiocpu->set_addrmap(AS_IO, &hng64_state::hng_sound_io);
+	m_audiocpu->out_hreq_cb().set(FUNC(hng64_state::dma_hreq_cb));
+	m_audiocpu->in_memr_cb().set(FUNC(hng64_state::dma_memr_cb));
+	m_audiocpu->out_iow_cb<3>().set(FUNC(hng64_state::dma_iow3_cb));
 
-	MCFG_V53_TCU_OUT0_HANDLER(WRITELINE(hng64_state, tcu_tm0_cb))
-	MCFG_V53_TCU_OUT1_HANDLER(WRITELINE(hng64_state, tcu_tm1_cb))
-	MCFG_V53_TCU_OUT2_HANDLER(WRITELINE(hng64_state, tcu_tm2_cb))
+	m_audiocpu->out_handler<0>().set(FUNC(hng64_state::tcu_tm0_cb));
+	m_audiocpu->out_handler<1>().set(FUNC(hng64_state::tcu_tm1_cb));
+	m_audiocpu->out_handler<2>().set(FUNC(hng64_state::tcu_tm2_cb));
 
-	MCFG_SPEAKER_STANDARD_STEREO("lspeaker", "rspeaker")
+	SPEAKER(config, "lspeaker").front_left();
+	SPEAKER(config, "rspeaker").front_right();
 
-	MCFG_SOUND_ADD("l7a1045", L7A1045, 32000000/2 ) // ??
-	MCFG_SOUND_ROUTE(0, "lspeaker", 1.0)
-	MCFG_SOUND_ROUTE(1, "rspeaker", 1.0)
-
-MACHINE_CONFIG_END
+	L7A1045(config, m_dsp, 32000000/2); // ??
+	m_dsp->add_route(0, "lspeaker", 1.0);
+	m_dsp->add_route(1, "rspeaker", 1.0);
+}

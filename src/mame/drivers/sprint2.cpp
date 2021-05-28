@@ -20,38 +20,50 @@
 ***************************************************************************/
 
 #include "emu.h"
-#include "cpu/m6502/m6502.h"
 #include "includes/sprint2.h"
+
+#include "cpu/m6502/m6502.h"
 #include "sound/discrete.h"
+#include "speaker.h"
 
 #define MACHINE_IS_SPRINT1   (m_game == 1)
 #define MACHINE_IS_SPRINT2   (m_game == 2)
 #define MACHINE_IS_DOMINOS   (m_game == 3)
 
-DRIVER_INIT_MEMBER(sprint2_state,sprint1)
+
+void sprint2_state::machine_start()
+{
+	m_gear_sel.resolve();
+
+	save_item(NAME(m_steering));
+	save_item(NAME(m_gear));
+	save_item(NAME(m_dial));
+	save_item(NAME(m_collision));
+}
+
+
+void sprint2_state::init_sprint1()
 {
 	m_game = 1;
 }
-DRIVER_INIT_MEMBER(sprint2_state,sprint2)
+void sprint2_state::init_sprint2()
 {
 	m_game = 2;
 }
-DRIVER_INIT_MEMBER(sprint2_state,dominos)
+void sprint2_state::init_dominos()
 {
 	m_game = 3;
 }
 
-DRIVER_INIT_MEMBER(sprint2_state,dominos4)
+void sprint2_state::init_dominos4()
 {
 	m_game = 3;
 	m_maincpu->space(AS_PROGRAM).install_read_port(0x0880, 0x0880, "SELFTTEST");
-	m_maincpu->space(AS_PROGRAM).install_write_handler(0x0c50, 0x0c5f, write8_delegate(FUNC(sprint2_state::dominos4_lamp3_w),this));
-	m_maincpu->space(AS_PROGRAM).install_write_handler(0x0c60, 0x0c6f, write8_delegate(FUNC(sprint2_state::dominos4_lamp4_w),this));
 }
 
-int sprint2_state::service_mode()
+uint8_t sprint2_state::service_mode()
 {
-	UINT8 v = ioport("INB")->read();
+	uint8_t v = m_in[1]->read();
 
 	if (MACHINE_IS_SPRINT1)
 	{
@@ -70,17 +82,15 @@ int sprint2_state::service_mode()
 }
 
 
-INTERRUPT_GEN_MEMBER(sprint2_state::sprint2)
+INTERRUPT_GEN_MEMBER(sprint2_state::irq)
 {
-	/* handle steering wheels */
+	// handle steering wheels
 
 	if (MACHINE_IS_SPRINT1 || MACHINE_IS_SPRINT2)
 	{
-		int i;
-
-		for (i = 0; i < 2; i++)
+		for (int i = 0; i < 2; i++)
 		{
-			signed char delta = ioport(i ? "DIAL_P2" : "DIAL_P1")->read() - m_dial[i];
+			signed char delta = m_dials[i]->read() - m_dial[i];
 
 			if (delta < 0)
 			{
@@ -93,47 +103,46 @@ INTERRUPT_GEN_MEMBER(sprint2_state::sprint2)
 
 			m_dial[i] += delta;
 
-			switch (ioport(i ? "GEAR_P2" : "GEAR_P1")->read() & 15)
+			switch (m_gears[i]->read() & 15)
 			{
 			case 1: m_gear[i] = 1; break;
 			case 2: m_gear[i] = 2; break;
 			case 4: m_gear[i] = 3; break;
 			case 8: m_gear[i] = 4; break;
 			}
-			output_set_value("P1gear", m_gear[0]);
-			output_set_value("P2gear", m_gear[1]);
+			m_gear_sel[0] = m_gear[0];
+			m_gear_sel[1] = m_gear[1];
 		}
 	}
 
-	address_space &space = m_maincpu->space(AS_PROGRAM);
-	m_discrete->write(space, SPRINT2_MOTORSND1_DATA, m_video_ram[0x394] & 15); // also DOMINOS_FREQ_DATA
-	m_discrete->write(space, SPRINT2_MOTORSND2_DATA, m_video_ram[0x395] & 15);
-	m_discrete->write(space, SPRINT2_CRASHSND_DATA, m_video_ram[0x396] & 15);  // also DOMINOS_AMP_DATA
+	m_discrete->write(SPRINT2_MOTORSND1_DATA, m_video_ram[0x394] & 15); // also DOMINOS_FREQ_DATA
+	m_discrete->write(SPRINT2_MOTORSND2_DATA, m_video_ram[0x395] & 15);
+	m_discrete->write(SPRINT2_CRASHSND_DATA, m_video_ram[0x396] & 15);  // also DOMINOS_AMP_DATA
 
-	/* interrupts and watchdog are disabled during service mode */
+	// interrupts and watchdog are disabled during service mode
 
-	machine().watchdog_enable(!service_mode());
+	m_watchdog->watchdog_enable(!service_mode());
 
 	if (!service_mode())
-		device.execute().set_input_line(INPUT_LINE_NMI, PULSE_LINE);
+		device.execute().pulse_input_line(INPUT_LINE_NMI, attotime::zero);
 }
 
 
-READ8_MEMBER(sprint2_state::sprint2_wram_r)
+uint8_t sprint2_state::wram_r(offs_t offset)
 {
 	return m_video_ram[0x380 + offset % 0x80];
 }
 
 
-READ8_MEMBER(sprint2_state::sprint2_dip_r)
+uint8_t sprint2_state::dip_r(offs_t offset)
 {
-	return (ioport("DSW")->read() << (2 * ((offset & 3) ^ 3))) & 0xc0;
+	return (m_dsw->read() << (2 * ((offset & 3) ^ 3))) & 0xc0;
 }
 
 
-READ8_MEMBER(sprint2_state::sprint2_input_A_r)
+uint8_t sprint2_state::input_A_r(offs_t offset)
 {
-	UINT8 val = ioport("INA")->read();
+	uint8_t val = m_in[0]->read();
 
 	if (m_game == 2)// (MACHINE_IS_SPRINT2)
 	{
@@ -149,9 +158,9 @@ READ8_MEMBER(sprint2_state::sprint2_input_A_r)
 }
 
 
-READ8_MEMBER(sprint2_state::sprint2_input_B_r)
+uint8_t sprint2_state::input_B_r(offs_t offset)
 {
-	UINT8 val = ioport("INB")->read();
+	uint8_t val = m_in[1]->read();
 
 	if (m_game == 1) // (MACHINE_IS_SPRINT1)
 	{
@@ -164,161 +173,118 @@ READ8_MEMBER(sprint2_state::sprint2_input_B_r)
 }
 
 
-READ8_MEMBER(sprint2_state::sprint2_sync_r)
+uint8_t sprint2_state::sync_r()
 {
-	UINT8 val = 0;
+	uint8_t val = 0;
 
-	if (m_attract != 0)
+	if (m_outlatch->q0_r() != 0)
 		val |= 0x10;
 
 	if (m_screen->vpos() == 261)
-		val |= 0x20; /* VRESET */
+		val |= 0x20; // VRESET
 
 	if (m_screen->vpos() >= 224)
-		val |= 0x40; /* VBLANK */
+		val |= 0x40; // VBLANK
 
 	if (m_screen->vpos() >= 131)
-		val |= 0x80; /* 60 Hz? */
+		val |= 0x80; // 60 Hz?
 
 	return val;
 }
 
 
-READ8_MEMBER(sprint2_state::sprint2_steering1_r)
+template <uint8_t Which>
+uint8_t sprint2_state::steering_r()
 {
-	return m_steering[0];
-}
-READ8_MEMBER(sprint2_state::sprint2_steering2_r)
-{
-	return m_steering[1];
+	return m_steering[Which];
 }
 
 
-WRITE8_MEMBER(sprint2_state::sprint2_steering_reset1_w)
+template <uint8_t Which>
+void sprint2_state::steering_reset_w(uint8_t data)
 {
-	m_steering[0] |= 0x80;
-}
-WRITE8_MEMBER(sprint2_state::sprint2_steering_reset2_w)
-{
-	m_steering[1] |= 0x80;
+	m_steering[Which] |= 0x80;
 }
 
 
-WRITE8_MEMBER(sprint2_state::sprint2_wram_w)
+void sprint2_state::wram_w(offs_t offset, uint8_t data)
 {
 	m_video_ram[0x380 + offset % 0x80] = data;
 }
 
 
-WRITE8_MEMBER(sprint2_state::sprint2_attract_w)
+void sprint2_state::output_latch_w(offs_t offset, uint8_t data)
 {
-	m_attract = offset & 1;
-
-	// also DOMINOS_ATTRACT_EN
-	m_discrete->write(space, SPRINT2_ATTRACT_EN, m_attract);
+	m_outlatch->write_bit(offset >> 4, offset & 1);
 }
 
 
-WRITE8_MEMBER(sprint2_state::sprint2_noise_reset_w)
+void sprint2_state::noise_reset_w(uint8_t data)
 {
-	m_discrete->write(space, SPRINT2_NOISE_RESET, 0);
+	m_discrete->write(SPRINT2_NOISE_RESET, 0);
 }
 
 
-WRITE8_MEMBER(sprint2_state::sprint2_skid1_w)
+void sprint2_state::main_map(address_map &map)
 {
-	// also DOMINOS_TUMBLE_EN
-	m_discrete->write(space, SPRINT2_SKIDSND1_EN, offset & 1);
+	map.global_mask(0x3fff);
+	map(0x0000, 0x03ff).rw(FUNC(sprint2_state::wram_r), FUNC(sprint2_state::wram_w));
+	map(0x0400, 0x07ff).ram().w(FUNC(sprint2_state::video_ram_w)).share(m_video_ram);
+	map(0x0818, 0x081f).r(FUNC(sprint2_state::input_A_r));
+	map(0x0828, 0x082f).r(FUNC(sprint2_state::input_B_r));
+	map(0x0830, 0x0837).r(FUNC(sprint2_state::dip_r));
+	map(0x0840, 0x087f).portr("COIN");
+	map(0x0880, 0x08bf).r(FUNC(sprint2_state::steering_r<0>));
+	map(0x08c0, 0x08ff).r(FUNC(sprint2_state::steering_r<1>));
+	map(0x0c00, 0x0fff).r(FUNC(sprint2_state::sync_r));
+	map(0x0c00, 0x0c7f).w(FUNC(sprint2_state::output_latch_w));
+	map(0x0c80, 0x0cff).w(m_watchdog, FUNC(watchdog_timer_device::reset_w));
+	map(0x0d00, 0x0d7f).lw8(NAME([this] (uint8_t data) { m_collision[0] = 0; }));
+	map(0x0d80, 0x0dff).lw8(NAME([this] (uint8_t data) { m_collision[1] = 0; }));
+	map(0x0e00, 0x0e7f).w(FUNC(sprint2_state::steering_reset_w<0>));
+	map(0x0e80, 0x0eff).w(FUNC(sprint2_state::steering_reset_w<1>));
+	map(0x0f00, 0x0f7f).w(FUNC(sprint2_state::noise_reset_w));
+	map(0x1000, 0x13ff).lr8(NAME([this] () -> uint8_t { return m_collision[0]; }));
+	map(0x1400, 0x17ff).lr8(NAME([this] () -> uint8_t { return m_collision[1]; }));
+	map(0x1800, 0x1800).nopr();  // debugger ROM location?
+	map(0x2000, 0x3fff).rom();
 }
-
-WRITE8_MEMBER(sprint2_state::sprint2_skid2_w)
-{
-	m_discrete->write(space, SPRINT2_SKIDSND2_EN, offset & 1);
-}
-
-
-WRITE8_MEMBER(sprint2_state::sprint2_lamp1_w)
-{
-	set_led_status(machine(), 0, offset & 1);
-}
-WRITE8_MEMBER(sprint2_state::sprint2_lamp2_w)
-{
-	set_led_status(machine(), 1, offset & 1);
-}
-
-WRITE8_MEMBER(sprint2_state::dominos4_lamp3_w)
-{
-	set_led_status(machine(), 2, offset & 1);
-}
-WRITE8_MEMBER(sprint2_state::dominos4_lamp4_w)
-{
-	set_led_status(machine(), 3, offset & 1);
-}
-
-static ADDRESS_MAP_START( sprint2_map, AS_PROGRAM, 8, sprint2_state )
-	ADDRESS_MAP_GLOBAL_MASK(0x3fff)
-	AM_RANGE(0x0000, 0x03ff) AM_READWRITE(sprint2_wram_r,sprint2_wram_w)
-	AM_RANGE(0x0400, 0x07ff) AM_RAM_WRITE(sprint2_video_ram_w) AM_SHARE("video_ram")
-	AM_RANGE(0x0818, 0x081f) AM_READ(sprint2_input_A_r)
-	AM_RANGE(0x0828, 0x082f) AM_READ(sprint2_input_B_r)
-	AM_RANGE(0x0830, 0x0837) AM_READ(sprint2_dip_r)
-	AM_RANGE(0x0840, 0x087f) AM_READ_PORT("COIN")
-	AM_RANGE(0x0880, 0x08bf) AM_READ(sprint2_steering1_r)
-	AM_RANGE(0x08c0, 0x08ff) AM_READ(sprint2_steering2_r)
-	AM_RANGE(0x0c00, 0x0fff) AM_READ(sprint2_sync_r)
-	AM_RANGE(0x0c00, 0x0c0f) AM_WRITE(sprint2_attract_w)
-	AM_RANGE(0x0c10, 0x0c1f) AM_WRITE(sprint2_skid1_w)
-	AM_RANGE(0x0c20, 0x0c2f) AM_WRITE(sprint2_skid2_w)
-	AM_RANGE(0x0c30, 0x0c3f) AM_WRITE(sprint2_lamp1_w)
-	AM_RANGE(0x0c40, 0x0c4f) AM_WRITE(sprint2_lamp2_w)
-	AM_RANGE(0x0c60, 0x0c6f) AM_WRITENOP /* SPARE */
-	AM_RANGE(0x0c80, 0x0cff) AM_WRITE(watchdog_reset_w)
-	AM_RANGE(0x0d00, 0x0d7f) AM_WRITE(sprint2_collision_reset1_w)
-	AM_RANGE(0x0d80, 0x0dff) AM_WRITE(sprint2_collision_reset2_w)
-	AM_RANGE(0x0e00, 0x0e7f) AM_WRITE(sprint2_steering_reset1_w)
-	AM_RANGE(0x0e80, 0x0eff) AM_WRITE(sprint2_steering_reset2_w)
-	AM_RANGE(0x0f00, 0x0f7f) AM_WRITE(sprint2_noise_reset_w)
-	AM_RANGE(0x1000, 0x13ff) AM_READ(sprint2_collision1_r)
-	AM_RANGE(0x1400, 0x17ff) AM_READ(sprint2_collision2_r)
-	AM_RANGE(0x1800, 0x1800) AM_READNOP  /* debugger ROM location? */
-	AM_RANGE(0x2000, 0x3fff) AM_ROM
-ADDRESS_MAP_END
 
 
 static INPUT_PORTS_START( sprint2 )
 	PORT_START("DSW")
-	PORT_DIPNAME( 0x01, 0x00, "Tracks on Demo" )
+	PORT_DIPNAME( 0x01, 0x00, "Tracks on Demo" )        PORT_DIPLOCATION("SW1:1")
 	PORT_DIPSETTING(    0x00, "Easy Track Only" )
 	PORT_DIPSETTING(    0x01, "Cycle 12 Tracks" )
-	PORT_DIPNAME( 0x02, 0x00, "Oil Slicks" )
+	PORT_DIPNAME( 0x02, 0x00, "Oil Slicks" )            PORT_DIPLOCATION("SW1:2")
 	PORT_DIPSETTING(    0x02, DEF_STR( Off ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
-	PORT_DIPNAME( 0x0c, 0x00, DEF_STR( Coinage ) )
+	PORT_DIPNAME( 0x0c, 0x00, DEF_STR( Coinage ) )      PORT_DIPLOCATION("SW1:3,4")
 	PORT_DIPSETTING(    0x08, DEF_STR( 2C_1C ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( 1C_1C ) )
 	PORT_DIPSETTING(    0x04, DEF_STR( 1C_2C ) )
 	PORT_DIPSETTING(    0x0c, DEF_STR( Free_Play ) )
-	PORT_DIPNAME( 0x10, 0x00, DEF_STR( Unused) )
+	PORT_DIPNAME( 0x10, 0x00, DEF_STR( Unused) )        PORT_DIPLOCATION("SW1:5")
 	PORT_DIPSETTING(    0x10, DEF_STR( Off ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
-	PORT_DIPNAME( 0x20, 0x00, "Extended Play" )
+	PORT_DIPNAME( 0x20, 0x00, "Extended Play" )         PORT_DIPLOCATION("SW1:6")
 	PORT_DIPSETTING(    0x20, DEF_STR( Off ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
-	PORT_DIPNAME( 0xc0, 0x00, "Play Time" )
+	PORT_DIPNAME( 0xc0, 0x00, "Play Time" )             PORT_DIPLOCATION("SW1:7,8")
 	PORT_DIPSETTING(    0xc0, "60 seconds" )
 	PORT_DIPSETTING(    0x80, "90 seconds" )
 	PORT_DIPSETTING(    0x40, "120 seconds" )
 	PORT_DIPSETTING(    0x00, "150 seconds" )
 
-	PORT_START("INA")   /* input A */
-	PORT_BIT (0x01, IP_ACTIVE_LOW, IPT_UNUSED ) /* P1 1st gear */
-	PORT_BIT (0x02, IP_ACTIVE_LOW, IPT_UNUSED ) /* P2 1st gear */
-	PORT_BIT (0x04, IP_ACTIVE_LOW, IPT_UNUSED ) /* P1 2nd gear */
-	PORT_BIT (0x08, IP_ACTIVE_LOW, IPT_UNUSED ) /* P2 2nd gear */
-	PORT_BIT (0x10, IP_ACTIVE_LOW, IPT_UNUSED ) /* P1 3rd gear */
-	PORT_BIT (0x20, IP_ACTIVE_LOW, IPT_UNUSED ) /* P2 3rd gear */
+	PORT_START("INA")   // input A
+	PORT_BIT (0x01, IP_ACTIVE_LOW, IPT_UNUSED ) // P1 1st gear
+	PORT_BIT (0x02, IP_ACTIVE_LOW, IPT_UNUSED ) // P2 1st gear
+	PORT_BIT (0x04, IP_ACTIVE_LOW, IPT_UNUSED ) // P1 2nd gear
+	PORT_BIT (0x08, IP_ACTIVE_LOW, IPT_UNUSED ) // P2 2nd gear
+	PORT_BIT (0x10, IP_ACTIVE_LOW, IPT_UNUSED ) // P1 3rd gear
+	PORT_BIT (0x20, IP_ACTIVE_LOW, IPT_UNUSED ) // P2 3rd gear
 
-	PORT_START("INB")   /* input B */
+	PORT_START("INB")   // input B
 	PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_BUTTON1 ) PORT_NAME("Player 1 Gas") PORT_PLAYER(1)
 	PORT_BIT(0x02, IP_ACTIVE_LOW, IPT_BUTTON1 ) PORT_NAME("Player 2 Gas") PORT_PLAYER(2)
 	PORT_SERVICE( 0x04, IP_ACTIVE_LOW )
@@ -357,37 +323,37 @@ static INPUT_PORTS_START( sprint2 )
 INPUT_PORTS_END
 
 
-static INPUT_PORTS_START( sprint1 )
+	static INPUT_PORTS_START( sprint1 )
 	PORT_START("DSW")
-	PORT_DIPNAME( 0x01, 0x00, "Change Track" )
+	PORT_DIPNAME( 0x01, 0x00, "Change Track" )          PORT_DIPLOCATION("SW1:1")
 	PORT_DIPSETTING(    0x01, "Every Lap" )
 	PORT_DIPSETTING(    0x00, "Every 2 Laps" )
-	PORT_DIPNAME( 0x02, 0x00, "Oil Slicks" )
+	PORT_DIPNAME( 0x02, 0x00, "Oil Slicks" )            PORT_DIPLOCATION("SW1:2")
 	PORT_DIPSETTING(    0x02, DEF_STR( Off ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
-	PORT_DIPNAME( 0x0c, 0x00, DEF_STR( Coinage ) )
+	PORT_DIPNAME( 0x0c, 0x00, DEF_STR( Coinage ) )      PORT_DIPLOCATION("SW1:3,4")
 	PORT_DIPSETTING(    0x08, DEF_STR( 2C_1C ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( 1C_1C ) )
 	PORT_DIPSETTING(    0x04, DEF_STR( 1C_2C ) )
 	PORT_DIPSETTING(    0x0c, DEF_STR( Free_Play ) )
-	PORT_DIPNAME( 0x10, 0x00, DEF_STR( Unused) )
+	PORT_DIPNAME( 0x10, 0x00, DEF_STR( Unused) )        PORT_DIPLOCATION("SW1:5")
 	PORT_DIPSETTING(    0x10, DEF_STR( Off ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
-	PORT_DIPNAME( 0x20, 0x00, "Extended Play" )
+	PORT_DIPNAME( 0x20, 0x00, "Extended Play" )         PORT_DIPLOCATION("SW1:6")
 	PORT_DIPSETTING(    0x20, DEF_STR( Off ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
-	PORT_DIPNAME( 0xc0, 0x00, "Play Time" )
+	PORT_DIPNAME( 0xc0, 0x00, "Play Time" )             PORT_DIPLOCATION("SW1:7,8")
 	PORT_DIPSETTING(    0xc0, "60 seconds" )
 	PORT_DIPSETTING(    0x80, "90 seconds" )
 	PORT_DIPSETTING(    0x40, "120 seconds" )
 	PORT_DIPSETTING(    0x00, "150 seconds" )
 
-	PORT_START("INA")   /* input A */
+	PORT_START("INA")   // input A
 
-	PORT_START("INB")   /* input B */
-	PORT_BIT ( 0x01, IP_ACTIVE_LOW, IPT_UNUSED ) /* 1st gear */
-	PORT_BIT ( 0x02, IP_ACTIVE_LOW, IPT_UNUSED ) /* 2nd gear */
-	PORT_BIT ( 0x04, IP_ACTIVE_LOW, IPT_UNUSED ) /* 3rd gear */
+	PORT_START("INB")   // input B
+	PORT_BIT ( 0x01, IP_ACTIVE_LOW, IPT_UNUSED ) // 1st gear
+	PORT_BIT ( 0x02, IP_ACTIVE_LOW, IPT_UNUSED ) // 2nd gear
+	PORT_BIT ( 0x04, IP_ACTIVE_LOW, IPT_UNUSED ) // 3rd gear
 	PORT_BIT( 0x08, IP_ACTIVE_LOW, IPT_BUTTON1 ) PORT_NAME("Gas")
 	PORT_SERVICE( 0x10, IP_ACTIVE_LOW )
 	PORT_BIT ( 0x20, IP_ACTIVE_LOW, IPT_START1 )
@@ -416,35 +382,35 @@ INPUT_PORTS_END
 
 static INPUT_PORTS_START( dominos )
 	PORT_START("DSW")
-	PORT_DIPNAME( 0x03, 0x01, "Points to Win" )
+	PORT_DIPNAME( 0x03, 0x01, "Points to Win" )         PORT_DIPLOCATION("SW1:1,2")
 	PORT_DIPSETTING(    0x03, "6" )
 	PORT_DIPSETTING(    0x02, "5" )
 	PORT_DIPSETTING(    0x01, "4" )
 	PORT_DIPSETTING(    0x00, "3" )
-	PORT_DIPNAME( 0x0C, 0x08, DEF_STR( Coinage ) )
+	PORT_DIPNAME( 0x0C, 0x08, DEF_STR( Coinage ) )      PORT_DIPLOCATION("SW1:3,4")
 	PORT_DIPSETTING(    0x04, DEF_STR( 2C_1C ) )
 	PORT_DIPSETTING(    0x08, DEF_STR( 1C_1C ) )
 	PORT_DIPSETTING(    0x0c, DEF_STR( 1C_2C ) )
-	PORT_DIPNAME( 0x10, 0x10, DEF_STR( Unknown ) )
+	PORT_DIPNAME( 0x10, 0x00, DEF_STR( Unused ) )      PORT_DIPLOCATION("SW1:5") // Manual says "Always on" for dips 5-8
 	PORT_DIPSETTING(    0x10, DEF_STR( Off ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
-	PORT_DIPNAME( 0x20, 0x20, DEF_STR( Unknown ) )
+	PORT_DIPNAME( 0x20, 0x00, DEF_STR( Unused ) )      PORT_DIPLOCATION("SW1:6")
 	PORT_DIPSETTING(    0x20, DEF_STR( Off ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
-	PORT_DIPNAME( 0x40, 0x40, DEF_STR( Unknown ) )
+	PORT_DIPNAME( 0x40, 0x00, DEF_STR( Unused ) )      PORT_DIPLOCATION("SW1:7")
 	PORT_DIPSETTING(    0x40, DEF_STR( Off ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
-	PORT_DIPNAME( 0x80, 0x80, DEF_STR( Unknown ) )
+	PORT_DIPNAME( 0x80, 0x00, DEF_STR( Unused ) )      PORT_DIPLOCATION("SW1:8")
 	PORT_DIPSETTING(    0x80, DEF_STR( Off ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
 
-	PORT_START("INA")   /* input A */
+	PORT_START("INA")   // input A
 	PORT_BIT ( 0x01, IP_ACTIVE_LOW, IPT_JOYSTICK_UP ) PORT_4WAY PORT_PLAYER(2)
 	PORT_BIT ( 0x02, IP_ACTIVE_LOW, IPT_JOYSTICK_RIGHT ) PORT_4WAY PORT_PLAYER(2)
 	PORT_BIT ( 0x04, IP_ACTIVE_LOW, IPT_JOYSTICK_DOWN ) PORT_4WAY PORT_PLAYER(2)
 	PORT_BIT ( 0x08, IP_ACTIVE_LOW, IPT_JOYSTICK_LEFT ) PORT_4WAY PORT_PLAYER(2)
 
-	PORT_START("INB")   /* input B */
+	PORT_START("INB")   // input B
 	PORT_BIT ( 0x01, IP_ACTIVE_LOW, IPT_JOYSTICK_UP ) PORT_4WAY PORT_PLAYER(1)
 	PORT_BIT ( 0x02, IP_ACTIVE_LOW, IPT_JOYSTICK_RIGHT ) PORT_4WAY PORT_PLAYER(1)
 	PORT_BIT ( 0x04, IP_ACTIVE_LOW, IPT_JOYSTICK_DOWN ) PORT_4WAY PORT_PLAYER(1)
@@ -464,7 +430,7 @@ INPUT_PORTS_END
 static INPUT_PORTS_START( dominos4 )
 	PORT_INCLUDE(dominos)
 
-	PORT_MODIFY("INA")   /* input A */
+	PORT_MODIFY("INA")   // input A
 	PORT_BIT ( 0x01, IP_ACTIVE_LOW, IPT_JOYSTICK_UP ) PORT_4WAY PORT_PLAYER(1)
 	PORT_BIT ( 0x02, IP_ACTIVE_LOW, IPT_JOYSTICK_RIGHT ) PORT_4WAY PORT_PLAYER(1)
 	PORT_BIT ( 0x04, IP_ACTIVE_LOW, IPT_JOYSTICK_DOWN ) PORT_4WAY PORT_PLAYER(1)
@@ -474,7 +440,7 @@ static INPUT_PORTS_START( dominos4 )
 	PORT_BIT ( 0x40, IP_ACTIVE_LOW, IPT_JOYSTICK_DOWN ) PORT_4WAY PORT_PLAYER(2)
 	PORT_BIT ( 0x80, IP_ACTIVE_LOW, IPT_JOYSTICK_LEFT ) PORT_4WAY PORT_PLAYER(2)
 
-	PORT_MODIFY("INB")   /* input A */
+	PORT_MODIFY("INB")   // input B
 	PORT_BIT ( 0x01, IP_ACTIVE_LOW, IPT_JOYSTICK_UP ) PORT_4WAY PORT_PLAYER(3)
 	PORT_BIT ( 0x02, IP_ACTIVE_LOW, IPT_JOYSTICK_RIGHT ) PORT_4WAY PORT_PLAYER(3)
 	PORT_BIT ( 0x04, IP_ACTIVE_LOW, IPT_JOYSTICK_DOWN ) PORT_4WAY PORT_PLAYER(3)
@@ -521,72 +487,76 @@ static const gfx_layout car_layout =
 };
 
 
-static GFXDECODE_START( sprint2 )
-	GFXDECODE_ENTRY( "gfx1", 0, tile_layout, 0, 2 )
-	GFXDECODE_ENTRY( "gfx2", 0, car_layout, 4, 4 )
+static GFXDECODE_START( gfx_sprint2 )
+	GFXDECODE_ENTRY( "tiles", 0, tile_layout, 0, 2 )
+	GFXDECODE_ENTRY( "sprites", 0, car_layout, 4, 4 )
 GFXDECODE_END
 
 
-static MACHINE_CONFIG_START( sprint2, sprint2_state )
+void sprint2_state::sprint2(machine_config &config)
+{
+	// basic machine hardware
+	M6502(config, m_maincpu, 12.096_MHz_XTAL / 16);
+	m_maincpu->set_addrmap(AS_PROGRAM, &sprint2_state::main_map);
+	m_maincpu->set_vblank_int("screen", FUNC(sprint2_state::irq));
 
-	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", M6502, XTAL_12_096MHz / 16)
-	MCFG_CPU_PROGRAM_MAP(sprint2_map)
-	MCFG_CPU_VBLANK_INT_DRIVER("screen", sprint2_state,  sprint2)
-	MCFG_WATCHDOG_VBLANK_INIT(8)
+	WATCHDOG_TIMER(config, m_watchdog).set_vblank_count(m_screen, 8);
 
-	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_REFRESH_RATE(60)
-	MCFG_SCREEN_SIZE(512, 262)
-	MCFG_SCREEN_VISIBLE_AREA(0, 511, 0, 223)
-	MCFG_SCREEN_UPDATE_DRIVER(sprint2_state, screen_update_sprint2)
-	MCFG_SCREEN_VBLANK_DRIVER(sprint2_state, screen_eof_sprint2)
-	MCFG_SCREEN_PALETTE("palette")
+	// video hardware
+	SCREEN(config, m_screen, SCREEN_TYPE_RASTER);
+	m_screen->set_raw(12.096_MHz_XTAL, 768, 0, 512, 262, 0, 224);
+	m_screen->set_screen_update(FUNC(sprint2_state::screen_update));
+	m_screen->screen_vblank().set(FUNC(sprint2_state::screen_vblank));
+	m_screen->set_palette(m_palette);
 
-	MCFG_GFXDECODE_ADD("gfxdecode", "palette", sprint2)
-	MCFG_PALETTE_ADD("palette", 12)
-	MCFG_PALETTE_INDIRECT_ENTRIES(4)
-	MCFG_PALETTE_INIT_OWNER(sprint2_state, sprint2)
+	GFXDECODE(config, m_gfxdecode, m_palette, gfx_sprint2);
+	PALETTE(config, m_palette, FUNC(sprint2_state::palette), 12, 4);
 
-	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_STEREO("lspeaker", "rspeaker")
+	// sound hardware
+	SPEAKER(config, "lspeaker").front_left();
+	SPEAKER(config, "rspeaker").front_right();
 
-	MCFG_SOUND_ADD("discrete", DISCRETE, 0)
-	MCFG_DISCRETE_INTF(sprint2)
-	MCFG_SOUND_ROUTE(0, "lspeaker", 1.0)
-	MCFG_SOUND_ROUTE(1, "rspeaker", 1.0)
-MACHINE_CONFIG_END
+	F9334(config, m_outlatch); // at H8
+	m_outlatch->q_out_cb<0>().set("discrete", FUNC(discrete_device::write_line<SPRINT2_ATTRACT_EN>)); // also DOMINOS_ATTRACT_EN
+	m_outlatch->q_out_cb<1>().set("discrete", FUNC(discrete_device::write_line<SPRINT2_SKIDSND1_EN>)); // also DOMINOS_TUMBLE_EN
+	m_outlatch->q_out_cb<2>().set("discrete", FUNC(discrete_device::write_line<SPRINT2_SKIDSND2_EN>));
+	m_outlatch->q_out_cb<3>().set_output("led0"); // START LAMP1
+	m_outlatch->q_out_cb<4>().set_output("led1"); // START LAMP2
+	//m_outlatch->q_out_cb<6>().set(FUNC(sprint2_state::spare_w));
 
-
-static MACHINE_CONFIG_DERIVED( sprint1, sprint2 )
-
-	/* sound hardware */
-	MCFG_DEVICE_REMOVE("lspeaker")
-	MCFG_DEVICE_REMOVE("rspeaker")
-	MCFG_SPEAKER_STANDARD_MONO("mono")
-
-	MCFG_DEVICE_REMOVE("discrete")
-
-	MCFG_SOUND_ADD("discrete", DISCRETE, 0)
-	MCFG_DISCRETE_INTF(sprint1)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 1.0)
-MACHINE_CONFIG_END
+	DISCRETE(config, m_discrete, sprint2_discrete);
+	m_discrete->add_route(0, "lspeaker", 1.0);
+	m_discrete->add_route(1, "rspeaker", 1.0);
+}
 
 
-static MACHINE_CONFIG_DERIVED( dominos, sprint2 )
+void sprint2_state::sprint1(machine_config &config)
+{
+	sprint2(config);
 
-	/* sound hardware */
-	MCFG_DEVICE_REMOVE("lspeaker")
-	MCFG_DEVICE_REMOVE("rspeaker")
-	MCFG_SPEAKER_STANDARD_MONO("mono")
+	// sound hardware
+	config.device_remove("lspeaker");
+	config.device_remove("rspeaker");
+	SPEAKER(config, "mono").front_center();
 
-	MCFG_DEVICE_REMOVE("discrete")
+	DISCRETE(config.replace(), m_discrete, sprint1_discrete).add_route(ALL_OUTPUTS, "mono", 1.0);
+}
 
-	MCFG_SOUND_ADD("discrete", DISCRETE, 0)
-	MCFG_DISCRETE_INTF(dominos)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 1.0)
-MACHINE_CONFIG_END
+
+void sprint2_state::dominos(machine_config &config)
+{
+	sprint1(config);
+
+	// sound hardware
+	DISCRETE(config.replace(), m_discrete, dominos_discrete).add_route(ALL_OUTPUTS, "mono", 1.0);
+}
+
+void sprint2_state::dominos4(machine_config &config)
+{
+	dominos(config);
+	m_outlatch->q_out_cb<5>().set_output("led2"); // START LAMP3
+	m_outlatch->q_out_cb<6>().set_output("led3"); // START LAMP4
+}
 
 ROM_START( sprint1 )
 	ROM_REGION( 0x10000, "maincpu", 0 )
@@ -595,17 +565,17 @@ ROM_START( sprint1 )
 	ROM_LOAD( "6442-01.d1", 0x3000, 0x0800, CRC(e9ff0124) SHA1(42fe028e2e595573ccc0821de3bb6970364c585d) )
 	ROM_LOAD( "6443-01.e1", 0x3800, 0x0800, CRC(d6bb00d0) SHA1(cdcd4bb7b32be7a11480d3312fcd8d536e2d0caf) )
 
-	ROM_REGION( 0x0200, "gfx1", 0 ) /* tiles */
+	ROM_REGION( 0x0200, "tiles", 0 )
 	ROM_LOAD_NIB_HIGH( "6396-01.p4", 0x0000, 0x0200, CRC(801b42dd) SHA1(1db58390d803f404253cbf36d562016441ca568d) )
 	ROM_LOAD_NIB_LOW ( "6397-01.r4", 0x0000, 0x0200, CRC(135ba1aa) SHA1(0465259440f73e1a2c8d8101f29e99b4885420e4) )
 
-	ROM_REGION( 0x0200, "gfx2", 0 ) /* cars */
+	ROM_REGION( 0x0200, "sprites", 0 ) // cars
 	ROM_LOAD_NIB_HIGH( "6399-01.j6", 0x0000, 0x0200, CRC(63d685b2) SHA1(608746163e25dbc14cde43c17aecbb9a14fac875) )
 	ROM_LOAD_NIB_LOW ( "6398-01.k6", 0x0000, 0x0200, CRC(c9e1017e) SHA1(e7279a13e4a812d2e0218be0bc5162f2e56c6b66) )
 
 	ROM_REGION( 0x0120, "proms", 0 )
-	ROM_LOAD( "6400-01.m2", 0x0000, 0x0100, CRC(b8094b4c) SHA1(82dc6799a19984f3b204ee3aeeb007e55afc8be3) )  /* SYNC */
-	ROM_LOAD( "6401-01.e2", 0x0100, 0x0020, CRC(857df8db) SHA1(06313d5bde03220b2bc313d18e50e4bb1d0cfbbb) )  /* address */
+	ROM_LOAD( "6400-01.m2", 0x0000, 0x0100, CRC(b8094b4c) SHA1(82dc6799a19984f3b204ee3aeeb007e55afc8be3) )  // SYNC
+	ROM_LOAD( "6401-01.e2", 0x0100, 0x0020, CRC(857df8db) SHA1(06313d5bde03220b2bc313d18e50e4bb1d0cfbbb) )  // address
 ROM_END
 
 
@@ -616,17 +586,17 @@ ROM_START( sprint2 )
 	ROM_LOAD( "6404.d1",    0x3000, 0x0800, CRC(d2878ff6) SHA1(b742a8896c1bf1cfacf48d06908920d88a2c9ea8) )
 	ROM_LOAD( "6405.e1",    0x3800, 0x0800, CRC(6c991c80) SHA1(c30a5b340f05dd702c7a186eb62607a48fa19f72) )
 
-	ROM_REGION( 0x0200, "gfx1", 0 ) /* tiles */
+	ROM_REGION( 0x0200, "tiles", 0 )
 	ROM_LOAD_NIB_HIGH( "6396-01.p4", 0x0000, 0x0200, CRC(801b42dd) SHA1(1db58390d803f404253cbf36d562016441ca568d) )
 	ROM_LOAD_NIB_LOW ( "6397-01.r4", 0x0000, 0x0200, CRC(135ba1aa) SHA1(0465259440f73e1a2c8d8101f29e99b4885420e4) )
 
-	ROM_REGION( 0x0200, "gfx2", 0 ) /* cars */
+	ROM_REGION( 0x0200, "sprites", 0 ) // cars
 	ROM_LOAD_NIB_HIGH( "6399-01.j6", 0x0000, 0x0200, CRC(63d685b2) SHA1(608746163e25dbc14cde43c17aecbb9a14fac875) )
 	ROM_LOAD_NIB_LOW ( "6398-01.k6", 0x0000, 0x0200, CRC(c9e1017e) SHA1(e7279a13e4a812d2e0218be0bc5162f2e56c6b66) )
 
 	ROM_REGION( 0x0120, "proms", 0 )
-	ROM_LOAD( "6400-01.m2", 0x0000, 0x0100, CRC(b8094b4c) SHA1(82dc6799a19984f3b204ee3aeeb007e55afc8be3) )  /* SYNC */
-	ROM_LOAD( "6401-01.e2", 0x0100, 0x0020, CRC(857df8db) SHA1(06313d5bde03220b2bc313d18e50e4bb1d0cfbbb) )  /* address */
+	ROM_LOAD( "6400-01.m2", 0x0000, 0x0100, CRC(b8094b4c) SHA1(82dc6799a19984f3b204ee3aeeb007e55afc8be3) )  // SYNC
+	ROM_LOAD( "6401-01.e2", 0x0100, 0x0020, CRC(857df8db) SHA1(06313d5bde03220b2bc313d18e50e4bb1d0cfbbb) )  // address
 ROM_END
 
 
@@ -635,19 +605,19 @@ ROM_START( sprint2a )
 	ROM_LOAD( "6290-01.b1", 0x2000, 0x0800, CRC(41fc985e) SHA1(7178846480cbf8d15955ccd987d0b0e902ab9f90) )
 	ROM_LOAD( "6291-01.c1", 0x2800, 0x0800, CRC(07f7a920) SHA1(845f65d2bd290eb295ca6bae2575f27aaa08c0dd) )
 	ROM_LOAD( "6404.d1",    0x3000, 0x0800, CRC(d2878ff6) SHA1(b742a8896c1bf1cfacf48d06908920d88a2c9ea8) )
-	ROM_LOAD( "6405-02.e1", 0x3800, 0x0800, CRC(e80fd249) SHA1(7bcf7dfd72ca83fdd80593eaf392570da1f71298) )
+	ROM_LOAD( "6405-02.e1", 0x3800, 0x0800, CRC(e80fd249) SHA1(7bcf7dfd72ca83fdd80593eaf392570da1f71298) ) // sldh
 
-	ROM_REGION( 0x0200, "gfx1", 0 ) /* tiles */
+	ROM_REGION( 0x0200, "tiles", 0 )
 	ROM_LOAD_NIB_HIGH( "6396-01.p4", 0x0000, 0x0200, CRC(801b42dd) SHA1(1db58390d803f404253cbf36d562016441ca568d) )
 	ROM_LOAD_NIB_LOW ( "6397-01.r4", 0x0000, 0x0200, CRC(135ba1aa) SHA1(0465259440f73e1a2c8d8101f29e99b4885420e4) )
 
-	ROM_REGION( 0x0200, "gfx2", 0 ) /* cars */
+	ROM_REGION( 0x0200, "sprites", 0 ) // cars
 	ROM_LOAD_NIB_HIGH( "6399-01.j6", 0x0000, 0x0200, CRC(63d685b2) SHA1(608746163e25dbc14cde43c17aecbb9a14fac875) )
 	ROM_LOAD_NIB_LOW ( "6398-01.k6", 0x0000, 0x0200, CRC(c9e1017e) SHA1(e7279a13e4a812d2e0218be0bc5162f2e56c6b66) )
 
 	ROM_REGION( 0x0120, "proms", 0 )
-	ROM_LOAD( "6400-01.m2", 0x0000, 0x0100, CRC(b8094b4c) SHA1(82dc6799a19984f3b204ee3aeeb007e55afc8be3) )  /* SYNC */
-	ROM_LOAD( "6401-01.e2", 0x0100, 0x0020, CRC(857df8db) SHA1(06313d5bde03220b2bc313d18e50e4bb1d0cfbbb) )  /* address */
+	ROM_LOAD( "6400-01.m2", 0x0000, 0x0100, CRC(b8094b4c) SHA1(82dc6799a19984f3b204ee3aeeb007e55afc8be3) )  // SYNC
+	ROM_LOAD( "6401-01.e2", 0x0100, 0x0020, CRC(857df8db) SHA1(06313d5bde03220b2bc313d18e50e4bb1d0cfbbb) )  // address
 ROM_END
 
 
@@ -658,17 +628,17 @@ ROM_START( sprint2h )
 	ROM_LOAD( "6404.d1",    0x3000, 0x0800, CRC(d2878ff6) SHA1(b742a8896c1bf1cfacf48d06908920d88a2c9ea8) )
 	ROM_LOAD( "6405-02.e1", 0x3800, 0x0800, CRC(6de291f1) SHA1(00c2826011d80ac0784649a7bc156a97c26565fd) ) // sldh
 
-	ROM_REGION( 0x0200, "gfx1", 0 ) /* tiles */
+	ROM_REGION( 0x0200, "tiles", 0 )
 	ROM_LOAD_NIB_HIGH( "6396-01.p4", 0x0000, 0x0200, CRC(801b42dd) SHA1(1db58390d803f404253cbf36d562016441ca568d) )
 	ROM_LOAD_NIB_LOW ( "6397-01.r4", 0x0000, 0x0200, CRC(135ba1aa) SHA1(0465259440f73e1a2c8d8101f29e99b4885420e4) )
 
-	ROM_REGION( 0x0200, "gfx2", 0 ) /* cars */
+	ROM_REGION( 0x0200, "sprites", 0 ) // cars
 	ROM_LOAD_NIB_HIGH( "6399-01.j6", 0x0000, 0x0200, CRC(63d685b2) SHA1(608746163e25dbc14cde43c17aecbb9a14fac875) )
 	ROM_LOAD_NIB_LOW ( "6398-01.k6", 0x0000, 0x0200, CRC(c9e1017e) SHA1(e7279a13e4a812d2e0218be0bc5162f2e56c6b66) )
 
 	ROM_REGION( 0x0120, "proms", 0 )
-	ROM_LOAD( "6400-01.m2", 0x0000, 0x0100, CRC(b8094b4c) SHA1(82dc6799a19984f3b204ee3aeeb007e55afc8be3) )  /* SYNC */
-	ROM_LOAD( "6401-01.e2", 0x0100, 0x0020, CRC(857df8db) SHA1(06313d5bde03220b2bc313d18e50e4bb1d0cfbbb) )  /* address */
+	ROM_LOAD( "6400-01.m2", 0x0000, 0x0100, CRC(b8094b4c) SHA1(82dc6799a19984f3b204ee3aeeb007e55afc8be3) )  // SYNC
+	ROM_LOAD( "6401-01.e2", 0x0100, 0x0020, CRC(857df8db) SHA1(06313d5bde03220b2bc313d18e50e4bb1d0cfbbb) )  // address
 ROM_END
 
 
@@ -677,16 +647,15 @@ ROM_START( dominos )
 	ROM_LOAD( "7352-02.d1",   0x3000, 0x0800, CRC(738b4413) SHA1(3a90ab25bb5f65504692f97da43f03e21392dcd8) )
 	ROM_LOAD( "7438-02.e1",   0x3800, 0x0800, CRC(c84e54e2) SHA1(383b388a1448a195f28352fc5e4ff1a2af80cc95) )
 
-	ROM_REGION( 0x200, "gfx1", 0 ) /* tiles */
+	ROM_REGION( 0x200, "tiles", 0 )
 	ROM_LOAD_NIB_HIGH( "7439-01.p4",   0x0000, 0x0200, CRC(4f42fdd6) SHA1(f8ea4b582e26cad37b746174cdc9f1c7ae0819c3) )
 	ROM_LOAD_NIB_LOW ( "7440-01.r4",   0x0000, 0x0200, CRC(957dd8df) SHA1(280457392f40cd66eae34d2fcdbd4d2142793402) )
 
-	ROM_REGION( 0x200, "gfx2", 0 ) /* sprites, not used */
-	ROM_FILL( 0x0000, 0x0200, 0x00 )
+	ROM_REGION( 0x200, "sprites", ROMREGION_ERASE00 ) // not used
 
 	ROM_REGION( 0x0120, "proms", 0 )
-	ROM_LOAD( "6400-01.m2", 0x0000, 0x0100, CRC(b8094b4c) SHA1(82dc6799a19984f3b204ee3aeeb007e55afc8be3) )  /* SYNC */
-	ROM_LOAD( "6401-01.e2", 0x0100, 0x0020, CRC(857df8db) SHA1(06313d5bde03220b2bc313d18e50e4bb1d0cfbbb) )  /* address */
+	ROM_LOAD( "6400-01.m2", 0x0000, 0x0100, CRC(b8094b4c) SHA1(82dc6799a19984f3b204ee3aeeb007e55afc8be3) )  // SYNC
+	ROM_LOAD( "6401-01.e2", 0x0100, 0x0020, CRC(857df8db) SHA1(06313d5bde03220b2bc313d18e50e4bb1d0cfbbb) )  // address
 ROM_END
 
 ROM_START( dominos4 ) // built from original Atari source code
@@ -700,21 +669,20 @@ ROM_START( dominos4 ) // built from original Atari source code
 	ROM_LOAD_NIB_HIGH( "007760-01.p1",   0x3c00, 0x0400, CRC(7dc2a7a1) SHA1(9d02572cf689c6476b33226a5358dd1f72c4e61d) )
 	ROM_LOAD_NIB_LOW ( "007761-01.p0",   0x3c00, 0x0400, CRC(04365e0d) SHA1(fefc3c04e55f1aa8c80b1e5e1e403af8698c3530) )
 
-	ROM_REGION( 0x200, "gfx1", 0 ) /* tiles */
+	ROM_REGION( 0x200, "tiles", 0 )
 	ROM_LOAD_NIB_HIGH( "007764-01.p4",   0x0000, 0x0200, CRC(e4332dc0) SHA1(1f16c5b9f9fd7d478fd729cc79968f17746111f4) )
 	ROM_LOAD_NIB_LOW ( "007765-01.r4",   0x0000, 0x0200, CRC(6e4e6c75) SHA1(0fc77fecaa73eac57baf778bc51387c75883aad4) )
 
-	ROM_REGION( 0x200, "gfx2", 0 ) /* sprites, not used */
-	ROM_FILL( 0x0000, 0x0200, 0x00 )
+	ROM_REGION( 0x200, "sprites", ROMREGION_ERASE00 ) // not used
 
 	ROM_REGION( 0x0120, "proms", 0 )
-	ROM_LOAD( "6400-01.m2", 0x0000, 0x0100, CRC(b8094b4c) SHA1(82dc6799a19984f3b204ee3aeeb007e55afc8be3) )  /* SYNC */
-	ROM_LOAD( "6401-01.e2", 0x0100, 0x0020, CRC(857df8db) SHA1(06313d5bde03220b2bc313d18e50e4bb1d0cfbbb) )  /* address */
+	ROM_LOAD( "6400-01.m2", 0x0000, 0x0100, CRC(b8094b4c) SHA1(82dc6799a19984f3b204ee3aeeb007e55afc8be3) )  // SYNC
+	ROM_LOAD( "6401-01.e2", 0x0100, 0x0020, CRC(857df8db) SHA1(06313d5bde03220b2bc313d18e50e4bb1d0cfbbb) )  // address
 ROM_END
 
-GAME( 1978, sprint1,  0,       sprint1, sprint1, sprint2_state, sprint1, ROT0, "Atari (Kee Games)", "Sprint 1", 0 )
-GAME( 1976, sprint2,  sprint1, sprint2, sprint2, sprint2_state, sprint2, ROT0, "Atari (Kee Games)", "Sprint 2 (set 1)", 0 )
-GAME( 1976, sprint2a, sprint1, sprint2, sprint2, sprint2_state, sprint2, ROT0, "Atari (Kee Games)", "Sprint 2 (set 2)", 0 )
-GAME( 1976, sprint2h, sprint1, sprint2, sprint2, sprint2_state, sprint2, ROT0, "hack", "Sprint 2 (color kit, Italy)", MACHINE_WRONG_COLORS ) // Italian hack, supposedly is color instead of b/w? how?
-GAME( 1977, dominos,  0,       dominos, dominos, sprint2_state, dominos, ROT0, "Atari", "Dominos", 0 )
-GAME( 1977, dominos4, dominos, dominos, dominos4,sprint2_state, dominos4,ROT0, "Atari", "Dominos 4 (Cocktail)", 0 )
+GAME( 1978, sprint1,  0,       sprint1, sprint1, sprint2_state, init_sprint1, ROT0, "Atari (Kee Games)", "Sprint 1", MACHINE_SUPPORTS_SAVE )
+GAME( 1976, sprint2,  sprint1, sprint2, sprint2, sprint2_state, init_sprint2, ROT0, "Atari (Kee Games)", "Sprint 2 (set 1)", MACHINE_SUPPORTS_SAVE )
+GAME( 1976, sprint2a, sprint1, sprint2, sprint2, sprint2_state, init_sprint2, ROT0, "Atari (Kee Games)", "Sprint 2 (set 2)", MACHINE_SUPPORTS_SAVE )
+GAME( 1976, sprint2h, sprint1, sprint2, sprint2, sprint2_state, init_sprint2, ROT0, "hack", "Sprint 2 (color kit, Italy)", MACHINE_WRONG_COLORS | MACHINE_SUPPORTS_SAVE ) // Italian hack, supposedly is color instead of b/w? how?
+GAME( 1977, dominos,  0,       dominos, dominos, sprint2_state, init_dominos, ROT0, "Atari", "Dominos", MACHINE_SUPPORTS_SAVE )
+GAME( 1977, dominos4, dominos, dominos4,dominos4,sprint2_state, init_dominos4,ROT0, "Atari", "Dominos 4 (Cocktail)", MACHINE_SUPPORTS_SAVE )

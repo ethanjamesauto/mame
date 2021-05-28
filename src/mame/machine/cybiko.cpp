@@ -12,6 +12,7 @@
 
 */
 
+#include "emu.h"
 #include "includes/cybiko.h"
 
 #define LOG_LEVEL  1
@@ -24,36 +25,36 @@
 // DRIVER INIT & EXIT //
 ////////////////////////
 
-DRIVER_INIT_MEMBER(cybiko_state,cybiko)
+void cybiko_state::init_cybiko()
 {
 	_logerror( 0, ("init_cybikov1\n"));
-	m_maincpu->space(AS_PROGRAM).install_ram(0x200000, 0x200000 + m_ram->size() - 1, 0, 0x200000 - m_ram->size(), m_ram->pointer());
+	m_maincpu->space(AS_PROGRAM).install_ram(0x200000, 0x200000 + m_ram->size() - 1, m_ram->pointer());
 }
 
-DRIVER_INIT_MEMBER(cybiko_state,cybikoxt)
+void cybiko_state::init_cybikoxt()
 {
 	_logerror( 0, ("init_cybikoxt\n"));
-	m_maincpu->space(AS_PROGRAM).install_ram(0x400000, 0x400000 + m_ram->size() - 1, 0, 0x200000 - m_ram->size(), m_ram->pointer());
+	m_maincpu->space(AS_PROGRAM).install_ram(0x400000, 0x400000 + m_ram->size() - 1, m_ram->pointer());
 }
 
-QUICKLOAD_LOAD_MEMBER( cybiko_state, cybiko )
+QUICKLOAD_LOAD_MEMBER(cybiko_state::quickload_cybiko)
 {
-	image.fread(m_flash1->get_ptr(), MIN(image.length(), 0x84000));
+	image.fread(m_flash1->get_ptr(), std::min(image.length(), uint64_t(0x84000)));
 
-	return IMAGE_INIT_PASS;
+	return image_init_result::PASS;
 }
 
-QUICKLOAD_LOAD_MEMBER( cybiko_state, cybikoxt )
+QUICKLOAD_LOAD_MEMBER(cybiko_state::quickload_cybikoxt)
 {
 	address_space &dest = m_maincpu->space(AS_PROGRAM);
-	UINT32 size = MIN(image.length(), RAMDISK_SIZE);
+	uint32_t size = std::min(image.length(), uint64_t(RAMDISK_SIZE));
 
-	dynamic_buffer buffer(size);
+	std::vector<uint8_t> buffer(size);
 	image.fread(&buffer[0], size);
 	for (int byte = 0; byte < size; byte++)
 		dest.write_byte(0x400000 + byte, buffer[byte]);
 
-	return IMAGE_INIT_PASS;
+	return image_init_result::PASS;
 }
 
 ///////////////////
@@ -62,12 +63,6 @@ QUICKLOAD_LOAD_MEMBER( cybiko_state, cybikoxt )
 
 void cybiko_state::machine_start()
 {
-	_logerror( 0, ("machine_start_cybikov1\n"));
-	// serial port
-	cybiko_rs232_init();
-	// other
-	machine().add_notifier(MACHINE_NOTIFY_EXIT, machine_notify_delegate(FUNC(cybiko_state::machine_stop_cybiko),this));
-
 	int nvram_size = RAMDISK_SIZE;
 
 	if (m_ram->size() < nvram_size)
@@ -84,117 +79,32 @@ void cybiko_state::machine_start()
 
 void cybiko_state::machine_reset()
 {
-	_logerror( 0, ("machine_reset_cybikov1\n"));
-	cybiko_rs232_reset();
-}
-
-//////////////////
-// MACHINE STOP //
-//////////////////
-
-void cybiko_state::machine_stop_cybiko()
-{
-	_logerror( 0, ("machine_stop_cybikov1\n"));
-	// serial port
-	cybiko_rs232_exit();
-}
-
-///////////
-// RS232 //
-///////////
-
-
-void cybiko_state::cybiko_rs232_init()
-{
-	_logerror( 0, ("cybiko_rs232_init\n"));
-	memset( &m_rs232, 0, sizeof(m_rs232));
-//  machine().scheduler().timer_pulse(TIME_IN_HZ( 10), FUNC(rs232_timer_callback));
-}
-
-void cybiko_state::cybiko_rs232_exit()
-{
-	_logerror( 0, ("cybiko_rs232_exit\n"));
-}
-
-void cybiko_state::cybiko_rs232_reset()
-{
-	_logerror( 0, ("cybiko_rs232_reset\n"));
-}
-
-void cybiko_state::cybiko_rs232_write_byte( int data )
-{
-//  printf( "%c", data);
-}
-
-void cybiko_state::cybiko_rs232_pin_sck( int data )
-{
-	_logerror( 3, ("cybiko_rs232_pin_sck (%d)\n", data));
-	// clock high-to-low
-	if ((m_rs232.pin.sck == 1) && (data == 0))
-	{
-		// transmit
-		if (m_rs232.pin.txd) m_rs232.tx_byte = m_rs232.tx_byte | (1 << m_rs232.tx_bits);
-		m_rs232.tx_bits++;
-		if (m_rs232.tx_bits == 8)
-		{
-			m_rs232.tx_bits = 0;
-			cybiko_rs232_write_byte(m_rs232.tx_byte);
-			m_rs232.tx_byte = 0;
-		}
-		// receive
-		m_rs232.pin.rxd = (m_rs232.rx_byte >> m_rs232.rx_bits) & 1;
-		m_rs232.rx_bits++;
-		if (m_rs232.rx_bits == 8)
-		{
-			m_rs232.rx_bits = 0;
-			m_rs232.rx_byte = 0;
-		}
-	}
-	// save sck
-	m_rs232.pin.sck = data;
-}
-
-void cybiko_state::cybiko_rs232_pin_txd( int data )
-{
-	_logerror( 3, ("cybiko_rs232_pin_txd (%d)\n", data));
-	m_rs232.pin.txd = data;
-}
-
-int cybiko_state::cybiko_rs232_pin_rxd()
-{
-	_logerror( 3, ("cybiko_rs232_pin_rxd\n"));
-	return m_rs232.pin.rxd;
-}
-
-int cybiko_state::cybiko_rs232_rx_queue()
-{
-	return 0;
 }
 
 /////////////////////////
 // READ/WRITE HANDLERS //
 /////////////////////////
 
-READ16_MEMBER( cybiko_state::cybiko_lcd_r )
+uint16_t cybiko_state::cybiko_lcd_r(offs_t offset, uint16_t mem_mask)
 {
-	UINT16 data = 0;
-	if (ACCESSING_BITS_8_15) data |= (m_crtc->reg_idx_r(space, offset) << 8);
-	if (ACCESSING_BITS_0_7) data |= (m_crtc->reg_dat_r(space, offset) << 0);
+	uint16_t data = 0;
+	if (ACCESSING_BITS_8_15) data |= (m_crtc->reg_idx_r() << 8);
+	if (ACCESSING_BITS_0_7) data |= (m_crtc->reg_dat_r() << 0);
 	return data;
 }
 
-WRITE16_MEMBER( cybiko_state::cybiko_lcd_w )
+void cybiko_state::cybiko_lcd_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
-	if (ACCESSING_BITS_8_15) m_crtc->reg_idx_w(space, offset, (data >> 8) & 0xff);
-	if (ACCESSING_BITS_0_7) m_crtc->reg_dat_w(space, offset, (data >> 0) & 0xff);
+	if (ACCESSING_BITS_8_15) m_crtc->reg_idx_w((data >> 8) & 0xff);
+	if (ACCESSING_BITS_0_7) m_crtc->reg_dat_w((data >> 0) & 0xff);
 }
 
-int cybiko_state::cybiko_key_r( offs_t offset, int mem_mask)
+int cybiko_state::cybiko_key_r(offs_t offset, int mem_mask)
 {
-	UINT16 data = 0xFFFF;
-	for (UINT8 i = 0; i < 15; i++)
+	uint16_t data = 0xFFFF;
+	for (uint8_t i = 0; i < 15; i++)
 	{
-		if (m_input[i] && !BIT(offset, i))
+		if (m_input[i].found() && !BIT(offset, i))
 			data &= ~m_input[i]->read();
 	}
 	if (data != 0xFFFF)
@@ -204,28 +114,28 @@ int cybiko_state::cybiko_key_r( offs_t offset, int mem_mask)
 	return data;
 }
 
-READ16_MEMBER( cybiko_state::cybikov1_key_r )
+uint16_t cybiko_state::cybikov1_key_r(offs_t offset, uint16_t mem_mask)
 {
 	return cybiko_key_r(offset, mem_mask);
 }
 
-READ16_MEMBER( cybiko_state::cybikov2_key_r )
+uint16_t cybiko_state::cybikov2_key_r(offs_t offset, uint16_t mem_mask)
 {
-	UINT16 data = cybiko_key_r(offset, mem_mask);
+	uint16_t data = cybiko_key_r(offset, mem_mask);
 	if (!BIT(offset, 0))
 		data |= 0x0002; // or else [esc] does not work in "lost in labyrinth"
 	return data;
 }
 
-READ16_MEMBER( cybiko_state::cybikoxt_key_r )
+uint16_t cybiko_state::cybikoxt_key_r(offs_t offset, uint16_t mem_mask)
 {
 	return cybiko_key_r(offset, mem_mask);
 }
 
 #if 0
-READ16_MEMBER( cybiko_state::cybikov1_io_reg_r )
+uint16_t cybiko_state::cybikov1_io_reg_r(offs_t offset)
 {
-	UINT16 data = 0;
+	uint16_t data = 0;
 #if 0
 	_logerror( 2, ("cybikov1_io_reg_r (%08X)\n", offset));
 	switch (offset)
@@ -271,9 +181,9 @@ READ16_MEMBER( cybiko_state::cybikov1_io_reg_r )
 	return data;
 }
 
-READ16_MEMBER( cybiko_state::cybikov2_io_reg_r )
+uint16_t cybiko_state::cybikov2_io_reg_r(offs_t offset)
 {
-	UINT16 data = 0;
+	uint16_t data = 0;
 #if 0
 	_logerror( 2, ("cybikov2_io_reg_r (%08X)\n", offset));
 	switch (offset)
@@ -319,9 +229,9 @@ READ16_MEMBER( cybiko_state::cybikov2_io_reg_r )
 	return data;
 }
 
-READ16_MEMBER( cybiko_state::cybikoxt_io_reg_r )
+uint16_t cybiko_state::cybikoxt_io_reg_r(offs_t offset)
 {
-	UINT16 data = 0;
+	uint16_t data = 0;
 #if 0
 	_logerror( 2, ("cybikoxt_io_reg_r (%08X)\n", offset));
 	switch (offset)
@@ -359,7 +269,7 @@ READ16_MEMBER( cybiko_state::cybikoxt_io_reg_r )
 	return data;
 }
 
-WRITE16_MEMBER( cybiko_state::cybikov1_io_reg_w )
+void cybiko_state::cybikov1_io_reg_w(offs_t offset, uint16_t data)
 {
 #if 0
 	_logerror( 2, ("cybikov1_io_reg_w (%08X/%02X)\n", offset, data));
@@ -402,7 +312,7 @@ WRITE16_MEMBER( cybiko_state::cybikov1_io_reg_w )
 #endif
 }
 
-WRITE16_MEMBER( cybiko_state::cybikov2_io_reg_w )
+void cybiko_state::cybikov2_io_reg_w(offs_t offset, uint16_t data)
 {
 #if 0
 	_logerror( 2, ("cybikov2_io_reg_w (%08X/%02X)\n", offset, data));
@@ -445,7 +355,7 @@ WRITE16_MEMBER( cybiko_state::cybikov2_io_reg_w )
 #endif
 }
 
-WRITE16_MEMBER( cybiko_state::cybikoxt_io_reg_w )
+void cybiko_state::cybikoxt_io_reg_w(offs_t offset, uint16_t data)
 {
 #if 0
 	_logerror( 2, ("cybikoxt_io_reg_w (%08X/%02X)\n", offset, data));
@@ -485,7 +395,7 @@ WRITE16_MEMBER( cybiko_state::cybikoxt_io_reg_w )
 // 00/01, 00/C0, 0F/32, 0D/03, 0B/03, 09/50, 07/D6, 05/00, 04/00, 20/00, 23/08, 27/01, 2F/08, 2C/02, 2B/08, 28/01
 // 04/80, 05/02, 00/C8, 00/C8, 00/C0, 1B/2C, 00/01, 00/C0, 1B/6C, 0F/10, 0D/07, 0B/07, 09/D2, 07/D6, 05/00, 04/00,
 // 20/00, 23/08, 27/01, 2F/08, 2C/02, 2B/08, 28/01, 37/08, 34/04, 33/08, 30/03, 04/80, 05/02, 1B/6C, 00/C8
-WRITE16_MEMBER( cybiko_state::cybiko_usb_w )
+void cybiko_state::cybiko_usb_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	if (ACCESSING_BITS_8_15) _logerror( 2, ("[%08X] <- %02X\n", 0x200000 + offset * 2 + 0, (data >> 8) & 0xFF));
 	if (ACCESSING_BITS_0_7) _logerror( 2, ("[%08X] <- %02X\n", 0x200000 + offset * 2 + 1, (data >> 0) & 0xFF));

@@ -8,10 +8,10 @@
 
 *********************************************************************/
 
-#pragma once
+#ifndef MAME_EMU_VIDEO_GENERIC_H
+#define MAME_EMU_VIDEO_GENERIC_H
 
-#ifndef __VIDEO_GENERIC_H__
-#define __VIDEO_GENERIC_H__
+#pragma once
 
 
 
@@ -28,4 +28,18 @@ extern const gfx_layout gfx_8x8x6_planar;
 
 extern const gfx_layout gfx_16x16x4_planar;
 
-#endif  /* __VIDEO_GENERIC_H__ */
+extern const gfx_layout gfx_8x8x4_packed_msb;
+extern const gfx_layout gfx_8x8x4_packed_lsb;
+extern const gfx_layout gfx_8x8x8_raw;
+
+extern const gfx_layout gfx_16x16x4_packed_msb;
+extern const gfx_layout gfx_16x16x4_packed_lsb;
+extern const gfx_layout gfx_16x16x8_raw;
+
+extern const gfx_layout gfx_8x8x4_row_2x2_group_packed_msb;
+extern const gfx_layout gfx_8x8x4_row_2x2_group_packed_lsb;
+
+extern const gfx_layout gfx_8x8x4_col_2x2_group_packed_msb;
+extern const gfx_layout gfx_8x8x4_col_2x2_group_packed_lsb;
+
+#endif  /* MAME_EMU_VIDEO_GENERIC_H */

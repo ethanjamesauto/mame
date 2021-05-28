@@ -24,33 +24,22 @@
 
 ***************************************************************************/
 
-#ifndef __PIC8259_H__
-#define __PIC8259_H__
-
-
-/***************************************************************************
-    DEVICE CONFIGURATION MACROS
-***************************************************************************/
-
-#define MCFG_PIC8259_ADD(_tag, _out_int, _sp_en, _read_slave_ack) \
-	MCFG_DEVICE_ADD(_tag, PIC8259, 0) \
-	devcb = &pic8259_device::static_set_out_int_callback( *device, DEVCB_##_out_int ); \
-	devcb = &pic8259_device::static_set_sp_en_callback( *device, DEVCB_##_sp_en ); \
-	devcb = &pic8259_device::static_set_read_slave_ack_callback( *device, DEVCB_##_read_slave_ack );
+#ifndef MAME_MACHINE_PIC8259_H
+#define MAME_MACHINE_PIC8259_H
 
 
 class pic8259_device : public device_t
 {
 public:
-	pic8259_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	pic8259_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock = 0);
 
-	template<class _Object> static devcb_base &static_set_out_int_callback(device_t &device, _Object object) { return downcast<pic8259_device &>(device).m_out_int_func.set_callback(object); }
-	template<class _Object> static devcb_base &static_set_sp_en_callback(device_t &device, _Object object) { return downcast<pic8259_device &>(device).m_sp_en_func.set_callback(object); }
-	template<class _Object> static devcb_base &static_set_read_slave_ack_callback(device_t &device, _Object object) { return downcast<pic8259_device &>(device).m_read_slave_ack_func.set_callback(object); }
+	auto out_int_callback() { return m_out_int_func.bind(); } // Interrupt request output to CPU or master 8259 (active high)
+	auto in_sp_callback() { return m_in_sp_func.bind(); } // Slave program select (VCC = master; GND = slave; pin becomes EN output in buffered mode)
+	auto read_slave_ack_callback() { return m_read_slave_ack_func.bind(); } // Cascaded interrupt acknowledge request for slave 8259 to place vector on data bus
 
-	DECLARE_READ8_MEMBER( read );
-	DECLARE_WRITE8_MEMBER( write );
-	UINT32 acknowledge();
+	uint8_t read(offs_t offset);
+	void write(offs_t offset, uint8_t data);
+	uint8_t acknowledge();
 
 	DECLARE_WRITE_LINE_MEMBER( ir0_w ) { set_irq_line(0, state); }
 	DECLARE_WRITE_LINE_MEMBER( ir1_w ) { set_irq_line(1, state); }
@@ -63,67 +52,82 @@ public:
 
 	IRQ_CALLBACK_MEMBER(inta_cb);
 
-	// used by m92.c until we can figure out how to hook it up in a way that doesn't break nbbatman (probably need correct IRQ timing / clears for the sprites IRQs
-	int HACK_get_base_vector() { return m_base;  }
-
 protected:
+	pic8259_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock);
+
 	// device-level overrides
+	virtual void device_resolve_objects() override;
 	virtual void device_start() override;
 	virtual void device_reset() override;
 	virtual void device_timer(emu_timer &timer, device_timer_id id, int param, void *ptr) override;
 
+	virtual bool is_x86() const { return m_is_x86; }
+
 private:
-	static const device_timer_id TIMER_CHECK_IRQ = 0;
+	static constexpr device_timer_id TIMER_CHECK_IRQ = 0;
 
 	inline void set_timer() { timer_set(attotime::zero, TIMER_CHECK_IRQ); }
 	void set_irq_line(int irq, int state);
 
 
-	enum pic8259_state_t
+	enum class state_t : u8
 	{
-		STATE_ICW1,
-		STATE_ICW2,
-		STATE_ICW3,
-		STATE_ICW4,
-		STATE_READY
+		ICW1,
+		ICW2,
+		ICW3,
+		ICW4,
+		READY
 	};
 
 	devcb_write_line m_out_int_func;
-	devcb_read_line m_sp_en_func;
+	devcb_read_line m_in_sp_func;
 	devcb_read8 m_read_slave_ack_func;
 
-	pic8259_state_t m_state;
+	state_t m_state;
 
-	UINT8 m_isr;
-	UINT8 m_irr;
-	UINT8 m_prio;
-	UINT8 m_imr;
-	UINT8 m_irq_lines;
+	uint8_t m_isr;
+	uint8_t m_irr;
+	uint8_t m_prio;
+	uint8_t m_imr;
+	uint8_t m_irq_lines;
 
-	UINT8 m_input;
-	UINT8 m_ocw3;
+	uint8_t m_input;
+	uint8_t m_ocw3;
 
-	UINT8 m_master;
+	uint8_t m_master;
 	/* ICW1 state */
-	UINT8 m_level_trig_mode;
-	UINT8 m_vector_size;
-	UINT8 m_cascade;
-	UINT8 m_icw4_needed;
-	UINT32 m_vector_addr_low;
+	uint8_t m_level_trig_mode;
+	uint8_t m_vector_size;
+	uint8_t m_cascade;
+	uint8_t m_icw4_needed;
+	uint32_t m_vector_addr_low;
 	/* ICW2 state */
-	UINT8 m_base;
-	UINT8 m_vector_addr_high;
+	uint8_t m_base;
+	uint8_t m_vector_addr_high;
 
 	/* ICW3 state */
-	UINT8 m_slave;
+	uint8_t m_slave;
 
 	/* ICW4 state */
-	UINT8 m_nested;
-	UINT8 m_mode;
-	UINT8 m_auto_eoi;
-	UINT8 m_is_x86;
+	uint8_t m_nested;
+	uint8_t m_mode;
+	uint8_t m_auto_eoi;
+	uint8_t m_is_x86;
+
+	int8_t m_current_level;
+	uint8_t m_inta_sequence;
 };
 
-extern const device_type PIC8259;
+class v5x_icu_device : public pic8259_device
+{
+public:
+	v5x_icu_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock = 0);
 
-#endif /* __PIC8259_H__ */
+protected:
+	virtual bool is_x86() const override { return true; }
+};
+
+DECLARE_DEVICE_TYPE(PIC8259, pic8259_device)
+DECLARE_DEVICE_TYPE(V5X_ICU, v5x_icu_device)
+
+#endif // MAME_MACHINE_PIC8259_H

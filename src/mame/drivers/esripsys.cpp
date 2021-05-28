@@ -27,12 +27,13 @@
 ****************************************************************************/
 
 #include "emu.h"
-#include "cpu/m6809/m6809.h"
+#include "includes/esripsys.h"
+
 #include "cpu/esrip/esrip.h"
+#include "cpu/m6809/m6809.h"
 #include "machine/6840ptm.h"
 #include "machine/nvram.h"
-#include "sound/dac.h"
-#include "includes/esripsys.h"
+#include "speaker.h"
 
 
 /*************************************
@@ -53,13 +54,13 @@ WRITE_LINE_MEMBER(esripsys_state::ptm_irq)
  *************************************/
 
 /* Note: Game CPU /FIRQ is connected to RXRDY */
-WRITE8_MEMBER(esripsys_state::uart_w)
+void esripsys_state::uart_w(offs_t offset, uint8_t data)
 {
 	if ((offset & 1) == 0)
 		osd_printf_debug("%c",data);
 }
 
-READ8_MEMBER(esripsys_state::uart_r)
+uint8_t esripsys_state::uart_r()
 {
 	return 0;
 }
@@ -84,7 +85,7 @@ READ8_MEMBER(esripsys_state::uart_r)
     7: Frame CPU /NMI       7: /VBLANK
 */
 
-READ8_MEMBER(esripsys_state::g_status_r)
+uint8_t esripsys_state::g_status_r()
 {
 	int bank4 = BIT(m_videocpu->get_rip_status(), 2);
 	int vblank = m_screen->vblank();
@@ -92,10 +93,10 @@ READ8_MEMBER(esripsys_state::g_status_r)
 	return (!vblank << 7) | (bank4 << 6) | (m_f_status & 0x2f);
 }
 
-WRITE8_MEMBER(esripsys_state::g_status_w)
+void esripsys_state::g_status_w(uint8_t data)
 {
 	int bankaddress;
-	UINT8 *rom = memregion("game_cpu")->base();
+	uint8_t *rom = memregion("game_cpu")->base();
 
 	m_g_status = data;
 
@@ -132,17 +133,17 @@ WRITE8_MEMBER(esripsys_state::g_status_w)
     7: /FRDONE                  7: /VBLANK
 */
 
-READ8_MEMBER(esripsys_state::f_status_r)
+uint8_t esripsys_state::f_status_r()
 {
 	int vblank = m_screen->vblank();
-	UINT8 rip_status = m_videocpu->get_rip_status();
+	uint8_t rip_status = m_videocpu->get_rip_status();
 
 	rip_status = (rip_status & 0x18) | (BIT(rip_status, 6) << 1) |  BIT(rip_status, 7);
 
 	return (!vblank << 7) | (m_fbsel << 6) | (m_frame_vbl << 5) | rip_status;
 }
 
-WRITE8_MEMBER(esripsys_state::f_status_w)
+void esripsys_state::f_status_w(uint8_t data)
 {
 	m_f_status = data;
 }
@@ -160,13 +161,13 @@ TIMER_CALLBACK_MEMBER(esripsys_state::delayed_bank_swap)
 	m_fbsel ^= 1;
 }
 
-WRITE8_MEMBER(esripsys_state::frame_w)
+void esripsys_state::frame_w(uint8_t data)
 {
 	machine().scheduler().synchronize(timer_expired_delegate(FUNC(esripsys_state::delayed_bank_swap),this));
 	m_frame_vbl = 1;
 }
 
-READ8_MEMBER(esripsys_state::fdt_r)
+uint8_t esripsys_state::fdt_r(offs_t offset)
 {
 	if (!m_fasel)
 		return m_fdt_b[offset];
@@ -174,7 +175,7 @@ READ8_MEMBER(esripsys_state::fdt_r)
 		return m_fdt_a[offset];
 }
 
-WRITE8_MEMBER(esripsys_state::fdt_w)
+void esripsys_state::fdt_w(offs_t offset, uint8_t data)
 {
 	if (!m_fasel)
 		m_fdt_b[offset] = data;
@@ -189,7 +190,7 @@ WRITE8_MEMBER(esripsys_state::fdt_w)
  *
  *************************************/
 
-READ16_MEMBER( esripsys_state::fdt_rip_r )
+uint16_t esripsys_state::fdt_rip_r(offs_t offset)
 {
 	offset = (offset & 0x7ff) << 1;
 
@@ -199,7 +200,7 @@ READ16_MEMBER( esripsys_state::fdt_rip_r )
 		return (m_fdt_b[offset] << 8) | m_fdt_b[offset + 1];
 }
 
-WRITE16_MEMBER( esripsys_state::fdt_rip_w )
+void esripsys_state::fdt_rip_w(offs_t offset, uint16_t data)
 {
 	offset = (offset & 0x7ff) << 1;
 
@@ -226,11 +227,11 @@ WRITE16_MEMBER( esripsys_state::fdt_rip_w )
    D7 = /FDONE
 */
 
-READ8_MEMBER(esripsys_state::rip_status_in)
+uint8_t esripsys_state::rip_status_in()
 {
 	int vpos =  m_screen->vpos();
-	UINT8 _vblank = !(vpos >= ESRIPSYS_VBLANK_START);
-//  UINT8 _hblank = !m_screen->hblank();
+	uint8_t _vblank = !(vpos >= ESRIPSYS_VBLANK_START);
+//  uint8_t _hblank = !m_screen->hblank();
 
 	return  _vblank
 			| (m_hblank << 1)
@@ -246,12 +247,12 @@ READ8_MEMBER(esripsys_state::rip_status_in)
  *
  *************************************/
 
-WRITE8_MEMBER(esripsys_state::g_iobus_w)
+void esripsys_state::g_iobus_w(uint8_t data)
 {
 	m_g_iodata = data;
 }
 
-READ8_MEMBER(esripsys_state::g_iobus_r)
+uint8_t esripsys_state::g_iobus_r()
 {
 	switch (m_g_ioaddr & 0x7f)
 	{
@@ -282,9 +283,9 @@ READ8_MEMBER(esripsys_state::g_iobus_r)
 		case 0x10:
 			return ioport("IO_1")->read();
 		case 0x11:
-			return ioport("JOYSTICK_X")->read();
+			return ioport("STICKX")->read();
 		case 0x12:
-			return ioport("JOYSTICK_Y")->read();
+			return ioport("STICKY")->read();
 		case 0x16:
 			return m_io_firq_status;
 		case 0x18:
@@ -318,7 +319,7 @@ READ8_MEMBER(esripsys_state::g_iobus_r)
 	}
 }
 
-WRITE8_MEMBER(esripsys_state::g_ioadd_w)
+void esripsys_state::g_ioadd_w(uint8_t data)
 {
 	m_g_ioaddr = data;
 
@@ -451,11 +452,11 @@ static INPUT_PORTS_START( turbosub )
 	PORT_START("IO_2")
 	PORT_BIT( 0xff, IP_ACTIVE_LOW, IPT_UNUSED )
 
-	PORT_START("JOYSTICK_X")
-	PORT_BIT( 0xff, 0x00, IPT_AD_STICK_X ) PORT_MINMAX(0xff, 0x00) PORT_SENSITIVITY(25) PORT_KEYDELTA(200)
+	PORT_START("STICKX")
+	PORT_BIT( 0xff, 0x80, IPT_AD_STICK_X ) PORT_SENSITIVITY(50) PORT_KEYDELTA(30)
 
-	PORT_START("JOYSTICK_Y")
-	PORT_BIT( 0xff, 0x00, IPT_AD_STICK_Y ) PORT_MINMAX(0xff, 0x00) PORT_SENSITIVITY(25) PORT_KEYDELTA(200)
+	PORT_START("STICKY")
+	PORT_BIT( 0xff, 0x80, IPT_AD_STICK_Y ) PORT_SENSITIVITY(70) PORT_KEYDELTA(30)
 INPUT_PORTS_END
 
 
@@ -466,19 +467,19 @@ INPUT_PORTS_END
  *************************************/
 
 /* Game/Sound CPU communications */
-READ8_MEMBER(esripsys_state::s_200e_r)
+uint8_t esripsys_state::s_200e_r()
 {
 	return m_g_to_s_latch1;
 }
 
-WRITE8_MEMBER(esripsys_state::s_200e_w)
+void esripsys_state::s_200e_w(uint8_t data)
 {
 	m_s_to_g_latch1 = data;
 }
 
-WRITE8_MEMBER(esripsys_state::s_200f_w)
+void esripsys_state::s_200f_w(uint8_t data)
 {
-	UINT8 *rom = memregion("sound_data")->base();
+	uint8_t *rom = memregion("sound_data")->base();
 	int rombank = data & 0x20 ? 0x2000 : 0;
 
 	/* Bit 6 -> Reset latch U56A */
@@ -500,17 +501,17 @@ WRITE8_MEMBER(esripsys_state::s_200f_w)
 	m_s_to_g_latch2 = data;
 }
 
-READ8_MEMBER(esripsys_state::s_200f_r)
+uint8_t esripsys_state::s_200f_r()
 {
 	return (m_g_to_s_latch2 & 0xfc) | (m_u56b << 1) | m_u56a;
 }
 
-READ8_MEMBER(esripsys_state::tms5220_r)
+uint8_t esripsys_state::tms5220_r(offs_t offset)
 {
 	if (offset == 0)
 	{
 		/* TMS5220 core returns status bits in D7-D6 */
-		UINT8 status = m_tms->status_r(space, 0);
+		uint8_t status = m_tms->status_r();
 
 		status = ((status & 0x80) >> 5) | ((status & 0x40) >> 5) | ((status & 0x20) >> 5);
 		return (m_tms->readyq_r() << 7) | (m_tms->intq_r() << 6) | status;
@@ -520,30 +521,30 @@ READ8_MEMBER(esripsys_state::tms5220_r)
 }
 
 /* TODO: Implement correctly using the state PROM */
-WRITE8_MEMBER(esripsys_state::tms5220_w)
+void esripsys_state::tms5220_w(offs_t offset, uint8_t data)
 {
 	if (offset == 0)
 	{
 		m_tms_data = data;
-		m_tms->data_w(space, 0, m_tms_data);
+		m_tms->data_w(m_tms_data);
 	}
 #if 0
 	if (offset == 1)
 	{
-		m_tms->data_w(space, 0, m_tms_data);
+		m_tms->data_w(m_tms_data);
 	}
 #endif
 }
 
 /* Not used in later revisions */
-WRITE8_MEMBER(esripsys_state::control_w)
+void esripsys_state::control_w(uint8_t data)
 {
-	logerror("Sound control write: %.2x (PC:0x%.4x)\n", data, space.device().safe_pcbase());
+	logerror("Sound control write: %.2x (PC:0x%.4x)\n", data, m_soundcpu->pcbase());
 }
 
 
 /* 10-bit MC3410CL DAC */
-WRITE8_MEMBER(esripsys_state::esripsys_dac_w)
+void esripsys_state::esripsys_dac_w(offs_t offset, uint8_t data)
 {
 	if (offset == 0)
 	{
@@ -551,22 +552,10 @@ WRITE8_MEMBER(esripsys_state::esripsys_dac_w)
 	}
 	else
 	{
-		UINT16 dac_data = (m_dac_msb << 8) | data;
-
-		/*
-		    The 8-bit DAC modulates the 10-bit DAC.
-		    Shift down to prevent clipping.
-		*/
-		m_dac->write_signed16((m_dac_vol * dac_data) >> 1);
+		uint16_t dac_data = (m_dac_msb << 8) | data;
+		m_dac->write(dac_data);
 	}
 }
-
-/* 8-bit MC3408 DAC */
-WRITE8_MEMBER(esripsys_state::volume_dac_w)
-{
-	m_dac_vol = data;
-}
-
 
 /*************************************
  *
@@ -574,50 +563,54 @@ WRITE8_MEMBER(esripsys_state::volume_dac_w)
  *
  *************************************/
 
-static ADDRESS_MAP_START( game_cpu_map, AS_PROGRAM, 8, esripsys_state )
-	AM_RANGE(0x0000, 0x3fff) AM_RAM AM_SHARE("share1")
-	AM_RANGE(0x4000, 0x42ff) AM_RAM AM_SHARE("pal_ram")
-	AM_RANGE(0x4300, 0x4300) AM_WRITE(esripsys_bg_intensity_w)
-	AM_RANGE(0x4400, 0x47ff) AM_NOP // Collision detection RAM
-	AM_RANGE(0x4800, 0x4bff) AM_READWRITE(g_status_r, g_status_w)
-	AM_RANGE(0x4c00, 0x4fff) AM_READWRITE(g_iobus_r, g_iobus_w)
-	AM_RANGE(0x5000, 0x53ff) AM_WRITE(g_ioadd_w)
-	AM_RANGE(0x5400, 0x57ff) AM_NOP
-	AM_RANGE(0x5c00, 0x5fff) AM_READWRITE(uart_r, uart_w)
-	AM_RANGE(0x6000, 0xdfff) AM_ROMBANK("bank1")
-	AM_RANGE(0xe000, 0xffff) AM_ROM
-ADDRESS_MAP_END
+void esripsys_state::game_cpu_map(address_map &map)
+{
+	map(0x0000, 0x3fff).ram().share("share1");
+	map(0x4000, 0x42ff).ram().share("pal_ram");
+	map(0x4300, 0x4300).w(FUNC(esripsys_state::esripsys_bg_intensity_w));
+	map(0x4400, 0x47ff).noprw(); // Collision detection RAM
+	map(0x4800, 0x4bff).rw(FUNC(esripsys_state::g_status_r), FUNC(esripsys_state::g_status_w));
+	map(0x4c00, 0x4fff).rw(FUNC(esripsys_state::g_iobus_r), FUNC(esripsys_state::g_iobus_w));
+	map(0x5000, 0x53ff).w(FUNC(esripsys_state::g_ioadd_w));
+	map(0x5400, 0x57ff).noprw();
+	map(0x5c00, 0x5fff).rw(FUNC(esripsys_state::uart_r), FUNC(esripsys_state::uart_w));
+	map(0x6000, 0xdfff).bankr("bank1");
+	map(0xe000, 0xffff).rom();
+}
 
 
-static ADDRESS_MAP_START( frame_cpu_map, AS_PROGRAM, 8, esripsys_state )
-	AM_RANGE(0x0000, 0x3fff) AM_RAM AM_SHARE("share1")
-	AM_RANGE(0x4000, 0x4fff) AM_READWRITE(fdt_r, fdt_w)
-	AM_RANGE(0x6000, 0x6000) AM_READWRITE(f_status_r, f_status_w)
-	AM_RANGE(0x8000, 0x8000) AM_WRITE(frame_w)
-	AM_RANGE(0xc000, 0xffff) AM_ROM
-ADDRESS_MAP_END
+void esripsys_state::frame_cpu_map(address_map &map)
+{
+	map(0x0000, 0x3fff).ram().share("share1");
+	map(0x4000, 0x4fff).rw(FUNC(esripsys_state::fdt_r), FUNC(esripsys_state::fdt_w));
+	map(0x6000, 0x6000).rw(FUNC(esripsys_state::f_status_r), FUNC(esripsys_state::f_status_w));
+	map(0x8000, 0x8000).w(FUNC(esripsys_state::frame_w));
+	map(0xc000, 0xffff).rom();
+}
 
 
-static ADDRESS_MAP_START( sound_cpu_map, AS_PROGRAM, 8, esripsys_state )
-	AM_RANGE(0x0000, 0x07ff) AM_RAM
-	AM_RANGE(0x0800, 0x0fff) AM_RAM // Not installed on later PCBs
-	AM_RANGE(0x2008, 0x2009) AM_READWRITE(tms5220_r, tms5220_w)
-	AM_RANGE(0x200a, 0x200b) AM_WRITE(esripsys_dac_w)
-	AM_RANGE(0x200c, 0x200c) AM_WRITE(volume_dac_w)
-	AM_RANGE(0x200d, 0x200d) AM_WRITE(control_w)
-	AM_RANGE(0x200e, 0x200e) AM_READWRITE(s_200e_r, s_200e_w)
-	AM_RANGE(0x200f, 0x200f) AM_READWRITE(s_200f_r, s_200f_w)
-	AM_RANGE(0x2020, 0x2027) AM_DEVREADWRITE("6840ptm", ptm6840_device, read, write)
-	AM_RANGE(0x8000, 0x9fff) AM_ROMBANK("bank2")
-	AM_RANGE(0xa000, 0xbfff) AM_ROMBANK("bank3")
-	AM_RANGE(0xc000, 0xdfff) AM_ROMBANK("bank4")
-	AM_RANGE(0xe000, 0xffff) AM_ROM
-ADDRESS_MAP_END
+void esripsys_state::sound_cpu_map(address_map &map)
+{
+	map(0x0000, 0x07ff).ram();
+	map(0x0800, 0x0fff).ram(); // Not installed on later PCBs
+	map(0x2008, 0x2009).rw(FUNC(esripsys_state::tms5220_r), FUNC(esripsys_state::tms5220_w));
+	map(0x200a, 0x200b).w(FUNC(esripsys_state::esripsys_dac_w));
+	map(0x200c, 0x200c).w("dacvol", FUNC(dac_byte_interface::data_w));
+	map(0x200d, 0x200d).w(FUNC(esripsys_state::control_w));
+	map(0x200e, 0x200e).rw(FUNC(esripsys_state::s_200e_r), FUNC(esripsys_state::s_200e_w));
+	map(0x200f, 0x200f).rw(FUNC(esripsys_state::s_200f_r), FUNC(esripsys_state::s_200f_w));
+	map(0x2020, 0x2027).rw("6840ptm", FUNC(ptm6840_device::read), FUNC(ptm6840_device::write));
+	map(0x8000, 0x9fff).bankr("bank2");
+	map(0xa000, 0xbfff).bankr("bank3");
+	map(0xc000, 0xdfff).bankr("bank4");
+	map(0xe000, 0xffff).rom();
+}
 
 
-static ADDRESS_MAP_START( video_cpu_map, AS_PROGRAM, 64, esripsys_state )
-	AM_RANGE(0x000, 0x1ff) AM_ROM
-ADDRESS_MAP_END
+void esripsys_state::video_cpu_map(address_map &map)
+{
+	map(0x000, 0x1ff).rom();
+}
 
 
 /*************************************
@@ -626,24 +619,24 @@ ADDRESS_MAP_END
  *
  *************************************/
 
-DRIVER_INIT_MEMBER(esripsys_state,esripsys)
+void esripsys_state::init_esripsys()
 {
-	UINT8 *rom = memregion("sound_data")->base();
+	uint8_t *rom = memregion("sound_data")->base();
 
-	m_fdt_a = std::make_unique<UINT8[]>(FDT_RAM_SIZE);
-	m_fdt_b = std::make_unique<UINT8[]>(FDT_RAM_SIZE);
-	m_cmos_ram = std::make_unique<UINT8[]>(CMOS_RAM_SIZE);
+	m_fdt_a = std::make_unique<uint8_t[]>(FDT_RAM_SIZE);
+	m_fdt_b = std::make_unique<uint8_t[]>(FDT_RAM_SIZE);
+	m_cmos_ram = std::make_unique<uint8_t[]>(CMOS_RAM_SIZE);
 
-	machine().device<nvram_device>("nvram")->set_base(m_cmos_ram.get(), CMOS_RAM_SIZE);
+	subdevice<nvram_device>("nvram")->set_base(m_cmos_ram.get(), CMOS_RAM_SIZE);
 
 	membank("bank2")->set_base(&rom[0x0000]);
 	membank("bank3")->set_base(&rom[0x4000]);
 	membank("bank4")->set_base(&rom[0x8000]);
 
 	/* Register stuff for state saving */
-	save_pointer(NAME(m_fdt_a.get()), FDT_RAM_SIZE);
-	save_pointer(NAME(m_fdt_b.get()), FDT_RAM_SIZE);
-	save_pointer(NAME(m_cmos_ram.get()), CMOS_RAM_SIZE);
+	save_pointer(NAME(m_fdt_a), FDT_RAM_SIZE);
+	save_pointer(NAME(m_fdt_b), FDT_RAM_SIZE);
+	save_pointer(NAME(m_cmos_ram), CMOS_RAM_SIZE);
 
 	save_item(NAME(m_g_iodata));
 	save_item(NAME(m_g_ioaddr));
@@ -662,7 +655,6 @@ DRIVER_INIT_MEMBER(esripsys_state,esripsys)
 	save_item(NAME(m_s_to_g_latch1));
 	save_item(NAME(m_s_to_g_latch2));
 	save_item(NAME(m_dac_msb));
-	save_item(NAME(m_dac_vol));
 	save_item(NAME(m_tms_data));
 
 	m_fasel = 0;
@@ -671,49 +663,52 @@ DRIVER_INIT_MEMBER(esripsys_state,esripsys)
 	save_item(NAME(m_fbsel));
 }
 
-static MACHINE_CONFIG_START( esripsys, esripsys_state )
-	MCFG_CPU_ADD("game_cpu", M6809E, XTAL_8MHz)
-	MCFG_CPU_PROGRAM_MAP(game_cpu_map)
-	MCFG_CPU_VBLANK_INT_DRIVER("screen", esripsys_state,  esripsys_vblank_irq)
-	MCFG_QUANTUM_PERFECT_CPU("game_cpu")
+void esripsys_state::esripsys(machine_config &config)
+{
+	MC6809E(config, m_gamecpu, XTAL(8'000'000) / 4);
+	m_gamecpu->set_addrmap(AS_PROGRAM, &esripsys_state::game_cpu_map);
+	m_gamecpu->set_vblank_int("screen", FUNC(esripsys_state::esripsys_vblank_irq));
 
-	MCFG_CPU_ADD("frame_cpu", M6809E, XTAL_8MHz)
-	MCFG_CPU_PROGRAM_MAP(frame_cpu_map)
+	config.set_perfect_quantum(m_gamecpu);
 
-	MCFG_CPU_ADD("video_cpu", ESRIP, XTAL_40MHz / 4)
-	MCFG_CPU_PROGRAM_MAP(video_cpu_map)
-	MCFG_ESRIP_FDT_R_CALLBACK(READ16(esripsys_state, fdt_rip_r))
-	MCFG_ESRIP_FDT_W_CALLBACK(WRITE16(esripsys_state, fdt_rip_w))
-	MCFG_ESRIP_STATUS_IN_CALLBACK(READ8(esripsys_state, rip_status_in))
-	MCFG_ESRIP_DRAW_CALLBACK_OWNER(esripsys_state, esripsys_draw)
-	MCFG_ESRIP_LBRM_PROM("proms")
+	MC6809E(config, m_framecpu, XTAL(8'000'000) / 4);
+	m_framecpu->set_addrmap(AS_PROGRAM, &esripsys_state::frame_cpu_map);
 
-	MCFG_CPU_ADD("sound_cpu", M6809E, XTAL_8MHz)
-	MCFG_CPU_PROGRAM_MAP(sound_cpu_map)
+	ESRIP(config, m_videocpu, XTAL(40'000'000) / 4);
+	m_videocpu->set_addrmap(AS_PROGRAM, &esripsys_state::video_cpu_map);
+	m_videocpu->fdt_r().set(FUNC(esripsys_state::fdt_rip_r));
+	m_videocpu->fdt_w().set(FUNC(esripsys_state::fdt_rip_w));
+	m_videocpu->status_in().set(FUNC(esripsys_state::rip_status_in));
+	m_videocpu->set_draw_callback(FUNC(esripsys_state::esripsys_draw));
+	m_videocpu->set_lbrm_prom_region("proms");
+	m_videocpu->set_screen_tag(m_screen);
 
-	MCFG_NVRAM_ADD_0FILL("nvram")
+	MC6809E(config, m_soundcpu, XTAL(8'000'000) / 4);
+	m_soundcpu->set_addrmap(AS_PROGRAM, &esripsys_state::sound_cpu_map);
+
+	NVRAM(config, "nvram", nvram_device::DEFAULT_ALL_0);
 
 	/* Video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_RAW_PARAMS(ESRIPSYS_PIXEL_CLOCK, ESRIPSYS_HTOTAL, ESRIPSYS_HBLANK_END, ESRIPSYS_HBLANK_START, ESRIPSYS_VTOTAL, ESRIPSYS_VBLANK_END, ESRIPSYS_VBLANK_START)
-	MCFG_SCREEN_UPDATE_DRIVER(esripsys_state, screen_update_esripsys)
-	MCFG_SCREEN_VIDEO_ATTRIBUTES(VIDEO_ALWAYS_UPDATE)
+	SCREEN(config, m_screen, SCREEN_TYPE_RASTER);
+	m_screen->set_raw(ESRIPSYS_PIXEL_CLOCK, ESRIPSYS_HTOTAL, ESRIPSYS_HBLANK_END, ESRIPSYS_HBLANK_START,
+											ESRIPSYS_VTOTAL, ESRIPSYS_VBLANK_END, ESRIPSYS_VBLANK_START);
+	m_screen->set_screen_update(FUNC(esripsys_state::screen_update_esripsys));
+	m_screen->set_video_attributes(VIDEO_ALWAYS_UPDATE);
 
 	/* Sound hardware */
-	MCFG_SPEAKER_STANDARD_MONO("mono")
+	SPEAKER(config, "speaker").front_center();
 
-	MCFG_DAC_ADD("dac")
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.50)
+	MC3410(config, m_dac, 0).add_route(ALL_OUTPUTS, "speaker", 1.0); // unknown DAC
+	mc3408_device &dacvol(MC3408(config, "dacvol", 0));
+	dacvol.set_output_range(0, 1).add_route(0, m_dac, 1.0, DAC_INPUT_RANGE_HI).add_route(0, m_dac, -1.0, DAC_INPUT_RANGE_LO); // unknown DAC
 
-	MCFG_SOUND_ADD("tms5220nl", TMS5220, 640000)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 1.00)
+	TMS5220(config, m_tms, 640000).add_route(ALL_OUTPUTS, "speaker", 1.0);
 
 	/* 6840 PTM */
-	MCFG_DEVICE_ADD("6840ptm", PTM6840, 0)
-	MCFG_PTM6840_INTERNAL_CLOCK(XTAL_8MHz / 4)
-	MCFG_PTM6840_EXTERNAL_CLOCKS(0, 0, 0)
-	MCFG_PTM6840_IRQ_CB(WRITELINE(esripsys_state, ptm_irq))
-MACHINE_CONFIG_END
+	ptm6840_device &ptm(PTM6840(config, "6840ptm", XTAL(8'000'000) / 4));
+	ptm.set_external_clocks(0, 0, 0);
+	ptm.irq_callback().set(FUNC(esripsys_state::ptm_irq));
+}
 
 
 /*************************************
@@ -1071,6 +1066,6 @@ ROM_END
  *
  *************************************/
 
-GAME( 1985, turbosub,  0,        esripsys, turbosub, esripsys_state, esripsys, ROT0, "Entertainment Sciences", "Turbo Sub (prototype rev. TSCA)", MACHINE_SUPPORTS_SAVE )
-GAME( 1985, turbosub7, turbosub, esripsys, turbosub, esripsys_state, esripsys, ROT0, "Entertainment Sciences", "Turbo Sub (prototype rev. TSC7)", MACHINE_SUPPORTS_SAVE )
-GAME( 1985, turbosub6, turbosub, esripsys, turbosub, esripsys_state, esripsys, ROT0, "Entertainment Sciences", "Turbo Sub (prototype rev. TSC6)", MACHINE_SUPPORTS_SAVE )
+GAME( 1985, turbosub,  0,        esripsys, turbosub, esripsys_state, init_esripsys, ROT0, "Entertainment Sciences", "Turbo Sub (prototype rev. TSCA)", MACHINE_SUPPORTS_SAVE )
+GAME( 1985, turbosub7, turbosub, esripsys, turbosub, esripsys_state, init_esripsys, ROT0, "Entertainment Sciences", "Turbo Sub (prototype rev. TSC7)", MACHINE_SUPPORTS_SAVE )
+GAME( 1985, turbosub6, turbosub, esripsys, turbosub, esripsys_state, init_esripsys, ROT0, "Entertainment Sciences", "Turbo Sub (prototype rev. TSC6)", MACHINE_SUPPORTS_SAVE )

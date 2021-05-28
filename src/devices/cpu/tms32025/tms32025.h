@@ -17,21 +17,10 @@
 	*                                                                          *
 	\***************************************************************************/
 
+#ifndef MAME_TMS32025_TMS32025_H
+#define MAME_TMS32025_TMS32025_H
+
 #pragma once
-
-#ifndef __TMS32025_H__
-#define __TMS32025_H__
-
-
-
-
-#define TMS32025_BIO        0x10000     /* BIO input  */
-#define TMS32025_HOLD       0x10001     /* HOLD input */
-#define TMS32025_HOLDA      0x10001     /* HOLD Acknowledge output */
-#define TMS32025_XF         0x10002     /* XF output  */
-#define TMS32025_DR         0x10003     /* Serial Data  Receive  input  */
-#define TMS32025_DX         0x10003     /* Serial Data  Transmit output */
-
 
 
 /****************************************************************************
@@ -73,70 +62,99 @@ class tms32025_device : public cpu_device
 {
 public:
 	// construction/destruction
-	tms32025_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
-	tms32025_device(const machine_config &mconfig, device_type type, const char *name, const char *tag, device_t *owner, UINT32 clock, const char *shortname, const char *source);
+	tms32025_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
+	tms32025_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock);
 
+	// configuration helpers
+	auto bio_in_cb() { return m_bio_in.bind(); }
+	auto hold_in_cb() { return m_hold_in.bind(); }
+	auto hold_ack_out_cb() { return m_hold_ack_out.bind(); }
+	auto xf_out_cb() { return m_xf_out.bind(); }
+	auto dr_in_cb() { return m_dr_in.bind(); }
+	auto dx_out_cb() { return m_dx_out.bind(); }
+
+	void set_mp_mc(bool state) { m_mp_mc = state; }
+
+	//void tms32025_program(address_map &map);
+	void tms32025_data(address_map &map);
+	void tms32026_data(address_map &map);
 protected:
+	tms32025_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock, address_map_constructor prgmap, address_map_constructor datamap);
+
 	// device-level overrides
 	virtual void device_start() override;
 	virtual void device_reset() override;
 
 	// device_execute_interface overrides
-	virtual UINT32 execute_min_cycles() const override { return 4; }
-	virtual UINT32 execute_max_cycles() const override { return 20; }
-	virtual UINT32 execute_input_lines() const override { return 6; }
+	virtual uint32_t execute_min_cycles() const noexcept override { return 4; }
+	virtual uint32_t execute_max_cycles() const noexcept override { return 20; }
+	virtual uint32_t execute_input_lines() const noexcept override { return 6; }
 	virtual void execute_run() override;
 	virtual void execute_set_input(int inputnum, int state) override;
 
 	// device_memory_interface overrides
-	virtual const address_space_config *memory_space_config(address_spacenum spacenum = AS_0) const override { return (spacenum == AS_PROGRAM) ? &m_program_config : ( (spacenum == AS_IO) ? &m_io_config : ( (spacenum == AS_DATA) ? &m_data_config : nullptr ) ); }
-	virtual bool memory_read(address_spacenum spacenum, offs_t offset, int size, UINT64 &value) override;
-	virtual bool memory_write(address_spacenum spacenum, offs_t offset, int size, UINT64 value) override;
-	virtual bool memory_readop(offs_t offset, int size, UINT64 &value) override;
+	virtual space_config_vector memory_space_config() const override;
 
 	// device_state_interface overrides
-	virtual void state_import(const device_state_entry &entry) override;
-	virtual void state_export(const device_state_entry &entry) override;
-	void state_string_export(const device_state_entry &entry, std::string &str) override;
+	virtual void state_string_export(const device_state_entry &entry, std::string &str) const override;
 
 	// device_disasm_interface overrides
-	virtual UINT32 disasm_min_opcode_bytes() const override { return 2; }
-	virtual UINT32 disasm_max_opcode_bytes() const override { return 4; }
-	virtual offs_t disasm_disassemble(char *buffer, offs_t pc, const UINT8 *oprom, const UINT8 *opram, UINT32 options) override;
+	virtual std::unique_ptr<util::disasm_interface> create_disassembler() override;
 
-private:
+	virtual const tiny_rom_entry *device_rom_region() const override;
+
+	void common_reset();
+
 	address_space_config m_program_config;
 	address_space_config m_data_config;
 	address_space_config m_io_config;
 
+	required_shared_ptr<uint16_t> m_b0;
+	required_shared_ptr<uint16_t> m_b1;
+	required_shared_ptr<uint16_t> m_b2;
+	optional_shared_ptr<uint16_t> m_b3;
+
+	memory_access<16, 1, -1, ENDIANNESS_BIG>::cache m_cache;
+	memory_access<16, 1, -1, ENDIANNESS_BIG>::specific m_program;
+	memory_access<16, 1, -1, ENDIANNESS_BIG>::specific m_data;
+	memory_access<16, 1, -1, ENDIANNESS_BIG>::specific m_io;
+
 	typedef void ( tms32025_device::*opcode_func ) ();
 	struct tms32025_opcode
 	{
-		UINT8       cycles;
+		uint8_t       cycles;
 		opcode_func function;
 	};
 	static const tms32025_opcode s_opcode_main[256];
 	static const tms32025_opcode s_opcode_CE_subset[256];
 	static const tms32025_opcode s_opcode_Dx_subset[8];
 
+	devcb_read16 m_bio_in;
+	devcb_read16 m_hold_in;
+	devcb_write16 m_hold_ack_out;
+	devcb_write16 m_xf_out;
+	devcb_read16 m_dr_in;
+	devcb_write16 m_dx_out;
+
 
 	/******************** CPU Internal Registers *******************/
-	UINT16  m_PREVPC;     /* previous program counter */
-	UINT16  m_PC;
-	UINT16  m_PFC;
-	UINT16  m_STR0, m_STR1;
-	UINT8   m_IFR;
-	UINT8   m_RPTC;
+	uint16_t  m_PREVPC;     /* previous program counter */
+	uint16_t  m_PC;
+	uint16_t  m_PFC;
+	uint16_t  m_STR0, m_STR1;
+	uint8_t   m_IFR;
+	uint8_t   m_RPTC;
 	PAIR    m_ACC;
 	PAIR    m_Preg;
-	UINT16  m_Treg;
-	UINT16  m_AR[8];
-	UINT16  m_STACK[8];
+	uint16_t  m_Treg;
+	uint16_t  m_AR[8];
+	uint16_t  m_STACK[8];
 	PAIR    m_ALU;
-protected:
-	UINT16  m_intRAM[0x800];
-private:
-	UINT8   m_timerover;
+	uint16_t  m_drr, m_dxr, m_tim, m_prd, m_imr, m_greg;
+
+	uint16_t m_fixed_STR1;
+
+	uint8_t   m_timerover;
 
 	/********************** Status data ****************************/
 	PAIR    m_opcode;
@@ -148,46 +166,44 @@ private:
 	int     m_tms32025_dec_cycles;
 
 	PAIR    m_oldacc;
-	UINT32  m_memaccess;
+	uint32_t  m_memaccess;
 	int     m_icount;
 	int     m_mHackIgnoreARP;          /* special handling for lst, lst1 instructions */
 	int     m_waiting_for_serial_frame;
+	bool    m_mp_mc;
 
-	address_space *m_program;
-	direct_read_data *m_direct;
-	address_space *m_data;
-	address_space *m_io;
+	uint16_t drr_r();
+	void drr_w(uint16_t data);
+	uint16_t dxr_r();
+	void dxr_w(uint16_t data);
+	uint16_t tim_r();
+	void tim_w(uint16_t data);
+	uint16_t prd_r();
+	void prd_w(uint16_t data);
+	uint16_t imr_r();
+	void imr_w(uint16_t data);
+	uint16_t greg_r();
+	void greg_w(uint16_t data);
 
-	UINT16 *m_pgmmap[0x200];
-protected:
-	UINT16 *m_datamap[0x200];
-
-private:
-	UINT32 m_debugger_temp;
-
-	inline void CLR0(UINT16 flag);
-	inline void SET0(UINT16 flag);
-	inline void CLR1(UINT16 flag);
-	inline void SET1(UINT16 flag);
+	inline void CLR0(uint16_t flag);
+	inline void SET0(uint16_t flag);
+	inline void CLR1(uint16_t flag);
+	inline void SET1(uint16_t flag);
 	inline void MODIFY_DP(int data);
 	inline void MODIFY_PM(int data);
 	inline void MODIFY_ARP(int data);
-	inline UINT16 M_RDROM(offs_t addr);
-	inline void M_WRTROM(offs_t addr, UINT16 data);
-	inline UINT16 M_RDRAM(offs_t addr);
-	inline void M_WRTRAM(offs_t addr, UINT16 data);
-	UINT16 reverse_carry_add(UINT16 arg0, UINT16 arg1 );
+	uint16_t reverse_carry_add(uint16_t arg0, uint16_t arg1 );
 	inline void MODIFY_AR_ARP();
 	inline void CALCULATE_ADD_CARRY();
 	inline void CALCULATE_SUB_CARRY();
-	inline void CALCULATE_ADD_OVERFLOW(INT32 addval);
-	inline void CALCULATE_SUB_OVERFLOW(INT32 subval);
-	inline UINT16 POP_STACK();
-	inline void PUSH_STACK(UINT16 data);
+	inline void CALCULATE_ADD_OVERFLOW(int32_t addval);
+	inline void CALCULATE_SUB_OVERFLOW(int32_t subval);
+	inline uint16_t POP_STACK();
+	inline void PUSH_STACK(uint16_t data);
 	inline void SHIFT_Preg_TO_ALU();
 	inline void GETDATA(int shift,int signext);
-	inline void PUTDATA(UINT16 data);
-	inline void PUTDATA_SST(UINT16 data);
+	inline void PUTDATA(uint16_t data);
+	inline void PUTDATA_SST(uint16_t data);
 	void opcodes_CE();
 	void opcodes_Dx();
 	void illegal();
@@ -227,9 +243,9 @@ private:
 	void call();
 	void cmpl();
 	void cmpr();
-	void cnfd();
-	void cnfp();
-	void conf();
+	virtual void cnfd();
+	virtual void cnfp();
+	virtual void conf();
 	void dint();
 	void dmov();
 	void eint();
@@ -276,7 +292,6 @@ private:
 	void mpys();
 	void mpyu();
 	void neg();
-	void nop();
 	void norm();
 	void or_();
 	void ork();
@@ -346,7 +361,6 @@ private:
 	void zals();
 	inline int process_IRQs();
 	inline void process_timer(int clocks);
-
 };
 
 
@@ -354,15 +368,16 @@ class tms32026_device : public tms32025_device
 {
 public:
 	// construction/destruction
-	tms32026_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	tms32026_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
 protected:
 	virtual void device_reset() override;
+	virtual void cnfd() override;
+	virtual void cnfp() override;
+	virtual void conf() override;
 };
 
+DECLARE_DEVICE_TYPE(TMS32025, tms32025_device)
+DECLARE_DEVICE_TYPE(TMS32026, tms32026_device)
 
-extern const device_type TMS32025;
-extern const device_type TMS32026;
-
-
-#endif  /* __TMS32025_H__ */
+#endif // MAME_TMS32025_TMS32025_H

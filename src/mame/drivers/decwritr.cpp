@@ -8,14 +8,24 @@
 
 **************************************************************************/
 
+// tech manual: http://manx.classiccmp.org/mirror/vt100.net/docs/la120-tm/la120tm1.pdf
+
 #include "emu.h"
-#include "render.h"
+#include "bus/rs232/rs232.h"
 #include "cpu/i8085/i8085.h"
+#include "machine/74259.h"
+#include "machine/dc305.h"
+#include "machine/er1400.h"
 #include "machine/i8251.h"
+#include "machine/input_merger.h"
 #include "sound/beep.h"
+#include "screen.h"
+#include "speaker.h"
+
 
 #define KBD_VERBOSE 1
-#define LED_VERBOSE 1
+#define LED_VERBOSE 0
+#define DC305_VERBOSE 0
 
 //**************************************************************************
 //  DRIVER STATE
@@ -25,38 +35,62 @@ class decwriter_state : public driver_device
 {
 public:
 	// constructor
-	decwriter_state(const machine_config &mconfig, device_type type, const char *tag)
-		: driver_device(mconfig, type, tag),
+	decwriter_state(const machine_config &mconfig, device_type type, const char *tag) :
+		driver_device(mconfig, type, tag),
 		m_maincpu(*this, "maincpu"),
 		m_speaker(*this, "beeper"),
-		m_uart(*this, "i8251")
+		m_usart(*this, "usart"),
+		m_nvm(*this, "nvm"),
+		m_ledlatch(*this, "ledlatch"),
+		m_prtlsi(*this, "prtlsi")
 	{
 	}
-	required_device<cpu_device> m_maincpu;
-	required_device<beep_device> m_speaker;
-	required_device<i8251_device> m_uart;
-	//required_device<generic_terminal_device> m_terminal;
-	UINT32 screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
+
+	void la120(machine_config &config);
+private:
+	uint32_t screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
 	{
-		bitmap.fill(rgb_t::black);
+		bitmap.fill(rgb_t::black(), cliprect);
 		return 0;
 	}
-	DECLARE_READ8_MEMBER(la120_KBD_r);
-	DECLARE_WRITE8_MEMBER(la120_LED_w);
-	DECLARE_READ8_MEMBER(la120_NVR_r);
-	DECLARE_WRITE8_MEMBER(la120_NVR_w);
-	DECLARE_READ8_MEMBER(la120_DC305_r);
-	DECLARE_WRITE8_MEMBER(la120_DC305_w);
-private:
+
+	IRQ_CALLBACK_MEMBER(inta_cb);
+
+	uint8_t la120_KBD_r(offs_t offset);
+	void la120_LED_w(offs_t offset, uint8_t data);
+	uint8_t la120_NVR_r();
+	void la120_NVR_w(offs_t offset, uint8_t data);
+	uint8_t la120_DC305_r(offs_t offset);
+	void la120_DC305_w(offs_t offset, uint8_t data);
+
+	void la120_io(address_map &map);
+	void la120_mem(address_map &map);
+
 	virtual void machine_start() override;
 	//virtual void machine_reset();
+
+	required_device<cpu_device> m_maincpu;
+	required_device<beep_device> m_speaker;
+	required_device<i8251_device> m_usart;
+	required_device<er1400_device> m_nvm;
+	required_device<ls259_device> m_ledlatch;
+	required_device<dc305_device> m_prtlsi;
+
 	ioport_port* m_col_array[16];
-	UINT8 m_led_array;
-	UINT8 m_led_7seg_counter;
-	UINT8 m_led_7seg[4];
+	uint8_t m_led_7seg_counter;
+	uint8_t m_led_7seg[4];
 };
 
-READ8_MEMBER( decwriter_state::la120_KBD_r )
+IRQ_CALLBACK_MEMBER( decwriter_state::inta_cb )
+{
+	// one wait state inserted
+	if (!machine().side_effects_disabled())
+		m_maincpu->adjust_icount(-1);
+
+	return m_prtlsi->inta();
+}
+
+uint8_t decwriter_state::la120_KBD_r(offs_t offset)
 {
 	/* for reading the keyboard array, addr bits 5-11 are ignored.
 	 * a15 a14 a13 a12 a11 a10  a9  a8  a7  a6  a5  a4  a3  a2  a1  a0
@@ -69,16 +103,15 @@ READ8_MEMBER( decwriter_state::la120_KBD_r )
 	 * d7 d6 d5 d4 d3 d2 d1 d0
 	 *  \--\--\--\--\--\--\--\-- read from rows
 	 */
-	UINT8 code = 0;
+	uint8_t code = 0;
 	if (offset&0x8) code |= m_col_array[offset&0x7]->read();
 	if (offset&0x10) code |= m_col_array[(offset&0x7)+8]->read();
-#ifdef KBD_VERBOSE
-	logerror("Keyboard column %X read, returning %02X\n", offset&0xF, code);
-#endif
+	if (KBD_VERBOSE)
+		logerror("Keyboard column %X read, returning %02X\n", offset&0xF, code);
 	return code;
 }
 
-WRITE8_MEMBER( decwriter_state::la120_LED_w )
+void decwriter_state::la120_LED_w(offs_t offset, uint8_t data)
 {
 	/* for writing the keyboard array, addr bits 5-11 are ignored.
 	 * a15 a14 a13 a12 a11 a10  a9  a8  a7  a6  a5  a4  a3  a2  a1  a0
@@ -89,20 +122,17 @@ WRITE8_MEMBER( decwriter_state::la120_LED_w )
 	 */
 	if (!(offset&0x10)) // we're updating an led state
 	{
-#ifdef LED_VERBOSE
-		logerror("Updated LED status array: LED #%d is now %d\n", ((offset&0xe)>>1), (offset&1));
-#endif
-		m_led_array &= ((1<<((offset&0xe)>>1))^0xFF); // mask out the old bit
-		m_led_array |= ((offset&1)<<((offset&0xe)>>1)); // OR in the new bit
+		if (LED_VERBOSE)
+			logerror("Updated LED status array: LED #%d is now %d\n", ((offset&0xe)>>1), (offset&1));
+		m_ledlatch->write_bit((~offset & 0xe) >> 1, !BIT(offset, 0));
 		m_led_7seg_counter = 0;
 	}
 	else // we're updating the 7segment display
 	{
 		m_led_7seg_counter++;
 		m_led_7seg_counter &= 0xF;
-#ifdef LED_VERBOSE
-		logerror("Updated 7seg display: displaying a digit of %d in position %d\n", (offset&0xF)^0xF, m_led_7seg_counter-1);
-#endif
+		if (LED_VERBOSE)
+			logerror("Updated 7seg display: displaying a digit of %d in position %d\n", (offset&0xF)^0xF, m_led_7seg_counter-1);
 		if ((m_led_7seg_counter >= 1) && (m_led_7seg_counter <= 4))
 		{
 			m_led_7seg[m_led_7seg_counter-1] = (offset&0xF)^0xF;
@@ -110,42 +140,126 @@ WRITE8_MEMBER( decwriter_state::la120_LED_w )
 	}
 	popmessage("LEDs: %c %c %c %c : %s  %s  %s  %s  %s  %s  %s  %s\n",
 	m_led_7seg[3]+0x30, m_led_7seg[2]+0x30, m_led_7seg[1]+0x30, m_led_7seg[0]+0x30,
-	(m_led_array&0x80)?"ON LINE":"-------",
-	(m_led_array&0x40)?"LOCAL":"-----",
-	(m_led_array&0x20)?"ALT CHR SET":"-----------",
-	(m_led_array&0x10)?"<LED4>":"-----",
-	(m_led_array&0x8)?"CTS":"---",
-	(m_led_array&0x4)?"DSR":"---",
-	(m_led_array&0x2)?"SET-UP":"------",
-	(m_led_array&0x1)?"PAPER OUT":"---------" );
+	(!m_ledlatch->q0_r())?"ON LINE":"-------",
+	(!m_ledlatch->q1_r())?"LOCAL":"-----",
+	(!m_ledlatch->q2_r())?"ALT CHR SET":"-----------",
+	(!m_ledlatch->q3_r())?"<LED4>":"-----",
+	(!m_ledlatch->q4_r())?"CTS":"---",
+	(!m_ledlatch->q5_r())?"DSR":"---",
+	(!m_ledlatch->q6_r())?"SET-UP":"------",
+	(!m_ledlatch->q7_r())?"PAPER OUT":"---------" );
 }
 
-READ8_MEMBER( decwriter_state::la120_NVR_r )
+/* control lines:
+   3 2 1
+   0 0 0 Standby
+   0 0 1 Read
+   0 1 0 Erase
+   0 1 1 Write
+   1 0 0 <unused>
+   1 0 1 Shift data out
+   1 1 0 Accept address
+   1 1 1 Accept data
+   */
+uint8_t decwriter_state::la120_NVR_r()
 {
-	return 0xFF;
+	// one wait state inserted
+	if (!machine().side_effects_disabled())
+		m_maincpu->adjust_icount(-1);
+
+	return (!m_nvm->data_r() << 7) | 0x7f;
 }
 
-WRITE8_MEMBER( decwriter_state::la120_NVR_w )
+void decwriter_state::la120_NVR_w(offs_t offset, uint8_t data)
 {
-}
-READ8_MEMBER( decwriter_state::la120_DC305_r )
-{
-	return 0xFF;
-}
-WRITE8_MEMBER( decwriter_state::la120_DC305_w )
-{
+	// one wait state inserted
+	if (!machine().side_effects_disabled())
+		m_maincpu->adjust_icount(-1);
+
+	// ER1400 has negative logic, but 7406 inverters are used
+	m_nvm->c3_w(BIT(offset, 10));
+	m_nvm->c2_w(BIT(offset, 9));
+	m_nvm->c1_w(BIT(offset, 8));
+
+	// FIXME: clock line shouldn't be inverted relative to C1-C3, but accesses only seems to work this way
+	m_nvm->clock_w(!BIT(offset, 0));
+
+	// C2 is used to disable pullup on data line
+	m_nvm->data_w(!BIT(offset, 9) ? 0 : !BIT(data, 7));
 }
 
-static ADDRESS_MAP_START(la120_mem, AS_PROGRAM, 8, decwriter_state)
-	ADDRESS_MAP_UNMAP_HIGH
-	AM_RANGE( 0x0000, 0x2fff ) AM_ROM
-	AM_RANGE( 0x3000, 0x3fff ) AM_READWRITE(la120_KBD_r, la120_LED_w) // keyboard read, write to status and 7seg LEDS
-	AM_RANGE( 0x4000, 0x43ff ) AM_MIRROR(0x0c00) AM_RAM // 1k 'low ram'
-	AM_RANGE( 0x5000, 0x53ff ) AM_MIRROR(0x0c00) AM_RAM // 1k 'high ram'
-	AM_RANGE( 0x6000, 0x6fff ) AM_MIRROR(0x08fe) AM_READWRITE(la120_NVR_r, la120_NVR_w) // ER1400 EAROM
-	AM_RANGE( 0x7000, 0x7003 ) AM_MIRROR(0x0ffc) AM_READWRITE(la120_DC305_r, la120_DC305_w) // DC305 printer controller ASIC stuff; since this can generate interrupts this needs to be split to its own device.
+/* todo: fully reverse engineer DC305 ASIC */
+/* read registers: all 4 registers read the same set of 8 bits, but what register is being read may be selectable by writing
+   Tech manual implies this register is an 8-bit position counter of where the carriage head currently is located.
+   0 = 1 = 2 = 3
+   data bits:
+   76543210
+   |||||||\- ?
+   ||||||\-- ?
+   |||||\--- ?
+   ||||\---- ?
+   |||\----- ?
+   ||\------ ?
+   |\------- ?
+   \-------- ?
+ */
+uint8_t decwriter_state::la120_DC305_r(offs_t offset)
+{
+	// one wait state inserted
+	if (!machine().side_effects_disabled())
+		m_maincpu->adjust_icount(-1);
+
+	uint8_t data = m_prtlsi->read(offset);
+	if (DC305_VERBOSE)
+		logerror("DC305 Read from offset %01x, returning %02X\n", offset, data);
+	return data;
+}
+/* write registers:
+   0 = ? (a bunch of data written here on start, likely motor control and setup bits)
+   1 = ? (one byte written here, possibly voltage control, 0x00 or could be dot fifo write?)
+   2 = ?
+   3 = ?
+   there are at least two bits in here to enable the 2.5ms tick interrupt(rst3) and the dot interrupt/linefeed(rtc expired) interrupt(rst5)
+   the dot fifo is 4 bytes long, dot int fires when it is half empty
+   at least 3 bits control the speaker/buzzer which can be on or off, at least two volume levels, and at least two frequencies, 400hz or 2400hz
+   two quadrature lines from the head servomotor connect here to allow the dc305 to determine motor position; one pulses when the motor turns clockwise and one when it turns counterclockwise. the head stop is found when the pulses stop, which firmware uses to find the zero position.
+ */
+void decwriter_state::la120_DC305_w(offs_t offset, uint8_t data)
+{
+	// one wait state inserted
+	if (!machine().side_effects_disabled())
+		m_maincpu->adjust_icount(-1);
+
+	m_prtlsi->write(offset, data);
+	if (DC305_VERBOSE)
+		logerror("DC305 Write of %02X to offset %01X\n", data, offset);
+}
+
+/*
+ * 8080  address map (x = ignored; * = selects address within this range)
+   a15 a14 a13 a12 a11 a10 a9  a8  a7  a6  a5  a4  a3  a2  a1  a0
+   0   0   0   0   *   *   *   *   *   *   *   *   *   *   *   *     R      ROMS0 (e6 first half OR e6,e8)
+   0   0   0   1   *   *   *   *   *   *   *   *   *   *   *   *     R      ROMS1 (e6 second half OR e12,e17)
+   0   0   1   0   0   *   *   *   *   *   *   *   *   *   *   *     R      ROMS2 (e4)
+   0   0   1   0   1   *   *   *   *   *   *   *   *   *   *   *     R      ROMS2 (open bus)
+   0   0   1   1   x   x   x   x   x   x   x   *   *   *   *   *     RW     KBD(R)/LED(W)
+   0   1   0   0   x   x   *   *   *   *   *   *   *   *   *   *     RW     RAM0 (e7,e13)
+   0   1   0   1   x   x   *   *   *   *   *   *   *   *   *   *     RW     RAM1 (e9,e18)
+   0   1   1   0   x   *   *   *   x   x   x   x   x   x   x   *     RW     NVM (ER1400,e39)
+   0   1   1   1   x   x   x   x   x   x   x   x   x   x   *   *     RW     PTR (DC305 ASIC,e25)
+   1   *   *   *   *   *   *   *   *   *   *   *   *   *   *   *            Expansion space (open bus)
+ */
+void decwriter_state::la120_mem(address_map &map)
+{
+	map.unmap_value_high();
+	map(0x0000, 0x27ff).rom();
+	map(0x3000, 0x301f).rw(FUNC(decwriter_state::la120_KBD_r), FUNC(decwriter_state::la120_LED_w)).mirror(0xFE0); // keyboard read, write to status and 7seg LEDS
+	map(0x4000, 0x43ff).mirror(0x0c00).ram(); // 1k 'low ram'
+	map(0x5000, 0x53ff).mirror(0x0c00).ram(); // 1k 'high ram'
+	map(0x6000, 0x67ff) /*.mirror(0x08fe)*/ .mirror(0x800).rw(FUNC(decwriter_state::la120_NVR_r), FUNC(decwriter_state::la120_NVR_w)); // ER1400 EAROM; a10,9,8 are c3,2,1, a0 is clk, data i/o on d7, d0 always reads as 0 (there may have once been a second er1400 with data i/o on d0, sharing same address controls as the d7 one, not populated on shipping boards), d1-d6 read open bus
+	map(0x7000, 0x7003).mirror(0x0ffc).rw(FUNC(decwriter_state::la120_DC305_r), FUNC(decwriter_state::la120_DC305_w)); // DC305 printer controller ASIC stuff; since this can generate interrupts (dot interrupt, lf interrupt, 2.5ms interrupt) this needs to be split to its own device.
 	// 8000-ffff is reserved for expansion (i.e. unused, open bus)
-ADDRESS_MAP_END
+}
 
 /*
  * 8080 IO address map (x = ignored; * = selects address within this range)
@@ -156,14 +270,14 @@ ADDRESS_MAP_END
    0   x   x   x   x   x   1   x     RW     Flags Read/Write
    1   x   x   x   x   x   x   x     RW     Expansion (Open bus)
  */
-static ADDRESS_MAP_START(la120_io, AS_IO, 8, decwriter_state)
-	ADDRESS_MAP_UNMAP_HIGH
-	AM_RANGE(0x00, 0x00) AM_MIRROR(0x7C) AM_DEVREADWRITE("i8251", i8251_device, data_r, data_w) // 8251 Data
-	AM_RANGE(0x01, 0x01) AM_MIRROR(0x7C) AM_DEVREADWRITE("i8251", i8251_device, status_r, control_w) // 8251 Status/Control
-	//AM_RANGE(0x02, 0x02) AM_MIRROR(0x7D) // other io ports
+void decwriter_state::la120_io(address_map &map)
+{
+	map.unmap_value_high();
+	map(0x00, 0x01).mirror(0x7C).rw(m_usart, FUNC(i8251_device::read), FUNC(i8251_device::write)); // 8251 Status/Control
+	//map(0x02, 0x02).mirror(0x7D); // other io ports, serial loopback etc, see table 4-9 in TM
 	// 0x80-0xff are reserved for expansion (i.e. unused, open bus)
-	ADDRESS_MAP_GLOBAL_MASK(0xff)
-ADDRESS_MAP_END
+	map.global_mask(0xff);
+}
 
 /* Input ports */
 static INPUT_PORTS_START( la120 )
@@ -206,7 +320,7 @@ static INPUT_PORTS_START( la120 )
 		PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("[ {") PORT_CODE(KEYCODE_OPENBRACE) PORT_CHAR('[') PORT_CHAR('{')
 		PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("- _") PORT_CODE(KEYCODE_MINUS) PORT_CHAR('-') PORT_CHAR('_')
 		PORT_BIT(0x60, IP_ACTIVE_HIGH, IPT_UNUSED)
-		PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_TOGGLE PORT_NAME("Caps lock") PORT_CODE(KEYCODE_CAPSLOCK) // TODO: does the physical switch toggle?
+		PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_TOGGLE PORT_NAME("Caps lock") PORT_CODE(KEYCODE_CAPSLOCK) // This key has a physical toggle
 	PORT_START("COL5")
 		PORT_BIT(0x01, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("Num 0") PORT_CODE(KEYCODE_0_PAD)
 		PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_KEYBOARD) PORT_NAME("/ ?") PORT_CODE(KEYCODE_SLASH) PORT_CHAR('/') PORT_CHAR('?')
@@ -291,16 +405,6 @@ INPUT_PORTS_END
 
 void decwriter_state::machine_start()
 {
-	m_speaker->set_frequency(786); // TODO: LA120 speaker is controlled by asic; VT100 has: 7.945us per serial clock = ~125865.324hz, / 160 clocks per char = ~ 786 hz
-#if 0
-	output_set_value("online_led",1);
-	output_set_value("local_led", 0);
-	output_set_value("noscroll_led",1);
-	output_set_value("basic_led", 1);
-	output_set_value("hardcopy_led", 1);
-	output_set_value("l1_led", 1);
-	output_set_value("l2_led", 1);
-#endif
 	char kbdcol[8];
 	// look up all 16 tags 'the slow way' but only once on reset
 	for (int i = 0; i < 16; i++)
@@ -308,7 +412,6 @@ void decwriter_state::machine_start()
 		sprintf(kbdcol,"COL%X", i);
 		m_col_array[i] = ioport(kbdcol);
 	}
-	m_led_array = 0;
 	m_led_7seg_counter = 0;
 	m_led_7seg[0] = m_led_7seg[1] = m_led_7seg[2] = m_led_7seg[3] = 0xF;
 }
@@ -323,43 +426,57 @@ void decwriter_state::machine_reset()
 //  MACHINE DRIVERS
 //**************************************************************************
 
-static MACHINE_CONFIG_START( la120, decwriter_state )
-
-	MCFG_CPU_ADD("maincpu",I8080, XTAL_18MHz / 9) // 18Mhz xtal on schematics, using an i8224 clock divider/reset sanitizer IC
-	MCFG_CPU_PROGRAM_MAP(la120_mem)
-	MCFG_CPU_IO_MAP(la120_io)
+void decwriter_state::la120(machine_config &config)
+{
+	I8080A(config, m_maincpu, XTAL(18'000'000) / 9); // 18Mhz xtal on schematics, using an i8224 clock divider/reset sanitizer IC
+	m_maincpu->set_addrmap(AS_PROGRAM, &decwriter_state::la120_mem);
+	m_maincpu->set_addrmap(AS_IO, &decwriter_state::la120_io);
+	m_maincpu->set_irq_acknowledge_callback(FUNC(decwriter_state::inta_cb));
 
 	/* video hardware */
 	//TODO: no actual screen! has 8 leds above the keyboard (similar to vt100/vk100) and has 4 7segment leds for showing an error code.
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_UPDATE_DRIVER(decwriter_state, screen_update)
-	MCFG_SCREEN_SIZE(640,480)
-	MCFG_SCREEN_VISIBLE_AREA(0,639, 0,479)
-	MCFG_SCREEN_REFRESH_RATE(30)
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_RASTER));
+	screen.set_screen_update(FUNC(decwriter_state::screen_update));
+	screen.set_size(640,480);
+	screen.set_visarea_full();
+	screen.set_refresh_hz(30);
 
-	//MCFG_DEFAULT_LAYOUT( layout_la120 )
+	DC305(config, m_prtlsi, XTAL(18'000'000) / 9);
+	m_prtlsi->rxc_callback().set("usart", FUNC(i8251_device::write_rxc));
+	m_prtlsi->txc_callback().set("usart", FUNC(i8251_device::write_txc));
+	m_prtlsi->int_callback().set("mainint", FUNC(input_merger_device::in_w<0>));
+
+	LS259(config, m_ledlatch); // E2 on keyboard
+	m_ledlatch->q_out_cb<0>().set_output("led1").invert(); // ON LINE
+	m_ledlatch->q_out_cb<1>().set_output("led2").invert(); // LOCAL
+	m_ledlatch->q_out_cb<2>().set_output("led3").invert(); // ALT CHAR SET
+	m_ledlatch->q_out_cb<3>().set_output("led4").invert();
+	m_ledlatch->q_out_cb<4>().set_output("led5").invert(); // CTS
+	m_ledlatch->q_out_cb<5>().set_output("led6").invert(); // DSR
+	m_ledlatch->q_out_cb<6>().set_output("led7").invert(); // SETUP
+	m_ledlatch->q_out_cb<7>().set_output("led8").invert(); // PAPER OUT
+
+	//config.set_default_layout(layout_la120);
 
 	/* audio hardware */
-	MCFG_SPEAKER_STANDARD_MONO("mono")
-	MCFG_SOUND_ADD("beeper", BEEP, 0)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.50)
+	SPEAKER(config, "mono").front_center();
+	BEEP(config, m_speaker, 786).add_route(ALL_OUTPUTS, "mono", 0.50); // TODO: LA120 speaker is controlled by asic; VT100 has: 7.945us per serial clock = ~125865.324hz, / 160 clocks per char = ~ 786 hz
 
 	/* i8251 */
-	MCFG_DEVICE_ADD("i8251", I8251, 0)
-	/*
-	MCFG_I8251_TXD_HANDLER(DEVWRITELINE(RS232_TAG, rs232_port_device, write_txd))
-	MCFG_I8251_DTR_HANDLER(DEVWRITELINE(RS232_TAG, rs232_port_device, write_dtr))
-	MCFG_I8251_RTS_HANDLER(DEVWRITELINE(RS232_TAG, rs232_port_device, write_rts))
+	i8251_device &usart(I8251(config, "usart", XTAL(18'000'000) / 9));
+	usart.txd_handler().set("eia", FUNC(rs232_port_device::write_txd));
+	usart.dtr_handler().set("eia", FUNC(rs232_port_device::write_dtr));
+	usart.rts_handler().set("eia", FUNC(rs232_port_device::write_rts));
+	usart.rxrdy_handler().set("mainint", FUNC(input_merger_device::in_w<1>));
 
-	MCFG_RS232_PORT_ADD(RS232_TAG, default_rs232_devices, NULL)
-	MCFG_RS232_RXD_HANDLER(DEVWRITELINE("i8251", i8251_device, write_rxd))
-	MCFG_RS232_DSR_HANDLER(DEVWRITELINE("i8251", i8251_device, write_dsr))
+	INPUT_MERGER_ANY_HIGH(config, "mainint").output_handler().set_inputline(m_maincpu, 0);
 
-	MCFG_DEVICE_ADD(COM5016T_TAG, COM8116, XTAL_5_0688MHz)
-	MCFG_COM8116_FR_HANDLER(DEVWRITELINE("i8251", i8251_device, write_rxc))
-	MCFG_COM8116_FT_HANDLER(DEVWRITELINE("i8251", i8251_device, write_txc))
-	*/
-MACHINE_CONFIG_END
+	rs232_port_device &rs232(RS232_PORT(config, "eia", default_rs232_devices, nullptr));
+	rs232.rxd_handler().set("usart", FUNC(i8251_device::write_rxd));
+	rs232.dsr_handler().set("usart", FUNC(i8251_device::write_dsr));
+
+	ER1400(config, m_nvm);
+}
 
 
 
@@ -380,5 +497,5 @@ ROM_END
 //**************************************************************************
 //  DRIVERS
 //**************************************************************************
-/*    YEAR  NAME   PARENT  COMPAT  MACHINE  INPUT  CLASS          INIT  COMPANY                          FULLNAME       FLAGS */
-COMP( 1978, la120, 0,      0,      la120,   la120, driver_device, 0,    "Digital Equipment Corporation", "DECwriter III (LA120)", MACHINE_NO_SOUND | MACHINE_IS_SKELETON | MACHINE_NOT_WORKING )
+/*    YEAR  NAME   PARENT  COMPAT  MACHINE  INPUT  CLASS            INIT        COMPANY                          FULLNAME                 FLAGS */
+COMP( 1978, la120, 0,      0,      la120,   la120, decwriter_state, empty_init, "Digital Equipment Corporation", "DECwriter III (LA120)", MACHINE_IS_SKELETON )

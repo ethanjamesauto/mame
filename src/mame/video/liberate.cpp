@@ -42,7 +42,7 @@ TILEMAP_MAPPER_MEMBER(liberate_state::fix_scan)
 
 TILE_GET_INFO_MEMBER(liberate_state::get_back_tile_info)
 {
-	const UINT8 *RAM = memregion("user1")->base();
+	const uint8_t *RAM = memregion("user1")->base();
 	int tile, bank;
 
 	/* Convert tile index of 512x512 to paged format */
@@ -66,19 +66,19 @@ TILE_GET_INFO_MEMBER(liberate_state::get_back_tile_info)
 		bank = 3;
 	else
 		bank = 2;
-	SET_TILE_INFO_MEMBER(bank, tile & 0x7f, m_background_color, 0);
+	tileinfo.set(bank, tile & 0x7f, m_background_color, 0);
 }
 
 TILE_GET_INFO_MEMBER(liberate_state::get_fix_tile_info)
 {
-	UINT8 *videoram = m_videoram;
-	UINT8 *colorram = m_colorram;
+	uint8_t *videoram = m_videoram;
+	uint8_t *colorram = m_colorram;
 	int tile, color;
 
 	tile = videoram[tile_index] + (colorram[tile_index] << 8);
 	color = (colorram[tile_index] & 0x70) >> 4;
 
-	SET_TILE_INFO_MEMBER(0, tile, color, 0);
+	tileinfo.set(0, tile, color, 0);
 }
 
 TILE_GET_INFO_MEMBER(liberate_state::prosport_get_back_tile_info)
@@ -97,12 +97,12 @@ TILE_GET_INFO_MEMBER(liberate_state::prosport_get_back_tile_info)
 
 	tile += m_io_ram[0]&0x20; //Pro Bowling bg tiles banking bit
 
-	SET_TILE_INFO_MEMBER(8, tile, 0, 0);
+	tileinfo.set(8, tile, 0, 0);
 }
 
 /***************************************************************************/
 
-WRITE8_MEMBER(liberate_state::deco16_io_w)
+void liberate_state::deco16_io_w(offs_t offset, uint8_t data)
 {
 	m_io_ram[offset] = data;
 	if (offset > 1 && offset < 6)
@@ -126,13 +126,13 @@ WRITE8_MEMBER(liberate_state::deco16_io_w)
 			m_maincpu->set_input_line(DECO16_IRQ_LINE, CLEAR_LINE);
 			break;
 		case 9: /* Sound */
-			soundlatch_byte_w(space, 0, data);
+			m_soundlatch->write(data);
 			m_audiocpu->set_input_line(M6502_IRQ_LINE, HOLD_LINE);
 			break;
 	}
 }
 
-WRITE8_MEMBER(liberate_state::prosoccr_io_w)
+void liberate_state::prosoccr_io_w(offs_t offset, uint8_t data)
 {
 	m_io_ram[offset] = data;
 	if (offset > 1 && offset < 6)
@@ -154,14 +154,14 @@ WRITE8_MEMBER(liberate_state::prosoccr_io_w)
 			m_maincpu->set_input_line(DECO16_IRQ_LINE, CLEAR_LINE);
 			break;
 		case 9: /* Sound */
-			soundlatch_byte_w(space, 0, data);
+			m_soundlatch->write(data);
 			m_audiocpu->set_input_line(M6502_IRQ_LINE, HOLD_LINE);
 			break;
 	}
 }
 
 /* completely different i/o...*/
-WRITE8_MEMBER(liberate_state::prosport_io_w)
+void liberate_state::prosport_io_w(offs_t offset, uint8_t data)
 {
 	m_io_ram[offset] = data;
 
@@ -173,7 +173,7 @@ WRITE8_MEMBER(liberate_state::prosport_io_w)
 			m_back_tilemap->mark_all_dirty();
 			break;
 		case 2: /* Sound */
-			soundlatch_byte_w(space, 0, data);
+			m_soundlatch->write(data);
 			m_audiocpu->set_input_line(M6502_IRQ_LINE, HOLD_LINE);
 			break;
 		case 4: /* Irq ack */
@@ -182,19 +182,19 @@ WRITE8_MEMBER(liberate_state::prosport_io_w)
 	}
 }
 
-WRITE8_MEMBER(liberate_state::liberate_videoram_w)
+void liberate_state::liberate_videoram_w(offs_t offset, uint8_t data)
 {
 	m_videoram[offset] = data;
 	m_fix_tilemap->mark_tile_dirty(offset);
 }
 
-WRITE8_MEMBER(liberate_state::liberate_colorram_w)
+void liberate_state::liberate_colorram_w(offs_t offset, uint8_t data)
 {
 	m_colorram[offset] = data;
 	m_fix_tilemap->mark_tile_dirty(offset);
 }
 
-WRITE8_MEMBER(liberate_state::prosport_bg_vram_w)
+void liberate_state::prosport_bg_vram_w(offs_t offset, uint8_t data)
 {
 	m_bg_vram[offset] = data;
 	m_back_tilemap->mark_tile_dirty(offset);
@@ -204,22 +204,22 @@ WRITE8_MEMBER(liberate_state::prosport_bg_vram_w)
 
 VIDEO_START_MEMBER(liberate_state,prosoccr)
 {
-	m_back_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(liberate_state::get_back_tile_info),this), tilemap_mapper_delegate(FUNC(liberate_state::back_scan),this), 16, 16, 32, 32);
-	m_fix_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(liberate_state::get_fix_tile_info),this), tilemap_mapper_delegate(FUNC(liberate_state::fix_scan),this), 8, 8, 32, 32);
+	m_back_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(liberate_state::get_back_tile_info)), tilemap_mapper_delegate(*this, FUNC(liberate_state::back_scan)), 16, 16, 32, 32);
+	m_fix_tilemap  = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(liberate_state::get_fix_tile_info)),  tilemap_mapper_delegate(*this, FUNC(liberate_state::fix_scan)),   8,  8, 32, 32);
 
 	m_fix_tilemap->set_transparent_pen(0);
 
 	m_fg_gfx = memregion("fg_gfx")->base();
-	m_charram = std::make_unique<UINT8[]>(0x1800 * 2);
+	m_charram = std::make_unique<uint8_t[]>(0x1800 * 2);
 
-	save_pointer(NAME(m_charram.get()), 0x1800 * 2);
+	save_pointer(NAME(m_charram), 0x1800 * 2);
 	save_pointer(NAME(m_fg_gfx), 0x6000);
 }
 
 VIDEO_START_MEMBER(liberate_state,boomrang)
 {
-	m_back_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(liberate_state::get_back_tile_info),this), tilemap_mapper_delegate(FUNC(liberate_state::back_scan),this), 16, 16, 32, 32);
-	m_fix_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(liberate_state::get_fix_tile_info),this), tilemap_mapper_delegate(FUNC(liberate_state::fix_scan),this), 8, 8, 32, 32);
+	m_back_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(liberate_state::get_back_tile_info)), tilemap_mapper_delegate(*this, FUNC(liberate_state::back_scan)), 16, 16, 32, 32);
+	m_fix_tilemap  = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(liberate_state::get_fix_tile_info)),  tilemap_mapper_delegate(*this, FUNC(liberate_state::fix_scan)),   8,  8, 32, 32);
 
 	m_back_tilemap->set_transmask(0, 0x0001, 0x007e); /* Bottom 1 pen/Top 7 pens */
 	m_fix_tilemap->set_transparent_pen(0);
@@ -227,58 +227,58 @@ VIDEO_START_MEMBER(liberate_state,boomrang)
 
 VIDEO_START_MEMBER(liberate_state,liberate)
 {
-	m_back_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(liberate_state::get_back_tile_info),this), tilemap_mapper_delegate(FUNC(liberate_state::back_scan),this), 16, 16, 32, 32);
-	m_fix_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(liberate_state::get_fix_tile_info),this), tilemap_mapper_delegate(FUNC(liberate_state::fix_scan),this), 8, 8, 32, 32);
+	m_back_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(liberate_state::get_back_tile_info)), tilemap_mapper_delegate(*this, FUNC(liberate_state::back_scan)), 16, 16, 32, 32);
+	m_fix_tilemap  = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(liberate_state::get_fix_tile_info)),  tilemap_mapper_delegate(*this, FUNC(liberate_state::fix_scan)),   8,  8, 32, 32);
 
 	m_fix_tilemap->set_transparent_pen(0);
 }
 
 VIDEO_START_MEMBER(liberate_state,prosport)
 {
-	m_back_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(liberate_state::prosport_get_back_tile_info),this), tilemap_mapper_delegate(FUNC(liberate_state::back_scan),this), 16, 16, 32, 32);
-	m_fix_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(liberate_state::get_fix_tile_info),this), tilemap_mapper_delegate(FUNC(liberate_state::fix_scan),this), 8, 8, 32, 32);
+	m_back_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(liberate_state::prosport_get_back_tile_info)), tilemap_mapper_delegate(*this, FUNC(liberate_state::back_scan)), 16, 16, 32, 32);
+	m_fix_tilemap  = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(liberate_state::get_fix_tile_info)),           tilemap_mapper_delegate(*this, FUNC(liberate_state::fix_scan)),   8,  8, 32, 32);
 
 	m_fix_tilemap->set_transparent_pen(0);
 }
 
 /***************************************************************************/
 
-PALETTE_INIT_MEMBER(liberate_state,liberate)
+void liberate_state::liberate_palette(palette_device &palette) const
 {
-	const UINT8 *color_prom = memregion("proms")->base();
-	int i, bit0, bit1, bit2, g, r, b;
-
-	for (i = 0;i < 32;i++)
+	const uint8_t *color_prom = memregion("proms")->base();
+	for (int i = 0; i < 32; i++)
 	{
-		/* red component */
+		int bit0, bit1, bit2;
+
+		// red component
 		bit0 = (*color_prom >> 0) & 0x01;
 		bit1 = (*color_prom >> 1) & 0x01;
 		bit2 = (*color_prom >> 2) & 0x01;
-		r = 0x21 * bit0 + 0x47 * bit1 + 0x97 * bit2;
+		int const r = 0x21 * bit0 + 0x47 * bit1 + 0x97 * bit2;
 
-		/* green component */
+		// green component
 		bit0 = (*color_prom >> 3) & 0x01;
 		bit1 = (*color_prom >> 4) & 0x01;
 		bit2 = (*color_prom >> 5) & 0x01;
-		g = 0x21 * bit0 + 0x47 * bit1 + 0x97 * bit2;
+		int const g = 0x21 * bit0 + 0x47 * bit1 + 0x97 * bit2;
 
-		/* blue component */
+		// blue component
 		bit0 = 0;
 		bit1 = (*color_prom >> 6) & 0x01;
 		bit2 = (*color_prom >> 7) & 0x01;
-		b = 0x21 * bit0 + 0x47 * bit1 + 0x97 * bit2;
+		int const b = 0x21 * bit0 + 0x47 * bit1 + 0x97 * bit2;
 
 		color_prom++;
-		palette.set_pen_color(i,rgb_t(r,g,b));
+		palette.set_pen_color(i, rgb_t(r, g, b));
 	}
-	palette.set_pen_color(32,rgb_t(0,0,0)); /* Allocate black for when no background is displayed */
+	palette.set_pen_color(32, rgb_t::black()); // Allocate black for when no background is displayed
 }
 
 /***************************************************************************/
 
 void liberate_state::liberate_draw_sprites( bitmap_ind16 &bitmap, const rectangle &cliprect )
 {
-	UINT8 *spriteram = m_spriteram;
+	uint8_t *spriteram = m_spriteram;
 	int offs;
 
 	/* Sprites */
@@ -347,7 +347,7 @@ void liberate_state::liberate_draw_sprites( bitmap_ind16 &bitmap, const rectangl
 void liberate_state::prosport_draw_sprites( bitmap_ind16 &bitmap, const rectangle &cliprect )
 {
 	int offs, multi, fx, fy, sx, sy, sy2, code, code2, color, gfx_region;
-	UINT8 *spriteram = m_spriteram;
+	uint8_t *spriteram = m_spriteram;
 
 	for (offs = 0x000; offs < 0x800; offs += 4)
 	{
@@ -410,7 +410,7 @@ void liberate_state::prosport_draw_sprites( bitmap_ind16 &bitmap, const rectangl
 
 void liberate_state::boomrang_draw_sprites( bitmap_ind16 &bitmap, const rectangle &cliprect, int pri )
 {
-	UINT8 *spriteram = m_spriteram;
+	uint8_t *spriteram = m_spriteram;
 	int offs, multi, fx, fy, sx, sy, sy2, code, code2, color;
 
 	for (offs = 0x000; offs < 0x800; offs += 4)
@@ -470,7 +470,7 @@ void liberate_state::boomrang_draw_sprites( bitmap_ind16 &bitmap, const rectangl
 
 void liberate_state::prosoccr_draw_sprites( bitmap_ind16 &bitmap, const rectangle &cliprect )
 {
-	UINT8 *spriteram = m_spriteram;
+	uint8_t *spriteram = m_spriteram;
 	int offs, code, fx, fy, sx, sy;
 
 	for (offs = 0x000; offs < 0x400; offs += 4)
@@ -494,7 +494,7 @@ void liberate_state::prosoccr_draw_sprites( bitmap_ind16 &bitmap, const rectangl
 
 /***************************************************************************/
 
-UINT32 liberate_state::screen_update_prosoccr(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t liberate_state::screen_update_prosoccr(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	m_back_tilemap->set_scrolly(0,  m_io_ram[1]);
 	m_back_tilemap->set_scrollx(0, -m_io_ram[0]);
@@ -510,10 +510,10 @@ UINT32 liberate_state::screen_update_prosoccr(screen_device &screen, bitmap_ind1
 	return 0;
 }
 
-UINT32 liberate_state::screen_update_prosport(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t liberate_state::screen_update_prosport(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
-	UINT8 *videoram = m_videoram;
-	UINT8 *colorram = m_colorram;
+	uint8_t *videoram = m_videoram;
+	uint8_t *colorram = m_colorram;
 	int mx, my, tile, offs, gfx_region;
 	int scrollx, scrolly;
 
@@ -553,7 +553,7 @@ UINT32 liberate_state::screen_update_prosport(screen_device &screen, bitmap_ind1
 	return 0;
 }
 
-UINT32 liberate_state::screen_update_boomrang(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t liberate_state::screen_update_boomrang(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	m_back_tilemap->set_scrolly(0,  m_io_ram[1]);
 	m_back_tilemap->set_scrollx(0, -m_io_ram[0]);
@@ -572,7 +572,7 @@ UINT32 liberate_state::screen_update_boomrang(screen_device &screen, bitmap_ind1
 	return 0;
 }
 
-UINT32 liberate_state::screen_update_liberate(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t liberate_state::screen_update_liberate(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	m_back_tilemap->set_scrolly(0,  m_io_ram[1]);
 	m_back_tilemap->set_scrollx(0, -m_io_ram[0]);

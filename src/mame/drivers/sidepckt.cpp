@@ -11,11 +11,11 @@ ernesto@imagina.com
 
 Thanks must go to Mirko Buffoni for testing the music.
 
-i8751 protection simluation and other fixes by Bryan McPhail, 15/10/00.
+i8751 protection simulation and other fixes by Bryan McPhail, 15/10/00.
 
 
 ToDo:
- support screen flipping for sprites
+- sidepcktj: Intermission screen's background for player 2 is completely screwed (Cause is currently unknown)
 
 
 Stephh's notes (based on the games M6809 code and some tests) :
@@ -123,109 +123,105 @@ Stephh's notes (based on the games M6809 code and some tests) :
       * Lives settings (table at 0x4696) : 06 03 02 instead of 06 03 09
       * Timer settings (table at 0x9d99) : 30 20 18 instead of 40 30 20, so the timer is faster
 
+Additional notes:
+----------------
+- sidepckt and sidepcktb don't have cocktail mode at all, while sidepcktj has a 'cooperative' cocktail mode; when it's the p2 turn,
+  the screen scrolls and a 'flipped score area' is shown on the other side, so the 2nd player just continues the same game.
+  Note that the screen never flips in any case.
+
 ***************************************************************************/
 
 #include "emu.h"
-#include "cpu/m6809/m6809.h"
-#include "cpu/m6502/m6502.h"
-#include "sound/2203intf.h"
-#include "sound/3526intf.h"
 #include "includes/sidepckt.h"
 
-// protection tables
-static const UINT8 sidepckt_prot_table_1[0x10]={0x05,0x03,0x02,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff};
-static const UINT8 sidepckt_prot_table_2[0x10]={0x8e,0x42,0xad,0x58,0xec,0x85,0xdd,0x4c,0xad,0x9f,0x00,0x4c,0x7e,0x42,0xa2,0xff};
-static const UINT8 sidepckt_prot_table_3[0x10]={0xbd,0x73,0x80,0xbd,0x73,0xa7,0xbd,0x73,0xe0,0x7e,0x72,0x56,0xff,0xff,0xff,0xff};
-
-static const UINT8 sidepcktj_prot_table_1[0x10]={0x05,0x03,0x00,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff};
-static const UINT8 sidepcktj_prot_table_2[0x10]={0x8e,0x42,0xb2,0x58,0xec,0x85,0xdd,0x4c,0xad,0x9f,0x00,0x4c,0x7e,0x42,0xa7,0xff};
-static const UINT8 sidepcktj_prot_table_3[0x10]={0xbd,0x71,0xc8,0xbd,0x71,0xef,0xbd,0x72,0x28,0x7e,0x70,0x9e,0xff,0xff,0xff,0xff};
+#include "cpu/m6809/m6809.h"
+#include "cpu/m6502/m6502.h"
+#include "sound/ymopn.h"
+#include "sound/ymopl.h"
+#include "screen.h"
+#include "speaker.h"
 
 
-WRITE8_MEMBER(sidepckt_state::sound_cpu_command_w)
+//**************************************************************************
+//  PROTECTION MCU
+//**************************************************************************
+
+uint8_t sidepckt_state::mcu_r()
 {
-	soundlatch_byte_w(space, offset, data);
-	m_audiocpu->set_input_line(INPUT_LINE_NMI, PULSE_LINE);
+	return m_mcu_p1;
 }
 
-READ8_MEMBER(sidepckt_state::i8751_r)
+void sidepckt_state::mcu_w(uint8_t data)
 {
-	return m_i8751_return;
+	m_mcu_p2 = data;
+	m_mcu->set_input_line(MCS51_INT0_LINE, ASSERT_LINE);
 }
 
-WRITE8_MEMBER(sidepckt_state::i8751_w)
+void sidepckt_state::mcu_p1_w(uint8_t data)
 {
-	m_maincpu->set_input_line(M6809_FIRQ_LINE, HOLD_LINE); /* i8751 triggers FIRQ on main cpu */
-
-	/* This function takes multiple parameters */
-	if (m_in_math == 1)
-	{
-		m_in_math = 2;
-		m_math_param = data;
-		m_i8751_return = m_math_param;
-	}
-	else if (m_in_math == 2)
-	{
-		m_in_math = 0;
-		m_i8751_return = (data) ? (m_math_param / data) : 0;
-	}
-	else switch (data)
-	{
-		case 1: /* ID Check */
-		case 2: /* Protection data (executable code) */
-		case 3: /* Protection data (executable code) */
-			m_current_table = data - 1;
-			m_current_ptr = 0;
-		case 6: /* Read table data */
-			m_i8751_return = m_prot_table[m_current_table][m_current_ptr];
-			m_current_ptr = (m_current_ptr + 1) & 0x0f;
-			break;
-
-		case 4: /* Divide function - multiple parameters */
-			m_in_math = 1;
-			m_i8751_return = 4;
-			break;
-
-		default:
-			break;
-	}
+	m_mcu_p1 = data;
 }
+
+uint8_t sidepckt_state::mcu_p2_r()
+{
+	return m_mcu_p2;
+}
+
+void sidepckt_state::mcu_p3_w(uint8_t data)
+{
+	// 765432--  unused
+	// ------1-  mcu int ack
+	// -------0  cpu firq
+
+	if (BIT(data, 0) == 0 && BIT(m_mcu_p3, 0) == 1)
+		m_maincpu->set_input_line(M6809_FIRQ_LINE, ASSERT_LINE);
+
+	if (BIT(data, 0) == 1 && BIT(m_mcu_p3, 0) == 0)
+		m_maincpu->set_input_line(M6809_FIRQ_LINE, CLEAR_LINE);
+
+	if (BIT(data, 1) == 0 && BIT(m_mcu_p3, 1) == 1)
+		m_mcu->set_input_line(MCS51_INT0_LINE, CLEAR_LINE);
+
+	m_mcu_p3 = data;
+}
+
 
 /******************************************************************************/
 
-static ADDRESS_MAP_START( sidepckt_map, AS_PROGRAM, 8, sidepckt_state )
-	AM_RANGE(0x0000, 0x0fff) AM_RAM
-	AM_RANGE(0x1000, 0x13ff) AM_RAM_WRITE(videoram_w) AM_SHARE("videoram")
-	AM_RANGE(0x1400, 0x17ff) AM_RAM // ???
-	AM_RANGE(0x1800, 0x1bff) AM_RAM_WRITE(colorram_w) AM_SHARE("colorram")
-	AM_RANGE(0x1c00, 0x1fff) AM_RAM // ???
-	AM_RANGE(0x2000, 0x20ff) AM_RAM AM_SHARE("spriteram")
-	AM_RANGE(0x2100, 0x24ff) AM_RAM // ???
-	AM_RANGE(0x3000, 0x3000) AM_READ_PORT("P1")
-	AM_RANGE(0x3001, 0x3001) AM_READ_PORT("P2")
-	AM_RANGE(0x3002, 0x3002) AM_READ_PORT("DSW1")
-	AM_RANGE(0x3003, 0x3003) AM_READ_PORT("DSW2")
-	AM_RANGE(0x3004, 0x3004) AM_WRITE(sound_cpu_command_w)
-	AM_RANGE(0x300c, 0x300c) AM_READNOP AM_WRITE(flipscreen_w)
-	AM_RANGE(0x3014, 0x3014) AM_READ(i8751_r)
-	AM_RANGE(0x3018, 0x3018) AM_WRITE(i8751_w)
-	AM_RANGE(0x4000, 0xffff) AM_ROM
-ADDRESS_MAP_END
+void sidepckt_state::sidepckt_map(address_map &map)
+{
+	map(0x0000, 0x0fff).ram();
+	map(0x1000, 0x13ff).mirror(0x400).ram().w(FUNC(sidepckt_state::videoram_w)).share("videoram");
+	map(0x1800, 0x1bff).mirror(0x400).ram().w(FUNC(sidepckt_state::colorram_w)).share("colorram");
+	map(0x2000, 0x20ff).ram().share("spriteram");
+	map(0x2100, 0x24ff).nopw(); // ??? (Unused spriteram? The game writes some values at boot, but never read)
+	map(0x3000, 0x3000).portr("P1");
+	map(0x3001, 0x3001).portr("P2");
+	map(0x3002, 0x3002).portr("DSW1");
+	map(0x3003, 0x3003).portr("DSW2");
+	map(0x3004, 0x3004).w(m_soundlatch, FUNC(generic_latch_8_device::write));
+	map(0x300c, 0x300c).rw(FUNC(sidepckt_state::scroll_y_r), FUNC(sidepckt_state::scroll_y_w));
+	map(0x3014, 0x3014).r(FUNC(sidepckt_state::mcu_r));
+	map(0x3018, 0x3018).w(FUNC(sidepckt_state::mcu_w));
+	map(0x4000, 0xffff).rom();
+}
 
-static ADDRESS_MAP_START( sidepcktb_map, AS_PROGRAM, 8, sidepckt_state )
-	AM_RANGE(0x3014, 0x3014) AM_READNOP
-	AM_RANGE(0x3018, 0x3018) AM_WRITENOP
-	AM_IMPORT_FROM( sidepckt_map )
-ADDRESS_MAP_END
+void sidepckt_state::sidepcktb_map(address_map &map)
+{
+	sidepckt_map(map);
+	map(0x3014, 0x3014).nopr();
+	map(0x3018, 0x3018).nopw();
+}
 
 
-static ADDRESS_MAP_START( sound_map, AS_PROGRAM, 8, sidepckt_state )
-	AM_RANGE(0x0000, 0x0fff) AM_RAM
-	AM_RANGE(0x1000, 0x1001) AM_DEVWRITE("ym1", ym2203_device, write)
-	AM_RANGE(0x2000, 0x2001) AM_DEVWRITE("ym2", ym3526_device, write)
-	AM_RANGE(0x3000, 0x3000) AM_READ(soundlatch_byte_r)
-	AM_RANGE(0x8000, 0xffff) AM_ROM
-ADDRESS_MAP_END
+void sidepckt_state::sound_map(address_map &map)
+{
+	map(0x0000, 0x0fff).ram();
+	map(0x1000, 0x1001).w("ym1", FUNC(ym2203_device::write));
+	map(0x2000, 0x2001).w("ym2", FUNC(ym3526_device::write));
+	map(0x3000, 0x3000).r(m_soundlatch, FUNC(generic_latch_8_device::read));
+	map(0x8000, 0xffff).rom();
+}
 
 
 /******************************************************************************/
@@ -348,7 +344,7 @@ static const gfx_layout spritelayout =
 	32*8    /* every char takes 8 consecutive bytes */
 };
 
-static GFXDECODE_START( sidepckt )
+static GFXDECODE_START( gfx_sidepckt )
 	GFXDECODE_ENTRY( "gfx1", 0, charlayout,   128,  4 ) /* colors 128-159 */
 	GFXDECODE_ENTRY( "gfx2", 0, spritelayout,   0, 16 ) /* colors   0-127 */
 GFXDECODE_END
@@ -356,53 +352,61 @@ GFXDECODE_END
 
 void sidepckt_state::machine_reset()
 {
-	m_i8751_return = 0;
-	m_current_ptr = 0;
-	m_current_table = 0;
-	m_in_math = 0;
-	m_math_param = 0;
+	m_scroll_y = 0;
 }
 
-static MACHINE_CONFIG_START( sidepckt, sidepckt_state )
-
+void sidepckt_state::sidepckt(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", M6809, 2000000) /* 2 MHz */
-	MCFG_CPU_PROGRAM_MAP(sidepckt_map)
-	MCFG_CPU_VBLANK_INT_DRIVER("screen", sidepckt_state, nmi_line_pulse)
+	MC6809E(config, m_maincpu, 12_MHz_XTAL/6); /* MC68B09EP, 2 MHz */
+	m_maincpu->set_addrmap(AS_PROGRAM, &sidepckt_state::sidepckt_map);
 
-	MCFG_CPU_ADD("audiocpu", M6502, 1500000) /* 1.5 MHz */
-	MCFG_CPU_PROGRAM_MAP(sound_map)
+	M6502(config, m_audiocpu, 12_MHz_XTAL/8); /* 1.5 MHz */
+	m_audiocpu->set_addrmap(AS_PROGRAM, &sidepckt_state::sound_map);
+
+	I8751(config, m_mcu, 8_MHz_XTAL); // 8.0MHz OSC on PCB
+	m_mcu->port_out_cb<1>().set(FUNC(sidepckt_state::mcu_p1_w));
+	m_mcu->port_in_cb<2>().set(FUNC(sidepckt_state::mcu_p2_r));
+	m_mcu->port_out_cb<3>().set(FUNC(sidepckt_state::mcu_p3_w));
+
+	// needs a tight sync with the mcu
+	config.set_perfect_quantum(m_maincpu);
 
 	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_REFRESH_RATE(58) /* VERIFY: May be 55 or 56 */
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(2500) /* not accurate */ )
-	MCFG_SCREEN_SIZE(32*8, 32*8)
-	MCFG_SCREEN_VISIBLE_AREA(0*8, 32*8-1, 2*8, 30*8-1)
-	MCFG_SCREEN_UPDATE_DRIVER(sidepckt_state, screen_update)
-	MCFG_SCREEN_PALETTE("palette")
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_RASTER));
+	screen.set_refresh_hz(58); /* VERIFY: May be 55 or 56 */
+	screen.set_vblank_time(ATTOSECONDS_IN_USEC(2500)); /* not accurate */
+	screen.set_size(32*8, 32*8);
+	screen.set_visarea(0*8, 32*8-1, 2*8, 30*8-1);
+	screen.set_screen_update(FUNC(sidepckt_state::screen_update));
+	screen.set_palette(m_palette);
+	screen.screen_vblank().set_inputline(m_maincpu, INPUT_LINE_NMI);
 
-	MCFG_GFXDECODE_ADD("gfxdecode", "palette", sidepckt)
-	MCFG_PALETTE_ADD("palette", 256)
-	MCFG_PALETTE_INIT_OWNER(sidepckt_state, sidepckt)
+	GFXDECODE(config, m_gfxdecode, m_palette, gfx_sidepckt);
+	PALETTE(config, m_palette, FUNC(sidepckt_state::sidepckt_palette), 256);
 
 	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_MONO("mono")
+	SPEAKER(config, "mono").front_center();
 
-	MCFG_SOUND_ADD("ym1", YM2203, 1500000)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.25)
+	GENERIC_LATCH_8(config, m_soundlatch);
+	m_soundlatch->data_pending_callback().set_inputline(m_audiocpu, INPUT_LINE_NMI);
 
-	MCFG_SOUND_ADD("ym2", YM3526, 3000000)
-	MCFG_YM3526_IRQ_HANDLER(DEVWRITELINE("audiocpu", m6502_device, irq_line))
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 1.0)
-MACHINE_CONFIG_END
+	ym2203_device &ym1(YM2203(config, "ym1", 12_MHz_XTAL/8)); /* 1.5 MHz */
+	ym1.add_route(ALL_OUTPUTS, "mono", 0.25);
 
-static MACHINE_CONFIG_DERIVED( sidepcktb, sidepckt )
+	ym3526_device &ym2(YM3526(config, "ym2", 12_MHz_XTAL/4)); /* 3 MHz */
+	ym2.irq_handler().set_inputline(m_audiocpu, M6502_IRQ_LINE);
+	ym2.add_route(ALL_OUTPUTS, "mono", 1.0);
+}
+
+void sidepckt_state::sidepcktb(machine_config &config)
+{
+	sidepckt(config);
 
 	/* basic machine hardware */
-	MCFG_CPU_MODIFY("maincpu")
-	MCFG_CPU_PROGRAM_MAP(sidepcktb_map)
-MACHINE_CONFIG_END
+	m_maincpu->set_addrmap(AS_PROGRAM, &sidepckt_state::sidepcktb_map);
+	config.device_remove("mcu");
+}
 
 
 /***************************************************************************
@@ -411,107 +415,88 @@ MACHINE_CONFIG_END
 
 ***************************************************************************/
 
-ROM_START( sidepckt )
+ROM_START( sidepckt ) // DE-0245-2
 	ROM_REGION( 0x10000, "maincpu", 0 )
-	ROM_LOAD( "dh00",         0x00000, 0x10000, CRC(251b316e) SHA1(c777d87621b8fefe0e33156be03da8aed733db9a) )
+	ROM_LOAD( "dh00-e.3c", 0x00000, 0x10000, CRC(251b316e) SHA1(c777d87621b8fefe0e33156be03da8aed733db9a) )
 
 	ROM_REGION( 0x10000, "audiocpu", 0 )
-	ROM_LOAD( "dh04.bin",     0x08000, 0x8000, CRC(d076e62e) SHA1(720ff1a6a58697b4a9c7c4f31c24a2cf8a04900a) )
+	ROM_LOAD( "dh04.3h", 0x08000, 0x8000, CRC(d076e62e) SHA1(720ff1a6a58697b4a9c7c4f31c24a2cf8a04900a) ) // is this really DH-04-E??
 
-	ROM_REGION( 0x10000, "mcu", 0 ) //i8751 MCU
-	ROM_LOAD( "i8751.mcu",     0x00000, 0x8000, NO_DUMP )
+	ROM_REGION( 0x1000, "mcu", 0 ) // i8751 MCU (BAD_DUMP because it was created from the Japanese version)
+	ROM_LOAD( "dh-e.6d", 0x0000, 0x1000, BAD_DUMP CRC(00654574) SHA1(7d775e7b7cbb548c50b9b838a525a12bf7a32f8e) )
 
 	ROM_REGION( 0x18000, "gfx1", 0 )
-	ROM_LOAD( "sp_07.bin",    0x00000, 0x8000, CRC(9d6f7969) SHA1(583852be0861a89c63ce09eb39146ec379b9e12d) ) /* characters */
-	ROM_LOAD( "sp_06.bin",    0x08000, 0x8000, CRC(580e4e43) SHA1(de152a5d4fbc52d80e3eb9af17835ecb6258d45e) )
-	ROM_LOAD( "sp_05.bin",    0x10000, 0x8000, CRC(05ab71d2) SHA1(6f06d1d1440a5fb05c01f712457d0bb167e93099) )
+	ROM_LOAD( "dh07-e.13k", 0x00000, 0x8000, CRC(9d6f7969) SHA1(583852be0861a89c63ce09eb39146ec379b9e12d) ) // characters
+	ROM_LOAD( "dh06-e.13j", 0x08000, 0x8000, CRC(580e4e43) SHA1(de152a5d4fbc52d80e3eb9af17835ecb6258d45e) )
+	ROM_LOAD( "dh05-e.13h", 0x10000, 0x8000, CRC(05ab71d2) SHA1(6f06d1d1440a5fb05c01f712457d0bb167e93099) )
 
 	ROM_REGION( 0x18000, "gfx2", 0 )
-	ROM_LOAD( "dh01.bin",     0x00000, 0x8000, CRC(a2cdfbea) SHA1(0721e538e3306d616f11008f784cf21e679f330d) ) /* sprites */
-	ROM_LOAD( "dh02.bin",     0x08000, 0x8000, CRC(eeb5c3e7) SHA1(57eda1cc29124e04fe5025a904634d8ca52c0f12) )
-	ROM_LOAD( "dh03.bin",     0x10000, 0x8000, CRC(8e18d21d) SHA1(74f0ddf1fcbed386332eba882b4136295b4f096d) )
+	ROM_LOAD( "dh01.14a", 0x00000, 0x8000, CRC(a2cdfbea) SHA1(0721e538e3306d616f11008f784cf21e679f330d) ) // sprites
+	ROM_LOAD( "dh02.15a", 0x08000, 0x8000, CRC(eeb5c3e7) SHA1(57eda1cc29124e04fe5025a904634d8ca52c0f12) )
+	ROM_LOAD( "dh03.17a", 0x10000, 0x8000, CRC(8e18d21d) SHA1(74f0ddf1fcbed386332eba882b4136295b4f096d) )
 
-	ROM_REGION( 0x0200, "proms", 0 )    /* color PROMs */
-	ROM_LOAD( "dh-09.bpr",    0x0000, 0x0100, CRC(ce049b4f) SHA1(e4918cef7b319dd40cf1722eb8bf5e79be04fd6c) )
-	ROM_LOAD( "dh-08.bpr",    0x0100, 0x0100, CRC(cdf2180f) SHA1(123215d096f88b66396d40d7a579380d0b5b2b89) )
+	ROM_REGION( 0x0200, "proms", 0 ) // color PROMs
+	ROM_LOAD( "dh-09.16l", 0x0000, 0x0100, CRC(ce049b4f) SHA1(e4918cef7b319dd40cf1722eb8bf5e79be04fd6c) ) // MMI 6309-1N BPROM
+	ROM_LOAD( "dh-08.15l", 0x0100, 0x0100, CRC(cdf2180f) SHA1(123215d096f88b66396d40d7a579380d0b5b2b89) ) // MMI 6303-1N BPROM
 ROM_END
 
-ROM_START( sidepcktj )
+ROM_START( sidepcktj ) // DE-0245-1
 	ROM_REGION( 0x10000, "maincpu", 0 )
-	ROM_LOAD( "dh00.bin",     0x00000, 0x10000, CRC(a66bc28d) SHA1(cd62ce1dce6fe42d9745eec50d11e86b076d28e1) )
+	ROM_LOAD( "dh00-1.3c", 0x00000, 0x10000, CRC(a66bc28d) SHA1(cd62ce1dce6fe42d9745eec50d11e86b076d28e1) )
 
 	ROM_REGION( 0x10000, "audiocpu", 0 )
-	ROM_LOAD( "dh04.bin",     0x08000, 0x8000, CRC(d076e62e) SHA1(720ff1a6a58697b4a9c7c4f31c24a2cf8a04900a) )
+	ROM_LOAD( "dh04_6-19.3h", 0x08000, 0x8000, CRC(053ff83a) SHA1(e6e3ce15a86172bdc6094b4999e52d1aafc0ae10) ) // handwritten 6-19 on label
 
-	ROM_REGION( 0x10000, "mcu", 0 ) //i8751 MCU
-	ROM_LOAD( "i8751.mcu",     0x00000, 0x8000, NO_DUMP )
+	ROM_REGION( 0x1000, "mcu", 0 ) // i8751 MCU
+	ROM_LOAD( "dh.6d", 0x0000, 0x1000, CRC(f7e099b6) SHA1(8e718384489a589acebc19ca361e0aa8a4c6b63b) )
 
 	ROM_REGION( 0x18000, "gfx1", 0 )
-	ROM_LOAD( "dh07.bin",     0x00000, 0x8000, CRC(7d0ce858) SHA1(3a158f218a762e6841d2611f41ace67a1afefb35) ) /* characters */
-	ROM_LOAD( "dh06.bin",     0x08000, 0x8000, CRC(b86ddf72) SHA1(7596dd1b646971d8df1bc4fd157ccf161a712d59) )
-	ROM_LOAD( "dh05.bin",     0x10000, 0x8000, CRC(df6f94f2) SHA1(605796191f37cb76d496aa459243655070bb90c0) )
+	ROM_LOAD( "dh07.13k", 0x00000, 0x8000, CRC(7d0ce858) SHA1(3a158f218a762e6841d2611f41ace67a1afefb35) ) // characters
+	ROM_LOAD( "dh06.13j", 0x08000, 0x8000, CRC(b86ddf72) SHA1(7596dd1b646971d8df1bc4fd157ccf161a712d59) )
+	ROM_LOAD( "dh05.13h", 0x10000, 0x8000, CRC(df6f94f2) SHA1(605796191f37cb76d496aa459243655070bb90c0) )
 
 	ROM_REGION( 0x18000, "gfx2", 0 )
-	ROM_LOAD( "dh01.bin",     0x00000, 0x8000, CRC(a2cdfbea) SHA1(0721e538e3306d616f11008f784cf21e679f330d) ) /* sprites */
-	ROM_LOAD( "dh02.bin",     0x08000, 0x8000, CRC(eeb5c3e7) SHA1(57eda1cc29124e04fe5025a904634d8ca52c0f12) )
-	ROM_LOAD( "dh03.bin",     0x10000, 0x8000, CRC(8e18d21d) SHA1(74f0ddf1fcbed386332eba882b4136295b4f096d) )
+	ROM_LOAD( "dh01.14a", 0x00000, 0x8000, CRC(a2cdfbea) SHA1(0721e538e3306d616f11008f784cf21e679f330d) ) // sprites
+	ROM_LOAD( "dh02.15a", 0x08000, 0x8000, CRC(eeb5c3e7) SHA1(57eda1cc29124e04fe5025a904634d8ca52c0f12) )
+	ROM_LOAD( "dh03.17a", 0x10000, 0x8000, CRC(8e18d21d) SHA1(74f0ddf1fcbed386332eba882b4136295b4f096d) )
 
-	ROM_REGION( 0x0200, "proms", 0 )    /* color PROMs */
-	ROM_LOAD( "dh-09.bpr",    0x0000, 0x0100, CRC(ce049b4f) SHA1(e4918cef7b319dd40cf1722eb8bf5e79be04fd6c) )
-	ROM_LOAD( "dh-08.bpr",    0x0100, 0x0100, CRC(cdf2180f) SHA1(123215d096f88b66396d40d7a579380d0b5b2b89) )
+	ROM_REGION( 0x0200, "proms", 0 ) // color PROMs
+	ROM_LOAD( "dh-09.16l", 0x0000, 0x0100, CRC(ce049b4f) SHA1(e4918cef7b319dd40cf1722eb8bf5e79be04fd6c) ) // MMI 6309-1N BPROM
+	ROM_LOAD( "dh-08.15l", 0x0100, 0x0100, CRC(cdf2180f) SHA1(123215d096f88b66396d40d7a579380d0b5b2b89) ) // MMI 6303-1N BPROM
 ROM_END
 
 ROM_START( sidepcktb )
 	ROM_REGION( 0x10000, "maincpu", 0 )
-	ROM_LOAD( "sp_09.bin",    0x04000, 0x4000, CRC(3c6fe54b) SHA1(4025ac48d75f171f4c979d3fcd6a2f8da18cef4f) )
-	ROM_LOAD( "sp_08.bin",    0x08000, 0x8000, CRC(347f81cd) SHA1(5ab06130f35788e51a881cc0f387649532145bd6) )
+	ROM_LOAD( "sp_09.bin", 0x04000, 0x4000, CRC(3c6fe54b) SHA1(4025ac48d75f171f4c979d3fcd6a2f8da18cef4f) )
+	ROM_LOAD( "sp_08.bin", 0x08000, 0x8000, CRC(347f81cd) SHA1(5ab06130f35788e51a881cc0f387649532145bd6) )
 
 	ROM_REGION( 0x10000, "audiocpu", 0 )
-	ROM_LOAD( "dh04.bin",     0x08000, 0x8000, CRC(d076e62e) SHA1(720ff1a6a58697b4a9c7c4f31c24a2cf8a04900a) )
+	ROM_LOAD( "dh04.3h", 0x08000, 0x8000, CRC(d076e62e) SHA1(720ff1a6a58697b4a9c7c4f31c24a2cf8a04900a) )
 
 	ROM_REGION( 0x18000, "gfx1", 0 )
-	ROM_LOAD( "sp_07.bin",    0x00000, 0x8000, CRC(9d6f7969) SHA1(583852be0861a89c63ce09eb39146ec379b9e12d) ) /* characters */
-	ROM_LOAD( "sp_06.bin",    0x08000, 0x8000, CRC(580e4e43) SHA1(de152a5d4fbc52d80e3eb9af17835ecb6258d45e) )
-	ROM_LOAD( "sp_05.bin",    0x10000, 0x8000, CRC(05ab71d2) SHA1(6f06d1d1440a5fb05c01f712457d0bb167e93099) )
+	ROM_LOAD( "dh07-e.13k", 0x00000, 0x8000, CRC(9d6f7969) SHA1(583852be0861a89c63ce09eb39146ec379b9e12d) ) // characters
+	ROM_LOAD( "dh06-e.13j", 0x08000, 0x8000, CRC(580e4e43) SHA1(de152a5d4fbc52d80e3eb9af17835ecb6258d45e) )
+	ROM_LOAD( "dh05-e.13h", 0x10000, 0x8000, CRC(05ab71d2) SHA1(6f06d1d1440a5fb05c01f712457d0bb167e93099) )
 
 	ROM_REGION( 0x18000, "gfx2", 0 )
-	ROM_LOAD( "dh01.bin",     0x00000, 0x8000, CRC(a2cdfbea) SHA1(0721e538e3306d616f11008f784cf21e679f330d) ) /* sprites */
-	ROM_LOAD( "dh02.bin",     0x08000, 0x8000, CRC(eeb5c3e7) SHA1(57eda1cc29124e04fe5025a904634d8ca52c0f12) )
-	ROM_LOAD( "dh03.bin",     0x10000, 0x8000, CRC(8e18d21d) SHA1(74f0ddf1fcbed386332eba882b4136295b4f096d) )
+	ROM_LOAD( "dh01.14a", 0x00000, 0x8000, CRC(a2cdfbea) SHA1(0721e538e3306d616f11008f784cf21e679f330d) ) // sprites
+	ROM_LOAD( "dh02.15a", 0x08000, 0x8000, CRC(eeb5c3e7) SHA1(57eda1cc29124e04fe5025a904634d8ca52c0f12) )
+	ROM_LOAD( "dh03.17a", 0x10000, 0x8000, CRC(8e18d21d) SHA1(74f0ddf1fcbed386332eba882b4136295b4f096d) )
 
-	ROM_REGION( 0x0200, "proms", 0 )    /* color PROMs */
-	ROM_LOAD( "dh-09.bpr",    0x0000, 0x0100, CRC(ce049b4f) SHA1(e4918cef7b319dd40cf1722eb8bf5e79be04fd6c) )
-	ROM_LOAD( "dh-08.bpr",    0x0100, 0x0100, CRC(cdf2180f) SHA1(123215d096f88b66396d40d7a579380d0b5b2b89) )
+	ROM_REGION( 0x0200, "proms", 0 ) // color PROMs
+	ROM_LOAD( "dh-09.16l", 0x0000, 0x0100, CRC(ce049b4f) SHA1(e4918cef7b319dd40cf1722eb8bf5e79be04fd6c) )
+	ROM_LOAD( "dh-08.15l", 0x0100, 0x0100, CRC(cdf2180f) SHA1(123215d096f88b66396d40d7a579380d0b5b2b89) )
 ROM_END
 
 
-DRIVER_INIT_MEMBER(sidepckt_state,sidepckt)
+void sidepckt_state::init_sidepckt()
 {
-	m_prot_table[0] = sidepckt_prot_table_1;
-	m_prot_table[1] = sidepckt_prot_table_2;
-	m_prot_table[2] = sidepckt_prot_table_3;
-
-	save_item(NAME(m_i8751_return));
-	save_item(NAME(m_current_ptr));
-	save_item(NAME(m_current_table));
-	save_item(NAME(m_in_math));
-	save_item(NAME(m_math_param));
-}
-
-DRIVER_INIT_MEMBER(sidepckt_state,sidepcktj)
-{
-	m_prot_table[0] = sidepcktj_prot_table_1;
-	m_prot_table[1] = sidepcktj_prot_table_2;
-	m_prot_table[2] = sidepcktj_prot_table_3;
-
-	save_item(NAME(m_i8751_return));
-	save_item(NAME(m_current_ptr));
-	save_item(NAME(m_current_table));
-	save_item(NAME(m_in_math));
-	save_item(NAME(m_math_param));
+	save_item(NAME(m_mcu_p1));
+	save_item(NAME(m_mcu_p2));
+	save_item(NAME(m_mcu_p3));
 }
 
 
-GAME( 1986, sidepckt,  0,        sidepckt,  sidepckt,  sidepckt_state, sidepckt,  ROT0, "Data East Corporation", "Side Pocket (World)", MACHINE_NO_COCKTAIL | MACHINE_SUPPORTS_SAVE )
-GAME( 1986, sidepcktj, sidepckt, sidepckt,  sidepcktj, sidepckt_state, sidepcktj, ROT0, "Data East Corporation", "Side Pocket (Japan)", MACHINE_NO_COCKTAIL | MACHINE_SUPPORTS_SAVE )
-GAME( 1986, sidepcktb, sidepckt, sidepcktb, sidepcktb, driver_device,  0,         ROT0, "bootleg", "Side Pocket (bootleg)", MACHINE_NO_COCKTAIL | MACHINE_SUPPORTS_SAVE )
+GAME( 1986, sidepckt,  0,        sidepckt,  sidepckt,  sidepckt_state, init_sidepckt, ROT0, "Data East Corporation", "Side Pocket (World)",           MACHINE_SUPPORTS_SAVE )
+GAME( 1986, sidepcktj, sidepckt, sidepckt,  sidepcktj, sidepckt_state, init_sidepckt, ROT0, "Data East Corporation", "Side Pocket (Japan, Cocktail)", MACHINE_SUPPORTS_SAVE )
+GAME( 1986, sidepcktb, sidepckt, sidepcktb, sidepcktb, sidepckt_state, empty_init,    ROT0, "bootleg",               "Side Pocket (bootleg)",         MACHINE_SUPPORTS_SAVE )

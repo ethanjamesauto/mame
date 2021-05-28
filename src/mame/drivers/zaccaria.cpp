@@ -2,7 +2,7 @@
 // copyright-holders:Nicola Salmoria
 /***************************************************************************
 
-Jack Rabbit memory map (preliminary)
+Zaccaria Z80µP hardware
 
 driver by Nicola Salmoria
 thanks to Andrea Babich for the manual.
@@ -25,10 +25,10 @@ TODO:
 
 
 Notes:
-- There is a protection device which I haven't located on the schematics. It
-  sits on bits 4-7 of the data bus, and is read from locations where only bits
-  0-3 are connected to regular devices (6400-6407 has 4-bit RAM, while 6c00-6c07
-  has a 4-bit input port).
+- The protection device at 1A on the ROM board (1B11147) is unidentified on the
+  schematics but appears to be a PAL16L8 or PAL16R4. It sits on bits 4-7 of the
+  data bus, and is read from locations where only bits 0-3 are connected to regular
+  devices (6400-6407 has 4-bit RAM, while 6c00-6c07 has a 4-bit input port).
 
 - The 6802 driving the TMS5220 has a push button connected to the NMI line. On
   Zaccaria pinballs, when pressed, this causes the speech 6802 and the slave
@@ -40,160 +40,58 @@ Notes:
 ***************************************************************************/
 
 #include "emu.h"
-#include "cpu/z80/z80.h"
-#include "cpu/m6800/m6800.h"
-#include "machine/i8255.h"
-#include "sound/dac.h"
 #include "includes/zaccaria.h"
+
+#include "cpu/z80/z80.h"
+#include "machine/74259.h"
+#include "machine/i8255.h"
+#include "machine/watchdog.h"
+#include "screen.h"
+#include "speaker.h"
 
 
 void zaccaria_state::machine_start()
 {
 	save_item(NAME(m_dsw_sel));
-	save_item(NAME(m_active_8910));
-	save_item(NAME(m_port0a));
-	save_item(NAME(m_acs));
-	save_item(NAME(m_last_port0b));
-	save_item(NAME(m_toggle));
 	save_item(NAME(m_nmi_mask));
 }
 
 void zaccaria_state::machine_reset()
 {
 	m_dsw_sel = 0;
-	m_active_8910 = 0;
-	m_port0a = 0;
-	m_acs = 0;
-	m_last_port0b = 0;
-	m_toggle = 0;
-	m_nmi_mask = 0;
 }
 
-WRITE8_MEMBER(zaccaria_state::dsw_sel_w)
+void zaccaria_state::dsw_sel_w(uint8_t data)
 {
 	switch (data & 0xf0)
 	{
-		case 0xe0:
-			m_dsw_sel = 0;
-			break;
+	case 0xe0:
+		m_dsw_sel = 0;
+		break;
 
-		case 0xd0:
-			m_dsw_sel = 1;
-			break;
+	case 0xd0:
+		m_dsw_sel = 1;
+		break;
 
-		case 0xb0:
-			m_dsw_sel = 2;
-			break;
+	case 0xb0:
+		m_dsw_sel = 2;
+		break;
 
-		default:
-			logerror("%s: portsel = %02x\n", machine().describe_context(), data);
-			break;
+	default:
+		logerror("%s: portsel = %02x\n", machine().describe_context(), data);
+		break;
 	}
 }
 
-READ8_MEMBER(zaccaria_state::dsw_r)
+uint8_t zaccaria_state::dsw_r()
 {
 	return m_dsw_port[m_dsw_sel]->read();
 }
 
 
-WRITE8_MEMBER(zaccaria_state::ay8910_port0a_w)
-{
-	/* bits 0-2 go to a 74LS156 with open collector outputs
-	 * one out of 8 Resitors is than used to form a resistor
-	 * divider with Analog input 5 (tromba)
-	 */
-
-	// bits 3-4 control the analog drum emulation on 8910 #0 ch. A
-
-	static const int table[8] = { 8200, 5600, 3300, 1500, 820, 390, 150, 47 };
-	int b0, b1, b2, ba, v;
-	b0 = data & 0x01;
-	b1 = (data & 0x02) >> 1;
-	b2 = (data & 0x04) >> 2;
-	ba = (b0<<2) | (b1<<1) | b2;
-	/* 150 below to scale to volume 100 */
-	v = (150 * table[ba]) / (4700 + table[ba]);
-	//printf("dac1w %02d %04d\n", ba, v);
-	m_ay2->set_volume(1, v);
-}
-
-READ8_MEMBER(zaccaria_state::port0a_r)
-{
-	return (m_active_8910 == 0) ? m_ay1->data_r(space, 0) : m_ay2->data_r(space, 0);
-}
-
-WRITE8_MEMBER(zaccaria_state::port0a_w)
-{
-	m_port0a = data;
-}
-
-WRITE8_MEMBER(zaccaria_state::port0b_w)
-{
-	/* bit 1 goes to 8910 #0 BDIR pin  */
-	if ((m_last_port0b & 0x02) == 0x02 && (data & 0x02) == 0x00)
-	{
-		/* bit 0 goes to the 8910 #0 BC1 pin */
-		m_ay1->data_address_w(space, m_last_port0b, m_port0a);
-	}
-	else if ((m_last_port0b & 0x02) == 0x00 && (data & 0x02) == 0x02)
-	{
-		/* bit 0 goes to the 8910 #0 BC1 pin */
-		if (m_last_port0b & 0x01)
-			m_active_8910 = 0;
-	}
-	/* bit 3 goes to 8910 #1 BDIR pin  */
-	if ((m_last_port0b & 0x08) == 0x08 && (data & 0x08) == 0x00)
-	{
-		/* bit 2 goes to the 8910 #1 BC1 pin */
-		m_ay2->data_address_w(space, m_last_port0b >> 2, m_port0a);
-	}
-	else if ((m_last_port0b & 0x08) == 0x00 && (data & 0x08) == 0x08)
-	{
-		/* bit 2 goes to the 8910 #1 BC1 pin */
-		if (m_last_port0b & 0x04)
-			m_active_8910 = 1;
-	}
-
-	m_last_port0b = data;
-}
-
-INTERRUPT_GEN_MEMBER(zaccaria_state::cb1_toggle)
-{
-	m_pia0->cb1_w(m_toggle & 1);
-	m_toggle ^= 1;
-}
-
-WRITE8_MEMBER(zaccaria_state::port1b_w)
-{
-	// bit 0 = /RS
-	m_tms->rsq_w((data >> 0) & 0x01);
-	// bit 1 = /WS
-	m_tms->wsq_w((data >> 1) & 0x01);
-
-	// bit 3 = "ACS" (goes, inverted, to input port 6 bit 3)
-	m_acs = ~data & 0x08;
-
-	// bit 4 = led (for testing?)
-	set_led_status(machine(), 0,~data & 0x10);
-}
-
-
-WRITE8_MEMBER(zaccaria_state::sound_command_w)
-{
-	soundlatch_byte_w(space, 0, data);
-	m_audio2->set_input_line(0, (data & 0x80) ? CLEAR_LINE : ASSERT_LINE);
-}
-
-WRITE8_MEMBER(zaccaria_state::sound1_command_w)
-{
-	m_pia0->ca1_w(data & 0x80);
-	soundlatch2_byte_w(space, 0, data);
-}
-
 GAME_EXTERN(monymony);
 
-READ8_MEMBER(zaccaria_state::prot1_r)
+uint8_t zaccaria_state::prot1_r(offs_t offset)
 {
 	switch (offset)
 	{
@@ -213,7 +111,7 @@ READ8_MEMBER(zaccaria_state::prot1_r)
 	}
 }
 
-READ8_MEMBER(zaccaria_state::prot2_r)
+uint8_t zaccaria_state::prot2_r(offs_t offset)
 {
 	switch (offset)
 	{
@@ -235,102 +133,34 @@ READ8_MEMBER(zaccaria_state::prot2_r)
 }
 
 
-WRITE8_MEMBER(zaccaria_state::coin_w)
+WRITE_LINE_MEMBER(zaccaria_state::coin_w)
 {
-	coin_counter_w(machine(), 0,data & 1);
+	machine().bookkeeping().coin_counter_w(0, state);
 }
 
-WRITE8_MEMBER(zaccaria_state::nmi_mask_w)
+WRITE_LINE_MEMBER(zaccaria_state::nmi_mask_w)
 {
-	m_nmi_mask = data & 1;
+	m_nmi_mask = state;
+	if (!m_nmi_mask)
+		m_maincpu->set_input_line(INPUT_LINE_NMI, CLEAR_LINE);
 }
 
-static ADDRESS_MAP_START( main_map, AS_PROGRAM, 8, zaccaria_state )
-	AM_RANGE(0x0000, 0x5fff) AM_ROM
-	AM_RANGE(0x6000, 0x63ff) AM_READONLY
-	AM_RANGE(0x6400, 0x6407) AM_READ(prot1_r)
-	AM_RANGE(0x6000, 0x67ff) AM_WRITE(videoram_w) AM_SHARE("videoram") /* 6400-67ff is 4 bits wide */
-	AM_RANGE(0x6800, 0x683f) AM_WRITE(attributes_w) AM_SHARE("attributesram")
-	AM_RANGE(0x6840, 0x685f) AM_RAM AM_SHARE("spriteram")
-	AM_RANGE(0x6881, 0x68c0) AM_RAM AM_SHARE("spriteram2")
-	AM_RANGE(0x6c00, 0x6c00) AM_WRITE(flip_screen_x_w)
-	AM_RANGE(0x6c01, 0x6c01) AM_WRITE(flip_screen_y_w)
-	AM_RANGE(0x6c02, 0x6c02) AM_WRITENOP    /* sound reset */
-	AM_RANGE(0x6c06, 0x6c06) AM_WRITE(coin_w)
-	AM_RANGE(0x6c07, 0x6c07) AM_WRITE(nmi_mask_w)
-	AM_RANGE(0x6c00, 0x6c07) AM_READ(prot2_r)
-	AM_RANGE(0x6e00, 0x6e00) AM_READWRITE(dsw_r, sound_command_w)
-	AM_RANGE(0x7000, 0x77ff) AM_RAM
-	AM_RANGE(0x7800, 0x7803) AM_DEVREADWRITE("ppi8255", i8255_device, read, write)
-	AM_RANGE(0x7c00, 0x7c00) AM_READ(watchdog_reset_r)
-	AM_RANGE(0x8000, 0xdfff) AM_ROM
-ADDRESS_MAP_END
-
-/* slave sound cpu, produces music and sound effects */
-/* mapping:
-   A15 A14 A13 A12 A11 A10 A09 A08 A07 A06 A05 A04 A03 A02 A01 A00
-     0   0   0   0   0   0   0   0   0   *   *   *   *   *   *   *  RW 6802 internal ram
-     0   0   0   x   x   x   x   x   x   x   x   x   x   x   x   x  Open bus (for area that doesn't overlap ram)
-     0   0   1   x   x   x   x   x   x   x   x   x   x   x   x   x  Open bus
-     0   1   0   x   x   x   x   x   x   x   x   x   0   0   x   x  Open bus
-     0   1   0   x   x   x   x   x   x   x   x   x   0   1   x   x  Open bus
-     0   1   0   x   x   x   x   x   x   x   x   x   1   0   x   x  Open bus
-     0   1   0   x   x   x   x   x   x   x   x   x   1   1   *   *  RW 6821 PIA @ 4I
-     0   1   1   x   x   x   x   x   x   x   x   x   x   x   x   x  Open bus
-     1   0   %   %   *   *   *   *   *   *   *   *   *   *   *   *  R /CS4A: Enable Rom 13
-     1   1   %   %   *   *   *   *   *   *   *   *   *   *   *   *  R /CS5A: Enable Rom 9
-     note that the % bits go to pins 2 (6802 A12) and 26 (6802 A13) of the roms
-     monymony and jackrabt both use 2764 roms, which use pin 2 as A12 and pin 26 as N/C don't care
-     hence for actual chips used, the mem map is:
-     1   0   x   *   *   *   *   *   *   *   *   *   *   *   *   *  R /CS4A: Enable Rom 13
-     1   1   x   *   *   *   *   *   *   *   *   *   *   *   *   *  R /CS5A: Enable Rom 9
-
-     6821 PIA: CA1 comes from the master sound cpu's latch bit 7 (which is also connected to the AY chip at 4G's IOB1); CB1 comes from a periodic counter clocked by the 6802's clock, divided by 4096. CA2 and CB2 are disconnected. PA0-7 connect to the data busses of the AY-3-8910 chips; PB0 and PB1 connect to the BC1 and BDIR pins of the AY chip at 4G; PB2 and PB3 connect to the BC1 and BDIR pins of the AY chip at 4H.
-*/
-static ADDRESS_MAP_START( sound_map_1, AS_PROGRAM, 8, zaccaria_state )
-	AM_RANGE(0x0000, 0x007f) AM_RAM
-	AM_RANGE(0x500c, 0x500f) AM_DEVREADWRITE("pia0", pia6821_device, read, write) AM_MIRROR(0x1ff0)
-	AM_RANGE(0x8000, 0x9fff) AM_ROM AM_MIRROR(0x2000) // rom 13
-	AM_RANGE(0xc000, 0xdfff) AM_ROM AM_MIRROR(0x2000) // rom 9
-ADDRESS_MAP_END
-
-/* master sound cpu, controls speech directly */
-/* mapping:
-   A15 A14 A13 A12 A11 A10 A09 A08 A07 A06 A05 A04 A03 A02 A01 A00
-     0   0   0   0   0   0   0   0   0   *   *   *   *   *   *   *  RW 6802 internal ram
-**** x   0   0   0   x   x   x   x   1   x   x   0   x   x   *   *  Open bus (test mode writes as if there was another PIA here)
-     x   0   0   0   x   x   x   x   1   x   x   1   x   x   *   *  RW 6821 PIA @ 1I
-     x   0   0   1   0   0   x   x   x   x   x   x   x   x   x   x  W  MC1408 DAC
-     x   x   0   1   0   1   x   x   x   x   x   x   x   x   x   x  W  Command to slave sound1 cpu
-     x   x   0   1   1   0   x   x   x   x   x   x   x   x   x   x  R  Command read latch from z80
-     x   x   0   1   1   1   x   x   x   x   x   x   x   x   x   x  Open bus
-     %   %   1   0   *   *   *   *   *   *   *   *   *   *   *   *  R /CS1A: Enable Rom 8
-     %   %   1   1   *   *   *   *   *   *   *   *   *   *   *   *  R /CS0A: Enable Rom 7
-     note that the % bits go to pins 2 (6802 A14) and 26 (6802 A15) of the roms
-     monymony and jackrabt both use 2764 roms, which use pin 2 as A12 and pin 26 as N/C don't care
-     hence for actual chips used, the mem map is:
-     x   *   1   0   *   *   *   *   *   *   *   *   *   *   *   *  R /CS1A: Enable Rom 8
-     x   *   1   1   *   *   *   *   *   *   *   *   *   *   *   *  R /CS0A: Enable Rom 7
-
-     6821 PIA: PA0-7, CA2 and CB1 connect to the TMS5200; CA1 and CB2 are disconnected, though the test mode assumes there's something connected to CB2 (possibly another LED like the one connected to PB4); PB3 connects to 'ACS' which goes to the z80.
-*/
-static ADDRESS_MAP_START( sound_map_2, AS_PROGRAM, 8, zaccaria_state )
-	AM_RANGE(0x0000, 0x007f) AM_RAM /* 6802 internal ram */
-	AM_RANGE(0x0090, 0x0093) AM_DEVREADWRITE("pia1", pia6821_device, read, write) AM_MIRROR(0x8F6C)
-	AM_RANGE(0x1000, 0x1000) AM_DEVWRITE("mc1408", dac_device, write_unsigned8) AM_MIRROR(0x83FF) /* MC1408 */
-	AM_RANGE(0x1400, 0x1400) AM_WRITE(sound1_command_w) AM_MIRROR(0xC3FF)
-	AM_RANGE(0x1800, 0x1800) AM_READ(soundlatch_byte_r) AM_MIRROR(0xC3FF)
-	AM_RANGE(0x2000, 0x2fff) AM_ROM AM_MIRROR(0x8000) // rom 8 with A12 low
-	AM_RANGE(0x3000, 0x3fff) AM_ROM AM_MIRROR(0x8000) // rom 7 with A12 low
-	AM_RANGE(0x6000, 0x6fff) AM_ROM AM_MIRROR(0x8000) // rom 8 with A12 high
-	AM_RANGE(0x7000, 0x7fff) AM_ROM AM_MIRROR(0x8000) // rom 7 with A12 high
-ADDRESS_MAP_END
-
-
-CUSTOM_INPUT_MEMBER(zaccaria_state::acs_r)
+void zaccaria_state::main_map(address_map &map)
 {
-	return (m_acs & 0x08) ? 1 : 0;
+	map(0x0000, 0x5fff).rom();
+	map(0x6000, 0x67ff).ram().w(FUNC(zaccaria_state::videoram_w)).share("videoram"); /* 6400-67ff is 4 bits wide */
+	map(0x6400, 0x6407).r(FUNC(zaccaria_state::prot1_r));
+	map(0x6800, 0x683f).w(FUNC(zaccaria_state::attributes_w)).share("attributesram");
+	map(0x6840, 0x685f).ram().share("spriteram");
+	map(0x6881, 0x68c0).ram().share("spriteram2");
+	map(0x6c00, 0x6c07).mirror(0x81f8).r(FUNC(zaccaria_state::prot2_r)).w("mainlatch", FUNC(ls259_device::write_d0));
+	map(0x6e00, 0x6e00).mirror(0x81f8).r(FUNC(zaccaria_state::dsw_r)).w(m_audiopcb, FUNC(zac1b11142_audio_device::hs_w));
+	map(0x7000, 0x77ff).ram();
+	map(0x7800, 0x7803).rw("ppi8255", FUNC(i8255_device::read), FUNC(i8255_device::write));
+	map(0x7c00, 0x7c00).r("watchdog", FUNC(watchdog_timer_device::reset_r));
+	map(0x8000, 0xdfff).rom();
 }
+
 
 static INPUT_PORTS_START( monymony )
 	PORT_START("DSW.0")
@@ -437,7 +267,7 @@ static INPUT_PORTS_START( monymony )
 	PORT_BIT( 0x01, IP_ACTIVE_LOW, IPT_COIN1 )
 	PORT_BIT( 0x02, IP_ACTIVE_LOW, IPT_COIN2 )
 	PORT_BIT( 0x04, IP_ACTIVE_LOW, IPT_COIN3 )
-	PORT_BIT( 0x08, IP_ACTIVE_HIGH, IPT_SPECIAL ) PORT_CUSTOM_MEMBER(DEVICE_SELF, zaccaria_state,acs_r, NULL)   /* "ACS" - from pin 13 of a PIA on the sound board */
+	PORT_BIT( 0x08, IP_ACTIVE_HIGH, IPT_CUSTOM ) PORT_READ_LINE_DEVICE_MEMBER("audiopcb", zac1b11142_audio_device, acs_r)
 	/* other bits come from a protection device */
 INPUT_PORTS_END
 
@@ -487,89 +317,59 @@ static const gfx_layout spritelayout =
 	32*8
 };
 
-static GFXDECODE_START( zaccaria )
+static GFXDECODE_START( gfx_zaccaria )
 	GFXDECODE_ENTRY( "gfx1", 0, gfx_8x8x3_planar, 0, 32 )
 	GFXDECODE_ENTRY( "gfx1", 0, spritelayout, 32*8, 32 )
 GFXDECODE_END
 
 
-INTERRUPT_GEN_MEMBER(zaccaria_state::vblank_irq)
+WRITE_LINE_MEMBER(zaccaria_state::vblank_irq)
 {
-	if(m_nmi_mask)
-		device.execute().set_input_line(INPUT_LINE_NMI, PULSE_LINE);
+	if (state && m_nmi_mask)
+		m_maincpu->set_input_line(INPUT_LINE_NMI, ASSERT_LINE);
 }
 
 
-static MACHINE_CONFIG_START( zaccaria, zaccaria_state )
-
+void zaccaria_state::zaccaria(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", Z80,XTAL_18_432MHz/6)   /* verified on pcb */
-	MCFG_CPU_PROGRAM_MAP(main_map)
-	MCFG_CPU_VBLANK_INT_DRIVER("screen", zaccaria_state,  vblank_irq)
-//  MCFG_QUANTUM_TIME(attotime::from_hz(1000000))
+	Z80(config, m_maincpu, XTAL(18'432'000)/6);   /* verified on pcb */
+	m_maincpu->set_addrmap(AS_PROGRAM, &zaccaria_state::main_map);
 
-	MCFG_CPU_ADD("audiocpu", M6802,XTAL_3_579545MHz) /* verified on pcb */
-	MCFG_CPU_PROGRAM_MAP(sound_map_1)
-	MCFG_CPU_PERIODIC_INT_DRIVER(zaccaria_state, cb1_toggle, (double)XTAL_3_579545MHz/4096)
-//  MCFG_QUANTUM_TIME(attotime::from_hz(1000000))
+//  config.set_maximum_quantum(attotime::from_hz(1000000));
 
-	MCFG_CPU_ADD("audio2", M6802,XTAL_3_579545MHz) /* verified on pcb */
-	MCFG_CPU_PROGRAM_MAP(sound_map_2)
-//  MCFG_QUANTUM_TIME(attotime::from_hz(1000000))
+	WATCHDOG_TIMER(config, "watchdog");
 
-	MCFG_DEVICE_ADD("ppi8255", I8255A, 0)
-	MCFG_I8255_IN_PORTA_CB(IOPORT("P1"))
-	MCFG_I8255_IN_PORTB_CB(IOPORT("P2"))
-	MCFG_I8255_IN_PORTC_CB(IOPORT("SYSTEM"))
-	MCFG_I8255_OUT_PORTC_CB(WRITE8(zaccaria_state, dsw_sel_w))
+	ls259_device &mainlatch(LS259(config, "mainlatch")); // 3G on 1B1141 I/O (Z80) board
+	mainlatch.q_out_cb<0>().set(FUNC(zaccaria_state::flip_screen_x_w)); // VCMA
+	mainlatch.q_out_cb<1>().set(FUNC(zaccaria_state::flip_screen_y_w)); // HCMA
+	mainlatch.q_out_cb<2>().set("audiopcb", FUNC(zac1b11142_audio_device::ressound_w)); // RESSOUND
+	mainlatch.q_out_cb<6>().set(FUNC(zaccaria_state::coin_w)); // COUNT
+	mainlatch.q_out_cb<7>().set(FUNC(zaccaria_state::nmi_mask_w)); // INTST
 
-	MCFG_DEVICE_ADD( "pia0", PIA6821, 0)
-	MCFG_PIA_READPA_HANDLER(READ8(zaccaria_state, port0a_r))
-	MCFG_PIA_WRITEPA_HANDLER(WRITE8(zaccaria_state, port0a_w))
-	MCFG_PIA_WRITEPB_HANDLER(WRITE8(zaccaria_state, port0b_w))
-	MCFG_PIA_IRQA_HANDLER(DEVWRITELINE("audiocpu", m6802_cpu_device, nmi_line))
-	MCFG_PIA_IRQB_HANDLER(DEVWRITELINE("audiocpu", m6802_cpu_device, irq_line))
-
-	MCFG_DEVICE_ADD( "pia1", PIA6821, 0)
-	MCFG_PIA_READPA_HANDLER(DEVREAD8("tms", tms5220_device, status_r))
-	MCFG_PIA_WRITEPA_HANDLER(DEVWRITE8("tms", tms5220_device, data_w))
-	MCFG_PIA_WRITEPB_HANDLER(WRITE8(zaccaria_state,port1b_w))
+	i8255_device &ppi(I8255A(config, "ppi8255"));
+	ppi.in_pa_callback().set_ioport("P1");
+	ppi.in_pb_callback().set_ioport("P2");
+	ppi.in_pc_callback().set_ioport("SYSTEM");
+	ppi.out_pc_callback().set(FUNC(zaccaria_state::dsw_sel_w));
 
 	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_REFRESH_RATE(60.57) /* verified on pcb */
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(0))
-	MCFG_SCREEN_SIZE(32*8, 32*8)
-	MCFG_SCREEN_VISIBLE_AREA(0*8, 32*8-1, 2*8, 30*8-1)
-	MCFG_SCREEN_UPDATE_DRIVER(zaccaria_state, screen_update)
-	MCFG_SCREEN_PALETTE("palette")
+	screen_device &screen(SCREEN(config, "screen", SCREEN_TYPE_RASTER));
+	screen.set_refresh_hz(60.57); /* verified on pcb */
+	screen.set_vblank_time(ATTOSECONDS_IN_USEC(0));
+	screen.set_size(32*8, 32*8);
+	screen.set_visarea(0*8, 32*8-1, 2*8, 30*8-1);
+	screen.set_screen_update(FUNC(zaccaria_state::screen_update));
+	screen.set_palette(m_palette);
+	screen.screen_vblank().set(FUNC(zaccaria_state::vblank_irq));
 
-	MCFG_GFXDECODE_ADD("gfxdecode", "palette", zaccaria)
-	MCFG_PALETTE_ADD("palette", 32*8+32*8)
-	MCFG_PALETTE_INDIRECT_ENTRIES(512)
-	MCFG_PALETTE_INIT_OWNER(zaccaria_state, zaccaria)
+	GFXDECODE(config, m_gfxdecode, m_palette, gfx_zaccaria);
+	PALETTE(config, m_palette, FUNC(zaccaria_state::zaccaria_palette), 32*8 + 32*8, 512);
 
 	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_MONO("mono")
-
-	MCFG_SOUND_ADD("ay1", AY8910, XTAL_3_579545MHz/2) /* verified on pcb */
-	MCFG_AY8910_PORT_B_READ_CB(READ8(driver_device, soundlatch2_byte_r))
-	MCFG_AY8910_PORT_A_WRITE_CB(WRITE8(zaccaria_state, ay8910_port0a_w))
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.15)
-
-	MCFG_SOUND_ADD("ay2", AY8910, XTAL_3_579545MHz/2) /* verified on pcb */
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.15)
-
-	MCFG_DAC_ADD("mc1408")
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.80)
-
-	/* There is no xtal, the clock is obtained from a RC oscillator as shown in the TMS5220 datasheet (R=100kOhm C=22pF) */
-	/* 162kHz measured on pin 3 20 minutesa fter power on. Clock would then be 162*4=648kHz. */
-	MCFG_SOUND_ADD("tms", TMS5200, 649200) /* ROMCLK pin measured at 162.3Khz, OSC is exactly *4 of that) */
-	MCFG_TMS52XX_IRQ_HANDLER(DEVWRITELINE("pia1", pia6821_device, cb1_w))
-	MCFG_TMS52XX_READYQ_HANDLER(DEVWRITELINE("pia1", pia6821_device, ca2_w))
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.80)
-MACHINE_CONFIG_END
+	SPEAKER(config, "speaker").front_center();
+	ZACCARIA_1B11142(config, "audiopcb").add_route(ALL_OUTPUTS, "speaker", 1.0);
+}
 
 
 
@@ -594,11 +394,46 @@ ROM_START( monymony )
 	ROM_LOAD( "cpu6.2c",           0x5000, 0x1000, CRC(31da62b1) SHA1(486f07087244f8537510afacb64ddd59eb512a4d) )
 	ROM_CONTINUE(             0xd000, 0x1000 )
 
-	ROM_REGION( 0x10000, "audiocpu", 0 ) /* 64k for first 6802 */
+	ROM_REGION( 0x10000, "audiopcb:melodycpu", 0 ) /* 64k for first 6802 */
 	ROM_LOAD( "snd13.2g",           0x8000, 0x2000, CRC(78b01b98) SHA1(2aabed56cdae9463deb513c0c5021f6c8dfd271e) )
 	ROM_LOAD( "snd9.1i",           0xc000, 0x2000, CRC(94e3858b) SHA1(04961f67b95798b530bd83355dec612389f22255) )
 
-	ROM_REGION( 0x10000, "audio2", 0 ) /* 64k for second 6802 */
+	ROM_REGION( 0x10000, "audiopcb:audiocpu", 0 ) /* 64k for second 6802 */
+	ROM_LOAD( "snd8.1h",           0x2000, 0x1000, CRC(aad76193) SHA1(e08fc184efced392ee902c4cc9daaaf3310cdfe2) )
+	ROM_CONTINUE(             0x6000, 0x1000 )
+	ROM_LOAD( "snd7.1g",           0x3000, 0x1000, CRC(1e8ffe3e) SHA1(858ee7abe88d5801237e519cae2b50ae4bf33a58) )
+	ROM_CONTINUE(             0x7000, 0x1000 )
+
+	ROM_REGION( 0x6000, "gfx1", 0 )
+	ROM_LOAD( "bg1.2d",           0x0000, 0x2000, CRC(82ab4d1a) SHA1(5aaf42a508df236f2e7c844d377132d73053907b) )
+	ROM_LOAD( "bg2.1f",           0x2000, 0x2000, CRC(40d4e4d1) SHA1(79cbade30f1c9269e70ddb9c4332cfe1e8dc50a9) )
+	ROM_LOAD( "bg3.1e",           0x4000, 0x2000, CRC(36980455) SHA1(4140b0cd4137c8f209124b12d9c0eb3b04f91991) )
+
+	ROM_REGION( 0x0400, "proms", 0 )
+	ROM_LOAD( "9g",  0x0000, 0x0200, CRC(fc9a0f21) SHA1(2a93d684645ee1b70315386127223151582ab370) )
+	ROM_LOAD( "9f",  0x0200, 0x0200, CRC(93106704) SHA1(d3b8281c87d253a2ed40ff400438e879ca40c2b7) )
+ROM_END
+
+ROM_START( monymony2 )
+	ROM_REGION( 0x10000, "maincpu", 0 )
+	ROM_LOAD( "cpu1.1a",           0x0000, 0x1000, CRC(907225b2) SHA1(88955d21deee8364e391413c8e59361ca5f7e534) )
+	ROM_CONTINUE(             0x8000, 0x1000 )
+	ROM_LOAD( "cpu2.1b",           0x1000, 0x1000, CRC(87372545) SHA1(04618d007a93b3f6706f56b10bdf39727d7d748d) )
+	ROM_CONTINUE(             0x9000, 0x1000 )
+	ROM_LOAD( "cpu3.1c",           0x2000, 0x1000, CRC(3c874c16) SHA1(5607475638c3c313a8150aaa0e3b653226c2442a) )
+	ROM_CONTINUE(             0xa000, 0x1000 )
+	ROM_LOAD( "cpu4.1d",           0x3000, 0x1000, CRC(5fdec451) SHA1(0f955c907e0a61a725a951018fdf5cc321139863) )
+	ROM_CONTINUE(             0xb000, 0x1000 )
+	ROM_LOAD( "cpu5.2a",           0x4000, 0x1000, CRC(af830e3c) SHA1(bed57c341ae3500f147efe31bcf01f81466ec1c0) )
+	ROM_CONTINUE(             0xc000, 0x1000 )
+	ROM_LOAD( "cpu6.2c",           0x5000, 0x1000, CRC(31da62b1) SHA1(486f07087244f8537510afacb64ddd59eb512a4d) )
+	ROM_CONTINUE(             0xd000, 0x1000 )
+
+	ROM_REGION( 0x10000, "audiopcb:melodycpu", 0 ) /* 64k for first 6802 */
+	ROM_LOAD( "snd13.2g",           0x8000, 0x2000, CRC(78b01b98) SHA1(2aabed56cdae9463deb513c0c5021f6c8dfd271e) )
+	ROM_LOAD( "snd9.1i",           0xc000, 0x2000, CRC(94e3858b) SHA1(04961f67b95798b530bd83355dec612389f22255) )
+
+	ROM_REGION( 0x10000, "audiopcb:audiocpu", 0 ) /* 64k for second 6802 */
 	ROM_LOAD( "snd8.1h",           0x2000, 0x1000, CRC(aad76193) SHA1(e08fc184efced392ee902c4cc9daaaf3310cdfe2) )
 	ROM_CONTINUE(             0x6000, 0x1000 )
 	ROM_LOAD( "snd7.1g",           0x3000, 0x1000, CRC(1e8ffe3e) SHA1(858ee7abe88d5801237e519cae2b50ae4bf33a58) )
@@ -629,11 +464,11 @@ ROM_START( jackrabt )
 	ROM_LOAD( "cpu-01.5h",    0xc000, 0x1000, CRC(785e1a01) SHA1(a748d300be9455cad4f912e01c2279bb8465edfe) )
 	ROM_LOAD( "cpu-01.6h",    0xd000, 0x1000, CRC(dd5979cf) SHA1(e9afe7002b2258a1c3132bdd951c6e20d473fb6a) )
 
-	ROM_REGION( 0x10000, "audiocpu", 0 ) /* 64k for first 6802 */
+	ROM_REGION( 0x10000, "audiopcb:melodycpu", 0 ) /* 64k for first 6802 */
 	ROM_LOAD( "13snd.2g",     0x8000, 0x2000, CRC(fc05654e) SHA1(ed9c66672fe89c41e320e1d27b53f5efa92dce9c) )
 	ROM_LOAD( "9snd.1i",      0xc000, 0x2000, CRC(3dab977f) SHA1(3e79c06d2e70b050f01b7ac58be5127ba87904b0) )
 
-	ROM_REGION( 0x10000, "audio2", 0 ) /* 64k for second 6802 */
+	ROM_REGION( 0x10000, "audiopcb:audiocpu", 0 ) /* 64k for second 6802 */
 	ROM_LOAD( "8snd.1h",      0x2000, 0x1000, CRC(f4507111) SHA1(0513f0831b94aeda84aa4f3b4a7c60dfc5113b2d) )
 	ROM_CONTINUE(             0x6000, 0x1000 )
 	ROM_LOAD( "7snd.1g",      0x3000, 0x1000, CRC(c722eff8) SHA1(d8d1c091ab80ea2d6616e4dc030adc9905c0a496) )
@@ -668,11 +503,11 @@ ROM_START( jackrabt2 )
 	ROM_LOAD( "6cpu2.2c",     0x5000, 0x1000, CRC(404496eb) SHA1(44381e27e540fe9d8cacab4c3b1fe9a4f20d26a8) )
 	ROM_CONTINUE(             0xd000, 0x1000 )
 
-	ROM_REGION( 0x10000, "audiocpu", 0 ) /* 64k for first 6802 */
+	ROM_REGION( 0x10000, "audiopcb:melodycpu", 0 ) /* 64k for first 6802 */
 	ROM_LOAD( "13snd.2g",     0x8000, 0x2000, CRC(fc05654e) SHA1(ed9c66672fe89c41e320e1d27b53f5efa92dce9c) )
 	ROM_LOAD( "9snd.1i",      0xc000, 0x2000, CRC(3dab977f) SHA1(3e79c06d2e70b050f01b7ac58be5127ba87904b0) )
 
-	ROM_REGION( 0x10000, "audio2", 0 ) /* 64k for second 6802 */
+	ROM_REGION( 0x10000, "audiopcb:audiocpu", 0 ) /* 64k for second 6802 */
 	ROM_LOAD( "8snd.1h",      0x2000, 0x1000, CRC(f4507111) SHA1(0513f0831b94aeda84aa4f3b4a7c60dfc5113b2d) )
 	ROM_CONTINUE(             0x6000, 0x1000 )
 	ROM_LOAD( "7snd.1g",      0x3000, 0x1000, CRC(c722eff8) SHA1(d8d1c091ab80ea2d6616e4dc030adc9905c0a496) )
@@ -709,11 +544,11 @@ ROM_START( jackrabts )
 	ROM_LOAD( "6cpu.2c",      0x5000, 0x1000, CRC(f53d6356) SHA1(9b167edca59cf81a2468368a372bab132f15e2ea) )
 	ROM_CONTINUE(             0xd000, 0x1000 )
 
-	ROM_REGION( 0x10000, "audiocpu", 0 ) /* 64k for first 6802 */
+	ROM_REGION( 0x10000, "audiopcb:melodycpu", 0 ) /* 64k for first 6802 */
 	ROM_LOAD( "13snd.2g",     0x8000, 0x2000, CRC(fc05654e) SHA1(ed9c66672fe89c41e320e1d27b53f5efa92dce9c) )
 	ROM_LOAD( "9snd.1i",      0xc000, 0x2000, CRC(3dab977f) SHA1(3e79c06d2e70b050f01b7ac58be5127ba87904b0) )
 
-	ROM_REGION( 0x10000, "audio2", 0 ) /* 64k for second 6802 */
+	ROM_REGION( 0x10000, "audiopcb:audiocpu", 0 ) /* 64k for second 6802 */
 	ROM_LOAD( "8snd.1h",      0x2000, 0x1000, CRC(f4507111) SHA1(0513f0831b94aeda84aa4f3b4a7c60dfc5113b2d) )
 	ROM_CONTINUE(             0x6000, 0x1000 )
 	ROM_LOAD( "7snd.1g",      0x3000, 0x1000, CRC(c722eff8) SHA1(d8d1c091ab80ea2d6616e4dc030adc9905c0a496) )
@@ -731,7 +566,8 @@ ROM_END
 
 
 
-GAME( 1983, monymony,  0,        zaccaria, monymony, driver_device, 0, ROT90, "Zaccaria", "Money Money", MACHINE_IMPERFECT_SOUND | MACHINE_SUPPORTS_SAVE )
-GAME( 1984, jackrabt,  0,        zaccaria, jackrabt, driver_device, 0, ROT90, "Zaccaria", "Jack Rabbit (set 1)", MACHINE_IMPERFECT_SOUND | MACHINE_SUPPORTS_SAVE )
-GAME( 1984, jackrabt2, jackrabt, zaccaria, jackrabt, driver_device, 0, ROT90, "Zaccaria", "Jack Rabbit (set 2)", MACHINE_IMPERFECT_SOUND | MACHINE_SUPPORTS_SAVE )
-GAME( 1984, jackrabts, jackrabt, zaccaria, jackrabt, driver_device, 0, ROT90, "Zaccaria", "Jack Rabbit (special)", MACHINE_IMPERFECT_SOUND | MACHINE_SUPPORTS_SAVE )
+GAME( 1983, monymony,  0,        zaccaria, monymony, zaccaria_state, empty_init, ROT90, "Zaccaria", "Money Money (set 1)",   MACHINE_IMPERFECT_SOUND | MACHINE_SUPPORTS_SAVE )
+GAME( 1983, monymony2, monymony, zaccaria, monymony, zaccaria_state, empty_init, ROT90, "Zaccaria", "Money Money (set 2)",   MACHINE_IMPERFECT_SOUND | MACHINE_SUPPORTS_SAVE )
+GAME( 1984, jackrabt,  0,        zaccaria, jackrabt, zaccaria_state, empty_init, ROT90, "Zaccaria", "Jack Rabbit (set 1)",   MACHINE_IMPERFECT_SOUND | MACHINE_SUPPORTS_SAVE )
+GAME( 1984, jackrabt2, jackrabt, zaccaria, jackrabt, zaccaria_state, empty_init, ROT90, "Zaccaria", "Jack Rabbit (set 2)",   MACHINE_IMPERFECT_SOUND | MACHINE_SUPPORTS_SAVE )
+GAME( 1984, jackrabts, jackrabt, zaccaria, jackrabt, zaccaria_state, empty_init, ROT90, "Zaccaria", "Jack Rabbit (special)", MACHINE_IMPERFECT_SOUND | MACHINE_SUPPORTS_SAVE )

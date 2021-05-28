@@ -6,9 +6,9 @@
 
     Miodrag Milanovic
 */
-#include <assert.h>
-
 #include "gtp_cas.h"
+
+#include <cassert>
 
 
 #define GTP_WAV_FREQUENCY   44100
@@ -20,8 +20,8 @@
 #define GTP_BLOCK_TURBO     0x01
 #define GTP_BLOCK_NAME      0x10
 
-static INT16    wave_data;
-static INT16    len;
+static int16_t    wave_data; // FIXME: global variable prevent multiple instances
+static int16_t    len;
 
 #define PULSE_WIDTH     30
 #define PERIOD_BASE     150
@@ -32,7 +32,7 @@ static INT16    len;
 #define INTERBLOCK_PAUSE    100000
 
 
-static void gtp_output_wave( INT16 **buffer, int length ) {
+static void gtp_output_wave( int16_t **buffer, int length ) {
 	if ( buffer == nullptr ) {
 		return;
 	}
@@ -45,7 +45,7 @@ static void gtp_output_wave( INT16 **buffer, int length ) {
 
 
 
-static int gtp_mod_1( INT16 **buffer )
+static int gtp_mod_1( int16_t **buffer )
 {
 	wave_data = WAVE_LOW;
 	gtp_output_wave(buffer,PULSE_WIDTH);
@@ -63,7 +63,7 @@ static int gtp_mod_1( INT16 **buffer )
 	return PERIOD_1 * 2;
 }
 
-static int gtp_mod_0( INT16 **buffer )
+static int gtp_mod_0( int16_t **buffer )
 {
 	wave_data = WAVE_LOW;
 	gtp_output_wave(buffer,PULSE_WIDTH);
@@ -75,9 +75,9 @@ static int gtp_mod_0( INT16 **buffer )
 	return PERIOD_0;
 }
 
-static int gtp_byte( INT16 **buffer, UINT8 val )
+static int gtp_byte( int16_t **buffer, uint8_t val )
 {
-	UINT8 b;
+	uint8_t b;
 	int j,size = 0;
 	for (j=0;j<8;j++) {
 		b = (val >> j) & 1;
@@ -90,7 +90,7 @@ static int gtp_byte( INT16 **buffer, UINT8 val )
 	return size;
 }
 
-static int gtp_sync( INT16 **buffer )
+static int gtp_sync( int16_t **buffer )
 {
 	int i;
 	int size = 0;
@@ -107,7 +107,7 @@ static int gtp_sync( INT16 **buffer )
 	return size;
 }
 
-static int gtp_cas_to_wav_size( const UINT8 *casdata, int caslen ) {
+static int gtp_cas_to_wav_size( const uint8_t *casdata, int caslen ) {
 	int size,n;
 	size = 0;
 	n = 0;
@@ -128,7 +128,7 @@ static int gtp_cas_to_wav_size( const UINT8 *casdata, int caslen ) {
 	return size;
 }
 
-static int gtp_cas_fill_wave( INT16 *buffer, int length, UINT8 *bytes ) {
+static int gtp_cas_fill_wave( int16_t *buffer, int length, uint8_t *bytes ) {
 	int i,size,n;
 	size = 0;
 	n = 0;
@@ -164,7 +164,7 @@ static int gtp_cas_fill_wave( INT16 *buffer, int length, UINT8 *bytes ) {
 
 
 
-static const struct CassetteLegacyWaveFiller gtp_legacy_fill_wave = {
+static const cassette_image::LegacyWaveFiller gtp_legacy_fill_wave = {
 	gtp_cas_fill_wave,          /* fill_wave */
 	-1,                 /* chunk_size */
 	0,                  /* chunk_samples */
@@ -176,19 +176,19 @@ static const struct CassetteLegacyWaveFiller gtp_legacy_fill_wave = {
 
 
 
-static casserr_t gtp_cassette_identify( cassette_image *cassette, struct CassetteOptions *opts ) {
-	return cassette_legacy_identify( cassette, opts, &gtp_legacy_fill_wave );
+static cassette_image::error gtp_cassette_identify( cassette_image *cassette, cassette_image::Options *opts ) {
+	return cassette->legacy_identify( opts, &gtp_legacy_fill_wave );
 }
 
 
 
-static casserr_t gtp_cassette_load( cassette_image *cassette ) {
-	return cassette_legacy_construct( cassette, &gtp_legacy_fill_wave );
+static cassette_image::error gtp_cassette_load( cassette_image *cassette ) {
+	return cassette->legacy_construct( &gtp_legacy_fill_wave );
 }
 
 
 
-static const struct CassetteFormat gtp_cassette_format = {
+static const cassette_image::Format gtp_cassette_format = {
 	"gtp",
 	gtp_cassette_identify,
 	gtp_cassette_load,

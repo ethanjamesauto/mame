@@ -19,10 +19,10 @@
 // Colors are 3bpp, but how they are generated is a mystery
 // there's no color prom on the pcb, nor palette ram
 
-PALETTE_INIT_MEMBER(galaxia_state,galaxia)
+void galaxia_state::galaxia_palette(palette_device &palette) const
 {
 	// estimated with video/photo references
-	const int lut_clr[0x18] = {
+	constexpr int lut_clr[0x18] = {
 		// background
 		0, 1, 4, 5,
 		0, 3, 6, 2,
@@ -41,10 +41,10 @@ PALETTE_INIT_MEMBER(galaxia_state,galaxia)
 	palette.set_pen_color(BULLET_PEN, pal1bit(1), pal1bit(1), pal1bit(0));
 }
 
-PALETTE_INIT_MEMBER(galaxia_state,astrowar)
+void galaxia_state::astrowar_palette(palette_device &palette) const
 {
 	// no reference material available(?), except for Data East astrof
-	const int lut_clr[8] = { 7, 3, 5, 1, 4, 2, 6, 7 };
+	constexpr int lut_clr[8] = { 7, 3, 5, 1, 4, 2, 6, 7 };
 
 	for (int i = 0; i < 8; i++)
 	{
@@ -63,18 +63,18 @@ PALETTE_INIT_MEMBER(galaxia_state,astrowar)
 
 TILE_GET_INFO_MEMBER(galaxia_state::get_galaxia_bg_tile_info)
 {
-	UINT8 code = m_video_ram[tile_index] & 0x7f; // d7 unused
-	UINT8 color = m_color_ram[tile_index] & 3; // highest bits unused
+	uint8_t code = m_video_ram[tile_index] & 0x7f; // d7 unused
+	uint8_t color = m_color_ram[tile_index] & 3; // highest bits unused
 
-	SET_TILE_INFO_MEMBER(0, code, color, 0);
+	tileinfo.set(0, code, color, 0);
 }
 
 TILE_GET_INFO_MEMBER(galaxia_state::get_astrowar_bg_tile_info)
 {
-	UINT8 code = m_video_ram[tile_index];
-	UINT8 color = m_color_ram[tile_index] & 7; // highest bits unused
+	uint8_t code = m_video_ram[tile_index];
+	uint8_t color = m_color_ram[tile_index] & 7; // highest bits unused
 
-	SET_TILE_INFO_MEMBER(0, code, color, 0);
+	tileinfo.set(0, code, color, 0);
 }
 
 void galaxia_state::init_common()
@@ -83,11 +83,11 @@ void galaxia_state::init_common()
 	cvs_init_stars();
 }
 
-VIDEO_START_MEMBER(galaxia_state,galaxia)
+void galaxia_state::video_start()
 {
 	init_common();
 
-	m_bg_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(galaxia_state::get_galaxia_bg_tile_info),this), TILEMAP_SCAN_ROWS, 8, 8, 32, 32);
+	m_bg_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(galaxia_state::get_galaxia_bg_tile_info)), TILEMAP_SCAN_ROWS, 8, 8, 32, 32);
 	m_bg_tilemap->set_transparent_pen(0);
 	m_bg_tilemap->set_scroll_cols(8);
 
@@ -97,7 +97,7 @@ VIDEO_START_MEMBER(galaxia_state,astrowar)
 {
 	init_common();
 
-	m_bg_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(galaxia_state::get_astrowar_bg_tile_info),this), TILEMAP_SCAN_ROWS, 8, 8, 32, 32);
+	m_bg_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(galaxia_state::get_astrowar_bg_tile_info)), TILEMAP_SCAN_ROWS, 8, 8, 32, 32);
 	m_bg_tilemap->set_transparent_pen(0);
 	m_bg_tilemap->set_scroll_cols(8);
 	m_bg_tilemap->set_scrolldx(8, 8);
@@ -108,24 +108,22 @@ VIDEO_START_MEMBER(galaxia_state,astrowar)
 
 /********************************************************************************/
 
-UINT32 galaxia_state::screen_update_galaxia(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t galaxia_state::screen_update_galaxia(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
-	int x, y;
-
-	bitmap_ind16 const &s2636_0_bitmap = m_s2636_0->update(cliprect);
-	bitmap_ind16 const &s2636_1_bitmap = m_s2636_1->update(cliprect);
-	bitmap_ind16 const &s2636_2_bitmap = m_s2636_2->update(cliprect);
+	bitmap_ind16 const &s2636_0_bitmap = m_s2636[0]->update(cliprect);
+	bitmap_ind16 const &s2636_1_bitmap = m_s2636[1]->update(cliprect);
+	bitmap_ind16 const &s2636_2_bitmap = m_s2636[2]->update(cliprect);
 
 	bitmap.fill(0, cliprect);
 	cvs_update_stars(bitmap, cliprect, STAR_PEN, 1);
 	m_bg_tilemap->draw(screen, bitmap, cliprect, 0, 0);
 
-	for (y = cliprect.min_y; y <= cliprect.max_y; y++)
+	for (int y = cliprect.top(); y <= cliprect.bottom(); y++)
 	{
-		for (x = cliprect.min_x; x <= cliprect.max_x; x++)
+		for (int x = cliprect.left(); x <= cliprect.right(); x++)
 		{
-			bool bullet = m_bullet_ram[y] && x == (m_bullet_ram[y] ^ 0xff);
-			bool background = (bitmap.pix16(y, x) & 3) != 0;
+			bool const bullet = m_bullet_ram[y] && x == (m_bullet_ram[y] ^ 0xff);
+			bool const background = (bitmap.pix(y, x) & 3) != 0;
 
 			// draw bullets (guesswork)
 			if (bullet)
@@ -134,16 +132,16 @@ UINT32 galaxia_state::screen_update_galaxia(screen_device &screen, bitmap_ind16 
 				if (background) m_collision_register |= 0x80;
 
 				// bullet size/color/priority is guessed
-				bitmap.pix16(y, x) = BULLET_PEN;
-				if (x) bitmap.pix16(y, x-1) = BULLET_PEN;
+				bitmap.pix(y, x) = BULLET_PEN;
+				if (x) bitmap.pix(y, x-1) = BULLET_PEN;
 			}
 
 			// copy the S2636 images into the main bitmap and check collision
-			int pixel0 = s2636_0_bitmap.pix16(y, x);
-			int pixel1 = s2636_1_bitmap.pix16(y, x);
-			int pixel2 = s2636_2_bitmap.pix16(y, x);
+			int const pixel0 = s2636_0_bitmap.pix(y, x);
+			int const pixel1 = s2636_1_bitmap.pix(y, x);
+			int const pixel2 = s2636_2_bitmap.pix(y, x);
 
-			int pixel = pixel0 | pixel1 | pixel2;
+			int const pixel = pixel0 | pixel1 | pixel2;
 
 			if (S2636_IS_PIXEL_DRAWN(pixel))
 			{
@@ -164,7 +162,7 @@ UINT32 galaxia_state::screen_update_galaxia(screen_device &screen, bitmap_ind16 
 					if (S2636_IS_PIXEL_DRAWN(pixel2)) m_collision_register |= 0x40;
 				}
 
-				bitmap.pix16(y, x) = S2636_PIXEL_COLOR(pixel) | SPRITE_PEN_BASE;
+				bitmap.pix(y, x) = S2636_PIXEL_COLOR(pixel) | SPRITE_PEN_BASE;
 			}
 		}
 	}
@@ -173,55 +171,53 @@ UINT32 galaxia_state::screen_update_galaxia(screen_device &screen, bitmap_ind16 
 }
 
 
-UINT32 galaxia_state::screen_update_astrowar(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t galaxia_state::screen_update_astrowar(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	// astrowar has only one S2636
-	int x, y;
-
-	bitmap_ind16 const &s2636_0_bitmap = m_s2636_0->update(cliprect);
+	bitmap_ind16 const &s2636_0_bitmap = m_s2636[0]->update(cliprect);
 
 	bitmap.fill(0, cliprect);
 	cvs_update_stars(bitmap, cliprect, STAR_PEN, 1);
 	m_bg_tilemap->draw(screen, bitmap, cliprect, 0, 0);
 	copybitmap(m_temp_bitmap, bitmap, 0, 0, 0, 0, cliprect);
 
-	for (y = cliprect.min_y; y <= cliprect.max_y; y++)
+	for (int y = cliprect.top(); y <= cliprect.bottom(); y++)
 	{
 		// draw bullets (guesswork)
 		if (m_bullet_ram[y])
 		{
-			UINT8 pos = m_bullet_ram[y] ^ 0xff;
+			uint8_t const pos = m_bullet_ram[y] ^ 0xff;
 
 			// background vs. bullet collision detection
-			if (m_temp_bitmap.pix16(y, pos) & 1)
+			if (m_temp_bitmap.pix(y, pos) & 1)
 				m_collision_register |= 0x02;
 
 			// bullet size/color/priority is guessed
-			bitmap.pix16(y, pos) = BULLET_PEN;
-			if (pos) bitmap.pix16(y, pos-1) = BULLET_PEN;
+			bitmap.pix(y, pos) = BULLET_PEN;
+			if (pos) bitmap.pix(y, pos-1) = BULLET_PEN;
 		}
 
-		for (x = cliprect.min_x; x <= cliprect.max_x; x++)
+		for (int x = cliprect.left(); x <= cliprect.right(); x++)
 		{
 			// NOTE: similar to zac2650.c, the sprite chip runs at a different frequency than the background generator
 			// the exact timing ratio is unknown, so we'll have to do with guesswork
-			float s_ratio = 256.0f / 196.0f;
+			float const s_ratio = 256.0f / 196.0f;
 
-			float sx = x * s_ratio;
-			if ((int)(sx + 0.5f) > cliprect.max_x)
+			float const sx = x * s_ratio;
+			if (int(sx + 0.5f) > cliprect.right())
 				break;
 
 			// copy the S2636 bitmap into the main bitmap and check collision
-			int pixel = s2636_0_bitmap.pix16(y, x);
+			int const pixel = s2636_0_bitmap.pix(y, x);
 
 			if (S2636_IS_PIXEL_DRAWN(pixel))
 			{
 				// S2636 vs. background collision detection
-				if ((m_temp_bitmap.pix16(y, (int)(sx)) | m_temp_bitmap.pix16(y, (int)(sx + 0.5f))) & 1)
+				if ((m_temp_bitmap.pix(y, int(sx)) | m_temp_bitmap.pix(y, int(sx + 0.5f))) & 1)
 					m_collision_register |= 0x01;
 
-				bitmap.pix16(y, (int)(sx)) = S2636_PIXEL_COLOR(pixel) | SPRITE_PEN_BASE;
-				bitmap.pix16(y, (int)(sx + 0.5f)) = S2636_PIXEL_COLOR(pixel) | SPRITE_PEN_BASE;
+				bitmap.pix(y, int(sx)) = S2636_PIXEL_COLOR(pixel) | SPRITE_PEN_BASE;
+				bitmap.pix(y, int(sx + 0.5f)) = S2636_PIXEL_COLOR(pixel) | SPRITE_PEN_BASE;
 			}
 		}
 	}

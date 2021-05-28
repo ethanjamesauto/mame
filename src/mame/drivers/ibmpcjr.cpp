@@ -1,34 +1,39 @@
 // license:BSD-3-Clause
 // copyright-holders:Wilbert Pol
 #include "emu.h"
+
 #include "cpu/i86/i86.h"
-#include "sound/sn76496.h"
-#include "sound/speaker.h"
-#include "video/pc_t1t.h"
-#include "machine/ins8250.h"
+#include "imagedev/cassette.h"
 #include "machine/i8255.h"
+#include "machine/ins8250.h"
+#include "machine/pc_lpt.h"
+#include "machine/pckeybrd.h"
 #include "machine/pic8259.h"
 #include "machine/pit8253.h"
 #include "machine/ram.h"
-#include "machine/pckeybrd.h"
-#include "machine/pc_lpt.h"
-#include "machine/pc_fdc.h"
-#include "bus/rs232/rs232.h"
-#include "bus/rs232/ser_mouse.h"
-#include "bus/pc_joy/pc_joy.h"
-#include "bus/isa/fdc.h"
-#include "imagedev/cassette.h"
+#include "sound/sn76496.h"
+#include "sound/spkrdev.h"
+#include "video/pc_t1t.h"
 
-#include "bus/generic/slot.h"
 #include "bus/generic/carts.h"
+#include "bus/generic/slot.h"
+#include "bus/isa/fdc.h"
+#include "bus/pc_joy/pc_joy.h"
+#include "bus/rs232/hlemouse.h"
+#include "bus/rs232/rs232.h"
+#include "bus/rs232/null_modem.h"
+#include "bus/rs232/terminal.h"
 
+#include "screen.h"
 #include "softlist.h"
+#include "speaker.h"
+
 
 class pcjr_state : public driver_device
 {
 public:
-	pcjr_state(const machine_config &mconfig, device_type type, const char *tag)
-		: driver_device(mconfig, type, tag),
+	pcjr_state(const machine_config &mconfig, device_type type, const char *tag) :
+		driver_device(mconfig, type, tag),
 		m_maincpu(*this, "maincpu"),
 		m_pic8259(*this, "pic8259"),
 		m_pit8253(*this, "pit8253"),
@@ -41,6 +46,12 @@ public:
 		m_keyboard(*this, "pc_keyboard")
 	{ }
 
+	void ibmpcjx(machine_config &config);
+	void ibmpcjr(machine_config &config);
+
+	void init_pcjr();
+
+private:
 	required_device<cpu_device> m_maincpu;
 	required_device<pic8259_device> m_pic8259;
 	required_device<pit8253_device> m_pit8253;
@@ -55,39 +66,38 @@ public:
 	DECLARE_WRITE_LINE_MEMBER(out2_changed);
 	DECLARE_WRITE_LINE_MEMBER(keyb_interrupt);
 
-	DECLARE_WRITE8_MEMBER(pc_nmi_enable_w);
-	DECLARE_READ8_MEMBER(pcjr_nmi_enable_r);
+	void pc_nmi_enable_w(uint8_t data);
+	uint8_t pcjr_nmi_enable_r();
 	DECLARE_WRITE_LINE_MEMBER(pic8259_set_int_line);
 
-	DECLARE_WRITE8_MEMBER(pcjr_ppi_portb_w);
-	DECLARE_READ8_MEMBER(pcjr_ppi_porta_r);
-	DECLARE_READ8_MEMBER(pcjr_ppi_portc_r);
-	DECLARE_WRITE8_MEMBER(pcjr_fdc_dor_w);
-	DECLARE_READ8_MEMBER(pcjx_port_1ff_r);
-	DECLARE_WRITE8_MEMBER(pcjx_port_1ff_w);
+	void pcjr_ppi_portb_w(uint8_t data);
+	uint8_t pcjr_ppi_portc_r();
+	void pcjr_fdc_dor_w(uint8_t data);
+	uint8_t pcjx_port_1ff_r();
+	void pcjx_port_1ff_w(uint8_t data);
 	void pcjx_set_bank(int unk1, int unk2, int unk3);
 
-	int load_cart(device_image_interface &image, generic_slot_device *slot);
-	DECLARE_DEVICE_IMAGE_LOAD_MEMBER(pcjr_cart1) { return load_cart(image, m_cart1); }
-	DECLARE_DEVICE_IMAGE_LOAD_MEMBER(pcjr_cart2) { return load_cart(image, m_cart2); }
-	void pc_speaker_set_spkrdata(UINT8 data);
+	image_init_result load_cart(device_image_interface &image, generic_slot_device *slot);
+	DECLARE_DEVICE_IMAGE_LOAD_MEMBER(cart1_load) { return load_cart(image, m_cart1); }
+	DECLARE_DEVICE_IMAGE_LOAD_MEMBER(cart2_load) { return load_cart(image, m_cart2); }
+	void pc_speaker_set_spkrdata(uint8_t data);
 
-	UINT8 m_pc_spkrdata;
-	UINT8 m_pit_out2;
-	UINT8 m_pcjr_dor;
-	UINT8 m_pcjx_1ff_count;
-	UINT8 m_pcjx_1ff_val;
-	UINT8 m_pcjx_1ff_bankval;
-	UINT8 m_pcjx_1ff_bank[20][2];
+	uint8_t m_pc_spkrdata;
+	uint8_t m_pit_out2;
+	uint8_t m_pcjr_dor;
+	uint8_t m_pcjx_1ff_count;
+	uint8_t m_pcjx_1ff_val;
+	uint8_t m_pcjx_1ff_bankval;
+	uint8_t m_pcjx_1ff_bank[20][2];
 	int m_ppi_portc_switch_high;
-	UINT8 m_ppi_portb;
+	uint8_t m_ppi_portb;
 
-	UINT8 m_pc_keyb_data;
-	UINT8 m_transferring;
-	UINT8 m_latch;
-	UINT32 m_raw_keyb_data;
+	uint8_t m_pc_keyb_data;
+	uint8_t m_transferring;
+	uint8_t m_latch;
+	uint32_t m_raw_keyb_data;
 	int m_signal_count;
-	UINT8 m_nmi_enabled;
+	uint8_t m_nmi_enabled;
 
 	void device_timer(emu_timer &timer, device_timer_id id, int param, void *ptr) override;
 	emu_timer *m_pc_int_delay_timer;
@@ -102,24 +112,25 @@ public:
 	};
 
 	void machine_reset() override;
-	DECLARE_DRIVER_INIT(pcjr);
+	void ibmpcjr_io(address_map &map);
+	void ibmpcjr_map(address_map &map);
+	void ibmpcjx_io(address_map &map);
+	void ibmpcjx_map(address_map &map);
 };
 
 static INPUT_PORTS_START( ibmpcjr )
-	PORT_INCLUDE(pc_keyboard)
-
 	PORT_START("IN0") /* IN0 */
 	PORT_BIT ( 0xf0, 0xf0,   IPT_UNUSED )
 	PORT_BIT ( 0x08, 0x08,   IPT_CUSTOM ) PORT_VBLANK("pcvideo_pcjr:screen")
 	PORT_BIT ( 0x07, 0x07,   IPT_UNUSED )
 INPUT_PORTS_END
 
-DRIVER_INIT_MEMBER(pcjr_state, pcjr)
+void pcjr_state::init_pcjr()
 {
 	m_pc_int_delay_timer = timer_alloc(TIMER_IRQ_DELAY);
 	m_pcjr_watchdog = timer_alloc(TIMER_WATCHDOG);
 	m_keyb_signal_timer = timer_alloc(TIMER_KB_SIGNAL);
-	membank( "bank10" )->set_base( m_ram->pointer() );
+	m_maincpu->space(AS_PROGRAM).install_ram(0, m_ram->size() - 1, m_ram->pointer());
 }
 
 void pcjr_state::machine_reset()
@@ -187,7 +198,7 @@ void pcjr_state::device_timer(emu_timer &timer, device_timer_id id, int param, v
 
 WRITE_LINE_MEMBER(pcjr_state::pic8259_set_int_line)
 {
-	UINT32 pc = m_maincpu->pc();
+	uint32_t pc = m_maincpu->pc();
 	if ( (pc == 0xF0453) || (pc == 0xFF196) )
 	{
 		m_pc_int_delay_timer->adjust( m_maincpu->cycles_to_attotime(20), state );
@@ -203,7 +214,7 @@ WRITE_LINE_MEMBER(pcjr_state::pic8259_set_int_line)
  *      PC Speaker related
  *
  *************************************************************************/
-void pcjr_state::pc_speaker_set_spkrdata(UINT8 data)
+void pcjr_state::pc_speaker_set_spkrdata(uint8_t data)
 {
 	m_pc_spkrdata = data ? 1 : 0;
 	m_speaker->level_w(m_pc_spkrdata & m_pit_out2);
@@ -213,6 +224,7 @@ WRITE_LINE_MEMBER(pcjr_state::out2_changed)
 {
 	m_pit_out2 = state ? 1 : 0;
 	m_speaker->level_w(m_pc_spkrdata & m_pit_out2);
+	m_cassette->output(state ? 1.0 : -1.0);
 }
 
 /*************************************************************
@@ -257,9 +269,9 @@ WRITE_LINE_MEMBER(pcjr_state::keyb_interrupt)
 {
 	int data;
 
-	if(state && (data = m_keyboard->read(machine().driver_data()->generic_space(), 0)))
+	if(state && (data = m_keyboard->read()))
 	{
-		UINT8   parity = 0;
+		uint8_t   parity = 0;
 		int     i;
 
 		m_latch = 1;
@@ -297,20 +309,20 @@ WRITE_LINE_MEMBER(pcjr_state::keyb_interrupt)
 	}
 }
 
-READ8_MEMBER(pcjr_state::pcjr_nmi_enable_r)
+uint8_t pcjr_state::pcjr_nmi_enable_r()
 {
 	m_latch = 0;
 	m_maincpu->set_input_line(INPUT_LINE_NMI, CLEAR_LINE);
 	return m_nmi_enabled;
 }
 
-WRITE8_MEMBER(pcjr_state::pc_nmi_enable_w)
+void pcjr_state::pc_nmi_enable_w(uint8_t data)
 {
 	m_nmi_enabled = data & 0x80;
 	m_maincpu->set_input_line(INPUT_LINE_NMI, m_nmi_enabled && m_latch);
 }
 
-WRITE8_MEMBER(pcjr_state::pcjr_ppi_portb_w)
+void pcjr_state::pcjr_ppi_portb_w(uint8_t data)
 {
 	/* KB controller port B */
 	m_ppi_portb = data;
@@ -332,7 +344,7 @@ WRITE8_MEMBER(pcjr_state::pcjr_ppi_portb_w)
  * PC6 - KYBD IN
  * PC7 - (keyboard) CABLE CONNECTED
  */
-READ8_MEMBER(pcjr_state::pcjr_ppi_portc_r)
+uint8_t pcjr_state::pcjr_ppi_portc_r()
 {
 	int data=0xff;
 
@@ -367,10 +379,10 @@ READ8_MEMBER(pcjr_state::pcjr_ppi_portc_r)
 	return data;
 }
 
-WRITE8_MEMBER(pcjr_state::pcjr_fdc_dor_w)
+void pcjr_state::pcjr_fdc_dor_w(uint8_t data)
 {
 	logerror("fdc: dor = %02x\n", data);
-	UINT8 pdor = m_pcjr_dor;
+	uint8_t pdor = m_pcjr_dor;
 	floppy_image_device *floppy0 = m_fdc->subdevice<floppy_connector>("0")->get_device();
 	floppy_image_device *floppy1 = nullptr;
 
@@ -390,8 +402,7 @@ WRITE8_MEMBER(pcjr_state::pcjr_fdc_dor_w)
 	else
 		m_fdc->set_floppy(nullptr);
 
-	if((pdor^m_pcjr_dor) & 0x80)
-		m_fdc->reset();
+	m_fdc->reset_w(!BIT(m_pcjr_dor, 7));
 
 	if(m_pcjr_dor & 0x20) {
 		if((pdor & 0x40) && !(m_pcjr_dor & 0x40))
@@ -409,7 +420,7 @@ void pcjr_state::pcjx_set_bank(int unk1, int unk2, int unk3)
 	logerror("pcjx: 0x1ff 0:%02x 1:%02x 2:%02x\n", unk1, unk2, unk3);
 }
 
-WRITE8_MEMBER(pcjr_state::pcjx_port_1ff_w)
+void pcjr_state::pcjx_port_1ff_w(uint8_t data)
 {
 	switch(m_pcjx_1ff_count) {
 	case 0:
@@ -428,7 +439,7 @@ WRITE8_MEMBER(pcjr_state::pcjx_port_1ff_w)
 	}
 }
 
-READ8_MEMBER(pcjr_state::pcjx_port_1ff_r)
+uint8_t pcjr_state::pcjx_port_1ff_r()
 {
 	if(m_pcjx_1ff_count == 2)
 		pcjx_set_bank(m_pcjx_1ff_bankval, m_pcjx_1ff_bank[m_pcjx_1ff_bankval & 0x1f][0], m_pcjx_1ff_bank[m_pcjx_1ff_bankval & 0x1f][1]);
@@ -437,12 +448,12 @@ READ8_MEMBER(pcjr_state::pcjx_port_1ff_r)
 	return 0x60; // expansion?
 }
 
-int pcjr_state::load_cart(device_image_interface &image, generic_slot_device *slot)
+image_init_result pcjr_state::load_cart(device_image_interface &image, generic_slot_device *slot)
 {
-	UINT32 size = slot->common_get_size("rom");
+	uint32_t size = slot->common_get_size("rom");
 	bool imagic_hack = false;
 
-	if (image.software_entry() == nullptr)
+	if (!image.loaded_through_softlist())
 	{
 		int header_size = 0;
 
@@ -457,7 +468,7 @@ int pcjr_state::load_cart(device_image_interface &image, generic_slot_device *sl
 				break;
 			default:
 				image.seterror(IMAGE_ERROR_UNSUPPORTED, "Invalid header size" );
-				return IMAGE_INIT_FAIL;
+				return image_init_result::FAIL;
 		}
 		if (size - header_size == 0xa000)
 		{
@@ -479,7 +490,7 @@ int pcjr_state::load_cart(device_image_interface &image, generic_slot_device *sl
 		// the first chunk is unique, the second is repeated 4 times up to 0xa000 size
 
 		// mirroring
-		UINT8 *ROM = slot->get_rom_base();
+		uint8_t *ROM = slot->get_rom_base();
 		memcpy(ROM + 0xe000, ROM + 0x2000, 0x2000);
 		memcpy(ROM + 0xc000, ROM + 0x2000, 0x2000);
 		memcpy(ROM + 0xa000, ROM + 0x2000, 0x2000);
@@ -488,19 +499,26 @@ int pcjr_state::load_cart(device_image_interface &image, generic_slot_device *sl
 		memcpy(ROM + 0x4000, ROM, 0x2000);
 		memcpy(ROM + 0x2000, ROM, 0x2000);
 	}
-	return IMAGE_INIT_PASS;
+	return image_init_result::PASS;
 }
 
 
-static SLOT_INTERFACE_START( pcjr_floppies )
-	SLOT_INTERFACE( "525dd", FLOPPY_525_DD )
-	SLOT_INTERFACE( "35dd", FLOPPY_35_DD )
-SLOT_INTERFACE_END
+static void pcjr_floppies(device_slot_interface &device)
+{
+	device.option_add("525dd", FLOPPY_525_DD);
+	device.option_add("35dd", FLOPPY_35_DD);
+}
 
-static SLOT_INTERFACE_START(pcjr_com)
-	SLOT_INTERFACE("microsoft_mouse", MSFT_SERIAL_MOUSE)
-	SLOT_INTERFACE("mousesys_mouse", MSYSTEM_SERIAL_MOUSE)
-SLOT_INTERFACE_END
+static void pcjr_com(device_slot_interface &device)
+{
+	device.option_add("microsoft_mouse", MSFT_HLE_SERIAL_MOUSE);
+	device.option_add("logitech_mouse", LOGITECH_HLE_SERIAL_MOUSE);
+	device.option_add("wheel_mouse", WHEEL_HLE_SERIAL_MOUSE);
+	device.option_add("msystems_mouse", MSYSTEMS_HLE_SERIAL_MOUSE);
+	device.option_add("rotatable_mouse", ROTATABLE_HLE_SERIAL_MOUSE);
+	device.option_add("terminal",SERIAL_TERMINAL);
+	device.option_add("null_modem",NULL_MODEM);
+}
 
 static const gfx_layout pc_8_charlayout =
 {
@@ -528,172 +546,179 @@ static const gfx_layout kanji_layout =
 	16*16                   /* every char takes 8 bytes */
 };
 
-static GFXDECODE_START( pcjr )
+static GFXDECODE_START( gfx_pcjr )
 	GFXDECODE_ENTRY( "gfx1", 0x0000, pc_8_charlayout, 3, 1 )
 GFXDECODE_END
 
 
-static ADDRESS_MAP_START(ibmpcjr_map, AS_PROGRAM, 8, pcjr_state)
-	AM_RANGE(0x00000, 0x9ffff) AM_RAMBANK("bank10")
-	AM_RANGE(0xa0000, 0xaffff) AM_RAM
-	AM_RANGE(0xb0000, 0xb7fff) AM_NOP
-	AM_RANGE(0xb8000, 0xbffff) AM_RAMBANK("bank14")
-	AM_RANGE(0xc0000, 0xc7fff) AM_NOP
-	AM_RANGE(0xc8000, 0xc9fff) AM_ROM
-	AM_RANGE(0xca000, 0xcffff) AM_NOP
-	AM_RANGE(0xd0000, 0xdffff) AM_DEVREAD("cartslot2", generic_slot_device, read_rom)
-	AM_RANGE(0xe0000, 0xeffff) AM_DEVREAD("cartslot1", generic_slot_device, read_rom)
-	AM_RANGE(0xf0000, 0xfffff) AM_ROM
-ADDRESS_MAP_END
+void pcjr_state::ibmpcjr_map(address_map &map)
+{
+	map.unmap_value_high();
+	map(0xb8000, 0xbffff).m("pcvideo_pcjr:vram", FUNC(address_map_bank_device::amap8));
+	map(0xd0000, 0xdffff).r(m_cart2, FUNC(generic_slot_device::read_rom));
+	map(0xe0000, 0xeffff).r(m_cart1, FUNC(generic_slot_device::read_rom));
+	map(0xf0000, 0xfffff).rom().region("bios", 0);
+}
 
 
-static ADDRESS_MAP_START(ibmpcjr_io, AS_IO, 8, pcjr_state)
-	AM_RANGE(0x0020, 0x0021) AM_DEVREADWRITE("pic8259", pic8259_device, read, write)
-	AM_RANGE(0x0040, 0x0043) AM_DEVREADWRITE("pit8253", pit8253_device, read, write)
-	AM_RANGE(0x0060, 0x0063) AM_DEVREADWRITE("ppi8255", i8255_device, read, write)
-	AM_RANGE(0x00a0, 0x00a0) AM_READWRITE(pcjr_nmi_enable_r, pc_nmi_enable_w )
-	AM_RANGE(0x00c0, 0x00c0) AM_DEVWRITE("sn76496", sn76496_device, write)
-	AM_RANGE(0x00f2, 0x00f2) AM_WRITE(pcjr_fdc_dor_w)
-	AM_RANGE(0x00f4, 0x00f5) AM_DEVICE("fdc", upd765a_device, map)
-	AM_RANGE(0x0200, 0x0207) AM_DEVREADWRITE("pc_joy", pc_joy_device, joy_port_r, joy_port_w)
-	AM_RANGE(0x02f8, 0x02ff) AM_DEVREADWRITE("ins8250", ins8250_device, ins8250_r, ins8250_w)
-	AM_RANGE(0x0378, 0x037b) AM_DEVREADWRITE("lpt_0", pc_lpt_device, read, write)
-	AM_RANGE(0x03d0, 0x03df) AM_DEVREADWRITE("pcvideo_pcjr", pcvideo_pcjr_device, read, write)
-ADDRESS_MAP_END
+void pcjr_state::ibmpcjr_io(address_map &map)
+{
+	map.unmap_value_high();
+	map(0x0020, 0x0021).rw(m_pic8259, FUNC(pic8259_device::read), FUNC(pic8259_device::write));
+	map(0x0040, 0x0043).rw(m_pit8253, FUNC(pit8253_device::read), FUNC(pit8253_device::write));
+	map(0x0060, 0x0063).rw("ppi8255", FUNC(i8255_device::read), FUNC(i8255_device::write));
+	map(0x00a0, 0x00a0).rw(FUNC(pcjr_state::pcjr_nmi_enable_r), FUNC(pcjr_state::pc_nmi_enable_w));
+	map(0x00c0, 0x00c0).w("sn76496", FUNC(sn76496_device::write));
+	map(0x00f2, 0x00f2).w(FUNC(pcjr_state::pcjr_fdc_dor_w));
+	map(0x00f4, 0x00f5).m(m_fdc, FUNC(upd765a_device::map));
+	map(0x0200, 0x0207).rw("pc_joy", FUNC(pc_joy_device::joy_port_r), FUNC(pc_joy_device::joy_port_w));
+	map(0x02f8, 0x02ff).rw("ins8250", FUNC(ins8250_device::ins8250_r), FUNC(ins8250_device::ins8250_w));
+	map(0x0378, 0x037b).rw("lpt_0", FUNC(pc_lpt_device::read), FUNC(pc_lpt_device::write));
+	map(0x03d0, 0x03df).r("pcvideo_pcjr", FUNC(pcvideo_pcjr_device::read)).w("pcvideo_pcjr", FUNC(pcvideo_pcjr_device::write));
+}
 
-static ADDRESS_MAP_START(ibmpcjx_map, AS_PROGRAM, 8, pcjr_state )
-	AM_RANGE(0x80000, 0xb7fff) AM_ROM AM_REGION("kanji",0)
-	AM_IMPORT_FROM( ibmpcjr_map )
-ADDRESS_MAP_END
+void pcjr_state::ibmpcjx_map(address_map &map)
+{
+	map.unmap_value_high();
+	map(0x80000, 0x9ffff).ram().share("vram"); // TODO: remove this part of vram hack
+	map(0x80000, 0xb7fff).rom().region("kanji", 0);
+	map(0xb8000, 0xbffff).m("pcvideo_pcjr:vram", FUNC(address_map_bank_device::amap8));
+	map(0xd0000, 0xdffff).r(m_cart1, FUNC(generic_slot_device::read_rom));
+	map(0xe0000, 0xfffff).rom().region("bios", 0);
+}
 
-static ADDRESS_MAP_START(ibmpcjx_io, AS_IO, 8, pcjr_state)
-	AM_RANGE(0x01ff, 0x01ff) AM_READWRITE(pcjx_port_1ff_r, pcjx_port_1ff_w)
-	AM_IMPORT_FROM( ibmpcjr_io )
-ADDRESS_MAP_END
+void pcjr_state::ibmpcjx_io(address_map &map)
+{
+	map.unmap_value_high();
+	ibmpcjr_io(map);
+	map(0x01ff, 0x01ff).rw(FUNC(pcjr_state::pcjx_port_1ff_r), FUNC(pcjr_state::pcjx_port_1ff_w));
+}
 
-static MACHINE_CONFIG_START( ibmpcjr, pcjr_state)
+void pcjr_state::ibmpcjr(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", I8088, 4900000)
-	MCFG_CPU_PROGRAM_MAP(ibmpcjr_map)
-	MCFG_CPU_IO_MAP(ibmpcjr_io)
-	MCFG_CPU_IRQ_ACKNOWLEDGE_DEVICE("pic8259", pic8259_device, inta_cb)
+	I8088(config, m_maincpu, 4900000);
+	m_maincpu->set_addrmap(AS_PROGRAM, &pcjr_state::ibmpcjr_map);
+	m_maincpu->set_addrmap(AS_IO, &pcjr_state::ibmpcjr_io);
+	m_maincpu->set_irq_acknowledge_callback("pic8259", FUNC(pic8259_device::inta_cb));
 
 /*
   On the PC Jr the input for clock 1 seems to be selectable
   based on bit 4(/5?) written to output port A0h. This is not
   supported yet.
  */
-	MCFG_DEVICE_ADD("pit8253", PIT8253, 0)
-	MCFG_PIT8253_CLK0(XTAL_14_31818MHz/12)
-	MCFG_PIT8253_OUT0_HANDLER(DEVWRITELINE("pic8259", pic8259_device, ir0_w))
-	MCFG_PIT8253_CLK1(XTAL_14_31818MHz/12)
-	MCFG_PIT8253_CLK2(XTAL_14_31818MHz/12)
-	MCFG_PIT8253_OUT2_HANDLER(WRITELINE(pcjr_state, out2_changed))
+	PIT8253(config, m_pit8253, 0);
+	m_pit8253->set_clk<0>(XTAL(14'318'181)/12);
+	m_pit8253->out_handler<0>().set(m_pic8259, FUNC(pic8259_device::ir0_w));
+	m_pit8253->set_clk<1>(XTAL(14'318'181)/12);
+	m_pit8253->set_clk<2>(XTAL(14'318'181)/12);
+	m_pit8253->out_handler<2>().set(FUNC(pcjr_state::out2_changed));
 
-	MCFG_PIC8259_ADD( "pic8259", WRITELINE(pcjr_state, pic8259_set_int_line), VCC, NULL )
+	PIC8259(config, m_pic8259, 0);
+	m_pic8259->out_int_callback().set(FUNC(pcjr_state::pic8259_set_int_line));
 
-	MCFG_DEVICE_ADD("ppi8255", I8255, 0)
-	MCFG_I8255_IN_PORTA_CB(CONSTANT(0xff))
-	MCFG_I8255_OUT_PORTB_CB(WRITE8(pcjr_state, pcjr_ppi_portb_w))
-	MCFG_I8255_IN_PORTC_CB(READ8(pcjr_state, pcjr_ppi_portc_r))
+	i8255_device &ppi(I8255(config, "ppi8255"));
+	ppi.in_pa_callback().set_constant(0xff);
+	ppi.out_pb_callback().set(FUNC(pcjr_state::pcjr_ppi_portb_w));
+	ppi.in_pc_callback().set(FUNC(pcjr_state::pcjr_ppi_portc_r));
 
-	MCFG_DEVICE_ADD( "ins8250", INS8250, XTAL_1_8432MHz )
-	MCFG_INS8250_OUT_TX_CB(DEVWRITELINE("serport", rs232_port_device, write_txd))
-	MCFG_INS8250_OUT_DTR_CB(DEVWRITELINE("serport", rs232_port_device, write_dtr))
-	MCFG_INS8250_OUT_RTS_CB(DEVWRITELINE("serport", rs232_port_device, write_rts))
-	MCFG_INS8250_OUT_INT_CB(DEVWRITELINE("pic8259", pic8259_device, ir3_w))
+	ins8250_device &uart(INS8250(config, "ins8250", XTAL(1'843'200)));
+	uart.out_tx_callback().set("serport", FUNC(rs232_port_device::write_txd));
+	uart.out_dtr_callback().set("serport", FUNC(rs232_port_device::write_dtr));
+	uart.out_rts_callback().set("serport", FUNC(rs232_port_device::write_rts));
+	uart.out_int_callback().set(m_pic8259, FUNC(pic8259_device::ir3_w));
 
-	MCFG_RS232_PORT_ADD( "serport", pcjr_com, nullptr )
-	MCFG_RS232_RXD_HANDLER(DEVWRITELINE("ins8250", ins8250_uart_device, rx_w))
-	MCFG_RS232_DCD_HANDLER(DEVWRITELINE("ins8250", ins8250_uart_device, dcd_w))
-	MCFG_RS232_DSR_HANDLER(DEVWRITELINE("ins8250", ins8250_uart_device, dsr_w))
-	MCFG_RS232_RI_HANDLER(DEVWRITELINE("ins8250", ins8250_uart_device, ri_w))
-	MCFG_RS232_CTS_HANDLER(DEVWRITELINE("ins8250", ins8250_uart_device, cts_w))
+	rs232_port_device &serport(RS232_PORT(config, "serport", pcjr_com, nullptr));
+	serport.rxd_handler().set("ins8250", FUNC(ins8250_uart_device::rx_w));
+	serport.dcd_handler().set("ins8250", FUNC(ins8250_uart_device::dcd_w));
+	serport.dsr_handler().set("ins8250", FUNC(ins8250_uart_device::dsr_w));
+	serport.ri_handler().set("ins8250", FUNC(ins8250_uart_device::ri_w));
+	serport.cts_handler().set("ins8250", FUNC(ins8250_uart_device::cts_w));
 
 	/* video hardware */
-	MCFG_PCVIDEO_PCJR_ADD("pcvideo_pcjr")
+	PCVIDEO_PCJR(config, "pcvideo_pcjr", 0).set_screen("pcvideo_pcjr:screen");
 
-	MCFG_GFXDECODE_ADD("gfxdecode", "pcvideo_pcjr:palette", pcjr)
+	GFXDECODE(config, "gfxdecode", "pcvideo_pcjr:palette", gfx_pcjr);
 
 	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_MONO("mono")
-	MCFG_SOUND_ADD("speaker", SPEAKER_SOUND, 0)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.80)
-	MCFG_SOUND_ADD("sn76496", SN76496, XTAL_14_31818MHz/4)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.80)
+	SPEAKER(config, "mono").front_center();
+	SPEAKER_SOUND(config, "speaker").add_route(ALL_OUTPUTS, "mono", 0.80);
+	SN76496(config, "sn76496", XTAL(14'318'181)/4).add_route(ALL_OUTPUTS, "mono", 0.80);
 
 	/* printer */
-	MCFG_DEVICE_ADD("lpt_0", PC_LPT, 0)
-	MCFG_PC_LPT_IRQ_HANDLER(DEVWRITELINE("pic8259", pic8259_device, ir7_w))
+	pc_lpt_device &lpt0(PC_LPT(config, "lpt_0"));
+	lpt0.irq_handler().set(m_pic8259, FUNC(pic8259_device::ir7_w));
 
-	MCFG_PC_JOY_ADD("pc_joy")
+	PC_JOY(config, "pc_joy");
 
 	/* cassette */
-	MCFG_CASSETTE_ADD( "cassette")
-	MCFG_CASSETTE_DEFAULT_STATE(CASSETTE_PLAY | CASSETTE_MOTOR_DISABLED | CASSETTE_SPEAKER_ENABLED)
+	CASSETTE(config, m_cassette);
+	m_cassette->set_default_state(CASSETTE_PLAY | CASSETTE_MOTOR_DISABLED | CASSETTE_SPEAKER_ENABLED);
+	m_cassette->add_route(ALL_OUTPUTS, "mono", 0.05);
 
-	MCFG_UPD765A_ADD("fdc", false, false)
+	UPD765A(config, m_fdc, 8'000'000, false, false);
 
-	MCFG_FLOPPY_DRIVE_ADD("fdc:0", pcjr_floppies, "525dd", isa8_fdc_device::floppy_formats)
-	MCFG_SLOT_FIXED(true)
+	FLOPPY_CONNECTOR(config, "fdc:0", pcjr_floppies, "525dd", isa8_fdc_device::floppy_formats, true);
 
-	MCFG_PC_KEYB_ADD("pc_keyboard", WRITELINE(pcjr_state, keyb_interrupt))
+	PC_KEYB(config, m_keyboard);
+	m_keyboard->keypress().set(FUNC(pcjr_state::keyb_interrupt));
 
 	/* cartridge */
-	MCFG_GENERIC_CARTSLOT_ADD("cartslot1", generic_plain_slot, "ibmpcjr_cart")
-	MCFG_GENERIC_EXTENSIONS("bin,jrc")
-	MCFG_GENERIC_LOAD(pcjr_state, pcjr_cart1)
-
-	MCFG_GENERIC_CARTSLOT_ADD("cartslot2", generic_plain_slot, "ibmpcjr_cart")
-	MCFG_GENERIC_EXTENSIONS("bin,jrc")
-	MCFG_GENERIC_LOAD(pcjr_state, pcjr_cart2)
+	GENERIC_CARTSLOT(config, "cartslot1", generic_plain_slot, "ibmpcjr_cart", "bin,jrc").set_device_load(FUNC(pcjr_state::cart1_load));
+	GENERIC_CARTSLOT(config, "cartslot2", generic_plain_slot, "ibmpcjr_cart", "bin,jrc").set_device_load(FUNC(pcjr_state::cart2_load));
 
 	/* internal ram */
-	MCFG_RAM_ADD(RAM_TAG)
-	MCFG_RAM_DEFAULT_SIZE("640K")
+	RAM(config, m_ram).set_default_size("640K").set_extra_options("128K, 256K, 512K");
 
 	/* Software lists */
-	MCFG_SOFTWARE_LIST_ADD("cart_list","ibmpcjr_cart")
-	MCFG_SOFTWARE_LIST_ADD("flop_list","ibmpcjr_flop")
-MACHINE_CONFIG_END
+	SOFTWARE_LIST(config, "cart_list").set_original("ibmpcjr_cart");
+	SOFTWARE_LIST(config, "flop_list").set_original("ibmpcjr_flop");
+	SOFTWARE_LIST(config, "pc_list").set_compatible("ibm5150");
+}
 
-static GFXDECODE_START( ibmpcjx )
+static GFXDECODE_START( gfx_ibmpcjx )
 	GFXDECODE_ENTRY( "gfx1", 0x0000, pc_8_charlayout, 3, 1 )
 	GFXDECODE_ENTRY( "kanji", 0x0000, kanji_layout, 3, 1 )
 GFXDECODE_END
 
-static MACHINE_CONFIG_DERIVED( ibmpcjx, ibmpcjr )
-	MCFG_CPU_MODIFY("maincpu")
-	MCFG_CPU_PROGRAM_MAP(ibmpcjx_map)
-	MCFG_CPU_IO_MAP(ibmpcjx_io)
+void pcjr_state::ibmpcjx(machine_config &config)
+{
+	ibmpcjr(config);
 
-	MCFG_DEVICE_REMOVE("fdc:0");
-	MCFG_FLOPPY_DRIVE_ADD("fdc:0", pcjr_floppies, "35dd", isa8_fdc_device::floppy_formats)
-	MCFG_SLOT_FIXED(true)
-	MCFG_FLOPPY_DRIVE_ADD("fdc:1", pcjr_floppies, "35dd", isa8_fdc_device::floppy_formats)
-	MCFG_SLOT_FIXED(true)
+	m_maincpu->set_addrmap(AS_PROGRAM, &pcjr_state::ibmpcjx_map);
+	m_maincpu->set_addrmap(AS_IO, &pcjr_state::ibmpcjx_io);
 
-	MCFG_GFXDECODE_MODIFY("gfxdecode", ibmpcjx)
-MACHINE_CONFIG_END
+	config.device_remove("fdc:0");
+	FLOPPY_CONNECTOR(config, "fdc:0", pcjr_floppies, "35dd", isa8_fdc_device::floppy_formats, true);
+	FLOPPY_CONNECTOR(config, "fdc:1", pcjr_floppies, "35dd", isa8_fdc_device::floppy_formats, true);
+
+	subdevice<gfxdecode_device>("gfxdecode")->set_info(gfx_ibmpcjx);
+
+	/* internal ram */
+	m_ram->set_default_size("512K").set_extra_options(""); // only boots with 512k currently
+}
 
 
 
 ROM_START( ibmpcjr )
-	ROM_REGION(0x100000,"maincpu", 0)
-	ROM_LOAD("bios.rom", 0xf0000, 0x10000,CRC(31e3a7aa) SHA1(1f5f7013f18c08ff50d7942e76c4fbd782412414))
+	ROM_REGION(0x10000,"bios", 0)
+	ROM_SYSTEM_BIOS( 0, "default", "Default" )
+	ROMX_LOAD("bios.rom", 0x0000, 0x10000,CRC(31e3a7aa) SHA1(1f5f7013f18c08ff50d7942e76c4fbd782412414), ROM_BIOS(0))
+	ROM_SYSTEM_BIOS( 1, "quiksilver", "Quicksilver" ) // Alternate bios to boot up faster (Synectics)
+	ROMX_LOAD("quiksilv.rom", 0x0000, 0x10000, CRC(86aaa1c4) SHA1(b3d7e8ce5de17441891e0b71e5261ed01a169dc1), ROM_BIOS(1))
 
 	ROM_REGION(0x08100,"gfx1", 0)
 	ROM_LOAD("cga.chr",     0x00000, 0x01000, CRC(42009069) SHA1(ed08559ce2d7f97f68b9f540bddad5b6295294dd)) // from an unknown clone cga card
 ROM_END
 
 ROM_START( ibmpcjx )
-	ROM_REGION(0x100000,"maincpu", ROMREGION_ERASEFF)
+	ROM_REGION(0x20000,"bios", ROMREGION_ERASEFF)
 	ROM_DEFAULT_BIOS("unk")
 	ROM_SYSTEM_BIOS( 0, "5601jda", "5601jda" )
-	ROMX_LOAD("5601jda.bin", 0xf0000, 0x10000, CRC(b1e12366) SHA1(751feb16b985aa4f1ec1437493ff77e2ebd5e6a6), ROM_BIOS(1))
-	ROMX_LOAD("basicjx.rom",   0xe8000, 0x08000, NO_DUMP, ROM_BIOS(1)) // boot fails due of this.
+	ROMX_LOAD("5601jda.bin", 0x10000, 0x10000, CRC(b1e12366) SHA1(751feb16b985aa4f1ec1437493ff77e2ebd5e6a6), ROM_BIOS(0))
+	ROMX_LOAD("basicjx.rom",   0x08000, 0x08000, NO_DUMP, ROM_BIOS(0)) // boot fails due to this.
 	ROM_SYSTEM_BIOS( 1, "unk", "unk" )
-	ROMX_LOAD("ipljx.rom", 0xe0000, 0x20000, CRC(36a7b2de) SHA1(777db50c617725e149bca9b18cf51ce78f6dc548), ROM_BIOS(2))
+	ROMX_LOAD("ipljx.rom", 0x00000, 0x20000, CRC(36a7b2de) SHA1(777db50c617725e149bca9b18cf51ce78f6dc548), ROM_BIOS(1))
 
 	ROM_REGION(0x08100,"gfx1", 0) //TODO: needs a different charset
 	ROM_LOAD("cga.chr",     0x00000, 0x01000, BAD_DUMP CRC(42009069) SHA1(ed08559ce2d7f97f68b9f540bddad5b6295294dd)) // from an unknown clone cga card
@@ -702,7 +727,6 @@ ROM_START( ibmpcjx )
 	ROM_LOAD("kanji.rom",     0x00000, 0x38000, BAD_DUMP CRC(eaa6e3c3) SHA1(35554587d02d947fae8446964b1886fff5c9d67f)) // hand-made rom
 ROM_END
 
-/*    YEAR  NAME        PARENT      COMPAT      MACHINE     INPUT       INIT        COMPANY            FULLNAME */
-// pcjr
-COMP( 1983, ibmpcjr,    ibm5150,    0,          ibmpcjr,    ibmpcjr, pcjr_state,    pcjr,       "International Business Machines", "IBM PC Jr", MACHINE_IMPERFECT_COLORS )
-COMP( 1985, ibmpcjx,    ibm5150,    0,          ibmpcjx,    ibmpcjr, pcjr_state,    pcjr,       "International Business Machines", "IBM PC JX", MACHINE_IMPERFECT_COLORS | MACHINE_NOT_WORKING)
+//    YEAR  NAME     PARENT   COMPAT  MACHINE  INPUT    CLASS       INIT       COMPANY                            FULLNAME     FLAGS
+COMP( 1983, ibmpcjr, ibm5150, 0,      ibmpcjr, ibmpcjr, pcjr_state, init_pcjr, "International Business Machines", "IBM PC Jr", MACHINE_IMPERFECT_COLORS )
+COMP( 1985, ibmpcjx, ibm5150, 0,      ibmpcjx, ibmpcjr, pcjr_state, init_pcjr, "International Business Machines", "IBM PC JX", MACHINE_IMPERFECT_COLORS | MACHINE_NOT_WORKING)

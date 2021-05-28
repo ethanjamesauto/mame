@@ -7,7 +7,6 @@
 
  ***********************************************************************************************************/
 
-
 #include "emu.h"
 #include "slot.h"
 
@@ -15,7 +14,7 @@
 //  GLOBAL VARIABLES
 //**************************************************************************
 
-const device_type EA2001_CART_SLOT = &device_creator<arcadia_cart_slot_device>;
+DEFINE_DEVICE_TYPE(EA2001_CART_SLOT, arcadia_cart_slot_device, "arcadia_cart_slot", "Emerson Arcadia Cartridge Slot")
 
 //**************************************************************************
 //    ARCADIA Cartridges Interface
@@ -25,10 +24,10 @@ const device_type EA2001_CART_SLOT = &device_creator<arcadia_cart_slot_device>;
 //  device_arcadia_cart_interface - constructor
 //-------------------------------------------------
 
-device_arcadia_cart_interface::device_arcadia_cart_interface(const machine_config &mconfig, device_t &device)
-	: device_slot_card_interface(mconfig, device),
-		m_rom(nullptr),
-		m_rom_size(0)
+device_arcadia_cart_interface::device_arcadia_cart_interface(const machine_config &mconfig, device_t &device) :
+	device_interface(device, "arcadiacart"),
+	m_rom(nullptr),
+	m_rom_size(0)
 {
 }
 
@@ -45,7 +44,7 @@ device_arcadia_cart_interface::~device_arcadia_cart_interface()
 //  rom_alloc - alloc the space for the cart
 //-------------------------------------------------
 
-void device_arcadia_cart_interface::rom_alloc(UINT32 size, const char *tag)
+void device_arcadia_cart_interface::rom_alloc(uint32_t size, const char *tag)
 {
 	if (m_rom == nullptr)
 	{
@@ -62,11 +61,11 @@ void device_arcadia_cart_interface::rom_alloc(UINT32 size, const char *tag)
 //-------------------------------------------------
 //  arcadia_cart_slot_device - constructor
 //-------------------------------------------------
-arcadia_cart_slot_device::arcadia_cart_slot_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock) :
-						device_t(mconfig, EA2001_CART_SLOT, "Emerson Arcadia Cartridge Slot", tag, owner, clock, "arcadia_cart_slot", __FILE__),
-						device_image_interface(mconfig, *this),
-						device_slot_interface(mconfig, *this),
-						m_type(ARCADIA_STD), m_cart(nullptr)
+arcadia_cart_slot_device::arcadia_cart_slot_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock) :
+	device_t(mconfig, EA2001_CART_SLOT, tag, owner, clock),
+	device_image_interface(mconfig, *this),
+	device_single_card_slot_interface<device_arcadia_cart_interface>(mconfig, *this),
+	m_type(ARCADIA_STD), m_cart(nullptr)
 {
 }
 
@@ -85,19 +84,7 @@ arcadia_cart_slot_device::~arcadia_cart_slot_device()
 
 void arcadia_cart_slot_device::device_start()
 {
-	m_cart = dynamic_cast<device_arcadia_cart_interface *>(get_card_device());
-}
-
-//-------------------------------------------------
-//  device_config_complete - perform any
-//  operations now that the configuration is
-//  complete
-//-------------------------------------------------
-
-void arcadia_cart_slot_device::device_config_complete()
-{
-	// set brief and instance name
-	update_names();
+	m_cart = get_card_device();
 }
 
 
@@ -122,7 +109,7 @@ static int arcadia_get_pcb_id(const char *slot)
 {
 	for (auto & elem : slot_list)
 	{
-		if (!core_stricmp(elem.slot_option, slot))
+		if (!strcmp(elem.slot_option, slot))
 			return elem.pcb_id;
 	}
 
@@ -132,7 +119,7 @@ static int arcadia_get_pcb_id(const char *slot)
 #if 0
 static const char *arcadia_get_slot(int type)
 {
-	for (int i = 0; i < ARRAY_LENGTH(slot_list); i++)
+	for (int i = 0; i < std::size(slot_list); i++)
 	{
 		if (slot_list[i].pcb_id == type)
 			return slot_list[i].slot_option;
@@ -146,20 +133,20 @@ static const char *arcadia_get_slot(int type)
  call load
  -------------------------------------------------*/
 
-bool arcadia_cart_slot_device::call_load()
+image_init_result arcadia_cart_slot_device::call_load()
 {
 	if (m_cart)
 	{
-		UINT32 len = (software_entry() == nullptr) ? length() : get_software_region_length("rom");
+		uint32_t len = !loaded_through_softlist() ? length() : get_software_region_length("rom");
 
 		m_cart->rom_alloc(len, tag());
 
-		if (software_entry() == nullptr)
+		if (!loaded_through_softlist())
 			fread(m_cart->get_rom_base(), len);
 		else
 			memcpy(m_cart->get_rom_base(), get_software_region("rom"), len);
 
-		if (software_entry() == nullptr)
+		if (!loaded_through_softlist())
 		{
 			// we need to identify Golf!
 			m_type = ARCADIA_STD;
@@ -207,42 +194,30 @@ bool arcadia_cart_slot_device::call_load()
 
 		//printf("Type: %s\n", arcadia_get_slot(m_type));
 
-		return IMAGE_INIT_PASS;
+		return image_init_result::PASS;
 	}
 
-	return IMAGE_INIT_PASS;
+	return image_init_result::PASS;
 }
-
-
-/*-------------------------------------------------
- call softlist load
- -------------------------------------------------*/
-
-bool arcadia_cart_slot_device::call_softlist_load(software_list_device &swlist, const char *swname, const rom_entry *start_entry)
-{
-	load_software_part_region(*this, swlist, swname, start_entry);
-	return TRUE;
-}
-
 
 
 /*-------------------------------------------------
  get default card software
  -------------------------------------------------*/
 
-void arcadia_cart_slot_device::get_default_card_software(std::string &result)
+std::string arcadia_cart_slot_device::get_default_card_software(get_default_card_software_hook &hook) const
 {
-	software_get_default_slot(result, "std");
+	return software_get_default_slot("std");
 }
 
 /*-------------------------------------------------
  read
  -------------------------------------------------*/
 
-READ8_MEMBER(arcadia_cart_slot_device::read_rom)
+uint8_t arcadia_cart_slot_device::read_rom(offs_t offset)
 {
 	if (m_cart)
-		return m_cart->read_rom(space, offset);
+		return m_cart->read_rom(offset);
 	else
 		return 0xff;
 }
@@ -251,10 +226,10 @@ READ8_MEMBER(arcadia_cart_slot_device::read_rom)
  write
  -------------------------------------------------*/
 
-READ8_MEMBER(arcadia_cart_slot_device::extra_rom)
+uint8_t arcadia_cart_slot_device::extra_rom(offs_t offset)
 {
 	if (m_cart)
-		return m_cart->extra_rom(space, offset);
+		return m_cart->extra_rom(offset);
 	else
 		return 0xff;
 }

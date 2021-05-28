@@ -1,93 +1,83 @@
 // license:BSD-3-Clause
-// copyright-holders:David Haywood
+// copyright-holders:David Haywood, Samuel Neves, Peter Wilhelmsen, Morten Shearman Kirkegaard
+#ifndef MAME_MACHINE_315_5838_371_0229_COMP_H
+#define MAME_MACHINE_315_5838_371_0229_COMP_H
 
 #pragma once
 
-#ifndef __SEGA315_5838_COMP__
-#define __SEGA315_5838_COMP__
+#include "dirom.h"
 
-#define CHANNELS 2
+// #define SEGA315_DUMP_DEBUG // dump stuff to files to help with decryption efforts
 
-typedef device_delegate<UINT16 (UINT32)> sega_dec_read_delegate;
+DECLARE_DEVICE_TYPE(SEGA315_5838_COMP, sega_315_5838_comp_device)
 
-extern const device_type SEGA315_5838_COMP;
-
-#define MCFG_SET_5838_READ_CALLBACK_CH1( _class, _method) \
-	sega_315_5838_comp_device::set_read_cb_ch1(*device, sega_m2_read_delegate(&_class::_method, #_class "::" #_method, NULL, (_class *)0));
-
-#define MCFG_SET_5838_READ_CALLBACK_CH2( _class, _method) \
-	sega_315_5838_comp_device::set_read_cb_ch2(*device, sega_m2_read_delegate(&_class::_method, #_class "::" #_method, NULL, (_class *)0));
-
-class sega_315_5838_comp_device :  public device_t
+class sega_315_5838_comp_device :  public device_t,
+								   public device_rom_interface<23>
 {
 public:
 	// construction/destruction
-	sega_315_5838_comp_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	sega_315_5838_comp_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
-	sega_dec_read_delegate m_read_ch2;
+	uint16_t data_r();
 
-	static void set_read_cb_ch1(device_t &device,sega_dec_read_delegate readcb)
+	void data_w_doa(offs_t offset, uint32_t data, uint32_t mem_mask = ~0);
+	void data_w(offs_t offset, uint32_t data, uint32_t mem_mask = ~0);
+	void srcaddr_w(offs_t offset, uint32_t data, uint32_t mem_mask = ~0);
+
+	void debug_helper(int id);
+
+	enum
 	{
-		sega_315_5838_comp_device &dev = downcast<sega_315_5838_comp_device &>(device);
-		dev.m_channel[0].m_read_ch = readcb;
-	}
+		HACK_MODE_NONE = 0,
+		HACK_MODE_NO_KEY,
+		HACK_MODE_DOA
+	};
 
-	static void set_read_cb_ch2(device_t &device,sega_dec_read_delegate readcb)
-	{
-		sega_315_5838_comp_device &dev = downcast<sega_315_5838_comp_device &>(device);
-		dev.m_channel[1].m_read_ch = readcb;
-	}
-
-	DECLARE_READ32_MEMBER(decathlt_prot1_r);
-	DECLARE_READ32_MEMBER(decathlt_prot2_r);
-	UINT32 genericdecathlt_prot_r(UINT32 mem_mask, int channel);
-
-	void write_prot_data(UINT32 data, UINT32 mem_mask, int channel, int rev_words);
-
-	void upload_table_data(UINT16 data, int channel);
-	void set_upload_mode(UINT16 data, int channel);
-	void set_prot_addr(UINT32 data, UINT32 mem_mask, int channel);
-
-	DECLARE_WRITE32_MEMBER(decathlt_prot1_w_doa);
-	DECLARE_WRITE32_MEMBER(decathlt_prot1_w);
-	DECLARE_WRITE32_MEMBER(decathlt_prot2_w);
-	DECLARE_WRITE32_MEMBER(decathlt_prot1_srcaddr_w);
-	DECLARE_WRITE32_MEMBER(decathlt_prot2_srcaddr_w);
-
-	void install_decathlt_protection();
-	void install_doa_protection();
-
-	DECLARE_READ32_MEMBER(doa_prot_r);
-	DECLARE_WRITE32_MEMBER(doa_prot_w);
+	void set_hack_mode(int mode) { m_hackmode = mode; }
 
 protected:
 	virtual void device_start() override;
 	virtual void device_reset() override;
 
+	virtual void rom_bank_updated() override;
+
 private:
+	uint16_t source_word_r();
 
-	// Decathlete specific variables and functions (see machine/decathlt.c)
-	struct channel_type
-	{
-		UINT32 m_srcoffset;
-		UINT16 m_decathlt_prottable1[24];
-		UINT16 m_decathlt_dictionary[128];
+	void write_prot_data(uint32_t data, uint32_t mem_mask, int rev_words);
+	void set_prot_addr(uint32_t data, uint32_t mem_mask);
 
-		UINT32 m_decathlt_lastcount;
-		UINT32 m_decathlt_prot_uploadmode;
-		UINT32 m_decathlt_prot_uploadoffset;
-		sega_dec_read_delegate m_read_ch;
+	uint32_t m_srcoffset;
+	uint32_t m_srcstart; // failsafe
+	bool m_abort;
 
-	};
+	struct {
+		uint16_t mode;
+		struct {
+			uint8_t len;       /* in bits */
+			uint8_t idx;       /* in the dictionary */
+			uint16_t pattern;  /* of the first node */
+		} tree[12];
+		int it2;
+		uint8_t dictionary[256];
+		int id;
+	} m_compstate;
 
-	channel_type m_channel[2];
+	void set_table_upload_mode_w(uint16_t val);
+	void upload_table_data_w(uint16_t val);
 
+	uint8_t get_decompressed_byte(void);
+	uint16_t decipher(uint16_t c);
 
+	int m_num_bits_compressed;
+	uint16_t m_val_compressed;
+	int m_num_bits;
+	uint16_t m_val;
 
-	// Doa
-	int m_protstate;
-	int m_prot_a;
-	UINT8 m_protram[256];
+	int m_hackmode;
+#ifdef SEGA315_DUMP_DEBUG
+	FILE* m_fp;
+#endif
 };
 
-#endif
+#endif // MAME_MACHINE_315_5838_371_0229_COMP_H

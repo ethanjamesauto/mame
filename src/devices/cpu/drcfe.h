@@ -28,11 +28,10 @@
     a linked list and returned for further processing by the backend.
 
 ***************************************************************************/
+#ifndef MAME_CPU_DRCFE_H
+#define MAME_CPU_DRCFE_H
 
 #pragma once
-
-#ifndef __DRCFE_H__
-#define __DRCFE_H__
 
 
 //**************************************************************************
@@ -40,43 +39,43 @@
 //**************************************************************************
 
 // this defines a branch targetpc that is dynamic at runtime
-const offs_t BRANCH_TARGET_DYNAMIC = ~0;
+constexpr offs_t BRANCH_TARGET_DYNAMIC = ~offs_t(0);
 
 
 // opcode branch flags
-const UINT32 OPFLAG_IS_UNCONDITIONAL_BRANCH = 0x00000001;       // instruction is unconditional branch
-const UINT32 OPFLAG_IS_CONDITIONAL_BRANCH   = 0x00000002;       // instruction is conditional branch
-const UINT32 OPFLAG_IS_BRANCH               = (OPFLAG_IS_UNCONDITIONAL_BRANCH | OPFLAG_IS_CONDITIONAL_BRANCH);
-const UINT32 OPFLAG_IS_BRANCH_TARGET        = 0x00000004;       // instruction is the target of a branch
-const UINT32 OPFLAG_IN_DELAY_SLOT           = 0x00000008;       // instruction is in the delay slot of a branch
-const UINT32 OPFLAG_INTRABLOCK_BRANCH       = 0x00000010;       // instruction branches within the block
+constexpr u32 OPFLAG_IS_UNCONDITIONAL_BRANCH = 0x00000001;       // instruction is unconditional branch
+constexpr u32 OPFLAG_IS_CONDITIONAL_BRANCH   = 0x00000002;       // instruction is conditional branch
+constexpr u32 OPFLAG_IS_BRANCH               = (OPFLAG_IS_UNCONDITIONAL_BRANCH | OPFLAG_IS_CONDITIONAL_BRANCH);
+constexpr u32 OPFLAG_IS_BRANCH_TARGET        = 0x00000004;       // instruction is the target of a branch
+constexpr u32 OPFLAG_IN_DELAY_SLOT           = 0x00000008;       // instruction is in the delay slot of a branch
+constexpr u32 OPFLAG_INTRABLOCK_BRANCH       = 0x00000010;       // instruction branches within the block
 
 // opcode exception flags
-const UINT32 OPFLAG_CAN_TRIGGER_SW_INT      = 0x00000020;       // instruction can trigger a software interrupt
-const UINT32 OPFLAG_CAN_EXPOSE_EXTERNAL_INT = 0x00000040;       // instruction can expose an external interrupt
-const UINT32 OPFLAG_CAN_CAUSE_EXCEPTION     = 0x00000080;       // instruction may generate exception
-const UINT32 OPFLAG_WILL_CAUSE_EXCEPTION    = 0x00000100;       // instruction will generate exception
-const UINT32 OPFLAG_PRIVILEGED              = 0x00000200;       // instruction is privileged
+constexpr u32 OPFLAG_CAN_TRIGGER_SW_INT      = 0x00000020;       // instruction can trigger a software interrupt
+constexpr u32 OPFLAG_CAN_EXPOSE_EXTERNAL_INT = 0x00000040;       // instruction can expose an external interrupt
+constexpr u32 OPFLAG_CAN_CAUSE_EXCEPTION     = 0x00000080;       // instruction may generate exception
+constexpr u32 OPFLAG_WILL_CAUSE_EXCEPTION    = 0x00000100;       // instruction will generate exception
+constexpr u32 OPFLAG_PRIVILEGED              = 0x00000200;       // instruction is privileged
 
 // opcode virtual->physical translation flags
-const UINT32 OPFLAG_VALIDATE_TLB            = 0x00000400;       // instruction must validate TLB before execution
-const UINT32 OPFLAG_MODIFIES_TRANSLATION    = 0x00000800;       // instruction modifies the TLB
-const UINT32 OPFLAG_COMPILER_PAGE_FAULT     = 0x00001000;       // compiler hit a page fault when parsing
-const UINT32 OPFLAG_COMPILER_UNMAPPED       = 0x00002000;       // compiler hit unmapped memory when parsing
+constexpr u32 OPFLAG_VALIDATE_TLB            = 0x00000400;       // instruction must validate TLB before execution
+constexpr u32 OPFLAG_MODIFIES_TRANSLATION    = 0x00000800;       // instruction modifies the TLB
+constexpr u32 OPFLAG_COMPILER_PAGE_FAULT     = 0x00001000;       // compiler hit a page fault when parsing
+constexpr u32 OPFLAG_COMPILER_UNMAPPED       = 0x00002000;       // compiler hit unmapped memory when parsing
 
 // opcode flags
-const UINT32 OPFLAG_INVALID_OPCODE          = 0x00004000;       // instruction is invalid
-const UINT32 OPFLAG_VIRTUAL_NOOP            = 0x00008000;       // instruction is a virtual no-op
+constexpr u32 OPFLAG_INVALID_OPCODE          = 0x00004000;       // instruction is invalid
+constexpr u32 OPFLAG_VIRTUAL_NOOP            = 0x00008000;       // instruction is a virtual no-op
 
 // opcode sequence flow flags
-const UINT32 OPFLAG_REDISPATCH              = 0x00010000;       // instruction must redispatch after completion
-const UINT32 OPFLAG_RETURN_TO_START         = 0x00020000;       // instruction must jump back to the beginning after completion
-const UINT32 OPFLAG_END_SEQUENCE            = 0x00040000;       // this is the last instruction in a sequence
-const UINT32 OPFLAG_CAN_CHANGE_MODES        = 0x00080000;       // instruction can change modes
+constexpr u32 OPFLAG_REDISPATCH              = 0x00010000;       // instruction must redispatch after completion
+constexpr u32 OPFLAG_RETURN_TO_START         = 0x00020000;       // instruction must jump back to the beginning after completion
+constexpr u32 OPFLAG_END_SEQUENCE            = 0x00040000;       // this is the last instruction in a sequence
+constexpr u32 OPFLAG_CAN_CHANGE_MODES        = 0x00080000;       // instruction can change modes
 
 // execution semantics
-const UINT32 OPFLAG_READS_MEMORY            = 0x00100000;       // instruction reads memory
-const UINT32 OPFLAG_WRITES_MEMORY           = 0x00200000;       // instruction writes memory
+constexpr u32 OPFLAG_READS_MEMORY            = 0x00100000;       // instruction reads memory
+constexpr u32 OPFLAG_WRITES_MEMORY           = 0x00200000;       // instruction writes memory
 
 
 
@@ -102,23 +101,25 @@ struct opcode_desc
 	// copy of up to 16 bytes of opcode
 	union
 	{
-		UINT8       b[16];
-		UINT16      w[8];
-		UINT32      l[4];
-		UINT64      q[2];
+		u8          b[16];
+		u16         w[8];
+		u32         l[4];
+		u64         q[2];
 	} opptr;                                // pointer to opcode memory
 
 	// information about this instruction's execution
-	UINT8           length;                 // length in bytes of this opcode
-	UINT8           delayslots;             // number of delay slots (for branches)
-	UINT8           skipslots;              // number of skip slots (for branches)
-	UINT32          flags;                  // OPFLAG_* opcode flags
-	UINT32          cycles;                 // number of cycles needed to execute
+	u8              length;                 // length in bytes of this opcode
+	u8              delayslots;             // number of delay slots (for branches)
+	u8              skipslots;              // number of skip slots (for branches)
+	u32             flags;                  // OPFLAG_* opcode flags
+	u32             userflags;              // core specific flags
+	u32             userdata0;              // core specific data
+	u32             cycles;                 // number of cycles needed to execute
 
 	// register usage information
-	UINT32          regin[4];               // input registers
-	UINT32          regout[4];              // output registers
-	UINT32          regreq[4];              // required output registers
+	u32             regin[4];               // input registers
+	u32             regout[4];              // output registers
+	u32             regreq[4];              // required output registers
 };
 
 
@@ -127,27 +128,27 @@ class drc_frontend
 {
 public:
 	// construction/destruction
-	drc_frontend(device_t &cpu, UINT32 window_start, UINT32 window_end, UINT32 max_sequence);
+	drc_frontend(device_t &cpu, u32 window_start, u32 window_end, u32 max_sequence);
 	virtual ~drc_frontend();
 
 	// describe a block
-	const opcode_desc *describe_code(offs_t startpc);
+	opcode_desc const *describe_code(offs_t startpc);
 
 protected:
 	// required overrides
-	virtual bool describe(opcode_desc &desc, const opcode_desc *prev) = 0;
+	virtual bool describe(opcode_desc &desc, opcode_desc const *prev) = 0;
 
 private:
 	// internal helpers
-	opcode_desc *describe_one(offs_t curpc, const opcode_desc *prevdesc);
-	void build_sequence(int start, int end, UINT32 endflag);
-	void accumulate_required_backwards(opcode_desc &desc, UINT32 *reqmask);
+	opcode_desc *describe_one(offs_t curpc, opcode_desc const *prevdesc, bool in_delay_slot = false);
+	void build_sequence(int start, int end, u32 endflag);
+	void accumulate_required_backwards(opcode_desc &desc, u32 *reqmask);
 	void release_descriptions();
 
 	// configuration parameters
-	UINT32              m_window_start;             // code window start offset = startpc - window_start
-	UINT32              m_window_end;               // code window end offset = startpc + window_end
-	UINT32              m_max_sequence;             // maximum instructions to include in a sequence
+	u32                 m_window_start;             // code window start offset = startpc - window_start
+	u32                 m_window_end;               // code window end offset = startpc + window_end
+	u32                 m_max_sequence;             // maximum instructions to include in a sequence
 
 	// CPU parameters
 	cpu_device &        m_cpudevice;                // CPU device object
@@ -157,8 +158,7 @@ private:
 	// opcode descriptor arrays
 	simple_list<opcode_desc> m_desc_live_list;      // list of live descriptions
 	fixed_allocator<opcode_desc> m_desc_allocator;  // fixed allocator for descriptions
-	std::vector<opcode_desc *> m_desc_array;      // array of descriptions in PC order
+	std::vector<opcode_desc *> m_desc_array;        // array of descriptions in PC order
 };
 
-
-#endif /* __DRCFE_H__ */
+#endif // MAME_CPU_DRCFE_H

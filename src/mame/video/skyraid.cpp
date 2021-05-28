@@ -1,4 +1,4 @@
-// license:???
+// license:BSD-3-Clause
 // copyright-holders:Stefan Jokisch
 /***************************************************************************
 
@@ -18,7 +18,7 @@ void skyraid_state::video_start()
 
 void skyraid_state::draw_text(bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
-	const UINT8* p = m_alpha_num_ram;
+	const uint8_t* p = m_alpha_num_ram;
 
 	int i;
 
@@ -37,7 +37,7 @@ void skyraid_state::draw_text(bitmap_ind16 &bitmap, const rectangle &cliprect)
 
 void skyraid_state::draw_terrain(bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
-	const UINT8* p = memregion("user1")->base();
+	const uint8_t* p = memregion("user1")->base();
 
 	int x;
 	int y;
@@ -50,7 +50,7 @@ void skyraid_state::draw_terrain(bitmap_ind16 &bitmap, const rectangle &cliprect
 
 		while (x < bitmap.width())
 		{
-			UINT8 val = p[offset++];
+			uint8_t val = p[offset++];
 
 			int color = val / 32;
 			int count = val % 32;
@@ -110,26 +110,23 @@ void skyraid_state::draw_missiles(bitmap_ind16 &bitmap, const rectangle &cliprec
 
 void skyraid_state::draw_trapezoid(bitmap_ind16& dst, bitmap_ind16& src)
 {
-	const UINT8* p = memregion("user2")->base();
+	uint8_t const *const p = memregion("user2")->base();
 
-	int x;
-	int y;
-
-	for (y = 0; y < dst.height(); y++)
+	for (int y = 0; y < dst.height(); y++)
 	{
-		UINT16* pSrc = &src.pix16(y);
-		UINT16* pDst = &dst.pix16(y);
+		uint16_t const *const pSrc = &src.pix(y);
+		uint16_t *const pDst = &dst.pix(y);
 
-		int x1 = 0x000 + p[(y & ~1) + 0];
-		int x2 = 0x100 + p[(y & ~1) + 1];
+		int const x1 = 0x000 + p[(y & ~1) + 0];
+		int const x2 = 0x100 + p[(y & ~1) + 1];
 
-		for (x = x1; x < x2; x++)
+		for (int x = x1; x < x2; x++)
 			pDst[x] = pSrc[128 * (x - x1) / (x2 - x1)];
 	}
 }
 
 
-UINT32 skyraid_state::screen_update_skyraid(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t skyraid_state::screen_update_skyraid(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	bitmap.fill(0, cliprect);
 

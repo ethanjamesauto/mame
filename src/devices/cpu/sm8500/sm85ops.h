@@ -80,7 +80,7 @@
 			break; \
 		case 0x40: \
 			s2 = mem_readword( sm8500_b2w[r1 & 0x07] ); \
-			mem_writeword( sm8500_b2w[r1 & 0x07], s2 + 1 ); \
+			mem_writeword( sm8500_b2w[r1 & 0x07], s2 + 2 ); \
 			break; \
 		case 0x80: \
 			s2 = mem_readword( m_PC ); m_PC += 2; \
@@ -89,19 +89,19 @@
 			} \
 			break; \
 		case 0xC0: \
-			s2 = mem_readword( sm8500_b2w[ r1 & 0x07] ); \
-			mem_writeword( sm8500_b2w[r1 & 0x07], s2 - 1 ); \
+			s2 = mem_readword( sm8500_b2w[ r1 & 0x07])-2; \
+			mem_writeword( sm8500_b2w[r1 & 0x07], s2 ); \
 			break; \
 		} \
 		r2 = r1; \
 		r1 = sm8500_b2w[ ( r1 >> 3 ) & 0x07 ];
 
 #define ARG_d8  r1 = mem_readbyte( m_PC++ ); \
-		s2 = m_PC + ((INT8)r1);
+		s2 = m_PC + ((int8_t)r1);
 
 #define ARG_Rbr r1 = mem_readbyte( m_PC++ ); \
 		r2 = mem_readbyte( m_PC++ ); \
-		s2 = m_PC + ((INT8)r2);
+		s2 = m_PC + ((int8_t)r2);
 
 #define ARG_ad16    s2 = mem_readword( m_PC ); \
 			m_PC += 2;
@@ -144,6 +144,7 @@
 				s2 = s2 + mem_readbyte( ( r1 >> 3 ) & 0x07 ); \
 			}  \
 			s2 = mem_readword( s2 ); \
+			break; \
 		case 0x80: \
 		case 0xC0: \
 			break; \
@@ -356,7 +357,7 @@
 #define OP_INC16(X) d1 = X; \
 			res = d1 + 1; \
 			m_PS1 = m_PS1 & ( FLAG_C | FLAG_D | FLAG_H | FLAG_B | FLAG_I ); \
-			m_PS1 = m_PS1 | ( ( ( res & 0xFF ) == 0 ) ? FLAG_Z : 0 ); \
+			m_PS1 = m_PS1 | ( ( ( res & 0xFFFF ) == 0 ) ? FLAG_Z : 0 ); \
 			m_PS1 = m_PS1 | ( ( res & 0x8000 ) ? FLAG_S : 0 ); \
 			m_PS1 = m_PS1 | ( ( ( ( d1 ^ res ) & 0x8000 ) && ! ( res & 0x8000 ) ) ? FLAG_V : 0 );
 
@@ -377,7 +378,7 @@
 #define OP_AND8(X,Y)    d1 = X; \
 			d2 = Y; \
 			res = d1 & d2; \
-			m_PS1 = m_PS1 & ( FLAG_B | FLAG_I | FLAG_H | FLAG_D ); \
+			m_PS1 = m_PS1 & ( FLAG_B | FLAG_C | FLAG_I | FLAG_H | FLAG_D ); \
 			m_PS1 = m_PS1 | ( ( ( res & 0xFF ) == 0 ) ? FLAG_Z : 0 ); \
 			m_PS1 = m_PS1 | ( ( res & 0x80 ) ? FLAG_S : 0 );
 
@@ -390,7 +391,7 @@
 #define OP_OR8(X,Y) d1 = X; \
 			d2 = Y; \
 			res = d1 | d2; \
-			m_PS1 = m_PS1 & ( FLAG_B | FLAG_I | FLAG_H | FLAG_D ); \
+			m_PS1 = m_PS1 & ( FLAG_B | FLAG_C | FLAG_I | FLAG_H | FLAG_D ); \
 			m_PS1 = m_PS1 | ( ( ( res & 0xFF ) == 0 ) ? FLAG_Z : 0 ); \
 			m_PS1 = m_PS1 | ( ( res & 0x80 ) ? FLAG_S : 0 );
 
@@ -403,7 +404,7 @@
 #define OP_XOR8(X,Y)    d1 = X; \
 			d2 = Y; \
 			res = d1 ^ d2; \
-			m_PS1 = m_PS1 & ( FLAG_B | FLAG_I | FLAG_H | FLAG_D ); \
+			m_PS1 = m_PS1 & ( FLAG_B | FLAG_C | FLAG_I | FLAG_H | FLAG_D ); \
 			m_PS1 = m_PS1 | ( ( ( res & 0xFF ) == 0 ) ? FLAG_Z : 0 ); \
 			m_PS1 = m_PS1 | ( ( res & 0x80 ) ? FLAG_S : 0 );
 
@@ -501,7 +502,7 @@
 case 0x00:  /* CLR R - 4 cycles - Flags affected: -------- */
 	ARG_R;
 	mem_writebyte( r1, 0 );
-		mycycles += 4;
+	mycycles += 4;
 	break;
 case 0x01:  /* NEG R - 5 cycles - Flags affected: CZSV---- */
 	ARG_R;
@@ -872,7 +873,7 @@ case 0x2A:  /* BBC FFii/i(Rr),#b,d8 - 16,12/14,10 cycles - Flags affected: -----
 	if ( mem_readbyte( s1 ) & s2 ) {
 		mycycles += 10;
 	} else {
-		m_PC = m_PC + ((INT8)d1);
+		m_PC = m_PC + ((int8_t)d1);
 		mycycles += 14;
 	}
 	if ( ( r1 & 0x38 ) == 0 ) {
@@ -882,7 +883,7 @@ case 0x2A:  /* BBC FFii/i(Rr),#b,d8 - 16,12/14,10 cycles - Flags affected: -----
 case 0x2B:  /* BBS FFii/i(Rr),#b,d8 - 16,12/14,10 cycles - Flags affected: -------- */
 	ARG_riBd;
 	if ( mem_readbyte( s1 ) & s2 ) {
-		m_PC = m_PC + ((INT8)d1);
+		m_PC = m_PC + ((int8_t)d1);
 		mycycles += 14;
 	} else {
 		mycycles += 10;
@@ -903,13 +904,13 @@ case 0x2C:  /* EXTS Rr - 6 cycles - Flags affected: -------- */
 	mycycles += 6;
 	break;
 case 0x2D:  /* unk2D - 4 cycles */
-logerror( "%04X: unk%02x\n", m_PC-1,op );
+	logerror( "%04X: unk%02x, unhandled\n", m_PC-1,op );
 	mycycles += 4;
 	break;
 case 0x2E:  /* MOV PS0,#00 - 4 cycles - Flags affected: -------- */
 	ARG_R;
 	m_PS0 = r1;
-		mycycles += 4;
+	mycycles += 4;
 	break;
 case 0x2F:  /* BTST R,i - 6 cycles - Flags affected: -Z-0---- */
 	ARG_RR;
@@ -945,6 +946,7 @@ case 0x31:  /* ADD r,@rr / ADD r,(rr)+ / ADD r,@ww / ADD r,ww(rr) / ADD r,-(rr) 
 case 0x32:  /* SUB r,@rr / SUB r,(rr)+ / SUB r,@ww / SUB r,ww(rr) / SUB r,-(rr) - 8,13,11,15,13 cycles - Flags affected: CZSV1H-- */
 	ARG_rmw;
 	OP_SUB8( mem_readbyte( r1 ), mem_readbyte( s2 ) );
+	mem_writebyte( r1, res & 0xFF );
 	switch( r2 & 0xC0 ) {
 	case 0x00:  mycycles += 8; break;
 	case 0x40:  mycycles += 13; break;
@@ -1053,7 +1055,7 @@ case 0x3C:  /* MOVW RRr,RRs - 7 cycles - Flags affected: -------- */
 	mycycles += 7;
 	break;
 case 0x3D:  /* unk3D DM??? 3D 0E -> DM R0Eh ?? - 4,4 cycles */
-logerror( "%04X: unk%02x\n", m_PC-1,op );
+	logerror( "%04X: unk%02x, unhandled\n", m_PC-1,op );
 	mycycles += 4;
 	break;
 case 0x3E:  /* JMP RRr/@ww/ww(RRr) - 7/15/19 cycles - Flags affected: -------- */
@@ -1143,25 +1145,34 @@ case 0x4A:  /* MOVW RRr,RRs - 8 cycles - Flags affected: -------- */
 case 0x4B:  /* MOVW RRr,ww - 9 cycles - Flags affected: -------- */
 	ARG_Sw;
 	mem_writeword( r1, s2 );
-		mycycles += 9;
+	mycycles += 9;
 	break;
 case 0x4C:  /* MULT Rrr,Rs - 24 cycles - Flags affected: -Z-0---- */
+	// operation is not known if r1 is odd, assuming same as even for now
 	ARG_RR;
-	res = mem_readword( r1 ) * mem_readbyte( r2 );
-	mem_writeword( r1, res & 0xFFFF );
+	if (r1 & 1) logerror( "%04X: %02x odd register used\n", m_PC-1,op );
+	res = mem_readbyte( r1 | 1 ) * mem_readbyte( r2 );
+	//res = mem_readword( r1 ) * mem_readbyte( r2 );
+	res &= 0xFFFF;
+	mem_writeword( r1, res );
 	m_PS1 = m_PS1 & ~ ( FLAG_Z | FLAG_V );
-	m_PS1 |= ( ( res & 0xFFFF ) == 0x00 ? FLAG_Z : 0 );
+	m_PS1 |= ( ( res == 0x00 ) ? FLAG_Z : 0 );
 	mycycles += 24;
 	break;
 case 0x4D:  /* MULT RRr,i - 24 cycles - Flags affected: -Z-0---- */
+	// operation is not known if r1 is odd, assuming same as even for now
 	ARG_iR;
-	res = mem_readbyte( r1 + 1 ) * r2;
-	mem_writeword( r1, res & 0xFFFF );
+	if (r1 & 1) logerror( "%04X: %02x odd register used\n", m_PC-1,op );
+	res = mem_readbyte( r1 | 1 ) * r2;
+	//res = mem_readword( r1 ) * r2;
+	res &= 0xFFFF;
+	mem_writeword( r1, res );
 	m_PS1 = m_PS1 & ~ ( FLAG_Z | FLAG_V );
-	m_PS1 |= ( ( res & 0xFFFF ) == 0x00 ? FLAG_Z : 0 );
+	m_PS1 |= ( ( res == 0x00 ) ? FLAG_Z : 0 );
 	mycycles += 24;
 	break;
 case 0x4E:  /* BMOV Rr,#b,BF/BF,Rr,#b - 6 cycles - Flags affected: --------/-Z-0--B- */
+	// unconfirmed if V or Z are affected. It seems no games depend on it.
 	r2 = mem_readbyte( m_PC++ );
 	r1 = mem_readbyte( m_PC++ );
 	switch( r2 & 0xC0 ) {
@@ -1189,6 +1200,7 @@ case 0x4E:  /* BMOV Rr,#b,BF/BF,Rr,#b - 6 cycles - Flags affected: --------/-Z-0
 	mycycles += 6;
 	break;
 case 0x4F:  /* BCMP/BAND/BOR/BXOR BF,Rr,#b - 6 cycles - Flags affected: -Z-0---- / -Z-0--B- */
+	// unconfirmed if V or Z are affected. It seems no games depend on it.
 	r2 = mem_readbyte( m_PC++ );
 	r1 = mem_readbyte( m_PC++ );
 	s1 = mem_readbyte( r1 ) & ( 1 << ( r2 & 0x07 ) );
@@ -1265,39 +1277,92 @@ case 0x57:  /* XOR Rr,i - 6 cycles - Flags affected: -ZS0---- */
 case 0x58:  /* MOV Rr,i - 6 cycles - Flags affected: -------- */
 	ARG_iR;
 	mem_writebyte( r1, r2 );
-		mycycles += 6;
+	mycycles += 6;
 	break;
 case 0x59:  /* Invalid - 2? cycles - Flags affected: --------? */
-	logerror( "%04X: 59h: Invalid instruction\n", m_PC-1 );
+	logerror( "%04X: unk%02x, unhandled\n", m_PC-1,op );
 	mycycles += 2;
 	break;
-case 0x5A:  /* unk5A - 7,8,12,9,8 cycles */
-	logerror( "%04X: unk%02x\n", m_PC-1,op );
-/* NOTE: This unknown command is used in the calculator as a compare instruction
-       at 0x493A and 0x4941, we set the flags on the 3rd byte, although its real
-       function remains a mystery */
+case 0x5A:  /* indirect CMP - 7,8,12,9,8 cycles */
 	ARG_iR;
-	OP_CMP8( 0, r1 );
+	switch (r2 & 0xc0)
+	{
+		case 0x00:
+		// 5A 02 09 (used in calculator @ 493A and 4941. Used in Defender II @ 6DC9).
+		// Assuming it to be a compare of the literal last number against contents of (contents of r02).
+			//logerror( "%04X: unk%02X %02X %02X\n", m_PC-3,op,r2,r1 );
+			s1 = mem_readbyte(r2 & 7);
+			OP_CMP8( mem_readbyte(s1), r1 );
+			break;
+		case 0x40:
+			s1 = r2 & 7;    // s1 = primary reg
+			res = mem_readbyte(s1);   // res = secondary reg#
+			OP_CMP8( mem_readbyte(res), r1 );
+			mem_writebyte(s1, res+1);       // inc res
+			break;
+		case 0x80:
+		// 5A 86 C6 00 (used in Henry @ 495B, when you guess wrongly in practice mode).
+		// 5A 87 C6 00 (used in Henry @ 7073, when you guess wrongly in competition mode).
+		// Assuming it to be a compare of the literal last number against contents of (contents r06 + offset C6).
+			s1 = r1;
+			ARG_R;
+			//logerror( "%04X: unk%02X %02X %02X %02X\n", m_PC-4,op,r2,s1,r1 );
+			s1 += mem_readbyte(r2 & 7);
+			OP_CMP8( mem_readbyte(s1), r1 );
+			mycycles += 4;
+			break;
+		case 0xC0:
+			s1 = r2 & 7;    // s1 = primary reg
+			res = mem_readbyte(s1) - 1;   // res = secondary reg#
+			mem_writebyte(s1, res);       // dec res
+			OP_CMP8( mem_readbyte(res), r1 );
+			break;
+	}
 	mycycles += 7;
 	break;
-case 0x5B:  /* unk5B - 6,7,11,8,7 cycles */
-	logerror( "%04X: unk%02x\n", m_PC-1,op );
-/* NOTE: This unknown command is used in several carts, the code below allows those carts to boot */
+case 0x5B:  /* indirect MOV - 6,7,11,8,7 cycles */
+/* Only one variant is used in gamecom: 5B 42 00
+         Example:
+         move r02, E9
+         5b 42 00     (move 00 into register E9, then increment r02) */
 	ARG_iR;
-	r1 = r2 & 7;
-	res = mem_readbyte( r1 ) + 1;
-	mem_writebyte( r1, res );
+	switch (r2 & 0xc0)
+	{
+		case 0x00:
+			s1 = mem_readbyte(r2 & 7);
+			mem_writebyte( mem_readbyte(s1), r1 );
+			break;
+		case 0x40:
+			//logerror( "%04X: unk%02X %02X %02X\n", m_PC-3,op,r2,r1 );
+			s1 = r2 & 7;
+			res = mem_readbyte(s1);
+			mem_writebyte(res, r1);
+			mem_writebyte(s1, res + 1);
+			break;
+		case 0x80:
+			s1 = r1;
+			ARG_R;
+			s1 += mem_readbyte(r2 & 7);
+			mycycles += 4;
+			mem_writebyte(mem_readbyte(s1), r1);
+			break;
+		case 0xC0:
+			s1 = r2 & 7;
+			res = mem_readbyte(s1) - 1;
+			mem_writebyte(s1, res);
+			mem_writebyte(mem_readbyte(res), r1);
+			break;
+	}
 	mycycles += 6;
 	break;
 case 0x5C:  /* DIV RRr,RRs - 47 cycles - Flags affected: -Z-V---- */
 		/* lower 8 bits of RRs is used to divide */
 		/* remainder in stored upper 8 bits of RRs */
-logerror( "%04X: DIV RRr,Rs!\n", m_PC-1 );
 	ARG_RR;
 	m_PS1 = m_PS1 & ~ ( FLAG_Z | FLAG_V );
 	s1 = mem_readbyte( r2 + 1 );
 	if ( s1 ) {
-		UINT16 div = mem_readword( r1 );
+		uint16_t div = mem_readword( r1 );
 		res = div / s1;
 		mem_writebyte( r2, div % s1 );
 		mem_writeword( r1, res );
@@ -1308,7 +1373,7 @@ logerror( "%04X: DIV RRr,Rs!\n", m_PC-1 );
 	mycycles += 47;
 	break;
 case 0x5D:  /* DIV RRr,i - 44 cycles - Flags affected: -Z-V---- */
-logerror( "%04X: DIV RRr,i!\n", m_PC-1 );
+//  logerror( "%04X: DIV RRr,i!\n", m_PC-1 );
 	ARG_iR;
 	m_PS1 = m_PS1 & ~ ( FLAG_Z | FLAG_V );
 	if ( r2 ) {
@@ -1568,7 +1633,7 @@ case 0xC6:
 case 0xC7:
 	ARG_ri;
 	mem_writebyte( r1, r2 );
-		mycycles += 4;
+	mycycles += 4;
 	break;
 case 0xC8:  /* MOV IE0/IE1/IR0/IR1/P0/P1/P2/P3,i - 4 cycles - Flags affected: -------- */
 case 0xC9:
@@ -1637,6 +1702,7 @@ case 0xF0:  /* STOP - 2 cycles - Flags affected: -------- */
 		/* TODO: Add a bunch of additional cycles */
 		m_clock_changed = 0;
 	}
+	//logerror( "%04X: %02x, cpu-clock-change, unhandled\n", m_PC-1,op ); // fills up error log when unit sleeps
 	break;
 case 0xF1:  /* HALT - 2 cycles - Flags affected: -------- */
 	m_halted = 1;
@@ -1648,6 +1714,7 @@ case 0xF4:
 case 0xF5:
 case 0xF6:
 case 0xF7:
+	logerror( "%04X: unk%02x, unhandled\n", m_PC-1,op );
 	mycycles += 2;
 	break;
 case 0xF8:  /* RET - 10,8 cycles - Flags affected: -------- */
@@ -1677,11 +1744,11 @@ case 0xFC:  /* SETC - 2 cycles - Flags affected: C------- */
 	break;
 case 0xFD:  /* EI - 2 cycles - Flags affected: -------I */
 	m_PS1 = m_PS1 | FLAG_I;
-		mycycles += 2;
+	mycycles += 2;
 	break;
 case 0xFE:  /* DI - 2 cycles - Flags affected: -------I */
 	m_PS1 = m_PS1 & ~ ( FLAG_I );
-		mycycles += 2;
+	mycycles += 2;
 	break;
 case 0xFF:  /* NOP - 2 cycles - Flags affected: -------- */
 	mycycles += 2;

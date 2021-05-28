@@ -1,4 +1,4 @@
-// license:???
+// license:GPL-2.0+
 // copyright-holders:Jarek Burczynski
 /*
 *   Video Driver for Tank Busters
@@ -41,18 +41,18 @@ TILE_GET_INFO_MEMBER(tankbust_state::get_bg_tile_info)
 #if 0
 	if (attr&0x08)  //priority bg/sprites (1 = this bg tile on top of sprites)
 	{
-		color = ((int)rand()) & 0x0f;
+		color = ((int)machine().rand()) & 0x0f;
 	}
 	if (attr&0x80)  //all the roofs of all buildings have this bit set. What's this ???
 	{
-		color = ((int)rand()) & 0x0f;
+		color = ((int)machine().rand()) & 0x0f;
 	}
 #endif
 
 	/* priority bg/sprites (1 = this bg tile on top of sprites) */
 	tileinfo.category = (attr & 0x08) >> 3;
 
-	SET_TILE_INFO_MEMBER(1,
+	tileinfo.set(1,
 			code,
 			(color&4) | ((color&2)>>1) | ((color&1)<<1),
 			0);
@@ -63,7 +63,7 @@ TILE_GET_INFO_MEMBER(tankbust_state::get_txt_tile_info)
 	int code = m_txtram[tile_index];
 	int color = ((code>>6) & 0x03);
 
-	SET_TILE_INFO_MEMBER(2,
+	tileinfo.set(2,
 			code & 0x3f,
 			((color&2)>>1) | ((color&1)<<1),
 			0);
@@ -79,10 +79,10 @@ TILE_GET_INFO_MEMBER(tankbust_state::get_txt_tile_info)
 void tankbust_state::video_start()
 {
 	/* not scrollable */
-	m_txt_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(tankbust_state::get_txt_tile_info),this), TILEMAP_SCAN_ROWS,  8, 8, 64, 32);
+	m_txt_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(tankbust_state::get_txt_tile_info)), TILEMAP_SCAN_ROWS,  8, 8, 64, 32);
 
 	/* scrollable */
-	m_bg_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(tankbust_state::get_bg_tile_info),this), TILEMAP_SCAN_ROWS,  8, 8, 64, 32);
+	m_bg_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(tankbust_state::get_bg_tile_info)), TILEMAP_SCAN_ROWS,  8, 8, 64, 32);
 
 	m_txt_tilemap->set_transparent_pen(0);
 
@@ -97,25 +97,25 @@ void tankbust_state::video_start()
 
 ***************************************************************************/
 
-WRITE8_MEMBER(tankbust_state::background_videoram_w)
+void tankbust_state::background_videoram_w(offs_t offset, uint8_t data)
 {
 	m_videoram[offset] = data;
 	m_bg_tilemap->mark_tile_dirty(offset);
 }
 
-WRITE8_MEMBER(tankbust_state::background_colorram_w)
+void tankbust_state::background_colorram_w(offs_t offset, uint8_t data)
 {
 	m_colorram[offset] = data;
 	m_bg_tilemap->mark_tile_dirty(offset);
 }
 
-WRITE8_MEMBER(tankbust_state::txtram_w)
+void tankbust_state::txtram_w(offs_t offset, uint8_t data)
 {
 	m_txtram[offset] = data;
 	m_txt_tilemap->mark_tile_dirty(offset);
 }
 
-WRITE8_MEMBER(tankbust_state::xscroll_w)
+void tankbust_state::xscroll_w(offs_t offset, uint8_t data)
 {
 	if( m_xscroll[offset] != data )
 	{
@@ -131,7 +131,7 @@ WRITE8_MEMBER(tankbust_state::xscroll_w)
 }
 
 
-WRITE8_MEMBER(tankbust_state::yscroll_w)
+void tankbust_state::yscroll_w(offs_t offset, uint8_t data)
 {
 	if( m_yscroll[offset] != data )
 	{
@@ -191,7 +191,7 @@ void tankbust_state::draw_sprites(bitmap_ind16 &bitmap, const rectangle &cliprec
 #if 0
 		if ((m_spriteram[offs+2] & 0x02))
 		{
-			code = ((int)rand()) & 63;
+			code = ((int)machine().rand()) & 63;
 		}
 #endif
 
@@ -206,7 +206,7 @@ void tankbust_state::draw_sprites(bitmap_ind16 &bitmap, const rectangle &cliprec
 }
 
 
-UINT32 tankbust_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t tankbust_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 #if 0
 	for (int i=0; i<0x800; i++)

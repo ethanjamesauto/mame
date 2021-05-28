@@ -13,21 +13,12 @@
 
 **********************************************************************/
 
+#ifndef MAME_MACHINE_DS1302_H
+#define MAME_MACHINE_DS1302_H
+
 #pragma once
 
-#ifndef __DS1302_H__
-#define __DS1302_H__
-
-#include "emu.h"
-
-
-
-//**************************************************************************
-//  INTERFACE CONFIGURATION MACROS
-//**************************************************************************
-
-#define MCFG_DS1302_ADD(_tag, _clock) \
-	MCFG_DEVICE_ADD(_tag, DS1302, _clock)
+#include "dirtc.h"
 
 
 
@@ -43,7 +34,7 @@ class ds1302_device :  public device_t,
 {
 public:
 	// construction/destruction
-	ds1302_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	ds1302_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
 	DECLARE_WRITE_LINE_MEMBER( ce_w );
 	DECLARE_WRITE_LINE_MEMBER( sclk_w );
@@ -51,9 +42,10 @@ public:
 	DECLARE_READ_LINE_MEMBER( io_r );
 
 protected:
+	ds1302_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock, uint8_t ram_size);
+
 	// device-level overrides
 	virtual void device_start() override;
-	virtual void device_reset() override;
 	virtual void device_timer(emu_timer &timer, device_timer_id id, int param, void *ptr) override;
 
 	// device_nvram_interface overrides
@@ -63,34 +55,44 @@ protected:
 
 	// device_rtc_interface overrides
 	virtual void rtc_clock_updated(int year, int month, int day, int day_of_week, int hour, int minute, int second) override;
-	virtual bool rtc_feature_leap_year() override { return true; }
+	virtual bool rtc_feature_leap_year() const override { return true; }
 
 private:
 	void load_shift_register();
 	void input_bit();
 	void output_bit();
 
+	const uint8_t m_ram_size;
+
 	int m_ce;
 	int m_clk;
 	int m_io;
 	int m_state;
 	int m_bits;
-	UINT8 m_cmd;
-	UINT8 m_data;
+	uint8_t m_cmd;
+	uint8_t m_data;
 	int m_addr;
 
-	UINT8 m_reg[9];
-	UINT8 m_user[9];
-	UINT8 m_ram[0x20];
+	uint8_t m_reg[9];
+	uint8_t m_user[9];
+	uint8_t m_ram[31];
 
 	// timers
 	emu_timer *m_clock_timer;
 };
 
+// ======================> ds1202_device
 
-// device type definition
-extern const device_type DS1302;
+class ds1202_device : public ds1302_device
+{
+public:
+	// construction/destruction
+	ds1202_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
+};
 
 
+// device type declarations
+DECLARE_DEVICE_TYPE(DS1202, ds1202_device)
+DECLARE_DEVICE_TYPE(DS1302, ds1302_device)
 
-#endif
+#endif // MAME_MACHINE_DS1302_H

@@ -1,86 +1,116 @@
 // license:BSD-3-Clause
-// copyright-holders:Nicola Salmoria, Aaron Giles
+// copyright-holders:Nicola Salmoria, Aaron Giles, Vas Crabb
 /***************************************************************************
 
-    output.c
+    output.cpp
 
     General purpose output routines.
+
 ***************************************************************************/
 
 #include "emu.h"
+#include "output.h"
+
 #include "coreutil.h"
 
-/***************************************************************************
-    CONSTANTS
-***************************************************************************/
-
-#define HASH_SIZE       53
+#include <algorithm>
 
 
+#define OUTPUT_VERBOSE 0
 
-/***************************************************************************
-    TYPE DEFINITIONS
-***************************************************************************/
 
-class output_notify
+
+//**************************************************************************
+//  OUTPUT ITEM
+//**************************************************************************
+
+output_manager::output_item::output_item(
+		output_manager &manager,
+		std::string &&name,
+		u32 id,
+		s32 value)
+	: m_manager(manager)
+	, m_name(std::move(name))
+	, m_id(id)
+	, m_value(value)
+	, m_notifylist()
 {
-public:
-	output_notify(output_notifier_func callback, void *param)
-		: m_next(nullptr),
-			m_notifier(callback),
-			m_param(param) { }
-
-	output_notify *next() const { return m_next; }
-
-	output_notify *         m_next;           /* link to next item */
-	output_notifier_func    m_notifier;       /* callback to call */
-	void *                  m_param;          /* parameter to pass the callback */
-};
+}
 
 
-struct output_item
+void output_manager::output_item::notify(s32 value)
 {
-	output_item *       next;           /* next item in list */
-	std::string         name;           /* string name of the item */
-	UINT32              hash;           /* hash for this item name */
-	UINT32              id;             /* unique ID for this item */
-	INT32               value;          /* current value */
-	simple_list<output_notify> notifylist;     /* list of notifier callbacks */
-};
+	if (OUTPUT_VERBOSE)
+		m_manager.machine().logerror("Output %s = %d (was %d)\n", m_name, value, m_value);
+	m_value = value;
+
+	// call the local notifiers first
+	for (auto const &notify : m_notifylist)
+		notify(m_name.c_str(), value);
+
+	// call the global notifiers next
+	for (auto const &notify : m_manager.m_global_notifylist)
+		notify(m_name.c_str(), value);
+}
 
 
 
-/***************************************************************************
-    GLOBAL VARIABLES
-***************************************************************************/
+//**************************************************************************
+//  OUTPUT ITEM PROXY
+//**************************************************************************
 
-static output_item *itemtable[HASH_SIZE];
-static simple_list<output_notify> global_notifylist;
-static UINT32 uniqueid = 12345;
-
-
-
-/***************************************************************************
-    FUNCTION PROTOTYPES
-***************************************************************************/
-
-static void output_pause(running_machine &machine);
-static void output_resume(running_machine &machine);
-static void output_exit(running_machine &machine);
+void output_manager::item_proxy::resolve(device_t &device, std::string_view name)
+{
+	assert(!m_item);
+	m_item = &device.machine().output().find_or_create_item(name, 0);
+}
 
 
 
-/***************************************************************************
-    INLINE FUNCTIONS
-***************************************************************************/
+//**************************************************************************
+//  OUTPUT MANAGER
+//**************************************************************************
 
 /*-------------------------------------------------
-    get_hash - return the hash of an output value
+    output_manager - constructor
 -------------------------------------------------*/
 
-static inline UINT32 get_hash(const char *string)
+output_manager::output_manager(running_machine &machine)
+	: m_machine(machine)
+	, m_uniqueid(12345)
 {
-	return core_crc32(0, (UINT8 *)string, (UINT32)strlen(string));
+	// add callbacks
+	machine.add_notifier(MACHINE_NOTIFY_PAUSE, machine_notify_delegate(&output_manager::pause, this));
+	machine.add_notifier(MACHINE_NOTIFY_RESUME, machine_notify_delegate(&output_manager::resume, this));
+	machine.save().register_presave(save_prepost_delegate(FUNC(output_manager::presave), this));
+	machine.save().register_postload(save_prepost_delegate(FUNC(output_manager::postload), this));
+}
+
+
+/*-------------------------------------------------
+    register_save - register for save states
+-------------------------------------------------*/
+
+void output_manager::register_save()
+{
+	assert(m_save_order.empty());
+	assert(!m_save_data);
+
+	// make space for the data
+	m_save_order.clear();
+	m_save_order.reserve(m_itemtable.size());
+	m_save_data = std::make_unique<s32 []>(m_itemtable.size());
+
+	// sort existing outputs by name and register for save
+	for (auto &item : m_itemtable)
+		m_save_order.emplace_back(item.second);
+	std::sort(m_save_order.begin(), m_save_order.end(), [] (auto const &l, auto const &r) { return l.get().name() < r.get().name(); });
+
+	// register the reserved space for saving
+	machine().save().save_pointer(nullptr, "output", nullptr, 0, NAME(m_save_data), m_itemtable.size());
+	if (OUTPUT_VERBOSE)
+		osd_printf_verbose("Registered %u outputs for save states\n", m_itemtable.size());
+
 }
 
 
@@ -88,15 +118,11 @@ static inline UINT32 get_hash(const char *string)
     find_item - find an item based on a string
 -------------------------------------------------*/
 
-static inline output_item *find_item(const char *string)
+output_manager::output_item *output_manager::find_item(std::string_view string)
 {
-	UINT32 hash = get_hash(string);
-	output_item *item;
-
-	/* use the hash as a starting point and find an entry */
-	for (item = itemtable[hash % HASH_SIZE]; item != nullptr; item = item->next)
-		if (item->hash == hash && strcmp(string, item->name.c_str()) == 0)
-			return item;
+	auto item = m_itemtable.find(std::string(string));
+	if (item != m_itemtable.end())
+		return &item->second;
 
 	return nullptr;
 }
@@ -106,45 +132,23 @@ static inline output_item *find_item(const char *string)
     create_new_item - create a new item
 -------------------------------------------------*/
 
-static inline output_item *create_new_item(const char *outname, INT32 value)
+output_manager::output_item &output_manager::create_new_item(std::string_view outname, s32 value)
 {
-	auto item = global_alloc(output_item);
-	UINT32 hash = get_hash(outname);
+	if (OUTPUT_VERBOSE)
+		osd_printf_verbose("Creating output %s = %d%s\n", outname, value, m_save_data ? " (will not be saved)" : "");
 
-	/* fill in the data */
-	item->next = itemtable[hash % HASH_SIZE];
-	item->name.assign(outname);
-	item->hash = hash;
-	item->id = uniqueid++;
-	item->value = value;
-
-	/* add us to the hash table */
-	itemtable[hash % HASH_SIZE] = item;
-	return item;
+	auto const ins(m_itemtable.emplace(
+			std::piecewise_construct,
+			std::forward_as_tuple(outname),
+			std::forward_as_tuple(*this, std::string(outname), m_uniqueid++, value)));
+	assert(ins.second);
+	return ins.first->second;
 }
 
-
-
-/***************************************************************************
-    CORE IMPLEMENTATION
-***************************************************************************/
-
-/*-------------------------------------------------
-    output_init - initialize everything
--------------------------------------------------*/
-
-void output_init(running_machine &machine)
+output_manager::output_item &output_manager::find_or_create_item(std::string_view outname, s32 value)
 {
-	/* add pause callback */
-	machine.add_notifier(MACHINE_NOTIFY_PAUSE, machine_notify_delegate(FUNC(output_pause), &machine));
-	machine.add_notifier(MACHINE_NOTIFY_RESUME, machine_notify_delegate(FUNC(output_resume), &machine));
-
-	/* get a callback when done */
-	machine.add_notifier(MACHINE_NOTIFY_EXIT, machine_notify_delegate(FUNC(output_exit), &machine));
-
-	/* reset the lists */
-	memset(itemtable, 0, sizeof(itemtable));
-	global_notifylist.reset();
+	output_item *const item = find_item(outname);
+	return item ? *item : create_new_item(outname, value);
 }
 
 
@@ -152,39 +156,36 @@ void output_init(running_machine &machine)
     output_pause - send pause message
 -------------------------------------------------*/
 
-static void output_pause(running_machine &machine)
+void output_manager::pause()
 {
-	output_set_value("pause", 1);
+	set_value("pause", 1);
 }
 
-static void output_resume(running_machine &machine)
+void output_manager::resume()
 {
-	output_set_value("pause", 0);
+	set_value("pause", 0);
 }
 
 
 /*-------------------------------------------------
-    output_exit - cleanup on exit
+    presave - prepare data for save state
 -------------------------------------------------*/
 
-static void output_exit(running_machine &machine)
+void output_manager::presave()
 {
-	output_item *item;
-	int hash;
+	for (size_t i = 0; m_save_order.size() > i; ++i)
+		m_save_data[i] = m_save_order[i].get().get();
+}
 
-	/* remove all items */
-	for (hash = 0; hash < HASH_SIZE; hash++)
-		for (item = itemtable[hash]; item != nullptr; )
-		{
-			output_item *next = item->next;
 
-			/* free the name and the item */
-			global_free(item);
-			item = next;
-		}
+/*-------------------------------------------------
+    postload - restore loaded data
+-------------------------------------------------*/
 
-	/* remove all global notifiers */
-	global_notifylist.reset();
+void output_manager::postload()
+{
+	for (size_t i = 0; m_save_order.size() > i; ++i)
+		 m_save_order[i].get().set(m_save_data[i]);
 }
 
 
@@ -192,62 +193,15 @@ static void output_exit(running_machine &machine)
     output_set_value - set the value of an output
 -------------------------------------------------*/
 
-void output_set_value(const char *outname, INT32 value)
+void output_manager::set_value(std::string_view outname, s32 value)
 {
-	output_item *item = find_item(outname);
-	INT32 oldval;
+	output_item *const item = find_item(outname);
 
-	/* if no item of that name, create a new one and send the item's state */
-	if (item == nullptr)
-	{
-		item = create_new_item(outname, value);
-		oldval = value + 1;
-	}
-
+	// if no item of that name, create a new one and force notification
+	if (!item)
+		create_new_item(outname, value).notify(value);
 	else
-	{
-		/* set the new value */
-		oldval = item->value;
-		item->value = value;
-	}
-
-	/* if the value is different, signal the notifier */
-	if (oldval != value)
-	{
-		/* call the local notifiers first */
-		for (output_notify *notify = item->notifylist.first(); notify != nullptr; notify = notify->next())
-			(*notify->m_notifier)(outname, value, notify->m_param);
-
-		/* call the global notifiers next */
-		for (output_notify *notify = global_notifylist.first(); notify != nullptr; notify = notify->next())
-			(*notify->m_notifier)(outname, value, notify->m_param);
-	}
-}
-
-
-/*-------------------------------------------------
-    output_set_indexed_value - set the value of an
-    indexed output
--------------------------------------------------*/
-
-void output_set_indexed_value(const char *basename, int index, int value)
-{
-	char buffer[100];
-	char *dest = buffer;
-
-	/* copy the string */
-	while (*basename != 0)
-		*dest++ = *basename++;
-
-	/* append the index */
-	if (index >= 1000) *dest++ = '0' + ((index / 1000) % 10);
-	if (index >= 100) *dest++ = '0' + ((index / 100) % 10);
-	if (index >= 10) *dest++ = '0' + ((index / 10) % 10);
-	*dest++ = '0' + (index % 10);
-	*dest++ = 0;
-
-	/* set the value */
-	output_set_value(buffer, value);
+		item->set(value); // set the new value (notifies on change)
 }
 
 
@@ -256,80 +210,36 @@ void output_set_indexed_value(const char *basename, int index, int value)
     output
 -------------------------------------------------*/
 
-INT32 output_get_value(const char *outname)
+s32 output_manager::get_value(std::string_view outname)
 {
-	output_item *item = find_item(outname);
+	output_item const *const item = find_item(outname);
 
-	/* if no item, value is 0 */
-	if (item == nullptr)
-		return 0;
-	return item->value;
+	// if no item, value is 0
+	return item ? item->get() : 0;
 }
 
 
-/*-------------------------------------------------
-    output_get_indexed_value - get the value of an
-    indexed output
--------------------------------------------------*/
+//-------------------------------------------------
+//  set_notifier - sets a notifier callback for a
+//  particular output
+//-------------------------------------------------
 
-INT32 output_get_indexed_value(const char *basename, int index)
+void output_manager::set_notifier(std::string_view outname, notifier_func callback, void *param)
 {
-	char buffer[100];
-	char *dest = buffer;
-
-	/* copy the string */
-	while (*basename != 0)
-		*dest++ = *basename++;
-
-	/* append the index */
-	if (index >= 1000) *dest++ = '0' + ((index / 1000) % 10);
-	if (index >= 100) *dest++ = '0' + ((index / 100) % 10);
-	if (index >= 10) *dest++ = '0' + ((index / 10) % 10);
-	*dest++ = '0' + (index % 10);
-	*dest++ = 0;
-
-	/* set the value */
-	return output_get_value(buffer);
+	// if an item is specified, find/create it
+	output_item *const item = find_item(outname);
+	(item ? *item : create_new_item(outname, 0)).set_notifier(callback, param);
 }
 
 
-/*-------------------------------------------------
-    output_set_notifier - sets a notifier callback
-    for a particular output, or for all outputs
-    if NULL is specified
--------------------------------------------------*/
+//-------------------------------------------------
+//  set_global_notifier - sets a notifier callback
+//  for all outputs
+//-------------------------------------------------
 
-void output_set_notifier(const char *outname, output_notifier_func callback, void *param)
+void output_manager::set_global_notifier(notifier_func callback, void *param)
 {
-	/* if an item is specified, find it */
-	if (outname != nullptr)
-	{
-		output_item *item = find_item(outname);
-
-		/* if no item of that name, create a new one */
-		if (item == nullptr)
-			item = create_new_item(outname, 0);
-		item->notifylist.append(*global_alloc(output_notify(callback, param)));
-	}
-	else
-		global_notifylist.append(*global_alloc(output_notify(callback, param)));
-}
-
-
-/*-------------------------------------------------
-    output_notify_all - immediately call the given
-    notifier for all outputs
--------------------------------------------------*/
-
-void output_notify_all(output_notifier_func callback, void *param)
-{
-	output_item *item;
-	int hash;
-
-	/* remove all items */
-	for (hash = 0; hash < HASH_SIZE; hash++)
-		for (item = itemtable[hash]; item != nullptr; item = item->next)
-			(*callback)(item->name.c_str(), item->value, param);
+	m_global_notifylist.emplace_back(callback, param);
 }
 
 
@@ -338,14 +248,11 @@ void output_notify_all(output_notifier_func callback, void *param)
     a given name
 -------------------------------------------------*/
 
-UINT32 output_name_to_id(const char *outname)
+u32 output_manager::name_to_id(std::string_view outname)
 {
-	output_item *item = find_item(outname);
-
-	/* if no item, ID is 0 */
-	if (item == nullptr)
-		return 0;
-	return item->id;
+	// if no item, ID is 0
+	output_item const *const item = find_item(outname);
+	return item ? item->id() : 0;
 }
 
 
@@ -354,17 +261,12 @@ UINT32 output_name_to_id(const char *outname)
     to a given unique ID
 -------------------------------------------------*/
 
-const char *output_id_to_name(UINT32 id)
+char const *output_manager::id_to_name(u32 id)
 {
-	output_item *item;
-	int hash;
+	for (auto &item : m_itemtable)
+		if (item.second.id() == id)
+			return item.second.name().c_str();
 
-	/* remove all items */
-	for (hash = 0; hash < HASH_SIZE; hash++)
-		for (item = itemtable[hash]; item != nullptr; item = item->next)
-			if (item->id == id)
-				return item->name.c_str();
-
-	/* nothing found, return NULL */
+	// nothing found, return nullptr
 	return nullptr;
 }

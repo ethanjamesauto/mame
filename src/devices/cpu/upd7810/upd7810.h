@@ -1,9 +1,9 @@
 // license:BSD-3-Clause
 // copyright-holders:Juergen Buchmueller
-#pragma once
+#ifndef MAME_CPU_UPD7810_UPD7810_H
+#define MAME_CPU_UPD7810_UPD7810_H
 
-#ifndef __UPD7810_H__
-#define __UPD7810_H__
+#pragma once
 
 
 /*
@@ -30,18 +30,6 @@ enum
 	UPD7810_LV0, UPD7810_LV1
 };
 
-/* port numbers for PA,PB,PC,PD and PF */
-enum
-{
-	UPD7810_PORTA, UPD7810_PORTB, UPD7810_PORTC, UPD7810_PORTD, UPD7810_PORTF
-};
-
-enum
-{
-	UPD7807_PORTA, UPD7807_PORTB, UPD7807_PORTC, UPD7807_PORTD, UPD7807_PORTF,
-	UPD7807_PORTT
-};
-
 /* IRQ lines */
 #define UPD7810_INTF1       0
 #define UPD7810_INTF2       1
@@ -49,70 +37,57 @@ enum
 #define UPD7810_INTFE1      4
 
 
-
-#define MCFG_UPD7810_TO(_devcb) \
-	upd7810_device::set_to_func(*device, DEVCB_##_devcb);
-
-#define MCFG_UPD7810_CO0(_devcb) \
-	upd7810_device::set_co0_func(*device, DEVCB_##_devcb);
-
-#define MCFG_UPD7810_CO1(_devcb) \
-	upd7810_device::set_co1_func(*device, DEVCB_##_devcb);
-
-#define MCFG_UPD7810_TXD(_devcb) \
-	upd7810_device::set_txd_func(*device, DEVCB_##_devcb);
-
-#define MCFG_UPD7810_RXD(_devcb) \
-	upd7810_device::set_rxd_func(*device, DEVCB_##_devcb);
-
-#define MCFG_UPD7810_AN0(_devcb) \
-	upd7810_device::set_an0_func(*device, DEVCB_##_devcb);
-
-#define MCFG_UPD7810_AN1(_devcb) \
-	upd7810_device::set_an1_func(*device, DEVCB_##_devcb);
-
-#define MCFG_UPD7810_AN2(_devcb) \
-	upd7810_device::set_an2_func(*device, DEVCB_##_devcb);
-
-#define MCFG_UPD7810_AN3(_devcb) \
-	upd7810_device::set_an3_func(*device, DEVCB_##_devcb);
-
-#define MCFG_UPD7810_AN4(_devcb) \
-	upd7810_device::set_an4_func(*device, DEVCB_##_devcb);
-
-#define MCFG_UPD7810_AN5(_devcb) \
-	upd7810_device::set_an5_func(*device, DEVCB_##_devcb);
-
-#define MCFG_UPD7810_AN6(_devcb) \
-	upd7810_device::set_an6_func(*device, DEVCB_##_devcb);
-
-#define MCFG_UPD7810_AN7(_devcb) \
-	upd7810_device::set_an7_func(*device, DEVCB_##_devcb);
-
-
 class upd7810_device : public cpu_device
 {
 public:
 	// construction/destruction
-	upd7810_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
-	upd7810_device(const machine_config &mconfig, device_type type, const char *name, const char *tag, device_t *owner, UINT32 clock, const char *shortname, const char *source);
+	upd7810_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
-	// static configuration helpers
-	template<class _Object> static devcb_base &set_to_func(device_t &device, _Object object) { return downcast<upd7810_device &>(device).m_to_func.set_callback(object); }
-	template<class _Object> static devcb_base &set_co0_func(device_t &device, _Object object) { return downcast<upd7810_device &>(device).m_co0_func.set_callback(object); }
-	template<class _Object> static devcb_base &set_co1_func(device_t &device, _Object object) { return downcast<upd7810_device &>(device).m_co1_func.set_callback(object); }
-	template<class _Object> static devcb_base &set_txd_func(device_t &device, _Object object) { return downcast<upd7810_device &>(device).m_txd_func.set_callback(object); }
-	template<class _Object> static devcb_base &set_rxd_func(device_t &device, _Object object) { return downcast<upd7810_device &>(device).m_rxd_func.set_callback(object); }
-	template<class _Object> static devcb_base &set_an0_func(device_t &device, _Object object) { return downcast<upd7810_device &>(device).m_an0_func.set_callback(object); }
-	template<class _Object> static devcb_base &set_an1_func(device_t &device, _Object object) { return downcast<upd7810_device &>(device).m_an1_func.set_callback(object); }
-	template<class _Object> static devcb_base &set_an2_func(device_t &device, _Object object) { return downcast<upd7810_device &>(device).m_an2_func.set_callback(object); }
-	template<class _Object> static devcb_base &set_an3_func(device_t &device, _Object object) { return downcast<upd7810_device &>(device).m_an3_func.set_callback(object); }
-	template<class _Object> static devcb_base &set_an4_func(device_t &device, _Object object) { return downcast<upd7810_device &>(device).m_an4_func.set_callback(object); }
-	template<class _Object> static devcb_base &set_an5_func(device_t &device, _Object object) { return downcast<upd7810_device &>(device).m_an5_func.set_callback(object); }
-	template<class _Object> static devcb_base &set_an6_func(device_t &device, _Object object) { return downcast<upd7810_device &>(device).m_an6_func.set_callback(object); }
-	template<class _Object> static devcb_base &set_an7_func(device_t &device, _Object object) { return downcast<upd7810_device &>(device).m_an7_func.set_callback(object); }
+	// configuration helpers
+	auto to_func() { return m_to_func.bind(); }
+	auto co0_func() { return m_co0_func.bind(); }
+	auto co1_func() { return m_co1_func.bind(); }
+	auto txd_func() { return m_txd_func.bind(); }
+	auto rxd_func() { return m_rxd_func.bind(); }
+	auto an0_func() { return m_an_func[0].bind(); }
+	auto an1_func() { return m_an_func[1].bind(); }
+	auto an2_func() { return m_an_func[2].bind(); }
+	auto an3_func() { return m_an_func[3].bind(); }
+	auto an4_func() { return m_an_func[4].bind(); }
+	auto an5_func() { return m_an_func[5].bind(); }
+	auto an6_func() { return m_an_func[6].bind(); }
+	auto an7_func() { return m_an_func[7].bind(); }
+
+	auto pa_in_cb() { return m_pa_in_cb.bind(); }
+	auto pb_in_cb() { return m_pb_in_cb.bind(); }
+	auto pc_in_cb() { return m_pc_in_cb.bind(); }
+	auto pd_in_cb() { return m_pd_in_cb.bind(); }
+	auto pf_in_cb() { return m_pf_in_cb.bind(); }
+	auto pa_out_cb() { return m_pa_out_cb.bind(); }
+	auto pb_out_cb() { return m_pb_out_cb.bind(); }
+	auto pc_out_cb() { return m_pc_out_cb.bind(); }
+	auto pd_out_cb() { return m_pd_out_cb.bind(); }
+	auto pf_out_cb() { return m_pf_out_cb.bind(); }
+
+	void set_pa_pullups(uint8_t p) { m_pa_pullups = p; }
+	void set_pb_pullups(uint8_t p) { m_pb_pullups = p; }
+	void set_pc_pullups(uint8_t p) { m_pc_pullups = p; }
+	void set_pd_pullups(uint8_t p) { m_pd_pullups = p; }
+	void set_pf_pullups(uint8_t p) { m_pf_pullups = p; }
+
+	auto pt_in_cb() { return m_pt_in_cb.bind(); }
+
+	void pa_w(uint8_t data, uint8_t mem_mask = ~0);
+	void pb_w(uint8_t data, uint8_t mem_mask = ~0);
+	void pc_w(uint8_t data, uint8_t mem_mask = ~0);
+	void pd_w(uint8_t data, uint8_t mem_mask = ~0);
+	void pf_w(uint8_t data, uint8_t mem_mask = ~0);
 
 protected:
+	void upd_internal_128_ram_map(address_map &map);
+	void upd_internal_256_ram_map(address_map &map);
+	void upd_internal_4096_rom_map(address_map &map);
+
 	// flags
 	enum
 	{
@@ -129,7 +104,7 @@ protected:
 	// IRR flags
 	enum
 	{
-		INTNMI  = 0x0001,
+		INTFNMI = 0x0001,
 		INTFT0  = 0x0002,
 		INTFT1  = 0x0004,
 		INTF1   = 0x0008,
@@ -155,27 +130,30 @@ protected:
 		INTSB  = 0x0010
 	};
 
+	upd7810_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock, address_map_constructor internal_map);
+
 	// device-level overrides
 	virtual void device_start() override;
 	virtual void device_reset() override;
 
 	// device_execute_interface overrides
-	virtual UINT32 execute_min_cycles() const override { return 1; }
-	virtual UINT32 execute_max_cycles() const override { return 40; }
-	virtual UINT32 execute_input_lines() const override { return 2; }
+	virtual uint64_t execute_clocks_to_cycles(uint64_t clocks) const noexcept override { return (clocks + 3 - 1) / 3; }
+	virtual uint64_t execute_cycles_to_clocks(uint64_t cycles) const noexcept override { return (cycles * 3); }
+	virtual uint32_t execute_min_cycles() const noexcept override { return 1; }
+	virtual uint32_t execute_max_cycles() const noexcept override { return 40; }
+	virtual uint32_t execute_input_lines() const noexcept override { return 2; }
+	virtual bool execute_input_edge_triggered(int inputnum) const noexcept override { return true; }
 	virtual void execute_run() override;
 	virtual void execute_set_input(int inputnum, int state) override;
 
 	// device_memory_interface overrides
-	virtual const address_space_config *memory_space_config(address_spacenum spacenum = AS_0) const override { return (spacenum == AS_PROGRAM) ? &m_program_config : ( (spacenum == AS_IO) ? &m_io_config : nullptr ); }
+	virtual space_config_vector memory_space_config() const override;
 
 	// device_state_interface overrides
-	void state_string_export(const device_state_entry &entry, std::string &str) override;
+	virtual void state_string_export(const device_state_entry &entry, std::string &str) const override;
 
 	// device_disasm_interface overrides
-	virtual UINT32 disasm_min_opcode_bytes() const override { return 1; }
-	virtual UINT32 disasm_max_opcode_bytes() const override { return 4; }
-	virtual offs_t disasm_disassemble(char *buffer, offs_t pc, const UINT8 *oprom, const UINT8 *opram, UINT32 options) override;
+	virtual std::unique_ptr<util::disasm_interface> create_disassembler() override;
 
 	virtual void handle_timers(int cycles);
 	virtual void upd7810_take_irq();
@@ -191,24 +169,32 @@ protected:
 	devcb_write_line  m_co1_func;
 	devcb_write_line  m_txd_func;
 	devcb_read_line   m_rxd_func;
-	devcb_read8       m_an0_func;
-	devcb_read8       m_an1_func;
-	devcb_read8       m_an2_func;
-	devcb_read8       m_an3_func;
-	devcb_read8       m_an4_func;
-	devcb_read8       m_an5_func;
-	devcb_read8       m_an6_func;
-	devcb_read8       m_an7_func;
+	devcb_read8::array<8> m_an_func;
+
+	devcb_read8       m_pa_in_cb;
+	devcb_read8       m_pb_in_cb;
+	devcb_read8       m_pc_in_cb;
+	devcb_read8       m_pd_in_cb;
+	devcb_read8       m_pf_in_cb;
+	devcb_write8      m_pa_out_cb;
+	devcb_write8      m_pb_out_cb;
+	devcb_write8      m_pc_out_cb;
+	devcb_write8      m_pd_out_cb;
+	devcb_write8      m_pf_out_cb;
+
+	devcb_read8       m_pt_in_cb; // TODO: uPD7807 only
 
 	typedef void (upd7810_device::*opcode_func)();
 
 	struct opcode_s {
 		opcode_func opfunc;
-		UINT8 oplen;
-		UINT8 cycles;
-		UINT8 cycles_skip;
-		UINT8 mask_l0_l1;
+		uint8_t oplen;
+		uint8_t cycles;
+		uint8_t cycles_skip;
+		uint8_t mask_l0_l1;
 	};
+
+	virtual void configure_ops();
 
 	static const struct opcode_s s_op48[256];
 	static const struct opcode_s s_op4C[256];
@@ -245,15 +231,15 @@ protected:
 	static const struct opcode_s s_opXX_78c06[256];
 
 	address_space_config m_program_config;
-	address_space_config m_io_config;
 
 	PAIR    m_ppc;    /* previous program counter */
 	PAIR    m_pc;     /* program counter */
 	PAIR    m_sp;     /* stack pointer */
-	UINT8   m_op;     /* opcode */
-	UINT8   m_op2;    /* opcode part 2 */
-	UINT8   m_iff;    /* interrupt enable flip flop */
-	UINT8   m_psw;    /* processor status word */
+	uint8_t   m_op;     /* opcode */
+	uint8_t   m_op2;    /* opcode part 2 */
+	uint8_t   m_iff;    /* interrupt enable flip flop */
+	uint8_t   m_iff_pending;
+	uint8_t   m_psw;    /* processor status word */
 	PAIR    m_ea;     /* extended accumulator */
 	PAIR    m_va;     /* accumulator + vector register */
 	PAIR    m_bc;     /* 8bit B and C registers / 16bit BC register */
@@ -268,69 +254,72 @@ protected:
 	PAIR    m_tm;     /* 8 bit timer 0/1 comparator inputs */
 	PAIR    m_ecnt;   /* timer counter register / capture register */
 	PAIR    m_etm;    /* timer 0/1 comparator inputs */
-	UINT8   m_ma;     /* port A input or output mask */
-	UINT8   m_mb;     /* port B input or output mask */
-	UINT8   m_mcc;    /* port C control/port select */
-	UINT8   m_mc;     /* port C input or output mask */
-	UINT8   m_mm;     /* memory mapping */
-	UINT8   m_mf;     /* port F input or output mask */
-	UINT8   m_tmm;    /* timer 0 and timer 1 operating parameters */
-	UINT8   m_etmm;   /* 16-bit multifunction timer/event counter */
-	UINT8   m_eom;    /* 16-bit timer/event counter output control */
-	UINT8   m_sml;    /* serial interface parameters low */
-	UINT8   m_smh;    /* -"- high */
-	UINT8   m_panm;   /* previous analog to digital converter operating parameters */
-	UINT8   m_anm;    /* analog to digital converter operating parameters */
-	UINT8   m_mkl;    /* interrupt mask low */
-	UINT8   m_mkh;    /* -"- high */
-	UINT8   m_zcm;    /* bias circuitry for ac zero-cross detection */
-	UINT8   m_pa_in;  /* port A,B,C,D,F inputs */
-	UINT8   m_pb_in;
-	UINT8   m_pc_in;
-	UINT8   m_pd_in;
-	UINT8   m_pf_in;
-	UINT8   m_pa_out; /* port A,B,C,D,F outputs */
-	UINT8   m_pb_out;
-	UINT8   m_pc_out;
-	UINT8   m_pd_out;
-	UINT8   m_pf_out;
-	UINT8   m_cr0;    /* analog digital conversion register 0 */
-	UINT8   m_cr1;    /* analog digital conversion register 1 */
-	UINT8   m_cr2;    /* analog digital conversion register 2 */
-	UINT8   m_cr3;    /* analog digital conversion register 3 */
-	UINT8   m_txb;    /* transmitter buffer */
-	UINT8   m_rxb;    /* receiver buffer */
-	UINT8   m_txd;    /* port C control line states */
-	UINT8   m_rxd;
-	UINT8   m_sck;
-	UINT8   m_ti;
-	UINT8   m_to;
-	UINT8   m_ci;
-	UINT8   m_lv0;    /* level flip flop for co0 */
-	UINT8   m_lv1;    /* level flip flop for co1 */
-	UINT8   m_co0;
-	UINT8   m_co1;
-	UINT16  m_irr;    /* interrupt request register */
-	UINT16  m_itf;    /* interrupt test flag register */
+	uint8_t   m_ma;     /* port A input or output mask */
+	uint8_t   m_mb;     /* port B input or output mask */
+	uint8_t   m_mcc;    /* port C control/port select */
+	uint8_t   m_mc;     /* port C input or output mask */
+	uint8_t   m_mm;     /* memory mapping */
+	uint8_t   m_mf;     /* port F input or output mask */
+	uint8_t   m_mt;     /* port T input threshold level */
+	uint8_t   m_tmm;    /* timer 0 and timer 1 operating parameters */
+	uint8_t   m_etmm;   /* 16-bit multifunction timer/event counter */
+	uint8_t   m_eom;    /* 16-bit timer/event counter output control */
+	uint8_t   m_sml;    /* serial interface parameters low */
+	uint8_t   m_smh;    /* -"- high */
+	uint8_t   m_panm;   /* previous analog to digital converter operating parameters */
+	uint8_t   m_anm;    /* analog to digital converter operating parameters */
+	uint8_t   m_mkl;    /* interrupt mask low */
+	uint8_t   m_mkh;    /* -"- high */
+	uint8_t   m_zcm;    /* bias circuitry for ac zero-cross detection */
+	uint8_t   m_pa_in;  /* port A,B,C,D,F inputs */
+	uint8_t   m_pb_in;
+	uint8_t   m_pc_in;
+	uint8_t   m_pd_in;
+	uint8_t   m_pf_in;
+	uint8_t   m_pa_out; /* port A,B,C,D,F outputs */
+	uint8_t   m_pb_out;
+	uint8_t   m_pc_out;
+	uint8_t   m_pd_out;
+	uint8_t   m_pf_out;
+	uint8_t   m_pa_pullups;
+	uint8_t   m_pb_pullups;
+	uint8_t   m_pc_pullups;
+	uint8_t   m_pd_pullups;
+	uint8_t   m_pf_pullups;
+	uint8_t   m_cr[4];  /* analog digital conversion registers */
+	uint8_t   m_txb;    /* transmitter buffer */
+	uint8_t   m_rxb;    /* receiver buffer */
+	uint8_t   m_txd;    /* port C control line states */
+	uint8_t   m_rxd;
+	uint8_t   m_sck;
+	uint8_t   m_ti;
+	uint8_t   m_to;
+	uint8_t   m_ci;
+	uint8_t   m_lv0;    /* level flip flop for co0 */
+	uint8_t   m_lv1;    /* level flip flop for co1 */
+	uint8_t   m_co0;
+	uint8_t   m_co1;
+	uint16_t  m_irr;    /* interrupt request register */
+	uint16_t  m_itf;    /* interrupt test flag register */
 	int     m_nmi;    /* keep track of current nmi state. Needed for 7810 irq checking. */
 	int     m_int1;   /* keep track of current int1 state. Needed for irq checking. */
 	int     m_int2;   /* keep track to current int2 state. Needed for irq checking. */
 
 	/* internal helper variables */
-	UINT16  m_txs;    /* transmitter shift register */
-	UINT16  m_rxs;    /* receiver shift register */
-	UINT8   m_txcnt;  /* transmitter shift register bit count */
-	UINT8   m_rxcnt;  /* receiver shift register bit count */
-	UINT8   m_txbuf;  /* transmitter buffer was written */
-	INT32   m_ovc0;   /* overflow counter for timer 0 (for clock div 12/384) */
-	INT32   m_ovc1;   /* overflow counter for timer 0 (for clock div 12/384) */
-	INT32   m_ovce;   /* overflow counter for ecnt */
-	INT32   m_ovcf;   /* overflow counter for fixed clock div 3 mode */
-	INT32   m_ovcs;   /* overflow counter for serial I/O */
-	UINT8   m_edges;  /* rising/falling edge flag for serial I/O */
-	UINT16  m_adcnt;  /* A/D converter cycle count */
-	UINT8   m_adtot;  /* A/D converter total cycles per conversion */
-	UINT8   m_tmpcr;  /* temporary analog digital conversion register */
+	uint16_t  m_txs;    /* transmitter shift register */
+	uint16_t  m_rxs;    /* receiver shift register */
+	uint8_t   m_txcnt;  /* transmitter shift register bit count */
+	uint8_t   m_rxcnt;  /* receiver shift register bit count */
+	uint8_t   m_txbuf;  /* transmitter buffer was written */
+	int32_t   m_ovc0;   /* overflow counter for timer 0 (for clock div 12/384) */
+	int32_t   m_ovc1;   /* overflow counter for timer 0 (for clock div 12/384) */
+	int32_t   m_ovce;   /* overflow counter for ecnt */
+	int32_t   m_ovcf;   /* overflow counter for fixed clock div 3 mode */
+	int32_t   m_ovcs;   /* overflow counter for serial I/O */
+	uint8_t   m_edges;  /* rising/falling edge flag for serial I/O */
+	uint16_t  m_adcnt;  /* A/D converter cycle count */
+	uint8_t   m_adtot;  /* A/D converter total cycles per conversion */
+	uint8_t   m_tmpcr;  /* temporary analog digital conversion register */
 	int     m_shdone; /* A/D converter sample and hold done */
 	int     m_adout;  /* currently selected A/D converter output register */
 	int     m_adin;   /* currently selected A/D converter input */
@@ -344,13 +333,12 @@ protected:
 	const struct opcode_s *m_op64;
 	const struct opcode_s *m_op70;
 	const struct opcode_s *m_op74;
-	address_space *m_program;
-	direct_read_data *m_direct;
-	address_space *m_io;
+	memory_access<16, 0, 0, ENDIANNESS_LITTLE>::cache m_opcodes;
+	memory_access<16, 0, 0, ENDIANNESS_LITTLE>::specific m_program;
 	int m_icount;
 
-	UINT8 RP(offs_t port);
-	void WP(offs_t port, UINT8 data);
+	uint8_t RP(offs_t port);
+	void WP(offs_t port, uint8_t data);
 	void upd7810_write_EOM();
 	void upd7810_write_TXB();
 	void upd7810_sio_output();
@@ -500,6 +488,7 @@ protected:
 	void MOV_TXB_A();
 	void MOV_TM0_A();
 	void MOV_TM1_A();
+	void MOV_MT_A();
 	void MOV_ZCM_A();
 	void ANA_V_A();
 	void ANA_A_A();
@@ -1369,14 +1358,26 @@ protected:
 };
 
 
+class upd78c10_device : public upd7810_device
+{
+public:
+	// construction/destruction
+	upd78c10_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
+
+protected:
+	upd78c10_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock, address_map_constructor internal_map);
+};
+
+
 class upd7807_device : public upd7810_device
 {
 public:
 	// construction/destruction
-	upd7807_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	upd7807_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
 protected:
-	virtual offs_t disasm_disassemble(char *buffer, offs_t pc, const UINT8 *oprom, const UINT8 *opram, UINT32 options) override;
+	virtual std::unique_ptr<util::disasm_interface> create_disassembler() override;
+	virtual void configure_ops() override;
 };
 
 
@@ -1384,14 +1385,17 @@ class upd7801_device : public upd7810_device
 {
 public:
 	// construction/destruction
-	upd7801_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	upd7801_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
 protected:
 	virtual void device_reset() override;
+	virtual uint64_t execute_clocks_to_cycles(uint64_t clocks) const noexcept override { return (clocks + 2 - 1) / 2; }
+	virtual uint64_t execute_cycles_to_clocks(uint64_t cycles) const noexcept override { return (cycles * 2); }
 	virtual void execute_set_input(int inputnum, int state) override;
-	virtual offs_t disasm_disassemble(char *buffer, offs_t pc, const UINT8 *oprom, const UINT8 *opram, UINT32 options) override;
+	virtual std::unique_ptr<util::disasm_interface> create_disassembler() override;
 	virtual void handle_timers(int cycles) override;
 	virtual void upd7810_take_irq() override;
+	virtual void configure_ops() override;
 };
 
 
@@ -1399,16 +1403,18 @@ class upd78c05_device : public upd7810_device
 {
 public:
 	// construction/destruction
-	upd78c05_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
-	upd78c05_device(const machine_config &mconfig, device_type type, const char *name, const char *tag, device_t *owner, UINT32 clock, const char *shortname, const char *source);
+	upd78c05_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
 protected:
+	upd78c05_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock);
+
 	virtual void device_start() override;
 	virtual void device_reset() override;
-	virtual UINT64 execute_clocks_to_cycles(UINT64 clocks) const override { return (clocks + 4 - 1) / 4; }
-	virtual UINT64 execute_cycles_to_clocks(UINT64 cycles) const override { return (cycles * 4); }
-	virtual offs_t disasm_disassemble(char *buffer, offs_t pc, const UINT8 *oprom, const UINT8 *opram, UINT32 options) override;
+	virtual uint64_t execute_clocks_to_cycles(uint64_t clocks) const noexcept override { return (clocks + 4 - 1) / 4; }
+	virtual uint64_t execute_cycles_to_clocks(uint64_t cycles) const noexcept override { return (cycles * 4); }
+	virtual std::unique_ptr<util::disasm_interface> create_disassembler() override;
 	virtual void handle_timers(int cycles) override;
+	virtual void configure_ops() override;
 };
 
 
@@ -1416,15 +1422,16 @@ class upd78c06_device : public upd78c05_device
 {
 public:
 	// construction/destruction
-	upd78c06_device(const machine_config &mconfig, const char *tag, device_t *owner, UINT32 clock);
+	upd78c06_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
+	virtual void configure_ops() override;
 };
 
 
-extern const device_type UPD7810;
-extern const device_type UPD7807;
-extern const device_type UPD7801;
-extern const device_type UPD78C05;
-extern const device_type UPD78C06;
+DECLARE_DEVICE_TYPE(UPD7810,  upd7810_device)
+DECLARE_DEVICE_TYPE(UPD78C10, upd78c10_device)
+DECLARE_DEVICE_TYPE(UPD7807,  upd7807_device)
+DECLARE_DEVICE_TYPE(UPD7801,  upd7801_device)
+DECLARE_DEVICE_TYPE(UPD78C05, upd78c05_device)
+DECLARE_DEVICE_TYPE(UPD78C06, upd78c06_device)
 
-
-#endif /* __UPD7810_H__ */
+#endif // MAME_CPU_UPD7810_UPD7810_H

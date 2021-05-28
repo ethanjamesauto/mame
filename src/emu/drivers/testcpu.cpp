@@ -2,7 +2,7 @@
 // copyright-holders:Aaron Giles
 /*************************************************************************
 
-    testcpu.c
+    testcpu.cpp
 
     Example driver for performing CPU stress tests.
 
@@ -40,7 +40,7 @@ public:
 	// timer callback; used to wrest control of the system
 	virtual void device_timer(emu_timer &timer, device_timer_id id, int param, void *ptr) override
 	{
-		static const UINT32 sample_instructions[] =
+		static const u32 sample_instructions[] =
 		{
 			0x3d40f900,     // li r10,0xf9000000
 			0x394af000,     // addi r10,r10,-0x1000
@@ -108,7 +108,7 @@ public:
 	void dump_state(bool disassemble)
 	{
 		char buffer[256];
-		UINT8 instruction[32];
+		u8 instruction[32];
 		buffer[0] = 0;
 		int bytes = 0;
 		if (disassemble)
@@ -123,7 +123,7 @@ public:
 		}
 
 		// output the registers
-		printf("PC : %08X", UINT32(m_cpu->state_int(PPC_PC)));
+		printf("PC : %08X", u32(m_cpu->state_int(PPC_PC)));
 		if (disassemble && bytes > 0)
 		{
 			printf(" => ");
@@ -134,12 +134,12 @@ public:
 		printf("\n");
 		for (int regnum = 0; regnum < 32; regnum++)
 		{
-			printf("R%-2d: %08X   ", regnum, UINT32(m_cpu->state_int(PPC_R0 + regnum)));
+			printf("R%-2d: %08X   ", regnum, u32(m_cpu->state_int(PPC_R0 + regnum)));
 			if (regnum % 4 == 3) printf("\n");
 		}
 		printf("CR : %08X   LR : %08X   CTR: %08X   XER: %08X\n",
-				UINT32(m_cpu->state_int(PPC_CR)), UINT32(m_cpu->state_int(PPC_LR)),
-				UINT32(m_cpu->state_int(PPC_CTR)), UINT32(m_cpu->state_int(PPC_XER)));
+				u32(m_cpu->state_int(PPC_CR)), u32(m_cpu->state_int(PPC_LR)),
+				u32(m_cpu->state_int(PPC_CTR)), u32(m_cpu->state_int(PPC_XER)));
 		for (int regnum = 0; regnum < 32; regnum++)
 		{
 			printf("F%-2d: %10g   ", regnum, u2d(m_cpu->state_int(PPC_F0 + regnum)));
@@ -148,24 +148,27 @@ public:
 	}
 
 	// report reads from anywhere
-	READ64_MEMBER( general_r )
+	u64 general_r(offs_t offset, u64 mem_mask = ~0)
 	{
-		UINT64 fulloffs = offset;
-		UINT64 result = fulloffs + (fulloffs << 8) + (fulloffs << 16) + (fulloffs << 24) + (fulloffs << 32);
+		u64 fulloffs = offset;
+		u64 result = fulloffs + (fulloffs << 8) + (fulloffs << 16) + (fulloffs << 24) + (fulloffs << 32);
 		printf("Read from %08X & %08X%08X = %08X%08X\n", offset * 8, (int)((mem_mask&0xffffffff00000000LL) >> 32) , (int)(mem_mask&0xffffffff), (int)((result&0xffffffff00000000LL) >> 32), (int)(result&0xffffffff));
 		return result;
 	}
 
 	// report writes to anywhere
-	WRITE64_MEMBER( general_w )
+	void general_w(offs_t offset, u64 data, u64 mem_mask = ~0)
 	{
 		printf("Write to %08X & %08X%08X = %08X%08X\n", offset * 8, (int)((mem_mask&0xffffffff00000000LL) >> 32) , (int)(mem_mask&0xffffffff), (int)((data&0xffffffff00000000LL) >> 32), (int)(data&0xffffffff));
 	}
 
+	void testcpu(machine_config &config);
+
+	void ppc_mem(address_map &map);
 private:
 	// internal state
 	required_device<ppc603e_device> m_cpu;
-	required_shared_ptr<UINT64> m_ram;
+	required_shared_ptr<u64> m_ram;
 	address_space *m_space;
 };
 
@@ -175,10 +178,11 @@ private:
 //  ADDRESS MAPS
 //**************************************************************************
 
-static ADDRESS_MAP_START( ppc_mem, AS_PROGRAM, 64, testcpu_state )
-	AM_RANGE(RAM_BASE, RAM_BASE+7) AM_RAM AM_SHARE("ram")
-	AM_RANGE(0x00000000, 0xffffffff) AM_READWRITE(general_r, general_w)
-ADDRESS_MAP_END
+void testcpu_state::ppc_mem(address_map &map)
+{
+	map(RAM_BASE, RAM_BASE+7).ram().share("ram");
+	map(0x00000000, 0xffffffff).rw(this, FUNC(testcpu_state::general_r), FUNC(testcpu_state::general_w));
+}
 
 
 
@@ -186,13 +190,13 @@ ADDRESS_MAP_END
 //  MACHINE DRIVERS
 //**************************************************************************
 
-static MACHINE_CONFIG_START( testcpu, testcpu_state )
-
+void testcpu_state::testcpu(machine_config &config)
+{
 	// CPUs
-	MCFG_CPU_ADD("maincpu", PPC603E, 66000000)
-	MCFG_PPC_BUS_FREQUENCY(66000000)  // Multiplier 1, Bus = 66MHz, Core = 66MHz
-	MCFG_CPU_PROGRAM_MAP(ppc_mem)
-MACHINE_CONFIG_END
+	PPC603E(config, m_cpu, 66000000);
+	m_cpu->set_bus_frequency(66000000);  // Multiplier 1, Bus = 66MHz, Core = 66MHz
+	m_cpu->set_addrmap(AS_PROGRAM, &testcpu_state::ppc_mem);
+}
 
 
 

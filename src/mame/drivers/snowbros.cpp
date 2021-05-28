@@ -65,7 +65,7 @@ out of the sprite list at that point.. (verify on real hw)
 
 Ma Cheon Ru
 
-The electrified maze + ball minigame appears unreponsive to controls, this
+The electrified maze + ball minigame appears unresponsive to controls, this
 is because it actually requires you to move the joysticks in a circular
 motion through all 8 directions at a very even speed, a task which is
 practically impossible to perform on keyboard, and not even that easy with
@@ -76,22 +76,30 @@ a joystick.  This is not an emulation bug.
 
 #include "emu.h"
 #include "includes/snowbros.h"
+
 #include "cpu/m68000/m68000.h"
-#include "cpu/z80/z80.h"
-#include "sound/2151intf.h"
-#include "sound/3812intf.h"
-#include "sound/okim6295.h"
 #include "cpu/mcs51/mcs51.h" // for semicom mcu
+#include "cpu/z80/z80.h"
+#include "machine/watchdog.h"
+#include "sound/ymopm.h"
+#include "sound/ymopl.h"
+
+#include "speaker.h"
 
 
-WRITE16_MEMBER(snowbros_state::snowbros_flipscreen_w)
+void snowbros_state::snowbros_flipscreen_w(uint8_t data)
 {
-	if (ACCESSING_BITS_8_15)
-		flip_screen_set(~data & 0x8000);
+	m_pandora->flip_screen_set(!BIT(data, 7));
 }
 
 
-UINT32 snowbros_state::screen_update_snowbros(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+void snowbros_state::bootleg_flipscreen_w(uint8_t data)
+{
+	flip_screen_set(~data & 0x80);
+}
+
+
+uint32_t snowbros_state::screen_update_snowbros(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	/* This clears & redraws the entire screen each pass */
 	bitmap.fill(0xf0, cliprect);
@@ -100,7 +108,7 @@ UINT32 snowbros_state::screen_update_snowbros(screen_device &screen, bitmap_ind1
 }
 
 
-void snowbros_state::screen_eof_snowbros(screen_device &screen, bool state)
+WRITE_LINE_MEMBER(snowbros_state::screen_vblank_snowbros)
 {
 	// rising edge
 	if (state)
@@ -111,17 +119,17 @@ void snowbros_state::screen_eof_snowbros(screen_device &screen, bool state)
 
 
 
-WRITE16_MEMBER(snowbros_state::snowbros_irq4_ack_w)
+void snowbros_state::snowbros_irq4_ack_w(uint16_t data)
 {
 	m_maincpu->set_input_line(4, CLEAR_LINE);
 }
 
-WRITE16_MEMBER(snowbros_state::snowbros_irq3_ack_w)
+void snowbros_state::snowbros_irq3_ack_w(uint16_t data)
 {
 	m_maincpu->set_input_line(3, CLEAR_LINE);
 }
 
-WRITE16_MEMBER(snowbros_state::snowbros_irq2_ack_w)
+void snowbros_state::snowbros_irq2_ack_w(uint16_t data)
 {
 	m_maincpu->set_input_line(2, CLEAR_LINE);
 }
@@ -142,7 +150,7 @@ TIMER_DEVICE_CALLBACK_MEMBER(snowbros_state::snowbros_irq)
 
 TIMER_DEVICE_CALLBACK_MEMBER(snowbros_state::snowbros3_irq)
 {
-	int status = m_oki->read_status();
+	int status = m_oki->read();
 	int scanline = param;
 
 	if(scanline == 240)
@@ -158,8 +166,8 @@ TIMER_DEVICE_CALLBACK_MEMBER(snowbros_state::snowbros3_irq)
 	{
 		if ((status&0x08)==0x00)
 		{
-			m_oki->write_command(0x80|m_sb3_music);
-			m_oki->write_command(0x00|0x82);
+			m_oki->write(0x80|m_sb3_music);
+			m_oki->write(0x00|0x82);
 		}
 
 	}
@@ -167,215 +175,170 @@ TIMER_DEVICE_CALLBACK_MEMBER(snowbros_state::snowbros3_irq)
 	{
 		if ((status&0x08)==0x08)
 		{
-			m_oki->write_command(0x40);     /* Stop playing music */
+			m_oki->write(0x40);     /* Stop playing music */
 		}
 	}
 
 }
 
-
-/* Sound Routines */
-
-READ16_MEMBER(snowbros_state::snowbros_68000_sound_r)
+uint16_t snowbros_state::toto_read(offs_t offset, uint16_t mem_mask)
 {
-	return soundlatch_byte_r(space,offset);
-}
-
-
-WRITE16_MEMBER(snowbros_state::snowbros_68000_sound_w)
-{
-	if (ACCESSING_BITS_0_7)
-	{
-		soundlatch_byte_w(space, offset, data & 0xff);
-		m_soundcpu->set_input_line(INPUT_LINE_NMI, PULSE_LINE);
-	}
-}
-
-WRITE16_MEMBER(snowbros_state::semicom_soundcmd_w)
-{
-	if (ACCESSING_BITS_0_7) soundlatch_byte_w(space,0,data & 0xff);
-}
-
-READ16_MEMBER(snowbros_state::toto_read)
-{
-	int pc = space.device().safe_pc();
+	int pc = m_maincpu->pc();
 	if ((pc!= 0x3f010) && (pc!= 0x38008)) printf("toto prot %08x %04x\n", pc, mem_mask);
 	return 0x0700;
 }
 
 /* Snow Bros Memory Map */
 
-static ADDRESS_MAP_START( snowbros_map, AS_PROGRAM, 16, snowbros_state )
-	AM_RANGE(0x000000, 0x03ffff) AM_ROM
-	AM_RANGE(0x100000, 0x103fff) AM_RAM
-	AM_RANGE(0x200000, 0x200001) AM_WRITE(watchdog_reset16_w)
-	AM_RANGE(0x300000, 0x300001) AM_READWRITE(snowbros_68000_sound_r,snowbros_68000_sound_w)
-	AM_RANGE(0x400000, 0x400001) AM_WRITE(snowbros_flipscreen_w)
-	AM_RANGE(0x500000, 0x500001) AM_READ_PORT("DSW1")
-	AM_RANGE(0x500002, 0x500003) AM_READ_PORT("DSW2")
-	AM_RANGE(0x500004, 0x500005) AM_READ_PORT("SYSTEM")
-	AM_RANGE(0x600000, 0x6001ff) AM_RAM_DEVWRITE("palette", palette_device, write) AM_SHARE("palette")
-	AM_RANGE(0x700000, 0x701fff) AM_DEVREADWRITE("pandora", kaneko_pandora_device, spriteram_LSB_r, spriteram_LSB_w)
-	AM_RANGE(0x800000, 0x800001) AM_WRITE(snowbros_irq4_ack_w)  /* IRQ 4 acknowledge */
-	AM_RANGE(0x900000, 0x900001) AM_WRITE(snowbros_irq3_ack_w)  /* IRQ 3 acknowledge */
-	AM_RANGE(0xa00000, 0xa00001) AM_WRITE(snowbros_irq2_ack_w)  /* IRQ 2 acknowledge */
-ADDRESS_MAP_END
-
-static ADDRESS_MAP_START( sound_map, AS_PROGRAM, 8, snowbros_state )
-	AM_RANGE(0x0000, 0x7fff) AM_ROM
-	AM_RANGE(0x8000, 0x87ff) AM_RAM
-ADDRESS_MAP_END
-
-static ADDRESS_MAP_START( sound_io_map, AS_IO, 8, snowbros_state )
-	ADDRESS_MAP_GLOBAL_MASK(0xff)
-	AM_RANGE(0x02, 0x03) AM_DEVREADWRITE("ymsnd", ym3812_device, read, write)
-	AM_RANGE(0x04, 0x04) AM_READWRITE(soundlatch_byte_r, soundlatch_byte_w) /* goes back to the main CPU, checked during boot */
-ADDRESS_MAP_END
-
-
-
-READ8_MEMBER(snowbros_state::prot_io_r)
+void snowbros_state::snowbros_map(address_map &map)
 {
-	// never read?
-	return 0x00;
+	map(0x000000, 0x03ffff).rom();
+	map(0x100000, 0x103fff).ram();
+	map(0x200000, 0x200001).w("watchdog", FUNC(watchdog_timer_device::reset16_w));
+	map(0x300001, 0x300001).r("soundlatch2", FUNC(generic_latch_8_device::read));
+	map(0x300001, 0x300001).w(m_soundlatch, FUNC(generic_latch_8_device::write));
+	map(0x400000, 0x400000).w(FUNC(snowbros_state::snowbros_flipscreen_w));
+	map(0x500000, 0x500001).portr("DSW1");
+	map(0x500002, 0x500003).portr("DSW2");
+	map(0x500004, 0x500005).portr("SYSTEM");
+	map(0x600000, 0x6001ff).ram().w(m_palette, FUNC(palette_device::write16)).share("palette");
+	map(0x700000, 0x701fff).rw(m_pandora, FUNC(kaneko_pandora_device::spriteram_LSB_r), FUNC(kaneko_pandora_device::spriteram_LSB_w));
+	map(0x800000, 0x800001).w(FUNC(snowbros_state::snowbros_irq4_ack_w));  /* IRQ 4 acknowledge */
+	map(0x900000, 0x900001).w(FUNC(snowbros_state::snowbros_irq3_ack_w));  /* IRQ 3 acknowledge */
+	map(0xa00000, 0xa00001).w(FUNC(snowbros_state::snowbros_irq2_ack_w));  /* IRQ 2 acknowledge */
 }
 
-
-// probably not endian safe
-WRITE8_MEMBER(snowbros_state::prot_io_w)
+void snowbros_state::sound_map(address_map &map)
 {
-	switch (offset)
-	{
-		case 0x00:
-		{
-			UINT16 word = m_hyperpac_ram[(0xe000/2)+m_semicom_prot_offset];
-			word = (word & 0xff00) | (data << 0);
-			m_hyperpac_ram[(0xe000/2)+m_semicom_prot_offset] = word;
-			break;
-		}
-
-		case 0x01:
-		{
-			UINT16 word = m_hyperpac_ram[(0xe000/2)+m_semicom_prot_offset];
-			word = (word & 0x00ff) | (data << 8);
-			m_hyperpac_ram[(0xe000/2)+m_semicom_prot_offset] = word;
-			break;
-		}
-
-		case 0x02: // offset
-		{
-			m_semicom_prot_offset = data;
-			break;
-		}
-
-		case 0x03: // ??
-		{
-			//logerror("offset %02x data %02x\n",offset,data);
-			break;
-		}
-	}
+	map(0x0000, 0x7fff).rom();
+	map(0x8000, 0x87ff).ram();
 }
+
+void snowbros_state::sound_io_map(address_map &map)
+{
+	map.global_mask(0xff);
+	map(0x02, 0x03).rw("ymsnd", FUNC(ym3812_device::read), FUNC(ym3812_device::write));
+	map(0x04, 0x04).r(m_soundlatch, FUNC(generic_latch_8_device::read));
+	map(0x04, 0x04).w("soundlatch2", FUNC(generic_latch_8_device::write)); // goes back to the main CPU, checked during boot
+}
+
 
 /* Semicom AT89C52 MCU */
-static ADDRESS_MAP_START( protection_map, AS_PROGRAM, 8, snowbros_state )
-	AM_RANGE(0x0000, 0x1fff) AM_ROM
-ADDRESS_MAP_END
 
-static ADDRESS_MAP_START( protection_iomap, AS_IO, 8, snowbros_state )
-	AM_RANGE(MCS51_PORT_P0, MCS51_PORT_P3) AM_READWRITE(prot_io_r,prot_io_w)
-ADDRESS_MAP_END
+// probably not endian safe
+void snowbros_state::prot_p0_w(uint8_t data)
+{
+	uint16_t word = m_hyperpac_ram[m_semicom_prot_base + m_semicom_prot_offset];
+	word = (word & 0xff00) | (data << 0);
+	m_hyperpac_ram[m_semicom_prot_base + m_semicom_prot_offset] = word;
+}
+
+// probably not endian safe
+void snowbros_state::prot_p1_w(uint8_t data)
+{
+	uint16_t word = m_hyperpac_ram[m_semicom_prot_base + m_semicom_prot_offset];
+	word = (word & 0x00ff) | (data << 8);
+	m_hyperpac_ram[m_semicom_prot_base + m_semicom_prot_offset] = word;
+}
+
+void snowbros_state::prot_p2_w(uint8_t data)
+{
+	// offset
+	m_semicom_prot_offset = data;
+}
 
 /* Winter Bobble - bootleg GFX chip */
 
-static ADDRESS_MAP_START( wintbob_map, AS_PROGRAM, 16, snowbros_state )
-	AM_RANGE(0x000000, 0x03ffff) AM_ROM
-	AM_RANGE(0x100000, 0x103fff) AM_RAM
-	AM_RANGE(0x200000, 0x200001) AM_WRITE(watchdog_reset16_w)
-	AM_RANGE(0x300000, 0x300001) AM_READWRITE(snowbros_68000_sound_r,snowbros_68000_sound_w)
-	AM_RANGE(0x400000, 0x400001) AM_WRITE(snowbros_flipscreen_w)
-	AM_RANGE(0x500000, 0x500001) AM_READ_PORT("DSW1")
-	AM_RANGE(0x500002, 0x500003) AM_READ_PORT("DSW2")
-	AM_RANGE(0x500004, 0x500005) AM_READ_PORT("SYSTEM")
-	AM_RANGE(0x600000, 0x6001ff) AM_RAM_DEVWRITE("palette", palette_device, write) AM_SHARE("palette")
-	AM_RANGE(0x700000, 0x701fff) AM_RAM AM_SHARE("spriteram16b")
-	AM_RANGE(0x800000, 0x800001) AM_WRITE(snowbros_irq4_ack_w)  /* IRQ 4 acknowledge */
-	AM_RANGE(0x900000, 0x900001) AM_WRITE(snowbros_irq3_ack_w)  /* IRQ 3 acknowledge */
-	AM_RANGE(0xa00000, 0xa00001) AM_WRITE(snowbros_irq2_ack_w)  /* IRQ 2 acknowledge */
-ADDRESS_MAP_END
+void snowbros_state::wintbob_map(address_map &map)
+{
+	map(0x000000, 0x03ffff).rom();
+	map(0x100000, 0x103fff).ram();
+	map(0x200000, 0x200001).w("watchdog", FUNC(watchdog_timer_device::reset16_w));
+	map(0x300001, 0x300001).r("soundlatch2", FUNC(generic_latch_8_device::read));
+	map(0x300001, 0x300001).w(m_soundlatch, FUNC(generic_latch_8_device::write));
+	map(0x400000, 0x400000).w(FUNC(snowbros_state::bootleg_flipscreen_w));
+	map(0x500000, 0x500001).portr("DSW1");
+	map(0x500002, 0x500003).portr("DSW2");
+	map(0x500004, 0x500005).portr("SYSTEM");
+	map(0x600000, 0x6001ff).ram().w(m_palette, FUNC(palette_device::write16)).share("palette");
+	map(0x700000, 0x701fff).ram().share("spriteram16b");
+	map(0x800000, 0x800001).w(FUNC(snowbros_state::snowbros_irq4_ack_w));  /* IRQ 4 acknowledge */
+	map(0x900000, 0x900001).w(FUNC(snowbros_state::snowbros_irq3_ack_w));  /* IRQ 3 acknowledge */
+	map(0xa00000, 0xa00001).w(FUNC(snowbros_state::snowbros_irq2_ack_w));  /* IRQ 2 acknowledge */
+}
 
 /* Honey Dolls */
 
-static ADDRESS_MAP_START( honeydol_map, AS_PROGRAM, 16, snowbros_state )
-	AM_RANGE(0x000000, 0x03ffff) AM_ROM
-	AM_RANGE(0x100000, 0x10ffff) AM_RAM AM_SHARE("hyperpac_ram")
-	AM_RANGE(0x200000, 0x200001) AM_WRITENOP    /* ? */
-	AM_RANGE(0x300000, 0x300001) AM_WRITE(snowbros_68000_sound_w)   /* ? */
-	AM_RANGE(0x400000, 0x400001) AM_WRITE(snowbros_irq4_ack_w)  /* IRQ 4 acknowledge */
-	AM_RANGE(0x500000, 0x500001) AM_WRITE(snowbros_irq3_ack_w)  /* IRQ 3 acknowledge */
-	AM_RANGE(0x600000, 0x600001) AM_WRITE(snowbros_irq2_ack_w)  /* IRQ 2 acknowledge */
-	AM_RANGE(0x800000, 0x800001) AM_WRITENOP    /* ? */
-	AM_RANGE(0x900000, 0x900001) AM_READ_PORT("DSW1")
-	AM_RANGE(0x900002, 0x900003) AM_READ_PORT("DSW2")
-	AM_RANGE(0x900004, 0x900005) AM_READ_PORT("SYSTEM")
-	AM_RANGE(0xa00000, 0xa007ff) AM_RAM_DEVWRITE("palette", palette_device, write) AM_SHARE("palette")
-	AM_RANGE(0xb00000, 0xb01fff) AM_RAM AM_SHARE("spriteram16b")
-ADDRESS_MAP_END
+void snowbros_state::honeydol_map(address_map &map)
+{
+	map(0x000000, 0x03ffff).rom();
+	map(0x100000, 0x10ffff).ram().share("hyperpac_ram");
+	map(0x200000, 0x200001).nopw();    /* ? */
+	map(0x300001, 0x300001).w(m_soundlatch, FUNC(generic_latch_8_device::write));
+	map(0x400000, 0x400001).w(FUNC(snowbros_state::snowbros_irq4_ack_w));  /* IRQ 4 acknowledge */
+	map(0x500000, 0x500001).w(FUNC(snowbros_state::snowbros_irq3_ack_w));  /* IRQ 3 acknowledge */
+	map(0x600000, 0x600001).w(FUNC(snowbros_state::snowbros_irq2_ack_w));  /* IRQ 2 acknowledge */
+	map(0x800000, 0x800001).nopw();    /* ? */
+	map(0x900000, 0x900001).portr("DSW1");
+	map(0x900002, 0x900003).portr("DSW2");
+	map(0x900004, 0x900005).portr("SYSTEM");
+	map(0xa00000, 0xa007ff).ram().w(m_palette, FUNC(palette_device::write16)).share("palette");
+	map(0xb00000, 0xb01fff).ram().share("spriteram16b");
+}
 
-static ADDRESS_MAP_START( honeydol_sound_map, AS_PROGRAM, 8, snowbros_state )
-	AM_RANGE(0x0000, 0x7fff) AM_ROM
-	AM_RANGE(0x8000, 0x87ff) AM_RAM
-	AM_RANGE(0xe010, 0xe010) AM_DEVREADWRITE("oki", okim6295_device, read, write)
-ADDRESS_MAP_END
+void snowbros_state::honeydol_sound_map(address_map &map)
+{
+	map(0x0000, 0x7fff).rom();
+	map(0x8000, 0x87ff).ram();
+	map(0xe010, 0xe010).rw(m_oki, FUNC(okim6295_device::read), FUNC(okim6295_device::write));
+}
 
-static ADDRESS_MAP_START( honeydol_sound_io_map, AS_IO, 8, snowbros_state )
-	ADDRESS_MAP_GLOBAL_MASK(0xff)
-	AM_RANGE(0x02, 0x03) AM_DEVREADWRITE("ymsnd", ym3812_device, read, write)                                // not connected?
-	AM_RANGE(0x04, 0x04) AM_READWRITE(soundlatch_byte_r, soundlatch_byte_w) /* goes back to the main CPU, checked during boot */
-ADDRESS_MAP_END
+void snowbros_state::honeydol_sound_io_map(address_map &map)
+{
+	map.global_mask(0xff);
+	map(0x02, 0x03).rw("ymsnd", FUNC(ym3812_device::read), FUNC(ym3812_device::write));                                // not connected?
+	map(0x04, 0x04).r(m_soundlatch, FUNC(generic_latch_8_device::read));
+	map(0x04, 0x04).nopw(); // still written but never actually read by the main CPU
+}
 
 /* Twin Adventure */
 
-WRITE16_MEMBER(snowbros_state::twinadv_68000_sound_w)
+void snowbros_state::twinadv_map(address_map &map)
 {
-	if (ACCESSING_BITS_0_7)
-	{
-		soundlatch_byte_w(space, offset, data & 0xff);
-		m_soundcpu->set_input_line(INPUT_LINE_NMI, PULSE_LINE);
-	}
+	map(0x000000, 0x03ffff).rom();
+	map(0x100000, 0x10ffff).ram();
+	map(0x200000, 0x200001).w("watchdog", FUNC(watchdog_timer_device::reset16_w));
+	map(0x300001, 0x300001).r("soundlatch2", FUNC(generic_latch_8_device::read));
+	map(0x300001, 0x300001).w(m_soundlatch, FUNC(generic_latch_8_device::write));
+	map(0x400000, 0x400000).w(FUNC(snowbros_state::bootleg_flipscreen_w));
+
+	map(0x500000, 0x500001).portr("DSW1");
+	map(0x500002, 0x500003).portr("DSW2");
+	map(0x500004, 0x500005).portr("SYSTEM");
+	map(0x600000, 0x6001ff).ram().w(m_palette, FUNC(palette_device::write16)).share("palette");
+	map(0x700000, 0x701fff).ram().share("spriteram16b");
+	map(0x800000, 0x800001).w(FUNC(snowbros_state::snowbros_irq4_ack_w));  /* IRQ 4 acknowledge */
+	map(0x900000, 0x900001).w(FUNC(snowbros_state::snowbros_irq3_ack_w));  /* IRQ 3 acknowledge */
+	map(0xa00000, 0xa00001).w(FUNC(snowbros_state::snowbros_irq2_ack_w));  /* IRQ 2 acknowledge */
 }
 
-static ADDRESS_MAP_START( twinadv_map, AS_PROGRAM, 16, snowbros_state )
-	AM_RANGE(0x000000, 0x03ffff) AM_ROM
-	AM_RANGE(0x100000, 0x10ffff) AM_RAM
-	AM_RANGE(0x200000, 0x200001) AM_WRITE(watchdog_reset16_w)
-	AM_RANGE(0x300000, 0x300001) AM_READWRITE(snowbros_68000_sound_r,twinadv_68000_sound_w)
-	AM_RANGE(0x400000, 0x400001) AM_WRITE(snowbros_flipscreen_w)
-
-	AM_RANGE(0x500000, 0x500001) AM_READ_PORT("DSW1")
-	AM_RANGE(0x500002, 0x500003) AM_READ_PORT("DSW2")
-	AM_RANGE(0x500004, 0x500005) AM_READ_PORT("SYSTEM")
-	AM_RANGE(0x600000, 0x6001ff) AM_RAM_DEVWRITE("palette", palette_device, write) AM_SHARE("palette")
-	AM_RANGE(0x700000, 0x701fff) AM_RAM AM_SHARE("spriteram16b")
-	AM_RANGE(0x800000, 0x800001) AM_WRITE(snowbros_irq4_ack_w)  /* IRQ 4 acknowledge */
-	AM_RANGE(0x900000, 0x900001) AM_WRITE(snowbros_irq3_ack_w)  /* IRQ 3 acknowledge */
-	AM_RANGE(0xa00000, 0xa00001) AM_WRITE(snowbros_irq2_ack_w)  /* IRQ 2 acknowledge */
-ADDRESS_MAP_END
-
-WRITE8_MEMBER(snowbros_state::twinadv_oki_bank_w)
+void snowbros_state::twinadv_oki_bank_w(uint8_t data)
 {
 	int bank = (data &0x02)>>1;
 
 	if (data&0xfd) logerror ("Unused bank bits! %02x\n",data);
 
-	m_oki->set_bank_base(bank * 0x40000);
+	m_oki->set_rom_bank(bank);
 }
 
-static ADDRESS_MAP_START( twinadv_sound_io_map, AS_IO, 8, snowbros_state )
-	ADDRESS_MAP_GLOBAL_MASK(0xff)
-	AM_RANGE(0x02, 0x02) AM_READWRITE(soundlatch_byte_r, soundlatch_byte_w) // back to 68k?
-	AM_RANGE(0x04, 0x04) AM_WRITE(twinadv_oki_bank_w) // oki bank?
-	AM_RANGE(0x06, 0x06) AM_DEVREADWRITE("oki", okim6295_device, read, write)
-ADDRESS_MAP_END
+void snowbros_state::twinadv_sound_io_map(address_map &map)
+{
+	map.global_mask(0xff);
+	map(0x02, 0x02).r(m_soundlatch, FUNC(generic_latch_8_device::read));
+	map(0x02, 0x02).w("soundlatch2", FUNC(generic_latch_8_device::write)); // back to 68k?
+	map(0x04, 0x04).w(FUNC(snowbros_state::twinadv_oki_bank_w)); // oki bank?
+	map(0x06, 0x06).rw(m_oki, FUNC(okim6295_device::read), FUNC(okim6295_device::write));
+}
 
 
 /* SemiCom Memory Map
@@ -385,44 +348,42 @@ sound hardware is also different
 
 */
 
-static ADDRESS_MAP_START( hyperpac_map, AS_PROGRAM, 16, snowbros_state )
-	AM_RANGE(0x000000, 0x0fffff) AM_ROM
-	AM_RANGE(0x100000, 0x10ffff) AM_RAM AM_SHARE("hyperpac_ram")
-	AM_RANGE(0x300000, 0x300001) AM_WRITE(semicom_soundcmd_w)
-//  AM_RANGE(0x400000, 0x400001) ???
-	AM_RANGE(0x500000, 0x500001) AM_READ_PORT("DSW1")
-	AM_RANGE(0x500002, 0x500003) AM_READ_PORT("DSW2")
-	AM_RANGE(0x500004, 0x500005) AM_READ_PORT("SYSTEM")
+void snowbros_state::hyperpac_map(address_map &map)
+{
+	map(0x000000, 0x0fffff).rom();
+	map(0x100000, 0x10ffff).ram().share("hyperpac_ram");
+	map(0x300001, 0x300001).w(m_soundlatch, FUNC(generic_latch_8_device::write));
+//  map(0x400000, 0x400001) ???
+	map(0x500000, 0x500001).portr("DSW1");
+	map(0x500002, 0x500003).portr("DSW2");
+	map(0x500004, 0x500005).portr("SYSTEM");
 
-	AM_RANGE(0x600000, 0x6001ff) AM_RAM_DEVWRITE("palette", palette_device, write) AM_SHARE("palette")
-	AM_RANGE(0x700000, 0x701fff) AM_DEVREADWRITE("pandora", kaneko_pandora_device, spriteram_LSB_r, spriteram_LSB_w)
-	AM_RANGE(0x800000, 0x800001) AM_WRITE(snowbros_irq4_ack_w)  /* IRQ 4 acknowledge */
-	AM_RANGE(0x900000, 0x900001) AM_WRITE(snowbros_irq3_ack_w)  /* IRQ 3 acknowledge */
-	AM_RANGE(0xa00000, 0xa00001) AM_WRITE(snowbros_irq2_ack_w)  /* IRQ 2 acknowledge */
-ADDRESS_MAP_END
+	map(0x600000, 0x6001ff).ram().w(m_palette, FUNC(palette_device::write16)).share("palette");
+	map(0x700000, 0x701fff).rw(m_pandora, FUNC(kaneko_pandora_device::spriteram_LSB_r), FUNC(kaneko_pandora_device::spriteram_LSB_w));
+	map(0x800000, 0x800001).w(FUNC(snowbros_state::snowbros_irq4_ack_w));  /* IRQ 4 acknowledge */
+	map(0x900000, 0x900001).w(FUNC(snowbros_state::snowbros_irq3_ack_w));  /* IRQ 3 acknowledge */
+	map(0xa00000, 0xa00001).w(FUNC(snowbros_state::snowbros_irq2_ack_w));  /* IRQ 2 acknowledge */
+}
 
-static ADDRESS_MAP_START( hyperpac_sound_map, AS_PROGRAM, 8, snowbros_state )
-	AM_RANGE(0x0000, 0xcfff) AM_ROM
-	AM_RANGE(0xd000, 0xd7ff) AM_RAM
-	AM_RANGE(0xf000, 0xf001) AM_DEVREADWRITE("ymsnd", ym2151_device,read,write)
-	AM_RANGE(0xf002, 0xf002) AM_DEVREADWRITE("oki", okim6295_device, read, write)
-	AM_RANGE(0xf008, 0xf008) AM_READ(soundlatch_byte_r)
-ADDRESS_MAP_END
-
-static ADDRESS_MAP_START( hyperpac_sound_io_map, AS_IO, 8, snowbros_state )
-	ADDRESS_MAP_GLOBAL_MASK(0xff)
-ADDRESS_MAP_END
+void snowbros_state::hyperpac_sound_map(address_map &map)
+{
+	map(0x0000, 0xcfff).rom();
+	map(0xd000, 0xd7ff).ram();
+	map(0xf000, 0xf001).rw("ymsnd", FUNC(ym2151_device::read), FUNC(ym2151_device::write));
+	map(0xf002, 0xf002).rw(m_oki, FUNC(okim6295_device::read), FUNC(okim6295_device::write));
+	map(0xf008, 0xf008).r(m_soundlatch, FUNC(generic_latch_8_device::read));
+}
 
 /* Same volume used for all samples at the Moment, could be right, we have no
    way of knowing .. */
-READ16_MEMBER(snowbros_state::sb3_sound_r)
+uint16_t snowbros_state::sb3_sound_r()
 {
 	return 0x0003;
 }
 
 void snowbros_state::sb3_play_music(int data)
 {
-	UINT8 *snd;
+	uint8_t *snd;
 
 	/* sample is actually played in interrupt function so it loops */
 	m_sb3_music = data;
@@ -463,33 +424,33 @@ void snowbros_state::sb3_play_music(int data)
 
 void snowbros_state::sb3_play_sound (int data)
 {
-	int status = m_oki->read_status();
+	int status = m_oki->read();
 
 	if ((status&0x01)==0x00)
 	{
-		m_oki->write_command(0x80|data);
-		m_oki->write_command(0x00|0x12);
+		m_oki->write(0x80|data);
+		m_oki->write(0x00|0x12);
 	}
 	else if ((status&0x02)==0x00)
 	{
-		m_oki->write_command(0x80|data);
-		m_oki->write_command(0x00|0x22);
+		m_oki->write(0x80|data);
+		m_oki->write(0x00|0x22);
 	}
 	else if ((status&0x04)==0x00)
 	{
-		m_oki->write_command(0x80|data);
-		m_oki->write_command(0x00|0x42);
+		m_oki->write(0x80|data);
+		m_oki->write(0x00|0x42);
 	}
 
 
 }
 
-WRITE16_MEMBER(snowbros_state::sb3_sound_w)
+void snowbros_state::sb3_sound_w(uint16_t data)
 {
 	if (data == 0x00fe)
 	{
 		m_sb3_music_is_playing = 0;
-		m_oki->write_command(0x78);       /* Stop sounds */
+		m_oki->write(0x78);       /* Stop sounds */
 	}
 	else /* the alternating 0x00-0x2f or 0x30-0x5f might be something to do with the channels */
 	{
@@ -520,41 +481,98 @@ WRITE16_MEMBER(snowbros_state::sb3_sound_w)
 
 
 
-static ADDRESS_MAP_START( snowbros3_map, AS_PROGRAM, 16, snowbros_state )
-	AM_RANGE( 0x000000, 0x03ffff) AM_ROM
-	AM_RANGE( 0x100000, 0x103fff) AM_RAM
-	AM_RANGE( 0x200000, 0x200001) AM_WRITE(watchdog_reset16_w)
-	AM_RANGE( 0x300000, 0x300001) AM_READ(sb3_sound_r) // ?
-	AM_RANGE( 0x300000, 0x300001) AM_WRITE(sb3_sound_w)  // ?
-	AM_RANGE( 0x400000, 0x400001) AM_WRITE(snowbros_flipscreen_w)
-	AM_RANGE( 0x500000, 0x500001) AM_READ_PORT("DSW1")
-	AM_RANGE( 0x500002, 0x500003) AM_READ_PORT("DSW2")
-	AM_RANGE( 0x500004, 0x500005) AM_READ_PORT("SYSTEM")
-	AM_RANGE( 0x600000, 0x6003ff) AM_RAM_DEVWRITE("palette", palette_device, write) AM_SHARE("palette")
-	AM_RANGE( 0x700000, 0x7021ff) AM_RAM AM_SHARE("spriteram16b")
-	AM_RANGE(0x800000, 0x800001) AM_WRITE(snowbros_irq4_ack_w)  /* IRQ 4 acknowledge */
-	AM_RANGE(0x900000, 0x900001) AM_WRITE(snowbros_irq3_ack_w)  /* IRQ 3 acknowledge */
-	AM_RANGE(0xa00000, 0xa00001) AM_WRITE(snowbros_irq2_ack_w)  /* IRQ 2 acknowledge */
-ADDRESS_MAP_END
+void snowbros_state::snowbros3_map(address_map &map)
+{
+	map(0x000000, 0x03ffff).rom();
+	map(0x100000, 0x103fff).ram();
+	map(0x200000, 0x200001).w("watchdog", FUNC(watchdog_timer_device::reset16_w));
+	map(0x300000, 0x300001).r(FUNC(snowbros_state::sb3_sound_r)); // ?
+	map(0x300000, 0x300001).w(FUNC(snowbros_state::sb3_sound_w));  // ?
+	map(0x400000, 0x400000).w(FUNC(snowbros_state::bootleg_flipscreen_w));
+	map(0x500000, 0x500001).portr("DSW1");
+	map(0x500002, 0x500003).portr("DSW2");
+	map(0x500004, 0x500005).portr("SYSTEM");
+	map(0x600000, 0x6003ff).ram().w(m_palette, FUNC(palette_device::write16)).share("palette");
+	map(0x700000, 0x7021ff).ram().share("spriteram16b");
+	map(0x800000, 0x800001).w(FUNC(snowbros_state::snowbros_irq4_ack_w));  /* IRQ 4 acknowledge */
+	map(0x900000, 0x900001).w(FUNC(snowbros_state::snowbros_irq3_ack_w));  /* IRQ 3 acknowledge */
+	map(0xa00000, 0xa00001).w(FUNC(snowbros_state::snowbros_irq2_ack_w));  /* IRQ 2 acknowledge */
+}
 
 /* Final Tetris */
 
-static ADDRESS_MAP_START( finalttr_map, AS_PROGRAM, 16, snowbros_state )
-	AM_RANGE(0x000000, 0x0fffff) AM_ROM
-	AM_RANGE(0x100000, 0x103fff) AM_RAM AM_SHARE("hyperpac_ram")
-	AM_RANGE(0x300000, 0x300001) AM_WRITE(semicom_soundcmd_w)
-//  AM_RANGE(0x400000, 0x400001) ???
+void snowbros_state::finalttr_map(address_map &map)
+{
+	map(0x000000, 0x0fffff).rom();
+	map(0x100000, 0x103fff).ram().share("hyperpac_ram");
+	map(0x300001, 0x300001).w(m_soundlatch, FUNC(generic_latch_8_device::write));
+//  map(0x400000, 0x400001) ???
 
-	AM_RANGE(0x500000, 0x500001) AM_READ_PORT("DSW1")
-	AM_RANGE(0x500002, 0x500003) AM_READ_PORT("DSW2")
-	AM_RANGE(0x500004, 0x500005) AM_READ_PORT("SYSTEM")
+	map(0x500000, 0x500001).portr("DSW1");
+	map(0x500002, 0x500003).portr("DSW2");
+	map(0x500004, 0x500005).portr("SYSTEM");
 
-	AM_RANGE(0x600000, 0x6001ff) AM_RAM_DEVWRITE("palette", palette_device, write) AM_SHARE("palette")
-	AM_RANGE(0x700000, 0x701fff) AM_DEVREADWRITE("pandora", kaneko_pandora_device, spriteram_LSB_r, spriteram_LSB_w)
-	AM_RANGE(0x800000, 0x800001) AM_WRITE(snowbros_irq4_ack_w)  /* IRQ 4 acknowledge */
-	AM_RANGE(0x900000, 0x900001) AM_WRITE(snowbros_irq3_ack_w)  /* IRQ 3 acknowledge */
-	AM_RANGE(0xa00000, 0xa00001) AM_WRITE(snowbros_irq2_ack_w)  /* IRQ 2 acknowledge */
-ADDRESS_MAP_END
+	map(0x600000, 0x6001ff).ram().w(m_palette, FUNC(palette_device::write16)).share("palette");
+	map(0x700000, 0x701fff).rw(m_pandora, FUNC(kaneko_pandora_device::spriteram_LSB_r), FUNC(kaneko_pandora_device::spriteram_LSB_w));
+	map(0x800000, 0x800001).w(FUNC(snowbros_state::snowbros_irq4_ack_w));  /* IRQ 4 acknowledge */
+	map(0x900000, 0x900001).w(FUNC(snowbros_state::snowbros_irq3_ack_w));  /* IRQ 3 acknowledge */
+	map(0xa00000, 0xa00001).w(FUNC(snowbros_state::snowbros_irq2_ack_w));  /* IRQ 2 acknowledge */
+}
+
+
+// Yutnori protection.
+// The sequence MEN is sent to the protection device, followed by the code request (4 bytes in all).
+// After each byte, a number of NOPs are executed to give the device time to catch up.
+// After the 4th byte, the code reads the device to get its response.
+uint16_t snowbros_state::yutnori_prot_r()
+{
+	switch(m_yutnori_prot_val) // the 4th byte
+	{
+		case 0x33: // C3B6
+			return 0xcc;
+		case 0x60: // 4878
+			return 0xf9;
+		case 0xb8: // D820
+			return 0x74;
+	}
+	logerror("%s: Unhandled protection sequence found: %02X\n", machine().describe_context(), m_yutnori_prot_val);
+	return 0;
+}
+
+void snowbros_state::yutnori_prot_w(uint16_t data)
+{
+	m_yutnori_prot_val = data;
+}
+
+void snowbros_state::yutnori_map(address_map &map)
+{
+	map(0x000000, 0x03ffff).rom();
+
+	// 0x100000  clr.w on startup
+
+	map(0x200000, 0x200001).rw(FUNC(snowbros_state::yutnori_prot_r),FUNC(snowbros_state::yutnori_prot_w)); // protection
+
+	map(0x300000, 0x300001).portr("DSW1");
+	map(0x300002, 0x300003).portr("DSW2");
+	map(0x300004, 0x300005).portr("SYSTEM");
+
+	// could be one of the OKIs? but gets value to write from RAM, always seems to be 0?
+	map(0x30000c, 0x30000d).nopw();
+	map(0x30000e, 0x30000f).nopr(); //.r(FUNC(snowbros_state::yutnori_unk_r)); // ??
+
+//  map(0x400000, 0x400001).w("watchdog", FUNC(watchdog_timer_device::reset16_w)); // maybe?
+	map(0x400000, 0x400001).noprw();
+
+	map(0x500000, 0x5001ff).ram().w(m_palette, FUNC(palette_device::write16)).share("palette");
+
+	map(0x600000, 0x601fff).rw(m_pandora, FUNC(kaneko_pandora_device::spriteram_LSB_r), FUNC(kaneko_pandora_device::spriteram_LSB_w));
+
+	map(0x700000, 0x70ffff).ram();
+
+	map(0x800000, 0x800001).nopr().w(FUNC(snowbros_state::snowbros_irq4_ack_w));  /* IRQ 4 acknowledge */
+	map(0x900000, 0x900001).nopr().w(FUNC(snowbros_state::snowbros_irq3_ack_w));  /* IRQ 3 acknowledge */
+	map(0xa00000, 0xa00001).nopr().w(FUNC(snowbros_state::snowbros_irq2_ack_w));  /* IRQ 2 acknowledge */
+}
 
 static INPUT_PORTS_START( snowbros )
 	PORT_START("DSW1")  /* 500001 */
@@ -644,6 +662,23 @@ static INPUT_PORTS_START( snowbroj )
 	PORT_DIPNAME( 0x01, 0x01, DEF_STR( Unknown ) )      PORT_DIPLOCATION("SW1:1") /* Listed as "NOT USE" in the manual */
 	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
 	PORT_DIPSETTING(    0x01, DEF_STR( On ) )
+INPUT_PORTS_END
+
+static INPUT_PORTS_START( ballboy3p )
+	PORT_INCLUDE(snowbros)
+
+	PORT_MODIFY("DSW1") // on the PCB in place of the dips there's the plug for the controls of the 3rd player
+	PORT_BIT( 0x0001, IP_ACTIVE_LOW, IPT_JOYSTICK_UP ) PORT_8WAY PORT_PLAYER(3)
+	PORT_BIT( 0x0002, IP_ACTIVE_LOW, IPT_JOYSTICK_DOWN ) PORT_8WAY PORT_PLAYER(3)
+	PORT_BIT( 0x0004, IP_ACTIVE_LOW, IPT_JOYSTICK_LEFT ) PORT_8WAY PORT_PLAYER(3)
+	PORT_BIT( 0x0008, IP_ACTIVE_LOW, IPT_JOYSTICK_RIGHT ) PORT_8WAY PORT_PLAYER(3)
+	PORT_BIT( 0x0010, IP_ACTIVE_LOW, IPT_BUTTON1 ) PORT_PLAYER(3)
+	PORT_BIT( 0x0020, IP_ACTIVE_LOW, IPT_BUTTON2 ) PORT_PLAYER(3)
+	PORT_BIT( 0x0040, IP_ACTIVE_LOW, IPT_BUTTON3 ) PORT_PLAYER(3)
+	PORT_BIT( 0x0080, IP_ACTIVE_HIGH, IPT_UNKNOWN )
+
+	PORT_MODIFY("SYSTEM")
+	PORT_BIT( 0x1000, IP_ACTIVE_LOW, IPT_START3 )
 INPUT_PORTS_END
 
 static INPUT_PORTS_START( honeydol )
@@ -1537,21 +1572,88 @@ static INPUT_PORTS_START( suhosong )
 	PORT_BIT( 0x8000, IP_ACTIVE_HIGH, IPT_UNKNOWN )
 INPUT_PORTS_END
 
+
+
+
+static INPUT_PORTS_START( yutnori )
+	PORT_START("DSW1")
+	PORT_DIPNAME( 0x007,  0x0007, "Coin / Credit" ) PORT_DIPLOCATION("SW1:1,2,3")
+	PORT_DIPSETTING(      0x0004, "1 / 50" )
+	PORT_DIPSETTING(      0x0003, "1 / 40" )
+	PORT_DIPSETTING(      0x0002, "1 / 30" )
+	PORT_DIPSETTING(      0x0007, "2 / 50" )
+	PORT_DIPSETTING(      0x0006, "2 / 40" )
+	PORT_DIPSETTING(      0x0005, "2 / 30" )
+	PORT_DIPSETTING(      0x0001, "3 / 50" )
+	PORT_DIPSETTING(      0x0000, "3 / 40" )
+	PORT_DIPNAME( 0x0038, 0x0038, DEF_STR( Difficulty ) ) PORT_DIPLOCATION("SW1:4,5,6")
+	PORT_DIPSETTING(      0x0030, "1" )
+	PORT_DIPSETTING(      0x0028, "2" )
+	PORT_DIPSETTING(      0x0020, "3" )
+	PORT_DIPSETTING(      0x0038, "4" )
+	PORT_DIPSETTING(      0x0018, "5" )
+	PORT_DIPSETTING(      0x0010, "6" )
+	PORT_DIPSETTING(      0x0008, "7" )
+	PORT_DIPSETTING(      0x0000, "8" )
+	PORT_DIPNAME( 0xc0, 0xc0, "Mal Count" )   PORT_DIPLOCATION("SW1:7,8")
+	PORT_DIPSETTING(    0x40, "2" )
+	PORT_DIPSETTING(    0xc0, "3" )
+	PORT_DIPSETTING(    0x00, "4" )
+	PORT_DIPSETTING(    0x80, "5" )
+	PORT_BIT( 0x0100, IP_ACTIVE_LOW, IPT_JOYSTICK_UP ) PORT_8WAY
+	PORT_BIT( 0x0200, IP_ACTIVE_LOW, IPT_JOYSTICK_DOWN ) PORT_8WAY
+	PORT_BIT( 0x0400, IP_ACTIVE_LOW, IPT_JOYSTICK_LEFT ) PORT_8WAY
+	PORT_BIT( 0x0800, IP_ACTIVE_LOW, IPT_JOYSTICK_RIGHT ) PORT_8WAY
+	PORT_BIT( 0x1000, IP_ACTIVE_LOW, IPT_BUTTON1 )
+	PORT_BIT( 0x2000, IP_ACTIVE_LOW, IPT_BUTTON2 )
+	PORT_BIT( 0x4000, IP_ACTIVE_LOW, IPT_BUTTON3 )
+	PORT_BIT( 0x8000, IP_ACTIVE_HIGH, IPT_UNKNOWN )
+
+	PORT_START("DSW2")
+	PORT_DIPNAME( 0x03, 0x03, "Base Bet" ) PORT_DIPLOCATION("SW2:1,2")
+	PORT_DIPSETTING(    0x00, "20" )
+	PORT_DIPSETTING(    0x01, "30" )
+	PORT_DIPSETTING(    0x02, "40" )
+	PORT_DIPSETTING(    0x03, "50" )
+	PORT_DIPNAME( 0x0c, 0x0c, "Max Bet" ) PORT_DIPLOCATION("SW2:3,4")
+	PORT_DIPSETTING(    0x04, "150" )
+	PORT_DIPSETTING(    0x08, "200" )
+	PORT_DIPSETTING(    0x0c, "300" )
+	PORT_DIPSETTING(    0x00, "400" )
+	PORT_DIPNAME( 0x30, 0x30, "Score" ) PORT_DIPLOCATION("SW2:5,6")
+	PORT_DIPSETTING(    0x10, "800 1200 1600" )
+	PORT_DIPSETTING(    0x30, "1000 1500 2000" )
+	PORT_DIPSETTING(    0x00, "1200 1800 2400" )
+	PORT_DIPSETTING(    0x20, "1000 2000 3000" )
+	PORT_DIPNAME( 0x0040, 0x0040, "Bet -> Score" ) PORT_DIPLOCATION("SW2:7")
+	PORT_DIPSETTING(      0x0040, DEF_STR( On ) )
+	PORT_DIPSETTING(      0x0000, DEF_STR( Off ) )
+	PORT_SERVICE_DIPLOC(  0x0080, IP_ACTIVE_LOW, "SW2:8" )
+	PORT_BIT( 0x0100, IP_ACTIVE_LOW, IPT_JOYSTICK_UP ) PORT_8WAY PORT_PLAYER(2)
+	PORT_BIT( 0x0200, IP_ACTIVE_LOW, IPT_JOYSTICK_DOWN ) PORT_8WAY PORT_PLAYER(2)
+	PORT_BIT( 0x0400, IP_ACTIVE_LOW, IPT_JOYSTICK_LEFT ) PORT_8WAY PORT_PLAYER(2)
+	PORT_BIT( 0x0800, IP_ACTIVE_LOW, IPT_JOYSTICK_RIGHT ) PORT_8WAY PORT_PLAYER(2)
+	PORT_BIT( 0x1000, IP_ACTIVE_LOW, IPT_BUTTON1 ) PORT_PLAYER(2)
+	PORT_BIT( 0x2000, IP_ACTIVE_LOW, IPT_BUTTON2 ) PORT_PLAYER(2)
+	PORT_BIT( 0x4000, IP_ACTIVE_LOW, IPT_BUTTON3 ) PORT_PLAYER(2)
+	PORT_BIT( 0x8000, IP_ACTIVE_HIGH, IPT_UNKNOWN )
+
+	PORT_START("SYSTEM")
+	PORT_BIT( 0x0100, IP_ACTIVE_LOW, IPT_START1 )
+	PORT_BIT( 0x0200, IP_ACTIVE_LOW, IPT_START2 )
+	PORT_BIT( 0x0400, IP_ACTIVE_LOW, IPT_COIN1 )
+	PORT_BIT( 0x0800, IP_ACTIVE_LOW, IPT_COIN2 )
+	PORT_BIT( 0x1000, IP_ACTIVE_LOW, IPT_UNKNOWN )
+	PORT_BIT( 0x2000, IP_ACTIVE_LOW, IPT_TILT )
+	PORT_BIT( 0x4000, IP_ACTIVE_LOW, IPT_COIN3 )
+	PORT_BIT( 0x8000, IP_ACTIVE_LOW, IPT_UNKNOWN )
+INPUT_PORTS_END
+
+
 /* SnowBros */
 
-static const gfx_layout tilelayout =
-{
-	16,16,
-	RGN_FRAC(1,1),
-	4,
-	{ 0, 1, 2, 3 },
-	{ STEP8(0,4), STEP8(8*32,4) },
-	{ STEP8(0,32), STEP8(16*32,32) },
-	32*32
-};
-
-static GFXDECODE_START( snowbros )
-	GFXDECODE_ENTRY( "gfx1", 0, tilelayout,  0, 16 )
+static GFXDECODE_START( gfx_snowbros )
+	GFXDECODE_ENTRY( "gfx1", 0, gfx_8x8x4_row_2x2_group_packed_msb, 0, 16 )
 GFXDECODE_END
 
 /* Honey Doll */
@@ -1567,14 +1669,14 @@ static const gfx_layout honeydol_tilelayout8bpp =
 	32*32
 };
 
-static GFXDECODE_START( honeydol )
-	GFXDECODE_ENTRY( "gfx1", 0, tilelayout,  0, 64 ) // how does it use 0-15
-	GFXDECODE_ENTRY( "gfx2", 0, honeydol_tilelayout8bpp,  0, 4 )
+static GFXDECODE_START( gfx_honeydol )
+	GFXDECODE_ENTRY( "gfx1", 0, gfx_8x8x4_row_2x2_group_packed_msb, 0, 64 ) // how does it use 0-15
+	GFXDECODE_ENTRY( "gfx2", 0, honeydol_tilelayout8bpp,            0,  4 )
 
 GFXDECODE_END
 
-static GFXDECODE_START( twinadv )
-	GFXDECODE_ENTRY( "gfx1", 0, tilelayout,  0, 64 )
+static GFXDECODE_START( gfx_twinadv )
+	GFXDECODE_ENTRY( "gfx1", 0, gfx_8x8x4_row_2x2_group_packed_msb, 0, 64 )
 GFXDECODE_END
 
 /* Winter Bobble */
@@ -1590,8 +1692,8 @@ static const gfx_layout tilelayout_wb =
 	16*64
 };
 
-static GFXDECODE_START( wb )
-	GFXDECODE_ENTRY( "gfx1", 0, tilelayout_wb,  0, 16 )
+static GFXDECODE_START( gfx_wb )
+	GFXDECODE_ENTRY( "gfx1", 0, tilelayout_wb, 0, 16 )
 GFXDECODE_END
 
 /* SemiCom */
@@ -1624,18 +1726,18 @@ static const gfx_layout sb3_tilebglayout =
 };
 
 
-static GFXDECODE_START( sb3 )
-	GFXDECODE_ENTRY( "gfx1", 0, tilelayout,  0, 16 )
-	GFXDECODE_ENTRY( "gfx2", 0, sb3_tilebglayout,  0, 2 )
+static GFXDECODE_START( gfx_sb3 )
+	GFXDECODE_ENTRY( "gfx1", 0, gfx_8x8x4_row_2x2_group_packed_msb, 0, 16 )
+	GFXDECODE_ENTRY( "gfx2", 0, sb3_tilebglayout,                   0,  2 )
 GFXDECODE_END
 
-static GFXDECODE_START( hyperpac )
-	GFXDECODE_ENTRY( "gfx1", 0, hyperpac_tilelayout,  0, 16 )
+static GFXDECODE_START( gfx_hyperpac )
+	GFXDECODE_ENTRY( "gfx1", 0, hyperpac_tilelayout, 0, 16 )
 GFXDECODE_END
 
 MACHINE_RESET_MEMBER(snowbros_state,semiprot)
 {
-	UINT16 *PROTDATA = (UINT16*)memregion("user1")->base();
+	uint16_t *PROTDATA = (uint16_t*)memregion("user1")->base();
 	int i;
 
 	for (i = 0;i < 0x200/2;i++)
@@ -1644,178 +1746,192 @@ MACHINE_RESET_MEMBER(snowbros_state,semiprot)
 
 MACHINE_RESET_MEMBER(snowbros_state,finalttr)
 {
-	UINT16 *PROTDATA = (UINT16*)memregion("user1")->base();
+	uint16_t *PROTDATA = (uint16_t*)memregion("user1")->base();
 	int i;
 
 	for (i = 0;i < 0x200/2;i++)
 		m_hyperpac_ram[0x2000/2 + i] = PROTDATA[i];
 }
 
-static MACHINE_CONFIG_START( snowbros, snowbros_state )
-
+void snowbros_state::snowbros(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", M68000, XTAL_16MHz/2) /* 8 Mhz - confirmed */
-	MCFG_CPU_PROGRAM_MAP(snowbros_map)
-	MCFG_TIMER_DRIVER_ADD_SCANLINE("scantimer", snowbros_state, snowbros_irq, "screen", 0, 1)
+	M68000(config, m_maincpu, XTAL(16'000'000)/2); /* 8 Mhz - confirmed */
+	m_maincpu->set_addrmap(AS_PROGRAM, &snowbros_state::snowbros_map);
+	TIMER(config, "scantimer", 0).configure_scanline(FUNC(snowbros_state::snowbros_irq), "screen", 0, 1);
+	WATCHDOG_TIMER(config, "watchdog");
 
-	MCFG_CPU_ADD("soundcpu", Z80, XTAL_12MHz/2) /* 6 MHz - confirmed */
-	MCFG_CPU_PROGRAM_MAP(sound_map)
-	MCFG_CPU_IO_MAP(sound_io_map)
+	Z80(config, m_soundcpu, XTAL(12'000'000)/2); /* 6 MHz - confirmed */
+	m_soundcpu->set_addrmap(AS_PROGRAM, &snowbros_state::sound_map);
+	m_soundcpu->set_addrmap(AS_IO, &snowbros_state::sound_io_map);
 
 	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_REFRESH_RATE(57.5) /* ~57.5 - confirmed */
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(0))
-	MCFG_SCREEN_SIZE(32*8, 262)
-	MCFG_SCREEN_VISIBLE_AREA(0*8, 32*8-1, 2*8, 30*8-1)
-	MCFG_SCREEN_UPDATE_DRIVER(snowbros_state, screen_update_snowbros)
-	MCFG_SCREEN_VBLANK_DRIVER(snowbros_state, screen_eof_snowbros)
-	MCFG_SCREEN_PALETTE("palette")
+	SCREEN(config, m_screen, SCREEN_TYPE_RASTER);
+	m_screen->set_refresh_hz(57.5); /* ~57.5 - confirmed */
+	m_screen->set_vblank_time(ATTOSECONDS_IN_USEC(0));
+	m_screen->set_size(32*8, 262);
+	m_screen->set_visarea(0*8, 32*8-1, 2*8, 30*8-1);
+	m_screen->set_screen_update(FUNC(snowbros_state::screen_update_snowbros));
+	m_screen->screen_vblank().set(FUNC(snowbros_state::screen_vblank_snowbros));
+	m_screen->set_palette(m_palette);
 
-	MCFG_GFXDECODE_ADD("gfxdecode", "palette", snowbros)
-	MCFG_PALETTE_ADD("palette", 256)
-	MCFG_PALETTE_FORMAT(xBBBBBGGGGGRRRRR)
+	GFXDECODE(config, m_gfxdecode, m_palette, gfx_snowbros);
+	PALETTE(config, m_palette).set_format(palette_device::xBGR_555, 256);
 
-	MCFG_DEVICE_ADD("pandora", KANEKO_PANDORA, 0)
-	MCFG_KANEKO_PANDORA_GFXDECODE("gfxdecode")
-	MCFG_KANEKO_PANDORA_PALETTE("palette")
+	KANEKO_PANDORA(config, m_pandora, 0);
+	m_pandora->set_gfxdecode_tag(m_gfxdecode);
 
 	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_MONO("mono")
+	SPEAKER(config, "mono").front_center();
 
-	MCFG_SOUND_ADD("ymsnd", YM3812, XTAL_12MHz/4) /* 3 MHz - confirmed */
-	MCFG_YM3812_IRQ_HANDLER(INPUTLINE("soundcpu", 0))
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 1.0)
-MACHINE_CONFIG_END
+	GENERIC_LATCH_8(config, m_soundlatch);
+	m_soundlatch->data_pending_callback().set_inputline(m_soundcpu, INPUT_LINE_NMI);
 
+	GENERIC_LATCH_8(config, "soundlatch2");
 
-static MACHINE_CONFIG_DERIVED( wintbob, snowbros )
+	ym3812_device &ymsnd(YM3812(config, "ymsnd", XTAL(12'000'000)/4)); /* 3 MHz - confirmed */
+	ymsnd.irq_handler().set_inputline("soundcpu", 0);
+	ymsnd.add_route(ALL_OUTPUTS, "mono", 1.0);
+}
+
+void snowbros_state::wintbob(machine_config &config)
+{
+	snowbros(config);
 
 	/* basic machine hardware */
-	MCFG_CPU_MODIFY("maincpu")
-	MCFG_CPU_CLOCK(10000000) /* 10mhz - Confirmed */
-	MCFG_CPU_PROGRAM_MAP(wintbob_map)
+	m_maincpu->set_clock(10000000); /* 10mhz - Confirmed */
+	m_maincpu->set_addrmap(AS_PROGRAM, &snowbros_state::wintbob_map);
 
-	MCFG_DEVICE_REMOVE("pandora")
+	config.device_remove("pandora");
 
 	/* video hardware */
-	MCFG_GFXDECODE_MODIFY("gfxdecode", wb)
-	MCFG_SCREEN_MODIFY("screen")
-	MCFG_SCREEN_UPDATE_DRIVER(snowbros_state, screen_update_wintbob)
-	MCFG_SCREEN_VBLANK_NONE()
-MACHINE_CONFIG_END
+	m_gfxdecode->set_info(gfx_wb);
 
+	m_screen->set_screen_update(FUNC(snowbros_state::screen_update_wintbob));
+	m_screen->screen_vblank().set_nop();
+}
 
-static MACHINE_CONFIG_DERIVED( semicom, snowbros )
+void snowbros_state::semicom(machine_config &config)
+{
+	snowbros(config);
 
 	/* basic machine hardware */
-	MCFG_CPU_MODIFY("maincpu")
-	MCFG_CPU_CLOCK(XTAL_12MHz) /* 12MHz - Confirmed */
-	MCFG_CPU_PROGRAM_MAP(hyperpac_map)
+	m_maincpu->set_clock(XTAL(12'000'000)); /* 12MHz - Confirmed */
+	m_maincpu->set_addrmap(AS_PROGRAM, &snowbros_state::hyperpac_map);
 
-	MCFG_CPU_MODIFY("soundcpu")
-	MCFG_CPU_CLOCK(XTAL_16MHz/4) /* 4MHz - Confirmed */
-	MCFG_CPU_PROGRAM_MAP(hyperpac_sound_map)
-	MCFG_CPU_IO_MAP(hyperpac_sound_io_map)
+	m_soundcpu->set_clock(XTAL(16'000'000)/4); /* 4MHz - Confirmed */
+	m_soundcpu->set_addrmap(AS_PROGRAM, &snowbros_state::hyperpac_sound_map);
+	m_soundcpu->set_addrmap(AS_IO, address_map_constructor());
 
-	MCFG_GFXDECODE_MODIFY("gfxdecode", hyperpac)
+	m_gfxdecode->set_info(gfx_hyperpac);
+
+	m_soundlatch->data_pending_callback().set_nop();
+
+	config.device_remove("soundlatch2");
 
 	/* sound hardware */
-	MCFG_SOUND_REPLACE("ymsnd", YM2151, XTAL_16MHz/4) /* 4MHz - Confirmed */
-	MCFG_YM2151_IRQ_HANDLER(INPUTLINE("soundcpu", 0))
-	MCFG_SOUND_ROUTE(0, "mono", 0.10)
-	MCFG_SOUND_ROUTE(1, "mono", 0.10)
+	ym2151_device &ymsnd(YM2151(config.replace(), "ymsnd", XTAL(16'000'000)/4)); /* 4MHz - Confirmed */
+	ymsnd.irq_handler().set_inputline(m_soundcpu, 0);
+	ymsnd.add_route(0, "mono", 0.10);
+	ymsnd.add_route(1, "mono", 0.10);
 
-	MCFG_OKIM6295_ADD("oki", XTAL_16MHz/16, OKIM6295_PIN7_HIGH) /* 1MHz & pin 7 High - Confirmed */
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 1.0)
-MACHINE_CONFIG_END
+	OKIM6295(config, m_oki, XTAL(16'000'000)/16, okim6295_device::PIN7_HIGH); /* 1MHz & pin 7 High - Confirmed */
+	m_oki->add_route(ALL_OUTPUTS, "mono", 1.0);
+}
 
-
-static MACHINE_CONFIG_DERIVED( semicom_mcu, semicom )
-
-	/* basic machine hardware */
-
-	MCFG_CPU_ADD("protection", I8052, XTAL_16MHz)  // AT89C52
-	MCFG_CPU_PROGRAM_MAP(protection_map)
-	MCFG_CPU_IO_MAP(protection_iomap)
-MACHINE_CONFIG_END
-
-
-static MACHINE_CONFIG_DERIVED( semiprot, semicom )
-	MCFG_MACHINE_RESET_OVERRIDE (snowbros_state, semiprot )
-MACHINE_CONFIG_END
-
-
-static MACHINE_CONFIG_START( honeydol, snowbros_state )
+void snowbros_state::semicom_mcu(machine_config &config)
+{
+	semicom(config);
 
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", M68000, XTAL_12MHz) /* MC68000P12 @ 12MHz */
-	MCFG_CPU_PROGRAM_MAP(honeydol_map)
-	MCFG_TIMER_DRIVER_ADD_SCANLINE("scantimer", snowbros_state, snowbros_irq, "screen", 0, 1)
+	at89c52_device &prot(AT89C52(config, "protection", XTAL(16'000'000)));
+	prot.port_out_cb<0>().set(FUNC(snowbros_state::prot_p0_w));
+	prot.port_out_cb<1>().set(FUNC(snowbros_state::prot_p1_w));
+	prot.port_out_cb<2>().set(FUNC(snowbros_state::prot_p2_w));
+}
 
-	MCFG_CPU_ADD("soundcpu", Z80, XTAL_16MHz/4) /* 4Mhz (16MHz/4) like SemiCom or 6MHz (12MHz/2) like snowbros??? */
-	MCFG_CPU_PROGRAM_MAP(honeydol_sound_map)
-	MCFG_CPU_IO_MAP(honeydol_sound_io_map)
+
+void snowbros_state::semiprot(machine_config &config)
+{
+	semicom(config);
+	MCFG_MACHINE_RESET_OVERRIDE(snowbros_state, semiprot)
+}
+
+
+void snowbros_state::honeydol(machine_config &config)
+{
+	/* basic machine hardware */
+	M68000(config, m_maincpu, XTAL(12'000'000)); /* MC68000P12 @ 12MHz */
+	m_maincpu->set_addrmap(AS_PROGRAM, &snowbros_state::honeydol_map);
+	TIMER(config, "scantimer", 0).configure_scanline(FUNC(snowbros_state::snowbros_irq), "screen", 0, 1);
+
+	Z80(config, m_soundcpu, XTAL(16'000'000)/4); /* 4Mhz (16MHz/4) like SemiCom or 6MHz (12MHz/2) like snowbros??? */
+	m_soundcpu->set_addrmap(AS_PROGRAM, &snowbros_state::honeydol_sound_map);
+	m_soundcpu->set_addrmap(AS_IO, &snowbros_state::honeydol_sound_io_map);
 
 	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_REFRESH_RATE(57.5)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(2500) /* not accurate */)
-	MCFG_SCREEN_SIZE(32*8, 262)
-	MCFG_SCREEN_VISIBLE_AREA(0*8, 32*8-1, 2*8, 30*8-1)
-	MCFG_SCREEN_UPDATE_DRIVER(snowbros_state, screen_update_honeydol)
-	MCFG_SCREEN_PALETTE("palette")
+	SCREEN(config, m_screen, SCREEN_TYPE_RASTER);
+	m_screen->set_refresh_hz(57.5);
+	m_screen->set_vblank_time(ATTOSECONDS_IN_USEC(2500)); /* not accurate */
+	m_screen->set_size(32*8, 262);
+	m_screen->set_visarea(0*8, 32*8-1, 2*8, 30*8-1);
+	m_screen->set_screen_update(FUNC(snowbros_state::screen_update_honeydol));
+	m_screen->set_palette(m_palette);
 
-	MCFG_GFXDECODE_ADD("gfxdecode", "palette", honeydol)
-	MCFG_PALETTE_ADD("palette", 0x800/2)
-	MCFG_PALETTE_FORMAT(xBBBBBGGGGGRRRRR)
-
-	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_MONO("mono")
+	GFXDECODE(config, m_gfxdecode, m_palette, gfx_honeydol);
+	PALETTE(config, m_palette).set_format(palette_device::xBGR_555, 0x800/2);
 
 	/* sound hardware */
+	SPEAKER(config, "mono").front_center();
 
-	MCFG_SOUND_ADD("ymsnd", YM3812, XTAL_12MHz/4) /* 3Mhz */
-	MCFG_YM3812_IRQ_HANDLER(INPUTLINE("soundcpu", 0))
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 1.0)
+	GENERIC_LATCH_8(config, m_soundlatch);
+	m_soundlatch->data_pending_callback().set_inputline(m_soundcpu, INPUT_LINE_NMI);
 
+	ym3812_device &ymsnd(YM3812(config, "ymsnd", XTAL(12'000'000)/4)); /* 3Mhz */
+	ymsnd.irq_handler().set_inputline("soundcpu", 0);
+	ymsnd.add_route(ALL_OUTPUTS, "mono", 1.0);
 
-	MCFG_OKIM6295_ADD("oki", XTAL_16MHz/16, OKIM6295_PIN7_HIGH) /* freq? */
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 1.0)
-MACHINE_CONFIG_END
+	OKIM6295(config, m_oki, XTAL(16'000'000)/16, okim6295_device::PIN7_HIGH); /* freq? */
+	m_oki->add_route(ALL_OUTPUTS, "mono", 1.0);
+}
 
-static MACHINE_CONFIG_START( twinadv, snowbros_state )
-
+void snowbros_state::twinadv(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", M68000, XTAL_12MHz) /* 12MHz like Honey Dolls ? */
-	MCFG_CPU_PROGRAM_MAP(twinadv_map)
-	MCFG_TIMER_DRIVER_ADD_SCANLINE("scantimer", snowbros_state, snowbros_irq, "screen", 0, 1)
+	M68000(config, m_maincpu, XTAL(12'000'000)); /* 12MHz like Honey Dolls ? */
+	m_maincpu->set_addrmap(AS_PROGRAM, &snowbros_state::twinadv_map);
+	TIMER(config, "scantimer", 0).configure_scanline(FUNC(snowbros_state::snowbros_irq), "screen", 0, 1);
+	WATCHDOG_TIMER(config, "watchdog");
 
-	MCFG_CPU_ADD("soundcpu", Z80, XTAL_16MHz/4) /* 4Mhz (16MHz/4) like SemiCom or 6MHz (12MHz/2) like snowbros??? */
-	MCFG_CPU_PROGRAM_MAP(sound_map)
-	MCFG_CPU_IO_MAP(twinadv_sound_io_map)
-	MCFG_CPU_VBLANK_INT_DRIVER("screen", snowbros_state,  irq0_line_hold)
+	Z80(config, m_soundcpu, XTAL(16'000'000)/4); /* 4Mhz (16MHz/4) like SemiCom or 6MHz (12MHz/2) like snowbros??? */
+	m_soundcpu->set_addrmap(AS_PROGRAM, &snowbros_state::sound_map);
+	m_soundcpu->set_addrmap(AS_IO, &snowbros_state::twinadv_sound_io_map);
+	m_soundcpu->set_vblank_int("screen", FUNC(snowbros_state::irq0_line_hold));
 
 	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_REFRESH_RATE(57.5)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(2500) /* not accurate */)
-	MCFG_SCREEN_SIZE(32*8, 262)
-	MCFG_SCREEN_VISIBLE_AREA(0*8, 32*8-1, 2*8, 30*8-1)
-	MCFG_SCREEN_UPDATE_DRIVER(snowbros_state, screen_update_twinadv)
-	MCFG_SCREEN_PALETTE("palette")
+	SCREEN(config, m_screen, SCREEN_TYPE_RASTER);
+	m_screen->set_refresh_hz(57.5);
+	m_screen->set_vblank_time(ATTOSECONDS_IN_USEC(2500)); /* not accurate */
+	m_screen->set_size(32*8, 262);
+	m_screen->set_visarea(0*8, 32*8-1, 2*8, 30*8-1);
+	m_screen->set_screen_update(FUNC(snowbros_state::screen_update_twinadv));
+	m_screen->set_palette(m_palette);
 
-	MCFG_GFXDECODE_ADD("gfxdecode", "palette", twinadv)
-	MCFG_PALETTE_ADD("palette", 0x100)
-	MCFG_PALETTE_FORMAT(xBBBBBGGGGGRRRRR)
-
-	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_MONO("mono")
+	GFXDECODE(config, m_gfxdecode, m_palette, gfx_twinadv);
+	PALETTE(config, m_palette).set_format(palette_device::xBGR_555, 0x100);
 
 	/* sound hardware */
-	MCFG_OKIM6295_ADD("oki", XTAL_16MHz/16, OKIM6295_PIN7_HIGH) /* freq? */
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 1.0)
-MACHINE_CONFIG_END
+	SPEAKER(config, "mono").front_center();
+
+	GENERIC_LATCH_8(config, m_soundlatch);
+	m_soundlatch->data_pending_callback().set_inputline(m_soundcpu, INPUT_LINE_NMI);
+
+	GENERIC_LATCH_8(config, "soundlatch2");
+
+	/* sound hardware */
+	OKIM6295(config, m_oki, XTAL(16'000'000)/16, okim6295_device::PIN7_HIGH); /* freq? */
+	m_oki->add_route(ALL_OUTPUTS, "mono", 1.0);
+}
 
 
 /*
@@ -1836,63 +1952,100 @@ Intel P8752 (mcu)
 
 */
 
-static MACHINE_CONFIG_DERIVED( finalttr, semicom )
+void snowbros_state::finalttr(machine_config &config)
+{
+	semicom(config);
 
-	MCFG_CPU_MODIFY("maincpu")
-	MCFG_CPU_CLOCK(XTAL_12MHz)
-	MCFG_CPU_PROGRAM_MAP(finalttr_map)
+	m_maincpu->set_clock(XTAL(12'000'000));
+	m_maincpu->set_addrmap(AS_PROGRAM, &snowbros_state::finalttr_map);
 
-	MCFG_CPU_MODIFY("soundcpu")
-	MCFG_CPU_CLOCK(XTAL_3_579545MHz)
+	m_soundcpu->set_clock(XTAL(3'579'545));
 
-	MCFG_MACHINE_RESET_OVERRIDE (snowbros_state, finalttr )
+	MCFG_MACHINE_RESET_OVERRIDE(snowbros_state, finalttr)
 
-	MCFG_SOUND_REPLACE("ymsnd", YM2151, XTAL_3_579545MHz) /* possible but less likely 4MHz (12MHz/3) */
-	MCFG_YM2151_IRQ_HANDLER(INPUTLINE("soundcpu", 0))
-	MCFG_SOUND_ROUTE(0, "mono", 0.08)
-	MCFG_SOUND_ROUTE(1, "mono", 0.08)
+	ym2151_device &ymsnd(YM2151(config.replace(), "ymsnd", XTAL(3'579'545))); /* possible but less likely 4MHz (12MHz/3) */
+	ymsnd.irq_handler().set_inputline(m_soundcpu, 0);
+	ymsnd.add_route(0, "mono", 0.08);
+	ymsnd.add_route(1, "mono", 0.08);
 
-	MCFG_OKIM6295_REPLACE("oki", 999900, OKIM6295_PIN7_HIGH)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.40)
-MACHINE_CONFIG_END
+	m_oki->set_clock(999900);
+	m_oki->reset_routes().add_route(ALL_OUTPUTS, "mono", 0.4);
+}
 
 
-static MACHINE_CONFIG_DERIVED( _4in1, semicom )
-
-	/* basic machine hardware */
-	MCFG_GFXDECODE_MODIFY("gfxdecode", snowbros)
-MACHINE_CONFIG_END
-
-static MACHINE_CONFIG_START( snowbro3, snowbros_state ) /* PCB has 16MHz & 12MHz OSCs */
+void snowbros_state::_4in1(machine_config &config)
+{
+	semicom(config);
 
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", M68000, XTAL_12MHz) /* MC68000P10 CPU @ 12mhz or 8MHz (16MHz/2) ? */
-	MCFG_CPU_PROGRAM_MAP(snowbros3_map)
-	MCFG_TIMER_DRIVER_ADD_SCANLINE("scantimer", snowbros_state, snowbros3_irq, "screen", 0, 1)
+	m_gfxdecode->set_info(gfx_snowbros);
+}
+
+void snowbros_state::snowbro3(machine_config &config) /* PCB has 16MHz & 12MHz OSCs */
+{
+	/* basic machine hardware */
+	M68000(config, m_maincpu, XTAL(12'000'000)); /* MC68000P10 CPU @ 12mhz or 8MHz (16MHz/2) ? */
+	m_maincpu->set_addrmap(AS_PROGRAM, &snowbros_state::snowbros3_map);
+	TIMER(config, "scantimer", 0).configure_scanline(FUNC(snowbros_state::snowbros3_irq), "screen", 0, 1);
+	WATCHDOG_TIMER(config, "watchdog");
 
 	/* video hardware */
-	MCFG_SCREEN_ADD("screen", RASTER)
-	MCFG_SCREEN_REFRESH_RATE(60)
-	MCFG_SCREEN_VBLANK_TIME(ATTOSECONDS_IN_USEC(0))
-	MCFG_SCREEN_SIZE(32*8, 32*8)
-	MCFG_SCREEN_VISIBLE_AREA(0*8, 32*8-1, 2*8, 30*8-1)
-	MCFG_SCREEN_UPDATE_DRIVER(snowbros_state, screen_update_snowbro3)
-	MCFG_SCREEN_PALETTE("palette")
+	SCREEN(config, m_screen, SCREEN_TYPE_RASTER);
+	m_screen->set_refresh_hz(60);
+	m_screen->set_vblank_time(ATTOSECONDS_IN_USEC(0));
+	m_screen->set_size(32*8, 32*8);
+	m_screen->set_visarea(0*8, 32*8-1, 2*8, 30*8-1);
+	m_screen->set_screen_update(FUNC(snowbros_state::screen_update_snowbro3));
+	m_screen->set_palette(m_palette);
 
-	MCFG_GFXDECODE_ADD("gfxdecode", "palette", sb3)
-	MCFG_PALETTE_ADD("palette", 512)
-	MCFG_PALETTE_FORMAT(xBBBBBGGGGGRRRRR)
+	GFXDECODE(config, m_gfxdecode, m_palette, gfx_sb3);
+	PALETTE(config, m_palette).set_format(palette_device::xBGR_555, 512);
 
 	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_MONO("mono")
+	SPEAKER(config, "mono").front_center();
 
-	MCFG_OKIM6295_ADD("oki", XTAL_16MHz/16, OKIM6295_PIN7_HIGH) // clock frequency & pin 7 not verified
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 1.0)
-MACHINE_CONFIG_END
+	OKIM6295(config, m_oki, XTAL(16'000'000)/16, okim6295_device::PIN7_HIGH); // clock frequency & pin 7 not verified
+	m_oki->add_route(ALL_OUTPUTS, "mono", 1.0);
+}
+
+void snowbros_state::yutnori(machine_config &config)
+{
+	/* basic machine hardware */
+	M68000(config, m_maincpu, XTAL(16'000'000)/2);
+	m_maincpu->set_addrmap(AS_PROGRAM, &snowbros_state::yutnori_map);
+	TIMER(config, "scantimer", 0).configure_scanline(FUNC(snowbros_state::snowbros_irq), "screen", 0, 1);
+
+//  WATCHDOG_TIMER(config, "watchdog"); // maybe
+
+	/* video hardware */
+	SCREEN(config, m_screen, SCREEN_TYPE_RASTER);
+	m_screen->set_refresh_hz(57.5);
+	m_screen->set_vblank_time(ATTOSECONDS_IN_USEC(0));
+	m_screen->set_size(32*8, 262);
+	m_screen->set_visarea(0*8, 32*8-1, 2*8, 30*8-1);
+	m_screen->set_screen_update(FUNC(snowbros_state::screen_update_snowbros));
+	m_screen->screen_vblank().set(FUNC(snowbros_state::screen_vblank_snowbros));
+	m_screen->set_palette(m_palette);
+
+	GFXDECODE(config, m_gfxdecode, m_palette, gfx_hyperpac);
+	PALETTE(config, m_palette).set_format(palette_device::xBGR_555, 256);
+
+	KANEKO_PANDORA(config, m_pandora, 0);
+	m_pandora->set_gfxdecode_tag(m_gfxdecode);
+
+	/* sound hardware */
+	SPEAKER(config, "mono").front_center();
+
+	okim6295_device &oki1(OKIM6295(config, "oki1", XTAL(16'000'000)/16, okim6295_device::PIN7_HIGH)); // clock frequency & pin 7 not verified
+	oki1.add_route(ALL_OUTPUTS, "mono", 1.0);
+
+	okim6295_device &oki2(OKIM6295(config, "oki2", XTAL(16'000'000)/16, okim6295_device::PIN7_HIGH)); // clock frequency & pin 7 not verified
+	oki2.add_route(ALL_OUTPUTS, "mono", 1.0);
+}
 
 /***************************************************************************
 
-  Game driver(s)
+  ROM definitions
 
 ***************************************************************************/
 
@@ -2162,6 +2315,24 @@ ROM_START( twinadvk )
 	ROM_LOAD( "srb.bin", 0x40000, 0x40000, CRC(109e51e6) SHA1(3344c68d63bbad4a02b47143b2d2f72ce9bcb4bb) ) // bank 2
 ROM_END
 
+ROM_START( multi96 )
+	ROM_REGION( 0x40000, "maincpu", 0 )
+	ROM_LOAD16_BYTE( "uh12",  0x00001, 0x20000, CRC(e912ea4e) SHA1(cf0b37d6b6fbdd311ef7b404c4ba2c6a7e1f8486) ) // sldh
+	ROM_LOAD16_BYTE( "ui12",  0x00000, 0x20000, CRC(ac99e837) SHA1(20bc1599f78a4eac65cae54350872fa292daa807) ) // sldh
+
+	ROM_REGION( 0x10000, "soundcpu", 0 )    /* 64k for z80 sound code */
+	ROM_LOAD( "uh15.bin", 0x0000, 0x8000, CRC(3d5acd08) SHA1(c19f686862dfc12d2fa91c2dd3d3b75d9cb410c3) )
+
+	ROM_REGION( 0x180000, "gfx1", 0 ) /* 4bpp gfx */
+	ROM_LOAD( "ua4", 0x000000, 0x80000, CRC(66cae586) SHA1(22af524b26241a6456b777a847db73ff8d3db11f) ) // sldh
+	ROM_LOAD( "ua5", 0x080000, 0x80000, CRC(0bd9f6bb) SHA1(400ddff7a76860caacfe8bfd803f9ccd2dba3356) ) // sldh
+	ROM_LOAD( "ua6", 0x100000, 0x80000, CRC(0e90b26c) SHA1(fd9b40988d03db8ed797abf859a8828bb65db8d5) ) // sldh
+
+	ROM_REGION( 0x080000, "oki", 0 ) /* Samples - both banks are almost the same */
+	/* todo, check bank ordering .. */
+	ROM_LOAD( "sra.bin", 0x00000, 0x40000, CRC(82f452c4) SHA1(95ad6ede87ceafb045ed7df40496baf96190b97f) ) // bank 1
+	ROM_LOAD( "srb.bin", 0x40000, 0x40000, CRC(109e51e6) SHA1(3344c68d63bbad4a02b47143b2d2f72ce9bcb4bb) ) // bank 2
+ROM_END
 
 /* SemiCom Games */
 
@@ -2173,8 +2344,8 @@ ROM_START( hyperpac )
 	ROM_REGION( 0x10000, "soundcpu", 0 ) /* Z80 Code */
 	ROM_LOAD( "hyperpac.u1", 0x00000, 0x10000 , CRC(03faf88e) SHA1(a8da883d4b765b809452bbffca37ff224edbe86d) )
 
-	ROM_REGION( 0x10000, "protection", 0 ) /* Intel 87C52 MCU Code */
-	ROM_LOAD( "at89c52.bin", 0x00000, 0x2000 , CRC(291f9326) SHA1(e440ce7d92188faa86e02e7f9db4ec6bce21efd3) ) /* decapped */
+	ROM_REGION( 0x2000, "protection", 0 ) /* Intel 87C52 MCU Code */
+	ROM_LOAD( "at89c52.bin", 0x0000, 0x2000 , CRC(291f9326) SHA1(e440ce7d92188faa86e02e7f9db4ec6bce21efd3) ) /* decapped */
 
 	ROM_REGION( 0x040000, "oki", 0 ) /* Samples */
 	ROM_LOAD( "hyperpac.j15", 0x00000, 0x40000, CRC(fb9f468d) SHA1(52857b1a04c64ac853340ebb8e92d98eabea8bc1) )
@@ -2225,6 +2396,27 @@ ROM_START( twinkle )
 	ROM_LOAD( "ua4.bin", 0x000000, 0x80000, CRC(6b64bb09) SHA1(547eac1ad931a6b937dff0b922d06af92cc7ab73) )
 ROM_END
 
+ROM_START( twinklea )
+	ROM_REGION( 0x100000, "maincpu", 0 )
+	ROM_LOAD16_BYTE( "uh12.bin", 0x00001, 0x20000, CRC(6cc6e53c) SHA1(26584d2b99878230a33c1c2c8d71e758b0c09cac) ) // sldh
+	ROM_LOAD16_BYTE( "ui12.bin", 0x00000, 0x20000, CRC(79420382) SHA1(13183d819f5b7699e8e0974c193796151a0a9617) ) // sldh
+
+	ROM_REGION( 0x10000, "soundcpu", 0 )
+	ROM_LOAD( "u1.bin", 0x00000, 0x10000 , CRC(e40481da) SHA1(1c1fabcb67693235eaa6ff59ae12a35854b5564a) )
+
+	ROM_REGION( 0x10000, "cpu2", 0 ) // Intel 87C52 MCU Code
+	ROM_LOAD( "87c52.mcu", 0x00000, 0x10000 , NO_DUMP ) // needs decapping
+
+	ROM_REGION16_BE( 0x200, "user1", 0 ) // Data from Shared RAM
+	// this is not a real rom but instead the data extracted from shared ram, the MCU puts it there
+	ROM_LOAD16_WORD( "protdata.bin", 0x00000, 0x200, BAD_DUMP CRC(00d3e4b4) SHA1(afa359a8b48605ff034133bad2a0a182429dec71) ) // this has been extracted for the parent set, seems to work for this set, too
+
+	ROM_REGION( 0x040000, "oki", 0 )
+	ROM_LOAD( "uj15.bin", 0x00000, 0x40000, CRC(0a534b37) SHA1(b7d780eb4668f1f757a60884c022f5bbc424dc97) )
+
+	ROM_REGION( 0x080000, "gfx1", 0 ) // Sprites
+	ROM_LOAD( "ua4.bin", 0x000000, 0x80000, CRC(6b64bb09) SHA1(547eac1ad931a6b937dff0b922d06af92cc7ab73) )
+ROM_END
 
 ROM_START( pzlbreak )
 	ROM_REGION( 0x100000, "maincpu", 0 ) /* 68000 Code */
@@ -2248,6 +2440,29 @@ ROM_START( pzlbreak )
 	ROM_REGION( 0x100000, "gfx1", 0 ) /* Sprites */
 	ROM_LOAD( "2.ua4", 0x000000, 0x80000, CRC(d211705a) SHA1(b3a7f8198dc8c034b17b843b2ab0298426de3f55) )
 	ROM_LOAD( "3.ua5", 0x080000, 0x80000, CRC(6cdb73e9) SHA1(649e91ee54de2b359a207bed4d950db95515a3d8) )
+ROM_END
+
+ROM_START( pzlbreaka )
+	ROM_REGION( 0x100000, "maincpu", 0 )
+	ROM_LOAD16_BYTE( "uh12", 0x00001, 0x20000, CRC(c8a82ca8) SHA1(ee19c253af9c7c8a33435d9d2494c50f16033572) )
+	ROM_LOAD16_BYTE( "ui12", 0x00000, 0x20000, CRC(2f66c4ce) SHA1(4349f093ce1267c2ebcbf1233082661604f10851) )
+
+	ROM_REGION( 0x10000, "soundcpu", 0 )
+	ROM_LOAD( "u1", 0x00000, 0x10000 , CRC(1ad646b7) SHA1(0132baa097e48df2450afdcd316375dc546ea4d0) )
+
+	ROM_REGION( 0x10000, "cpu2", 0 ) // Intel 87C52 MCU Code
+	ROM_LOAD( "87c52.mcu", 0x00000, 0x10000 , NO_DUMP )
+
+	ROM_REGION16_BE( 0x200, "user1", ROMREGION_ERASEFF ) // Data from Shared RAM
+	// this is not a real rom but instead the data extracted from shared ram, the MCU puts it there
+	ROM_LOAD16_WORD( "protdata.bin", 0x00000, 0x200, BAD_DUMP CRC(092cb794) SHA1(eb2b336d97b440453ca37ee7605654b35dfb6bad) ) // extracted from the parent set, so marked as bad
+
+	ROM_REGION( 0x040000, "oki", 0 )
+	ROM_LOAD( "uj15", 0x00000, 0x20000, CRC(5cdffcc5) SHA1(793a20bd0480cfea0dbf9397797428f6d105f724) ) // 1xxxxxxxxxxxxxxxx = 0xFF and half sized compared to the parent
+
+	ROM_REGION( 0x100000, "gfx1", 0 )
+	ROM_LOAD( "ua4", 0x000000, 0x80000, CRC(d211705a) SHA1(b3a7f8198dc8c034b17b843b2ab0298426de3f55) )
+	ROM_LOAD( "ua5", 0x080000, 0x80000, CRC(eb3044bc) SHA1(c00e7b112b82c8eeb59c2a96168ea5156347f05e) ) // some differences compared to the parent
 ROM_END
 
 
@@ -2401,29 +2616,84 @@ ROM_START( mcheonru ) /* SemiCom Ser-4331-4 PCB */
 	ROM_LOAD( "u78", 0x180000, 0x80000, CRC(f1b74978) SHA1(d1ac1bc212050d4f1a861045ab612115c73d3fd0) )
 ROM_END
 
+/*
+
+Cookie & Bibi 2
+SemiCom (c) 1996
+
+  CPU: MC68000P10, Z8400B Z80
+Sound: OKIM6295, YM2151+YM3012 (rebadged as AD-65, KA51+K-662)
+Video: Lattice pLSI 1032-60LJ (square 84 pin socketed)
+  OSC: 16MHz, 12MHz
+*/
+
 ROM_START( cookbib2 )
 	ROM_REGION( 0x100000, "maincpu", 0 ) /* 68000 Code */
-	ROM_LOAD16_BYTE( "cookbib2.02",  0x00001, 0x40000, CRC(b2909460) SHA1(2438638af870cfc105631d2b5e5a27a64ab5394d) )
-	ROM_LOAD16_BYTE( "cookbib2.01",  0x00000, 0x40000, CRC(65aafde2) SHA1(01f9f261527c35182f0445d641d987aa86ad750f) )
+	ROM_LOAD16_BYTE( "unico_02.uh12",  0x00001, 0x40000, CRC(b2909460) SHA1(2438638af870cfc105631d2b5e5a27a64ab5394d) ) // 27C020
+	ROM_LOAD16_BYTE( "unico_01.ui12",  0x00000, 0x40000, CRC(65aafde2) SHA1(01f9f261527c35182f0445d641d987aa86ad750f) ) // 27C020
 
 	ROM_REGION( 0x10000, "soundcpu", 0 ) /* Z80 Code */
-	ROM_LOAD( "cookbib2.07", 0x00000, 0x10000 , CRC(f59f1c9a) SHA1(2830261fd55249e015514fcb4cf8392e83b7fd0d) )
+	ROM_LOAD( "unico_07.u1", 0x00000, 0x10000 , CRC(f59f1c9a) SHA1(2830261fd55249e015514fcb4cf8392e83b7fd0d) ) // 27C512
 
-	ROM_REGION( 0x10000, "cpu2", 0 ) /* Intel 87C52 MCU Code */
-	ROM_LOAD( "87c52.mcu", 0x00000, 0x10000 , NO_DUMP ) /* can't be dumped */
+	ROM_REGION( 0x2000, "protection", 0 ) /* P87C52EBPN (XSC6407A) Code (8052) */
+	ROM_LOAD( "p87c52ebpn.bin", 0x0000, 0x2000 , CRC(ef042cef) SHA1(3089d5a3cb5ed663a8d89d59e427a06cffcd6219) ) /* dumped via laser glitching */
+
+	ROM_REGION( 0x040000, "oki", 0 ) /* Samples */
+	ROM_LOAD( "unico_06.uj15", 0x00000, 0x20000, CRC(5e6f76b8) SHA1(725800143dfeaa6093ed5fcc5b9f15678ae9e547) ) // 27C010
+
+	ROM_REGION( 0x140000, "gfx1", 0 ) /* Sprites */
+	ROM_LOAD( "unico_05.ua4", 0x000000, 0x80000, CRC(89fb38ce) SHA1(1b39dd9c2743916b8d8af590bd92fe4819c2454b) ) // 27C040
+	ROM_LOAD( "unico_04.ua5", 0x080000, 0x80000, CRC(f240111f) SHA1(b2c3b6e3d916fc68e1fd258b1279b6c39e1f0108) ) // 27C040
+	ROM_LOAD( "unico_03.ua6", 0x100000, 0x40000, CRC(e1604821) SHA1(bede6bdd8331128b9f2b229d718133470bf407c9) ) // 27C020
+	/* UA7 is unpopulated */
+ROM_END
+
+ROM_START( cookbib2a )
+	ROM_REGION( 0x100000, "maincpu", 0 ) /* 68000 Code */
+	ROM_LOAD16_BYTE( "unico.uh12",  0x00001, 0x40000, CRC(19421631) SHA1(00dfc474cee7d21d4b6bdbae2eabcdfde3584307) ) // non descriptive UNICO label with no numbers
+	ROM_LOAD16_BYTE( "unico.ui12",  0x00000, 0x40000, CRC(0d09ecf5) SHA1(16f787638041d38ee2567ca958ca4405324cf5fa) ) // both program ROMs are 27C020
+
+	ROM_REGION( 0x10000, "soundcpu", 0 ) /* Z80 Code */
+	ROM_LOAD( "unico_07.u1", 0x00000, 0x10000 , CRC(f59f1c9a) SHA1(2830261fd55249e015514fcb4cf8392e83b7fd0d) ) // 27C512
+
+	ROM_REGION( 0x2000, "protection", 0 ) /* P87C52EBPN (XSC6407A) Code (8052) */
+	ROM_LOAD( "p87c52ebpn.bin", 0x0000, 0x2000 , CRC(ef042cef) SHA1(3089d5a3cb5ed663a8d89d59e427a06cffcd6219) ) /* dumped via laser glitching */
+
+	ROM_REGION( 0x040000, "oki", 0 ) /* Samples */
+	ROM_LOAD( "unico_06.uj15", 0x00000, 0x20000, CRC(5e6f76b8) SHA1(725800143dfeaa6093ed5fcc5b9f15678ae9e547) ) // 27C010
+
+	ROM_REGION( 0x140000, "gfx1", 0 ) /* Sprites */
+	ROM_LOAD( "unico_05.ua4", 0x000000, 0x80000, CRC(89fb38ce) SHA1(1b39dd9c2743916b8d8af590bd92fe4819c2454b) ) // 27C040
+	ROM_LOAD( "unico_04.ua5", 0x080000, 0x80000, CRC(f240111f) SHA1(b2c3b6e3d916fc68e1fd258b1279b6c39e1f0108) ) // 27C040
+	ROM_LOAD( "unico_03.ua6", 0x100000, 0x40000, CRC(e1604821) SHA1(bede6bdd8331128b9f2b229d718133470bf407c9) ) // 27C020
+	/* UA7 is unpopulated */
+ROM_END
+
+ROM_START( cookbib2b )
+	ROM_REGION( 0x100000, "maincpu", 0 ) /* 68000 Code */
+	ROM_LOAD16_BYTE( "uh12.020",  0x00001, 0x40000, CRC(a44ec1f8) SHA1(0c741bf38f5cf667586cd1925417b6e17dbb8916) )
+	ROM_LOAD16_BYTE( "ui12.020",  0x00000, 0x40000, CRC(bdbcd0d1) SHA1(9a6a85a492c21f6dd5daef964071a8a1c62f73c8) )
+
+	ROM_REGION( 0x10000, "soundcpu", 0 ) /* Z80 Code */
+	ROM_LOAD( "u1.512", 0x00000, 0x10000 , CRC(f59f1c9a) SHA1(2830261fd55249e015514fcb4cf8392e83b7fd0d) )
+
+	ROM_REGION( 0x2000, "protection", 0 ) /* P87C52EBPN (XSC6407A) Code (8052) */
+	ROM_LOAD( "87c52.mcu", 0x0000, 0x2000 , NO_DUMP ) /* not dumped yet */
 
 	ROM_REGION( 0x200, "user1", 0 ) /* Data from Shared RAM */
 	/* this is not a real rom but instead the data extracted from
-	   shared ram, the MCU puts it there */
-	ROM_LOAD16_WORD_SWAP( "protdata.bin", 0x00000, 0x200 , CRC(ae6d8ed5) SHA1(410cdacb9b90ea345c0e4be85e60a138f45a51f1) )
+	   shared ram, the MCU puts it there
+
+	   this one is hacked from the cookbib2 one, absolute code jump needed to be changed at least */
+	ROM_LOAD16_WORD_SWAP( "protdata_alt.bin", 0x000, 0x200, BAD_DUMP CRC(bc136ead) SHA1(96459c2ccf7f95880421ba082c2414fa1040f3ed) )
 
 	ROM_REGION( 0x040000, "oki", 0 ) /* Samples */
-	ROM_LOAD( "cookbib2.06", 0x00000, 0x20000, CRC(5e6f76b8) SHA1(725800143dfeaa6093ed5fcc5b9f15678ae9e547) )
+	ROM_LOAD( "uj15.010", 0x00000, 0x20000, CRC(5e6f76b8) SHA1(725800143dfeaa6093ed5fcc5b9f15678ae9e547) )
 
-	ROM_REGION( 0x140000, "gfx1", 0 ) /* Sprites */
-	ROM_LOAD( "cookbib2.05", 0x000000, 0x80000, CRC(89fb38ce) SHA1(1b39dd9c2743916b8d8af590bd92fe4819c2454b) )
-	ROM_LOAD( "cookbib2.04", 0x080000, 0x80000, CRC(f240111f) SHA1(b2c3b6e3d916fc68e1fd258b1279b6c39e1f0108) )
-	ROM_LOAD( "cookbib2.03", 0x100000, 0x40000, CRC(e1604821) SHA1(bede6bdd8331128b9f2b229d718133470bf407c9) )
+	ROM_REGION( 0x180000, "gfx1", 0 ) /* Sprites */
+	ROM_LOAD( "ua4.040", 0x000000, 0x80000, CRC(f458d52e) SHA1(f6a145aaa57c64557479e63bb95732a98a7b8b85) )
+	ROM_LOAD( "ua6.040", 0x080000, 0x80000, CRC(249e89b4) SHA1(2100eea2c3cee84a046ba7ff6cec1027966b895c) )
+	ROM_LOAD( "ua8.040", 0x100000, 0x80000, CRC(caa25138) SHA1(784111255777f5774abf4d34c0a95b5e23a14c9f) )
 ROM_END
 
 ROM_START( cookbib3 )
@@ -2513,6 +2783,27 @@ ROM_START( ballboy )
 ROM_END
 
 
+ROM_START( ballboy3p ) //PCB etched JOYCUS10 (or JOYCU510) 2081627 (0, 6 and 8 aren't clearly readable)
+	ROM_REGION( 0x40000, "maincpu", 0 ) // 68000 code
+	ROM_LOAD16_BYTE( "ur4",  0x00000, 0x20000, CRC(32153d8f) SHA1(1fa698b93507fb775dfff6da8701ab65c986cac5) )
+	ROM_LOAD16_BYTE( "ur3",  0x00001, 0x20000, CRC(4d462a75) SHA1(30a84a618bea5c64201329d02847382c2d0c84ba) )
+
+	// the sound is driven by an MCU
+	ROM_REGION( 0x10000, "cpu2", 0 )
+	ROM_LOAD( "sound.mcu", 0x00000, 0x10000 , NO_DUMP )
+
+	ROM_REGION( 0x80000, "gfx1", 0 )
+	ROM_LOAD( "ua5",        0x000000, 0x80000, CRC(fc72011f) SHA1(f1f10b34fd3365c6542299bd0224dad926d650b4) )   // 16x16 tiles
+
+	ROM_REGION( 0x400000, "gfx2", 0 ) // 16x16 BG Tiles
+	ROM_LOAD( "un7",        0x000000, 0x400000, CRC(fe427e9d) SHA1(6932ad18b6807af860f8430e2a00e959d6c36a23) )
+
+	ROM_REGION( 0x100000, "oki", 0 )    // OKIM6295 samples
+	ROM_LOAD( "us5",     0x00000, 0x20000, CRC(7c6368ef) SHA1(53393c570c605f7582b61c630980041e2ed32e2d) ) // only ROM identical to the 2 player version
+	ROM_CONTINUE(0x80000,0x60000)
+ROM_END
+
+
 /*
 
 Information from Korean arcade gaming magazine
@@ -2579,31 +2870,54 @@ ROM_START( suhosong )
 ROM_END
 
 
+ROM_START( yutnori )
+	ROM_REGION( 0x80000, "maincpu", 0 )    /* 68000 code */
+	ROM_LOAD16_BYTE( "sys_d0-d7",    0x000001, 0x20000, CRC(d5c853da) SHA1(578f29c3a307f82fcaa23a7fe2931c0a673e777e) )
+	ROM_LOAD16_BYTE( "sys_d8-d15",   0x000000, 0x20000, CRC(bf108119) SHA1(e64f64ddb577d6750cbc3a6c9d8d2ec4482cafe0) )
 
-DRIVER_INIT_MEMBER(snowbros_state,cookbib2)
+	ROM_REGION( 0x4010, "mcu", 0 )    /* PIC code */
+	ROM_LOAD( "pic16c64a-04-p",    0x000000, 0x4010, BAD_DUMP CRC(46fd3671) SHA1(54cf7a38f7743cdad73a2741183b2720ee42e6c8) ) // dump seems to be 99% empty, protected, only configuration bytes dumped?
+
+	ROM_REGION( 0x120000, "gfx1", ROMREGION_ERASE00 )
+	ROM_LOAD( "graphics_rom_1",    0x000000, 0x80000, CRC(d4881b49) SHA1(e169b7eca48a0bd66ad55fe21197a4bb491198bb) )
+	ROM_LOAD( "graphics_rom_2",    0x080000, 0x80000, CRC(8cd9ce60) SHA1(d1db929ca6128ec2ebe983e6161f200ba421bd31) )
+	ROM_LOAD( "graphics_rom_3",    0x100000, 0x20000, CRC(04f7c2ac) SHA1(927fa0f76ff1801845776d47aa5311f485b0b809) )
+
+	ROM_REGION(0x80000, "oki1", 0 ) // 2 banks, 1 large sample in each (music)
+	ROM_LOAD("sound rom", 0x000000, 0x080000, CRC(d24c2e43) SHA1(5c7a130048463558d695857ffc056a95a8072219) )
+
+	ROM_REGION(0x40000, "oki2", 0 )
+	ROM_LOAD("voice_rom", 0x000000, 0x040000, CRC(25e85201) SHA1(6c0001e2942f49b62e1bbf3a68c59abad1e2f94c) )
+ROM_END
+
+
+
+void snowbros_state::init_cookbib2()
 {
+	save_item(NAME(m_semicom_prot_offset));
+
+	m_semicom_prot_base = 0xf000 / 2;
 }
 
 
-READ16_MEMBER(snowbros_state::_4in1_02_read)
+uint16_t snowbros_state::_4in1_02_read()
 {
 	return 0x0202;
 }
 
-DRIVER_INIT_MEMBER(snowbros_state,4in1boot)
+void snowbros_state::init_4in1boot()
 {
-	UINT8 *src = memregion("maincpu")->base();
+	uint8_t *src = memregion("maincpu")->base();
 	int len = memregion("maincpu")->bytes();
 
 	/* strange order */
 	{
-		dynamic_buffer buffer(len);
-		int i;
-		for (i = 0;i < len; i++)
-			if (i&1) buffer[i] = BITSWAP8(src[i],6,7,5,4,3,2,1,0);
+		std::vector<uint8_t> buffer(len);
+		for (int i = 0;i < len; i++)
+			if (i & 1) buffer[i] = bitswap<8>(src[i],6,7,5,4,3,2,1,0);
 			else buffer[i] = src[i];
 
-		memcpy(src,&buffer[0],len);
+		memcpy(src, &buffer[0], len);
 	}
 
 	src = memregion("soundcpu")->base();
@@ -2611,26 +2925,24 @@ DRIVER_INIT_MEMBER(snowbros_state,4in1boot)
 
 	/* strange order */
 	{
-		dynamic_buffer buffer(len);
-		int i;
-		for (i = 0;i < len; i++)
+		std::vector<uint8_t> buffer(len);
+		for (int i = 0;i < len; i++)
 			buffer[i] = src[i^0x4000];
 		memcpy(src,&buffer[0],len);
 	}
-	m_maincpu->space(AS_PROGRAM).install_read_handler(0x200000, 0x200001, read16_delegate(FUNC(snowbros_state::_4in1_02_read),this));
+	m_maincpu->space(AS_PROGRAM).install_read_handler(0x200000, 0x200001, read16smo_delegate(*this, FUNC(snowbros_state::_4in1_02_read)));
 }
 
-DRIVER_INIT_MEMBER(snowbros_state,snowbro3)
+void snowbros_state::init_snowbro3()
 {
-	UINT8 *src = memregion("maincpu")->base();
+	uint8_t *src = memregion("maincpu")->base();
 	int len = memregion("maincpu")->bytes();
 
 	/* strange order */
 	{
-		dynamic_buffer buffer(len);
-		int i;
-		for (i = 0;i < len; i++)
-			buffer[i] = src[BITSWAP24(i,23,22,21,20,19,18,17,16,15,14,13,12,11,10,9,8,7,6,5,3,4,1,2,0)];
+		std::vector<uint8_t> buffer(len);
+		for (int i = 0;i < len; i++)
+			buffer[i] = src[bitswap<24>(i,23,22,21,20,19,18,17,16,15,14,13,12,11,10,9,8,7,6,5,3,4,1,2,0)];
 		memcpy(src,&buffer[0],len);
 	}
 
@@ -2638,43 +2950,50 @@ DRIVER_INIT_MEMBER(snowbros_state,snowbro3)
 	save_item(NAME(m_sb3_music));
 }
 
-READ16_MEMBER(snowbros_state::_3in1_read)
+void snowbros_state::init_ballboy3p()
+{
+	init_snowbro3();
+
+	m_maincpu->space(AS_PROGRAM).unmap_write(0x400000, 0x400001); // unmap flipscreen as the DSW has been removed in favor of the controls for the 3rd player
+}
+
+uint16_t snowbros_state::_3in1_read()
 {
 	return 0x000a;
 }
 
-DRIVER_INIT_MEMBER(snowbros_state,3in1semi)
+void snowbros_state::init_3in1semi()
 {
-	m_maincpu->space(AS_PROGRAM).install_read_handler(0x200000, 0x200001, read16_delegate(FUNC(snowbros_state::_3in1_read),this));
+	m_maincpu->space(AS_PROGRAM).install_read_handler(0x200000, 0x200001, read16smo_delegate(*this, FUNC(snowbros_state::_3in1_read)));
 }
 
 
-READ16_MEMBER(snowbros_state::cookbib3_read)
+uint16_t snowbros_state::cookbib3_read()
 {
 	return 0x2a2a;
 }
 
-DRIVER_INIT_MEMBER(snowbros_state,cookbib3)
+void snowbros_state::init_cookbib3()
 {
-	m_maincpu->space(AS_PROGRAM).install_read_handler(0x200000, 0x200001, read16_delegate(FUNC(snowbros_state::cookbib3_read),this));
+	m_maincpu->space(AS_PROGRAM).install_read_handler(0x200000, 0x200001, read16smo_delegate(*this, FUNC(snowbros_state::cookbib3_read)));
 }
 
-DRIVER_INIT_MEMBER(snowbros_state,pzlbreak)
+void snowbros_state::init_pzlbreak()
 {
 	m_pandora->set_bg_pen(0xc0);
 }
 
 
 
-DRIVER_INIT_MEMBER(snowbros_state,toto)
+void snowbros_state::init_toto()
 {
 	// every single rom has bits 0x10 and 0x08 swapped
-	UINT8 *src = memregion("maincpu")->base();
+	uint8_t *src = memregion("maincpu")->base();
 	int len = memregion("maincpu")->bytes();
 
 	for (int i = 0; i < len; i++)
 	{
-		src[i] = BITSWAP8(src[i], 7, 6, 5, 3, 4, 2, 1, 0);
+		src[i] = bitswap<8>(src[i], 7, 6, 5, 3, 4, 2, 1, 0);
 	}
 
 	src = memregion("gfx1")->base();
@@ -2682,7 +3001,7 @@ DRIVER_INIT_MEMBER(snowbros_state,toto)
 
 	for (int i = 0; i < len; i++)
 	{
-		src[i] = BITSWAP8(src[i], 7, 6, 5, 3, 4, 2, 1, 0);
+		src[i] = bitswap<8>(src[i], 7, 6, 5, 3, 4, 2, 1, 0);
 	}
 
 	src = memregion("soundcpu")->base();
@@ -2690,58 +3009,73 @@ DRIVER_INIT_MEMBER(snowbros_state,toto)
 
 	for (int i = 0; i < len; i++)
 	{
-		src[i] = BITSWAP8(src[i], 7, 6, 5, 3, 4, 2, 1, 0);
+		src[i] = bitswap<8>(src[i], 7, 6, 5, 3, 4, 2, 1, 0);
 	}
 
 	// protection? (just return 0x07)
-	m_maincpu->space(AS_PROGRAM).install_read_handler(0x500006, 0x500007, read16_delegate(FUNC(snowbros_state::toto_read),this));
+	m_maincpu->space(AS_PROGRAM).install_read_handler(0x500006, 0x500007, read16s_delegate(*this, FUNC(snowbros_state::toto_read)));
 }
 
-DRIVER_INIT_MEMBER(snowbros_state, hyperpac)
+void snowbros_state::init_hyperpac()
 {
 	save_item(NAME(m_semicom_prot_offset));
+	m_semicom_prot_base = 0xe000 / 2;
 }
 
 
-GAME( 1990, snowbros,  0,        snowbros, snowbros, driver_device, 0, ROT0, "Toaplan",                        "Snow Bros. - Nick & Tom (set 1)", MACHINE_SUPPORTS_SAVE )
-GAME( 1990, snowbrosa, snowbros, snowbros, snowbros, driver_device, 0, ROT0, "Toaplan",                        "Snow Bros. - Nick & Tom (set 2)", MACHINE_SUPPORTS_SAVE )
-GAME( 1990, snowbrosb, snowbros, snowbros, snowbros, driver_device, 0, ROT0, "Toaplan",                        "Snow Bros. - Nick & Tom (set 3)", MACHINE_SUPPORTS_SAVE )
-GAME( 1990, snowbrosc, snowbros, snowbros, snowbros, driver_device, 0, ROT0, "Toaplan",                        "Snow Bros. - Nick & Tom (set 4)", MACHINE_SUPPORTS_SAVE )
-GAME( 1990, snowbrosj, snowbros, snowbros, snowbroj, driver_device, 0, ROT0, "Toaplan",                        "Snow Bros. - Nick & Tom (Japan)", MACHINE_SUPPORTS_SAVE )
-GAME( 1990, snowbrosd, snowbros, snowbros, snowbroj, driver_device, 0, ROT0, "Toaplan (Dooyong license)",      "Snow Bros. - Nick & Tom (Dooyong license)", MACHINE_SUPPORTS_SAVE )
-GAME( 1990, wintbob,   snowbros, wintbob,  snowbros, driver_device, 0, ROT0, "bootleg (Sakowa Project Korea)", "The Winter Bobble (bootleg of Snow Bros.)", MACHINE_SUPPORTS_SAVE )
-GAME( 1990, snowbroswb,snowbros, wintbob,  snowbros, driver_device, 0, ROT0, "bootleg",                        "Snow Bros. - Nick & Tom (The Winter Bobble hardware bootleg)", MACHINE_SUPPORTS_SAVE ) // this was probably unhacked back from the more common Winter Bobble to make it look more original
+void snowbros_state::init_yutnori()
+{
+	m_yutnori_prot_val = 0;
+	m_pandora->set_bg_pen(0xf0);
+	save_item(NAME(m_yutnori_prot_val));
+}
 
-GAME( 1996, toto,      0,        snowbros, snowbros, snowbros_state, toto, ROT0, "SoftClub",                    "Come Back Toto", MACHINE_SUPPORTS_SAVE ) // modified from 'snowbros' code
+GAME( 1990, snowbros,   0,        snowbros,    snowbros, snowbros_state, empty_init,    ROT0, "Toaplan",                        "Snow Bros. - Nick & Tom (set 1)", MACHINE_SUPPORTS_SAVE )
+GAME( 1990, snowbrosa,  snowbros, snowbros,    snowbros, snowbros_state, empty_init,    ROT0, "Toaplan",                        "Snow Bros. - Nick & Tom (set 2)", MACHINE_SUPPORTS_SAVE )
+GAME( 1990, snowbrosb,  snowbros, snowbros,    snowbros, snowbros_state, empty_init,    ROT0, "Toaplan",                        "Snow Bros. - Nick & Tom (set 3)", MACHINE_SUPPORTS_SAVE )
+GAME( 1990, snowbrosc,  snowbros, snowbros,    snowbros, snowbros_state, empty_init,    ROT0, "Toaplan",                        "Snow Bros. - Nick & Tom (set 4)", MACHINE_SUPPORTS_SAVE )
+GAME( 1990, snowbrosj,  snowbros, snowbros,    snowbroj, snowbros_state, empty_init,    ROT0, "Toaplan",                        "Snow Bros. - Nick & Tom (Japan)", MACHINE_SUPPORTS_SAVE )
+GAME( 1990, snowbrosd,  snowbros, snowbros,    snowbroj, snowbros_state, empty_init,    ROT0, "Toaplan (Dooyong license)",      "Snow Bros. - Nick & Tom (Dooyong license)", MACHINE_SUPPORTS_SAVE )
+GAME( 1990, wintbob,    snowbros, wintbob,     snowbros, snowbros_state, empty_init,    ROT0, "bootleg (Sakowa Project Korea)", "The Winter Bobble (bootleg of Snow Bros.)", MACHINE_SUPPORTS_SAVE )
+GAME( 1990, snowbroswb, snowbros, wintbob,     snowbros, snowbros_state, empty_init,    ROT0, "bootleg",                        "Snow Bros. - Nick & Tom (The Winter Bobble hardware bootleg)", MACHINE_SUPPORTS_SAVE ) // this was probably unhacked back from the more common Winter Bobble to make it look more original
+
+GAME( 1996, toto,       0,        snowbros,    snowbros, snowbros_state, init_toto,     ROT0, "SoftClub",                       "Come Back Toto", MACHINE_SUPPORTS_SAVE ) // modified from 'snowbros' code
 
 // none of the games below are on genuine SnowBros hardware, but they clone the functionality of it.
 
 // SemiCom / Jeil titles are protected, a dumb MCU copies code into RAM at startup, some also check for a specific return value from an address on startup.
-GAME( 1993, finalttr, 0,        finalttr,     finalttr, driver_device,  0,        ROT0, "Jeil Computer System", "Final Tetris", MACHINE_SUPPORTS_SAVE )
-GAME( 1995, hyperpac, 0,        semicom_mcu,  hyperpac, snowbros_state, hyperpac, ROT0, "SemiCom",              "Hyper Pacman", MACHINE_SUPPORTS_SAVE )
-GAME( 1995, hyperpacb,hyperpac, semicom,      hyperpac, driver_device,  0,        ROT0, "bootleg",              "Hyper Pacman (bootleg)", MACHINE_SUPPORTS_SAVE )
-GAME( 1996, cookbib2, 0,        semiprot,     cookbib2, snowbros_state, cookbib2, ROT0, "SemiCom",              "Cookie & Bibi 2", MACHINE_SUPPORTS_SAVE )
-GAME( 1996, toppyrap, 0,        semiprot,     toppyrap, driver_device,  0,        ROT0, "SemiCom",              "Toppy & Rappy", MACHINE_SUPPORTS_SAVE )
-GAME( 1997, cookbib3, 0,        semiprot,     cookbib3, snowbros_state, cookbib3, ROT0, "SemiCom",              "Cookie & Bibi 3", MACHINE_SUPPORTS_SAVE )
-GAME( 1997, pzlbreak, 0,        semiprot,     pzlbreak, snowbros_state, pzlbreak, ROT0, "SemiCom / Tirano",     "Puzzle Break", MACHINE_SUPPORTS_SAVE )
-GAME( 1997, suhosong, 0,        semiprot,     suhosong, driver_device,  0,        ROT0, "SemiCom",              "Su Ho Seong", MACHINE_SUPPORTS_SAVE )
-GAME( 1997, twinkle,  0,        semiprot,     twinkle,  driver_device,  0,        ROT0, "SemiCom / Tirano",     "Twinkle", MACHINE_SUPPORTS_SAVE )
-GAME( 1998, 3in1semi, 0,        semiprot,     moremore, snowbros_state, 3in1semi, ROT0, "SemiCom / XESS",       "New HyperMan (3-in-1 with Cookie & Bibi & HyperMan)", MACHINE_SUPPORTS_SAVE )
-GAME( 1999, mcheonru, 0,        semiprot,     mcheonru, snowbros_state, 3in1semi, ROT0, "SemiCom / AceVer",     "Ma Cheon Ru", MACHINE_SUPPORTS_SAVE ) // a flyer exists for an English version called Arirang, AceVer team logo is displayed on it
-GAME( 1999, moremore, 0,        semiprot,     moremore, snowbros_state, 3in1semi, ROT0, "SemiCom / Exit",       "More More", MACHINE_SUPPORTS_SAVE )
-GAME( 1999, moremorp, 0,        semiprot,     moremore, snowbros_state, 3in1semi, ROT0, "SemiCom / Exit",       "More More Plus", MACHINE_SUPPORTS_SAVE )
+GAME( 1993, finalttr,   0,        finalttr,    finalttr, snowbros_state, empty_init,    ROT0, "Jeil Computer System", "Final Tetris", MACHINE_SUPPORTS_SAVE )
+GAME( 1995, hyperpac,   0,        semicom_mcu, hyperpac, snowbros_state, init_hyperpac, ROT0, "SemiCom",              "Hyper Pacman", MACHINE_SUPPORTS_SAVE )
+GAME( 1995, hyperpacb,  hyperpac, semicom,     hyperpac, snowbros_state, empty_init,    ROT0, "bootleg",              "Hyper Pacman (bootleg)", MACHINE_SUPPORTS_SAVE )
+GAME( 1996, cookbib2,   0,        semicom_mcu, cookbib2, snowbros_state, init_cookbib2, ROT0, "SemiCom",              "Cookie & Bibi 2 (set 1)", MACHINE_SUPPORTS_SAVE )
+GAME( 1996, cookbib2a,  cookbib2, semicom_mcu, cookbib2, snowbros_state, init_cookbib2, ROT0, "SemiCom",              "Cookie & Bibi 2 (set 2)", MACHINE_SUPPORTS_SAVE )
+GAME( 1996, cookbib2b,  cookbib2, semiprot,    cookbib2, snowbros_state, init_cookbib2, ROT0, "SemiCom",              "Cookie & Bibi 2 (set 3)", MACHINE_SUPPORTS_SAVE ) // older? test mode looks even worse on this, but neither shows the correct dip info anyway
+GAME( 1996, toppyrap,   0,        semiprot,    toppyrap, snowbros_state, empty_init,    ROT0, "SemiCom",              "Toppy & Rappy", MACHINE_SUPPORTS_SAVE )
+GAME( 1997, cookbib3,   0,        semiprot,    cookbib3, snowbros_state, init_cookbib3, ROT0, "SemiCom",              "Cookie & Bibi 3", MACHINE_SUPPORTS_SAVE )
+GAME( 1997, pzlbreak,   0,        semiprot,    pzlbreak, snowbros_state, init_pzlbreak, ROT0, "SemiCom / Tirano",     "Puzzle Break (set 1)", MACHINE_SUPPORTS_SAVE )
+GAME( 1997, pzlbreaka,  pzlbreak, semiprot,    pzlbreak, snowbros_state, init_pzlbreak, ROT0, "SemiCom / Tirano",     "Puzzle Break (set 2)", MACHINE_SUPPORTS_SAVE )
+GAME( 1997, suhosong,   0,        semiprot,    suhosong, snowbros_state, empty_init,    ROT0, "SemiCom",              "Su Ho Seong", MACHINE_SUPPORTS_SAVE )
+GAME( 1997, twinkle,    0,        semiprot,    twinkle,  snowbros_state, empty_init,    ROT0, "SemiCom / Tirano",     "Twinkle (set 1)", MACHINE_SUPPORTS_SAVE )
+GAME( 1997, twinklea,   twinkle,  semiprot,    twinkle,  snowbros_state, empty_init,    ROT0, "SemiCom / Tirano",     "Twinkle (set 2)", MACHINE_SUPPORTS_SAVE )
+GAME( 1998, 3in1semi,   0,        semiprot,    moremore, snowbros_state, init_3in1semi, ROT0, "SemiCom / XESS",       "New HyperMan (3-in-1 with Cookie & Bibi & HyperMan)", MACHINE_SUPPORTS_SAVE )
+GAME( 1999, mcheonru,   0,        semiprot,    mcheonru, snowbros_state, init_3in1semi, ROT0, "SemiCom / AceVer",     "Ma Cheon Ru", MACHINE_SUPPORTS_SAVE ) // a flyer exists for an English version called Arirang, AceVer team logo is displayed on it
+GAME( 1999, moremore,   0,        semiprot,    moremore, snowbros_state, init_3in1semi, ROT0, "SemiCom / Exit",       "More More", MACHINE_SUPPORTS_SAVE )
+GAME( 1999, moremorp,   0,        semiprot,    moremore, snowbros_state, init_3in1semi, ROT0, "SemiCom / Exit",       "More More Plus", MACHINE_SUPPORTS_SAVE )
 // This is very similar to the SemiCom titles, but unprotected.
-GAME( 2002, 4in1boot, 0,        _4in1,    4in1boot, snowbros_state, 4in1boot, ROT0, "K1 Soft", "Puzzle King (PacMan 2, Tetris, HyperMan 2, Snow Bros.)" , MACHINE_SUPPORTS_SAVE )
+GAME( 2002, 4in1boot,   0,        _4in1,       4in1boot, snowbros_state, init_4in1boot, ROT0, "K1 Soft", "Puzzle King (PacMan 2, Tetris, HyperMan 2, Snow Bros.)" , MACHINE_SUPPORTS_SAVE )
 
-GAME( 1995, honeydol, 0,        honeydol, honeydol, driver_device, 0, ROT0, "Barko Corp.", "Honey Dolls", MACHINE_SUPPORTS_SAVE ) // based on snowbros code..
+GAME( 1995, honeydol,   0,        honeydol,    honeydol, snowbros_state, empty_init,    ROT0, "Barko Corp.", "Honey Dolls", MACHINE_SUPPORTS_SAVE ) // based on snowbros code..
 
-GAME( 1995, twinadv,  0,        twinadv,  twinadv, driver_device,  0, ROT0, "Barko Corp.", "Twin Adventure (World)", MACHINE_SUPPORTS_SAVE )
-GAME( 1995, twinadvk, twinadv,  twinadv,  twinadv, driver_device,  0, ROT0, "Barko Corp.", "Twin Adventure (Korea)", MACHINE_SUPPORTS_SAVE )
+GAME( 1995, twinadv,    0,        twinadv,     twinadv,  snowbros_state, empty_init,    ROT0, "Barko Corp.", "Twin Adventure (World)", MACHINE_SUPPORTS_SAVE )
+GAME( 1995, twinadvk,   twinadv,  twinadv,     twinadv,  snowbros_state, empty_init,    ROT0, "Barko Corp.", "Twin Adventure (Korea)", MACHINE_SUPPORTS_SAVE )
+GAME( 1996, multi96,    twinadv,  twinadv,     twinadv,  snowbros_state, empty_init,    ROT0, "Barko Corp.", "Multi Game '96 (Italy)", MACHINE_SUPPORTS_SAVE )
 
 // The Korean games database shows an earlier version of this called Ball Boy with a different title screen to the version of Ball Boy we have
 // http://mamedev.emulab.it/undumped/images/Ballboy.jpg
 // it is possible this 'ball boy' is the original bootleg, with snwobro3 being a hack of that, and the ballboy set we have a further hack of that
-// there is also a later 2004 version with 3 player support
 // these use an MCU to drive the sound
-GAME( 2002, snowbro3, 0,        snowbro3, snowbroj, snowbros_state, snowbro3, ROT0, "Syrmex",  "Snow Brothers 3 - Magical Adventure", MACHINE_IMPERFECT_SOUND | MACHINE_SUPPORTS_SAVE ) // hacked from SnowBros code but released as an original game
-GAME( 2003, ballboy,  snowbro3, snowbro3, snowbroj, snowbros_state, snowbro3, ROT0, "bootleg", "Ball Boy", MACHINE_IMPERFECT_SOUND | MACHINE_SUPPORTS_SAVE )
+GAME( 2002, snowbro3,   0,        snowbro3,    snowbroj,  snowbros_state, init_snowbro3,  ROT0, "Syrmex",  "Snow Brothers 3 - Magical Adventure", MACHINE_IMPERFECT_SOUND | MACHINE_SUPPORTS_SAVE ) // hacked from SnowBros code but released as an original game
+GAME( 2003, ballboy,    snowbro3, snowbro3,    snowbroj,  snowbros_state, init_snowbro3,  ROT0, "bootleg", "Ball Boy (2 players)", MACHINE_IMPERFECT_SOUND | MACHINE_SUPPORTS_SAVE )
+GAME( 2004, ballboy3p,  snowbro3, snowbro3,    ballboy3p, snowbros_state, init_ballboy3p, ROT0, "bootleg", "Ball Boy (3 players)", MACHINE_IMPERFECT_SOUND | MACHINE_SUPPORTS_SAVE )
+// protection appears to handle the sound, should check if it's just a block of code that is conditionally executed like some of the Semicom titles.
+GAME( 1999, yutnori,    0,        yutnori,     yutnori,   snowbros_state, init_yutnori,   ROT0, "Nunal",   "Puzzle Yutnori (Korea)", MACHINE_UNEMULATED_PROTECTION | MACHINE_NO_SOUND ) // Nunal is apparently Korean slang for Eyeball, hence the logo.  Some places report 'JCC Soft' as the manufacturer

@@ -9,7 +9,7 @@
 #include "emu.h"
 #include "includes/ddragon3.h"
 
-WRITE16_MEMBER(ddragon3_state::ddragon3_scroll_w)
+void ddragon3_state::ddragon3_scroll_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	switch (offset)
 	{
@@ -27,7 +27,7 @@ WRITE16_MEMBER(ddragon3_state::ddragon3_scroll_w)
 	}
 }
 
-READ16_MEMBER(ddragon3_state::ddragon3_scroll_r)
+uint16_t ddragon3_state::ddragon3_scroll_r(offs_t offset)
 {
 	switch (offset)
 	{
@@ -46,16 +46,16 @@ READ16_MEMBER(ddragon3_state::ddragon3_scroll_r)
 
 TILE_GET_INFO_MEMBER(ddragon3_state::get_bg_tile_info)
 {
-	UINT16 attr = m_bg_videoram[tile_index];
+	uint16_t attr = m_bg_videoram[tile_index];
 	int code = (attr & 0x0fff) | ((m_bg_tilebase & 0x01) << 12);
 	int color = ((attr & 0xf000) >> 12);
 
-	SET_TILE_INFO_MEMBER(0, code, color, 0);
+	tileinfo.set(0, code, color, 0);
 }
 
 
 
-WRITE16_MEMBER(ddragon3_state::ddragon3_bg_videoram_w)
+void ddragon3_state::ddragon3_bg_videoram_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	COMBINE_DATA(&m_bg_videoram[offset]);
 	m_bg_tilemap->mark_tile_dirty(offset);
@@ -70,13 +70,13 @@ WRITE16_MEMBER(ddragon3_state::ddragon3_bg_videoram_w)
 
 TILE_GET_INFO_MEMBER(ddragon3_state::get_fg_tile_info)
 {
-	UINT16 *tilebase;
+	uint16_t *tilebase;
 	int tileno,colbank;
 
 	tilebase =  &m_fg_videoram[tile_index*2];
 	tileno =  (tilebase[1] & 0x1fff);
 	colbank = (tilebase[0] & 0x000f);
-	SET_TILE_INFO_MEMBER(1,
+	tileinfo.set(1,
 			tileno,
 			colbank,
 			TILE_FLIPYX((tilebase[0] & 0x00c0) >> 6));
@@ -84,7 +84,7 @@ TILE_GET_INFO_MEMBER(ddragon3_state::get_fg_tile_info)
 
 
 
-WRITE16_MEMBER(ddragon3_state::ddragon3_fg_videoram_w)
+void ddragon3_state::ddragon3_fg_videoram_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	COMBINE_DATA(&m_fg_videoram[offset]);
 	m_fg_tilemap->mark_tile_dirty(offset / 2);
@@ -98,19 +98,19 @@ WRITE16_MEMBER(ddragon3_state::ddragon3_fg_videoram_w)
 
 TILE_GET_INFO_MEMBER(wwfwfest_state::get_fg0_tile_info)
 {
-	UINT16 *tilebase;
+	uint16_t *tilebase;
 	int tileno;
 	int colbank;
 	tilebase =  &m_fg0_videoram[tile_index*2];
 	tileno =  (tilebase[0] & 0x00ff) | ((tilebase[1] & 0x000f) << 8);
 	colbank = (tilebase[1] & 0x00f0) >> 4;
-	SET_TILE_INFO_MEMBER(3,
+	tileinfo.set(3,
 			tileno,
 			colbank,
 			0);
 }
 
-WRITE16_MEMBER(wwfwfest_state::wwfwfest_fg0_videoram_w)
+void wwfwfest_state::wwfwfest_fg0_videoram_w(offs_t offset, uint16_t data)
 {
 	/* Videoram is 8 bit, upper & lower byte writes end up in the same place due to m68k byte smearing */
 	m_fg0_videoram[offset]=data&0xff;
@@ -124,8 +124,8 @@ void ddragon3_state::video_start()
 {
 	save_item(NAME(m_pri));
 
-	m_bg_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(ddragon3_state::get_bg_tile_info),this), TILEMAP_SCAN_ROWS, 16, 16, 32, 32);
-	m_fg_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(ddragon3_state::get_fg_tile_info),this), TILEMAP_SCAN_ROWS, 16, 16, 32, 32);
+	m_bg_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(ddragon3_state::get_bg_tile_info)), TILEMAP_SCAN_ROWS, 16, 16, 32, 32);
+	m_fg_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(ddragon3_state::get_fg_tile_info)), TILEMAP_SCAN_ROWS, 16, 16, 32, 32);
 
 	m_bg_tilemap->set_transparent_pen(0);
 	m_fg_tilemap->set_transparent_pen(0);
@@ -138,8 +138,7 @@ void wwfwfest_state::video_start()
 {
 	ddragon3_state::video_start();
 
-
-	m_fg0_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(wwfwfest_state::get_fg0_tile_info),this),TILEMAP_SCAN_ROWS, 8, 8,64,32);
+	m_fg0_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(wwfwfest_state::get_fg0_tile_info)), TILEMAP_SCAN_ROWS, 8, 8,64,32);
 	m_fg0_tilemap->set_transparent_pen(0);
 
 }
@@ -176,11 +175,11 @@ void ddragon3_state::draw_sprites(bitmap_ind16 &bitmap, const rectangle &cliprec
 	  other bits unused
 	*/
 
-	UINT16 *buffered_spriteram16 = m_spriteram->buffer();
+	uint16_t *buffered_spriteram16 = m_spriteram->buffer();
 	int length = m_spriteram->bytes();
 	gfx_element *gfx = m_gfxdecode->gfx(2);
-	UINT16 *source = buffered_spriteram16;
-	UINT16 *finish = source + length/2;
+	uint16_t *source = buffered_spriteram16;
+	uint16_t *finish = source + length/2;
 
 	while( source<finish )
 	{
@@ -235,7 +234,7 @@ void ddragon3_state::draw_sprites(bitmap_ind16 &bitmap, const rectangle &cliprec
 
 
 
-UINT32 ddragon3_state::screen_update_ddragon3(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t ddragon3_state::screen_update_ddragon3(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	m_bg_tilemap->set_scrollx(0, m_bg_scrollx);
 	m_bg_tilemap->set_scrolly(0, m_bg_scrolly);
@@ -263,7 +262,7 @@ UINT32 ddragon3_state::screen_update_ddragon3(screen_device &screen, bitmap_ind1
 	return 0;
 }
 
-UINT32 ddragon3_state::screen_update_ctribe(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t ddragon3_state::screen_update_ctribe(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	m_bg_tilemap->set_scrollx(0, m_bg_scrollx);
 	m_bg_tilemap->set_scrolly(0, m_bg_scrolly);
@@ -286,7 +285,7 @@ UINT32 ddragon3_state::screen_update_ctribe(screen_device &screen, bitmap_ind16 
 }
 
 
-UINT32 wwfwfest_state::screen_update_wwfwfest(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t wwfwfest_state::screen_update_wwfwfest(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	if (m_pri == 0x78) {
 		m_fg_tilemap->set_scrolly(0, m_fg_scrolly  );

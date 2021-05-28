@@ -7,24 +7,9 @@
 */
 
 #include "emu.h"
-#include "debugger.h"
-#include "ucom4.h"
+#include "ucom4d.h"
 
-
-enum e_mnemonics
-{
-	mLI, mL, mLM, mLDI, mLDZ, mS, mTAL, mTLA,
-	mX, mXI, mXD, mXM, mXMI, mXMD, mAD, mADC, mADS, mDAA, mDAS,
-	mEXL, mCLA, mCMA, mCIA, mCLC, mSTC, mTC, mINC, mDEC, mIND, mDED,
-	mRMB, mSMB, mREB, mSEB, mRPB, mSPB, mJMP, mJCP, mJPA, mCAL, mCZP, mRT, mRTS,
-	mCI, mCM, mCMB, mTAB, mCLI, mTMB, mTPA, mTPB,
-	mTIT, mIA, mIP, mOE, mOP, mOCD, mNOP,
-	mILL,
-	mTAW, mTAZ, mTHX, mTLY, mXAW, mXAZ, mXHR, mXHX, mXLS, mXLY, mXC,
-	mSFB, mRFB, mFBT, mFBF, mRAR, mINM, mDEM, mSTM, mTTM, mEI, mDI
-};
-
-static const char *const s_mnemonics[] =
+const char *const ucom4_disassembler::s_mnemonics[] =
 {
 	"LI", "L", "LM", "LDI", "LDZ", "S", "TAL", "TLA",
 	"X", "XI", "XD", "XM", "XMI", "XMD", "AD", "ADC", "ADS", "DAA", "DAS",
@@ -38,7 +23,7 @@ static const char *const s_mnemonics[] =
 };
 
 // number of bits per opcode parameter, 2 digits means opcode is 2 bytes
-static const UINT8 s_bits[] =
+const u8 ucom4_disassembler::s_bits[] =
 {
 	4, 0, 2, 80, 4, 0, 0, 0,
 	0, 0, 0, 2, 2, 2, 0, 0, 0, 0, 0,
@@ -51,15 +36,12 @@ static const UINT8 s_bits[] =
 	2, 2, 2, 2, 0, 0, 0, 80, 0, 0, 0
 };
 
-#define _OVER DASMFLAG_STEP_OVER
-#define _OUT  DASMFLAG_STEP_OUT
-
-static const UINT32 s_flags[] =
+const u32 ucom4_disassembler::s_flags[] =
 {
 	0, 0, 0, 0, 0, 0, 0, 0,
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	0, 0, 0, 0, 0, 0, 0, 0, 0, _OVER, _OVER, _OUT, _OUT,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, STEP_OVER, STEP_OVER, STEP_OUT, STEP_OUT,
 	0, 0, 0, 0, 0, 0, 0, 0,
 	0, 0, 0, 0, 0, 0, 0,
 	0,
@@ -68,7 +50,7 @@ static const UINT32 s_flags[] =
 };
 
 
-static const UINT8 ucom4_mnemonic[0x100] =
+const u8 ucom4_disassembler::ucom4_mnemonic[0x100] =
 {
 	/* 0x00 */
 	mNOP, mDI, mS, mTIT, mTC, mTTM, mDAA, mTAL,
@@ -112,24 +94,22 @@ static const UINT8 ucom4_mnemonic[0x100] =
 };
 
 
-
-CPU_DISASSEMBLE(ucom4)
+offs_t ucom4_disassembler::disassemble(std::ostream &stream, offs_t pc, const data_buffer &opcodes, const data_buffer &params)
 {
-	int pos = 0;
-	UINT8 op = oprom[pos++];
-	UINT8 instr = ucom4_mnemonic[op];
+	offs_t pos = pc;
+	u8 op = opcodes.r8(pos++);
+	u8 instr = ucom4_mnemonic[op];
 
-	char *dst = buffer;
-	dst += sprintf(dst, "%-4s ", s_mnemonics[instr]);
+	util::stream_format(stream,"%-4s ", s_mnemonics[instr]);
 
 	// opcode parameter
 	int bits = s_bits[instr];
 	if (bits)
 	{
-		UINT16 param = op & ((1 << (bits % 10)) - 1);
+		u16 param = op & ((1 << (bits % 10)) - 1);
 		if (bits / 10)
 		{
-			UINT8 op2 = oprom[pos++];
+			u8 op2 = opcodes.r8(pos++);
 			param = (param << (bits / 10)) | (op2 & ((1 << (bits / 10)) - 1));
 			bits = (bits % 10) + (bits / 10);
 		}
@@ -142,12 +122,12 @@ CPU_DISASSEMBLE(ucom4)
 		}
 
 		if (bits <= 4)
-			dst += sprintf(dst, "%d", param);
+			util::stream_format(stream, "%d", param);
 		else if (bits <= 8)
-			dst += sprintf(dst, "$%02X", param);
+			util::stream_format(stream, "$%02X", param);
 		else
-			dst += sprintf(dst, "$%03X", param);
+			util::stream_format(stream, "$%03X", param);
 	}
 
-	return pos | s_flags[instr] | DASMFLAG_SUPPORTED;
+	return (pos - pc) | s_flags[instr] | SUPPORTED;
 }

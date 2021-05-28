@@ -14,8 +14,8 @@
 ******************************************************************************/
 
 #include "emu.h"
-#include "vsystem_spr.h"
 #include "includes/inufuku.h"
+#include "screen.h"
 
 
 /******************************************************************************
@@ -24,7 +24,7 @@
 
 ******************************************************************************/
 
-WRITE16_MEMBER(inufuku_state::inufuku_palettereg_w)
+void inufuku_state::inufuku_palettereg_w(offs_t offset, uint16_t data)
 {
 	switch (offset)
 	{
@@ -37,7 +37,7 @@ WRITE16_MEMBER(inufuku_state::inufuku_palettereg_w)
 	}
 }
 
-WRITE16_MEMBER(inufuku_state::inufuku_scrollreg_w)
+void inufuku_state::inufuku_scrollreg_w(offs_t offset, uint16_t data)
 {
 	switch (offset)
 	{
@@ -66,7 +66,7 @@ WRITE16_MEMBER(inufuku_state::inufuku_scrollreg_w)
 
 TILE_GET_INFO_MEMBER(inufuku_state::get_inufuku_bg_tile_info)
 {
-	SET_TILE_INFO_MEMBER(0,
+	tileinfo.set(0,
 			m_bg_videoram[tile_index],
 			m_bg_palettebank,
 			0);
@@ -74,36 +74,36 @@ TILE_GET_INFO_MEMBER(inufuku_state::get_inufuku_bg_tile_info)
 
 TILE_GET_INFO_MEMBER(inufuku_state::get_inufuku_tx_tile_info)
 {
-	SET_TILE_INFO_MEMBER(1,
+	tileinfo.set(1,
 			m_tx_videoram[tile_index],
 			m_tx_palettebank,
 			0);
 }
 
-READ16_MEMBER(inufuku_state::inufuku_bg_videoram_r)
+uint16_t inufuku_state::inufuku_bg_videoram_r(offs_t offset)
 {
 	return m_bg_videoram[offset];
 }
 
-WRITE16_MEMBER(inufuku_state::inufuku_bg_videoram_w)
+void inufuku_state::inufuku_bg_videoram_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	COMBINE_DATA(&m_bg_videoram[offset]);
 	m_bg_tilemap->mark_tile_dirty(offset);
 }
 
-READ16_MEMBER(inufuku_state::inufuku_tx_videoram_r)
+uint16_t inufuku_state::inufuku_tx_videoram_r(offs_t offset)
 {
 	return m_tx_videoram[offset];
 }
 
-WRITE16_MEMBER(inufuku_state::inufuku_tx_videoram_w)
+void inufuku_state::inufuku_tx_videoram_w(offs_t offset, uint16_t data, uint16_t mem_mask)
 {
 	COMBINE_DATA(&m_tx_videoram[offset]);
 	m_tx_tilemap->mark_tile_dirty(offset);
 }
 
 
-UINT32 inufuku_state::inufuku_tile_callback( UINT32 code )
+uint32_t inufuku_state::inufuku_tile_callback( uint32_t code )
 {
 	return ((m_spriteram2[code*2] & 0x0007) << 16) + m_spriteram2[(code*2)+ 1];
 }
@@ -117,13 +117,13 @@ UINT32 inufuku_state::inufuku_tile_callback( UINT32 code )
 
 void inufuku_state::video_start()
 {
-	m_bg_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(inufuku_state::get_inufuku_bg_tile_info),this), TILEMAP_SCAN_ROWS, 8, 8, 64, 64);
-	m_tx_tilemap = &machine().tilemap().create(m_gfxdecode, tilemap_get_info_delegate(FUNC(inufuku_state::get_inufuku_tx_tile_info),this), TILEMAP_SCAN_ROWS, 8, 8, 64, 64);
+	m_bg_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(inufuku_state::get_inufuku_bg_tile_info)), TILEMAP_SCAN_ROWS, 8, 8, 64, 64);
+	m_tx_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(inufuku_state::get_inufuku_tx_tile_info)), TILEMAP_SCAN_ROWS, 8, 8, 64, 64);
 
 	m_bg_tilemap->set_transparent_pen(255);
 	m_tx_tilemap->set_transparent_pen(255);
 
-	m_spriteram1_old = make_unique_clear<UINT16[]>(m_spriteram1.bytes()/2);
+	m_spriteram1_old = make_unique_clear<uint16_t[]>(m_spriteram1.bytes()/2);
 
 }
 
@@ -134,7 +134,7 @@ void inufuku_state::video_start()
 
 ******************************************************************************/
 
-UINT32 inufuku_state::screen_update_inufuku(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t inufuku_state::screen_update_inufuku(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
 	int i;
 
@@ -163,7 +163,7 @@ UINT32 inufuku_state::screen_update_inufuku(screen_device &screen, bitmap_ind16 
 	return 0;
 }
 
-void inufuku_state::screen_eof_inufuku(screen_device &screen, bool state)
+WRITE_LINE_MEMBER(inufuku_state::screen_vblank_inufuku)
 {
 	// rising edge
 	if (state)

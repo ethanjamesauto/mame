@@ -1,6 +1,6 @@
 /*
- * Copyright 2011-2015 Branimir Karadzic. All rights reserved.
- * License: http://www.opensource.org/licenses/BSD-2-Clause
+ * Copyright 2011-2019 Branimir Karadzic. All rights reserved.
+ * License: https://github.com/bkaradzic/bgfx#license-bsd-2-clause
  */
 
 #include "bgfx_p.h"
@@ -10,6 +10,8 @@
 #	include <AvailabilityMacros.h>
 #	include <Cocoa/Cocoa.h>
 #	include <bx/os.h>
+
+BX_PRAGMA_DIAGNOSTIC_IGNORED_CLANG("-Wdeprecated-declarations")
 
 namespace bgfx { namespace gl
 {
@@ -65,8 +67,20 @@ namespace bgfx { namespace gl
 		BX_CHECK(NULL != s_opengl, "OpenGL dynamic library is not found!");
 
 		const AutoreleasePoolHolder pool;
-		NSWindow* nsWindow = (NSWindow*)g_platformData.nwh;
+		NSObject* nwh = (NSObject*)g_platformData.nwh;
 		m_context = g_platformData.context;
+
+		NSWindow* nsWindow = nil;
+		NSView* contentView = nil;
+		if ([nwh isKindOfClass:[NSView class]])
+		{
+			contentView = (NSView*)nwh;
+		}
+		else if ([nwh isKindOfClass:[NSWindow class]])
+		{
+			nsWindow = (NSWindow*)nwh;
+			contentView = [nsWindow contentView];
+		}
 
 		if (NULL == g_platformData.context)
 		{
@@ -97,11 +111,28 @@ namespace bgfx { namespace gl
 			NSOpenGLPixelFormat* pixelFormat = [[NSOpenGLPixelFormat alloc] initWithAttributes:pixelFormatAttributes];
 			BGFX_FATAL(NULL != pixelFormat, Fatal::UnableToInitialize, "Failed to initialize pixel format.");
 
-			NSRect glViewRect = [[nsWindow contentView] bounds];
+			NSRect glViewRect = [contentView bounds];
 			NSOpenGLView* glView = [[NSOpenGLView alloc] initWithFrame:glViewRect pixelFormat:pixelFormat];
 
 			[pixelFormat release];
-			[nsWindow setContentView:glView];
+			// GLFW creates a helper contentView that handles things like keyboard and drag and
+			// drop events. We don't want to clobber that view if it exists. Instead we just
+			// add ourselves as a subview and make the view resize automatically.
+			if (nil != contentView)
+			{
+				[glView setAutoresizingMask:( NSViewHeightSizable |
+						NSViewWidthSizable |
+						NSViewMinXMargin |
+						NSViewMaxXMargin |
+						NSViewMinYMargin |
+						NSViewMaxYMargin )];
+				[contentView addSubview:glView];
+			}
+			else
+			{
+				if (nil != nsWindow)
+					[nsWindow setContentView:glView];
+			}
 
 			NSOpenGLContext* glContext = [glView openGLContext];
 			BGFX_FATAL(NULL != glContext, Fatal::UnableToInitialize, "Failed to initialize GL context.");
@@ -110,11 +141,19 @@ namespace bgfx { namespace gl
 			GLint interval = 0;
 			[glContext setValues:&interval forParameter:NSOpenGLCPSwapInterval];
 
+			// When initializing NSOpenGLView programatically (as we are), this sometimes doesn't
+			// get hooked up properly (especially when there are existing window elements). This ensures
+			// we are valid. Otherwise, you'll probably get a GL_INVALID_FRAMEBUFFER_OPERATION when
+			// trying to glClear() for the first time.
+			[glContext setView:glView];
+
 			m_view    = glView;
 			m_context = glContext;
 		}
 
 		import();
+
+		g_internalData.context = m_context;
 	}
 
 	void GlContext::destroy()
@@ -125,8 +164,8 @@ namespace bgfx { namespace gl
 			[glView release];
 		}
 
-		m_view    = 0;
-		m_context = 0;
+		m_view    = NULL;
+		m_context = NULL;
 		bx::dlclose(s_opengl);
 	}
 
@@ -152,8 +191,8 @@ namespace bgfx { namespace gl
 	{
 		uint64_t caps = 0;
 #if defined(MAC_OS_X_VERSION_MAX_ALLOWED) && (MAC_OS_X_VERSION_MAX_ALLOWED >= 1070)
-		NSWindow* nsWindow = (NSWindow*)g_platformData.nwh;
-		if ([nsWindow respondsToSelector:@selector(backingScaleFactor)] && (1.0f < [nsWindow backingScaleFactor]))
+		NSObject* nwh = (NSObject*)g_platformData.nwh;
+		if ([nwh respondsToSelector:@selector(backingScaleFactor)] && (1.0f < [(id)nwh backingScaleFactor]))
 			caps |= BGFX_CAPS_HIDPI;
 #endif // defined(MAC_OS_X_VERSION_MAX_ALLOWED) && (MAC_OS_X_VERSION_MAX_ALLOWED >= 1070)
 		return caps;
@@ -207,11 +246,21 @@ namespace bgfx { namespace gl
 						_func = (_proto)bx::dlsym(s_opengl, #_import); \
 						BX_TRACE("%p " #_func " (" #_import ")", _func); \
 					} \
-					BGFX_FATAL(_optional || NULL != _func, Fatal::UnableToInitialize, "Failed to create OpenGL context. NSGLGetProcAddress(\"%s\")", #_import); \
+					BGFX_FATAL(_optional || NULL != _func, Fatal::UnableToInitialize, "Failed to create OpenGL context. GetProcAddress(\"%s\")", #_import); \
 				}
 #	include "glimports.h"
 	}
 
 } /* namespace gl */ } // namespace bgfx
+
+void* nsglGetProcAddress(const GLubyte* _name)
+{
+	using namespace bgfx::gl;
+	if (NULL == s_opengl)
+	{
+		s_opengl = bx::dlopen("/System/Library/Frameworks/OpenGL.framework/Versions/Current/OpenGL");
+	}
+	return bx::dlsym(s_opengl, (const char*)_name);
+}
 
 #endif // BX_PLATFORM_OSX && (BGFX_CONFIG_RENDERER_OPENGLES2|BGFX_CONFIG_RENDERER_OPENGLES3|BGFX_CONFIG_RENDERER_OPENGL)

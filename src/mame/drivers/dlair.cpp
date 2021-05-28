@@ -35,15 +35,19 @@
 *************************************************************************/
 
 #include "emu.h"
-#include "render.h"
+
 #include "cpu/z80/z80.h"
-#include "cpu/z80/z80daisy.h"
+#include "machine/z80daisy.h"
 #include "machine/ldv1000.h"
 #include "machine/ldstub.h"
+#include "machine/watchdog.h"
 #include "machine/z80ctc.h"
-#include "machine/z80dart.h"
+#include "machine/z80sio.h"
 #include "sound/ay8910.h"
-#include "sound/speaker.h"
+#include "sound/spkrdev.h"
+#include "emupal.h"
+#include "speaker.h"
+
 #include "dlair.lh"
 
 
@@ -59,33 +63,36 @@ public:
 		m_ldv1000(*this, "ld_ldv1000"),
 		m_pr7820(*this, "ld_pr7820"),
 		m_22vp932(*this, "ld_22vp932"),
-		m_videoram(*this, "videoram")
+		m_videoram(*this, "videoram"),
+		m_digits(*this, "digit%u", 0U)
 	{
 	}
 
-	required_device<cpu_device> m_maincpu;
-	optional_device<speaker_sound_device> m_speaker;
-	optional_device<gfxdecode_device> m_gfxdecode;
-	optional_device<palette_device> m_palette;
-	optional_device<pioneer_ldv1000_device> m_ldv1000;
-	optional_device<pioneer_pr7820_device> m_pr7820;
-	optional_device<phillips_22vp932_device> m_22vp932;
-	optional_shared_ptr<UINT8> m_videoram;
+	DECLARE_READ_LINE_MEMBER(laserdisc_status_r);
+	DECLARE_READ_LINE_MEMBER(laserdisc_command_r);
+	void init_fixed();
+	void init_variable();
 
-	void laserdisc_data_w(UINT8 data)
+	void dlair_base(machine_config &config);
+	void dlair_pr7820(machine_config &config);
+	void dleuro(machine_config &config);
+	void dlair_ldv1000(machine_config &config);
+
+private:
+	void laserdisc_data_w(uint8_t data)
 	{
 		if (m_ldv1000 != nullptr) m_ldv1000->data_w(data);
 		if (m_pr7820 != nullptr) m_pr7820->data_w(data);
 		if (m_22vp932 != nullptr) m_22vp932->data_w(data);
 	}
 
-	void laserdisc_enter_w(UINT8 data)
+	void laserdisc_enter_w(uint8_t data)
 	{
 		if (m_pr7820 != nullptr) m_pr7820->enter_w(data);
 		if (m_22vp932 != nullptr) m_22vp932->enter_w(data);
 	}
 
-	UINT8 laserdisc_data_r()
+	uint8_t laserdisc_data_r()
 	{
 		if (m_ldv1000 != nullptr) return m_ldv1000->status_r();
 		if (m_pr7820 != nullptr) return m_pr7820->data_r();
@@ -93,41 +100,52 @@ public:
 		return 0;
 	}
 
-	UINT8 laserdisc_data_available_r()
+	uint8_t laserdisc_data_available_r()
 	{
 		return CLEAR_LINE;
 	}
 
-	UINT8 laserdisc_status_r()
+	uint8_t laserdisc_status_strobe_r()
 	{
 		if (m_ldv1000 != nullptr) return m_ldv1000->status_strobe_r();
 		return CLEAR_LINE;
 	}
 
-	UINT8 laserdisc_ready_r()
+	uint8_t laserdisc_ready_r()
 	{
 		if (m_ldv1000 != nullptr) return m_ldv1000->command_strobe_r();
 		if (m_pr7820 != nullptr) return m_pr7820->ready_r();
 		return CLEAR_LINE;
 	}
 
-	UINT8 m_last_misc;
-	UINT8 m_laserdisc_data;
-	DECLARE_WRITE8_MEMBER(misc_w);
-	DECLARE_WRITE8_MEMBER(dleuro_misc_w);
-	DECLARE_WRITE8_MEMBER(led_den1_w);
-	DECLARE_WRITE8_MEMBER(led_den2_w);
-	DECLARE_READ8_MEMBER(laserdisc_r);
-	DECLARE_WRITE8_MEMBER(laserdisc_w);
-	DECLARE_CUSTOM_INPUT_MEMBER(laserdisc_status_r);
-	DECLARE_CUSTOM_INPUT_MEMBER(laserdisc_command_r);
-	DECLARE_DRIVER_INIT(fixed);
-	DECLARE_DRIVER_INIT(variable);
-	DECLARE_MACHINE_START(dlair);
-	DECLARE_MACHINE_RESET(dlair);
-	DECLARE_PALETTE_INIT(dleuro);
-	UINT32 screen_update_dleuro(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
+	void misc_w(uint8_t data);
+	void dleuro_misc_w(uint8_t data);
+	void led_den1_w(offs_t offset, uint8_t data);
+	void led_den2_w(offs_t offset, uint8_t data);
+	uint8_t laserdisc_r();
+	void laserdisc_w(uint8_t data);
+	virtual void machine_start() override;
+	virtual void machine_reset() override;
+	void dleuro_palette(palette_device &palette) const;
+	uint32_t screen_update_dleuro(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect);
 	DECLARE_WRITE_LINE_MEMBER(write_speaker);
+
+	void dleuro_io_map(address_map &map);
+	void dleuro_map(address_map &map);
+	void dlus_map(address_map &map);
+
+	required_device<z80_device> m_maincpu;
+	optional_device<speaker_sound_device> m_speaker;
+	optional_device<gfxdecode_device> m_gfxdecode;
+	optional_device<palette_device> m_palette;
+	optional_device<pioneer_ldv1000_device> m_ldv1000;
+	optional_device<pioneer_pr7820_device> m_pr7820;
+	optional_device<philips_22vp932_device> m_22vp932;
+	optional_shared_ptr<uint8_t> m_videoram;
+	output_finder<16> m_digits;
+
+	uint8_t m_last_misc;
+	uint8_t m_laserdisc_data;
 };
 
 
@@ -152,7 +170,7 @@ public:
 
 
 
-static const UINT8 led_map[16] =
+static const uint8_t led_map[16] =
 	{ 0x3f,0x06,0x5b,0x4f,0x66,0x6d,0x7c,0x07,0x7f,0x67,0x77,0x7c,0x39,0x5e,0x79,0x00 };
 
 
@@ -184,11 +202,9 @@ static const z80_daisy_config dleuro_daisy_chain[] =
  *
  *************************************/
 
-PALETTE_INIT_MEMBER(dlair_state,dleuro)
+void dlair_state::dleuro_palette(palette_device &palette) const
 {
-	int i;
-
-	for (i = 0; i < 8; i++)
+	for (int i = 0; i < 8; i++)
 	{
 		palette.set_pen_color(2 * i + 0, rgb_t(0, 0, 0));
 		palette.set_pen_color(2 * i + 1, pal1bit(i >> 0), pal1bit(i >> 1), pal1bit(i >> 2));
@@ -203,18 +219,18 @@ PALETTE_INIT_MEMBER(dlair_state,dleuro)
  *
  *************************************/
 
-UINT32 dlair_state::screen_update_dleuro(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+uint32_t dlair_state::screen_update_dleuro(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
 {
-	UINT8 *videoram = m_videoram;
-	int x, y;
-
-	/* redraw the overlay */
-	for (y = 0; y < 32; y++)
-		for (x = 0; x < 32; x++)
+	// redraw the overlay
+	for (int y = 0; y < 32; y++)
+	{
+		for (int x = 0; x < 32; x++)
 		{
-			UINT8 *base = &videoram[y * 64 + x * 2 + 1];
-			m_gfxdecode->gfx(0)->opaque(bitmap,cliprect, base[0], base[1], 0, 0, 10 * x, 16 * y);
+			uint8_t const *const base = &m_videoram[y * 64 + x * 2 + 1];
+			// TODO: opaque?
+			m_gfxdecode->gfx(0)->opaque(bitmap, cliprect, base[0], base[1], 0, 0, 10 * x, 16 * y);
 		}
+	}
 
 	return 0;
 }
@@ -227,12 +243,16 @@ UINT32 dlair_state::screen_update_dleuro(screen_device &screen, bitmap_ind16 &bi
  *
  *************************************/
 
-MACHINE_START_MEMBER(dlair_state,dlair)
+void dlair_state::machine_start()
 {
+	m_digits.resolve();
+
+	save_item(NAME(m_last_misc));
+	save_item(NAME(m_laserdisc_data));
 }
 
 
-MACHINE_RESET_MEMBER(dlair_state,dlair)
+void dlair_state::machine_reset()
 {
 #if 0
 
@@ -253,7 +273,7 @@ MACHINE_RESET_MEMBER(dlair_state,dlair)
  *
  *************************************/
 
-WRITE8_MEMBER(dlair_state::misc_w)
+void dlair_state::misc_w(uint8_t data)
 {
 	/*
 	    D0-D3 = B0-B3
@@ -262,10 +282,10 @@ WRITE8_MEMBER(dlair_state::misc_w)
 	       D6 = ENTER
 	       D7 = INT/EXT
 	*/
-	UINT8 diff = data ^ m_last_misc;
+	uint8_t diff = data ^ m_last_misc;
 	m_last_misc = data;
 
-	coin_counter_w(machine(), 0, (~data >> 4) & 1);
+	machine().bookkeeping().coin_counter_w(0, (~data >> 4) & 1);
 
 	/* on bit 5 going low, push the data out to the laserdisc player */
 	if ((diff & 0x20) && !(data & 0x20))
@@ -276,7 +296,7 @@ WRITE8_MEMBER(dlair_state::misc_w)
 }
 
 
-WRITE8_MEMBER(dlair_state::dleuro_misc_w)
+void dlair_state::dleuro_misc_w(uint8_t data)
 {
 	/*
 	       D0 = CHAR GEN ON+
@@ -288,11 +308,11 @@ WRITE8_MEMBER(dlair_state::dleuro_misc_w)
 	       D6 = ENTER
 	       D7 = INT/EXT
 	*/
-	UINT8 diff = data ^ m_last_misc;
+	uint8_t diff = data ^ m_last_misc;
 	m_last_misc = data;
 
-	coin_counter_w(machine(), 1, (~data >> 3) & 1);
-	coin_counter_w(machine(), 0, (~data >> 4) & 1);
+	machine().bookkeeping().coin_counter_w(1, (~data >> 3) & 1);
+	machine().bookkeeping().coin_counter_w(0, (~data >> 4) & 1);
 
 	/* on bit 5 going low, push the data out to the laserdisc player */
 	if ((diff & 0x20) && !(data & 0x20))
@@ -303,15 +323,15 @@ WRITE8_MEMBER(dlair_state::dleuro_misc_w)
 }
 
 
-WRITE8_MEMBER(dlair_state::led_den1_w)
+void dlair_state::led_den1_w(offs_t offset, uint8_t data)
 {
-	output_set_digit_value(0 + (offset & 7), led_map[data & 0x0f]);
+	m_digits[0 | (offset & 7)] = led_map[data & 0x0f];
 }
 
 
-WRITE8_MEMBER(dlair_state::led_den2_w)
+void dlair_state::led_den2_w(offs_t offset, uint8_t data)
 {
-	output_set_digit_value(8 + (offset & 7), led_map[data & 0x0f]);
+	m_digits[8 | (offset & 7)] = led_map[data & 0x0f];
 }
 
 
@@ -322,27 +342,27 @@ WRITE8_MEMBER(dlair_state::led_den2_w)
  *
  *************************************/
 
-CUSTOM_INPUT_MEMBER(dlair_state::laserdisc_status_r)
+READ_LINE_MEMBER(dlair_state::laserdisc_status_r)
 {
-	return laserdisc_status_r();
+	return laserdisc_status_strobe_r();
 }
 
 
-CUSTOM_INPUT_MEMBER(dlair_state::laserdisc_command_r)
+READ_LINE_MEMBER(dlair_state::laserdisc_command_r)
 {
 	return (laserdisc_ready_r() == ASSERT_LINE) ? 0 : 1;
 }
 
 
-READ8_MEMBER(dlair_state::laserdisc_r)
+uint8_t dlair_state::laserdisc_r()
 {
-	UINT8 result = laserdisc_data_r();
+	uint8_t result = laserdisc_data_r();
 	osd_printf_debug("laserdisc_r = %02X\n", result);
 	return result;
 }
 
 
-WRITE8_MEMBER(dlair_state::laserdisc_w)
+void dlair_state::laserdisc_w(uint8_t data)
 {
 	m_laserdisc_data = data;
 }
@@ -356,20 +376,21 @@ WRITE8_MEMBER(dlair_state::laserdisc_w)
  *************************************/
 
 /* complete memory map derived from schematics */
-static ADDRESS_MAP_START( dlus_map, AS_PROGRAM, 8, dlair_state )
-	AM_RANGE(0x0000, 0x9fff) AM_ROM
-	AM_RANGE(0xa000, 0xa7ff) AM_MIRROR(0x1800) AM_RAM
-	AM_RANGE(0xc000, 0xc000) AM_MIRROR(0x1fc7) AM_DEVREAD("aysnd", ay8910_device, data_r)
-	AM_RANGE(0xc008, 0xc008) AM_MIRROR(0x1fc7) AM_READ_PORT("CONTROLS")
-	AM_RANGE(0xc010, 0xc010) AM_MIRROR(0x1fc7) AM_READ_PORT("SERVICE")
-	AM_RANGE(0xc020, 0xc020) AM_MIRROR(0x1fc7) AM_READ(laserdisc_r)
-	AM_RANGE(0xe000, 0xe000) AM_MIRROR(0x1fc7) AM_DEVWRITE("aysnd", ay8910_device, data_w)
-	AM_RANGE(0xe008, 0xe008) AM_MIRROR(0x1fc7) AM_WRITE(misc_w)
-	AM_RANGE(0xe010, 0xe010) AM_MIRROR(0x1fc7) AM_DEVWRITE("aysnd", ay8910_device, address_w)
-	AM_RANGE(0xe020, 0xe020) AM_MIRROR(0x1fc7) AM_WRITE(laserdisc_w)
-	AM_RANGE(0xe030, 0xe037) AM_MIRROR(0x1fc0) AM_WRITE(led_den2_w)
-	AM_RANGE(0xe038, 0xe03f) AM_MIRROR(0x1fc0) AM_WRITE(led_den1_w)
-ADDRESS_MAP_END
+void dlair_state::dlus_map(address_map &map)
+{
+	map(0x0000, 0x9fff).rom();
+	map(0xa000, 0xa7ff).mirror(0x1800).ram();
+	map(0xc000, 0xc000).mirror(0x1fc7).r("aysnd", FUNC(ay8910_device::data_r));
+	map(0xc008, 0xc008).mirror(0x1fc7).portr("P1");
+	map(0xc010, 0xc010).mirror(0x1fc7).portr("SYSTEM");
+	map(0xc020, 0xc020).mirror(0x1fc7).r(FUNC(dlair_state::laserdisc_r));
+	map(0xe000, 0xe000).mirror(0x1fc7).w("aysnd", FUNC(ay8910_device::data_w));
+	map(0xe008, 0xe008).mirror(0x1fc7).w(FUNC(dlair_state::misc_w));
+	map(0xe010, 0xe010).mirror(0x1fc7).w("aysnd", FUNC(ay8910_device::address_w));
+	map(0xe020, 0xe020).mirror(0x1fc7).w(FUNC(dlair_state::laserdisc_w));
+	map(0xe030, 0xe037).mirror(0x1fc0).w(FUNC(dlair_state::led_den2_w));
+	map(0xe038, 0xe03f).mirror(0x1fc0).w(FUNC(dlair_state::led_den1_w));
+}
 
 
 
@@ -380,31 +401,33 @@ ADDRESS_MAP_END
  *************************************/
 
 /* complete memory map derived from schematics */
-static ADDRESS_MAP_START( dleuro_map, AS_PROGRAM, 8, dlair_state )
-	AM_RANGE(0x0000, 0x9fff) AM_ROM
-	AM_RANGE(0xa000, 0xa7ff) AM_MIRROR(0x1800) AM_RAM
-	AM_RANGE(0xc000, 0xc7ff) AM_MIRROR(0x1800) AM_RAM AM_SHARE("videoram")
-	AM_RANGE(0xe000, 0xe000) AM_MIRROR(0x1f47) // WT LED 1
-	AM_RANGE(0xe008, 0xe008) AM_MIRROR(0x1f47) // WT LED 2
-	AM_RANGE(0xe010, 0xe010) AM_MIRROR(0x1f47) AM_WRITE(led_den1_w)         // WT EXT LED 1
-	AM_RANGE(0xe018, 0xe018) AM_MIRROR(0x1f47) AM_WRITE(led_den2_w)         // WT EXT LED 2
-	AM_RANGE(0xe020, 0xe020) AM_MIRROR(0x1f47) AM_WRITE(laserdisc_w)        // DISC WT
-	AM_RANGE(0xe028, 0xe028) AM_MIRROR(0x1f47) AM_WRITE(dleuro_misc_w)      // WT MISC
-	AM_RANGE(0xe030, 0xe030) AM_MIRROR(0x1f47) AM_WRITE(watchdog_reset_w)   // CLR WDOG
-	AM_RANGE(0xe080, 0xe080) AM_MIRROR(0x1f47) AM_READ_PORT("P1")           // CP A
-	AM_RANGE(0xe088, 0xe088) AM_MIRROR(0x1f47) AM_READ_PORT("SYSTEM")       // CP B
-	AM_RANGE(0xe090, 0xe090) AM_MIRROR(0x1f47) AM_READ_PORT("DSW1")         // OPT SW A
-	AM_RANGE(0xe098, 0xe098) AM_MIRROR(0x1f47) AM_READ_PORT("DSW2")         // OPT SW B
-	AM_RANGE(0xe0a0, 0xe0a0) AM_MIRROR(0x1f47) AM_READ(laserdisc_r)         // RD DISC DATA
-ADDRESS_MAP_END
+void dlair_state::dleuro_map(address_map &map)
+{
+	map(0x0000, 0x9fff).rom();
+	map(0xa000, 0xa7ff).mirror(0x1800).ram();
+	map(0xc000, 0xc7ff).mirror(0x1800).ram().share("videoram");
+	map(0xe000, 0xe000).mirror(0x1f47); // WT LED 1
+	map(0xe008, 0xe008).mirror(0x1f47); // WT LED 2
+	map(0xe010, 0xe010).mirror(0x1f47).w(FUNC(dlair_state::led_den1_w));         // WT EXT LED 1
+	map(0xe018, 0xe018).mirror(0x1f47).w(FUNC(dlair_state::led_den2_w));         // WT EXT LED 2
+	map(0xe020, 0xe020).mirror(0x1f47).w(FUNC(dlair_state::laserdisc_w));        // DISC WT
+	map(0xe028, 0xe028).mirror(0x1f47).w(FUNC(dlair_state::dleuro_misc_w));      // WT MISC
+	map(0xe030, 0xe030).mirror(0x1f47).w("watchdog", FUNC(watchdog_timer_device::reset_w));   // CLR WDOG
+	map(0xe080, 0xe080).mirror(0x1f47).portr("P1");           // CP A
+	map(0xe088, 0xe088).mirror(0x1f47).portr("SYSTEM");       // CP B
+	map(0xe090, 0xe090).mirror(0x1f47).portr("DSW1");         // OPT SW A
+	map(0xe098, 0xe098).mirror(0x1f47).portr("DSW2");         // OPT SW B
+	map(0xe0a0, 0xe0a0).mirror(0x1f47).r(FUNC(dlair_state::laserdisc_r));         // RD DISC DATA
+}
 
 
 /* complete memory map derived from schematics */
-static ADDRESS_MAP_START( dleuro_io_map, AS_IO, 8, dlair_state )
-	ADDRESS_MAP_GLOBAL_MASK(0xff)
-	AM_RANGE(0x00, 0x03) AM_MIRROR(0x7c) AM_DEVREADWRITE("ctc", z80ctc_device, read, write)
-	AM_RANGE(0x80, 0x83) AM_MIRROR(0x7c) AM_DEVREADWRITE("sio", z80dart_device, ba_cd_r, ba_cd_w)
-ADDRESS_MAP_END
+void dlair_state::dleuro_io_map(address_map &map)
+{
+	map.global_mask(0xff);
+	map(0x00, 0x03).mirror(0x7c).rw("ctc", FUNC(z80ctc_device::read), FUNC(z80ctc_device::write));
+	map(0x80, 0x83).mirror(0x7c).rw("sio", FUNC(z80sio_device::ba_cd_r), FUNC(z80sio_device::ba_cd_w));
+}
 
 
 /*
@@ -471,17 +494,17 @@ Address in ROM:
  *
  *************************************/
 
+	// TODO: DIPs still needs work
 static INPUT_PORTS_START( dlair )
 	PORT_START("DSW1")
-	PORT_DIPNAME( 0x03, 0x00, DEF_STR( Coinage ) ) PORT_DIPLOCATION("A:2,1")
+	PORT_DIPNAME( 0x01, 0x00, DEF_STR( Coinage ) ) PORT_DIPLOCATION("A:1")
 	PORT_DIPSETTING(    0x01, DEF_STR( 3C_1C ) )
-//  PORT_DIPSETTING(    0x02, DEF_STR( 3C_1C ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( 2C_1C ) )
-	PORT_DIPSETTING(    0x03, DEF_STR( Unused ) )
+	PORT_DIPUNUSED_DIPLOC( 0x02, IP_ACTIVE_HIGH, "A:2")
 	PORT_DIPNAME( 0x04, 0x00, "Difficulty Mode" ) PORT_DIPLOCATION("A:3")
 	PORT_DIPSETTING(    0x04, "Mode 1" )
 	PORT_DIPSETTING(    0x00, "Mode 2" )
-	PORT_DIPNAME( 0x08, 0x00, "Engineering mode" ) PORT_DIPLOCATION("A:4")
+	PORT_DIPNAME( 0x08, 0x00, "Engineering Mode" ) PORT_DIPLOCATION("A:4")
 	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
 	PORT_DIPSETTING(    0x08, DEF_STR( On ) )
 	PORT_DIPNAME( 0x10, 0x00, "2 Credits/Free play" ) PORT_DIPLOCATION("A:5")
@@ -523,7 +546,7 @@ static INPUT_PORTS_START( dlair )
 	PORT_DIPSETTING(    0x80, DEF_STR( Easy ) ) PORT_CONDITION("DSW1", 0x04, EQUALS, 0x04)
 	PORT_DIPSETTING(    0x90, DEF_STR( Easy ) ) PORT_CONDITION("DSW1", 0x04, EQUALS, 0x04)
 
-	PORT_START("CONTROLS")
+	PORT_START("P1")
 	PORT_BIT( 0x01, IP_ACTIVE_LOW, IPT_JOYSTICK_UP )
 	PORT_BIT( 0x02, IP_ACTIVE_LOW, IPT_JOYSTICK_DOWN )
 	PORT_BIT( 0x04, IP_ACTIVE_LOW, IPT_JOYSTICK_LEFT )
@@ -533,14 +556,14 @@ static INPUT_PORTS_START( dlair )
 	PORT_BIT( 0x40, IP_ACTIVE_LOW, IPT_UNKNOWN )    /* probably unused */
 	PORT_BIT( 0x80, IP_ACTIVE_LOW, IPT_UNKNOWN )    /* probably unused */
 
-	PORT_START("SERVICE")
+	PORT_START("SYSTEM")
 	PORT_BIT( 0x01, IP_ACTIVE_LOW, IPT_START1 )
 	PORT_BIT( 0x02, IP_ACTIVE_LOW, IPT_START2 )
 	PORT_BIT( 0x04, IP_ACTIVE_LOW, IPT_COIN1 )
 	PORT_BIT( 0x08, IP_ACTIVE_LOW, IPT_COIN2 )
 	PORT_BIT( 0x30, IP_ACTIVE_LOW, IPT_UNKNOWN )    /* probably unused */
-	PORT_BIT( 0x40, IP_ACTIVE_HIGH, IPT_SPECIAL ) PORT_CUSTOM_MEMBER(DEVICE_SELF, dlair_state,laserdisc_status_r, NULL)     /* status strobe */
-	PORT_BIT( 0x80, IP_ACTIVE_HIGH, IPT_SPECIAL ) PORT_CUSTOM_MEMBER(DEVICE_SELF, dlair_state,laserdisc_command_r, NULL)    /* command strobe */
+	PORT_BIT( 0x40, IP_ACTIVE_HIGH, IPT_CUSTOM ) PORT_READ_LINE_MEMBER(dlair_state, laserdisc_status_r)     /* status strobe */
+	PORT_BIT( 0x80, IP_ACTIVE_HIGH, IPT_CUSTOM ) PORT_READ_LINE_MEMBER(dlair_state, laserdisc_command_r)    /* command strobe */
 INPUT_PORTS_END
 
 
@@ -548,9 +571,9 @@ static INPUT_PORTS_START( dlaire )
 	PORT_INCLUDE(dlair)
 
 	PORT_MODIFY("DSW2")
-	PORT_DIPNAME( 0x08, 0x08, "LD Player" )     /* In Rev F, F2 and so on... before it was Joystick Sound Feedback */
-	PORT_DIPSETTING(    0x00, "LD-PR7820" )
-	PORT_DIPSETTING(    0x08, "LDV-1000" )
+	PORT_DIPNAME( 0x08, 0x00, "LD Player" )  PORT_DIPLOCATION("B:3")    /* In Rev F, F2 and so on... before it was Joystick Sound Feedback */
+	PORT_DIPSETTING(    0x08, "LD-PR7820" )
+	PORT_DIPSETTING(    0x00, "LDV-1000" )
 INPUT_PORTS_END
 
 
@@ -571,15 +594,14 @@ static INPUT_PORTS_START( dleuro )
 	PORT_BIT( 0x04, IP_ACTIVE_LOW, IPT_COIN1 )
 	PORT_BIT( 0x08, IP_ACTIVE_LOW, IPT_COIN2 )
 	PORT_BIT( 0x30, IP_ACTIVE_LOW, IPT_UNKNOWN )    /* probably unused */
-	PORT_BIT( 0x40, IP_ACTIVE_HIGH, IPT_SPECIAL ) PORT_CUSTOM_MEMBER(DEVICE_SELF, dlair_state,laserdisc_status_r, NULL)     /* status strobe */
-	PORT_BIT( 0x80, IP_ACTIVE_HIGH, IPT_SPECIAL ) PORT_CUSTOM_MEMBER(DEVICE_SELF, dlair_state,laserdisc_command_r, NULL)    /* command strobe */
+	PORT_BIT( 0x40, IP_ACTIVE_HIGH, IPT_CUSTOM ) PORT_READ_LINE_MEMBER(dlair_state, laserdisc_status_r)     /* status strobe */
+	PORT_BIT( 0x80, IP_ACTIVE_HIGH, IPT_CUSTOM ) PORT_READ_LINE_MEMBER(dlair_state, laserdisc_command_r)    /* command strobe */
 
 	PORT_START("DSW1")
-	PORT_DIPNAME( 0x03, 0x00, DEF_STR( Coinage ) ) PORT_DIPLOCATION("A:2,1")
+	PORT_DIPNAME( 0x01, 0x00, DEF_STR( Coinage ) ) PORT_DIPLOCATION("A:1")
 	PORT_DIPSETTING(    0x01, DEF_STR( 3C_1C ) )
-//  PORT_DIPSETTING(    0x02, DEF_STR( 3C_1C ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( 2C_1C ) )
-	PORT_DIPSETTING(    0x03, DEF_STR( Unused ) )
+	PORT_DIPUNUSED_DIPLOC( 0x02, IP_ACTIVE_HIGH, "A:2")
 	PORT_DIPNAME( 0x04, 0x00, "Difficulty Mode" ) PORT_DIPLOCATION("A:3")
 	PORT_DIPSETTING(    0x04, "Mode 1" )
 	PORT_DIPSETTING(    0x00, "Mode 2" )
@@ -626,7 +648,53 @@ static INPUT_PORTS_START( dleuro )
 	PORT_DIPSETTING(    0x90, DEF_STR( Easy ) ) PORT_CONDITION("DSW1", 0x04, EQUALS, 0x04)
 INPUT_PORTS_END
 
+static INPUT_PORTS_START( spaceace )
+	PORT_INCLUDE(dlair)
 
+	PORT_MODIFY("DSW1")
+	PORT_DIPNAME( 0x01, 0x00, DEF_STR( Coinage ) ) PORT_DIPLOCATION("A:1")
+	PORT_DIPSETTING(    0x00, DEF_STR( 2C_1C ) )
+	PORT_DIPSETTING(    0x01, DEF_STR( 3C_1C ) )
+	PORT_DIPNAME( 0x02, 0x00, DEF_STR( Lives ) ) PORT_DIPLOCATION("A:2")
+	PORT_DIPSETTING(    0x00, "3" )
+	PORT_DIPSETTING(    0x02, "5" )
+	// TODO: manual claims following is "Difficulty Increase", which more or less is again rank ...
+	PORT_DIPNAME( 0x04, 0x00, DEF_STR( Difficulty ) ) PORT_DIPLOCATION("A:3")
+	PORT_DIPSETTING(    0x00, DEF_STR( Easy ) ) // 5 chapters without losing life
+	PORT_DIPSETTING(    0x04, DEF_STR( Hard ) ) // 3
+	PORT_DIPNAME( 0x08, 0x00, "Difficulty Rank Increase" ) PORT_DIPLOCATION("A:4")
+	PORT_DIPSETTING(    0x00, "Slow" )
+	PORT_DIPSETTING(    0x08, "Fast" )
+	PORT_DIPNAME( 0x10, 0x10, DEF_STR( Demo_Sounds ) ) PORT_DIPLOCATION("A:5")
+	PORT_DIPSETTING(    0x00, DEF_STR( No ) )
+	PORT_DIPSETTING(    0x10, DEF_STR( Yes ) )
+	PORT_DIPNAME( 0x20, 0x00, "Demo Sounds Frequency" ) PORT_DIPLOCATION("A:6")
+	PORT_DIPSETTING(    0x00, "All the time" )
+	PORT_DIPSETTING(    0x20, "1 out of eight times" )
+	PORT_DIPUNUSED_DIPLOC( 0x40, IP_ACTIVE_HIGH, "A:7")
+	PORT_DIPUNUSED_DIPLOC( 0x80, IP_ACTIVE_HIGH, "A:8")
+
+	PORT_MODIFY("DSW2")
+	PORT_DIPNAME( 0x01, 0x01, "LD Player" ) PORT_DIPLOCATION("B:1")
+	PORT_DIPSETTING(    0x00, "LD-PR7820" )
+	PORT_DIPSETTING(    0x01, "LDV-1000" )
+	PORT_DIPUNUSED_DIPLOC( 0x02, IP_ACTIVE_HIGH, "B:2")
+	PORT_DIPUNUSED_DIPLOC( 0x04, IP_ACTIVE_HIGH, "B:3")
+	PORT_DIPUNUSED_DIPLOC( 0x08, IP_ACTIVE_HIGH, "B:4")
+	PORT_DIPNAME( 0x10, 0x00, DEF_STR( Free_Play ) ) PORT_DIPLOCATION("B:5")
+	PORT_DIPSETTING(    0x00, DEF_STR( No ) )
+	PORT_DIPSETTING(    0x10, DEF_STR( Yes ) )
+	PORT_DIPNAME( 0x20, 0x00, "Unlimited Lives" ) PORT_DIPLOCATION("B:6")
+	PORT_DIPSETTING(    0x00, DEF_STR( No ) )
+	PORT_DIPSETTING(    0x20, DEF_STR( Yes ) )
+	PORT_DIPNAME( 0x40, 0x00, "Enable Frame Display" ) PORT_DIPLOCATION("B:7") // ?
+	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
+	PORT_DIPSETTING(    0x40, DEF_STR( On ) )
+	PORT_SERVICE_DIPLOC( 0x80, IP_ACTIVE_HIGH, "B:8" ) // "Diagnostic Mode", plays the whole disc from start to finish, start buttons makes the disc go back one chapter. Setting this to off makes it to execute host CPU tests before proceeding to game.
+
+INPUT_PORTS_END
+
+// TODO: dips for Space Ace euro, different than NTSC
 
 /*************************************
  *
@@ -646,7 +714,7 @@ static const gfx_layout charlayout =
 };
 
 
-static GFXDECODE_START( dlair )
+static GFXDECODE_START( gfx_dlair )
 	GFXDECODE_ENTRY( "gfx1", 0x0000, charlayout, 0, 8 )
 GFXDECODE_END
 
@@ -657,86 +725,81 @@ GFXDECODE_END
  *
  *************************************/
 
-static MACHINE_CONFIG_START( dlair_base, dlair_state )
-
+void dlair_state::dlair_base(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", Z80, MASTER_CLOCK_US/4)
-	MCFG_CPU_PROGRAM_MAP(dlus_map)
-	MCFG_CPU_PERIODIC_INT_DRIVER(dlair_state, irq0_line_hold,  (double)MASTER_CLOCK_US/8/16/16/16/16)
-
-	MCFG_MACHINE_START_OVERRIDE(dlair_state,dlair)
-	MCFG_MACHINE_RESET_OVERRIDE(dlair_state,dlair)
+	Z80(config, m_maincpu, MASTER_CLOCK_US/4);
+	m_maincpu->set_addrmap(AS_PROGRAM, &dlair_state::dlus_map);
+	m_maincpu->set_periodic_int(FUNC(dlair_state::irq0_line_hold),  attotime::from_hz((double)MASTER_CLOCK_US/8/16/16/16/16));
 
 	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_STEREO("lspeaker", "rspeaker")
+	SPEAKER(config, "lspeaker").front_left();
+	SPEAKER(config, "rspeaker").front_right();
 
-	MCFG_SOUND_ADD("aysnd", AY8910, MASTER_CLOCK_US/8)
-	MCFG_AY8910_PORT_A_READ_CB(IOPORT("DSW1"))
-	MCFG_AY8910_PORT_B_READ_CB(IOPORT("DSW2"))
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "rspeaker", 0.33)
-MACHINE_CONFIG_END
-
-
-static MACHINE_CONFIG_DERIVED( dlair_pr7820, dlair_base )
-	MCFG_LASERDISC_PR7820_ADD("ld_pr7820")
-	MCFG_SOUND_ROUTE(0, "lspeaker", 1.0)
-	MCFG_SOUND_ROUTE(1, "rspeaker", 1.0)
-	MCFG_LASERDISC_SCREEN_ADD_NTSC("screen", "ld_pr7820")
-MACHINE_CONFIG_END
+	ay8910_device &aysnd(AY8910(config, "aysnd", MASTER_CLOCK_US/8));
+	aysnd.port_a_read_callback().set_ioport("DSW1");
+	aysnd.port_b_read_callback().set_ioport("DSW2");
+	aysnd.add_route(ALL_OUTPUTS, "rspeaker", 0.33);
+}
 
 
-static MACHINE_CONFIG_DERIVED( dlair_ldv1000, dlair_base )
-	MCFG_LASERDISC_LDV1000_ADD("ld_ldv1000")
-	MCFG_SOUND_ROUTE(0, "lspeaker", 1.0)
-	MCFG_SOUND_ROUTE(1, "rspeaker", 1.0)
-	MCFG_LASERDISC_SCREEN_ADD_NTSC("screen", "ld_ldv1000")
-MACHINE_CONFIG_END
+void dlair_state::dlair_pr7820(machine_config &config)
+{
+	dlair_base(config);
+	PIONEER_PR7820(config, m_pr7820, 0);
+	m_pr7820->add_route(0, "lspeaker", 1.0);
+	m_pr7820->add_route(1, "rspeaker", 1.0);
+	m_pr7820->add_ntsc_screen(config, "screen");
+}
 
 
-static MACHINE_CONFIG_START( dleuro, dlair_state )
+void dlair_state::dlair_ldv1000(machine_config &config)
+{
+	dlair_base(config);
+	PIONEER_LDV1000(config, m_ldv1000, 0);
+	m_ldv1000->add_route(0, "lspeaker", 1.0);
+	m_ldv1000->add_route(1, "rspeaker", 1.0);
+	m_ldv1000->add_ntsc_screen(config, "screen");
+}
 
+
+void dlair_state::dleuro(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu", Z80, MASTER_CLOCK_EURO/4)
-	MCFG_CPU_CONFIG(dleuro_daisy_chain)
-	MCFG_CPU_PROGRAM_MAP(dleuro_map)
-	MCFG_CPU_IO_MAP(dleuro_io_map)
+	Z80(config, m_maincpu, MASTER_CLOCK_EURO/4);
+	m_maincpu->set_daisy_config(dleuro_daisy_chain);
+	m_maincpu->set_addrmap(AS_PROGRAM, &dlair_state::dleuro_map);
+	m_maincpu->set_addrmap(AS_IO, &dlair_state::dleuro_io_map);
 
-	MCFG_DEVICE_ADD("ctc", Z80CTC, MASTER_CLOCK_EURO/4 /* same as "maincpu" */)
-	MCFG_Z80CTC_INTR_CB(INPUTLINE("maincpu", INPUT_LINE_IRQ0))
-	MCFG_Z80CTC_ZC0_CB(WRITELINE(dlair_state, write_speaker))
+	z80ctc_device& ctc(Z80CTC(config, "ctc", MASTER_CLOCK_EURO/4 /* same as "maincpu" */));
+	ctc.intr_callback().set_inputline(m_maincpu, INPUT_LINE_IRQ0);
+	ctc.zc_callback<0>().set(FUNC(dlair_state::write_speaker));
 
-	MCFG_Z80SIO0_ADD("sio", MASTER_CLOCK_EURO/4 /* same as "maincpu" */, 0, 0, 0, 0)
-	MCFG_Z80DART_OUT_INT_CB(INPUTLINE("maincpu", INPUT_LINE_IRQ0))
+	z80sio_device& sio(Z80SIO(config, "sio", MASTER_CLOCK_EURO/4 /* same as "maincpu" */));
+	sio.out_int_callback().set_inputline(m_maincpu, INPUT_LINE_IRQ0);
 	// TODO: hook up tx and rx callbacks
 
-	MCFG_WATCHDOG_TIME_INIT(attotime::from_hz(MASTER_CLOCK_EURO/(16*16*16*16*16*8)))
+	WATCHDOG_TIMER(config, "watchdog").set_time(attotime::from_hz(MASTER_CLOCK_EURO/(16*16*16*16*16*8)));
 
-	MCFG_MACHINE_START_OVERRIDE(dlair_state,dlair)
-	MCFG_MACHINE_RESET_OVERRIDE(dlair_state,dlair)
-
-	MCFG_LASERDISC_22VP932_ADD("ld_22vp932")
-	MCFG_LASERDISC_OVERLAY_DRIVER(256, 256, dlair_state, screen_update_dleuro)
-	MCFG_LASERDISC_OVERLAY_PALETTE("palette")
+	PHILIPS_22VP932(config, m_22vp932, 0);
+	m_22vp932->set_overlay(256, 256, FUNC(dlair_state::screen_update_dleuro));
+	m_22vp932->add_route(0, "lspeaker", 1.0);
+	m_22vp932->add_route(1, "rspeaker", 1.0);
 
 	/* video hardware */
-	MCFG_LASERDISC_SCREEN_ADD_PAL("screen", "ld_22vp932")
+	m_22vp932->add_pal_screen(config, "screen");
 
-	MCFG_GFXDECODE_ADD("gfxdecode", "palette", dlair)
-	MCFG_PALETTE_ADD("palette", 16)
-
-	MCFG_PALETTE_INIT_OWNER(dlair_state,dleuro)
+	GFXDECODE(config, m_gfxdecode, m_palette, gfx_dlair);
+	PALETTE(config, m_palette, FUNC(dlair_state::dleuro_palette), 16);
 
 	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_STEREO("lspeaker", "rspeaker")
+	SPEAKER(config, "lspeaker").front_left();
+	SPEAKER(config, "rspeaker").front_right();
 
-	MCFG_SOUND_ADD("speaker", SPEAKER_SOUND, 0)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "lspeaker", 0.33)
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "rspeaker", 0.33)
-
-	MCFG_SOUND_MODIFY("ld_22vp932")
-	MCFG_SOUND_ROUTE(0, "lspeaker", 1.0)
-	MCFG_SOUND_ROUTE(1, "rspeaker", 1.0)
-MACHINE_CONFIG_END
+	SPEAKER_SOUND(config, m_speaker);
+	m_speaker->add_route(ALL_OUTPUTS, "lspeaker", 0.33);
+	m_speaker->add_route(ALL_OUTPUTS, "rspeaker", 0.33);
+}
 
 
 
@@ -903,7 +966,7 @@ ROM_START( spaceace )       /* revision A3 */
 	ROM_LOAD( "sa_a3_u5.bin", 0x8000, 0x2000,  CRC(85cbcdc4) SHA1(97e01e96c885ab7af4c3a3b586eb40374d54f12f) )
 
 	DISK_REGION( "ld_ldv1000" )
-	DISK_IMAGE_READONLY( "spaceace", 0, NO_DUMP )
+	DISK_IMAGE_READONLY( "space_ace_ver2", 0, NO_DUMP )
 ROM_END
 
 ROM_START( spaceacea2 )     /* revision A2 */
@@ -915,7 +978,7 @@ ROM_START( spaceacea2 )     /* revision A2 */
 	ROM_LOAD( "sa_a2_u5.bin", 0x8000, 0x2000,  CRC(85cbcdc4) SHA1(97e01e96c885ab7af4c3a3b586eb40374d54f12f) )
 
 	DISK_REGION( "ld_ldv1000" )
-	DISK_IMAGE_READONLY( "spaceace", 0, NO_DUMP )
+	DISK_IMAGE_READONLY( "space_ace_ver2", 0, NO_DUMP )
 ROM_END
 
 ROM_START( spaceacea )      /* revision A */
@@ -927,7 +990,7 @@ ROM_START( spaceacea )      /* revision A */
 	ROM_LOAD( "sa_a_u5.bin", 0x8000, 0x2000,  CRC(85cbcdc4) SHA1(97e01e96c885ab7af4c3a3b586eb40374d54f12f) )
 
 	DISK_REGION( "ld_ldv1000" )
-	DISK_IMAGE_READONLY( "spaceace", 0, NO_DUMP )
+	DISK_IMAGE_READONLY( "space_ace_ver2", 0, NO_DUMP )
 ROM_END
 
 ROM_START( spaceaceeuro )       /* Italian Sidam version */
@@ -954,13 +1017,13 @@ ROM_END
  *
  *************************************/
 
-DRIVER_INIT_MEMBER(dlair_state,fixed)
+void dlair_state::init_fixed()
 {
 //  m_laserdisc_type = LASERDISC_TYPE_FIXED;
 }
 
 
-DRIVER_INIT_MEMBER(dlair_state,variable)
+void dlair_state::init_variable()
 {
 //  m_laserdisc_type = LASERDISC_TYPE_VARIABLE;
 }
@@ -973,21 +1036,21 @@ DRIVER_INIT_MEMBER(dlair_state,variable)
  *
  *************************************/
 
-GAMEL( 1983, dlair,    0,        dlair_ldv1000, dlaire, dlair_state, variable, ROT0, "Cinematronics", "Dragon's Lair (US Rev. F2)", MACHINE_NOT_WORKING, layout_dlair )
-GAMEL( 1983, dlairf,   dlair,    dlair_ldv1000, dlaire, dlair_state, variable, ROT0, "Cinematronics", "Dragon's Lair (US Rev. F)",  MACHINE_NOT_WORKING, layout_dlair )
-GAMEL( 1983, dlaire,   dlair,    dlair_ldv1000, dlaire, dlair_state, variable, ROT0, "Cinematronics", "Dragon's Lair (US Rev. E)",  MACHINE_NOT_WORKING, layout_dlair )
-GAMEL( 1983, dlaird,   dlair,    dlair_ldv1000, dlair, dlair_state,  fixed,    ROT0, "Cinematronics", "Dragon's Lair (US Rev. D, Pioneer LD-V1000)",  MACHINE_NOT_WORKING, layout_dlair )
-GAMEL( 1983, dlairc,   dlair,    dlair_pr7820,  dlair, dlair_state,  fixed,    ROT0, "Cinematronics", "Dragon's Lair (US Rev. C, Pioneer PR-7820)",  MACHINE_NOT_WORKING, layout_dlair )
-GAMEL( 1983, dlairb,   dlair,    dlair_pr7820,  dlair, dlair_state,  fixed,    ROT0, "Cinematronics", "Dragon's Lair (US Rev. B, Pioneer PR-7820)",  MACHINE_NOT_WORKING, layout_dlair )
-GAMEL( 1983, dlaira,   dlair,    dlair_pr7820,  dlair, dlair_state,  fixed,    ROT0, "Cinematronics", "Dragon's Lair (US Rev. A, Pioneer PR-7820)",  MACHINE_NOT_WORKING, layout_dlair )
-GAMEL( 1983, dlair_2,  dlair,    dlair_pr7820,  dlair, dlair_state,  fixed,    ROT0, "Cinematronics", "Dragon's Lair (US Beta 2?, Pioneer PR-7820)",  MACHINE_NOT_WORKING, layout_dlair )
-GAMEL( 1983, dlair_1,  dlair,    dlair_pr7820,  dlair, dlair_state,  fixed,    ROT0, "Cinematronics", "Dragon's Lair (US Beta 1, Pioneer PR-7820)",  MACHINE_NOT_WORKING, layout_dlair )
+GAMEL( 1983, dlair,        0,        dlair_ldv1000, dlaire,   dlair_state, init_variable, ROT0, "Cinematronics", "Dragon's Lair (US Rev. F2)", MACHINE_NOT_WORKING, layout_dlair )
+GAMEL( 1983, dlairf,       dlair,    dlair_ldv1000, dlaire,   dlair_state, init_variable, ROT0, "Cinematronics", "Dragon's Lair (US Rev. F)",  MACHINE_NOT_WORKING, layout_dlair )
+GAMEL( 1983, dlaire,       dlair,    dlair_ldv1000, dlaire,   dlair_state, init_variable, ROT0, "Cinematronics", "Dragon's Lair (US Rev. E)",  MACHINE_NOT_WORKING, layout_dlair )
+GAMEL( 1983, dlaird,       dlair,    dlair_ldv1000, dlair,    dlair_state, init_fixed,    ROT0, "Cinematronics", "Dragon's Lair (US Rev. D, Pioneer LD-V1000)",  MACHINE_NOT_WORKING, layout_dlair )
+GAMEL( 1983, dlairc,       dlair,    dlair_pr7820,  dlair,    dlair_state, init_fixed,    ROT0, "Cinematronics", "Dragon's Lair (US Rev. C, Pioneer PR-7820)",  MACHINE_NOT_WORKING, layout_dlair )
+GAMEL( 1983, dlairb,       dlair,    dlair_pr7820,  dlair,    dlair_state, init_fixed,    ROT0, "Cinematronics", "Dragon's Lair (US Rev. B, Pioneer PR-7820)",  MACHINE_NOT_WORKING, layout_dlair )
+GAMEL( 1983, dlaira,       dlair,    dlair_pr7820,  dlair,    dlair_state, init_fixed,    ROT0, "Cinematronics", "Dragon's Lair (US Rev. A, Pioneer PR-7820)",  MACHINE_NOT_WORKING, layout_dlair )
+GAMEL( 1983, dlair_2,      dlair,    dlair_pr7820,  dlair,    dlair_state, init_fixed,    ROT0, "Cinematronics", "Dragon's Lair (US Beta 2?, Pioneer PR-7820)",  MACHINE_NOT_WORKING, layout_dlair )
+GAMEL( 1983, dlair_1,      dlair,    dlair_pr7820,  dlair,    dlair_state, init_fixed,    ROT0, "Cinematronics", "Dragon's Lair (US Beta 1, Pioneer PR-7820)",  MACHINE_NOT_WORKING, layout_dlair )
 
-GAMEL( 1983, dleuro,   dlair,    dleuro,        dleuro, dlair_state, fixed,    ROT0, "Cinematronics (Atari license)", "Dragon's Lair (European)",  MACHINE_NOT_WORKING, layout_dlair )
-GAMEL( 1983, dleuroalt,dlair,    dleuro,        dleuro, dlair_state, fixed,    ROT0, "Cinematronics (Atari license)", "Dragon's Lair (European, alternate)",  MACHINE_NOT_WORKING, layout_dlair )
-GAMEL( 1983, dlital,   dlair,    dleuro,        dleuro, dlair_state, fixed,    ROT0, "Cinematronics (Sidam license?)","Dragon's Lair (Italian)",  MACHINE_NOT_WORKING, layout_dlair )
+GAMEL( 1983, dleuro,       dlair,    dleuro,        dleuro,   dlair_state, init_fixed,    ROT0, "Cinematronics (Atari license)", "Dragon's Lair (European)",  MACHINE_NOT_WORKING, layout_dlair )
+GAMEL( 1983, dleuroalt,    dlair,    dleuro,        dleuro,   dlair_state, init_fixed,    ROT0, "Cinematronics (Atari license)", "Dragon's Lair (European, alternate)",  MACHINE_NOT_WORKING, layout_dlair )
+GAMEL( 1983, dlital,       dlair,    dleuro,        dleuro,   dlair_state, init_fixed,    ROT0, "Cinematronics (Sidam license?)","Dragon's Lair (Italian)",  MACHINE_NOT_WORKING, layout_dlair )
 
-GAMEL( 1983, spaceace,     0,        dlair_ldv1000, dlaire, dlair_state, variable, ROT0, "Cinematronics", "Space Ace (US Rev. A3)", MACHINE_NOT_WORKING, layout_dlair )
-GAMEL( 1983, spaceacea2,   spaceace, dlair_ldv1000, dlaire, dlair_state, variable, ROT0, "Cinematronics", "Space Ace (US Rev. A2)", MACHINE_NOT_WORKING, layout_dlair )
-GAMEL( 1983, spaceacea,    spaceace, dlair_ldv1000, dlaire, dlair_state, variable, ROT0, "Cinematronics", "Space Ace (US Rev. A)", MACHINE_NOT_WORKING, layout_dlair )
-GAMEL( 1983, spaceaceeuro, spaceace, dleuro,        dleuro, dlair_state, fixed,    ROT0, "Cinematronics (Atari license)", "Space Ace (European)",  MACHINE_NOT_WORKING, layout_dlair )
+GAMEL( 1983, spaceace,     0,        dlair_ldv1000, spaceace, dlair_state, init_variable, ROT0, "Cinematronics", "Space Ace (US Rev. A3)", MACHINE_NOT_WORKING, layout_dlair )
+GAMEL( 1983, spaceacea2,   spaceace, dlair_ldv1000, spaceace, dlair_state, init_variable, ROT0, "Cinematronics", "Space Ace (US Rev. A2)", MACHINE_NOT_WORKING, layout_dlair )
+GAMEL( 1983, spaceacea,    spaceace, dlair_ldv1000, spaceace, dlair_state, init_variable, ROT0, "Cinematronics", "Space Ace (US Rev. A)", MACHINE_NOT_WORKING, layout_dlair )
+GAMEL( 1983, spaceaceeuro, spaceace, dleuro,        spaceace, dlair_state, init_fixed,    ROT0, "Cinematronics (Atari license)", "Space Ace (European)",  MACHINE_NOT_WORKING, layout_dlair )

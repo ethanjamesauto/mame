@@ -1,105 +1,137 @@
 // license:BSD-3-Clause
 // copyright-holders:Sandro Ronco, Robbbert
-/***************************************************************************
+/******************************************************************************************************
 
-        Protec Pro-80
+Protec Pro-80
 
-        06/12/2009 Skeleton driver.
+2009-12-09 Skeleton driver.
 
-        TODO:
-        - Cassette load/save
-        - Use messram for optional ram
-        - Fix Step command (don't works due of missing interrupt emulation)
+TODO:
+- Cassette load (last byte is bad)
+- Use messram for optional ram
+- Fix Step command (doesn't work due to missing interrupt emulation)
 
-The unit has a PIO, ports 40-43, but it was for expansion only.
+The cassette uses 2 bits for input, plus a D flipflop and a 74LS221 oneshot, with the pulse width set
+  by 0.02uf and 24k (= 336 usec). The pulse is started by a H->L transistion of the input. At the end
+  of the pulse, the current input is passed through the flipflop.
 
-The cassette used 2 bits for input, plus a D flipflop and a 74LS221 oneshot.
+Cassette start address is always 1000. The end address must be entered into 13DC/DD (little-endian).
+Then press W to save. To load, press L. If it says r at the end, it indicates a bad checksum.
 
-
-****************************************************************************/
+******************************************************************************************************/
 
 
 #include "emu.h"
+
 #include "cpu/z80/z80.h"
+#include "machine/timer.h"
+#include "machine/z80pio.h"
 #include "imagedev/cassette.h"
-#include "sound/wave.h"
+#include "speaker.h"
+#include "video/pwm.h"
+
 #include "pro80.lh"
+
 
 class pro80_state : public driver_device
 {
 public:
 	pro80_state(const machine_config &mconfig, device_type type, const char *tag)
-		: driver_device(mconfig, type, tag),
-	m_maincpu(*this, "maincpu"),
-	m_cass(*this, "cassette")
+		: driver_device(mconfig, type, tag)
+		, m_maincpu(*this, "maincpu")
+		, m_cass(*this, "cassette")
+		, m_io_keyboard(*this, "LINE%u", 0U)
+		, m_display(*this, "display")
 	{ }
 
+	void pro80(machine_config &config);
+
+private:
+	void digit_w(u8 data);
+	void segment_w(u8 data);
+	u8 kp_r();
+	TIMER_DEVICE_CALLBACK_MEMBER(kansas_r);
+
+	void io_map(address_map &map);
+	void mem_map(address_map &map);
+
+	u8 m_digit_sel;
+	u8 m_cass_in;
+	u16 m_cass_data[4];
+	virtual void machine_reset() override;
+	virtual void machine_start() override;
 	required_device<cpu_device> m_maincpu;
 	required_device<cassette_image_device> m_cass;
-	void machine_reset() override;
-
-	DECLARE_WRITE8_MEMBER( digit_w );
-	DECLARE_WRITE8_MEMBER( segment_w );
-	DECLARE_READ8_MEMBER( kp_r );
-
-	UINT8 m_digit_sel;
+	required_ioport_array<6> m_io_keyboard;
+	required_device<pwm_display_device> m_display;
 };
 
+TIMER_DEVICE_CALLBACK_MEMBER( pro80_state::kansas_r )
+{
+	m_cass_data[1]++;
+	u8 cass_ws = (m_cass->input() > +0.03) ? 1 : 0;
 
-WRITE8_MEMBER( pro80_state::digit_w )
+	if (cass_ws != m_cass_data[0])
+	{
+		m_cass_data[0] = cass_ws;
+		m_cass_in = ((m_cass_data[1] < 12) ? 0x10 : 0); // get data bit
+		m_cass_data[1] = 0;
+		if (!cass_ws) m_cass_in |= 0x20;  // set sync bit
+	}
+}
+
+void pro80_state::digit_w(u8 data)
 {
 	// --xx xxxx digit select
 	// -x-- ---- cassette out
 	// x--- ---- ???
 	m_digit_sel = data & 0x3f;
+	m_cass->output( BIT(data, 6) ? -1.0 : +1.0);
 }
 
-WRITE8_MEMBER( pro80_state::segment_w )
+void pro80_state::segment_w(u8 data)
 {
 	if (m_digit_sel)
 	{
-		if (!BIT(m_digit_sel, 0)) output_set_digit_value(0, data);
-		if (!BIT(m_digit_sel, 1)) output_set_digit_value(1, data);
-		if (!BIT(m_digit_sel, 2)) output_set_digit_value(2, data);
-		if (!BIT(m_digit_sel, 3)) output_set_digit_value(3, data);
-		if (!BIT(m_digit_sel, 4)) output_set_digit_value(4, data);
-		if (!BIT(m_digit_sel, 5)) output_set_digit_value(5, data);
-		m_cass->output( BIT(data, 6) ? -1.0 : +1.0);
+		for (u8 i = 0; i < 6; i++)
+			if (!BIT(m_digit_sel, i))
+				m_display->matrix(1<<i, data);
 
 		m_digit_sel = 0;
 	}
 }
 
-READ8_MEMBER( pro80_state::kp_r )
+u8 pro80_state::kp_r()
 {
-	UINT8 data = 0x0f;
+	u8 data = 0x0f;
 
-	if (!BIT(m_digit_sel, 0)) data &= ioport("LINE0")->read();
-	if (!BIT(m_digit_sel, 1)) data &= ioport("LINE1")->read();
-	if (!BIT(m_digit_sel, 2)) data &= ioport("LINE2")->read();
-	if (!BIT(m_digit_sel, 3)) data &= ioport("LINE3")->read();
-	if (!BIT(m_digit_sel, 4)) data &= ioport("LINE4")->read();
-	if (!BIT(m_digit_sel, 5)) data &= ioport("LINE5")->read();
+	for (u8 i = 0; i < 6; i++)
+		if (!BIT(m_digit_sel, i))
+			data &= m_io_keyboard[i]->read();
 
-	// cassette-in bits go here - bit 4 = sync bit, bit 5 = data bit
+	data |= m_cass_in;
+	data |= 0xc0;
+	m_cass_in = 0;
 	return data;
 }
 
-static ADDRESS_MAP_START( pro80_mem, AS_PROGRAM, 8, pro80_state )
-	ADDRESS_MAP_UNMAP_HIGH
-	AM_RANGE(0x0000, 0x03ff) AM_ROM
-	AM_RANGE(0x1000, 0x13ff) AM_RAM
-	AM_RANGE(0x1400, 0x17ff) AM_RAM // 2nd RAM is optional
-ADDRESS_MAP_END
+void pro80_state::mem_map(address_map &map)
+{
+	map.unmap_value_high();
+	map(0x0000, 0x03ff).rom();
+	map(0x1000, 0x13ff).ram();
+	map(0x1400, 0x17ff).ram(); // 2nd RAM is optional
+}
 
-static ADDRESS_MAP_START( pro80_io, AS_IO, 8, pro80_state )
-	ADDRESS_MAP_UNMAP_HIGH
-	ADDRESS_MAP_GLOBAL_MASK(0xff)
-	//AM_RANGE(0x40, 0x43) Z80PIO
-	AM_RANGE(0x44, 0x47) AM_READ(kp_r)
-	AM_RANGE(0x48, 0x4b) AM_WRITE(digit_w)
-	AM_RANGE(0x4c, 0x4f) AM_WRITE(segment_w)
-ADDRESS_MAP_END
+void pro80_state::io_map(address_map &map)
+{
+	map.unmap_value_high();
+	map.global_mask(0xff);
+	map(0x40, 0x43).rw("pio", FUNC(z80pio_device::read), FUNC(z80pio_device::write));
+	map(0x44, 0x47).r(FUNC(pro80_state::kp_r));
+	map(0x48, 0x4b).w(FUNC(pro80_state::digit_w));
+	map(0x4c, 0x4f).w(FUNC(pro80_state::segment_w));
+}
 
 /* Input ports */
 static INPUT_PORTS_START( pro80 )
@@ -110,7 +142,7 @@ static INPUT_PORTS_START( pro80 )
 		PORT_BIT(0x08, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("Res") PORT_CODE(KEYCODE_EQUALS)
 	PORT_START("LINE1")
 		PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("EXE") PORT_CODE(KEYCODE_ENTER)
-		PORT_BIT(0x02, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("NEx") PORT_CODE(KEYCODE_N)
+		PORT_BIT(0x02, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("NEx") PORT_CODE(KEYCODE_N) PORT_CODE(KEYCODE_UP)
 		PORT_BIT(0x04, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("REx") PORT_CODE(KEYCODE_R)
 		PORT_BIT(0x08, IP_ACTIVE_LOW, IPT_KEYPAD) PORT_NAME("MEx") PORT_CODE(KEYCODE_M)
 	PORT_START("LINE2")
@@ -138,34 +170,47 @@ INPUT_PORTS_END
 void pro80_state::machine_reset()
 {
 	m_digit_sel = 0;
+	m_cass_in = 0;
 }
 
-static MACHINE_CONFIG_START( pro80, pro80_state )
+void pro80_state::machine_start()
+{
+	save_item(NAME(m_digit_sel));
+	save_item(NAME(m_cass_in));
+	save_pointer(NAME(m_cass_data) ,4);
+}
+
+void pro80_state::pro80(machine_config &config)
+{
 	/* basic machine hardware */
-	MCFG_CPU_ADD("maincpu",Z80, XTAL_4MHz)
-	MCFG_CPU_PROGRAM_MAP(pro80_mem)
-	MCFG_CPU_IO_MAP(pro80_io)
+	Z80(config, m_maincpu, XTAL(4'000'000) / 2);
+	m_maincpu->set_addrmap(AS_PROGRAM, &pro80_state::mem_map);
+	m_maincpu->set_addrmap(AS_IO, &pro80_state::io_map);
 
 	/* video hardware */
-	MCFG_DEFAULT_LAYOUT(layout_pro80)
+	config.set_default_layout(layout_pro80);
+	PWM_DISPLAY(config, m_display).set_size(6, 8);
+	m_display->set_segmask(0x3f, 0xff);
+
+	Z80PIO(config, "pio", XTAL(4'000'000) / 2);
 
 	/* sound hardware */
-	MCFG_SPEAKER_STANDARD_MONO("mono")
-	MCFG_SOUND_WAVE_ADD(WAVE_TAG, "cassette")
-	MCFG_SOUND_ROUTE(ALL_OUTPUTS, "mono", 0.25)
+	SPEAKER(config, "mono").front_center();
 
-	/* Devices */
-	MCFG_CASSETTE_ADD( "cassette" )
-MACHINE_CONFIG_END
+	// Cassette
+	CASSETTE(config, m_cass);
+	m_cass->add_route(ALL_OUTPUTS, "mono", 0.05);
+	TIMER(config, "kansas_r").configure_periodic(FUNC(pro80_state::kansas_r), attotime::from_hz(40000)); // cass read
+}
 
 /* ROM definition */
 ROM_START( pro80 )
-	ROM_REGION( 0x10000, "maincpu", ROMREGION_ERASEFF )
+	ROM_REGION( 0x0400, "maincpu", 0 )
 	// This rom dump is taken out of manual for this machine
 	ROM_LOAD( "pro80.bin", 0x0000, 0x0400, CRC(1bf6e0a5) SHA1(eb45816337e08ed8c30b589fc24960dc98b94db2))
 ROM_END
 
 /* Driver */
 
-/*    YEAR  NAME    PARENT  COMPAT   MACHINE    INPUT    INIT    COMPANY     FULLNAME       FLAGS */
-COMP( 1981, pro80,  0,      0,       pro80,     pro80, driver_device,   0,      "Protec",   "Pro-80", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
+//    YEAR  NAME   PARENT  COMPAT  MACHINE  INPUT  CLASS        INIT        COMPANY   FULLNAME  FLAGS
+COMP( 1981, pro80, 0,      0,      pro80,   pro80, pro80_state, empty_init, "Protec", "Pro-80", MACHINE_NOT_WORKING | MACHINE_SUPPORTS_SAVE )
