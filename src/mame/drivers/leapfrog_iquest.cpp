@@ -17,7 +17,7 @@
 #include "machine/bankdev.h"
 
 #include "screen.h"
-#include "softlist.h"
+#include "softlist_dev.h"
 #include "speaker.h"
 #include "screen.h"
 
@@ -83,7 +83,7 @@ private:
 
 	uint8_t unk_ff80_r();
 	void unk_ff80_w(uint8_t data);
-	uint8_t m_ff80;
+	uint8_t m_ff80 = 0;
 
 	uint8_t unk_fc00_r();
 	uint8_t unk_fc01_r(offs_t offset);
@@ -97,20 +97,20 @@ private:
 	uint8_t unk_fce5_r();
 	void unk_fce5_w(uint8_t data);
 
-	uint8_t m_fce5;
+	uint8_t m_fce5 = 0;
 
 	uint8_t unk_ff00_01_r(offs_t offset);
 
 	void unk_ff81_84_w(offs_t offset, uint8_t data);
-	uint8_t m_ff81_84[4];
+	uint8_t m_ff81_84[4]{};
 
 	uint8_t unk_ff91_93_r(offs_t offset);
 	void unk_ff91_93_w(offs_t offset, uint8_t data);
-	uint8_t m_ff91_93[3];
+	uint8_t m_ff91_93[3]{};
 
 	uint8_t unk_ffa8_r();
 	void unk_ffa8_w(uint8_t data);
-	uint8_t m_ffa8;
+	uint8_t m_ffa8 = 0;
 
 	void unk_ffa9_w(uint8_t data);
 
@@ -651,7 +651,7 @@ void leapfrog_turboextreme_state::leapfrog_turboex(machine_config &config)
 	m_cart->set_width(GENERIC_ROM16_WIDTH);
 	m_cart->set_device_load(FUNC(leapfrog_turboextreme_state::cart_load));
 
-	SOFTWARE_LIST(config, "cart_list").set_original("leapfrog_turboextreme_cart");
+	SOFTWARE_LIST(config, "cart_list").set_original("turboextreme_cart");
 }
 
 void leapfrog_turbotwistmath_state::leapfrog_turbotwistmath(machine_config &config)
@@ -670,7 +670,7 @@ void leapfrog_turbotwistmath_state::leapfrog_turbotwistmath(machine_config &conf
 	m_cart->set_width(GENERIC_ROM16_WIDTH);
 	m_cart->set_device_load(FUNC(leapfrog_turbotwistmath_state::cart_load));
 
-	SOFTWARE_LIST(config, "cart_list").set_original("leapfrog_turbotwistmath_cart");
+	SOFTWARE_LIST(config, "cart_list").set_original("ttwist_math_cart");
 }
 
 void leapfrog_turbotwistspelling_state::leapfrog_turbotwistspelling(machine_config &config)
@@ -689,7 +689,7 @@ void leapfrog_turbotwistspelling_state::leapfrog_turbotwistspelling(machine_conf
 	m_cart->set_width(GENERIC_ROM16_WIDTH);
 	m_cart->set_device_load(FUNC(leapfrog_turbotwistspelling_state::cart_load));
 
-	SOFTWARE_LIST(config, "cart_list").set_original("leapfrog_turbotwistspelling_cart");
+	SOFTWARE_LIST(config, "cart_list").set_original("ttwist_spelling_cart");
 }
 
 void leapfrog_turbotwistvocabulator_state::leapfrog_turbotwistvocabulator(machine_config &config)
@@ -708,7 +708,7 @@ void leapfrog_turbotwistvocabulator_state::leapfrog_turbotwistvocabulator(machin
 	m_cart->set_width(GENERIC_ROM16_WIDTH);
 	m_cart->set_device_load(FUNC(leapfrog_turbotwistvocabulator_state::cart_load));
 
-	SOFTWARE_LIST(config, "cart_list").set_original("leapfrog_turbotwistvocabulator_cart");
+	SOFTWARE_LIST(config, "cart_list").set_original("ttwist_vocabulator_cart");
 }
 
 
@@ -728,7 +728,7 @@ void leapfrog_turbotwistbrainquest_state::leapfrog_turbotwistbrainquest(machine_
 	m_cart->set_width(GENERIC_ROM16_WIDTH);
 	m_cart->set_device_load(FUNC(leapfrog_turbotwistbrainquest_state::cart_load));
 
-	SOFTWARE_LIST(config, "cart_list").set_original("leapfrog_turbotwistbrainquest_cart");
+	SOFTWARE_LIST(config, "cart_list").set_original("ttwist_brainquest_cart");
 }
 
 ROM_START( iquest )

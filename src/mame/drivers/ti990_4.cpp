@@ -58,10 +58,10 @@ public:
 	void ti990_4v(machine_config &config);
 	void ti990_4(machine_config &config);
 
-	void init_ti990_4();
-	void init_ti990_4v();
-
 private:
+	virtual void machine_start() override;
+	virtual void machine_reset() override;
+
 	uint8_t panel_read(offs_t offset);
 	void panel_write(offs_t offset, uint8_t data);
 	void external_operation(offs_t offset, uint8_t data);
@@ -71,43 +71,37 @@ private:
 	DECLARE_WRITE_LINE_MEMBER( vdtkey_interrupt );
 	DECLARE_WRITE_LINE_MEMBER( line_interrupt );
 
-	DECLARE_MACHINE_RESET(ti990_4);
-
 	void crumap(address_map &map);
 	void crumap_v(address_map &map);
 	void memmap(address_map &map);
 
 	void        hold_load();
-	void        device_timer(emu_timer &timer, device_timer_id id, int param, void *ptr) override;
-	int         m_intlines;
-	int         m_int_level;
-	emu_timer*  m_nmi_timer;
+	TIMER_CALLBACK_MEMBER(clear_load);
+
+	int         m_intlines = 0;
+	int         m_int_level = 0;
+	emu_timer*  m_load_timer = nullptr;
 	void        reset_int_lines();
 	void        set_int_line(int line, int state);
 
-	bool        m_ckon_state;
+	bool        m_ckon_state = 0;
 
 	// Connected devices
 	required_device<tms9900_device>     m_maincpu;
 	required_device<fd800_legacy_device> m_fd800;
 };
 
-enum
-{
-	NMI_TIMER_ID = 1
-};
-
 void ti990_4_state::hold_load()
 {
 	m_maincpu->set_input_line(INT_9900_LOAD, ASSERT_LINE);
 	logerror("ti990_4: Triggering LOAD interrupt\n");
-	m_nmi_timer->adjust(attotime::from_msec(100));
+	m_load_timer->adjust(attotime::from_msec(100));
 }
 
 /*
     LOAD interrupt trigger callback
 */
-void ti990_4_state::device_timer(emu_timer &timer, device_timer_id id, int param, void *ptr)
+TIMER_CALLBACK_MEMBER(ti990_4_state::clear_load)
 {
 	m_maincpu->set_input_line(INT_9900_LOAD, CLEAR_LINE);
 	logerror("ti990_4: Released LOAD interrupt\n");
@@ -268,17 +262,17 @@ void ti990_4_state::crumap_v(address_map &map)
     nullptr
 }; */
 
-MACHINE_RESET_MEMBER(ti990_4_state,ti990_4)
+void ti990_4_state::machine_start()
+{
+	m_load_timer = timer_alloc(FUNC(ti990_4_state::clear_load), this);
+}
+
+void ti990_4_state::machine_reset()
 {
 	hold_load();
 	reset_int_lines();
 	m_ckon_state = false;
 	m_maincpu->set_ready(ASSERT_LINE);
-}
-
-void ti990_4_state::init_ti990_4()
-{
-	m_nmi_timer = timer_alloc(NMI_TIMER_ID);
 }
 
 void ti990_4_state::ti990_4(machine_config &config)
@@ -290,8 +284,6 @@ void ti990_4_state::ti990_4(machine_config &config)
 	m_maincpu->set_addrmap(AS_IO, &ti990_4_state::crumap);
 	m_maincpu->extop_cb().set(FUNC(ti990_4_state::external_operation));
 	m_maincpu->intlevel_cb().set(FUNC(ti990_4_state::interrupt_level));
-
-	MCFG_MACHINE_RESET_OVERRIDE(ti990_4_state, ti990_4 )
 
 	// Terminal
 	asr733_device& term(ASR733(config, "asr733", 0));
@@ -337,16 +329,16 @@ ROM_START(ti990_4)
 	(cf 945401-9701 pp. 1-19) */
 
 	/* test ROM */
-	ROMX_LOAD("94519209.u39", 0xFC00, 0x100, CRC(0a0b0c42), ROM_NIBBLE | ROM_SHIFT_NIBBLE_HI | ROM_SKIP(1))
-	ROMX_LOAD("94519210.u55", 0xFC00, 0x100, CRC(d078af61), ROM_NIBBLE | ROM_SHIFT_NIBBLE_LO | ROM_SKIP(1))
-	ROMX_LOAD("94519211.u61", 0xFC01, 0x100, CRC(6cf7d4a0), ROM_NIBBLE | ROM_SHIFT_NIBBLE_HI | ROM_SKIP(1))
-	ROMX_LOAD("94519212.u78", 0xFC01, 0x100, CRC(d9522458), ROM_NIBBLE | ROM_SHIFT_NIBBLE_LO | ROM_SKIP(1))
+	ROMX_LOAD("94519209.u39", 0xFC00, 0x100, CRC(0a0b0c42) SHA1(bb1f0c611b640cccadeaf8fbbabac7343fcb2a99), ROM_NIBBLE | ROM_SHIFT_NIBBLE_HI | ROM_SKIP(1))
+	ROMX_LOAD("94519210.u55", 0xFC00, 0x100, CRC(d078af61) SHA1(6f7e90b0972b97d3a3820b05ac8ffbd579910351), ROM_NIBBLE | ROM_SHIFT_NIBBLE_LO | ROM_SKIP(1))
+	ROMX_LOAD("94519211.u61", 0xFC01, 0x100, CRC(6cf7d4a0) SHA1(c26f09cec612545c5c4511291b5eb432998c21b3), ROM_NIBBLE | ROM_SHIFT_NIBBLE_HI | ROM_SKIP(1))
+	ROMX_LOAD("94519212.u78", 0xFC01, 0x100, CRC(d9522458) SHA1(8987e1f155da390ae39b45e41c2d847e62a3bc26), ROM_NIBBLE | ROM_SHIFT_NIBBLE_LO | ROM_SKIP(1))
 
 	/* LOAD ROM */
-	ROMX_LOAD("94519113.u3", 0xFE00, 0x100, CRC(8719b04e), ROM_NIBBLE | ROM_SHIFT_NIBBLE_HI | ROM_SKIP(1))
-	ROMX_LOAD("94519114.u4", 0xFE00, 0x100, CRC(72a040e0), ROM_NIBBLE | ROM_SHIFT_NIBBLE_LO | ROM_SKIP(1))
-	ROMX_LOAD("94519115.u6", 0xFE01, 0x100, CRC(9ccf8cca), ROM_NIBBLE | ROM_SHIFT_NIBBLE_HI | ROM_SKIP(1))
-	ROMX_LOAD("94519116.u7", 0xFE01, 0x100, CRC(fa387bf3), ROM_NIBBLE | ROM_SHIFT_NIBBLE_LO | ROM_SKIP(1))
+	ROMX_LOAD("94519113.u3", 0xFE00, 0x100, CRC(8719b04e) SHA1(63bdf5d9c25147bb9b608df6e9dbc2cf3789569b), ROM_NIBBLE | ROM_SHIFT_NIBBLE_HI | ROM_SKIP(1))
+	ROMX_LOAD("94519114.u4", 0xFE00, 0x100, CRC(72a040e0) SHA1(3291ab8af7097f69f1c7c95c2c0eaf327d4e98d5), ROM_NIBBLE | ROM_SHIFT_NIBBLE_LO | ROM_SKIP(1))
+	ROMX_LOAD("94519115.u6", 0xFE01, 0x100, CRC(9ccf8cca) SHA1(0e726ea76ef15274bb1a4475bfb672005dc05e00), ROM_NIBBLE | ROM_SHIFT_NIBBLE_HI | ROM_SKIP(1))
+	ROMX_LOAD("94519116.u7", 0xFE01, 0x100, CRC(fa387bf3) SHA1(d91de2335e0bb03e14bc4a951ee0bc04c6fff5ab), ROM_NIBBLE | ROM_SHIFT_NIBBLE_LO | ROM_SKIP(1))
 
 #else
 	/* ROM set 945121-4(?): "Floppy disc loader with self test" (cf 945401-9701 pp. 1-19) */
@@ -365,6 +357,6 @@ ROM_START(ti990_4v)
 	ROM_REGION(vdt911_device::chr_region_len, vdt911_chr_region, ROMREGION_ERASEFF)
 ROM_END
 
-//    YEAR  NAME      PARENT   COMPAT  MACHINE   INPUT  CLASS          INIT          COMPANY              FULLNAME                                                           FLAGS
-COMP( 1976, ti990_4,  0,       0,      ti990_4,  0,     ti990_4_state, init_ti990_4, "Texas Instruments", "TI Model 990/4 Microcomputer System",                             MACHINE_NOT_WORKING | MACHINE_NO_SOUND )
-COMP( 1976, ti990_4v, ti990_4, 0,      ti990_4v, 0,     ti990_4_state, init_ti990_4, "Texas Instruments", "TI Model 990/4 Microcomputer System with Video Display Terminal", MACHINE_NOT_WORKING | MACHINE_NO_SOUND )
+//    YEAR  NAME      PARENT   COMPAT  MACHINE   INPUT  CLASS          INIT        COMPANY              FULLNAME                                                           FLAGS
+COMP( 1976, ti990_4,  0,       0,      ti990_4,  0,     ti990_4_state, empty_init, "Texas Instruments", "TI Model 990/4 Microcomputer System",                             MACHINE_NOT_WORKING | MACHINE_NO_SOUND )
+COMP( 1976, ti990_4v, ti990_4, 0,      ti990_4v, 0,     ti990_4_state, empty_init, "Texas Instruments", "TI Model 990/4 Microcomputer System with Video Display Terminal", MACHINE_NOT_WORKING | MACHINE_NO_SOUND )

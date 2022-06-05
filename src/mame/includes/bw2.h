@@ -37,7 +37,7 @@ public:
 		m_lcdc(*this, MSM6255_TAG),
 		m_pit(*this, "ic6"),
 		m_centronics(*this, CENTRONICS_TAG),
-		m_exp(*this, BW2_EXPANSION_SLOT_TAG),
+		m_exp(*this, "exp"),
 		m_ram(*this, RAM_TAG),
 		m_floppy0(*this, WD2797_TAG":0"),
 		m_floppy1(*this, WD2797_TAG":1"),
@@ -77,14 +77,14 @@ public:
 	static void floppy_formats(format_registration &fr);
 
 	// keyboard state
-	uint8_t m_kb;
+	uint8_t m_kb = 0;
 
 	// memory state
-	uint8_t m_bank;
+	uint8_t m_bank = 0;
 
 	// floppy state
-	int m_mtron;
-	int m_mfdbk;
+	int m_mtron = 0;
+	int m_mfdbk = 0;
 
 	// video state
 	optional_shared_ptr<uint8_t> m_video_ram;

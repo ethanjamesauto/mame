@@ -147,16 +147,9 @@ Region byte at offset 0x031:
                 INTERRUPTS
 ***********************************************************/
 
-void slapshot_state::device_timer(emu_timer &timer, device_timer_id id, int param, void *ptr)
+TIMER_CALLBACK_MEMBER(slapshot_state::trigger_int6)
 {
-	switch (id)
-	{
-	case TIMER_SLAPSHOT_INTERRUPT6:
-		m_maincpu->set_input_line(6, HOLD_LINE);
-		break;
-	default:
-		throw emu_fatalerror("Unknown id in slapshot_state::device_timer");
-	}
+	m_maincpu->set_input_line(6, HOLD_LINE);
 }
 
 
@@ -398,7 +391,7 @@ void slapshot_state::machine_start()
 {
 	m_z80bank->configure_entries(0, 4, memregion("audiocpu")->base(), 0x4000);
 
-	m_int6_timer = timer_alloc(TIMER_SLAPSHOT_INTERRUPT6);
+	m_int6_timer = timer_alloc(FUNC(slapshot_state::trigger_int6), this);
 }
 
 
@@ -687,10 +680,10 @@ void slapshot_state::driver_init()
 	gfx_element *gx1 = m_gfxdecode->gfx(1);
 
 	// allocate memory for the assembled data
-	u8 *srcdata = auto_alloc_array(machine(), u8, gx0->elements() * gx0->width() * gx0->height());
+	m_decoded_gfx = std::make_unique<u8[]>(gx0->elements() * gx0->width() * gx0->height());
 
 	// loop over elements
-	u8 *dest = srcdata;
+	u8 *dest = m_decoded_gfx.get();
 	for (int c = 0; c < gx0->elements(); c++)
 	{
 		const u8 *c0base = gx0->get_data(c);
@@ -712,7 +705,7 @@ void slapshot_state::driver_init()
 		}
 	}
 
-	gx0->set_raw_layout(srcdata, gx0->width(), gx0->height(), gx0->elements(), 8 * gx0->width(), 8 * gx0->width() * gx0->height());
+	gx0->set_raw_layout(m_decoded_gfx.get(), gx0->width(), gx0->height(), gx0->elements(), 8 * gx0->width(), 8 * gx0->width() * gx0->height());
 	gx0->set_colors(4096 / 64);
 	gx0->set_granularity(64);
 	m_gfxdecode->set_gfx(1, nullptr);

@@ -29,7 +29,7 @@
 #include "cpu/unsp/unsp.h"
 #include "machine/spg110.h"
 #include "screen.h"
-#include "softlist.h"
+#include "softlist_dev.h"
 #include "speaker.h"
 
 class spg110_game_state : public driver_device
@@ -526,7 +526,7 @@ void spg110_game_state::spg110_base(machine_config &config)
 	m_maincpu->portb_in().set_ioport("PB");
 	m_maincpu->portc_in().set_ioport("PC");
 	m_maincpu->adc_in<0>().set_ioport("JOYX");
-	m_maincpu->adc_in<1>().set_ioport("JOYY");
+	m_maincpu->adc_in<3>().set_ioport("JOYY");
 
 	SCREEN(config, m_screen, SCREEN_TYPE_RASTER);
 	m_screen->set_refresh_hz(60);

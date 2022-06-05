@@ -11,8 +11,16 @@
 
 #include "emu.h"
 #include "a2mockingboard.h"
+
+#include "machine/6522via.h"
+#include "sound/ay8910.h"
+#include "sound/tms5220.h"
+#include "sound/votrax.h"
+
 #include "speaker.h"
 
+
+namespace {
 
 /***************************************************************************
     PARAMETERS
@@ -27,12 +35,109 @@
 #define E2P_TMS_TAG "tms5220"
 
 //**************************************************************************
-//  GLOBAL VARIABLES
+//  TYPE DEFINITIONS
 //**************************************************************************
 
-DEFINE_DEVICE_TYPE(A2BUS_MOCKINGBOARD, a2bus_mockingboard_device, "a2mockbd", "Sweet Micro Systems Mockingboard Sound/Speech I")
-DEFINE_DEVICE_TYPE(A2BUS_PHASOR,       a2bus_phasor_device,       "a2phasor", "Applied Engineering Phasor")
-DEFINE_DEVICE_TYPE(A2BUS_ECHOPLUS,     a2bus_echoplus_device,     "a2echop",  "Street Electronics Echo Plus")
+class a2bus_ayboard_device:
+	public device_t,
+	public device_a2bus_card_interface
+{
+public:
+	DECLARE_WRITE_LINE_MEMBER( via1_irq_w );
+	DECLARE_WRITE_LINE_MEMBER( via2_irq_w );
+	u8 via1_in_a() { return m_porta1; }
+	u8 via2_in_a() { return m_porta2; }
+	void via1_out_a(u8 data);
+	virtual void via1_out_b(u8 data);
+	void via2_out_a(u8 data);
+	virtual void via2_out_b(u8 data);
+
+protected:
+	// construction/destruction
+	a2bus_ayboard_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock);
+
+	virtual void device_start() override;
+	virtual void device_reset() override;
+	virtual void device_add_mconfig(machine_config &config) override;
+
+	// overrides of standard a2bus slot functions
+	virtual u8 read_c0nx(u8 offset) override { return 0xff; }
+	virtual void write_c0nx(u8 offset, u8 data) override { }
+	virtual u8 read_cnxx(u8 offset) override;
+	virtual void write_cnxx(u8 offset, u8 data) override;
+
+	void add_common_devices(machine_config &config);
+
+	required_device<via6522_device> m_via1;
+	optional_device<via6522_device> m_via2;
+	required_device<ay8913_device> m_ay1;
+	required_device<ay8913_device> m_ay2;
+
+	u8 m_porta1;
+	u8 m_porta2;
+};
+
+class a2bus_mockingboard_device : public a2bus_ayboard_device
+{
+public:
+	a2bus_mockingboard_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
+
+	virtual void via1_out_b(u8 data) override;
+protected:
+	virtual void device_add_mconfig(machine_config &config) override;
+	virtual void device_reset() override;
+
+	required_device<votrax_sc01_device> m_sc01;
+
+private:
+	DECLARE_WRITE_LINE_MEMBER(write_via1_cb2);
+
+	u8 m_portb1;
+	int m_last_cb2_state;
+};
+
+class a2bus_phasor_device : public a2bus_ayboard_device
+{
+public:
+	a2bus_phasor_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
+
+	void via1_out_b(u8 data) override;
+	void via2_out_b(u8 data) override;
+
+protected:
+	virtual void device_add_mconfig(machine_config &config) override;
+
+	virtual u8 read_c0nx(u8 offset) override;
+	virtual void write_c0nx(u8 offset, u8 data) override;
+	virtual u8 read_cnxx(u8 offset) override;
+	virtual void write_cnxx(u8 offset, u8 data) override;
+
+	required_device<ay8913_device> m_ay3;
+	required_device<ay8913_device> m_ay4;
+
+private:
+	void set_clocks();
+
+	bool m_native;
+};
+
+class a2bus_echoplus_device : public a2bus_ayboard_device
+{
+public:
+	a2bus_echoplus_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
+
+protected:
+	virtual void device_add_mconfig(machine_config &config) override;
+
+	virtual void via1_out_b(u8 data) override;
+
+	virtual u8 read_c0nx(u8 offset) override;
+	virtual void write_c0nx(u8 offset, u8 data) override;
+	virtual u8 read_cnxx(u8 offset) override;
+	virtual void write_cnxx(u8 offset, u8 data) override;
+
+	required_device<tms5220_device> m_tms;
+};
 
 //-------------------------------------------------
 //  device_add_mconfig - add device configuration
@@ -41,11 +146,13 @@ DEFINE_DEVICE_TYPE(A2BUS_ECHOPLUS,     a2bus_echoplus_device,     "a2echop",  "S
 void a2bus_ayboard_device::add_common_devices(machine_config &config)
 {
 	MOS6522(config, m_via1, 1022727);
+	m_via1->readpa_handler().set(FUNC(a2bus_ayboard_device::via1_in_a));
 	m_via1->writepa_handler().set(FUNC(a2bus_ayboard_device::via1_out_a));
 	m_via1->writepb_handler().set(FUNC(a2bus_ayboard_device::via1_out_b));
 	m_via1->irq_handler().set(FUNC(a2bus_ayboard_device::via1_irq_w));
 
 	MOS6522(config, m_via2, 1022727);
+	m_via2->readpa_handler().set(FUNC(a2bus_ayboard_device::via2_in_a));
 	m_via2->writepa_handler().set(FUNC(a2bus_ayboard_device::via2_out_a));
 	m_via2->writepb_handler().set(FUNC(a2bus_ayboard_device::via2_out_b));
 	m_via2->irq_handler().set(FUNC(a2bus_ayboard_device::via2_irq_w));
@@ -100,6 +207,9 @@ void a2bus_phasor_device::device_add_mconfig(machine_config &config)
 void a2bus_echoplus_device::device_add_mconfig(machine_config &config)
 {
 	add_common_devices(config);
+
+	config.device_remove(VIA2_TAG);
+	m_via1->writepb_handler().set(FUNC(a2bus_ayboard_device::via1_out_b));
 
 	AY8913(config, m_ay2, 1022727);
 	m_ay2->add_route(ALL_OUTPUTS, "rspeaker", 0.5);
@@ -165,7 +275,7 @@ void a2bus_ayboard_device::device_reset()
     read_cnxx - called for reads from this card's cnxx space
 -------------------------------------------------*/
 
-uint8_t a2bus_ayboard_device::read_cnxx(uint8_t offset)
+u8 a2bus_ayboard_device::read_cnxx(u8 offset)
 {
 	if (offset <= 0x7f)
 	{
@@ -179,9 +289,14 @@ uint8_t a2bus_ayboard_device::read_cnxx(uint8_t offset)
 	return 0;
 }
 
-uint8_t a2bus_phasor_device::read_cnxx(uint8_t offset)
+u8 a2bus_echoplus_device::read_cnxx(u8 offset)
 {
-	uint8_t ret = 0;
+	return m_via1->read(offset & 0xf);
+}
+
+u8 a2bus_phasor_device::read_cnxx(u8 offset)
+{
+	u8 ret = 0;
 	int via_sel;
 
 	if (m_native)
@@ -212,7 +327,7 @@ uint8_t a2bus_phasor_device::read_cnxx(uint8_t offset)
     write_cnxx - called for writes to this card's c0nx space
 -------------------------------------------------*/
 
-void a2bus_ayboard_device::write_cnxx(uint8_t offset, uint8_t data)
+void a2bus_ayboard_device::write_cnxx(u8 offset, u8 data)
 {
 	// When the SSI-263 is emulated, Cn40 will write to both the VIA and
 	// the first SSI-263, and Cn20 will write to both the VIA and the
@@ -227,7 +342,12 @@ void a2bus_ayboard_device::write_cnxx(uint8_t offset, uint8_t data)
 	}
 }
 
-void a2bus_phasor_device::write_cnxx(uint8_t offset, uint8_t data)
+void a2bus_echoplus_device::write_cnxx(u8 offset, u8 data)
+{
+	m_via1->write(offset & 0xf, data);
+}
+
+void a2bus_phasor_device::write_cnxx(u8 offset, u8 data)
 {
 	if ((offset < 0x20) || (offset >= 0x80 && offset < 0xa0))
 	{
@@ -277,12 +397,12 @@ WRITE_LINE_MEMBER( a2bus_ayboard_device::via2_irq_w )
 	}
 }
 
-void a2bus_ayboard_device::via1_out_a(uint8_t data)
+void a2bus_ayboard_device::via1_out_a(u8 data)
 {
 	m_porta1 = data;
 }
 
-void a2bus_ayboard_device::via1_out_b(uint8_t data)
+void a2bus_ayboard_device::via1_out_b(u8 data)
 {
 	if (!BIT(data, 2))
 	{
@@ -310,7 +430,59 @@ void a2bus_ayboard_device::via1_out_b(uint8_t data)
 	}
 }
 
-void a2bus_phasor_device::via1_out_b(uint8_t data)
+void a2bus_echoplus_device::via1_out_b(u8 data)
+{
+	if (!BIT(data, 2))
+	{
+		m_ay1->reset_w();
+		m_ay2->reset_w();
+	}
+	else
+	{
+		if (BIT(data, 3)) // BC2_1=1 (PSG1 active)
+		{
+			switch (data & 3)
+			{
+			case 0: // BDIR=0, BC1=0 (inactive)
+				break;
+
+			case 1: // BDIR=0, BC1=1 (read PSG)
+				m_porta1 = m_ay1->data_r();
+				break;
+
+			case 2: // BDIR=1, BC1=0 (write PSG)
+				m_ay1->data_w(m_porta1);
+				break;
+
+			case 3: // BDIR=1, BC1=1 (latch)
+				m_ay1->address_w(m_porta1);
+				break;
+			}
+		}
+		if (BIT(data, 4)) // BC2_2_=1 (PSG2 active)
+		{
+			switch (data & 3)
+			{
+			case 0: // BDIR=0, BC1=0 (inactive)
+				break;
+
+			case 1: // BDIR=0, BC1=1 (read PSG)
+				m_porta1 = m_ay2->data_r();
+				break;
+
+			case 2: // BDIR=1, BC1=0 (write PSG)
+				m_ay2->data_w(m_porta1);
+				break;
+
+			case 3: // BDIR=1, BC1=1 (latch)
+				m_ay2->address_w(m_porta1);
+				break;
+			}
+		}
+	}
+}
+
+void a2bus_phasor_device::via1_out_b(u8 data)
 {
 	if (!(data & 4))
 	{
@@ -359,12 +531,12 @@ void a2bus_phasor_device::via1_out_b(uint8_t data)
 	}
 }
 
-void a2bus_ayboard_device::via2_out_a(uint8_t data)
+void a2bus_ayboard_device::via2_out_a(u8 data)
 {
 	m_porta2 = data;
 }
 
-void a2bus_ayboard_device::via2_out_b(uint8_t data)
+void a2bus_ayboard_device::via2_out_b(u8 data)
 {
 	if (!BIT(data, 2))
 	{
@@ -392,7 +564,7 @@ void a2bus_ayboard_device::via2_out_b(uint8_t data)
 	}
 }
 
-void a2bus_phasor_device::via2_out_b(uint8_t data)
+void a2bus_phasor_device::via2_out_b(u8 data)
 {
 	if (!BIT(data, 2))
 	{
@@ -463,20 +635,20 @@ void a2bus_phasor_device::set_clocks()
 	}
 }
 
-uint8_t a2bus_phasor_device::read_c0nx(uint8_t offset)
+u8 a2bus_phasor_device::read_c0nx(u8 offset)
 {
 	m_native = BIT(offset, 0);
 	set_clocks();
 	return 0xff;
 }
 
-void a2bus_phasor_device::write_c0nx(uint8_t offset, uint8_t data)
+void a2bus_phasor_device::write_c0nx(u8 offset, u8 data)
 {
 	m_native = BIT(offset, 0);
 	set_clocks();
 }
 
-uint8_t a2bus_echoplus_device::read_c0nx(uint8_t offset)
+u8 a2bus_echoplus_device::read_c0nx(u8 offset)
 {
 	switch (offset)
 	{
@@ -487,7 +659,7 @@ uint8_t a2bus_echoplus_device::read_c0nx(uint8_t offset)
 	return 0;
 }
 
-void a2bus_echoplus_device::write_c0nx(uint8_t offset, uint8_t data)
+void a2bus_echoplus_device::write_c0nx(u8 offset, u8 data)
 {
 	switch (offset)
 	{
@@ -513,7 +685,7 @@ WRITE_LINE_MEMBER( a2bus_mockingboard_device::write_via1_cb2 )
 	m_last_cb2_state = state;
 }
 
-void a2bus_mockingboard_device::via1_out_b(uint8_t data)
+void a2bus_mockingboard_device::via1_out_b(u8 data)
 {
 	m_portb1 = data;
 
@@ -542,3 +714,14 @@ void a2bus_mockingboard_device::via1_out_b(uint8_t data)
 		}
 	}
 }
+
+} // anonymous namespace
+
+
+//**************************************************************************
+//  GLOBAL VARIABLES
+//**************************************************************************
+
+DEFINE_DEVICE_TYPE_PRIVATE(A2BUS_MOCKINGBOARD, device_a2bus_card_interface, a2bus_mockingboard_device, "a2mockbd", "Sweet Micro Systems Mockingboard Sound/Speech I")
+DEFINE_DEVICE_TYPE_PRIVATE(A2BUS_PHASOR,       device_a2bus_card_interface, a2bus_phasor_device,       "a2phasor", "Applied Engineering Phasor")
+DEFINE_DEVICE_TYPE_PRIVATE(A2BUS_ECHOPLUS,     device_a2bus_card_interface, a2bus_echoplus_device,     "a2echop",  "Street Electronics Echo Plus")

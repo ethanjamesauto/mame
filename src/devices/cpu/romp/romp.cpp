@@ -17,7 +17,6 @@
 #include "emu.h"
 #include "romp.h"
 #include "rompdasm.h"
-#include "debugger.h"
 
 #define LOG_GENERAL   (1U << 0)
 #define LOG_INTERRUPT (1U << 1)
@@ -887,7 +886,7 @@ void romp_device::execute_run()
 				flags_log(m_gpr[R2]);
 				break;
 			case 0xf5: // clz: count leading zeros
-				m_gpr[R2] = count_leading_zeros(u16(m_gpr[R3])) - 16;
+				m_gpr[R2] = count_leading_zeros_32(u16(m_gpr[R3])) - 16;
 				break;
 
 			case 0xf9: // mc03: move character zero from three

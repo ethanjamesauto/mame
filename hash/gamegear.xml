@@ -1261,6 +1261,19 @@ a certain item) -->
 		</part>
 	</software>
 
+<!-- This prototype doesn't work on real hardware, nor in MAME, due to a timing issue in its initialization code. It can be made to work by changing the instruction at $02E41 (EI) to 0x00 (NOP). -->
+	<software name="brkthru">
+		<description>BreakThru! (prototype)</description>
+		<year>1994</year>
+		<publisher>Spectrum Holobyte</publisher>
+		<part name="cart" interface="gamegear_cart">
+			<dataarea name="rom" size="131072">
+				<rom name="breakthru [proto].bin" size="131072" crc="64d7a694" sha1="571bd543320bc67c4103630c804705955bc5250a"/>
+				<rom size="1" offset="0x02e41" value="0x00" loadflag="fill"/>
+			</dataarea>
+		</part>
+	</software>
+
 	<software name="bublbobl">
 		<description>Bubble Bobble (Euro, USA)</description>
 		<year>1994</year>
@@ -2478,6 +2491,28 @@ a certain item) -->
 		</part>
 	</software>
 
+	<software name="dheadp4" cloneof="dhead">
+		<description>Dynamite Headdy (prototype)</description>
+		<year>1994</year>
+		<publisher>Sega</publisher>
+		<part name="cart" interface="gamegear_cart">
+			<dataarea name="rom" size="524288">
+				<rom name="dynamite headdy [proto].bin" size="524288" crc="843556b1" sha1="1f5628e2aa21a3ede186297062caaa400dec2ea2"/>
+			</dataarea>
+		</part>
+	</software>
+
+	<software name="dheadp3" cloneof="dhead">
+		<description>Dynamite Headdy (prototype, 19940615)</description>
+		<year>1994</year>
+		<publisher>Sega</publisher>
+		<part name="cart" interface="gamegear_cart">
+			<dataarea name="rom" size="524288">
+				<rom name="dynamite headdy (prototype - jun 15,  1994).bin" size="524288" crc="7bf339c0" sha1="0e8bccb304898a80efcbae8351303103ec4145ee"/>
+			</dataarea>
+		</part>
+	</software>
+
 	<software name="dheadp2" cloneof="dhead">
 		<description>Dynamite Headdy (prototype, 19940701)</description>
 		<year>1994</year>
@@ -2496,17 +2531,6 @@ a certain item) -->
 		<part name="cart" interface="gamegear_cart">
 			<dataarea name="rom" size="524288">
 				<rom name="dynamite headdy (prototype - jul 05,  1994).bin" size="524288" crc="c7bea89a" sha1="59807e03d32837db34e2912d0e85db812edf823c"/>
-			</dataarea>
-		</part>
-	</software>
-
-	<software name="dheadp3" cloneof="dhead">
-		<description>Dynamite Headdy (prototype, 19940615)</description>
-		<year>1994</year>
-		<publisher>Sega</publisher>
-		<part name="cart" interface="gamegear_cart">
-			<dataarea name="rom" size="524288">
-				<rom name="dynamite headdy (prototype - jun 15,  1994).bin" size="524288" crc="7bf339c0" sha1="0e8bccb304898a80efcbae8351303103ec4145ee"/>
 			</dataarea>
 		</part>
 	</software>
@@ -2560,6 +2584,32 @@ a certain item) -->
 		<part name="cart" interface="gamegear_cart">
 			<dataarea name="rom" size="524288">
 				<rom name="ecco the dolphin (usa, europe).bin" size="524288" crc="866c7113" sha1="7c6c8f44d5aa799726adc3a9e21c9f35cacea87f"/>
+			</dataarea>
+		</part>
+	</software>
+
+	<software name="eccop2" cloneof="ecco">
+		<description>Ecco the Dolphin (prototype, 19930614)</description>
+		<year>1993</year>
+		<publisher>Sega</publisher>
+		<part name="cart" interface="gamegear_cart">
+			<dataarea name="rom" size="524288">
+				<rom name="md ecco 0 14-6" size="262144" crc="7b9ebead" sha1="fa48d4a0650bfdd2469d8bbf112bdd6f228b46cd" offset="0x00000"/> <!-- original label: MD ECCO 0 14/6 -->
+				<rom name="md ecco 1 14-6" size="262144" crc="0a34d596" sha1="bd9416005dd0a8aa3fad50e5368adcfc17677851" offset="0x40000"/> <!-- original label: MD ECCO 1 14/6 -->
+			</dataarea>
+		</part>
+	</software>
+
+	<software name="eccop1" cloneof="ecco">
+		<description>Ecco the Dolphin (EPROM 20 prototype)</description>
+		<year>1993</year>
+		<publisher>Sega</publisher>
+		<part name="cart" interface="gamegear_cart">
+			<dataarea name="rom" size="524288">
+				<rom name="ecco the dolphin (eprom 20 prototype) - eprom 0.bin" size="131072" crc="036b12f8" sha1="e212d9e891d9e9874e872cecd1468a93a95d0610" offset="0x00000"/>
+				<rom name="ecco the dolphin (eprom 20 prototype) - eprom 1.bin" size="131072" crc="0ad67ac5" sha1="37f31ad0de02c617c4baadac9f91a66ffe8dcabc" offset="0x20000"/>
+				<rom name="ecco the dolphin (eprom 20 prototype) - eprom 2.bin" size="131072" crc="2ba83215" sha1="ea410b11108e08df1e8b20ab9aaa4831d88b7dc5" offset="0x40000"/>
+				<rom name="ecco the dolphin (eprom 20 prototype) - eprom 3.bin" size="131072" crc="734cd730" sha1="09d3b0c8b59f1bd997b893318378c5f91dd8d076" offset="0x60000"/>
 			</dataarea>
 		</part>
 	</software>
@@ -4958,6 +5008,17 @@ a certain item) -->
 		</part>
 	</software>
 
+	<software name="mkp" cloneof="mk">
+		<description>Mortal Kombat (prototype)</description>
+		<year>1993</year>
+		<publisher>Arena</publisher>
+		<part name="cart" interface="gamegear_cart">
+			<dataarea name="rom" size="524288">
+				<rom name="mortal kombat [proto].bin" size="524288" crc="16db4f6a" sha1="0d2ca2de933993ed45b20ef736237bc774dd3914"/>
+			</dataarea>
+		</part>
+	</software>
+
 	<software name="mk3">
 		<description>Mortal Kombat 3 (Euro)</description>
 		<year>1995</year>
@@ -6393,6 +6454,18 @@ a certain item) -->
 		</part>
 	</software>
 
+<!-- This was compiled from source released by one of the authors -->
+	<software name="pokerfc">
+		<description>Poker Face Paul's Cribbage (prototype)</description>
+		<year>1994</year>
+		<publisher>Spidersoft</publisher>
+		<part name="cart" interface="gamegear_cart">
+			<dataarea name="rom" size="131072">
+				<rom name="poker faced paul's cribbage [proto].bin" size="131072" crc="d2e644b4" sha1="232906b3198763dd8d500bf445edbc54e0e3c67e"/>
+			</dataarea>
+		</part>
+	</software>
+
 	<!-- Alt. Title: Poker Face Paul's Gin (Box) -->
 	<software name="pokerfg">
 		<description>Poker Faced Paul's Gin (USA)</description>
@@ -7113,7 +7186,7 @@ a certain item) -->
 		<info name="release" value="19950324"/>
 		<info name="alt_title" value="SDガンダム ウィナーズ ヒストリー"/>
 		<part name="cart" interface="gamegear_cart">
-			<!-- PCB info based on SMS Power  -->
+			<!-- PCB info based on SMS Power -->
 			<feature name="pcb" value="171-6059A" />
 			<feature name="ic1" value="MPR-17848" />
 			<dataarea name="rom" size="524288">
@@ -8773,6 +8846,18 @@ a certain item) -->
 			<feature name="ic1" value="MPR-15665" />
 			<dataarea name="rom" size="524288">
 				<rom name="mpr-15665.ic1" size="524288" crc="0b618409" sha1="2804b355347bda6e2903078ba30ed6b3a289ebba"/>
+			</dataarea>
+		</part>
+	</software>
+
+	<software name="sor2p" cloneof="sor2">
+		<description>Streets of Rage II ~ Bare Knuckle II - Shitou e no Chingonka (prototype)</description>
+		<year>1993</year>
+		<publisher>Sega</publisher>
+		<info name="alt_title" value="ベア・ナックルII 死闘への鎮魂歌"/>
+		<part name="cart" interface="gamegear_cart">
+			<dataarea name="rom" size="524288">
+				<rom name="streets of rage ii [proto].bin" size="524288" crc="6c395a69" sha1="15589214eb8570c9b2bf2ede14803d08c77c29f8"/>
 			</dataarea>
 		</part>
 	</software>

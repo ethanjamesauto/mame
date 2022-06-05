@@ -114,8 +114,8 @@ void sensorboard_device::device_start()
 		m_out_count.resolve();
 	}
 
-	m_undotimer = machine().scheduler().timer_alloc(timer_expired_delegate(FUNC(sensorboard_device::undo_tick),this));
-	m_sensortimer = machine().scheduler().timer_alloc(timer_expired_delegate(FUNC(sensorboard_device::sensor_off),this));
+	m_undotimer = timer_alloc(FUNC(sensorboard_device::undo_tick), this);
+	m_sensortimer = timer_alloc(FUNC(sensorboard_device::sensor_off), this);
 	cancel_sensor();
 
 	u16 wmask = ~((1 << m_width) - 1);
@@ -215,15 +215,17 @@ void sensorboard_device::nvram_default()
 	m_custom_init_cb(1);
 }
 
-void sensorboard_device::nvram_read(emu_file &file)
+bool sensorboard_device::nvram_read(util::read_stream &file)
 {
-	file.read(m_curstate, sizeof(m_curstate));
+	size_t actual;
+	return !file.read(m_curstate, sizeof(m_curstate), actual) && actual == sizeof(m_curstate);
 }
 
-void sensorboard_device::nvram_write(emu_file &file)
+bool sensorboard_device::nvram_write(util::write_stream &file)
 {
 	// save last board position
-	file.write(m_curstate, sizeof(m_curstate));
+	size_t actual;
+	return !file.write(m_curstate, sizeof(m_curstate), actual) && actual == sizeof(m_curstate);
 }
 
 bool sensorboard_device::nvram_can_write()
@@ -497,7 +499,7 @@ INPUT_CHANGED_MEMBER(sensorboard_device::sensor)
 
 INPUT_CHANGED_MEMBER(sensorboard_device::ui_spawn)
 {
-	u8 pos = (newval) ? (u8)param : 32 - count_leading_zeros(m_inp_spawn->read());
+	u8 pos = (newval) ? (u8)param : 32 - count_leading_zeros_32(m_inp_spawn->read());
 	if (pos == 0 || pos > m_maxspawn)
 		return;
 

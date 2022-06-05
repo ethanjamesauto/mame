@@ -583,7 +583,7 @@ B-2007 : Innovative Computing
 		</part>
 	</software>
 
-		<software name="bankrobr" cloneof="fortknox">
+	<software name="bankrobr" cloneof="fortknox">
 		<description>Bank Robber</description>
 		<!-- Earlier version of "Raid on Fort Knox". -->
 		<year>1982</year>
@@ -1175,7 +1175,7 @@ B-2007 : Innovative Computing
 		</part>
 	</software>
 
-		<software name="deadskys">
+	<software name="deadskys">
 		<description>Deadly Skies (PAL)</description>
 		<year>1983</year>
 		<publisher>Tronix</publisher>
@@ -2644,7 +2644,7 @@ B-2007 : Innovative Computing
 		<sharedfeat name="compatibility" value="NTSC"/>
 		<part name="cart" interface="vic1001_cart">
 			<dataarea name="blk5" size="0x2000">
-				<rom name="sargon ii chess (commodore)(1982)(vic-1919)(ju).a0" size="0x2000" crc="cd1ca8ec" sha1="3c1b6c2068d036aee40dbc31f075d0b789a503aa" offset="0x0000" />
+				<rom name="sargon ii chess (commodore)(1982)(vic-1919)(ju).a0" size="0x2000" crc="f7a9f922" sha1="9fd24fb75f85746190d740fd895bff9b5ca704d7" offset="0x0000" />
 			</dataarea>
 		</part>
 	</software>
@@ -3781,7 +3781,7 @@ B-2007 : Innovative Computing
 		<sharedfeat name="compatibility" value="NTSC,PAL"/>
 		<part name="cart" interface="vic1001_cart">
 			<dataarea name="blk5" size="0x2000">
-					<rom name="visible solar system (commodore)(1982)(vic-1930)(jue)[a2].a0" size="0x2000" crc="ee5d7a91" sha1="94f2ac4d58e9ffe4861c00de5551bdcb60b9dbf7" offset="0x0000" />
+				<rom name="visible solar system (commodore)(1982)(vic-1930)(jue)[a2].a0" size="0x2000" crc="ee5d7a91" sha1="94f2ac4d58e9ffe4861c00de5551bdcb60b9dbf7" offset="0x0000" />
 			</dataarea>
 		</part>
 	</software>

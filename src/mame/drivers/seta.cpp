@@ -64,7 +64,7 @@ P0-100A                 93 Quiz Kokology 2                      Tecmo
 P0-101-1                94 Pro Mahjong Kiwame                   Athena
 P0-102A                 93 Mad Shark                            Allumer
 P0-107A  (prototype?)   94 Orbs (prototype?)                    American Sammy
-P0-107A                 93 Kero Kero Keroppi no Issyoni Asobou  Sammy Industries  [added Chack'n, Hau]
+P0-107A                 93 Kero Kero Keroppi no Isshoni Asobou  Sammy Industries  [added Chack'n, Hau]
 P0-111A                 94 Magical Speed                        Allumer
 P0-114A  (SKB-001)      94 Krazy Bowl                           American Sammy
 P0-117A  (DH-01)        95 Extreme Downhill                     Sammy Japan
@@ -146,6 +146,7 @@ TODO:
 
 Thundercade / Twin Formation
 Taito America Corp./Romstar USA/Seta, 1987
+Hardware info by Guru
 
 PCB Layout
 ---------
@@ -194,8 +195,8 @@ Notes:
                     X1-001 (SDIP64)
                     X1-002 (SDIP64)
                     X1-006 (SDIP64)
-                    X0-006 (SDIP64), also marked 'RP5A10-0001'. This is a 65C02 in disguise,
-                                     possibly with additional ROM or logic acting as a protection chip.
+                    X0-006 (SDIP64), also marked 'RP5A10-0001'. This is a Ricoh 65c02 with ROM, RAM and
+                                     logic acting as a protection chip.
                                      clocks - pin1 16MHz, pin2 2MHz, pin3 59.1845Hz [VSYNC),
                                      pin63 2MHz, pin62 2MHz
                     X1-003 (SDIP42)
@@ -256,26 +257,93 @@ u75  131                                 u61 004
 ***************************************************************************/
 /***************************************************************************
 
-                                Caliber 50
+Caliber 50 (Athena / Seta, 1989)
+Hardware info by Guru
 
-CPU:   TMP 68000N-8, 65C02
-Other: NEC D4701
 
-UH-001-006        SW2  SW1
-UH-001-007
-UH-001-008                    8464         68000-8
-UH-001-009  X1-002A X1-001A   8464         Uh-002-001=T01
-UH-001-010                    8464            51832
-UH-001-011                    8464            51832
-                                           UH-001-002
-UH-001-012            X1-012               UH-001-003
-UH-001-013                               UH-002-004-T02
-                      X1-011               5116-10
-                                           BAT
-                         16MHz
-             X1-010   65C02      X1-006
-                      UH-001-005 X1-007
-                      4701       X1-004
+PCB Layout
+----------
+
+P0-044B
+|--------------------------------------------------------------|
+| VOL  3404   2063 UH-001-013.12M  UH-001-010.8M UH-001-007.4M |N
+|MB3730 3403        UH-001-012.11M  UH-001-009.6M UH-001-006.2M|M
+|                      UH-001-011.9M  UH-001-008.5M            |L
+|            |------|                     |--------|           |K
+|            |X1-010|                     |X1-002A |           |
+|            |------|                     |--------|           |J
+|                                         |--------|           |H
+|J                  |------| |------|     |X1-001A |        SW2|
+|A                  |X1-011| |X1-012|     |--------|           |G
+|M                  |------| |------|                          |F
+|M        UH-001-005.17E                                    SW1|E
+|A     UPD4701    65C02             8464     8464              |
+|   4584                                8464      8464         |
+|                       16MHz                           |----| |D
+|                                                       | 6  | |
+|                                                       | 8  | |C
+| X2-005(X5)        X1-006                UH-002-001.3B | 0  | |
+|               X1-007    UH-002-004.11B       51832    | 0  | |B
+| SW3     X1-004             LH5116  UH_001_002.7B      | 0  | |
+|                         BAT    UH_001_003.9B 51832    |----| |A
+|--------------------------------------------------------------|
+21 20 19 18 17 16 15 14 13 12 11 10  9  8  7  6  5  4  3  2  1
+
+Notes:
+         68000 - Toshiba TMP68000N-8 in SDIP64 package. Clock 8.000MHz [16/2]
+         65C02 - Rockwell R65C02P2. Clock 2.000MHz [16/8]
+          8464 - Fujitsu MB8464 8kBx8-bit SRAM
+          2063 - Toshiba TMM2063 8kBx8-bit SRAM
+         51832 - Toshiba TC51832 32kBx8-bit Psuedo SRAM
+        LH5116 - Sharp LH5116 2kBx8-bit SRAM (battery-backed)
+       UPD4701 - NEC uPD4701 Schmitt-Triggered 12-bit Binary X-Y 2-axis Incremental Encoder Counter.
+                 Used for controlling the shooting direction similar to how rotary joysticks work.
+                 The original control is called a 'Loop24 Joystick' and is very specialised.
+                 The joystick name 'Loop24' suggests there are 24 positions.
+                 The joystick has 4 additional wires coming from the bottom; +5V, GND, Loop1, Loop2.
+                 Loop1 connects to JAMMA pin 25 and Loop2 connects to JAMMA pin 26. This is basically a spinner or half of a trackball encoder.
+                 The game uses only 1 axis per player. Player 1 uses inputs Xa, Xb and player 2 uses inputs Ya, Yb
+          4584 - Toshiba TC4584 Hex Schmitt Trigger 4000-series logic chip. This is wired to the JAMMA pins 25 and 26
+                 via a 10k resistor array and is used for inputting the shooting direction into the uPD4701.
+           BAT - CR2032 3V Lithium Battery with solder tags
+         HSync - 15.6250kHz. Measured on X1-007 pin 22
+         VSync - 57.4449Hz. Measured on X1-007 pin 23
+         SW1/2 - 8 position DIP Switch. Note SW1#1 and SW2#7 are hard-wired to ground and do nothing.
+                 The PCB could be modified to enable them but by default the region changing does not work on the real PCB.
+                 In MAME it changes the region when those switches are changed. On the real PCB the region is fixed to
+                 Japan with Seta as the manufacturer. This effectively means SW1#1 and SW2#7 are always ON.
+                 But even though they work in MAME, on the test screen they don't show as 'on' even when toggled in MAME
+                 and the test screen just ignores it.
+        MB3730 - Fujitsu MB3730 Audio Power Amp
+        X1-010 - 16-bit PCM sound chip. Clock input 16.000MHz
+        X2-005 - Custom resistor array used for inputs
+        X1-004 - Seta custom chip marked 'X1-004' in SDIP52 package used for I/O
+        X1-006 - Seta custom chip marked 'X1-006' in SDIP64 package used for palette and pixel mixing functions
+        X1-007 - Seta custom chip marked 'X1-007' in SDIP42 package
+                 RGB and H/V Sync on the JAMMA connector are tied to this chip so likely this is an RGB DAC
+       X1-001A - Seta custom graphics chip \
+       X1-002A - Seta custom graphics chip / these work together to create sprites
+        X1-011 - Seta custom chip used for graphics mixing
+        X1-012 - Seta custom chip used for tilemaps
+          3404 - JRC3404 Dual Operational Amplifier
+          3403 - JRC3403 Quad Operational Amplifier
+           SW3 - Push button switch for reset
+UH-001-005.17E - 23C2001 32 pin 2Mbit mask ROM (65C02 sound program)
+UH-001-012.11M \ 23C4001 32 pin 4Mbit mask ROM (X1-010 samples)
+UH-001-013.12M /
+ UH-002-001.3B \ 23C2000 40 pin 2Mbit mask ROM (main program)
+UH-002-004.11B /
+ UH_001_002.7B \ 27C512 EPROM (main program)
+ UH_001_003.9B /
+ UH-001-006.2M \
+ UH-001-007.4M |
+ UH-001-008.5M | 23C4001 32 pin 4Mbit mask ROM (sprites)
+ UH-001-009.6M /
+ UH-001-010.8M \ 23C4001 32 pin 4Mbit mask ROM (background tiles)
+ UH-001-011.9M /
+
+Note not all ROMs have IC locations but regardless, the locations that are there are under chips
+and can't be seen unless the chip is removed. Therefore all ROMs are named with x,y locations.
 
 ***************************************************************************/
 /***************************************************************************
@@ -630,6 +698,7 @@ BPGH-013.U70    TC538000
 
 Zombie Raid
 Sammy, 1996
+Hardware info by Guru
 
 This is a gun shooting game using Seta/Allumer hardware.
 
@@ -689,6 +758,7 @@ NEC 71054C  ----???
                                 Kamen Rider
 Kamen Riderclub Battleracer
 Banpresto, 1993
+Hardware info by Guru
 
 Runs on Seta/Allumer hardware
 
@@ -748,6 +818,7 @@ X1-010           X1-006
 
 Allumer, 1993
 This game is a vertical shoot'em-up and runs on fairly standard Allumer hardware.
+Hardware info by Guru
 
 PCB Layout
 ----------
@@ -882,6 +953,7 @@ Custom chips:   X1-001A X1-002A
 
 Triple Fun
 ??, 19??
+Hardware info by Guru
 
 
 CPU   : TMP68HC000P-16 (68000)
@@ -1006,6 +1078,7 @@ Other   : Allumer
 
 Banpresto, 1992
 This game runs on Seta/Allumer hardware
+Hardware info by Guru
 
 PCB Layout
 ----------
@@ -1081,6 +1154,7 @@ Custom chips:   X1-001A X1-002A
 
 Banpresto, 1992
 Board looks similar to Castle of Dragon PCB.
+Hardware info by Guru
 
 PCB No: P0-077A (Seta Number)
         BP922   (Banpresto Number)
@@ -1116,6 +1190,7 @@ BP-U-003.U13      8M mask (32 pin, 1M x 8),   read as MX27C8000           Sound
 /***************************************************************************
 Ultra Toukon Densetsu
 Banpresto, 1993
+Hardware info by Guru
 
 This game runs on fairly standard Allumer hardware.
 
@@ -1212,6 +1287,7 @@ X1-010                           5168-10       68000-16
 
 Pairs Love
 Allumer, 199x
+Hardware info by Guru
 
 PCB Layout
 ----------
@@ -1249,6 +1325,7 @@ Notes:
 
 Rezon (Taito License)
 Allumer / Taito, 1992
+Hardware info by Guru
 
 This game runs on fairly standard Allumer hardware.
 
@@ -1324,7 +1401,7 @@ Notes:
 
 Crazy Fight
 Subsino 1996
-Readme by Guru
+Hardware info by Guru
 This game runs on Allumer-based hardware.
 It is a whack-a-mole type game using 6 buttons.
 
@@ -1363,10 +1440,9 @@ Notes:
       6164         - 8kx8 SRAM (SDIP28)
       62256        - 32kx8 SRAM (SDIP28)
       TD62003      - Toshiba TD62003 7-Channel Darlington Sink Driver (DIP16)
-      DIP42        - Unknown DIP42 IC. Note several pins have no connection.
+      DIP42        - Oki ULA. Note several pins have no connection.
                      Pins 6-26 tied to inputs on JAMMA connector.
                      Some other pins tied to logic.
-                     No pins have a clock so this chip is not a MCU.
       J2           - 4 pin connector. Pin 2 tied to DIP42 IC pin 27
                      and pin 3 tied to TD62003 pin 16
       Custom Chips - X1-007
@@ -1490,7 +1566,7 @@ void seta_state::uPD71054_timer_init()
 		uPD71054->max[no] = 0xffff;
 
 	for (int no = 0; no < USED_TIMER_NUM; no++)
-		uPD71054->timer[no] = machine().scheduler().timer_alloc(timer_expired_delegate(FUNC(seta_state::uPD71054_timer_callback),this));
+		uPD71054->timer[no] = timer_alloc(FUNC(seta_state::uPD71054_timer_callback), this);
 }
 
 
@@ -1833,8 +1909,13 @@ void usclssic_state::lockout_w(u8 data)
 {
 	u16 tiles_offset = BIT(data, 4) ? 0x4000 : 0;
 
-	m_port_select = BIT(data, 6);
-	m_buttonmux->select_w(m_port_select);
+	if (m_port_select != BIT(data, 6))
+	{
+		m_upd4701->update();
+		m_port_select = BIT(data, 6);
+		m_buttonmux->select_w(m_port_select);
+		m_upd4701->recalibrate();
+	}
 
 	m_upd4701->resetx_w(BIT(data, 7));
 	m_upd4701->resety_w(BIT(data, 7));
@@ -2170,7 +2251,7 @@ void seta_state::orbs_map(address_map &map)
 }
 
 /***************************************************************************
-                  Kero Kero Keroppi no Issyoni Asobou
+                  Kero Kero Keroppi no Isshoni Asobou
 ***************************************************************************/
 
 static const u16 keroppi_protection_word[] = {
@@ -2257,7 +2338,7 @@ void seta_state::keroppi_map(address_map &map)
 
 MACHINE_START_MEMBER(seta_state,keroppi)
 {
-	m_keroppi_prize_hop_timer = machine().scheduler().timer_alloc(timer_expired_delegate(FUNC(seta_state::keroppi_prize_hop_callback), this));
+	m_keroppi_prize_hop_timer = timer_alloc(FUNC(seta_state::keroppi_prize_hop_callback), this);
 
 	m_keroppi_prize_hop = 0;
 	m_keroppi_protection_count = 0;
@@ -2420,13 +2501,13 @@ void seta_state::drgnunit_map(address_map &map)
                                 The Roulette
 ***************************************************************************/
 
-MACHINE_START_MEMBER(setaroul_state, setaroul)
+void setaroul_state::machine_start()
 {
 	m_leds.resolve();
 }
 
 // Coin drop
-MACHINE_RESET_MEMBER(setaroul_state, setaroul)
+void setaroul_state::machine_reset()
 {
 	m_coin_start_cycles = 0;
 }
@@ -4124,10 +4205,10 @@ static INPUT_PORTS_START( calibr50 )
 	PORT_DIPSETTING(      0x0000, "Coin Mode 2" )
 
 	PORT_START("ROT1")  // Rotation Player 1
-	PORT_BIT( 0xfff, 0x00, IPT_DIAL ) PORT_SENSITIVITY(15) PORT_KEYDELTA(15) PORT_RESET PORT_CODE_DEC(KEYCODE_Z) PORT_CODE_INC(KEYCODE_X)
+	PORT_BIT( 0xfff, 0x00, IPT_DIAL ) PORT_SENSITIVITY(15) PORT_KEYDELTA(15) PORT_CODE_DEC(KEYCODE_Z) PORT_CODE_INC(KEYCODE_X)
 
 	PORT_START("ROT2")  // Rotation Player 2
-	PORT_BIT( 0xfff, 0x00, IPT_DIAL ) PORT_PLAYER(2) PORT_SENSITIVITY(15) PORT_KEYDELTA(15) PORT_RESET PORT_CODE_DEC(KEYCODE_N) PORT_CODE_INC(KEYCODE_M)
+	PORT_BIT( 0xfff, 0x00, IPT_DIAL ) PORT_PLAYER(2) PORT_SENSITIVITY(15) PORT_KEYDELTA(15) PORT_CODE_DEC(KEYCODE_N) PORT_CODE_INC(KEYCODE_M)
 INPUT_PORTS_END
 
 /***************************************************************************
@@ -4295,6 +4376,20 @@ static INPUT_PORTS_START( daiohp )
 	PORT_BIT( 0x0080, IP_ACTIVE_LOW, IPT_UNKNOWN )
 INPUT_PORTS_END
 
+/***************************************************************************
+                       Daioh (prototype, earlier)
+***************************************************************************/
+
+static INPUT_PORTS_START( daiohp2 )
+	PORT_INCLUDE(daiohp)
+
+	PORT_MODIFY("DSW")
+	PORT_DIPNAME( 0xc000, 0xc000, DEF_STR( Bonus_Life ) ) PORT_DIPLOCATION("SW1:7,8")
+	PORT_DIPSETTING(      0x8000, "300k and every 800k" )
+	PORT_DIPSETTING(      0xc000, "500k and every 1000k" )
+	PORT_DIPSETTING(      0x4000, "800k and 2000k only" )
+	PORT_DIPSETTING(      0x0000, "1000k Only" )
+INPUT_PORTS_END
 
 /***************************************************************************
                                 Dragon Unit
@@ -4572,7 +4667,8 @@ static INPUT_PORTS_START( downtown )
 	PORT_DIPSETTING(      0x0080, DEF_STR( 1C_3C ) )    PORT_CONDITION("DSW",0x8000,NOTEQUALS,0x8000)
 	PORT_DIPSETTING(      0x0040, DEF_STR( 1C_4C ) )    PORT_CONDITION("DSW",0x8000,NOTEQUALS,0x8000)
 	PORT_DIPSETTING(      0x0000, DEF_STR( 1C_6C ) )    PORT_CONDITION("DSW",0x8000,NOTEQUALS,0x8000)
-	PORT_DIPNAME( 0x0300, 0x0100, DEF_STR( Difficulty ) ) PORT_DIPLOCATION("SW2:1,2")
+	// default "Normal" on Romstar manual, and matches ALL OFF scheme
+	PORT_DIPNAME( 0x0300, 0x0300, DEF_STR( Difficulty ) ) PORT_DIPLOCATION("SW2:1,2")
 	PORT_DIPSETTING(      0x0200, DEF_STR( Easy ) )
 	PORT_DIPSETTING(      0x0300, DEF_STR( Normal ) )
 	PORT_DIPSETTING(      0x0100, DEF_STR( Hard ) )
@@ -4582,6 +4678,8 @@ static INPUT_PORTS_START( downtown )
 	PORT_DIPSETTING(      0x0800, "50K Only" )
 	PORT_DIPSETTING(      0x0400, "100K Only" )
 	PORT_DIPSETTING(      0x0000, "50K, Every 150K" )
+	// TODO: defaults to 2 lives in the Romstar manual, contradicts with DIPSW ALL OFF convention.
+	// Is it a regional difference? Verify with a Mokugeki Jp manual.
 	PORT_DIPNAME( 0x3000, 0x3000, DEF_STR( Lives ) ) PORT_DIPLOCATION("SW2:5,6")
 	PORT_DIPSETTING(      0x1000, "2" )
 	PORT_DIPSETTING(      0x3000, "3" )
@@ -5088,7 +5186,7 @@ INPUT_PORTS_END
 ***************************************************************************/
 
 #define KRZYBOWL_TRACKBALL(_dir_, _n_ ) \
-	PORT_BIT( 0x0fff, 0x0000, IPT_TRACKBALL_##_dir_ ) PORT_PLAYER(_n_) PORT_SENSITIVITY(70) PORT_KEYDELTA(30) PORT_REVERSE PORT_RESET
+	PORT_BIT( 0x0fff, 0x0000, IPT_TRACKBALL_##_dir_ ) PORT_PLAYER(_n_) PORT_SENSITIVITY(70) PORT_KEYDELTA(30) PORT_REVERSE
 
 static INPUT_PORTS_START( krzybowl )
 	PORT_START("P1") //Player 1
@@ -6553,16 +6651,16 @@ static INPUT_PORTS_START( usclssic )
 	PORT_BIT( 0xfff, 0x000, IPT_CUSTOM ) PORT_CUSTOM_MEMBER(usclssic_state, trackball_y_r)
 
 	PORT_START("TRACK1_X")     /* muxed port 0 */
-	PORT_BIT( 0xfff, 0x000, IPT_TRACKBALL_X ) PORT_SENSITIVITY(70) PORT_KEYDELTA(30) PORT_RESET
+	PORT_BIT( 0xfff, 0x000, IPT_TRACKBALL_X ) PORT_SENSITIVITY(70) PORT_KEYDELTA(30)
 
 	PORT_START("TRACK1_Y")     /* muxed port 0 */
-	PORT_BIT( 0xfff, 0x000, IPT_TRACKBALL_Y ) PORT_SENSITIVITY(70) PORT_KEYDELTA(30) PORT_RESET
+	PORT_BIT( 0xfff, 0x000, IPT_TRACKBALL_Y ) PORT_SENSITIVITY(70) PORT_KEYDELTA(30)
 
 	PORT_START("TRACK2_X")     /* muxed port 1 */
-	PORT_BIT( 0xfff, 0x000, IPT_TRACKBALL_X ) PORT_SENSITIVITY(70) PORT_KEYDELTA(30) PORT_RESET PORT_COCKTAIL
+	PORT_BIT( 0xfff, 0x000, IPT_TRACKBALL_X ) PORT_SENSITIVITY(70) PORT_KEYDELTA(30) PORT_COCKTAIL
 
 	PORT_START("TRACK2_Y")     /* muxed port 1 */
-	PORT_BIT( 0xfff, 0x000, IPT_TRACKBALL_Y ) PORT_SENSITIVITY(70) PORT_KEYDELTA(30) PORT_RESET PORT_COCKTAIL
+	PORT_BIT( 0xfff, 0x000, IPT_TRACKBALL_Y ) PORT_SENSITIVITY(70) PORT_KEYDELTA(30) PORT_COCKTAIL
 
 	PORT_START("BUTTONS")
 	PORT_BIT( 0x01, IP_ACTIVE_LOW, IPT_UNKNOWN ) PORT_WRITE_LINE_DEVICE_MEMBER("buttonmux", hc157_device, a0_w)
@@ -6973,7 +7071,7 @@ static INPUT_PORTS_START( orbs )
 INPUT_PORTS_END
 
 /***************************************************************************
-                  Kero Kero Keroppi no Issyoni Asobou
+                  Kero Kero Keroppi no Isshoni Asobou
 ***************************************************************************/
 
 
@@ -7939,8 +8037,6 @@ void downtown_state::tndrcade(machine_config &config)
 
 	PALETTE(config, m_palette).set_entries(512);    // sprites only
 
-	MCFG_VIDEO_START_OVERRIDE(downtown_state,seta)
-
 	/* sound hardware */
 	SPEAKER(config, "mono").front_center();
 
@@ -7950,7 +8046,7 @@ void downtown_state::tndrcade(machine_config &config)
 	ym1.add_route(ALL_OUTPUTS, "mono", 0.35);
 
 	ym3812_device &ym2(YM3812(config, "ym2", 16000000/4));   /* 4 MHz */
-	ym2.add_route(ALL_OUTPUTS, "mono", 1.0);
+	ym2.add_route(ALL_OUTPUTS, "mono", 0.5);
 }
 
 
@@ -7997,8 +8093,6 @@ void downtown_state::twineagl(machine_config &config)
 
 	PALETTE(config, m_palette).set_entries(512);
 
-	MCFG_VIDEO_START_OVERRIDE(downtown_state,seta)
-
 	/* sound hardware */
 	SPEAKER(config, "mono").front_center();
 
@@ -8006,7 +8100,7 @@ void downtown_state::twineagl(machine_config &config)
 	GENERIC_LATCH_8(config, m_soundlatch[1]);
 
 	X1_010(config, m_x1, 16000000);   /* 16 MHz */
-	m_x1->add_route(ALL_OUTPUTS, "mono", 1.0);
+	m_x1->add_route(ALL_OUTPUTS, "mono", 0.5);
 }
 
 
@@ -8048,8 +8142,6 @@ void downtown_state::downtown(machine_config &config)
 	m_layers[0]->set_xoffsets(0, -1);
 
 	PALETTE(config, m_palette).set_entries(512);
-
-	MCFG_VIDEO_START_OVERRIDE(downtown_state,seta)
 
 	/* sound hardware */
 	SPEAKER(config, "mono").front_center();
@@ -8139,8 +8231,6 @@ void usclssic_state::usclssic(machine_config &config)
 
 	PALETTE(config, m_palette, FUNC(usclssic_state::usclssic_palette), 16*32 + 64*32*2, 0x400); // sprites, layer - layer is 6 planes deep
 
-	MCFG_VIDEO_START_OVERRIDE(usclssic_state,seta)
-
 	/* sound hardware */
 	SPEAKER(config, "mono").front_center();
 
@@ -8149,7 +8239,7 @@ void usclssic_state::usclssic(machine_config &config)
 	m_soundlatch[0]->set_separate_acknowledge(true);
 
 	X1_010(config, m_x1, 16000000);   /* 16 MHz */
-	m_x1->add_route(ALL_OUTPUTS, "mono", 1.0);
+	m_x1->add_route(ALL_OUTPUTS, "mono", 0.5);
 }
 
 
@@ -8204,8 +8294,6 @@ void downtown_state::calibr50(machine_config &config)
 
 	PALETTE(config, m_palette).set_entries(512);
 
-	MCFG_VIDEO_START_OVERRIDE(downtown_state,seta)
-
 	/* sound hardware */
 	SPEAKER(config, "mono").front_center();
 
@@ -8259,8 +8347,6 @@ void downtown_state::metafox(machine_config &config)
 
 	PALETTE(config, m_palette).set_entries(512);
 
-	MCFG_VIDEO_START_OVERRIDE(downtown_state,seta)
-
 	/* sound hardware */
 	SPEAKER(config, "mono").front_center();
 
@@ -8268,7 +8354,7 @@ void downtown_state::metafox(machine_config &config)
 	GENERIC_LATCH_8(config, m_soundlatch[1]);
 
 	X1_010(config, m_x1, 16000000);   /* 16 MHz */
-	m_x1->add_route(ALL_OUTPUTS, "mono", 1.0);
+	m_x1->add_route(ALL_OUTPUTS, "mono", 0.5);
 }
 
 void downtown_state::arbalest(machine_config &config)
@@ -8309,13 +8395,11 @@ void seta_state::atehate(machine_config &config)
 
 	PALETTE(config, m_palette).set_entries(512);    // sprites only
 
-	MCFG_VIDEO_START_OVERRIDE(seta_state,seta)
-
 	/* sound hardware */
 	SPEAKER(config, "mono").front_center();
 
 	X1_010(config, m_x1, 16000000);   /* 16 MHz */
-	m_x1->add_route(ALL_OUTPUTS, "mono", 1.0);
+	m_x1->add_route(ALL_OUTPUTS, "mono", 0.5);
 }
 
 
@@ -8358,13 +8442,11 @@ void seta_state::blandia(machine_config &config)
 	X1_012(config, m_layers[1], m_palette, gfx_blandia_layer2).set_xoffsets(6, -2);
 	PALETTE(config, m_palette, FUNC(seta_state::blandia_palette), (16*32 + 64*32*4)*2, 0x600*2);  // sprites, layer1, layer2, palette effect - layers 1&2 are 6 planes deep
 
-	MCFG_VIDEO_START_OVERRIDE(seta_state,seta)
-
 	/* sound hardware */
 	SPEAKER(config, "mono").front_center();
 
 	X1_010(config, m_x1, 16000000);   /* 16 MHz */
-	m_x1->add_route(ALL_OUTPUTS, "mono", 1.0);
+	m_x1->add_route(ALL_OUTPUTS, "mono", 0.5);
 	m_x1->set_addrmap(0, &seta_state::blandia_x1_map);
 }
 
@@ -8397,13 +8479,11 @@ void seta_state::blandiap(machine_config &config)
 	X1_012(config, m_layers[1], m_palette, gfx_blandia_layer2).set_xoffsets(6, -2);
 	PALETTE(config, m_palette, FUNC(seta_state::blandia_palette), (16*32 + 64*32*4)*2, 0x600*2);  // sprites, layer1, layer2, palette effect - layers 1&2 are 6 planes deep
 
-	MCFG_VIDEO_START_OVERRIDE(seta_state,seta)
-
 	/* sound hardware */
 	SPEAKER(config, "mono").front_center();
 
 	X1_010(config, m_x1, 16000000);   /* 16 MHz */
-	m_x1->add_route(ALL_OUTPUTS, "mono", 1.0);
+	m_x1->add_route(ALL_OUTPUTS, "mono", 0.5);
 	m_x1->set_addrmap(0, &seta_state::blandia_x1_map);
 }
 
@@ -8437,13 +8517,11 @@ void seta_state::blockcar(machine_config &config)
 
 	PALETTE(config, m_palette).set_entries(512);    // sprites only
 
-	MCFG_VIDEO_START_OVERRIDE(seta_state,seta)
-
 	/* sound hardware */
 	SPEAKER(config, "mono").front_center();
 
 	X1_010(config, m_x1, 16000000);   /* 16 MHz */
-	m_x1->add_route(ALL_OUTPUTS, "mono", 1.0);
+	m_x1->add_route(ALL_OUTPUTS, "mono", 0.5);
 }
 
 
@@ -8515,13 +8593,11 @@ void seta_state::daioh(machine_config &config)
 	X1_012(config, m_layers[1], m_palette, gfx_msgundam_layer2).set_xoffsets(-2, -2);
 	PALETTE(config, m_palette).set_entries(512 * 3);    // sprites, layer1, layer2
 
-	MCFG_VIDEO_START_OVERRIDE(seta_state,seta)
-
 	/* sound hardware */
 	SPEAKER(config, "mono").front_center();
 
 	X1_010(config, m_x1, XTAL(16'000'000));   /* 16 MHz, Verified from PCB audio */
-	m_x1->add_route(ALL_OUTPUTS, "mono", 1.0);
+	m_x1->add_route(ALL_OUTPUTS, "mono", 0.5);
 }
 
 
@@ -8574,13 +8650,11 @@ void seta_state::drgnunit(machine_config &config)
 	X1_012(config, m_layers[0], m_palette, gfx_downtown).set_xoffsets(-2, -2);
 	PALETTE(config, m_palette).set_entries(512);
 
-	MCFG_VIDEO_START_OVERRIDE(seta_state,seta)
-
 	/* sound hardware */
 	SPEAKER(config, "mono").front_center();
 
 	X1_010(config, m_x1, 16000000);   /* 16 MHz */
-	m_x1->add_route(ALL_OUTPUTS, "mono", 1.0);
+	m_x1->add_route(ALL_OUTPUTS, "mono", 0.5);
 }
 
 void seta_state::stg(machine_config &config)
@@ -8635,9 +8709,6 @@ void setaroul_state::setaroul(machine_config &config)
 
 	WATCHDOG_TIMER(config, "watchdog");
 
-	MCFG_MACHINE_START_OVERRIDE(setaroul_state, setaroul)
-	MCFG_MACHINE_RESET_OVERRIDE(setaroul_state, setaroul)
-
 	SETA001_SPRITE(config, m_seta001, 16'000'000, m_palette, gfx_setaroul_sprites);
 	m_seta001->set_gfxbank_callback(FUNC(seta_state::setac_gfxbank_callback));
 	// position kludges
@@ -8665,8 +8736,6 @@ void setaroul_state::setaroul(machine_config &config)
 
 	X1_012(config, m_layers[0], m_palette, gfx_setaroul).set_xoffsets(0, 5);
 	PALETTE(config, m_palette, FUNC(setaroul_state::setaroul_palette), 512);
-
-	MCFG_VIDEO_START_OVERRIDE(setaroul_state,seta)
 
 	/* sound hardware */
 	SPEAKER(config, "lspeaker").front_left();
@@ -8713,13 +8782,11 @@ void seta_state::eightfrc(machine_config &config)
 	X1_012(config, m_layers[1], m_palette, gfx_msgundam_layer2);
 	PALETTE(config, m_palette).set_entries(512 * 3);    // sprites, layer1, layer2
 
-	MCFG_VIDEO_START_OVERRIDE(seta_state,seta)
-
 	/* sound hardware */
 	SPEAKER(config, "mono").front_center();
 
 	X1_010(config, m_x1, 16000000);   /* 16 MHz */
-	m_x1->add_route(ALL_OUTPUTS, "mono", 1.0);
+	m_x1->add_route(ALL_OUTPUTS, "mono", 0.5);
 	m_x1->set_addrmap(0, &seta_state::blandia_x1_map);
 }
 
@@ -8760,8 +8827,6 @@ void seta_state::extdwnhl(machine_config &config)
 	X1_012(config, m_layers[0], m_palette, gfx_zingzip_layer1).set_xoffsets(-2, -2);
 	X1_012(config, m_layers[1], m_palette, gfx_zingzip_layer2).set_xoffsets(-2, -2);
 	PALETTE(config, m_palette, FUNC(seta_state::zingzip_palette), 16*32 + 16*32 + 64*32*2, 0x600);    // sprites, layer2, layer1 - layer 1 gfx is 6 planes deep
-
-	MCFG_VIDEO_START_OVERRIDE(seta_state,seta)
 
 	/* sound hardware */
 	SPEAKER(config, "lspeaker").front_left();
@@ -8830,13 +8895,11 @@ void seta_state::gundhara(machine_config &config)
 	X1_012(config, m_layers[1], m_palette, gfx_jjsquawk_layer2);
 	PALETTE(config, m_palette, FUNC(seta_state::gundhara_palette), 16*32 + 64*32*4, 0x600);  // sprites, layer2, layer1 - layers are 6 planes deep (seta_state,but have only 4 palettes)
 
-	MCFG_VIDEO_START_OVERRIDE(seta_state,seta)
-
 	/* sound hardware */
 	SPEAKER(config, "mono").front_center();
 
 	X1_010(config, m_x1, 16000000);   /* 16 MHz */
-	m_x1->add_route(ALL_OUTPUTS, "mono", 1.0);
+	m_x1->add_route(ALL_OUTPUTS, "mono", 0.5);
 }
 
 
@@ -8906,13 +8969,11 @@ void seta_state::jjsquawk(machine_config &config)
 	X1_012(config, m_layers[1], m_palette, gfx_jjsquawk_layer2).set_xoffsets(-1, -1);
 	PALETTE(config, m_palette, FUNC(seta_state::jjsquawk_palette), 16*32 + 64*32*4, 0x600);  // sprites, layer2, layer1 - layers are 6 planes deep
 
-	MCFG_VIDEO_START_OVERRIDE(seta_state,seta)
-
 	/* sound hardware */
 	SPEAKER(config, "mono").front_center();
 
 	X1_010(config, m_x1, 16000000);   /* 16 MHz */
-	m_x1->add_route(ALL_OUTPUTS, "mono", 1.0);
+	m_x1->add_route(ALL_OUTPUTS, "mono", 0.5);
 }
 
 void seta_state::jjsquawb(machine_config &config)
@@ -8942,13 +9003,11 @@ void seta_state::jjsquawb(machine_config &config)
 	X1_012(config, m_layers[1], m_palette, gfx_jjsquawkb_layer2).set_xoffsets(-1, -1);
 	PALETTE(config, m_palette, FUNC(seta_state::jjsquawk_palette), 16*32 + 64*32*4, 0x600);  // sprites, layer2, layer1 - layers are 6 planes deep
 
-	MCFG_VIDEO_START_OVERRIDE(seta_state,seta)
-
 	/* sound hardware */
 	SPEAKER(config, "mono").front_center();
 
 	X1_010(config, m_x1, 16000000);   /* 16 MHz */
-	m_x1->add_route(ALL_OUTPUTS, "mono", 1.0);
+	m_x1->add_route(ALL_OUTPUTS, "mono", 0.5);
 }
 
 
@@ -8990,13 +9049,11 @@ void seta_state::kamenrid(machine_config &config)
 	X1_012(config, m_layers[1], m_palette, gfx_msgundam_layer2).set_xoffsets(-2, -2);
 	PALETTE(config, m_palette).set_entries(512 * 3);    // sprites, layer1, layer2
 
-	MCFG_VIDEO_START_OVERRIDE(seta_state,seta)
-
 	/* sound hardware */
 	SPEAKER(config, "mono").front_center();
 
 	X1_010(config, m_x1, 16000000);   /* 16 MHz */
-	m_x1->add_route(ALL_OUTPUTS, "mono", 1.0);
+	m_x1->add_route(ALL_OUTPUTS, "mono", 0.5);
 }
 
 
@@ -9031,8 +9088,6 @@ void seta_state::orbs(machine_config &config)
 
 	PALETTE(config, m_palette).set_entries(512);    // sprites only
 
-	MCFG_VIDEO_START_OVERRIDE(seta_state,seta)
-
 	/* sound hardware */
 	SPEAKER(config, "lspeaker").front_left();
 	SPEAKER(config, "rspeaker").front_right();
@@ -9044,7 +9099,7 @@ void seta_state::orbs(machine_config &config)
 
 
 /***************************************************************************
-                  Kero Kero Keroppi no Issyoni Asobou
+                  Kero Kero Keroppi no Isshoni Asobou
 ***************************************************************************/
 
 void seta_state::keroppi(machine_config &config)
@@ -9073,8 +9128,6 @@ void seta_state::keroppi(machine_config &config)
 	screen.set_palette(m_palette);
 
 	PALETTE(config, m_palette).set_entries(512);    // sprites only
-
-	MCFG_VIDEO_START_OVERRIDE(seta_state,seta)
 
 	/* sound hardware */
 	SPEAKER(config, "lspeaker").front_left();
@@ -9123,13 +9176,11 @@ void seta_state::krzybowl(machine_config &config)
 
 	PALETTE(config, m_palette).set_entries(512);    // sprites only
 
-	MCFG_VIDEO_START_OVERRIDE(seta_state,seta)
-
 	/* sound hardware */
 	SPEAKER(config, "mono").front_center();
 
 	X1_010(config, m_x1, 16000000);   /* 16 MHz */
-	m_x1->add_route(ALL_OUTPUTS, "mono", 1.0);
+	m_x1->add_route(ALL_OUTPUTS, "mono", 0.5);
 }
 
 
@@ -9171,13 +9222,11 @@ void seta_state::madshark(machine_config &config)
 	X1_012(config, m_layers[1], m_palette, gfx_jjsquawk_layer2);
 	PALETTE(config, m_palette, FUNC(seta_state::jjsquawk_palette), 16*32 + 64*32*4, 0x600);  // sprites, layer2, layer1 - layers are 6 planes deep
 
-	MCFG_VIDEO_START_OVERRIDE(seta_state,seta)
-
 	/* sound hardware */
 	SPEAKER(config, "mono").front_center();
 
 	X1_010(config, m_x1, 16000000);   /* 16 MHz */
-	m_x1->add_route(ALL_OUTPUTS, "mono", 1.0);
+	m_x1->add_route(ALL_OUTPUTS, "mono", 0.5);
 }
 
 
@@ -9223,13 +9272,11 @@ void seta_state::magspeed(machine_config &config)
 	X1_012(config, m_layers[1], m_palette, gfx_msgundam_layer2).set_xoffsets(0, -2);
 	PALETTE(config, m_palette).set_entries(512 * 3);    // sprites, layer1, layer2
 
-	MCFG_VIDEO_START_OVERRIDE(seta_state,seta)
-
 	/* sound hardware */
 	SPEAKER(config, "mono").front_center();
 
 	X1_010(config, m_x1, 16000000);   /* 16 MHz */
-	m_x1->add_route(ALL_OUTPUTS, "mono", 1.0);
+	m_x1->add_route(ALL_OUTPUTS, "mono", 0.5);
 }
 
 
@@ -9271,13 +9318,11 @@ void seta_state::msgundam(machine_config &config)
 	X1_012(config, m_layers[1], m_palette, gfx_msgundam_layer2).set_xoffsets(-2, -2);
 	PALETTE(config, m_palette).set_entries(512 * 3);    // sprites, layer1, layer2
 
-	MCFG_VIDEO_START_OVERRIDE(seta_state,seta)
-
 	/* sound hardware */
 	SPEAKER(config, "mono").front_center();
 
 	X1_010(config, m_x1, 16000000);   /* 16 MHz */
-	m_x1->add_route(ALL_OUTPUTS, "mono", 1.0);
+	m_x1->add_route(ALL_OUTPUTS, "mono", 0.5);
 }
 
 void seta_state::msgundamb(machine_config &config)
@@ -9413,8 +9458,6 @@ void kiwame_state::kiwame(machine_config &config)
 
 	PALETTE(config, m_palette).set_entries(512);    // sprites only
 
-	MCFG_VIDEO_START_OVERRIDE(kiwame_state,seta)
-
 	/* sound hardware */
 	SPEAKER(config, "lspeaker").front_left();
 	SPEAKER(config, "rspeaker").front_right();
@@ -9460,13 +9503,11 @@ void seta_state::rezon(machine_config &config)
 	X1_012(config, m_layers[1], m_palette, gfx_msgundam_layer2).set_xoffsets(-2, -2);
 	PALETTE(config, m_palette).set_entries(512 * 3);    // sprites, layer1, layer2
 
-	MCFG_VIDEO_START_OVERRIDE(seta_state,seta)
-
 	/* sound hardware */
 	SPEAKER(config, "mono").front_center();
 
 	X1_010(config, m_x1, 16000000);   /* 16 MHz */
-	m_x1->add_route(ALL_OUTPUTS, "mono", 1.0);
+	m_x1->add_route(ALL_OUTPUTS, "mono", 0.5);
 }
 
 
@@ -9501,13 +9542,11 @@ void seta_state::thunderl(machine_config &config)
 
 	PALETTE(config, m_palette).set_entries(512);    // sprites only
 
-	MCFG_VIDEO_START_OVERRIDE(seta_state,seta)
-
 	/* sound hardware */
 	SPEAKER(config, "mono").front_center();
 
 	X1_010(config, m_x1, 16000000);   /* 16 MHz */
-	m_x1->add_route(ALL_OUTPUTS, "mono", 1.0);
+	m_x1->add_route(ALL_OUTPUTS, "mono", 0.5);
 }
 
 
@@ -9577,8 +9616,6 @@ void seta_state::wiggie(machine_config &config)
 
 	PALETTE(config, m_palette).set_entries(512);    // sprites only
 
-	MCFG_VIDEO_START_OVERRIDE(seta_state,seta)
-
 	/* sound hardware */
 	SPEAKER(config, "mono").front_center();
 
@@ -9619,13 +9656,11 @@ void seta_state::wits(machine_config &config)
 
 	PALETTE(config, m_palette).set_entries(512);    // sprites only
 
-	MCFG_VIDEO_START_OVERRIDE(seta_state,seta)
-
 	/* sound hardware */
 	SPEAKER(config, "mono").front_center();
 
 	X1_010(config, m_x1, 16000000);   /* 16 MHz */
-	m_x1->add_route(ALL_OUTPUTS, "mono", 1.0);
+	m_x1->add_route(ALL_OUTPUTS, "mono", 0.5);
 }
 
 
@@ -9658,13 +9693,11 @@ void seta_state::umanclub(machine_config &config)
 
 	PALETTE(config, m_palette).set_entries(512);
 
-	MCFG_VIDEO_START_OVERRIDE(seta_state,seta)
-
 	/* sound hardware */
 	SPEAKER(config, "mono").front_center();
 
 	X1_010(config, m_x1, 16000000);   /* 16 MHz */
-	m_x1->add_route(ALL_OUTPUTS, "mono", 1.0);
+	m_x1->add_route(ALL_OUTPUTS, "mono", 0.5);
 }
 
 
@@ -9702,8 +9735,6 @@ void seta_state::utoukond(machine_config &config)
 	X1_012(config, m_layers[0], m_palette, gfx_msgundam_layer1).set_xoffsets(0, -2);
 	X1_012(config, m_layers[1], m_palette, gfx_msgundam_layer2).set_xoffsets(0, -2);
 	PALETTE(config, m_palette).set_entries(512 * 3);    // sprites, layer1, layer2
-
-	MCFG_VIDEO_START_OVERRIDE(seta_state,seta)
 
 	/* sound hardware */
 	SPEAKER(config, "lspeaker").front_left();
@@ -9765,13 +9796,11 @@ void seta_state::wrofaero(machine_config &config)
 	X1_012(config, m_layers[1], m_palette, gfx_msgundam_layer2);
 	PALETTE(config, m_palette).set_entries(512 * 3);    // sprites, layer1, layer2
 
-	MCFG_VIDEO_START_OVERRIDE(seta_state,seta)
-
 	/* sound hardware */
 	SPEAKER(config, "mono").front_center();
 
 	X1_010(config, m_x1, 16000000);   /* 16 MHz */
-	m_x1->add_route(ALL_OUTPUTS, "mono", 1.0);
+	m_x1->add_route(ALL_OUTPUTS, "mono", 0.5);
 }
 
 
@@ -9813,13 +9842,11 @@ void seta_state::zingzip(machine_config &config)
 	X1_012(config, m_layers[1], m_palette, gfx_zingzip_layer2).set_xoffsets(-2, -1);
 	PALETTE(config, m_palette, FUNC(seta_state::zingzip_palette), 16*32 + 16*32 + 64*32*2, 0x600);    // sprites, layer2, layer1 - layer 1 gfx is 6 planes deep
 
-	MCFG_VIDEO_START_OVERRIDE(seta_state,seta)
-
 	/* sound hardware */
 	SPEAKER(config, "mono").front_center();
 
 	X1_010(config, m_x1, 16000000);   /* 16 MHz */
-	m_x1->add_route(ALL_OUTPUTS, "mono", 1.0);
+	m_x1->add_route(ALL_OUTPUTS, "mono", 0.5);
 }
 
 
@@ -9869,13 +9896,11 @@ void seta_state::pairlove(machine_config &config)
 
 	PALETTE(config, m_palette).set_entries(2048);   // sprites only
 
-	MCFG_VIDEO_START_OVERRIDE(seta_state,seta)
-
 	/* sound hardware */
 	SPEAKER(config, "mono").front_center();
 
 	X1_010(config, m_x1, 16000000);   /* 16 MHz */
-	m_x1->add_route(ALL_OUTPUTS, "mono", 1.0);
+	m_x1->add_route(ALL_OUTPUTS, "mono", 0.5);
 }
 
 
@@ -9921,16 +9946,14 @@ void seta_state::crazyfgt(machine_config &config)
 	X1_012(config, m_layers[1], m_palette, gfx_blandia_layer2).set_xoffsets(0, -2);
 	PALETTE(config, m_palette, FUNC(seta_state::gundhara_palette), 16*32 + 64*32*4, 0x600);  // sprites, layer2, layer1 - layers are 6 planes deep (seta_state,but have only 4 palettes)
 
-	MCFG_VIDEO_START_OVERRIDE(seta_state,seta)
-
 	/* sound hardware */
 	SPEAKER(config, "mono").front_center();
 
 	ym3812_device &ymsnd(YM3812(config, "ymsnd", 16_MHz_XTAL / 4));
-	ymsnd.add_route(ALL_OUTPUTS, "mono", 1.0);
+	ymsnd.add_route(ALL_OUTPUTS, "mono", 0.5);
 
 	okim6295_device &oki(OKIM6295(config, "oki", 4.433619_MHz_XTAL / 4, okim6295_device::PIN7_HIGH));
-	oki.add_route(ALL_OUTPUTS, "mono", 1.0);
+	oki.add_route(ALL_OUTPUTS, "mono", 0.5);
 }
 
 
@@ -10001,8 +10024,6 @@ void jockeyc_state::jockeyc(machine_config &config)
 
 	X1_012(config, m_layers[0], m_palette, gfx_downtown).set_xoffsets(126, -2);
 	PALETTE(config, m_palette, FUNC(seta_state::palette_init_RRRRRGGGGGBBBBB_proms), 512 * 1);
-
-	MCFG_VIDEO_START_OVERRIDE(jockeyc_state,seta)
 
 	/* sound hardware */
 	SPEAKER(config, "lspeaker").front_left();
@@ -10277,28 +10298,28 @@ ROM_END
 
 ROM_START( calibr50 )
 	ROM_REGION( 0x0a0000, "maincpu", 0 )        /* 68000 Code */
-	ROM_LOAD16_BYTE( "uh002001.u45", 0x000000, 0x040000, CRC(eb92e7ed) SHA1(2aee8a7bce549ef7d7b35d1c248ebbdbc906e38d) )
-	ROM_LOAD16_BYTE( "uh002004.u41", 0x000001, 0x040000, CRC(5a0ed31e) SHA1(d6ee7654354ac9f1dc7add1ef9f68a147b6f2953) )
-	ROM_LOAD16_BYTE( "uh001003.9a",  0x080000, 0x010000, CRC(0d30d09f) SHA1(8a48511b628e85b72fda0968d813f4faebd0c418) )
-	ROM_LOAD16_BYTE( "uh001002.7a",  0x080001, 0x010000, CRC(7aecc3f9) SHA1(2454d9c758fa623d4d81a9230871b67d31d16cef) )
+	ROM_LOAD16_BYTE( "uh-002-001.3b",  0x000000, 0x040000, CRC(eb92e7ed) SHA1(2aee8a7bce549ef7d7b35d1c248ebbdbc906e38d) )
+	ROM_LOAD16_BYTE( "uh-002-004.11b", 0x000001, 0x040000, CRC(5a0ed31e) SHA1(d6ee7654354ac9f1dc7add1ef9f68a147b6f2953) )
+	ROM_LOAD16_BYTE( "uh_001_003.9b",  0x080000, 0x010000, CRC(0d30d09f) SHA1(8a48511b628e85b72fda0968d813f4faebd0c418) )
+	ROM_LOAD16_BYTE( "uh_001_002.7b",  0x080001, 0x010000, CRC(7aecc3f9) SHA1(2454d9c758fa623d4d81a9230871b67d31d16cef) )
 
 	ROM_REGION( 0x04c000, "sub", 0 )        /* 65c02 Code */
-	ROM_LOAD( "uh001005.u61", 0x004000, 0x040000, CRC(4a54c085) SHA1(f53ff257ce3d95f945a6befcfb61f1b570f0eafe) )
-	ROM_RELOAD(               0x00c000, 0x040000  )
+	ROM_LOAD( "uh-001-005.17e", 0x004000, 0x040000, CRC(4a54c085) SHA1(f53ff257ce3d95f945a6befcfb61f1b570f0eafe) )
+	ROM_RELOAD(                 0x00c000, 0x040000  )
 
 	ROM_REGION( 0x200000, "gfx1", 0 )   /* Sprites */
-	ROM_LOAD16_BYTE( "uh001006.ux2", 0x000000, 0x080000, CRC(fff52f91) SHA1(fd7807e9a8dd5a88df1fcd13746b44a33adbc0fa) )
-	ROM_LOAD16_BYTE( "uh001007.ux1", 0x000001, 0x080000, CRC(b6c19f71) SHA1(eb8bbaeaf4af07e178100ff16b228b537aa36272) )
-	ROM_LOAD16_BYTE( "uh001008.ux6", 0x100000, 0x080000, CRC(7aae07ef) SHA1(1db666db20efce1efe5b5769b8e3c78bbf508466) )
-	ROM_LOAD16_BYTE( "uh001009.ux0", 0x100001, 0x080000, CRC(f85da2c5) SHA1(d090e49b3a897729c7fb05f9386939448fe1d3d9) )
+	ROM_LOAD16_BYTE( "uh-001-006.2m", 0x000000, 0x080000, CRC(fff52f91) SHA1(fd7807e9a8dd5a88df1fcd13746b44a33adbc0fa) )
+	ROM_LOAD16_BYTE( "uh-001-007.4m", 0x000001, 0x080000, CRC(b6c19f71) SHA1(eb8bbaeaf4af07e178100ff16b228b537aa36272) )
+	ROM_LOAD16_BYTE( "uh-001-008.5m", 0x100000, 0x080000, CRC(7aae07ef) SHA1(1db666db20efce1efe5b5769b8e3c78bbf508466) )
+	ROM_LOAD16_BYTE( "uh-001-009.6m", 0x100001, 0x080000, CRC(f85da2c5) SHA1(d090e49b3a897729c7fb05f9386939448fe1d3d9) )
 
 	ROM_REGION( 0x100000, "gfx2", 0 )   /* Layer 1 */
-	ROM_LOAD16_BYTE( "uh001010.u3x", 0x000000, 0x080000, CRC(f986577a) SHA1(8f6c2fca271fed21a1c04e93c3f50dc41348ae30) )
-	ROM_LOAD16_BYTE( "uh001011.u50", 0x000001, 0x080000, CRC(08620052) SHA1(e2ab49dbabc139e6b276401340085ccab1ae3892) )
+	ROM_LOAD16_BYTE( "uh-001-010.8m", 0x000000, 0x080000, CRC(f986577a) SHA1(8f6c2fca271fed21a1c04e93c3f50dc41348ae30) )
+	ROM_LOAD16_BYTE( "uh-001-011.9m", 0x000001, 0x080000, CRC(08620052) SHA1(e2ab49dbabc139e6b276401340085ccab1ae3892) )
 
 	ROM_REGION( 0x100000, "x1snd", 0 )  /* Samples */
-	ROM_LOAD( "uh001013.u60", 0x000000, 0x080000, CRC(09ec0df6) SHA1(57c68d05074ea4a1e133be2ce6e25c594f04a712) )
-	ROM_LOAD( "uh001012.u46", 0x080000, 0x080000, CRC(bb996547) SHA1(0c8f570ef4454b10a023e0c463001c22a8cf99cd) )
+	ROM_LOAD( "uh-001-013.12m", 0x000000, 0x080000, CRC(09ec0df6) SHA1(57c68d05074ea4a1e133be2ce6e25c594f04a712) )
+	ROM_LOAD( "uh-001-012.11m", 0x080000, 0x080000, CRC(bb996547) SHA1(0c8f570ef4454b10a023e0c463001c22a8cf99cd) )
 ROM_END
 
 ROM_START( arbalest )
@@ -10566,6 +10587,12 @@ ROM_START( rezon )
 
 	ROM_REGION( 0x100000, "x1snd", 0 )  /* Samples */
 	ROM_LOAD16_WORD_SWAP( "us001009.u70",  0x000000, 0x100000, CRC(0d7d2e2b) SHA1(cfba19314ecb0a49ed9ff8df32cd6a3fe37ff526) )
+
+	ROM_REGION( 0x800, "plds", 0 )
+	ROM_LOAD( "us-010.u14", 0x000, 0x104, NO_DUMP )
+	ROM_LOAD( "us-011.u35", 0x200, 0x104, NO_DUMP )
+	ROM_LOAD( "us-012.u36", 0x400, 0x104, NO_DUMP )
+	ROM_LOAD( "us-013.u76", 0x600, 0x104, NO_DUMP )
 ROM_END
 
 /* note the ONLY byte that changes is the year, 1992 instead of 1991.  The actual license is controlled by a jumper but
@@ -10591,6 +10618,12 @@ ROM_START( rezont )
 
 	ROM_REGION( 0x100000, "x1snd", 0 )  /* Samples */
 	ROM_LOAD16_WORD_SWAP( "us001009.u70",  0x000000, 0x100000, CRC(0d7d2e2b) SHA1(cfba19314ecb0a49ed9ff8df32cd6a3fe37ff526) )
+
+	ROM_REGION( 0x800, "plds", 0 )
+	ROM_LOAD( "us-010.u14", 0x000, 0x104, NO_DUMP )
+	ROM_LOAD( "us-011.u35", 0x200, 0x104, NO_DUMP )
+	ROM_LOAD( "us-012.u36", 0x400, 0x104, NO_DUMP )
+	ROM_LOAD( "us-013.u76", 0x600, 0x104, NO_DUMP )
 ROM_END
 
 ROM_START( stg )
@@ -10637,6 +10670,14 @@ ROM_START( blandia )
 	ROM_REGION( 0x200000, "x1snd", 0 )  /* Samples */
 	ROM_LOAD( "ux001013.u69", 0x000000, 0x100000, CRC(5cd273cd) SHA1(602e1f10454e2b1c941f2e6983872bb9ca77a542) )
 	ROM_LOAD( "ux001014.u70", 0x100000, 0x080000, CRC(86b49b4e) SHA1(045b352950d848907af4c22b817d154b2cfff382) )
+
+	ROM_REGION( 0xc00, "plds", 0 )
+	ROM_LOAD( "ux-015.u206", 0x000, 0x117, CRC(08cddbdd) SHA1(c7330b96375f96406c63abe5d17d02e84828d884) )
+	ROM_LOAD( "ux-016.u116", 0x200, 0x117, CRC(9734f1af) SHA1(e7299892a26e9e8ee607ece93cefdee19a13ffae) )
+	ROM_LOAD( "ux-017.u14",  0x400, 0x117, CRC(9e95d8d5) SHA1(f7e7250e9aa6fc1c14874230a5b0019704e54c4c) )
+	ROM_LOAD( "ux-018.u35",  0x600, 0x117, CRC(c9579473) SHA1(ff65a5ed840b60bd8416ae7e11805635bfcec9ad) )
+	ROM_LOAD( "ux-019.u36",  0x800, 0x117, CRC(d85c359d) SHA1(251c1fc833c1be6b15e70240cbb6c997443baea3) )
+	ROM_LOAD( "ux-020.u76",  0xa00, 0x117, CRC(116278bf) SHA1(e34bceab30dce17c2a9cb0bf51a5eda0a89da08c) )
 ROM_END
 
 ROM_START( blandiap )
@@ -10702,7 +10743,11 @@ ROM_START( blockcar )
 	ROM_LOAD( "bl-chr-1.l3",  0x080000, 0x080000, CRC(563de808) SHA1(40b2f9f4a4cb1a019f6419572ee21d66dda7d4af) )
 
 	ROM_REGION( 0x100000, "x1snd", 0 )  /* Samples */
-	ROM_LOAD( "bl-snd-0.a13",  0x000000, 0x080000, CRC(a92dabaf) SHA1(610c1dc0467753dfddaa4b27bc40cb118b0bc7a3) )
+	/* The game plays music from 0x000000 to 0x0bffff and sfx from 0x0c0000 to 0x0fffff
+	   Loading the ROM mirrored like this causes sfx to play instead of music in some levels.
+	   the most logical conclusion is that the ROM below was dumped at half size and should
+	   be 1MByte, hence BAD_DUMP */
+	ROM_LOAD( "bl-snd-0.a13",  0x000000, 0x080000, BAD_DUMP CRC(a92dabaf) SHA1(610c1dc0467753dfddaa4b27bc40cb118b0bc7a3) )
 	ROM_RELOAD(                0x080000, 0x080000  )
 ROM_END
 
@@ -10755,6 +10800,10 @@ ROM_START( umanclub )
 
 	ROM_REGION( 0x100000, "x1snd", 0 )  /* Samples */
 	ROM_LOAD( "uw003.u13", 0x000000, 0x100000, CRC(e2f718eb) SHA1(fd085b68f76c8778816a1b7d47783b9dc20bff12) )
+
+	ROM_REGION( 0x400, "plds", 0 )
+	ROM_LOAD( "bp-u-004.u30", 0x000, 0x104, NO_DUMP )
+	ROM_LOAD( "bp-u-005.u32", 0x200, 0x104, NO_DUMP )
 ROM_END
 
 ROM_START( zingzip )
@@ -10775,6 +10824,13 @@ ROM_START( zingzip )
 
 	ROM_REGION( 0x100000, "x1snd", 0 )  /* Samples */
 	ROM_LOAD( "uy001011.70",  0x000000, 0x100000, CRC(bd845f55) SHA1(345b79cfcd8c924d6ba365814286e518438f10bc) ) // uy001017 + uy001018
+
+	ROM_REGION( 0xa00, "plds", 0 )
+	ROM_LOAD( "uy-012.u206", 0x000, 0x104, NO_DUMP )
+	ROM_LOAD( "uy-013.u14",  0x200, 0x104, NO_DUMP )
+	ROM_LOAD( "uy-014.u35",  0x400, 0x104, NO_DUMP )
+	ROM_LOAD( "uy-015.u36",  0x600, 0x104, NO_DUMP )
+	ROM_LOAD( "uy-016.u76",  0x800, 0x104, NO_DUMP )
 ROM_END
 
 ROM_START( zingzipbl )
@@ -10851,6 +10907,13 @@ ROM_START( daioh )
 
 	ROM_REGION( 0x100000, "x1snd", 0 )  /* Samples */
 	ROM_LOAD( "fg-001-007",  0x000000, 0x100000, CRC(4a2fe9e0) SHA1(e55b6f301f842ff5d3c7a0041856695ac1d8a78f) )
+
+	ROM_REGION( 0xa00, "plds", 0 )
+	ROM_LOAD( "fg-008.u206", 0x000, 0x104, NO_DUMP )
+	ROM_LOAD( "fg-009.u14",  0x200, 0x104, NO_DUMP )
+	ROM_LOAD( "fg-010.u35",  0x400, 0x104, NO_DUMP )
+	ROM_LOAD( "fg-011.u36",  0x600, 0x104, NO_DUMP )
+	ROM_LOAD( "fg-012.u76",  0x800, 0x104, NO_DUMP )
 ROM_END
 
 ROM_START( daioha )
@@ -10870,6 +10933,13 @@ ROM_START( daioha )
 
 	ROM_REGION( 0x100000, "x1snd", 0 )  /* Samples */
 	ROM_LOAD( "fg-001-007",  0x000000, 0x100000, CRC(4a2fe9e0) SHA1(e55b6f301f842ff5d3c7a0041856695ac1d8a78f) )
+
+	ROM_REGION( 0xa00, "plds", 0 )
+	ROM_LOAD( "fg-008.u206", 0x000, 0x104, NO_DUMP )
+	ROM_LOAD( "fg-009.u14",  0x200, 0x104, NO_DUMP )
+	ROM_LOAD( "fg-010.u35",  0x400, 0x104, NO_DUMP )
+	ROM_LOAD( "fg-011.u36",  0x600, 0x104, NO_DUMP )
+	ROM_LOAD( "fg-012.u76",  0x800, 0x104, NO_DUMP )
 ROM_END
 
 ROM_START( daiohp ) /* Found on the same P0-072-2 PCB as the Blandia prototype */
@@ -10942,7 +11012,7 @@ ROM_START( daiohp2 ) /* Found on the same P0-072-2 PCB as the previous Daioh pro
 	ROM_REGION( 0x200000, "gfx3", 0 )   /* Layer 2 */
 	ROM_LOAD16_BYTE( "bg2_0.u164", 0x000001, 0x080000, CRC(7e46a10e) SHA1(a8576f7a140b065b88a0dab648f7b31c75fec006) )
 	ROM_LOAD16_BYTE( "bg2_1.u166", 0x000000, 0x080000, CRC(9274123b) SHA1(b58e107a5bd222e454fd435d515e57cab52e6593) )
-	ROM_LOAD16_BYTE( "bg2_2.u165", 0x100001, 0x080000, CRC(3119189b) SHA1(3a45ec8db30659d7fd47090cb137df05bbdc1c86) )
+	ROM_LOAD16_BYTE( "bg2_2.u165", 0x100001, 0x080000, CRC(dc8ecfb7) SHA1(a202ff32c74601d5cd0aebdf84a481d36f540403) )
 	ROM_LOAD16_BYTE( "bg2_3.u167", 0x100000, 0x080000, CRC(533ba782) SHA1(b5f62323be95b2def8d1383b400b4ef0d3b3d6cd) )
 
 	ROM_REGION( 0x100000, "x1snd", 0 )  /* Samples */
@@ -11008,6 +11078,13 @@ ROM_START( msgundam )
 
 	ROM_REGION( 0x100000, "x1snd", 0 )  /* Samples */
 	ROM_LOAD( "fa001004.u26",  0x000000, 0x100000, CRC(b965f07c) SHA1(ff7827cc80655465ffbb732d55ba81f21f51a5ca) )
+
+	ROM_REGION( 0xa00, "plds", 0 )
+	ROM_LOAD( "fa-011.u50", 0x000, 0x104, NO_DUMP )
+	ROM_LOAD( "fa-012.u51", 0x200, 0x104, NO_DUMP )
+	ROM_LOAD( "fa-013.u52", 0x400, 0x104, NO_DUMP )
+	ROM_LOAD( "fa-014.u53", 0x600, 0x104, NO_DUMP )
+	ROM_LOAD( "fa-015.u54", 0x800, 0x104, NO_DUMP )
 ROM_END
 
 ROM_START( msgundam1 )
@@ -11027,6 +11104,13 @@ ROM_START( msgundam1 )
 
 	ROM_REGION( 0x100000, "x1snd", 0 )  /* Samples */
 	ROM_LOAD( "fa001004.u26",  0x000000, 0x100000, CRC(b965f07c) SHA1(ff7827cc80655465ffbb732d55ba81f21f51a5ca) )
+
+	ROM_REGION( 0xa00, "plds", 0 )
+	ROM_LOAD( "fa-011.u50", 0x000, 0x104, NO_DUMP )
+	ROM_LOAD( "fa-012.u51", 0x200, 0x104, NO_DUMP )
+	ROM_LOAD( "fa-013.u52", 0x400, 0x104, NO_DUMP )
+	ROM_LOAD( "fa-014.u53", 0x600, 0x104, NO_DUMP )
+	ROM_LOAD( "fa-015.u54", 0x800, 0x104, NO_DUMP )
 ROM_END
 
 ROM_START( msgundamb ) // 2 PCB stack, one has a 'Tecnoval - tecnologia valenciana del recreativo' sticker
@@ -11137,6 +11221,14 @@ ROM_START( wrofaero )
 	ROM_REGION( 0x100000, "x1snd", 0 )  /* Samples */
 	ROM_LOAD( "u69.bin",  0x000000, 0x080000, CRC(957ecd41) SHA1(3b37ba44b8b8f0f0de41c8c26c3dfdb391ba572c) )
 	ROM_LOAD( "u70.bin",  0x080000, 0x080000, CRC(8d756fdf) SHA1(d66712a6aa19252f2c915ac66fc27df031fa9512) )
+
+	ROM_REGION( 0xc00, "plds", 0 )
+	ROM_LOAD( "m-009.u206", 0x000, 0x104, NO_DUMP )
+	ROM_LOAD( "m-010.u116", 0x200, 0x104, NO_DUMP )
+	ROM_LOAD( "m-011.u14",  0x400, 0x104, NO_DUMP )
+	ROM_LOAD( "m-012.u35",  0x600, 0x104, NO_DUMP )
+	ROM_LOAD( "m-013.u36",  0x800, 0x104, NO_DUMP )
+	ROM_LOAD( "m-014.u76",  0xa00, 0x104, NO_DUMP )
 ROM_END
 
 ROM_START( jjsquawk ) /* PCB stickered  J.J. SQUAWKERS 9401- 1022 */
@@ -11165,6 +11257,14 @@ ROM_START( jjsquawk ) /* PCB stickered  J.J. SQUAWKERS 9401- 1022 */
 	ROM_REGION( 0x100000, "x1snd", 0 )  /* Samples */
 	ROM_LOAD( "fe2001005.u69", 0x000000, 0x080000, CRC(d99f2879) SHA1(66e83a6bc9093d19c72bd8ef1ec0523cfe218250) )
 	ROM_LOAD( "fe2001006.u70", 0x080000, 0x080000, CRC(9df1e478) SHA1(f41b55821187b417ad09e4a1f439c01a107d2674) )
+
+	ROM_REGION( 0xc00, "plds", 0 )
+	ROM_LOAD( "m-009.u206", 0x000, 0x104, NO_DUMP )
+	ROM_LOAD( "m-010.u116", 0x200, 0x104, NO_DUMP )
+	ROM_LOAD( "m2-011.u14", 0x400, 0x104, NO_DUMP )
+	ROM_LOAD( "m-012.u35",  0x600, 0x104, NO_DUMP )
+	ROM_LOAD( "m-013.u36",  0x800, 0x104, NO_DUMP )
+	ROM_LOAD( "m-014.u76",  0xa00, 0x104, NO_DUMP )
 ROM_END
 
 ROM_START( jjsquawko ) /* Official 93111A PCB missing version sticker */
@@ -11193,6 +11293,14 @@ ROM_START( jjsquawko ) /* Official 93111A PCB missing version sticker */
 	ROM_REGION( 0x100000, "x1snd", 0 )  /* Samples */
 	ROM_LOAD( "fe2001005.u69", 0x000000, 0x080000, CRC(d99f2879) SHA1(66e83a6bc9093d19c72bd8ef1ec0523cfe218250) )
 	ROM_LOAD( "fe2001006.u70", 0x080000, 0x080000, CRC(9df1e478) SHA1(f41b55821187b417ad09e4a1f439c01a107d2674) )
+
+	ROM_REGION( 0xc00, "plds", 0 )
+	ROM_LOAD( "m-009.u206", 0x000, 0x104, NO_DUMP )
+	ROM_LOAD( "m-010.u116", 0x200, 0x104, NO_DUMP )
+	ROM_LOAD( "m2-011.u14", 0x400, 0x104, NO_DUMP )
+	ROM_LOAD( "m-012.u35",  0x600, 0x104, NO_DUMP )
+	ROM_LOAD( "m-013.u36",  0x800, 0x104, NO_DUMP )
+	ROM_LOAD( "m-014.u76",  0xa00, 0x104, NO_DUMP )
 ROM_END
 
 ROM_START( jjsquawkb )
@@ -11288,6 +11396,13 @@ ROM_START( kamenrid )
 
 	ROM_REGION( 0x100000, "x1snd", 0 )  /* Samples */
 	ROM_LOAD( "fj001008.26", 0x000000, 0x100000, CRC(45e2b329) SHA1(8526afae1aa9178570c906eb96438f174d174f4d) )
+
+	ROM_REGION( 0xa00, "plds", 0 )
+	ROM_LOAD( "fj-111.u50", 0x000, 0x104, NO_DUMP )
+	ROM_LOAD( "fj-012.u51", 0x200, 0x104, NO_DUMP )
+	ROM_LOAD( "fj-013.u52", 0x400, 0x104, NO_DUMP )
+	ROM_LOAD( "fj-014.u53", 0x600, 0x104, NO_DUMP )
+	ROM_LOAD( "fj-015.u54", 0x800, 0x104, NO_DUMP )
 ROM_END
 
 ROM_START( eightfrc )
@@ -11308,6 +11423,14 @@ ROM_START( eightfrc )
 	ROM_REGION( 0x200000, "x1snd", 0 )  /* Samples */
 	ROM_LOAD( "u70.bin",  0x000000, 0x100000, CRC(dfdb67a3) SHA1(0fed6fb498dcfc1276facd0ecd2dfde45ff671f2) )
 	ROM_LOAD( "u69.bin",  0x100000, 0x100000, CRC(82ec08f1) SHA1(f17300d3cf990ef5c11056fd922f8cae0b2c918f) )
+
+	ROM_REGION( 0xc00, "plds", 0 )
+	ROM_LOAD( "uy-012.u206", 0x000, 0x104, NO_DUMP )
+	ROM_LOAD( "uy-013.u14",  0x200, 0x104, NO_DUMP )
+	ROM_LOAD( "uy-014.u35",  0x400, 0x104, NO_DUMP )
+	ROM_LOAD( "uy-015.u36",  0x600, 0x104, NO_DUMP )
+	ROM_LOAD( "uy-016.u76",  0x800, 0x104, NO_DUMP )
+	ROM_LOAD( "uy-017.u116", 0xa00, 0x104, NO_DUMP )
 ROM_END
 
 ROM_START( kiwame )
@@ -11339,6 +11462,10 @@ ROM_START( krzybowl )
 	ROM_REGION( 0x100000, "x1snd", 0 )  /* Samples */
 	ROM_LOAD( "fv001.005", 0x000000, 0x080000, CRC(5e206062) SHA1(e47cfb6947df178f3547dfe61907571bcb84e4ac) )
 	ROM_LOAD( "fv001.006", 0x080000, 0x080000, CRC(572a15e7) SHA1(b6a3e99e14a473b78ff48d1a46b20a0862d128e9) )
+
+	ROM_REGION( 0x400, "plds", 0 )
+	ROM_LOAD( "fv-007.u22", 0x000, 0x104, NO_DUMP )
+	ROM_LOAD( "fv-008.u23", 0x200, 0x104, NO_DUMP )
 ROM_END
 
 ROM_START( orbs )   /* All eproms are socketed and labelled (handwritten) "ORBS 10\7\94" */
@@ -11407,6 +11534,13 @@ ROM_START( extdwnhl )
 	ROM_REGION( 0x100000, "x1snd", 0 )  /* Samples */
 	ROM_LOAD( "fw001007.026",  0x080000, 0x080000, CRC(16d84d7a) SHA1(fdc13776ba1ec9c48a33a9f2dfe8a0e55c54d89e) )   // swapped halves
 	ROM_CONTINUE(              0x000000, 0x080000  )
+
+	ROM_REGION( 0xa00, "plds", 0 )
+	ROM_LOAD( "fw-001.u50", 0x000, 0x104, NO_DUMP )
+	ROM_LOAD( "fw-002.u51", 0x200, 0x104, NO_DUMP )
+	ROM_LOAD( "fw-003.u52", 0x400, 0x104, NO_DUMP )
+	ROM_LOAD( "fw-004.u53", 0x600, 0x104, NO_DUMP )
+	ROM_LOAD( "fw-005.u54", 0x800, 0x104, NO_DUMP )
 ROM_END
 
 ROM_START( gundhara )
@@ -11433,6 +11567,14 @@ ROM_START( gundhara )
 	ROM_REGION( 0x100000, "x1snd", 0 )  /* Samples */
 	ROM_LOAD( "bpgh-013.u70",  0x080000, 0x080000, CRC(0fa5d503) SHA1(fd7a80cd25c23e737cc2c3d11de2291e22313b58) )   // swapped halves
 	ROM_CONTINUE(              0x000000, 0x080000  )
+
+	ROM_REGION( 0xc00, "plds", 0 )
+	ROM_LOAD( "fx-001.u206", 0x000, 0x104, NO_DUMP )
+	ROM_LOAD( "fx-002.u116", 0x200, 0x104, NO_DUMP )
+	ROM_LOAD( "fx-003.u14",  0x400, 0x104, NO_DUMP )
+	ROM_LOAD( "fx-004.u35",  0x600, 0x104, NO_DUMP )
+	ROM_LOAD( "fx-005.u36",  0x800, 0x104, NO_DUMP )
+	ROM_LOAD( "fx-006.u76",  0xa00, 0x104, NO_DUMP )
 ROM_END
 
 /* Chinese factory board, possibly bootleg but appears to come from the
@@ -11499,6 +11641,13 @@ ROM_START( sokonuke )
 	ROM_REGION( 0x100000, "x1snd", 0 )  /* Samples */
 	ROM_LOAD( "001-006.bin",   0x080000, 0x080000, CRC(ecfac767) SHA1(3d05bdb2c2a8c7eb5fa77b0c4482f98d3947c6d6) )
 	ROM_CONTINUE(              0x000000, 0x080000  )
+
+	ROM_REGION( 0xa00, "plds", 0 )
+	ROM_LOAD( "fw-001.u50", 0x000, 0x104, NO_DUMP )
+	ROM_LOAD( "fw-002.u51", 0x200, 0x104, NO_DUMP )
+	ROM_LOAD( "fw-003.u52", 0x400, 0x104, NO_DUMP )
+	ROM_LOAD( "fw-004.u53", 0x600, 0x104, NO_DUMP )
+	ROM_LOAD( "fw-005.u54", 0x800, 0x104, NO_DUMP )
 ROM_END
 
 ROM_START( zombraid )
@@ -11525,6 +11674,14 @@ ROM_START( zombraid )
 
 	ROM_REGION(0x10000, "nvram", 0)
 	ROM_LOAD( "nvram.bin",  0x0000, 0x10000, CRC(1a4b2ee8) SHA1(9a14fb2089fef9d13e0a5fe0a83eb7bae51fe1ae) )
+
+	ROM_REGION( 0xc00, "plds", 0 )
+	ROM_LOAD( "fy-001.u206", 0x000, 0x104, NO_DUMP )
+	ROM_LOAD( "fy-002.u116", 0x200, 0x104, NO_DUMP )
+	ROM_LOAD( "fy-003.u14",  0x400, 0x104, NO_DUMP )
+	ROM_LOAD( "fy-004.u35",  0x600, 0x104, NO_DUMP )
+	ROM_LOAD( "fy-005.u36",  0x800, 0x104, NO_DUMP )
+	ROM_LOAD( "fy-006.u76",  0xa00, 0x104, NO_DUMP )
 ROM_END
 
 /* Notes about the Proto/Test roms:
@@ -11658,6 +11815,13 @@ ROM_START( madshark )
 
 	ROM_REGION( 0x100000, "x1snd", 0 )  /* Samples */
 	ROM_LOAD( "fq001007.26", 0x000000, 0x100000, CRC(e4b33c13) SHA1(c4f9532de7a09c80f5a74c3a386e99a0f546846f) )
+
+	ROM_REGION( 0xa00, "plds", 0 )
+	ROM_LOAD( "fq-008.u50", 0x000, 0x104, NO_DUMP )
+	ROM_LOAD( "fq-009.u51", 0x200, 0x104, NO_DUMP )
+	ROM_LOAD( "fq-010.u52", 0x400, 0x104, NO_DUMP )
+	ROM_LOAD( "fq-011.u53", 0x600, 0x104, NO_DUMP )
+	ROM_LOAD( "fq-012.u54", 0x800, 0x104, NO_DUMP )
 ROM_END
 
 ROM_START( magspeed )
@@ -11705,6 +11869,14 @@ ROM_START( utoukond )
 
 	ROM_REGION( 0x100000, "x1snd", 0 )  /* Samples */
 	ROM_LOAD( "93uta08.69", 0x000000, 0x100000, CRC(3d50bbcd) SHA1(e9b78d08466e1f9b42f11999bb53b6deceb81a12) )
+
+	ROM_REGION( 0xc00, "plds", 0 )
+	ROM_LOAD( "93ut-a12.u206", 0x000, 0x104, NO_DUMP )
+	ROM_LOAD( "93ut-a13.u14",  0x200, 0x104, NO_DUMP )
+	ROM_LOAD( "93ut-a14.u35",  0x400, 0x104, NO_DUMP )
+	ROM_LOAD( "93ut-a15.u36",  0x600, 0x104, NO_DUMP )
+	ROM_LOAD( "93ut-a16.u110", 0x800, 0x104, NO_DUMP )
+	ROM_LOAD( "93ut-a17.u76",  0xa00, 0x104, NO_DUMP )
 ROM_END
 
 ROM_START( neobattl )   // 1CC74: "SD GUNDAM v0.00. 1992/11/04 10:04:33"
@@ -11718,6 +11890,10 @@ ROM_START( neobattl )   // 1CC74: "SD GUNDAM v0.00. 1992/11/04 10:04:33"
 
 	ROM_REGION( 0x100000, "x1snd", 0 )  /* Samples */
 	ROM_LOAD( "bp923-005.u4", 0x000000, 0x100000, CRC(7c0e37be) SHA1(5d5779de948f986971a82db2a5a4302044c3257a) )
+
+	ROM_REGION( 0x400, "plds", 0 )
+	ROM_LOAD( "bp923-007.u37", 0x000, 0x104, NO_DUMP )
+	ROM_LOAD( "bp923-008.u38", 0x200, 0x104, NO_DUMP )
 ROM_END
 
 ROM_START( pairlove )
@@ -11729,9 +11905,8 @@ ROM_START( pairlove )
 	ROM_LOAD( "ut2-001-004.5j",  0x000000, 0x080000, CRC(fdc47b26) SHA1(0de51bcf67b909ac9578f0d1b14af8a4c758aacf) )
 	ROM_LOAD( "ut2-001-005.5l",  0x080000, 0x080000, CRC(076f94a2) SHA1(94b4b41a497dea1b6db5396bd7cd81ebcb217735) )
 
-	ROM_REGION( 0x100000, "x1snd", 0 )  /* Samples */
+	ROM_REGION( 0x80000, "x1snd", 0 )  /* Samples */
 	ROM_LOAD( "ut2-001-003.12a",  0x000000, 0x080000, CRC(900219a9) SHA1(3260a900df25beba597bf947a9fbb6f7392827d7) )
-	ROM_RELOAD(                   0x080000, 0x080000 )
 ROM_END
 
 ROM_START( crazyfgt )
@@ -12138,12 +12313,15 @@ u16 downtown_state::downtown_protection_r(offs_t offset)
 		case 0xa3:
 		{
 			static const u8 word[] = "WALTZ0";
-			if (offset >= 0x100/2 && offset <= 0x10a/2) return word[offset - 0x100/2];
-			else                                        return 0;
+			if (offset >= 0x100/2 && offset <= 0x10a/2)
+				return word[offset - 0x100/2];
+
+			// definitely wants to read-back hi-score table from 0x110-0x15f
+			break;
 		}
-		default:
-			return m_downtown_protection[offset] & 0xff;
 	}
+
+	return m_downtown_protection[offset] & 0xff;
 }
 
 void downtown_state::downtown_protection_w(offs_t offset, u16 data, u16 mem_mask)
@@ -12155,8 +12333,12 @@ void downtown_state::init_downtown()
 {
 	init_bank6502();
 
-	m_downtown_protection = make_unique_clear<u16[]>(0x200/2);
-	save_pointer(NAME(m_downtown_protection),0x200/2);
+	m_downtown_protection = make_unique_clear<u8[]>(0x100);
+	// TODO: protection RAM area is user clearable from service mode, most likely has some sort of battery backed RAM
+	// initializing with 0xff is enough for host CPU to catch up and default it with sensible defaults.
+	for (int i = 0; i < 0x100; i++)
+		m_downtown_protection[i] = 0xff;
+	save_pointer(NAME(m_downtown_protection), 0x200/2);
 
 	m_maincpu->space(AS_PROGRAM).install_read_handler(0x200000, 0x2001ff, read16sm_delegate(*this, FUNC(downtown_state::downtown_protection_r)));
 	m_maincpu->space(AS_PROGRAM).install_write_handler(0x200000, 0x2001ff, write16s_delegate(*this, FUNC(downtown_state::downtown_protection_w)));
@@ -12319,7 +12501,7 @@ GAME( 1989, metafox,   0,        metafox,   metafox,   downtown_state, init_meta
 
 GAME( 1989?,setaroul,  0,        setaroul,  setaroul,  setaroul_state, empty_init,     ROT270, "Visco",                     "The Roulette (Visco)", MACHINE_CLICKABLE_ARTWORK )
 
-GAME( 1989, drgnunit,  0,        drgnunit,  drgnunit,  seta_state,     empty_init,     ROT0,   "Seta",                      "Dragon Unit / Castle of Dragon", 0 )
+GAME( 1989, drgnunit,  0,        drgnunit,  drgnunit,  seta_state,     empty_init,     ROT0,   "Athena / Seta",             "Dragon Unit / Castle of Dragon", 0 ) // Country/License: DSW
 
 GAME( 1989, wits,      0,        wits,      wits,      seta_state,     empty_init,     ROT0,   "Athena (Visco license)",    "Wit's (Japan)" , 0) // Country/License: DSW
 
@@ -12356,12 +12538,12 @@ GAME( 1992, umanclub,  0,        umanclub,  umanclub,  seta_state,     empty_ini
 GAME( 1992, zingzip,   0,        zingzip,   zingzip,   seta_state,     empty_init,     ROT270, "Allumer / Tecmo",           "Zing Zing Zip", 0 ) // This set has Chinese Characters in Title screen, it distributed for Chinese market/or Title: DSW?
 GAME( 1992, zingzipbl, zingzip,  zingzipbl, zingzip,   seta_state,     empty_init,     ROT270, "bootleg",                   "Zing Zing Zip (bootleg)", MACHINE_NOT_WORKING )
 
-GAME( 1993, atehate,   0,        atehate,   atehate,   seta_state,     empty_init,     ROT0,   "Athena",                    "Athena no Hatena ?", 0 )
+GAME( 1993, atehate,   0,        atehate,   atehate,   seta_state,     empty_init,     ROT0,   "Athena",                    "Athena no Hatena?", 0 )
 
 GAME( 1993, daioh,     0,        daioh,     daioh,     seta_state,     empty_init,     ROT270, "Athena",                    "Daioh", 0 )
 GAME( 1993, daioha,    daioh,    daioh,     daioh,     seta_state,     empty_init,     ROT270, "Athena",                    "Daioh (earlier)", 0 )
 GAME( 1993, daiohp,    daioh,    daiohp,    daiohp,    seta_state,     empty_init,     ROT270, "Athena",                    "Daioh (prototype)", 0 )
-GAME( 1993, daiohp2,   daioh,    daiohp,    daiohp,    seta_state,     empty_init,     ROT270, "Athena",                    "Daioh (prototype, earlier)", 0 )
+GAME( 1993, daiohp2,   daioh,    daiohp,    daiohp2,   seta_state,     empty_init,     ROT270, "Athena",                    "Daioh (prototype, earlier)", 0 )
 GAME( 1993, daiohc,    daioh,    wrofaero,  daioh,     seta_state,     empty_init,     ROT270, "Athena",                    "Daioh (93111A PCB conversion)", 0 )
 
 GAME( 1993, jjsquawk,  0,        jjsquawk,  jjsquawk,  seta_state,     empty_init,     ROT0,   "Athena / Able",             "J. J. Squawkers", MACHINE_IMPERFECT_SOUND )
@@ -12370,7 +12552,7 @@ GAME( 1999, jjsquawkb, jjsquawk, jjsquawb,  jjsquawk,  seta_state,     empty_ini
 GAME( 1999, jjsquawkb2,jjsquawk, jjsquawk,  jjsquawk,  seta_state,     empty_init,     ROT0,   "bootleg",                   "J. J. Squawkers (bootleg, Blandia Conversion)", MACHINE_IMPERFECT_SOUND )
 GAME( 2003, simpsonjr, jjsquawk, jjsquawb,  jjsquawk,  seta_state,     empty_init,     ROT0,   "bootleg (Daigom Games)",    "Simpson Junior (bootleg of J. J. Squawkers)", MACHINE_IMPERFECT_SOUND )
 
-GAME( 1993, kamenrid,  0,        kamenrid,  kamenrid,  seta_state,     empty_init,     ROT0,   "Banpresto / Toei",          "Masked Riders Club Battle Race", 0 )
+GAME( 1993, kamenrid,  0,        kamenrid,  kamenrid,  seta_state,     empty_init,     ROT0,   "Banpresto / Toei",          "Masked Riders Club Battle Race / Kamen Rider Club Battle Racer", 0 )
 
 GAME( 1993, madshark,  0,        madshark,  madshark,  seta_state,     empty_init,     ROT270, "Allumer",                   "Mad Shark", 0 )
 
@@ -12399,7 +12581,7 @@ GAME( 1994, magspeed,  0,        magspeed,  magspeed,  seta_state,     empty_ini
 GAME( 1994, orbs,      0,        orbs,      orbs,      seta_state,     empty_init,     ROT0,   "American Sammy",            "Orbs (10/7/94 prototype?)", 0 )
 
 GAME( 1995, keroppi,   0,        keroppi,   keroppi,   seta_state,     empty_init,     ROT0,   "American Sammy",            "Kero Kero Keroppi's Let's Play Together (USA, Version 2.0)", 0 ) // ROM labels are all v1.0 tho.
-GAME( 1993, keroppij,  keroppi,  keroppi,   keroppij,  seta_state,     empty_init,     ROT0,   "Sammy Industries",          "Kero Kero Keroppi no Issyoni Asobou (Japan)", 0 )
+GAME( 1993, keroppij,  keroppi,  keroppi,   keroppij,  seta_state,     empty_init,     ROT0,   "Sammy Industries",          "Kero Kero Keroppi no Isshoni Asobou (Japan)", 0 )
 
 GAME( 1995, extdwnhl,  0,        extdwnhl,  extdwnhl,  seta_state,     empty_init,     ROT0,   "Sammy Industries Japan",    "Extreme Downhill (v1.5)", MACHINE_IMPERFECT_GRAPHICS )
 

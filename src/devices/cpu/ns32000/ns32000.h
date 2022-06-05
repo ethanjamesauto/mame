@@ -13,6 +13,7 @@ class ns32000_device : public cpu_device
 {
 public:
 	template <typename T> void set_fpu(T &&tag) { m_fpu.set_tag(std::forward<T>(tag)); }
+	template <typename T> void set_mmu(T &&tag) { m_mmu.set_tag(std::forward<T>(tag)); }
 
 	// construction/destruction
 	ns32000_device(machine_config const &mconfig, device_type type, char const *tag, device_t *owner, u32 clock);
@@ -44,12 +45,12 @@ protected:
 
 	enum addr_mode_type : unsigned
 	{
-		IMM,
-		REG,
-		MEM,
-		IND,
-		EXT,
-		TOS,
+		IMM, // immediate
+		REG, // register
+		MEM, // memory space
+		REL, // memory relative
+		EXT, // external
+		TOS, // top of stack
 	};
 	enum access_class : unsigned
 	{
@@ -71,8 +72,7 @@ protected:
 	// time needed to read or write a memory operand
 	unsigned top(size_code const size, u32 const address = 0) const
 	{
-		// TODO: mmu cycles
-		static constexpr unsigned tmmu = 0;
+		unsigned const tmmu = m_mmu ? 1 : 0;
 
 		switch (size)
 		{
@@ -118,7 +118,12 @@ protected:
 		unsigned tea;
 	};
 
-	// instruction decoding helpers
+	// memory accessors
+	template <typename T> T mem_read(unsigned st, u32 address, bool user = false, bool pfs = false);
+	template <typename T> void mem_write(unsigned st, u32 address, T data, bool user = false);
+
+	// instruction fetch/decode helpers
+	template <typename T> T fetch(unsigned &bytes);
 	s32 displacement(unsigned &bytes);
 	void decode(addr_mode *mode, unsigned &bytes);
 
@@ -131,20 +136,38 @@ protected:
 	// other execution helpers
 	bool condition(unsigned const cc);
 	void flags(u32 const src1, u32 const src2, u32 const dest, unsigned const size, bool const subtraction);
-	void interrupt(unsigned const vector, u32 const return_address, bool const trap = true);
-	u16 slave(addr_mode op1, addr_mode op2);
+	void interrupt(unsigned const type, u32 const return_address);
+
+	// slave protocol helpers
+	u16 slave(u8 opbyte, u16 opword, addr_mode op1, addr_mode op2);
+	u16 slave_slow(ns32000_slow_slave_interface &slave, u8 opbyte, u16 opword, addr_mode op1, addr_mode op2);
+	u16 slave_fast(ns32000_fast_slave_interface &slave, u8 opbyte, u16 opword, addr_mode op1, addr_mode op2);
 
 private:
+	u32 const m_address_mask;
+
 	// configuration
 	address_space_config m_program_config;
-	address_space_config m_interrupt_config;
+	address_space_config m_iam_config;
+	address_space_config m_iac_config;
+	address_space_config m_eim_config;
+	address_space_config m_eic_config;
+	address_space_config m_sif_config;
+	address_space_config m_nif_config;
+	address_space_config m_odt_config;
+	address_space_config m_rmw_config;
+	address_space_config m_ear_config;
 
 	optional_device<ns32000_slave_interface> m_fpu;
+	optional_device<ns32000_mmu_interface> m_mmu;
 
 	// emulation state
 	int m_icount;
 
 	typename memory_access<24, Width, 0, ENDIANNESS_LITTLE>::specific m_bus[16];
+
+	u32 m_ssp;     // saved stack pointer
+	u16 m_sps;     // saved program status
 
 	u32 m_pc;      // program counter
 	u32 m_sb;      // static base
@@ -183,8 +206,15 @@ public:
 	ns32032_device(machine_config const &mconfig, char const *tag, device_t *owner, u32 clock);
 };
 
+class ns32332_device : public ns32000_device<2>
+{
+public:
+	ns32332_device(machine_config const &mconfig, char const *tag, device_t *owner, u32 clock);
+};
+
 DECLARE_DEVICE_TYPE(NS32008, ns32008_device)
 DECLARE_DEVICE_TYPE(NS32016, ns32016_device)
 DECLARE_DEVICE_TYPE(NS32032, ns32032_device)
+DECLARE_DEVICE_TYPE(NS32332, ns32332_device)
 
 #endif // MAME_CPU_NS32000_NS32000_H

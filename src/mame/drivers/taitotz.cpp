@@ -178,6 +178,7 @@ Notes:
 #include "cpu/tlcs900/tmp95c063.h"
 #include "machine/nvram.h"
 #include "video/poly.h"
+#include "screen.h"
 
 /*
     Interesting mem areas
@@ -213,7 +214,7 @@ Notes:
         0x7004:            0x4003d554()
         0x7005:            0x4003d168()
         0x8000:            ?                                        Used by vibration (force feedback?) on pwrshovl
-		0x9100:            ?                                        Dendego3 speedometer and brake meter. io_shared[0x1c3c] = speed, io_shared[0x1c3e] = brake
+        0x9100:            ?                                        Dendego3 speedometer and brake meter. io_shared[0x1c3c] = speed, io_shared[0x1c3e] = brake
         0xa000:            ?                                        Used by vibration (force feedback?) on pwrshovl
         0xf000:            0x4002f328() TLCS_Init
         0xf010:            0x4002f074()                             Enables TLCS watchdog timer
@@ -595,28 +596,28 @@ private:
 	std::unique_ptr<uint32_t[]> m_screen_ram;
 	std::unique_ptr<uint32_t[]> m_frame_ram;
 	std::unique_ptr<uint32_t[]> m_texture_ram;
-	uint32_t m_video_unk_reg[0x10];
+	uint32_t m_video_unk_reg[0x10]{};
 
-	uint32_t m_video_fifo_ptr;
-	uint32_t m_video_ram_ptr;
-	uint32_t m_video_reg;
-	uint32_t m_scr_base;
+	uint32_t m_video_fifo_ptr = 0;
+	uint32_t m_video_ram_ptr = 0;
+	uint32_t m_video_reg = 0;
+	uint32_t m_scr_base = 0;
 
-	//uint64_t m_video_fifo_mem[4];
+	//uint64_t m_video_fifo_mem[4]{};
 
-	uint16_t m_io_share_ram[0x2000];
+	uint16_t m_io_share_ram[0x2000]{};
 
-	const char *m_hdd_serial_number;
+	const char *m_hdd_serial_number = nullptr;
 
 	uint8_t tlcs_common_r(offs_t offset);
 	void tlcs_common_w(offs_t offset, uint8_t data);
 	uint8_t tlcs_rtc_r(offs_t offset);
 	void tlcs_rtc_w(offs_t offset, uint8_t data);
 
-	uint8_t m_rtcdata[8];
+	uint8_t m_rtcdata[8]{};
 
 
-	uint32_t m_reg105;
+	uint32_t m_reg105 = 0;
 
 	std::unique_ptr<taitotz_renderer> m_renderer;
 
@@ -638,11 +639,11 @@ private:
 	void tlcs900h_mem(address_map &map);
 };
 
-class taitotz_renderer : public poly_manager<float, taitotz_polydata, 6, 50000>
+class taitotz_renderer : public poly_manager<float, taitotz_polydata, 6>
 {
 public:
 	taitotz_renderer(taitotz_state &state, int width, int height, uint32_t *scrram, uint32_t *texram)
-		: poly_manager<float, taitotz_polydata, 6, 50000>(state.machine()),
+		: poly_manager<float, taitotz_polydata, 6>(state.machine()),
 			m_state(state)
 	{
 		m_fb = std::make_unique<bitmap_rgb32>(width, height);
@@ -691,47 +692,47 @@ private:
 	taitotz_state &m_state;
 	std::unique_ptr<bitmap_rgb32> m_fb;
 	std::unique_ptr<bitmap_ind32> m_zbuffer;
-	uint32_t *m_texture;
-	uint32_t *m_screen_ram;
+	uint32_t *m_texture = nullptr;
+	uint32_t *m_screen_ram = nullptr;
 
 	rectangle m_cliprect;
 
-	PLANE m_clip_plane[6];
-	float m_matrix[4][3];
+	PLANE m_clip_plane[6]{};
+	float m_matrix[4][3]{};
 
-	float m_diffuse_intensity;
-	float m_ambient_intensity;
-	float m_specular_intensity;
-	float m_specular_power;
+	float m_diffuse_intensity = 0;
+	float m_ambient_intensity = 0;
+	float m_specular_intensity = 0;
+	float m_specular_power = 0;
 
-	int m_ambient_r;
-	int m_ambient_g;
-	int m_ambient_b;
-	int m_diffuse_r;
-	int m_diffuse_g;
-	int m_diffuse_b;
-	int m_specular_r;
-	int m_specular_g;
-	int m_specular_b;
+	int m_ambient_r = 0;
+	int m_ambient_g = 0;
+	int m_ambient_b = 0;
+	int m_diffuse_r = 0;
+	int m_diffuse_g = 0;
+	int m_diffuse_b = 0;
+	int m_specular_r = 0;
+	int m_specular_g = 0;
+	int m_specular_b = 0;
 
-	float m_vp_center_x;
-	float m_vp_center_y;
-	float m_vp_focus;
-	float m_vp_x;
-	float m_vp_y;
-	float m_vp_mul;
+	float m_vp_center_x = 0;
+	float m_vp_center_y = 0;
+	float m_vp_focus = 0;
+	float m_vp_x = 0;
+	float m_vp_y = 0;
+	float m_vp_mul = 0;
 
-	uint32_t m_reg_100;
-	uint32_t m_reg_101;
-	uint32_t m_reg_102;
+	uint32_t m_reg_100 = 0;
+	uint32_t m_reg_101 = 0;
+	uint32_t m_reg_102 = 0;
 
-	uint32_t m_reg_10000100;
-	uint32_t m_reg_10000101;
+	uint32_t m_reg_10000100 = 0;
+	uint32_t m_reg_10000101 = 0;
 
-	uint32_t m_tnl_fifo[64];
-	uint32_t m_direct_fifo[64];
-	int m_tnl_fifo_ptr;
-	int m_direct_fifo_ptr;
+	uint32_t m_tnl_fifo[64]{};
+	uint32_t m_direct_fifo[64]{};
+	int m_tnl_fifo_ptr = 0;
+	int m_direct_fifo_ptr = 0;
 };
 
 
@@ -1255,7 +1256,7 @@ void taitotz_renderer::render_tnl_object(uint32_t address, float scale, uint8_t 
 	int index = 0;
 	do
 	{
-		taitotz_polydata &extra = object_data_alloc();
+		taitotz_polydata &extra = object_data().next();
 
 		int num_verts;
 
@@ -1344,7 +1345,7 @@ void taitotz_renderer::render_tnl_object(uint32_t address, float scale, uint8_t 
 
 		for (int i=2; i < num_verts; i++)
 		{
-			render_triangle(m_cliprect, render_delegate(&taitotz_renderer::draw_scanline, this), 6, v[0], v[i-1], v[i]);
+			render_triangle<6>(m_cliprect, render_delegate(&taitotz_renderer::draw_scanline, this), v[0], v[i-1], v[i]);
 		}
 	}
 	while (!end);
@@ -1416,7 +1417,7 @@ void taitotz_renderer::push_direct_poly_fifo(uint32_t data)
 	if (m_direct_fifo_ptr >= expected_size)
 	{
 		vertex_t v[8];
-		taitotz_polydata &extra = object_data_alloc();
+		taitotz_polydata &extra = object_data().next();
 
 		int index = 4;
 		for (int i=0; i < num_verts; i++)
@@ -1434,7 +1435,7 @@ void taitotz_renderer::push_direct_poly_fifo(uint32_t data)
 
 		for (int i=2; i < num_verts; i++)
 		{
-			render_triangle(m_cliprect, render_delegate(&taitotz_renderer::draw_scanline_noz, this), 3, v[0], v[i-1], v[i]);
+			render_triangle<3>(m_cliprect, render_delegate(&taitotz_renderer::draw_scanline_noz, this), v[0], v[i-1], v[i]);
 		}
 
 		m_direct_fifo_ptr = 0;
@@ -1989,7 +1990,7 @@ void taitotz_state::ppc_common_w(offs_t offset, uint64_t data, uint64_t mem_mask
 		/*
 		if (m_io_share_ram[0xfff] == 0x1010)
 		{
-			printf("PPC -> TLCS cmd 1010:   %04X %04X %04X %04X\n", m_io_share_ram[0x1a02/2], m_io_share_ram[0x1a04/2], m_io_share_ram[0x1a06/2], m_io_share_ram[0x1a08/2]);
+		    printf("PPC -> TLCS cmd 1010:   %04X %04X %04X %04X\n", m_io_share_ram[0x1a02/2], m_io_share_ram[0x1a04/2], m_io_share_ram[0x1a06/2], m_io_share_ram[0x1a08/2]);
 		}
 		*/
 

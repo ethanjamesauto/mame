@@ -30,7 +30,7 @@ public:
 		, m_cassette(*this, "cassette")
 		, m_beeper(*this, DISCRETE_TAG)
 		, m_byteio(*this, VIP_BYTEIO_PORT_TAG)
-		, m_exp(*this, VIP_EXPANSION_SLOT_TAG)
+		, m_exp(*this, "exp")
 		, m_ram(*this, RAM_TAG)
 		, m_rom(*this, CDP1802_TAG)
 		, m_chip8(*this, "chip8")
@@ -125,10 +125,10 @@ private:
 	int m_exp_ef4;
 
 	// keyboard state
-	int m_keylatch;
+	int m_keylatch = 0;
 
 	// expansion state
-	uint8_t m_byteio_data;
+	uint8_t m_byteio_data = 0;
 	output_finder<3> m_leds;
 };
 

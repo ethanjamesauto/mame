@@ -7,8 +7,8 @@ Applied Concepts Great Game Machine (GGM), electronic board game computer.
 2nd source distribution: Modular Game System (MGS), by Chafitz.
 
 Hardware notes:
-- 6502A 2MHz (unknown XTAL, label "5-80"), SYP6522 VIA
-- 2KB RAM(4*HM472114AP-2), no ROM on main PCB
+- 6502A 2MHz, SYP6522 VIA
+- 2KB RAM(4*HM472114AP-2 or 1*M58725P), no ROM on main PCB
 - 2*74164 shift register, 3*6118P VFD driver
 - 8-digit 14seg VFD panel (same one as in Speak & Spell)
 - 5*4 keypad(unlabeled by default), 1-bit sound
@@ -19,7 +19,7 @@ There were also some standalone machines, eg. Morphy Encore, Odin Encore.
 Known chess cartridges (*denotes not dumped):
 - Chess/Boris 2.5 (aka Sargon 2.5)
 - *Gruenfeld Edition - Master Chess Openings
-- *Morphy Edition - Master Chess
+- Morphy Edition - Master Chess
 - Capablanca Edition - Master Chess Endgame
 - Sandy Edition - Master Chess (German language version of Morphy)
 - Steinitz Edition-4 - Master Chess
@@ -39,8 +39,6 @@ Other games:
 TODO:
 - it doesn't have nvram, it's a workaround for MAME forcing a hard reset when
   swapping in a new cartridge
-- what's VIA PB0 for? game toggles it once per irq
-- identify XTAL (2MHz CPU/VIA is correct, compared to video reference)
 - confirm display AP segment, is it used anywhere?
 - verify cartridge pinout, right now assume A0-A15 (max known cart size is 24KB).
   Boris/Sargon cartridge is A0-A11 and 2 CS lines, Steinitz uses the whole range.
@@ -59,7 +57,7 @@ TODO:
 #include "video/pwm.h"
 
 #include "speaker.h"
-#include "softlist.h"
+#include "softlist_dev.h"
 
 // internal artwork
 #include "aci_ggm.lh" // clickable
@@ -172,7 +170,7 @@ void ggm_state::update_reset(ioport_value state)
 DEVICE_IMAGE_LOAD_MEMBER(ggm_state::load_cart)
 {
 	u32 size = m_cart->common_get_size("rom");
-	m_cart_mask = ((1 << (31 - count_leading_zeros(size))) - 1) & 0xffff;
+	m_cart_mask = ((1 << (31 - count_leading_zeros_32(size))) - 1) & 0xffff;
 
 	m_cart->rom_alloc(size, GENERIC_ROM8_WIDTH, ENDIANNESS_LITTLE);
 	m_cart->common_load_rom(m_cart->get_rom_base(), size, "rom");
@@ -238,7 +236,7 @@ void ggm_state::select_w(u8 data)
 
 void ggm_state::control_w(u8 data)
 {
-	// PB0: ?
+	// PB0: DC/DC converter, toggles once per IRQ (probably for VFD, not needed for emulation)
 
 	// PB7: speaker out
 	m_dac->write(BIT(data, 7));
@@ -407,7 +405,7 @@ static INPUT_PORTS_START( ggm )
 
 	PORT_START("IN.4")
 	PORT_CONFNAME( 0x01, 0x00, "Version" ) // factory-set
-	PORT_CONFSETTING(    0x00, "GGS (Applied Concepts)" )
+	PORT_CONFSETTING(    0x00, "GGM (Applied Concepts)" )
 	PORT_CONFSETTING(    0x01, "MGS (Chafitz)" )
 	PORT_BIT(0x02, IP_ACTIVE_HIGH, IPT_OTHER) PORT_CODE(KEYCODE_F1) PORT_TOGGLE PORT_CHANGED_MEMBER(DEVICE_SELF, ggm_state, reset_switch, 0) PORT_NAME("Memory Switch")
 
@@ -432,10 +430,10 @@ INPUT_PORTS_END
 void ggm_state::ggm(machine_config &config)
 {
 	/* basic machine hardware */
-	M6502(config, m_maincpu, 2000000);
+	M6502(config, m_maincpu, 2_MHz_XTAL);
 	m_maincpu->set_addrmap(AS_PROGRAM, &ggm_state::main_map);
 
-	MOS6522(config, m_via, 2000000); // DDRA = 0xff, DDRB = 0x81
+	MOS6522(config, m_via, 2_MHz_XTAL); // DDRA = 0xff, DDRB = 0x81
 	m_via->writepa_handler().set(FUNC(ggm_state::select_w));
 	m_via->writepb_handler().set(FUNC(ggm_state::control_w));
 	m_via->readpb_handler().set(FUNC(ggm_state::input_r));

@@ -119,6 +119,7 @@ local function init()
 		end,
 		text = function(text, cdata)
 			if lasttag == "text" then
+				text = text:gsub("\r", "") -- strip crs
 				stmt = db.prepare("INSERT INTO \"" .. file .. "\" VALUES (?)")
 				db.check("inserting values")
 				stmt:bind_values(text)
@@ -168,7 +169,7 @@ function dat.check(set, softlist)
 		info = stmt:get_value(0)
 	end
 	stmt:finalize()
-	return info and _("History") or nil
+	return info and _p("plugin-data", "History") or nil
 end
 
 function dat.get()

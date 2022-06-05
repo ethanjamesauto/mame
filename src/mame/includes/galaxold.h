@@ -26,7 +26,7 @@
 #define STAR_COUNT  252
 struct star_gold
 {
-	int x, y, color;
+	int x = 0, y = 0, color = 0;
 };
 
 class galaxold_state : public driver_device
@@ -46,7 +46,6 @@ public:
 		, m_spriteram2(*this,"spriteram2")
 		, m_attributesram(*this,"attributesram")
 		, m_bulletsram(*this,"bulletsram")
-		, m_rockclim_videoram(*this,"rockclim_vram")
 		, m_racknrol_tiles_bank(*this,"racknrol_tbank")
 		, m_leds(*this, "led%u", 0U)
 		, m_leftclip(2)
@@ -67,21 +66,19 @@ public:
 	optional_shared_ptr<uint8_t> m_spriteram2;
 	required_shared_ptr<uint8_t> m_attributesram;
 	optional_shared_ptr<uint8_t> m_bulletsram;
-	optional_shared_ptr<uint8_t> m_rockclim_videoram;
 	optional_shared_ptr<uint8_t> m_racknrol_tiles_bank;
 	output_finder<2> m_leds;
 
-	int m_irq_line;
-	uint8_t m__4in1_bank;
-	tilemap_t *m_bg_tilemap;
-	tilemap_t *m_rockclim_tilemap;
-	int m_spriteram2_present;
-	uint8_t m_gfxbank[5];
-	uint8_t m_flipscreen_x;
-	uint8_t m_flipscreen_y;
-	uint8_t m_color_mask;
-	tilemap_t *m_dambustr_tilemap2;
-	std::unique_ptr<uint8_t[]> m_dambustr_videoram2;
+	int m_irq_line = 0;
+	uint8_t m__4in1_bank = 0U;
+	tilemap_t *m_bg_tilemap = nullptr;
+	int m_spriteram2_present = 0;
+	uint8_t m_gfxbank[5]{};
+	uint8_t m_flipscreen_x = 0U;
+	uint8_t m_flipscreen_y = 0U;
+	uint8_t m_color_mask = 0U;
+	tilemap_t *m_dambustr_tilemap2 = nullptr;
+	std::unique_ptr<uint8_t[]> m_dambustr_videoram2{};
 	int m_leftclip;
 
 	void (galaxold_state::*m_modify_charcode)(uint16_t *code, uint8_t x);     /* function to call to do character banking */
@@ -89,32 +86,30 @@ public:
 	void (galaxold_state::*m_modify_color)(uint8_t *color);   /* function to call to do modify how the color codes map to the PROM */
 	void (galaxold_state::*m_modify_ypos)(uint8_t*);  /* function to call to do modify how vertical positioning bits are connected */
 
-	uint8_t m_timer_adjusted;
-	uint8_t m_darkplnt_bullet_color;
+	uint8_t m_timer_adjusted = 0U;
+	uint8_t m_darkplnt_bullet_color = 0U;
 	void (galaxold_state::*m_draw_bullets)(bitmap_ind16 &,const rectangle &, int, int, int);  /* function to call to draw a bullet */
 
-	uint8_t m_background_enable;
-	uint8_t m_background_red;
-	uint8_t m_background_green;
-	uint8_t m_background_blue;
+	uint8_t m_background_enable = 0U;
+	uint8_t m_background_red = 0U;
+	uint8_t m_background_green = 0U;
+	uint8_t m_background_blue = 0U;
 	void (galaxold_state::*m_draw_background)(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);   /* function to call to draw the background */
-	uint16_t m_rockclim_v;
-	uint16_t m_rockclim_h;
-	int m_dambustr_bg_split_line;
-	int m_dambustr_bg_color_1;
-	int m_dambustr_bg_color_2;
-	int m_dambustr_bg_priority;
-	int m_dambustr_char_bank;
-	std::unique_ptr<bitmap_ind16> m_dambustr_tmpbitmap;
+	int m_dambustr_bg_split_line = 0;
+	int m_dambustr_bg_color_1 = 0;
+	int m_dambustr_bg_color_2 = 0;
+	int m_dambustr_bg_priority = 0;
+	int m_dambustr_char_bank = 0;
+	std::unique_ptr<bitmap_ind16> m_dambustr_tmpbitmap{};
 
 	void (galaxold_state::*m_draw_stars)(bitmap_ind16 &, const rectangle &);      /* function to call to draw the star layer */
-	int m_stars_colors_start;
-	int32_t m_stars_scrollpos;
-	uint8_t m_stars_on;
-	uint8_t m_stars_blink_state;
-	emu_timer *m_stars_blink_timer;
-	emu_timer *m_stars_scroll_timer;
-	struct star_gold m_stars[STAR_COUNT];
+	int m_stars_colors_start = 0;
+	int32_t m_stars_scrollpos = 0U;
+	uint8_t m_stars_on = 0U;
+	uint8_t m_stars_blink_state = 0U;
+	emu_timer *m_stars_blink_timer = nullptr;
+	emu_timer *m_stars_scroll_timer = nullptr;
+	struct star_gold m_stars[STAR_COUNT]{};
 
 	uint8_t drivfrcg_port0_r();
 	uint8_t scrambler_protection_2_r();
@@ -147,10 +142,6 @@ public:
 	void galaxold_stars_enable_w(uint8_t data);
 	void darkplnt_bullet_color_w(uint8_t data);
 	void galaxold_gfxbank_w(offs_t offset, uint8_t data);
-	void rockclim_videoram_w(offs_t offset, uint8_t data);
-	void rockclim_scroll_w(offs_t offset, uint8_t data);
-	void guttang_rombank_w(uint8_t data);
-	uint8_t rockclim_videoram_r(offs_t offset);
 	void dambustr_bg_split_line_w(uint8_t data);
 	void dambustr_bg_color_w(uint8_t data);
 	DECLARE_WRITE_LINE_MEMBER(galaxold_7474_9m_2_q_callback);
@@ -163,20 +154,18 @@ public:
 	void init_bullsdrtg();
 	void init_ladybugg();
 	void init_4in1();
-	void init_guttangt();
 
 	TILE_GET_INFO_MEMBER(drivfrcg_get_tile_info);
 	TILE_GET_INFO_MEMBER(racknrol_get_tile_info);
 	TILE_GET_INFO_MEMBER(dambustr_get_tile_info2);
 	TILE_GET_INFO_MEMBER(get_tile_info);
-	TILE_GET_INFO_MEMBER(rockclim_get_tile_info);
 	TILE_GET_INFO_MEMBER(harem_get_tile_info);
 
 	DECLARE_MACHINE_RESET(galaxold);
 	DECLARE_MACHINE_RESET(hunchbkg);
 
 	void galaxold_palette(palette_device &palette);
-	void rockclim_palette(palette_device &palette) const;
+	void s2650_palette(palette_device &palette) const;
 	void scrambold_palette(palette_device &palette);
 	void stratgyx_palette(palette_device &palette);
 	void darkplnt_palette(palette_device &palette) const;
@@ -195,7 +184,6 @@ public:
 	DECLARE_VIDEO_START(pisces);
 	DECLARE_VIDEO_START(dkongjrm);
 	DECLARE_VIDEO_START(dkongjrmc);
-	DECLARE_VIDEO_START(rockclim);
 	DECLARE_VIDEO_START(galaxold_plain);
 	DECLARE_VIDEO_START(ckongs);
 	DECLARE_VIDEO_START(darkplnt);
@@ -221,8 +209,6 @@ public:
 	void video_start_common();
 	void pisces_modify_spritecode(uint8_t *spriteram, int *code, int *flipx, int *flipy, int offs);
 	void mooncrst_modify_spritecode(uint8_t *spriteram, int *code, int *flipx, int *flipy, int offs);
-	void rockclim_draw_background(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
-	void rockclim_modify_spritecode(uint8_t *spriteram, int *code, int *flipx, int *flipy, int offs);
 	void harem_modify_spritecode(uint8_t *spriteram, int *code, int *flipx, int *flipy, int offs);
 	void mooncrst_modify_charcode(uint16_t *code, uint8_t x);
 	void pisces_modify_charcode(uint16_t *code, uint8_t x);
@@ -277,12 +263,10 @@ public:
 	void dkongjrmc(machine_config &config);
 	void bullsdrtg(machine_config &config);
 	void drivfrcg(machine_config &config);
-	void rockclim(machine_config &config);
 	void scramblb(machine_config &config);
 	void scramb2(machine_config &config);
 	void scramb3(machine_config &config);
 	void mooncrst(machine_config &config);
-	void guttang(machine_config &config);
 	void galaxian_audio(machine_config &config);
 	void mooncrst_audio(machine_config &config);
 	void _4in1_map(address_map &map);
@@ -292,7 +276,6 @@ public:
 	void drivfrcg_program(address_map &map);
 	void drivfrcg_io(address_map &map);
 	void galaxold_map(address_map &map);
-	void guttang_map(address_map &map);
 	void hexpoola_data(address_map &map);
 	void hexpoola_io(address_map &map);
 	void hunchbkg_map(address_map &map);
@@ -301,7 +284,6 @@ public:
 	void mooncrst_map(address_map &map);
 	void racknrol_map(address_map &map);
 	void racknrol_io(address_map &map);
-	void rockclim_map(address_map &map);
 	void scramb_common_map(address_map &map);
 	void scramb2_map(address_map &map);
 	void scramb3_map(address_map &map);

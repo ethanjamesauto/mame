@@ -98,7 +98,7 @@ public:
 		, m_floppy1(*this, "fdc:1")
 		, m_floppy2(*this, "fdc:2")
 		, m_floppy3(*this, "fdc:3")
-		, m_io_keyboard(*this, "LINE%u", 0)
+		, m_io_keyboard(*this, "LINE%u", 0U)
 //      , m_mainram(*this, RAM_TAG)
 	{ }
 
@@ -126,12 +126,12 @@ private:
 
 	void mem_map(address_map &map);
 
-	u8 m_size_store = 0;
+	u8 m_size_store = 0U;
 	bool m_fdc_drq = 0;
 	bool m_fdc_int = 0;
 	bool m_allow_nmi = 0;
-	u8 m_mode = 0;
-	floppy_image_device *m_floppy;
+	u8 m_mode = 0U;
+	floppy_image_device *m_floppy = 0;
 	required_device<cpu_device> m_maincpu;
 	//required_region_ptr<u8> m_p_chargen;
 	//required_shared_ptr<u8> m_p_vram;

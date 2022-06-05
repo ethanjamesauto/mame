@@ -58,10 +58,6 @@ public:
 	void subhuntr(machine_config &config);
 
 protected:
-	enum { TIMER_VIDEO };
-
-	virtual void device_timer(emu_timer &timer, device_timer_id id, int param, void *ptr) override;
-
 	virtual void machine_start() override;
 	virtual void machine_reset() override;
 
@@ -107,21 +103,9 @@ private:
 
 ***************************************************************************/
 
-void subhuntr_state::device_timer(emu_timer &timer, device_timer_id id, int param, void *ptr)
-{
-	switch (id)
-	{
-	case TIMER_VIDEO:
-		video_callback(ptr, param);
-		break;
-	default:
-		throw emu_fatalerror("Unknown id in subhuntr_state::device_timer");
-	}
-}
-
 void subhuntr_state::machine_start()
 {
-	m_video_timer = timer_alloc(TIMER_VIDEO);
+	m_video_timer = timer_alloc(FUNC(subhuntr_state::video_callback), this);
 	m_tilemap = &machine().tilemap().create(*m_gfx, tilemap_get_info_delegate(*this, FUNC(subhuntr_state::tile_info)), TILEMAP_SCAN_ROWS, 8, 8, 32, 8);
 	m_tilemap->set_transparent_pen(0);
 
@@ -147,7 +131,7 @@ void subhuntr_state::txtram_w(offs_t offset, u8 data)
 
 u8 subhuntr_state::intack_r()
 {
-	unsigned const source = count_leading_zeros(m_intreqs) - 24;
+	unsigned const source = count_leading_zeros_32(m_intreqs) - 24;
 	u8 const vector = ((m_intreq_cnf->read() & 0x01) ? 0x91 : 0x11) | (source << 1);
 	switch (source)
 	{

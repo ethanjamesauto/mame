@@ -726,18 +726,6 @@ void bebox_state::scsi53c810_pci_write(int function, int offset, uint32_t data, 
 }
 
 
-void bebox_state::device_timer(emu_timer &timer, device_timer_id id, int param, void *ptr)
-{
-	switch (id)
-	{
-	case TIMER_GET_DEVICES:
-		break;
-	default:
-		throw emu_fatalerror("Unknown id in bebox_state::device_timer");
-	}
-}
-
-
 /*************************************
  *
  *  Driver main
@@ -746,8 +734,6 @@ void bebox_state::device_timer(emu_timer &timer, device_timer_id id, int param, 
 
 void bebox_state::machine_reset()
 {
-	timer_set(attotime::zero, TIMER_GET_DEVICES);
-
 	m_ppc[0]->set_input_line(INPUT_LINE_RESET, CLEAR_LINE);
 	m_ppc[1]->set_input_line(INPUT_LINE_RESET, ASSERT_LINE);
 
@@ -768,7 +754,7 @@ void bebox_state::init_bebox()
 	/* set up boot and flash ROM */
 	membank("bank2")->set_base(memregion("user2")->base());
 
-	/* install MESS managed RAM */
+	/* install managed RAM */
 	space_0.install_ram(0, m_ram->size() - 1, 0x02000000, m_ram->pointer());
 	space_1.install_ram(0, m_ram->size() - 1, 0x02000000, m_ram->pointer());
 
@@ -777,7 +763,7 @@ void bebox_state::init_bebox()
 	 * lets CPU #1 go.  However, it seems that CPU #1 jumps into never-never
 	 * land, crashes, and then goes into NetBSD's crash handler which catches
 	 * it.  The current PowerPC core cannot catch this trip into never-never
-	 * land properly, and MESS crashes.  In the interim, this "mitten" catches
+	 * land properly, and MAME crashes.  In the interim, this "mitten" catches
 	 * the crash
 	 */
 	{

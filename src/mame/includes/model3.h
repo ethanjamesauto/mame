@@ -28,12 +28,19 @@ typedef float VECTOR3[3];
 
 struct cached_texture
 {
+	cached_texture(int texwidth, int texheight, int texformat) :
+		next(nullptr),
+		width(texwidth),
+		height(texheight),
+		format(texformat),
+		alpha(~0),
+		data(new rgb_t[(32 << texwidth) * (32 << texheight) * 4]) { }
 	cached_texture *next;
 	uint8_t       width;
 	uint8_t       height;
 	uint8_t       format;
 	uint8_t       alpha;
-	rgb_t       data[1];
+	std::unique_ptr<rgb_t[]> data;
 };
 
 struct m3_vertex
@@ -60,7 +67,45 @@ struct m3_triangle
 	int color;
 };
 
-class model3_renderer;
+struct model3_polydata
+{
+	cached_texture *texture;
+	uint32_t color;
+	uint32_t texture_param;
+	int transparency;
+	int intensity;
+};
+
+class model3_state;
+
+class model3_renderer : public poly_manager<float, model3_polydata, 6>
+{
+public:
+	model3_renderer(running_machine &machine, int width, int height)
+		: poly_manager<float, model3_polydata, 6>(machine)
+	{
+		m_fb = std::make_unique<bitmap_rgb32>(width, height);
+		m_zb = std::make_unique<bitmap_ind32>(width, height);
+	}
+
+	void draw(bitmap_rgb32 &bitmap, const rectangle &cliprect);
+	void draw_opaque_triangles(const m3_triangle* tris, int num_tris);
+	void draw_alpha_triangles(const m3_triangle* tris, int num_tris);
+	void clear_fb();
+	void clear_zb();
+	void draw_scanline_solid(int32_t scanline, const extent_t &extent, const model3_polydata &extradata, int threadid);
+	void draw_scanline_solid_trans(int32_t scanline, const extent_t &extent, const model3_polydata &extradata, int threadid);
+	void draw_scanline_tex(int32_t scanline, const extent_t &extent, const model3_polydata &extradata, int threadid);
+	void draw_scanline_tex_colormod(int32_t scanline, const extent_t &extent, const model3_polydata &extradata, int threadid);
+	void draw_scanline_tex_contour(int32_t scanline, const extent_t &extent, const model3_polydata &extradata, int threadid);
+	void draw_scanline_tex_trans(int32_t scanline, const extent_t &extent, const model3_polydata &extradata, int threadid);
+	void draw_scanline_tex_alpha(int32_t scanline, const extent_t &extent, const model3_polydata &extradata, int threadid);
+	void wait_for_polys();
+
+private:
+	std::unique_ptr<bitmap_rgb32> m_fb;
+	std::unique_ptr<bitmap_ind32> m_zb;
+};
 
 class model3_state : public driver_device
 {
@@ -171,93 +216,93 @@ private:
 	required_device<sega_billboard_device> m_billboard;
 	memory_bank_creator m_bank2;
 
-	tilemap_t *m_layer4[4];
-	tilemap_t *m_layer8[4];
+	tilemap_t *m_layer4[4]{};
+	tilemap_t *m_layer8[4]{};
 
-	int m_sound_irq_enable;
-	emu_timer *m_sound_timer;
-	emu_timer *m_real3d_dma_timer;
-	emu_timer *m_scan_timer;
-	uint8_t m_irq_enable;
-	uint8_t m_irq_state;
-	uint8_t m_scsi_irq_state;
-	int m_crom_bank;
-	int m_controls_bank;
-	bool m_step15_with_mpc106;
-	bool m_step20_with_old_real3d;
-	uint32_t m_real3d_device_id;
-	int m_pci_bus;
-	int m_pci_device;
-	int m_pci_function;
-	int m_pci_reg;
-	uint32_t m_mpc105_regs[0x40];
-	uint32_t m_mpc105_addr;
-	uint32_t m_mpc106_regs[0x40];
-	uint32_t m_mpc106_addr;
-	uint32_t m_dma_data;
-	uint32_t m_dma_status;
-	uint32_t m_dma_source;
-	uint32_t m_dma_dest;
-	uint32_t m_dma_endian;
-	uint32_t m_dma_irq;
-	uint32_t m_dma_busy;
-	uint64_t m_controls_2;
-	uint64_t m_controls_3;
-	uint8_t m_serial_fifo1;
-	uint8_t m_serial_fifo2;
-	int m_lightgun_reg_sel;
-	int m_adc_channel;
-	uint64_t m_real3d_status;
-	int m_prot_data_ptr;
+	int m_sound_irq_enable = 0;
+	emu_timer *m_sound_timer = nullptr;
+	emu_timer *m_real3d_dma_timer = nullptr;
+	emu_timer *m_scan_timer = nullptr;
+	uint8_t m_irq_enable = 0;
+	uint8_t m_irq_state = 0;
+	uint8_t m_scsi_irq_state = 0;
+	int m_crom_bank = 0;
+	int m_controls_bank = 0;
+	bool m_step15_with_mpc106 = false;
+	bool m_step20_with_old_real3d = false;
+	uint32_t m_real3d_device_id = 0;
+	int m_pci_bus = 0;
+	int m_pci_device = 0;
+	int m_pci_function = 0;
+	int m_pci_reg = 0;
+	uint32_t m_mpc105_regs[0x40]{};
+	uint32_t m_mpc105_addr = 0;
+	uint32_t m_mpc106_regs[0x40]{};
+	uint32_t m_mpc106_addr = 0;
+	uint32_t m_dma_data = 0;
+	uint32_t m_dma_status = 0;
+	uint32_t m_dma_source = 0;
+	uint32_t m_dma_dest = 0;
+	uint32_t m_dma_endian = 0;
+	uint32_t m_dma_irq = 0;
+	uint32_t m_dma_busy = 0;
+	uint64_t m_controls_2 = 0;
+	uint64_t m_controls_3 = 0;
+	uint8_t m_serial_fifo1 = 0;
+	uint8_t m_serial_fifo2 = 0;
+	int m_lightgun_reg_sel = 0;
+	int m_adc_channel = 0;
+	uint64_t m_real3d_status = 0;
+	int m_prot_data_ptr = 0;
 	std::unique_ptr<uint32_t[]> m_vrom;
-	int m_step;
-	int m_m3_step;
-	int32_t m_tap_state;
-	uint64_t m_ir;
-	uint8_t m_id_data[32];
-	int32_t m_id_size;
-	int m_tdo;
-	uint16_t m_layer_priority;
-	uint32_t m_layer_modulate_r;
-	uint32_t m_layer_modulate_g;
-	uint32_t m_layer_modulate_b;
-	uint32_t m_layer_modulate1;
-	uint32_t m_layer_modulate2;
+	int m_step = 0;
+	int m_m3_step = 0;
+	int32_t m_tap_state = 0;
+	uint64_t m_ir = 0;
+	uint8_t m_id_data[32]{};
+	int32_t m_id_size = 0;
+	int m_tdo = 0;
+	uint16_t m_layer_priority = 0;
+	uint32_t m_layer_modulate_r = 0;
+	uint32_t m_layer_modulate_g = 0;
+	uint32_t m_layer_modulate_b = 0;
+	uint32_t m_layer_modulate1 = 0;
+	uint32_t m_layer_modulate2 = 0;
 	uint64_t m_layer_scroll[2];
 	std::unique_ptr<uint64_t[]> m_m3_char_ram;
 	std::unique_ptr<uint64_t[]> m_m3_tile_ram;
 	std::unique_ptr<uint32_t[]> m_texture_fifo;
-	int m_texture_fifo_pos;
+	int m_texture_fifo_pos = 0;
 	std::unique_ptr<uint16_t[]> m_texture_ram[2];
 	std::unique_ptr<uint32_t[]> m_display_list_ram;
 	std::unique_ptr<uint32_t[]> m_culling_ram;
 	std::unique_ptr<uint32_t[]> m_polygon_ram;
-	int m_real3d_display_list;
+	int m_real3d_display_list = 0;
 	rectangle m_clip3d;
-	rectangle *m_screen_clip;
+	rectangle *m_screen_clip = nullptr;
 	VECTOR3 m_parallel_light;
-	float m_parallel_light_intensity;
-	float m_ambient_light_intensity;
-	uint64_t m_vid_reg0;
-	int m_matrix_stack_ptr;
-	int m_list_depth;
-	MATRIX *m_matrix_stack;
+	float m_parallel_light_intensity = 0;
+	float m_ambient_light_intensity = 0;
+	uint64_t m_vid_reg0 = 0;
+	int m_matrix_stack_ptr = 0;
+	int m_list_depth = 0;
+	std::unique_ptr<MATRIX[]> m_matrix_stack;
 	MATRIX m_coordinate_system;
 	MATRIX m_projection_matrix;
-	float m_viewport_x;
-	float m_viewport_y;
-	float m_viewport_width;
-	float m_viewport_height;
-	float m_viewport_near;
-	float m_viewport_far;
-	uint32_t m_matrix_base_address;
-	cached_texture *m_texcache[2][1024/32][2048/32];
+	float m_viewport_x = 0;
+	float m_viewport_y = 0;
+	float m_viewport_width = 0;
+	float m_viewport_height = 0;
+	float m_viewport_near = 0;
+	float m_viewport_far = 0;
+	uint32_t m_matrix_base_address = 0;
+	cached_texture *m_texcache[2][1024/32][2048/32]{};
 
-	model3_renderer *m_renderer;
-	m3_triangle* m_tri_buffer;
-	m3_triangle* m_tri_alpha_buffer;
-	int m_tri_buffer_ptr;
-	int m_tri_alpha_buffer_ptr;
+	std::unique_ptr<model3_renderer> m_renderer;
+	std::unique_ptr<m3_triangle[]> m_tri_buffer;
+	std::unique_ptr<m3_triangle[]> m_tri_alpha_buffer;
+	int m_tri_buffer_ptr = 0;
+	int m_tri_alpha_buffer_ptr = 0;
 	int m_viewport_tri_index[4];
 	int m_viewport_tri_alpha_index[4];
 

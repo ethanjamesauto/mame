@@ -223,7 +223,6 @@ void dkong_state::dkong2b_palette(palette_device &palette)
 	m_color_codes = color_prom; // we'll need it later
 }
 
-#ifdef UNUSED_FUNCTION
 void dkong_state::dkong4b_palette(palette_device &palette)
 {
 	const uint8_t *color_prom = memregion("proms")->base();
@@ -258,7 +257,6 @@ void dkong_state::dkong4b_palette(palette_device &palette)
 	// color_prom now points to the beginning of the character color codes
 	m_color_codes = color_prom; // we'll need it later
 }
-#endif
 
 void dkong_state::radarscp_palette(palette_device &palette)
 {
@@ -937,7 +935,7 @@ VIDEO_START_MEMBER(dkong_state,dkong)
 {
 	VIDEO_START_CALL_MEMBER(dkong_base);
 
-	m_scanline_timer = machine().scheduler().timer_alloc(timer_expired_delegate(FUNC(dkong_state::scanline_callback),this));
+	m_scanline_timer = timer_alloc(FUNC(dkong_state::scanline_callback), this);
 	m_scanline_timer->adjust(m_screen->time_until_pos(0));
 
 	switch (m_hardware_type)

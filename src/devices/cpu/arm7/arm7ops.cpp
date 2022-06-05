@@ -1676,8 +1676,8 @@ void arm7_cpu_device::arm7ops_0123(uint32_t insn)
 		R15 = GetRegister(insn & 0x0f);
 		// If new PC address has A0 set, switch to Thumb mode
 		if (R15 & 1) {
-			set_cpsr(GET_CPSR|T_MASK);
 			R15--;
+			set_cpsr(GET_CPSR|T_MASK);
 		}
 	}
 	else if ((insn & 0x0ff000f0) == 0x01200030) // BLX Rn - v5
@@ -1688,8 +1688,8 @@ void arm7_cpu_device::arm7ops_0123(uint32_t insn)
 		R15 = GetRegister(insn & 0x0f);
 		// If new PC address has A0 set, switch to Thumb mode
 		if (R15 & 1) {
-			set_cpsr(GET_CPSR|T_MASK);
 			R15--;
+			set_cpsr(GET_CPSR|T_MASK);
 		}
 	}
 	else if ((insn & 0x0ff000f0) == 0x01600010) // CLZ - v5
@@ -1697,7 +1697,7 @@ void arm7_cpu_device::arm7ops_0123(uint32_t insn)
 		uint32_t rm = insn&0xf;
 		uint32_t rd = (insn>>12)&0xf;
 
-		SetRegister(rd, count_leading_zeros(GetRegister(rm)));
+		SetRegister(rd, count_leading_zeros_32(GetRegister(rm)));
 
 		R15 += 4;
 	}

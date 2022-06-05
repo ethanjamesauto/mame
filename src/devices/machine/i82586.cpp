@@ -96,7 +96,7 @@ CFG_PARAMS[] =
 	{ "number of retries",          "maximum number of retries",          15,  7, 0xf0, 4, true },
 	{ "no crc insertion",           "crc appended to frame",               0,  8, 0x10, 4, false },
 	{ "prefetch bit in rbd",        "disabled (valid only in new modes)",  0,  0, 0x80, 7, false },
-	{ "preamble length",            "bytes",                               7,  3, 0x30, 4, true },
+	{ "preamble length",            "2^(n+1) bytes",                       2,  3, 0x30, 4, true },
 	{ "preamble until crs",         "disabled",                            1, 11, 0x01, 0, false },
 	{ "promiscuous mode",           "address filter on",                   0,  8, 0x01, 0, false },
 	{ "padding",                    "no padding",                          0,  8, 0x80, 7, false },
@@ -111,7 +111,7 @@ CFG_PARAMS[] =
 i82586_base_device::i82586_base_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock, endianness_t endian, u8 datawidth, u8 addrwidth)
 	: device_t(mconfig, type, tag, owner, clock)
 	, device_memory_interface(mconfig, *this)
-	, device_network_interface(mconfig, *this, 10.0f)
+	, device_network_interface(mconfig, *this, 10)
 	, m_space_config("shared", endian, datawidth, addrwidth)
 	, m_out_irq(*this)
 	, m_cx(false)
@@ -162,9 +162,9 @@ void i82586_base_device::device_start()
 {
 	m_space = &space(0);
 
-	m_out_irq.resolve();
+	m_out_irq.resolve_safe();
 
-	m_cu_timer = timer_alloc(CU_TIMER);
+	m_cu_timer = timer_alloc(FUNC(i82586_base_device::cu_execute), this);
 	m_cu_timer->enable(false);
 
 	save_item(NAME(m_cx));
@@ -201,16 +201,7 @@ void i82586_base_device::device_reset()
 	m_ru_state = RU_IDLE;
 
 	m_scp_address = SCP_ADDRESS;
-}
-
-void i82586_base_device::device_timer(emu_timer &timer, device_timer_id id, int param, void *ptr)
-{
-	switch (id)
-	{
-		case CU_TIMER:
-			cu_execute();
-			break;
-	}
+	m_mac_multi = 0;
 }
 
 device_memory_interface::space_config_vector i82586_base_device::memory_space_config() const
@@ -406,7 +397,7 @@ void i82586_base_device::update_scb()
 	set_irq(m_cx || m_fr || m_cna || m_rnr);
 }
 
-void i82586_base_device::cu_execute()
+TIMER_CALLBACK_MEMBER(i82586_base_device::cu_execute)
 {
 	// fetch the command block command/status
 	const u32 cb_cs = m_space->read_dword(m_cba);
@@ -1000,7 +991,7 @@ bool i82586_device::cu_transmit(u32 command)
 	}
 
 	// optionally compute/insert ethernet frame check sequence (4 bytes)
-	if (!cfg_no_crc_insertion() && !cfg_loopback_mode())
+	if (!cfg_no_crc_insertion())
 	{
 		LOG("cu_transmit inserting frame check sequence\n");
 
@@ -1092,8 +1083,8 @@ u16 i82586_device::ru_execute(u8 *buf, int length)
 	u32 rfd_cs = m_space->read_dword(m_rfd);
 	u16 status = 0;
 
-	// current buffer position and bytes remaining
-	int position = 0, remaining = length;
+	// current buffer position and bytes remaining (excluding fcs)
+	int position = 0, remaining = length - 4;
 
 	// set busy status
 	m_space->write_dword(m_rfd, rfd_cs | RFD_B);
@@ -1105,7 +1096,7 @@ u16 i82586_device::ru_execute(u8 *buf, int length)
 		status |= RFD_S_SHORT;
 
 	// set crc status
-	if (!cfg_loopback_mode() && ~compute_crc(buf, length, cfg_crc16()) != FCS_RESIDUE)
+	if (~compute_crc(buf, length, cfg_crc16()) != FCS_RESIDUE)
 	{
 		LOGMASKED(LOG_FRAMES, "ru_execute crc error computed 0x%08x stored 0x%08x\n",
 			compute_crc(buf, length - 4, cfg_crc16()), *(u32 *)&buf[length - 4]);
@@ -1187,18 +1178,18 @@ u16 i82586_device::ru_execute(u8 *buf, int length)
 
 void i82586_device::ru_complete(const u16 status)
 {
-	if (status & RFD_OK)
-		LOG("ru_complete frame received without error\n");
-	else
-		LOG("ru_complete frame received with errors status 0x%04x\n", status);
-
-	// update receive frame descriptor status
-	u32 rfd_cs = m_space->read_dword(m_rfd);
-	m_space->write_dword(m_rfd, (rfd_cs & ~0xffffU) | status);
-
 	// if we received without error, or we're saving bad frames, advance to the next rfd
 	if ((status & RFD_OK) || cfg_save_bad_frames())
 	{
+		if (status & RFD_OK)
+			LOG("ru_complete frame received without error\n");
+		else
+			LOG("ru_complete frame received with errors status 0x%04x\n", status);
+
+		// update receive frame descriptor status
+		u32 rfd_cs = m_space->read_dword(m_rfd);
+		m_space->write_dword(m_rfd, (rfd_cs & ~0xffffU) | status);
+
 		if (!(rfd_cs & RFD_EL))
 		{
 			// advance to next rfd
@@ -1216,17 +1207,19 @@ void i82586_device::ru_complete(const u16 status)
 
 		// set frame received status
 		m_fr = true;
-	}
 
-	// suspend on completion
-	if (rfd_cs & RFD_S)
-	{
-		m_ru_state = RU_SUSPENDED;
-		m_rnr = true;
-	}
+		// suspend on completion
+		if (rfd_cs & RFD_S)
+		{
+			m_ru_state = RU_SUSPENDED;
+			m_rnr = true;
+		}
 
-	static const char *const RU_STATE_NAME[] = { "IDLE", "SUSPENDED", "NO RESOURCES", nullptr, "READY" };
-	LOG("ru_complete complete state %s\n", RU_STATE_NAME[m_ru_state]);
+		static const char *const RU_STATE_NAME[] = { "IDLE", "SUSPENDED", "NO RESOURCES", nullptr, "READY" };
+		LOG("ru_complete complete state %s\n", RU_STATE_NAME[m_ru_state]);
+	}
+	else
+		LOG("ru_complete discarded frame with errors status 0x%04x\n", status);
 }
 
 u32 i82586_device::address(u32 base, int offset, int address, u16 empty)
@@ -1827,7 +1820,7 @@ u16 i82596_device::ru_execute(u8 *buf, int length)
 	}
 
 	// set crc status
-	if (!cfg_loopback_mode() && ~compute_crc(buf, length, cfg_crc16()) != FCS_RESIDUE)
+	if (~compute_crc(buf, length, cfg_crc16()) != FCS_RESIDUE)
 	{
 		LOGMASKED(LOG_FRAMES, "ru_execute crc error computed 0x%08x stored 0x%08x\n",
 			compute_crc(buf, length - 4, cfg_crc16()), *(u32 *)&buf[length - 4]);
@@ -1970,18 +1963,18 @@ u16 i82596_device::ru_execute(u8 *buf, int length)
 
 void i82596_device::ru_complete(const u16 status)
 {
-	if (status & RFD_OK)
-		LOG("ru_complete frame received without error\n");
-	else
-		LOG("ru_complete frame received with errors status 0x%04x\n", status);
-
-	// store status
-	const u32 rfd_cs = m_space->read_dword(m_rfd);
-	m_space->write_dword(m_rfd, (rfd_cs & ~0xffffU) | status);
-
 	// if we received without error, or we're saving bad frames, advance to the next rfd
-	if ((rfd_cs & RFD_OK) || cfg_save_bad_frames())
+	if ((status & RFD_OK) || cfg_save_bad_frames())
 	{
+		if (status & RFD_OK)
+			LOG("ru_complete frame received without error\n");
+		else
+			LOG("ru_complete frame received with errors status 0x%04x\n", status);
+
+		// update receive frame descriptor status
+		const u32 rfd_cs = m_space->read_dword(m_rfd);
+		m_space->write_dword(m_rfd, (rfd_cs & ~0xffffU) | status);
+
 		if (!(rfd_cs & RFD_EL))
 		{
 			// advance to next rfd
@@ -2004,17 +1997,19 @@ void i82596_device::ru_complete(const u16 status)
 
 		// set frame received status
 		m_fr = true;
-	}
 
-	// suspend on completion
-	if (rfd_cs & RFD_S)
-	{
-		m_ru_state = RU_SUSPENDED;
-		m_rnr = true;
-	}
+		// suspend on completion
+		if (rfd_cs & RFD_S)
+		{
+			m_ru_state = RU_SUSPENDED;
+			m_rnr = true;
+		}
 
-	static const char *const RU_STATE_NAME[] = { "IDLE", "SUSPENDED", "NO RESOURCES", nullptr, "READY", nullptr, nullptr, nullptr, nullptr, nullptr, "NO RESOURCES (RFD)", nullptr, "NO RESOURCES (RBD)" };
-	LOG("ru_complete complete state %s\n", RU_STATE_NAME[m_ru_state]);
+		static const char *const RU_STATE_NAME[] = { "IDLE", "SUSPENDED", "NO RESOURCES", nullptr, "READY", nullptr, nullptr, nullptr, nullptr, nullptr, "NO RESOURCES (RFD)", nullptr, "NO RESOURCES (RBD)" };
+		LOG("ru_complete complete state %s\n", RU_STATE_NAME[m_ru_state]);
+	}
+	else
+		LOG("ru_complete discarded frame with errors status 0x%04x\n", status);
 }
 
 u32 i82596_device::address(u32 base, int offset, int address, u16 empty)

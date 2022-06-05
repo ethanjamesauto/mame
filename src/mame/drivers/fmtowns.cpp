@@ -439,44 +439,17 @@ uint8_t towns_state::towns_intervaltimer2_r(offs_t offset)
 	return 0xff;
 }
 
-void towns_state::device_timer(emu_timer &timer, device_timer_id id, int param, void *ptr)
-{
-	switch(id)
-	{
-	case TIMER_FREERUN:
-		freerun_inc();
-		break;
-	case TIMER_INTERVAL2:
-		intervaltimer2_timeout();
-		break;
-	case TIMER_KEYBOARD:
-		poll_keyboard();
-		break;
-	case TIMER_MOUSE:
-		mouse_timeout();
-		break;
-	case TIMER_WAIT:
-		wait_end();
-		break;
-	case TIMER_CDSTATUS:
-		towns_cd_status_ready();
-		break;
-	case TIMER_CDDA:
-		towns_delay_cdda((cdrom_image_device*)ptr);
-		break;
-	}
-}
-void towns_state::freerun_inc()
+TIMER_CALLBACK_MEMBER(towns_state::freerun_inc)
 {
 	m_freerun_timer++;
 }
 
-void towns_state::intervaltimer2_timeout()
+TIMER_CALLBACK_MEMBER(towns_state::intervaltimer2_timeout)
 {
 	m_intervaltimer2_timeout_flag = 1;
 }
 
-void towns_state::wait_end()
+TIMER_CALLBACK_MEMBER(towns_state::wait_end)
 {
 	m_maincpu->set_input_line(INPUT_LINE_HALT,CLEAR_LINE);
 }
@@ -723,24 +696,20 @@ void towns_state::kb_sendcode(uint8_t scancode, int release)
 	//logerror("KB: sending scancode 0x%02x\n",scancode);
 }
 
-void towns_state::poll_keyboard()
+TIMER_CALLBACK_MEMBER(towns_state::poll_keyboard)
 {
-	int port,bit;
-	uint8_t scan;
-	uint32_t portval;
-
-	scan = 0;
-	for(port=0;port<4;port++)
+	uint8_t scan = 0;
+	for(int port = 0; port < 4; port++)
 	{
-		portval = m_kb_ports[port]->read();
-		for(bit=0;bit<32;bit++)
+		uint32_t portval = m_kb_ports[port]->read();
+		for(int bit = 0; bit < 32; bit++)
 		{
-			if(((portval & (1<<bit))) != ((m_kb_prev[port] & (1<<bit))))
+			if(BIT(portval, bit) != BIT(m_kb_prev[port], bit))
 			{  // bit changed
-				if((portval & (1<<bit)) == 0)  // release
-					kb_sendcode(scan,1);
+				if(BIT(portval, bit) == 0)  // release
+					kb_sendcode(scan, 1);
 				else
-					kb_sendcode(scan,0);
+					kb_sendcode(scan, 0);
 			}
 			scan++;
 		}
@@ -926,7 +895,7 @@ void towns_state::towns_sound_ctrl_w(offs_t offset, uint8_t data)
 
 // Controller ports
 // Joysticks are multiplexed, with fire buttons available when bits 0 and 1 of port 0x4d6 are high. (bits 2 and 3 for second port?)
-void towns_state::mouse_timeout()
+TIMER_CALLBACK_MEMBER(towns_state::mouse_timeout)
 {
 	m_towns_mouse_output = MOUSE_START;  // reset mouse data
 }
@@ -939,6 +908,7 @@ uint8_t towns_state::towns_padport_r(offs_t offset)
 	uint8_t extra2;
 	uint32_t state;
 
+	offset >>= 1;
 	if(offset == 0)
 	{
 		if((porttype & 0x0f) == 0x01)
@@ -960,7 +930,7 @@ uint8_t towns_state::towns_padport_r(offs_t offset)
 			if((extra1 & 0x20) && (m_towns_pad_mask & 0x02))
 				ret &= ~0x20;
 		}
-		if((porttype & 0x0f) == 0x04)  // 6-button joystick
+		else if((porttype & 0x0f) == 0x04)  // 6-button joystick
 		{
 			extra1 = m_6b_joy1_ex->read();
 
@@ -992,7 +962,7 @@ uint8_t towns_state::towns_padport_r(offs_t offset)
 					ret &= ~0x01;
 			}
 		}
-		if((porttype & 0x0f) == 0x02)  // mouse
+		else if((porttype & 0x0f) == 0x02)  // mouse
 		{
 			switch(m_towns_mouse_output)
 			{
@@ -1025,9 +995,9 @@ uint8_t towns_state::towns_padport_r(offs_t offset)
 			if(m_towns_pad_mask & 0x10)
 				ret |= 0x40;
 		}
-
+		else ret = 0x7f;
 	}
-	if(offset == 1)  // second joystick port
+	else if(offset == 1)  // second joystick port
 	{
 		if((porttype & 0xf0) == 0x10)
 		{
@@ -1048,7 +1018,7 @@ uint8_t towns_state::towns_padport_r(offs_t offset)
 			if((extra2 & 0x20) && (m_towns_pad_mask & 0x08))
 				ret &= ~0x20;
 		}
-		if((porttype & 0xf0) == 0x40)  // 6-button joystick
+		else if((porttype & 0xf0) == 0x40)  // 6-button joystick
 		{
 			extra2 = m_6b_joy2_ex->read();
 
@@ -1080,7 +1050,7 @@ uint8_t towns_state::towns_padport_r(offs_t offset)
 					ret &= ~0x01;
 			}
 		}
-		if((porttype & 0xf0) == 0x20)  // mouse
+		else if((porttype & 0xf0) == 0x20)  // mouse
 		{
 			switch(m_towns_mouse_output)
 			{
@@ -1113,6 +1083,7 @@ uint8_t towns_state::towns_padport_r(offs_t offset)
 			if(m_towns_pad_mask & 0x20)
 				ret |= 0x40;
 		}
+		else ret = 0x7f;
 	}
 
 	return ret;
@@ -1416,7 +1387,7 @@ void towns_state::towns_cdrom_set_irq(int line,int state)
 	}
 }
 
-void towns_state::towns_cd_status_ready()
+TIMER_CALLBACK_MEMBER(towns_state::towns_cd_status_ready)
 {
 	m_towns_cd.status |= 0x02;  // status read request
 	m_towns_cd.status |= 0x01;  // ready
@@ -1442,7 +1413,7 @@ uint8_t towns_state::towns_cd_get_track()
 
 	for(track=1;track<99;track++)
 	{
-		if(cdrom_get_track_start(cdrom->get_cdrom_file(),track) > lba)
+		if(cdrom->get_cdrom_file()->get_track_start(track) > lba)
 			break;
 	}
 	return track;
@@ -1450,7 +1421,7 @@ uint8_t towns_state::towns_cd_get_track()
 
 TIMER_CALLBACK_MEMBER(towns_state::towns_cdrom_read_byte)
 {
-	upd71071_device* device = (upd71071_device* )ptr;
+	upd71071_device* device = m_dma_1.target();
 	int masked;
 	// TODO: support software transfers, for now DMA is assumed.
 
@@ -1490,7 +1461,7 @@ TIMER_CALLBACK_MEMBER(towns_state::towns_cdrom_read_byte)
 				m_towns_cd.extra_status = 0;
 				towns_cd_set_status(0x22,0x00,0x00,0x00);
 				towns_cdrom_set_irq(TOWNS_CD_IRQ_DMA,1);
-				cdrom_read_data(m_cdrom->get_cdrom_file(),++m_towns_cd.lba_current,m_towns_cd.buffer,CD_TRACK_MODE1);
+				m_cdrom->get_cdrom_file()->read_data(++m_towns_cd.lba_current,m_towns_cd.buffer,cdrom_file::CD_TRACK_MODE1);
 				m_towns_cd.read_timer->adjust(attotime::from_hz(300000),1);
 				m_towns_cd.buffer_ptr = -1;
 			}
@@ -1521,7 +1492,7 @@ uint8_t towns_state::towns_cdrom_read_byte_software()
 		}
 		else
 		{
-			cdrom_read_data(m_cdrom->get_cdrom_file(),++m_towns_cd.lba_current,m_towns_cd.buffer,CD_TRACK_MODE1);
+			m_cdrom->get_cdrom_file()->read_data(++m_towns_cd.lba_current,m_towns_cd.buffer,cdrom_file::CD_TRACK_MODE1);
 			m_towns_cd.extra_status = 0;
 			towns_cd_set_status(0x21,0x00,0x00,0x00);
 			towns_cdrom_set_irq(TOWNS_CD_IRQ_DMA,1);
@@ -1553,7 +1524,7 @@ void towns_state::towns_cdrom_read(cdrom_image_device* device)
 	m_towns_cd.lba_current = msf_to_lbafm(lba1);
 	m_towns_cd.lba_last = msf_to_lbafm(lba2);
 
-	track = cdrom_get_track(device->get_cdrom_file(),m_towns_cd.lba_current);
+	track = device->get_cdrom_file()->get_track(m_towns_cd.lba_current);
 
 	// parameter 7 = sector count?
 	// lemmings 2 sets this to 4 but hates 4 extra sectors being read
@@ -1569,7 +1540,7 @@ void towns_state::towns_cdrom_read(cdrom_image_device* device)
 	}
 	else
 	{
-		cdrom_read_data(device->get_cdrom_file(),m_towns_cd.lba_current,m_towns_cd.buffer,CD_TRACK_MODE1);
+		device->get_cdrom_file()->read_data(m_towns_cd.lba_current,m_towns_cd.buffer,cdrom_file::CD_TRACK_MODE1);
 		if(m_towns_cd.software_tx)
 		{
 			m_towns_cd.status &= ~0x10;  // not a DMA transfer
@@ -1626,9 +1597,9 @@ void towns_state::towns_cdrom_play_cdda(cdrom_image_device* device)
 	}
 }
 
-void towns_state::towns_delay_cdda(cdrom_image_device* dev)
+TIMER_CALLBACK_MEMBER(towns_state::towns_delay_cdda)
 {
-	towns_cdrom_play_cdda(dev);
+	towns_cdrom_play_cdda(m_cdrom.target());
 }
 
 void towns_state::towns_cdrom_execute_command(cdrom_image_device* device)
@@ -1669,7 +1640,6 @@ void towns_state::towns_cdrom_execute_command(cdrom_image_device* device)
 				break;
 			case 0x04:  // Play Audio Track
 				if(LOG_CD) logerror("CD: Command 0x04: PLAY CD-DA\n");
-				m_towns_cdda_timer->set_ptr(device);
 				m_towns_cdda_timer->adjust(attotime::from_msec(1),0,attotime::never);
 				break;
 			case 0x05:  // Read TOC
@@ -1788,7 +1758,10 @@ uint8_t towns_state::towns_cdrom_r(offs_t offset)
 							m_towns_cd.extra_status = 0;
 							break;
 						case 0x04:  // play cdda
-							towns_cd_set_status(0x07,0x00,0x00,0x00);
+							if(m_cdda->audio_ended())
+								towns_cd_set_status(0x07,0x00,0x00,0x00);
+							else
+								towns_cd_set_status(0x00,0x00,0x03,0x00);
 							m_towns_cd.status &= ~2;
 							m_towns_cd.extra_status = 0;
 							break;
@@ -1809,7 +1782,7 @@ uint8_t towns_state::towns_cdrom_r(offs_t offset)
 									break;
 								case 4: // st1 = last track number (BCD)
 									towns_cd_set_status(0x17,
-										byte_to_bcd(cdrom_get_last_track(m_cdrom->get_cdrom_file())),
+										byte_to_bcd(m_cdrom->get_cdrom_file()->get_last_track()),
 										0x00,0x00);
 									m_towns_cd.extra_status++;
 									break;
@@ -1818,8 +1791,8 @@ uint8_t towns_state::towns_cdrom_r(offs_t offset)
 									m_towns_cd.extra_status++;
 									break;
 								case 6:  // st1/2/3 = address of track 0xaa? (BCD)
-									addr = cdrom_get_track_start(m_cdrom->get_cdrom_file(),0xaa);
-									addr = lba_to_msf(addr + 150);
+									addr = m_cdrom->get_cdrom_file()->get_track_start(0xaa);
+									addr = cdrom_file::lba_to_msf(addr + 150);
 									towns_cd_set_status(0x17,
 										(addr & 0xff0000) >> 16,(addr & 0x00ff00) >> 8,addr & 0x0000ff);
 									m_towns_cd.extra_status++;
@@ -1828,19 +1801,19 @@ uint8_t towns_state::towns_cdrom_r(offs_t offset)
 									if(m_towns_cd.extra_status & 0x01)
 									{
 										towns_cd_set_status(0x16,
-											((cdrom_get_adr_control(m_cdrom->get_cdrom_file(),(m_towns_cd.extra_status/2)-3) & 0x0f) << 4)
-											| ((cdrom_get_adr_control(m_cdrom->get_cdrom_file(),(m_towns_cd.extra_status/2)-3) & 0xf0) >> 4),
+											((m_cdrom->get_cdrom_file()->get_adr_control((m_towns_cd.extra_status/2)-3) & 0x0f) << 4)
+											| ((m_cdrom->get_cdrom_file()->get_adr_control((m_towns_cd.extra_status/2)-3) & 0xf0) >> 4),
 											byte_to_bcd((m_towns_cd.extra_status/2)-2),0x00);
 										m_towns_cd.extra_status++;
 									}
 									else
 									{
 										int track = (m_towns_cd.extra_status/2)-4;
-										addr = cdrom_get_track_start(m_cdrom->get_cdrom_file(),track);
-										addr = lba_to_msf(addr + 150);
+										addr = m_cdrom->get_cdrom_file()->get_track_start(track);
+										addr = cdrom_file::lba_to_msf(addr + 150);
 										towns_cd_set_status(0x17,
 											(addr & 0xff0000) >> 16,(addr & 0x00ff00) >> 8,addr & 0x0000ff);
-										if(track >= cdrom_get_last_track(m_cdrom->get_cdrom_file()))
+										if(track >= m_cdrom->get_cdrom_file()->get_last_track())
 										{
 											m_towns_cd.extra_status = 0;
 										}
@@ -1860,21 +1833,21 @@ uint8_t towns_state::towns_cdrom_r(offs_t offset)
 									break;
 								case 2:  // st0/1/2 = MSF from beginning of current track
 									addr = m_cdda->get_audio_lba();
-									addr = lba_to_msf(addr - m_towns_cd.cdda_current);
+									addr = cdrom_file::lba_to_msf(addr - m_towns_cd.cdda_current);
 									towns_cd_set_status(0x19,
 										(addr & 0xff0000) >> 16,(addr & 0x00ff00) >> 8,addr & 0x0000ff);
 									m_towns_cd.extra_status++;
 									break;
 								case 3:  // st1/2 = current MSF
 									addr = m_cdda->get_audio_lba();
-									addr = lba_to_msf(addr);  // this data is incorrect, but will do until exact meaning is found
+									addr = cdrom_file::lba_to_msf(addr);  // this data is incorrect, but will do until exact meaning is found
 									towns_cd_set_status(0x19,
 										0x00,(addr & 0xff0000) >> 16,(addr & 0x00ff00) >> 8);
 									m_towns_cd.extra_status++;
 									break;
 								case 4:
 									addr = m_cdda->get_audio_lba();
-									addr = lba_to_msf(addr);  // this data is incorrect, but will do until exact meaning is found
+									addr = cdrom_file::lba_to_msf(addr);  // this data is incorrect, but will do until exact meaning is found
 									towns_cd_set_status(0x20,
 										addr & 0x0000ff,0x00,0x00);
 									m_towns_cd.extra_status = 0;
@@ -2355,7 +2328,7 @@ void towns_state::towns_io(address_map &map)
 	// CD-ROM
 	map(0x04c0, 0x04cf).rw(FUNC(towns_state::towns_cdrom_r), FUNC(towns_state::towns_cdrom_w)).umask32(0x00ff00ff);
 	// Joystick / Mouse ports
-	map(0x04d0, 0x04d3).r(FUNC(towns_state::towns_padport_r)).umask32(0x00ff00ff);
+	map(0x04d0, 0x04d3).r(FUNC(towns_state::towns_padport_r));
 	map(0x04d6, 0x04d6).w(FUNC(towns_state::towns_pad_mask_w));
 	// Sound (YM3438 [FM], RF5c68 [PCM])
 	map(0x04d8, 0x04df).rw("fm", FUNC(ym3438_device::read), FUNC(ym3438_device::write)).umask32(0x00ff00ff);
@@ -2426,7 +2399,7 @@ void towns_state::towns16_io(address_map &map)
 	// CD-ROM
 	map(0x04c0, 0x04cf).rw(FUNC(towns_state::towns_cdrom_r), FUNC(towns_state::towns_cdrom_w)).umask16(0x00ff);
 	// Joystick / Mouse ports
-	map(0x04d0, 0x04d3).r(FUNC(towns_state::towns_padport_r)).umask16(0x00ff);
+	map(0x04d0, 0x04d3).r(FUNC(towns_state::towns_padport_r));
 	map(0x04d6, 0x04d6).w(FUNC(towns_state::towns_pad_mask_w));
 	// Sound (YM3438 [FM], RF5c68 [PCM])
 	map(0x04d8, 0x04df).rw("fm", FUNC(ym3438_device::read), FUNC(ym3438_device::write)).umask16(0x00ff);
@@ -2727,19 +2700,19 @@ void towns_state::driver_start()
 	//towns_sprram = std::make_unique<uint8_t[]>(0x20000);
 	m_towns_serial_rom = std::make_unique<uint8_t[]>(256/8);
 	init_serial_rom();
-	m_towns_kb_timer = timer_alloc(TIMER_KEYBOARD);
-	m_towns_mouse_timer = timer_alloc(TIMER_MOUSE);
-	m_towns_wait_timer = timer_alloc(TIMER_WAIT);
-	m_towns_freerun_counter = timer_alloc(TIMER_FREERUN);
-	m_towns_intervaltimer2 = timer_alloc(TIMER_INTERVAL2);
-	m_towns_status_timer = timer_alloc(TIMER_CDSTATUS);
-	m_towns_cdda_timer = timer_alloc(TIMER_CDDA);
+	m_towns_kb_timer = timer_alloc(FUNC(towns_state::poll_keyboard), this);
+	m_towns_mouse_timer = timer_alloc(FUNC(towns_state::mouse_timeout), this);
+	m_towns_wait_timer = timer_alloc(FUNC(towns_state::wait_end), this);
+	m_towns_freerun_counter = timer_alloc(FUNC(towns_state::freerun_inc), this);
+	m_towns_intervaltimer2 = timer_alloc(FUNC(towns_state::intervaltimer2_timeout), this);
+	m_towns_status_timer = timer_alloc(FUNC(towns_state::towns_cd_status_ready), this);
+	m_towns_cdda_timer = timer_alloc(FUNC(towns_state::towns_delay_cdda), this);
 
 	memset(&m_video,0,sizeof(struct towns_video_controller));
 	memset(&m_towns_cd,0,sizeof(struct towns_cdrom_controller));
 	m_towns_cd.status = 0x01;  // CDROM controller ready
 	m_towns_cd.buffer_ptr = -1;
-	m_towns_cd.read_timer = machine().scheduler().timer_alloc(timer_expired_delegate(FUNC(towns_state::towns_cdrom_read_byte),this), (void*)m_dma_1.target());
+	m_towns_cd.read_timer = timer_alloc(FUNC(towns_state::towns_cdrom_read_byte), this);
 
 	save_pointer(m_video.towns_crtc_reg,"CRTC registers",32);
 	save_pointer(m_video.towns_video_reg,"Video registers",2);

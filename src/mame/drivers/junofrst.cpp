@@ -141,9 +141,9 @@ private:
 	required_device<filter_rc_device> m_filter_0_2;
 	required_region_ptr<uint8_t> m_blitrom;
 
-	uint8_t  m_blitterdata[4];
-	uint8_t  m_i8039_status;
-	uint8_t  m_last_irq;
+	uint8_t  m_blitterdata[4]{};
+	uint8_t  m_i8039_status = 0;
+	uint8_t  m_last_irq = 0;
 };
 
 
@@ -250,7 +250,7 @@ void junofrst_state::portB_w(uint8_t data)
 			C += 220000;    /* 220000pF = 0.22uF */
 
 		data >>= 2;
-		filter[i]->filter_rc_set_RC(filter_rc_device::LOWPASS, 1000, 2200, 200, CAP_P(C));
+		filter[i]->filter_rc_set_RC(filter_rc_device::LOWPASS_3R, 1000, 2200, 200, CAP_P(C));
 	}
 }
 

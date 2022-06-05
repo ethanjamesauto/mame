@@ -130,12 +130,12 @@ protected:
 	std::unique_ptr<u16 []> m_bgvram;
 	std::unique_ptr<u16 []> m_fgvram;
 	std::unique_ptr<u16 []> m_paletteram;
-	uint16_t m_paloff;
+	uint16_t m_paloff = 0;
 	int m_spritesinit;
-	int m_spriteswidth;
-	int m_spritesaddr;
+	int m_spriteswidth = 0;
+	int m_spritesaddr = 0;
 	uint16_t m_videorambank;
-	uint8_t* m_rom8;
+	uint8_t* m_rom8 = nullptr;
 
 	void base_config(machine_config &config);
 	void video_config(machine_config &config);
@@ -714,4 +714,4 @@ GAME( 1993, twins,    0,     twins,    twins, twins_state,    init_twins,      R
 GAME( 1994, twinsed1, twins, twinsed1, twins, twinsed1_state, empty_init,      ROT0, "Ecogames (Electronic Devices license)", "Twins (Electronic Devices license, set 1)", MACHINE_SUPPORTS_SAVE )
 GAME( 1994, twinsed2, twins, twins,    twins, twins_state,    init_twinsed2,   ROT0, "Ecogames (Electronic Devices license)", "Twins (Electronic Devices license, set 2)", MACHINE_SUPPORTS_SAVE )
 
-GAME( 1994, spider,   0,     spider,   twins, spider_state,   empty_init, ROT0, "Buena Vision",                          "Spider",                                    MACHINE_IMPERFECT_GRAPHICS | MACHINE_SUPPORTS_SAVE )
+GAME( 1994, spider,   0,     spider,   twins, spider_state,   empty_init,      ROT0, "Buena Vision",                          "Spider (Buena Vision)",                     MACHINE_IMPERFECT_GRAPHICS | MACHINE_SUPPORTS_SAVE )

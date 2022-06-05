@@ -54,6 +54,7 @@ public:
 		, m_cxdio(*this, "cxdio")
 		, m_upd4701a(*this, "upd4701a%u", 1U)
 		, m_workram(*this, "workram")
+		, m_i8751_sync_timer(nullptr)
 		, m_romboard(ROM_BOARD_INVALID)
 		, m_tilemap_type(segaic16_video_device::TILEMAP_16B)
 		, m_custom_io_r(*this)
@@ -114,7 +115,6 @@ public:
 	void init_hwchamp_5521();
 	void init_sdi_5358_small();
 	void init_fpointbla();
-	void init_altbeasj_5521();
 	void init_snapper();
 	void init_shinobi4_5521();
 	void init_defense_5358_small();
@@ -161,8 +161,8 @@ protected:
 	// video updates
 	uint32_t screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
 
-	void tileram_w(address_space &space, offs_t offset, uint16_t data, uint16_t mem_mask = ~0) { m_segaic16vid->tileram_w(offset,data,mem_mask); };
-	void textram_w(address_space &space, offs_t offset, uint16_t data, uint16_t mem_mask = ~0) { m_segaic16vid->textram_w(offset,data,mem_mask); };
+	void tileram_w(address_space &space, offs_t offset, uint16_t data, uint16_t mem_mask = ~0) { m_segaic16vid->tileram_w(offset,data,mem_mask); }
+	void textram_w(address_space &space, offs_t offset, uint16_t data, uint16_t mem_mask = ~0) { m_segaic16vid->textram_w(offset,data,mem_mask); }
 
 	// bootleg stuff
 	void tilemap_16b_fpointbl_fill_latch(int i, uint16_t* latched_pageselect, uint16_t* latched_yscroll, uint16_t* latched_xscroll, uint16_t* textram);
@@ -189,13 +189,6 @@ protected:
 	// internal types
 	typedef delegate<void ()> i8751_sim_delegate;
 
-	// timer IDs
-	enum
-	{
-		TID_INIT_I8751,
-		TID_ATOMICP_SOUND_IRQ
-	};
-
 	// rom board types
 	enum segas16b_rom_board
 	{
@@ -210,16 +203,16 @@ protected:
 
 	// device overrides
 	virtual void video_start() override;
-	virtual void machine_start() override { m_lamps.resolve(); }
+	virtual void machine_start() override;
 	virtual void machine_reset() override;
-	virtual void device_timer(emu_timer &timer, device_timer_id id, int param, void *ptr) override;
+
+	TIMER_CALLBACK_MEMBER(i8751_sync);
+	TIMER_CALLBACK_MEMBER(atomicp_sound_irq);
 
 	// internal helpers
 	void init_generic(segas16b_rom_board rom_board);
 
 	// i8751 simulations
-	void altbeast_common_i8751_sim(offs_t soundoffs, offs_t inputoffs, int alt_bank);
-	void altbeasj_i8751_sim();
 	void tturf_i8751_sim();
 	void wb3_i8751_sim();
 
@@ -256,26 +249,29 @@ protected:
 	// memory pointers
 	required_shared_ptr<uint16_t> m_workram;
 
+	// timers
+	emu_timer *         m_i8751_sync_timer;
+
 	// configuration
 	segas16b_rom_board  m_romboard;
 	int                 m_tilemap_type;
-	read16_delegate   m_custom_io_r;
+	read16_delegate     m_custom_io_r;
 	write16_delegate    m_custom_io_w;
 	bool                m_disable_screen_blanking;
-	const uint8_t *       m_i8751_initial_config;
+	const uint8_t *     m_i8751_initial_config;
 	i8751_sim_delegate  m_i8751_vblank_hook;
-	uint8_t               m_atomicp_sound_divisor;
+	uint8_t             m_atomicp_sound_divisor;
 
 	// game-specific state
-	uint8_t               m_atomicp_sound_count;
-	uint8_t               m_hwc_input_value;
+	uint8_t             m_atomicp_sound_count;
+	uint8_t             m_hwc_input_value;
 	optional_ioport     m_hwc_monitor;
 	optional_ioport     m_hwc_left;
 	optional_ioport     m_hwc_right;
 	optional_ioport     m_hwc_left_limit;
 	optional_ioport     m_hwc_right_limit;
-	uint8_t               m_mj_input_num;
-	uint8_t               m_mj_last_val;
+	uint8_t             m_mj_input_num;
+	uint8_t             m_mj_last_val;
 	optional_ioport_array<6> m_mj_inputs;
 	int                 m_spritepalbase;
 
@@ -302,7 +298,7 @@ public:
 
 protected:
 	void sound_control_w(uint8_t data);
-	void dac_data_w(uint8_t data);
+	void dac_data_w(offs_t offset, uint8_t data);
 	INTERRUPT_GEN_MEMBER( soundirq_cb );
 	bool m_nmi_enable;
 	uint16_t m_dac_data;
@@ -406,7 +402,7 @@ private:
 	uint16_t          m_security_latch;
 	uint8_t           m_rle_control_position;
 	uint8_t           m_rle_control_byte;
-	bool            m_rle_latched;
+	bool              m_rle_latched;
 	uint8_t           m_rle_byte;
 	void isgsm_map(address_map &map);
 };

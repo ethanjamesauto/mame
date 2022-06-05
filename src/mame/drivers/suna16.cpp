@@ -314,6 +314,13 @@ MACHINE_START_MEMBER(suna16_state, bssoccer)
 	m_bank2->configure_entries(0, 8, memregion("pcm2")->base() + 0x1000, 0x10000);
 }
 
+MACHINE_START_MEMBER(suna16_state, sunaq)
+{
+	m_leds.resolve();
+
+	m_bank1->configure_entries(0, 8, memregion("pcm1")->base() + 0x1000, 0x10000);
+}
+
 /* Bank Switching */
 
 void suna16_state::bssoccer_pcm_1_bankswitch_w(uint8_t data)
@@ -942,8 +949,7 @@ void suna16_state::sunaq(machine_config &config)
 
 	config.set_maximum_quantum(attotime::from_hz(6000));
 
-	MCFG_MACHINE_START_OVERRIDE(suna16_state,uballoon)
-	MCFG_MACHINE_RESET_OVERRIDE(suna16_state,uballoon)
+	MCFG_MACHINE_START_OVERRIDE(suna16_state, sunaq)
 
 	/* video hardware */
 	SCREEN(config, m_screen, SCREEN_TYPE_RASTER);
@@ -1355,7 +1361,7 @@ ROM_START( bestbest )
 	ROM_LOAD16_BYTE( "12.bin", 0x300001, 0x80000, CRC(ca7c8176) SHA1(1ec99db3e0840b4647d6ccdf6fda118fa9ad4f42) )
 
 	ROM_REGION( 0x200, "proms", 0 ) // ?
-	ROM_LOAD( "82s129.5", 0x000, 0x100, CRC(10bfcebb) SHA1(ae8708db7d3a8984f16e876867ecdbb4445e3378) )  // FIXED BITS (0000xx0x0000xxxx)
+	ROM_LOAD( "82s129.5", 0x000, 0x100, CRC(10bfcebb) SHA1(ae8708db7d3a8984f16e876867ecdbb4445e3378) )  // FIXED BITS (0000xx0x0000xxxx), same as the one for starfigh in suna8.cpp
 	ROM_LOAD( "82s129.6", 0x100, 0x100, CRC(10bfcebb) SHA1(ae8708db7d3a8984f16e876867ecdbb4445e3378) )  // identical to 82s129.5
 ROM_END
 

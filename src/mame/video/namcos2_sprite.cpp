@@ -10,11 +10,15 @@
     C135 - Checks is object is displayed on Current output line.
     C146 - Steers the Decode Object Pixel data to the correct line buffer A or B
 
-    Metal Hawk requires a different draw function, so might use a different chip unless the hookup is just scrambled (needs checking)
+    Metal Hawk requires a different draw function, so might use a different chip unless the hookup
+    is just scrambled (needs checking).
 
-    used by the following drivers
-    namcos2.cpp (all games EXCEPT Steel Gunner, Steel Gunner 2, Lucky & Wild, Suzuka 8 Hours, Suzuka 8 Hours 2 which use the newer Namco NB1 style sprites, see namco_c355spr.cpp)
+    "Shadow" sprites are used in the baseball games to remap the background tile pen, and they're
+    also used a lot in valkyrie.
 
+    Device used by the following drivers:
+    namcos2.cpp (all games EXCEPT Steel Gunner, Steel Gunner 2, Lucky & Wild, Suzuka 8 Hours,
+    Suzuka 8 Hours 2 which use the newer Namco NB1 style sprites, see namco_c355spr.cpp).
 
 */
 
@@ -179,7 +183,10 @@ void namcos2_sprite_device::zdrawgfxzoom(
 										{
 											if (color == 0xf && c == 0xfe)
 											{
-												dest[x] |= 0x800;
+												if (dest[x] & 0x1000)
+													dest[x] |= 0x800;
+												else
+													dest[x] = palette.black_pen();
 											}
 											else
 											{
@@ -274,7 +281,7 @@ void namcos2_sprite_device::draw_sprites(screen_device &screen, bitmap_ind16 &bi
 			{
 				const u32 color  = (word3 >> 4) & 0x000f;
 				const int ypos   = (0x1ff - (word0 & 0x01ff)) - 0x50 + 0x02;
-				const int xpos   = (offset4 & 0x03ff) - 0x50 + 0x07;
+				const int xpos   = (offset4 & 0x07ff) - 0x50 + 0x07;
 				const bool flipy = word1 & 0x8000;
 				const bool flipx = word1 & 0x4000;
 				const int scalex = (sizex << 16) / (is_32 ? 0x20 : 0x10);
@@ -376,7 +383,7 @@ void namcos2_sprite_metalhawk_device::draw_sprites(screen_device &screen, bitmap
 				}
 				if (sizey < 0x20)
 				{
-					sy += (0x20 - sizey) / 0xC;
+					sy += (0x20 - sizey) / 0xc;
 				}
 				gfx->set_source_clip(0, 32, 0, 32);
 			}

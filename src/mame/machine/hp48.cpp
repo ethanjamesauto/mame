@@ -108,7 +108,7 @@ void hp48_state::rs232_start_recv_byte(uint8_t data)
 	}
 
 	/* schedule end of reception */
-	machine().scheduler().timer_set(RS232_DELAY, timer_expired_delegate(FUNC(hp48_state::rs232_byte_recv_cb),this), data);
+	m_recv_done_timer->adjust(RS232_DELAY, data);
 }
 
 
@@ -137,7 +137,7 @@ void hp48_state::rs232_send_byte()
 	m_io[0x12] |= 3;
 
 	/* schedule transmission */
-	machine().scheduler().timer_set(RS232_DELAY, timer_expired_delegate(FUNC(hp48_state::rs232_byte_sent_cb),this), data);
+	m_send_done_timer->adjust(RS232_DELAY, data);
 }
 
 
@@ -924,19 +924,20 @@ void hp48_state::base_machine_start(hp48_models model)
 		HP49_G_MODEL  ? (512 * 1024) :
 		HP48_GX_MODEL ? (128 * 1024) : (32 * 1024);
 
-	uint8_t *ram = auto_alloc_array(machine(), uint8_t, 2 * ram_size);
-	subdevice<nvram_device>("nvram")->set_base(ram, 2 * ram_size);
+	m_allocated_ram = std::make_unique<uint8_t[]>(2 * ram_size);
+	subdevice<nvram_device>("nvram")->set_base(m_allocated_ram.get(), 2 * ram_size);
 
 
 	/* ROM load */
 	uint32_t rom_size =
 		HP49_G_MODEL  ? (2048 * 1024) :
 		HP48_S_SERIES ?  (256 * 1024) : (512 * 1024);
-	m_rom = auto_alloc_array(machine(), uint8_t, 2 * rom_size);
-	decode_nibble(m_rom, memregion("maincpu")->base(), rom_size);
+	m_allocated_rom = std::make_unique<uint8_t[]>(2 * rom_size);
+	decode_nibble(m_allocated_rom.get(), memregion("maincpu")->base(), rom_size);
+	m_rom = m_allocated_rom.get();
 
 	/* init state */
-	memset(ram, 0, 2 * ram_size);
+	std::fill_n(&m_allocated_ram[0], 2 * ram_size, 0);
 	memset(m_io, 0, sizeof(m_io));
 	m_out = 0;
 	m_kdn = 0;
@@ -954,16 +955,16 @@ void hp48_state::base_machine_start(hp48_models model)
 	if (HP49_G_MODEL)
 	{
 		m_modules[HP48_NCE2].off_mask = 2 * 256 * 1024 - 1;
-		m_modules[HP48_NCE2].data     = ram;
+		m_modules[HP48_NCE2].data     = &m_allocated_ram[0];
 		m_modules[HP48_CE2].off_mask  = 2 * 128 * 1024 - 1;
-		m_modules[HP48_CE2].data      = ram + 2 * 256 * 1024;
+		m_modules[HP48_CE2].data      = &m_allocated_ram[2 * 256 * 1024];
 		m_modules[HP48_NCE3].off_mask = 2 * 128 * 1024 - 1;
-		m_modules[HP48_NCE3].data     = ram + 2 * (128+256) * 1024;
+		m_modules[HP48_NCE3].data     = &m_allocated_ram[2 * (128+256) * 1024];
 	}
 	else
 	{
 		m_modules[HP48_NCE2].off_mask = 2 * ram_size - 1;
-		m_modules[HP48_NCE2].data     = ram;
+		m_modules[HP48_NCE2].data     = &m_allocated_ram[0];
 	}
 
 	/* bank switcher */
@@ -975,15 +976,23 @@ void hp48_state::base_machine_start(hp48_models model)
 	}
 
 	/* timers */
-	m_1st_timer = machine().scheduler().timer_alloc(timer_expired_delegate(FUNC(hp48_state::timer1_cb), this));
+	m_1st_timer = timer_alloc(FUNC(hp48_state::timer1_cb), this);
 	m_1st_timer->adjust(attotime::from_hz(16), 0, attotime::from_hz(16));
 
-	m_2nd_timer = machine().scheduler().timer_alloc(timer_expired_delegate(FUNC(hp48_state::timer2_cb), this));
+	m_2nd_timer = timer_alloc(FUNC(hp48_state::timer2_cb), this);
 	m_2nd_timer->adjust(attotime::from_hz(8192), 0, attotime::from_hz(8192));
 
 	/* 1ms keyboard polling */
-	m_kbd_timer = machine().scheduler().timer_alloc(timer_expired_delegate(FUNC(hp48_state::kbd_cb), this));
+	m_kbd_timer = timer_alloc(FUNC(hp48_state::kbd_cb), this);
 	m_kbd_timer->adjust(attotime::from_msec(1), 0, attotime::from_msec(1));
+
+	/* serial receive done */
+	m_recv_done_timer = timer_alloc(FUNC(hp48_state::rs232_byte_recv_cb), this);
+	m_recv_done_timer->adjust(attotime::never);
+
+	/* serial send done */
+	m_send_done_timer = timer_alloc(FUNC(hp48_state::rs232_byte_sent_cb), this);
+	m_send_done_timer->adjust(attotime::never);
 
 	m_lshift0.resolve();
 	m_rshift0.resolve();

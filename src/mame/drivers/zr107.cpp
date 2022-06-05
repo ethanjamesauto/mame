@@ -307,7 +307,7 @@ uint32_t jetwave_state::screen_update(screen_device &screen, bitmap_rgb32 &bitma
 {
 	bitmap.fill(m_palette->pen(0), cliprect);
 
-	m_k001604->draw_back_layer(bitmap, cliprect);
+	m_k001604->draw_back_layer(screen, bitmap, cliprect);
 	m_k001005->draw(bitmap, cliprect);
 	m_k001604->draw_front_layer(screen, bitmap, cliprect);
 
@@ -333,7 +333,7 @@ K056832_CB_MEMBER(midnrun_state::tile_callback)
 void midnrun_state::video_start()
 {
 	m_k056832->set_layer_offs(0, -29, -27);
-	m_k056832->set_layer_offs(1, -29, -27);
+	m_k056832->set_layer_offs(1, -25, -27);
 	m_k056832->set_layer_offs(2, -29, -27);
 	m_k056832->set_layer_offs(3, -29, -27);
 	m_k056832->set_layer_offs(4, -29, -27);
@@ -346,9 +346,14 @@ uint32_t midnrun_state::screen_update(screen_device &screen, bitmap_rgb32 &bitma
 {
 	bitmap.fill(m_palette->pen(0), cliprect);
 
-	m_k056832->tilemap_draw(screen, bitmap, cliprect, 1, 0, 0);
-	m_k001005->draw(bitmap, cliprect);
-	m_k056832->tilemap_draw(screen, bitmap, cliprect, 0, 0, 0);
+	m_k056832->tilemap_draw_dj(screen, bitmap, cliprect, 1, 0, 0);
+
+	if (m_konppc->output_3d_enabled())
+	{
+		m_k001005->draw(bitmap, cliprect);
+	}
+
+	m_k056832->tilemap_draw_dj(screen, bitmap, cliprect, 0, 0, 0);
 
 	return 0;
 }
@@ -491,7 +496,7 @@ void zr107_state::machine_start()
 void midnrun_state::main_memmap(address_map &map)
 {
 	map(0x00000000, 0x000fffff).ram().share(m_workram);
-	map(0x74000000, 0x74003fff).rw(m_k056832, FUNC(k056832_device::ram_word_r), FUNC(k056832_device::ram_word_w));
+	map(0x74000000, 0x74001fff).rw(m_k056832, FUNC(k056832_device::ram_word_r), FUNC(k056832_device::ram_word_w)).mirror(0x2000);
 	map(0x74020000, 0x7402003f).rw(m_k056832, FUNC(k056832_device::word_r), FUNC(k056832_device::word_w));
 	map(0x74060000, 0x7406003f).rw(FUNC(midnrun_state::ccu_r), FUNC(midnrun_state::ccu_w));
 	map(0x74080000, 0x74081fff).ram().w(FUNC(midnrun_state::paletteram32_w)).share(m_generic_paletteram_32);
@@ -574,14 +579,6 @@ void zr107_state::sharc_memmap(address_map &map)
 
 
 static INPUT_PORTS_START( zr107 )
-	PORT_START("IN0")
-	PORT_BIT( 0x80, IP_ACTIVE_LOW, IPT_START1 ) PORT_NAME("Start/View")
-	PORT_BIT( 0x40, IP_ACTIVE_LOW, IPT_JOYSTICK_UP ) PORT_NAME("Shift Up")
-	PORT_BIT( 0x20, IP_ACTIVE_LOW, IPT_JOYSTICK_DOWN ) PORT_NAME("Shift Down")
-	PORT_BIT( 0x10, IP_ACTIVE_LOW, IPT_BUTTON5 ) PORT_NAME("AT/MT Switch") PORT_TOGGLE
-	PORT_BIT( 0x04, IP_ACTIVE_LOW, IPT_SERVICE1 ) PORT_NAME("Service Button") PORT_CODE(KEYCODE_9)
-	PORT_BIT( 0x0b, IP_ACTIVE_LOW, IPT_UNKNOWN )
-
 	PORT_START("IN1")
 	PORT_BIT( 0xff, IP_ACTIVE_LOW, IPT_UNKNOWN )
 
@@ -609,6 +606,15 @@ INPUT_PORTS_END
 static INPUT_PORTS_START( midnrun )
 	PORT_INCLUDE( zr107 )
 
+	PORT_START("IN0")
+	PORT_BIT( 0x80, IP_ACTIVE_LOW, IPT_START1 )        PORT_NAME("Start/View")
+	PORT_BIT( 0x40, IP_ACTIVE_LOW, IPT_JOYSTICK_UP )   PORT_NAME("Shift Up")   PORT_4WAY
+	PORT_BIT( 0x20, IP_ACTIVE_LOW, IPT_JOYSTICK_DOWN ) PORT_NAME("Shift Down") PORT_4WAY
+	PORT_BIT( 0x10, IP_ACTIVE_LOW, IPT_JOYSTICK_LEFT ) PORT_NAME("Auto Shift") PORT_4WAY PORT_TOGGLE PORT_CONDITION("IN3", 0x02, EQUALS, 0x02)
+	PORT_BIT( 0x10, IP_ACTIVE_LOW, IPT_BUTTON5 )       PORT_NAME("AT/MT Switch")                     PORT_CONDITION("IN3", 0x02, EQUALS, 0x00)
+	PORT_BIT( 0x04, IP_ACTIVE_LOW, IPT_SERVICE1 )      PORT_NAME("Service Button")
+	PORT_BIT( 0x0b, IP_ACTIVE_LOW, IPT_UNKNOWN )
+
 	PORT_START("IN3")
 	PORT_SERVICE_NO_TOGGLE( 0x80, IP_ACTIVE_LOW )
 	PORT_BIT( 0x40, IP_ACTIVE_LOW, IPT_UNUSED )
@@ -619,9 +625,9 @@ static INPUT_PORTS_START( midnrun )
 	PORT_DIPSETTING( 0x08, "2" )
 	PORT_DIPSETTING( 0x04, "3" )
 	PORT_DIPSETTING( 0x00, "4" )
-	PORT_DIPNAME( 0x02, 0x02, "Transmission Type" ) PORT_DIPLOCATION("SW:2")
-	PORT_DIPSETTING( 0x02, "Button" )
-	PORT_DIPSETTING( 0x00, "'T'Gate" ) //unused
+	PORT_DIPNAME( 0x02, 0x00, "Transmission Type" ) PORT_DIPLOCATION("SW:2")
+	PORT_DIPSETTING( 0x02, "'T'Gate" )
+	PORT_DIPSETTING( 0x00, "Button" )
 	PORT_DIPNAME( 0x01, 0x01, "CG Board Type" ) PORT_DIPLOCATION("SW:1")
 	PORT_DIPSETTING( 0x01, "Single" )
 	PORT_DIPSETTING( 0x00, "Twin" ) //unused
@@ -639,7 +645,7 @@ INPUT_PORTS_END
 static INPUT_PORTS_START( jetwave )
 	PORT_INCLUDE( zr107 )
 
-	PORT_MODIFY("IN0")
+	PORT_START("IN0")
 	PORT_BIT( 0x80, IP_ACTIVE_LOW, IPT_START1 ) PORT_NAME("Start/View")
 	PORT_BIT( 0x40, IP_ACTIVE_LOW, IPT_BUTTON6 ) PORT_NAME("T-Center") //Non-analog acell
 	PORT_BIT( 0x20, IP_ACTIVE_LOW, IPT_BUTTON7 ) PORT_NAME("Angle")
@@ -792,7 +798,7 @@ void midnrun_state::midnrun(machine_config &config)
 	zr107(config);
 	m_maincpu->set_addrmap(AS_PROGRAM, &midnrun_state::main_memmap);
 
-	config.set_maximum_quantum(attotime::from_hz(750000)); // Very high sync needed to prevent lockups - why?
+	config.set_maximum_quantum(attotime::from_hz(15000));
 
 	// video hardware
 	m_screen->set_screen_update(FUNC(midnrun_state::screen_update));
@@ -808,16 +814,14 @@ void jetwave_state::jetwave(machine_config &config)
 	zr107(config);
 	m_maincpu->set_addrmap(AS_PROGRAM, &jetwave_state::main_memmap);
 
-	config.set_maximum_quantum(attotime::from_hz(2000000)); // Very high sync needed to prevent lockups - why?
+	config.set_maximum_quantum(attotime::from_hz(15000));
 
 	// video hardware
+	m_screen->set_size(1024, 1024);
+	m_screen->set_visarea(40, 511 + 40, 27, 383 + 27);      // needs CRTC emulation
 	m_screen->set_screen_update(FUNC(jetwave_state::screen_update));
 
 	K001604(config, m_k001604, 0);
-	m_k001604->set_layer_size(0);
-	m_k001604->set_roz_size(0);
-	m_k001604->set_txt_mem_offset(0);
-	m_k001604->set_roz_mem_offset(0x4000);
 	m_k001604->set_palette(m_palette);
 
 	// The second K001006 chip connects to the second K001005 chip.
@@ -924,10 +928,10 @@ ROM_END
 
 ROM_START( midnruna2 )
 	ROM_REGION32_BE(0x200000, "prgrom", 0)    // PowerPC program roms
-	ROM_LOAD32_BYTE( "477ab1d01.20u", 0x000003, 0x80000, CRC(3aa31517) SHA1(315d9c3c930493e39bc497ceafa0c4ef6fa64e4d) ) // labeled AB1, but still program version AAA, v1.10 (ASA)
-	ROM_LOAD32_BYTE( "477ab1d02.17u", 0x000002, 0x80000, CRC(c506bd3d) SHA1(d44ed2cb39f0da44f681190132c7603dfca813d9) )
-	ROM_LOAD32_BYTE( "477ab1d03.15u", 0x000001, 0x80000, CRC(53f8e898) SHA1(ba83a60a411bb307cb0e424099716ccf888a4f39) )
-	ROM_LOAD32_BYTE( "477ab1d04.13u", 0x000000, 0x80000, CRC(0eb264b7) SHA1(179a3d58c0f554fd1b283ee3640ce09d5142b288) )
+	ROM_LOAD32_BYTE( "477ab1d01.20u", 0x000000, 0x80000, CRC(3aa31517) SHA1(315d9c3c930493e39bc497ceafa0c4ef6fa64e4d) ) // labeled AB1, but still program version AAA, v1.10 (ASA)
+	ROM_LOAD32_BYTE( "477ab1d02.17u", 0x000001, 0x80000, CRC(c506bd3d) SHA1(d44ed2cb39f0da44f681190132c7603dfca813d9) )
+	ROM_LOAD32_BYTE( "477ab1d03.15u", 0x000002, 0x80000, CRC(53f8e898) SHA1(ba83a60a411bb307cb0e424099716ccf888a4f39) )
+	ROM_LOAD32_BYTE( "477ab1d04.13u", 0x000003, 0x80000, CRC(0eb264b7) SHA1(179a3d58c0f554fd1b283ee3640ce09d5142b288) )
 
 	ROM_REGION(0x20000, "audiocpu", 0)      // M68K program
 	ROM_LOAD16_WORD_SWAP( "477b07.19l", 0x000000, 0x20000, CRC(2d00cf76) SHA1(152bed061c59e29864d735f8beba2a49136f7212) )
