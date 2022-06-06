@@ -69,7 +69,7 @@ private:
 	int m_serial_drop_frame;
 	int m_serial_sort;
 	unsigned m_vector_transit[3];
-	unsigned char * m_serial_buf;
+	std::unique_ptr<unsigned char[]> m_serial_buf;
 	size_t m_serial_offset;
 	struct serial_segment_t * m_serial_segments;
 	struct serial_segment_t * m_serial_segments_tail;

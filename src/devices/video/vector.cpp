@@ -436,7 +436,7 @@ void vector_device::device_start()
 	m_serial_sort = 1;
 
 	// allocate enough buffer space, although we should never use this much
-	m_serial_buf = auto_alloc_array_clear(machine(), unsigned char, (MAX_POINTS+2) * 4);
+	m_serial_buf = std::make_unique<unsigned char[]>((MAX_POINTS + 2) * 4);
 	if (!m_serial_buf)
 	{
 		// todo: how to signal an error?
