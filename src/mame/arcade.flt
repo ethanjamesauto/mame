@@ -377,6 +377,7 @@ ecoinf2.cpp
 ecoinf3.cpp
 ecoinfr.cpp
 efdt.cpp
+efg8080.cpp
 egghunt.cpp
 electra.cpp
 embargo.cpp
@@ -435,6 +436,7 @@ forte2.cpp
 fortecar.cpp
 freekick.cpp
 freeway.cpp
+frenzyxprss.cpp
 fresh.cpp
 fromanc2.cpp
 fromance.cpp
@@ -545,7 +547,6 @@ hapyfish.cpp
 harddriv.cpp
 hazelgr.cpp
 hcastle.cpp
-headonb.cpp
 heromem.cpp
 hexion.cpp
 hideseek.cpp
@@ -1140,6 +1141,7 @@ segaatom.cpp
 segac2.cpp
 segacoin.cpp
 segae.cpp
+segafruit.cpp
 segag80r.cpp
 segag80v.cpp
 segahang.cpp
@@ -1148,6 +1150,7 @@ segald.cpp
 segaorun.cpp
 segas16a.cpp
 segas16b.cpp
+segas16b_isgsm.cpp
 segas18.cpp
 segas18_astormbl.cpp
 segas24.cpp
