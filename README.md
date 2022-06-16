@@ -1,3 +1,4 @@
+This is a modified version of mame that adds support for the v.st vector board (see https://github.com/osresearch/vst). osresearch/mame has not been updated for a number of years, so I have been maintaining the code with the current version of MAME.
 
 # **MAME** #
 
