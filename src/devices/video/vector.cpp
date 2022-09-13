@@ -41,6 +41,12 @@
  *
  **************************************************************************** */
 
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <termios.h>
+#endif
+
 #include "emu.h"
 #include "vector.h"
 
@@ -53,7 +59,6 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include <termios.h>
 #include <errno.h>
 
 #include <inttypes.h>
@@ -122,6 +127,37 @@ serial_open(
         const char * const dev
 )
 {
+	#ifdef _WIN32
+		DCB dcb;
+		BOOL res;
+		char dev_char[128];
+		strcpy(dev_char, dev); //buffer overflow lol
+		const int fd = (int32_t)CreateFile(dev_char, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING,  0, NULL);
+		if (fd < 0) {
+			return -1;
+		}
+		memset(&dcb, 0, sizeof(DCB));
+		dcb.DCBlength = sizeof(DCB);
+		res = GetCommState((HANDLE)fd, &dcb);
+		if (res == FALSE) {
+			return -1;   
+		}
+		dcb.BaudRate        = 2000000;       //  Bit rate. Don't care for serial over USB.
+		dcb.ByteSize        = 8;             //  Data size, xmit and rcv
+		dcb.Parity          = NOPARITY;      //  Parity bit
+		dcb.StopBits        = ONESTOPBIT;    //  Stop bit
+		dcb.fOutX           = FALSE;
+		dcb.fInX            = FALSE;
+		dcb.fOutxCtsFlow    = FALSE;
+		dcb.fOutxDsrFlow    = FALSE;
+		dcb.fDsrSensitivity = FALSE;
+		dcb.fRtsControl     = RTS_CONTROL_ENABLE;
+		dcb.fDtrControl     = DTR_CONTROL_ENABLE;
+		res = SetCommState((HANDLE)fd, &dcb);
+		if (res == FALSE) {
+			return -1;  
+		}
+	#else
         const int fd = open(dev, O_RDWR | O_NONBLOCK | O_NOCTTY, 0666);
         if (fd < 0)
                 return -1;
@@ -134,6 +170,7 @@ serial_open(
         tcsetattr(fd, TCSANOW, &attr);
 
         return fd;
+	#endif
 }
 
 void vector_device::serial_draw_point(
@@ -381,8 +418,13 @@ void vector_device::serial_send()
 		size_t wlen = m_serial_offset - offset;
 		if (wlen > 64)
 			wlen = 64;
-
-		ssize_t rc = write(m_serial_fd, m_serial_buf + offset, m_serial_offset - offset);
+		
+		ssize_t rc;
+		#ifdef _WIN32
+			ssize_t rc = WriteFile(m_serial_fd, m_serial_buf + offset, m_serial_offset - offset, (DWORD*) &rc, NULL);
+		#else
+			rc = write(m_serial_fd, m_serial_buf + offset, m_serial_offset - offset);
+		#endif
 		if (rc <= 0)
 		{
 			eagain++;
