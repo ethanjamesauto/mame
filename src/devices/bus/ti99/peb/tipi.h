@@ -51,6 +51,8 @@ private:
 	void websocket_incoming(std::shared_ptr<webpp::ws_client::Message> message);
 	void websocket_error(const std::error_code& code);
 	void websocket_closed(int i, const std::string& msg);
+	void websocket_debug(const char* msg, int i);
+
 	TIMER_CALLBACK_MEMBER(open_websocket);
 
 	void send(const char* message);
@@ -114,7 +116,7 @@ public:
 protected:
 	void device_start() override { }
 	void call_unload() override;
-	image_init_result call_load() override;
+	std::pair<std::error_condition, std::string> call_load() override;
 };
 
 

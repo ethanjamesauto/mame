@@ -62,7 +62,8 @@ enum drvstatus_mask : u8
 	DRVSTATUS_G  = 0x08, // FD3 is mini floppy
 	DRVSTATUS_B  = 0x10, // not used
 	DRVSTATUS_D  = 0x20, // not used
-	DRVSTATUS_SS = 0x40, // 8" floppy is single-sided
+	DRVSTATUS_F  = 0x40, // ?
+	DRVSTATUS_DS = 0x80, // floppy is double-sided
 };
 
 DEFINE_DEVICE_TYPE(LABTAM_Z80SBC, labtam_z80sbc_device, "labtam_z80sbc", "Labtam Z80 SBC")
@@ -87,11 +88,16 @@ labtam_z80sbc_device::labtam_z80sbc_device(machine_config const &mconfig, char c
 }
 
 ROM_START(labtam_z80sbc)
+	ROM_SYSTEM_BIOS(0, "c85", "Version C85")
+	ROM_SYSTEM_BIOS(1, "a85", "Version A85")
+
 	ROM_REGION(0x2000, "eprom0", 0)
-	ROM_LOAD("z80_boot__a85_0.u59", 0x0000, 0x2000, CRC(4453c938) SHA1(b04987a07ff7e21f7eb354162ad14b59d17096dd))
+	ROMX_LOAD("z80_boot__c85_0.u59", 0x0000, 0x2000, CRC(472b39ad) SHA1(689c194dee29f895fb4f3e901adab3267e0e2823), ROM_BIOS(0))
+	ROMX_LOAD("z80_boot__a85_0.u59", 0x0000, 0x2000, CRC(4453c938) SHA1(b04987a07ff7e21f7eb354162ad14b59d17096dd), ROM_BIOS(1))
 
 	ROM_REGION(0x2000, "eprom1", 0)
-	ROM_LOAD("z80_boot__a85_1.u53", 0x0000, 0x2000, CRC(b7d489ea) SHA1(5bd6f3dd1c1f6f3e07706293bfc46a9bfc43d1f2))
+	ROMX_LOAD("z80_boot__c85_1.u53", 0x0000, 0x2000, CRC(8cb2374d) SHA1(20f6ec9ba9c8fb453f6497ffa0fb1dc3611e7d7f), ROM_BIOS(0))
+	ROMX_LOAD("z80_boot__a85_1.u53", 0x0000, 0x2000, CRC(b7d489ea) SHA1(5bd6f3dd1c1f6f3e07706293bfc46a9bfc43d1f2), ROM_BIOS(1))
 ROM_END
 
 static INPUT_PORTS_START(labtam_z80sbc)
@@ -240,6 +246,7 @@ void labtam_z80sbc_device::device_start()
 
 	save_item(NAME(m_map_mux));
 	save_item(NAME(m_map_num));
+	save_item(NAME(m_map_cnt));
 }
 
 void labtam_z80sbc_device::device_reset()
@@ -250,13 +257,13 @@ void labtam_z80sbc_device::device_reset()
 		u32 const ram1_select = m_e15[3]->read();
 
 		m_bus->space(AS_PROGRAM).install_ram(ram0_select, ram0_select | 0xffff, m_ram0.get());
-		m_bus->space(AS_PROGRAM).install_ram(ram1_select, ram1_select | 0xffff, m_ram0.get());
+		m_bus->space(AS_PROGRAM).install_ram(ram1_select, ram1_select | 0xffff, m_ram1.get());
 
 		u16 const pio_select = m_e15[2]->read() | m_e15[1]->read() | m_e15[0]->read();
 
 		m_bus->space(AS_IO).install_write_handler(pio_select | 0, pio_select | 0, write8smo_delegate(*this, FUNC(labtam_z80sbc_device::fdcclr_w)));
 		m_bus->space(AS_IO).install_write_handler(pio_select | 2, pio_select | 2, write8smo_delegate(*this, FUNC(labtam_z80sbc_device::netclr_w)));
-		m_bus->space(AS_IO).install_write_handler(pio_select | 4, pio_select | 4, write8smo_delegate(*this, FUNC(labtam_z80sbc_device::fdcattn_w)));
+		m_bus->space(AS_IO).install_write_handler(pio_select | 4, pio_select | 4, write8smo_delegate(*this, FUNC(labtam_z80sbc_device::fdcatn_w)));
 		m_bus->space(AS_IO).install_read_handler(pio_select | 8, pio_select | 8, read8smo_delegate(*this, FUNC(labtam_z80sbc_device::fdcstatus_r)));
 
 		m_installed = true;
@@ -264,6 +271,7 @@ void labtam_z80sbc_device::device_reset()
 
 	m_map_mux = 0;
 	m_map_num = 0;
+	m_map_cnt = 0;
 	m_fdcstatus = 0x3c;
 
 	m_dma[0]->iei_w(1);
@@ -273,6 +281,7 @@ static void z80sbc_floppies(device_slot_interface &device)
 {
 	device.option_add("dssd5", FLOPPY_525_SD);
 	device.option_add("dsdd5", FLOPPY_525_DD);
+	device.option_add("dshd5", FLOPPY_525_HD);
 	device.option_add("dssd8", FLOPPY_8_DSSD);
 	device.option_add("dsdd8", FLOPPY_8_DSDD);
 }
@@ -283,7 +292,6 @@ void labtam_z80sbc_device::device_add_mconfig(machine_config &config)
 {
 	Z80(config, m_cpu, 20_MHz_XTAL / 4);
 	m_cpu->set_addrmap(AS_PROGRAM, &labtam_z80sbc_device::cpu_mem);
-	m_cpu->set_addrmap(AS_OPCODES, &labtam_z80sbc_device::cpu_mem);
 	m_cpu->set_addrmap(AS_IO, &labtam_z80sbc_device::cpu_pio);
 	m_cpu->irqack_cb().set([this](int state) { m_map_mux |= MM_PND; });
 	m_cpu->set_daisy_config(daisy_chain);
@@ -331,7 +339,7 @@ void labtam_z80sbc_device::device_add_mconfig(machine_config &config)
 	m_uic->out_int_callback().set(m_int, FUNC(input_merger_any_high_device::in_w<3>));
 
 	WD2793(config, m_fdc, 2'000'000);
-	m_fdc->intrq_wr_callback().set(FUNC(labtam_z80sbc_device::fdcint_w));
+	m_fdc->intrq_wr_callback().set(m_uic, FUNC(am9519_device::ireq2_w));
 	m_fdc->drq_wr_callback().set(m_dma[0], FUNC(z80dma_device::rdy_w));
 
 	// WD1002 irq -> Am9519 ireq3
@@ -361,8 +369,8 @@ void labtam_z80sbc_device::cpu_mem(address_map &map)
 
 void labtam_z80sbc_device::cpu_pio(address_map &map)
 {
-	map(0x0000, 0x0000).lw8([this](u8 data) { LOG("fdcset 0x%02x (%s)\n", data, machine().describe_context()); }, "fdcset");
-	//map(0x0008, 0x0008); // TODO: serset: set sio interrupt
+	map(0x0000, 0x0000).mirror(0xff00).lw8([this](u8 data) { LOG("fdcset 0x%02x (%s)\n", data, machine().describe_context()); m_fdcstatus |= 0x01; int_w<3>(0); }, "fdcset");
+	map(0x0008, 0x0008).mirror(0xff00).lw8([this](u8 data) { LOG("serset 0x%02x (%s)\n", data, machine().describe_context()); m_fdcstatus |= 0x02; }, "serset");
 
 	map(0x0010, 0x0010).select(0xff00).lw8([this](offs_t offset, u8 data) { m_map_lo[offset >> 8] = data; }, "mapwr0");
 	map(0x0018, 0x0018).select(0xff00).lw8([this](offs_t offset, u8 data) { m_map_hi[offset >> 8] = data & 0xf0; }, "mapwr1");
@@ -389,13 +397,18 @@ void labtam_z80sbc_device::cpu_pio(address_map &map)
 	map(0x00e0, 0x00ff).mirror(0xff00).rw(m_rtc, FUNC(mm58167_device::read), FUNC(mm58167_device::write));
 }
 
-u8 labtam_z80sbc_device::mem_r(address_space &space, offs_t offset)
+u8 labtam_z80sbc_device::mem_r(offs_t offset)
 {
 	// check for and complete pending map number change
-	if ((m_map_mux & MM_PND) && (space.spacenum() == AS_PROGRAM) && !machine().side_effects_disabled())
+	if ((m_map_mux & MM_PND) && !machine().side_effects_disabled())
 	{
-		m_map_mux &= ~MM_PND;
-		m_map_mux ^= MM_INT;
+		if (m_map_cnt == 0)
+		{
+			m_map_mux &= ~MM_PND;
+			m_map_mux ^= MM_INT;
+		}
+		else
+			m_map_cnt--;
 	}
 
 	if (m_map_mux & MM_ENB)
@@ -485,27 +498,17 @@ void labtam_z80sbc_device::map_w(unsigned map_num, offs_t offset, u8 data)
 void labtam_z80sbc_device::intswt_w(u8 data)
 {
 	/*
-	 * Writing to this port toggles between interrupt (map number forced to 0) and
-	 * user (map number from mapnum latch) mode. The mapping mode can be applied
-	 * immediately, or only upon the next non-instruction memory read. The delay
-	 * mechanism is used to support interrupts:
-	 *
-	 *  - When an interrupt is taken, the delayed map change allows the Z80 to
-	 *    store the return address on the currently mapped stack, before switching
-	 *    to map 0 to fetch the interrupt vector address.
-	 *
-	 *  - When returning from an interrupt handler, the delayed map change allows
-	 *    further instructions (including RET) to be fetched from the interrupt
-	 *    service routine using map 0, while the return address will be fetched
-	 *    from the user mapped stack.
+	 * Writing to this port deactivates the interrupt map after the next three
+	 * Z80 memory read cycles. This delay supports interrupt return, allowing
+	 * the standard epilogue of NOP, EI, and RET to be fetched and executed
+	 * from map 0, before the return address is fetched from the non-interrupt
+	 * memory map.
 	 */
 
-	LOG("intswt_w 0x%02x mapnum 0x%02x (%s)\n", data, m_map_num, machine().describe_context());
+	LOG("intswt map 0x%02x mux 0x%02x (%s)\n", m_map_num, m_map_mux, machine().describe_context());
 
-	if (BIT(data, 0))
-		m_map_mux ^= MM_INT;
-	else
-		m_map_mux |= MM_PND;
+	m_map_mux |= MM_PND;
+	m_map_cnt = 3;
 }
 
 void labtam_z80sbc_device::mapnum_w(u8 data)
@@ -515,18 +518,7 @@ void labtam_z80sbc_device::mapnum_w(u8 data)
 	m_map_mux |= MM_ENB;
 
 	// TODO: what are bits 3, 4 and 5 used for?
-	m_map_num = data & 0x3f;
-}
-
-void labtam_z80sbc_device::fdcint_w(int state)
-{
-	if (state)
-		m_fdcstatus |= 1U << 0;
-	else
-		m_fdcstatus &= ~(1U << 0);
-
-	m_uic->ireq2_w(state);
-	int_w<3>(state);
+	m_map_num = data & 0x07;
 }
 
 void labtam_z80sbc_device::drive_w(offs_t offset, u8 data)
@@ -572,23 +564,27 @@ void labtam_z80sbc_device::drive_w(offs_t offset, u8 data)
 
 void labtam_z80sbc_device::fdcclr_w(u8 data)
 {
-	m_uic->ireq4_w(0);
+	LOG("fdcclr 0x%02x (%s)\n", data, machine().describe_context());
+	m_fdcstatus &= ~0x01;
+	int_w<3>(1);
 }
 
 void labtam_z80sbc_device::netclr_w(u8 data)
 {
-	LOG("netclr_w 0x%02x (%s)\n", data, machine().describe_context());
+	LOG("netclr 0x%02x (%s)\n", data, machine().describe_context());
+	m_fdcstatus &= ~0x02;
 }
 
-void labtam_z80sbc_device::fdcattn_w(u8 data)
+void labtam_z80sbc_device::fdcatn_w(u8 data)
 {
-	LOG("fdcattn_w 0x%02x (%s)\n", data, machine().describe_context());
+	LOG("fdcatn 0x%02x (%s)\n", data, machine().describe_context());
 	m_uic->ireq4_w(1);
+	m_uic->ireq4_w(0);
 }
 
 u8 labtam_z80sbc_device::fdcstatus_r()
 {
-	LOG("fdcstatus_r (%s)\n", machine().describe_context());
+	LOG("fdcstatus (%s)\n", machine().describe_context());
 	return m_fdcstatus;
 }
 
@@ -596,12 +592,12 @@ u8 labtam_z80sbc_device::drvstatus_r()
 {
 	u8 data = m_e21->read();
 
-	// TODO: read selected floppy twosid_r()
-#if 0
-	floppy_image_device *fid = m_fdd[*m_drive]->get_device();
-	if (fid && !fid->twosid_r())
-		data |= DRVSTATUS_SS;
-#endif
+	if (m_drive)
+	{
+		floppy_image_device *fid = m_fdd[*m_drive]->get_device();
+		if (fid && !fid->twosid_r())
+			data |= DRVSTATUS_DS;
+	}
 
 	return data;
 }

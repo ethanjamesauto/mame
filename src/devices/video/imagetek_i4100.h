@@ -61,7 +61,7 @@ public:
 
 	u32 screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect);
 	void draw_foreground(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect);
-	DECLARE_WRITE_LINE_MEMBER(screen_eof);
+	void screen_eof(int state);
 
 	// TODO: privatize eventually
 	u8 irq_enable() const { return m_irq_enable; }
@@ -140,11 +140,6 @@ protected:
 	bool m_spriteram_buffered;
 
 	void blt_write(const int tmap, const offs_t offs, const u16 data, const u16 mask);
-
-	enum
-	{
-		TIMER_BLIT_END = 1
-	};
 
 	emu_timer *m_blit_done_timer;
 

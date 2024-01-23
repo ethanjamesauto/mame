@@ -89,19 +89,6 @@ kp64_device::kp64_device(const machine_config &mconfig, const char *tag, device_
 
 
 //-------------------------------------------------
-//  device_resolve_objects - resolve objects that
-//  may be needed for other devices to set
-//  initial conditions at start time
-//-------------------------------------------------
-
-void kp64_device::device_resolve_objects()
-{
-	// Resolve output callback
-	m_out_callback.resolve_safe();
-}
-
-
-//-------------------------------------------------
 //  device_start - device-specific startup
 //-------------------------------------------------
 
@@ -190,7 +177,13 @@ void kp64_device::reload_count()
 {
 	m_count = BIT(m_status, 5) ? 0xffff : m_cr;
 	if (BIT(m_status, 0))
-		m_count_timer->adjust(clocks_to_attotime(u32(m_count) + 1));
+	{
+		// hng64 network MCU configures this supposedly invalid value and thrashes the scheduler if the timer is enabled
+		if (m_count == 0)
+			logerror("%s: Zero reload value specified for timer\n", machine().describe_context());
+		else
+			m_count_timer->adjust(clocks_to_attotime(u32(m_count) + 1));
+	}
 
 	// Count is now started whether or not it was before
 	m_reload = false;
@@ -467,7 +460,7 @@ void kp64_device::control_w(u8 data)
 //  xclk_w - set external count input
 //-------------------------------------------------
 
-WRITE_LINE_MEMBER(kp64_device::xclk_w)
+void kp64_device::xclk_w(int state)
 {
 	// Only falling edges count
 	if (std::exchange(m_xclk, state) && !state)
@@ -500,7 +493,7 @@ WRITE_LINE_MEMBER(kp64_device::xclk_w)
 //  gate_w - set gate input
 //-------------------------------------------------
 
-WRITE_LINE_MEMBER(kp64_device::gate_w)
+void kp64_device::gate_w(int state)
 {
 	if (m_gate == bool(state))
 		return;

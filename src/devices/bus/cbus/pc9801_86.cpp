@@ -44,7 +44,7 @@
 // device type definition
 DEFINE_DEVICE_TYPE(PC9801_86, pc9801_86_device, "pc9801_86", "NEC PC-9801-86")
 
-WRITE_LINE_MEMBER(pc9801_86_device::sound_irq)
+void pc9801_86_device::sound_irq(int state)
 {
 	m_fmirq = state ? true : false;
 	// TODO: sometimes misfired irq causes sound or even host hang
@@ -412,12 +412,12 @@ TIMER_CALLBACK_MEMBER(pc9801_86_device::dac_tick)
 			int16_t lsample = queue_pop() << 8;
 			lsample |= queue_pop();
 			m_ldac->write(lsample);
-		}	break;
+		}   break;
 		case 0x10: { // 16bit right only
 			int16_t rsample = queue_pop() << 8;
 			rsample |= queue_pop();
 			m_rdac->write(rsample);
-		}	break;
+		}   break;
 	}
 	if((queue_count() < m_irq_rate) && (m_pcm_ctrl & 0x20))
 	{

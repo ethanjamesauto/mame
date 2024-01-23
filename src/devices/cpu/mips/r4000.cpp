@@ -27,6 +27,7 @@
  */
 
 #include "emu.h"
+#include "divtlb.h"
 #include "debug/debugcpu.h"
 #include "r4000.h"
 #include "mips3dsm.h"
@@ -34,7 +35,6 @@
 
 #include "softfloat3/source/include/softfloat.h"
 
-#define LOG_GENERAL   (1U << 0)
 #define LOG_TLB       (1U << 1)
 #define LOG_CACHE     (1U << 2)
 #define LOG_EXCEPTION (1U << 3)
@@ -42,6 +42,7 @@
 #define LOG_STATS     (1U << 5)
 
 #define VERBOSE       (LOG_GENERAL)
+#include "logmacro.h"
 
 // operating system specific system call logging
 #define SYSCALL_IRIX53 (1U << 0)
@@ -55,7 +56,7 @@
 // experimental primary instruction cache
 #define ICACHE 0
 
-#include "logmacro.h"
+#define SCACHE !(m_cp0[CP0_Config] & CONFIG_SC)
 
 #define USE_ABI_REG_NAMES 1
 
@@ -197,6 +198,9 @@ void r4000_base_device::device_start()
 	m_icache_data = std::make_unique<u32 []>((0x1000U << config_ic) >> 2);
 
 	R4000_ENDIAN_LE_BE(accessors(m_le), accessors(m_be));
+
+	if (SCACHE)
+		save_pointer(NAME(m_scache_tag), m_scache_tag_size);
 }
 
 void r4000_base_device::device_reset()
@@ -232,9 +236,9 @@ void r4000_base_device::device_reset()
 	// initialize tlb mru index with identity mapping
 	for (unsigned i = 0; i < std::size(m_tlb); i++)
 	{
-		m_tlb_mru[TRANSLATE_READ][i] = i;
-		m_tlb_mru[TRANSLATE_WRITE][i] = i;
-		m_tlb_mru[TRANSLATE_FETCH][i] = i;
+		m_tlb_mru[TR_READ][i] = i;
+		m_tlb_mru[TR_WRITE][i] = i;
+		m_tlb_mru[TR_FETCH][i] = i;
 	}
 
 	// initialize statistics
@@ -261,12 +265,13 @@ device_memory_interface::space_config_vector r4000_base_device::memory_space_con
 	};
 }
 
-bool r4000_base_device::memory_translate(int spacenum, int intention, offs_t &address)
+bool r4000_base_device::memory_translate(int spacenum, int intention, offs_t &address, address_space *&target_space)
 {
+	target_space = &space(spacenum);
 	// FIXME: address truncation
 	u64 placeholder = s32(address);
 
-	translate_result const t = translate(intention, placeholder);
+	translate_result const t = translate(intention, true, placeholder);
 
 	if (t == ERROR || t == MISS)
 		return false;
@@ -945,75 +950,7 @@ void r4000_base_device::cpu_execute(u32 const op)
 		cpu_swr(op);
 		break;
 	case 0x2f: // CACHE
-		if ((SR & SR_KSU) && !(SR & SR_CU0) && !(SR & (SR_EXL | SR_ERL)))
-		{
-			cpu_exception(EXCEPTION_CP0);
-			break;
-		}
-
-		switch ((op >> 16) & 0x1f)
-		{
-		case 0x00: // index invalidate (I)
-			if (ICACHE)
-			{
-				m_icache_tag[(ADDR(m_r[RSREG], s16(op)) & m_icache_mask_hi) >> m_icache_shift] &= ~ICACHE_V;
-				break;
-			}
-			[[fallthrough]];
-		case 0x04: // index load tag (I)
-			if (ICACHE)
-			{
-				u32 const tag = m_icache_tag[(ADDR(m_r[RSREG], s16(op)) & m_icache_mask_hi) >> m_icache_shift];
-
-				m_cp0[CP0_TagLo] = ((tag & ICACHE_PTAG) << 8) | ((tag & ICACHE_V) >> 18) | ((tag & ICACHE_P) >> 25);
-				m_cp0[CP0_ECC] = 0; // data ecc or parity
-
-				break;
-			}
-			[[fallthrough]];
-		case 0x08: // index store tag (I)
-			if (ICACHE)
-			{
-				// FIXME: compute parity
-				m_icache_tag[(ADDR(m_r[RSREG], s16(op)) & m_icache_mask_hi) >> m_icache_shift] =
-					(m_cp0[CP0_TagLo] & TAGLO_PTAGLO) >> 8 | (m_cp0[CP0_TagLo] & TAGLO_PSTATE) << 18;
-
-				break;
-			}
-			[[fallthrough]];
-		case 0x01: // index writeback invalidate (D)
-		case 0x02: // index invalidate (SI)
-		case 0x03: // index writeback invalidate (SD)
-
-		case 0x05: // index load tag (D)
-		case 0x06: // index load tag (SI)
-		case 0x07: // index load tag (SI)
-
-		case 0x09: // index store tag (D)
-		case 0x0a: // index store tag (SI)
-		case 0x0b: // index store tag (SD)
-
-		case 0x0d: // create dirty exclusive (D)
-		case 0x0f: // create dirty exclusive (SD)
-
-		case 0x10: // hit invalidate (I)
-		case 0x11: // hit invalidate (D)
-		case 0x12: // hit invalidate (SI)
-		case 0x13: // hit invalidate (SD)
-
-		case 0x14: // fill (I)
-		case 0x15: // hit writeback invalidate (D)
-		case 0x17: // hit writeback invalidate (SD)
-
-		case 0x18: // hit writeback (I)
-		case 0x19: // hit writeback (D)
-		case 0x1b: // hit writeback (SD)
-
-		case 0x1e: // hit set virtual (SI)
-		case 0x1f: // hit set virtual (SD)
-			//LOGMASKED(LOG_CACHE, "cache 0x%08x unimplemented (%s)\n", op, machine().describe_context());
-			break;
-		}
+		cp0_cache(op);
 		break;
 	case 0x30: // LL
 		load_linked<u32>(ADDR(m_r[RSREG], s16(op)),
@@ -1176,7 +1113,7 @@ void r4000_base_device::cpu_exception(u32 exception, u16 const vector)
 			u32 const iphw = CAUSE & SR & CAUSE_IPHW;
 
 			if (iphw)
-				debug()->interrupt_hook(22 - count_leading_zeros_32((iphw - 1) & ~iphw));
+				debug()->interrupt_hook(22 - count_leading_zeros_32((iphw - 1) & ~iphw), m_pc);
 		}
 	}
 	else
@@ -1261,6 +1198,128 @@ void r4000_base_device::cpu_sdr(u32 const op)
 	unsigned const shift = ((offset & 7) ^ R4000_ENDIAN_LE_BE(0, 7)) << 3;
 
 	store<u64, false>(offset, m_r[RTREG] << shift, ~u64(0) << shift);
+}
+
+void r4000_base_device::cp0_cache(u32 const op)
+{
+	if ((SR & SR_KSU) && !(SR & SR_CU0) && !(SR & (SR_EXL | SR_ERL)))
+	{
+		cpu_exception(EXCEPTION_CP0);
+		return;
+	}
+
+	switch ((op >> 16) & 0x1f)
+	{
+	case 0x00: // index invalidate (I)
+		if (ICACHE)
+		{
+			m_icache_tag[(ADDR(m_r[RSREG], s16(op)) & m_icache_mask_hi) >> m_icache_shift] &= ~ICACHE_V;
+			break;
+		}
+		[[fallthrough]];
+	case 0x04: // index load tag (I)
+		if (ICACHE)
+		{
+			u32 const tag = m_icache_tag[(ADDR(m_r[RSREG], s16(op)) & m_icache_mask_hi) >> m_icache_shift];
+
+			m_cp0[CP0_TagLo] = ((tag & ICACHE_PTAG) << 8) | ((tag & ICACHE_V) >> 18) | ((tag & ICACHE_P) >> 25);
+			m_cp0[CP0_ECC] = 0; // data ecc or parity
+
+			break;
+		}
+		[[fallthrough]];
+	case 0x08: // index store tag (I)
+		if (ICACHE)
+		{
+			// FIXME: compute parity
+			m_icache_tag[(ADDR(m_r[RSREG], s16(op)) & m_icache_mask_hi) >> m_icache_shift] =
+				(m_cp0[CP0_TagLo] & TAGLO_PTAGLO) >> 8 | (m_cp0[CP0_TagLo] & TAGLO_PSTATE) << 18;
+			break;
+		}
+		[[fallthrough]];
+	case 0x01: // index writeback invalidate (D)
+	case 0x02: // index invalidate (SI)
+	case 0x03: // index writeback invalidate (SD)
+	case 0x05: // index load tag (D)
+		//LOGMASKED(LOG_CACHE, "cache 0x%08x unimplemented (%s)\n", op, machine().describe_context());
+		break;
+	case 0x06: // index load tag (SI)
+	case 0x07: // index load tag (SD)
+		if (SCACHE)
+		{
+			// TODO: translation type for CACHE instruction? Read seems reasonable since only the tag is changing here
+			u64 physical_address = ADDR(m_r[RSREG], s16(op));
+			translate_result const t = translate(TR_READ, false, physical_address);
+			if (t == ERROR || t == MISS)
+				return;
+
+			u32 const index = (physical_address & m_scache_tag_mask) >> m_scache_line_index;
+			if (index < m_scache_tag_size)
+			{
+				// TODO: Load the ECC register here
+				u32 const tag = m_scache_tag[index];
+				u32 const cs = (tag & SCACHE_CS) >> 22;
+				u32 const stag = tag & SCACHE_STAG;
+				u32 const pidx = (tag & SCACHE_PIDX) >> 19;
+				m_cp0[CP0_TagLo] = (stag << 13) | (cs << 10) | (pidx << 7);
+			}
+			else
+				fatalerror("r4000 scache load tag index out of range!");
+		}
+		else
+			LOGMASKED(LOG_CACHE, "cache 0x%08x called without scache enabled (%s)\n", op, machine().describe_context());
+		break;
+	case 0x09: // index store tag (D)
+		//LOGMASKED(LOG_CACHE, "cache 0x%08x unimplemented (%s)\n", op, machine().describe_context());
+		break;
+	case 0x0a: // index store tag (SI)
+	case 0x0b: // index store tag (SD)
+		if (SCACHE)
+		{
+			// TODO: translation type for CACHE instruction? Read seems reasonable since only the tag is changing here
+			u64 const virtual_address = ADDR(m_r[RSREG], s16(op));
+			u64 physical_address = virtual_address;
+			translate_result const t = translate(TR_READ, false, physical_address);
+			if (t == ERROR || t == MISS)
+				return;
+
+			u64 const index = (physical_address & m_scache_tag_mask) >> m_scache_line_index;
+			if (index < m_scache_tag_size)
+			{
+				// TODO: Calculate ECC bits here
+				u64 const tag_lo = m_cp0[CP0_TagLo];
+				u32 const cs = (tag_lo & TAGLO_CS) >> 10;
+				u32 const stag = (tag_lo & TAGLO_STAG) >> 13;
+				u32 const pidx = (virtual_address & 0x7000) >> 12;
+				m_scache_tag[index] = cs << 22 | pidx << 19 | stag;
+			}
+			else
+				fatalerror("r4000 scache store tag index out of range!");
+		}
+		else
+			LOGMASKED(LOG_CACHE, "cache 0x%08x called without scache enabled (%s)\n", op, machine().describe_context());
+		break;
+	case 0x0d: // create dirty exclusive (D)
+	case 0x0f: // create dirty exclusive (SD)
+
+	case 0x10: // hit invalidate (I)
+	case 0x11: // hit invalidate (D)
+	case 0x12: // hit invalidate (SI)
+	case 0x13: // hit invalidate (SD)
+
+	case 0x14: // fill (I)
+	case 0x15: // hit writeback invalidate (D)
+	case 0x17: // hit writeback invalidate (SD)
+
+	case 0x18: // hit writeback (I)
+	case 0x19: // hit writeback (D)
+	case 0x1b: // hit writeback (SD)
+
+	case 0x1e: // hit set virtual (SI)
+	case 0x1f: // hit set virtual (SD)
+		//LOGMASKED(LOG_CACHE, "cache 0x%08x unimplemented (%s)\n", op, machine().describe_context());
+		break;
+	}
 }
 
 void r4000_base_device::cp0_execute(u32 const op)
@@ -3429,7 +3488,7 @@ void r4000_base_device::cp2_execute(u32 const op)
 	}
 }
 
-r4000_base_device::translate_result r4000_base_device::translate(int intention, u64 &address)
+r4000_base_device::translate_result r4000_base_device::translate(int intention, bool debug, u64 &address)
 {
 	/*
 	 * Decode the program address into one of the following ranges depending on
@@ -3583,7 +3642,7 @@ r4000_base_device::translate_result r4000_base_device::translate(int intention, 
 	// address needs translation, using a combination of VPN2 and ASID
 	u64 const key = (address & (extended ? (EH_R | EH_VPN2_64) : EH_VPN2_32)) | (m_cp0[CP0_EntryHi] & EH_ASID);
 
-	unsigned *mru = m_tlb_mru[intention & TRANSLATE_TYPE_MASK];
+	unsigned *mru = m_tlb_mru[intention];
 	if (VERBOSE & LOG_STATS)
 		m_tlb_scans++;
 
@@ -3614,7 +3673,7 @@ r4000_base_device::translate_result r4000_base_device::translate(int intention, 
 		}
 
 		// test dirty
-		if ((intention & TRANSLATE_WRITE) && !(pfn & EL_D))
+		if ((intention == TR_WRITE) && !(pfn & EL_D))
 		{
 			modify = true;
 			break;
@@ -3632,7 +3691,7 @@ r4000_base_device::translate_result r4000_base_device::translate(int intention, 
 	}
 
 	// tlb miss, invalid entry, or a store to a non-dirty entry
-	if (!machine().side_effects_disabled() && !(intention & TRANSLATE_DEBUG_MASK))
+	if (!machine().side_effects_disabled() && !debug)
 	{
 		if (VERBOSE & LOG_TLB)
 		{
@@ -3643,7 +3702,7 @@ r4000_base_device::translate_result r4000_base_device::translate(int intention, 
 					m_cp0[CP0_EntryHi] & EH_ASID, address, machine().describe_context());
 			else
 				LOGMASKED(LOG_TLB, "tlb miss %c asid 0x%02x address 0x%016x (%s)\n",
-					mode[intention & TRANSLATE_TYPE_MASK], m_cp0[CP0_EntryHi] & EH_ASID, address, machine().describe_context());
+					mode[intention], m_cp0[CP0_EntryHi] & EH_ASID, address, machine().describe_context());
 		}
 
 		// load tlb exception registers
@@ -3653,9 +3712,9 @@ r4000_base_device::translate_result r4000_base_device::translate(int intention, 
 		m_cp0[CP0_XContext] = (m_cp0[CP0_XContext] & XCONTEXT_PTEBASE) | ((address >> 31) & XCONTEXT_R) | ((address >> 9) & XCONTEXT_BADVPN2);
 
 		if (invalid || modify || (SR & SR_EXL))
-			cpu_exception(modify ? EXCEPTION_MOD : (intention & TRANSLATE_WRITE) ? EXCEPTION_TLBS : EXCEPTION_TLBL);
+			cpu_exception(modify ? EXCEPTION_MOD : (intention == TR_WRITE) ? EXCEPTION_TLBS : EXCEPTION_TLBL);
 		else
-			cpu_exception((intention & TRANSLATE_WRITE) ? EXCEPTION_TLBS : EXCEPTION_TLBL, extended ? 0x080 : 0x000);
+			cpu_exception((intention == TR_WRITE) ? EXCEPTION_TLBS : EXCEPTION_TLBL, extended ? 0x080 : 0x000);
 	}
 
 	return MISS;
@@ -3663,7 +3722,7 @@ r4000_base_device::translate_result r4000_base_device::translate(int intention, 
 
 void r4000_base_device::address_error(int intention, u64 const address)
 {
-	if (!machine().side_effects_disabled() && !(intention & TRANSLATE_DEBUG_MASK))
+	if (!machine().side_effects_disabled())
 	{
 		logerror("address_error 0x%016x (%s)\n", address, machine().describe_context());
 
@@ -3671,7 +3730,7 @@ void r4000_base_device::address_error(int intention, u64 const address)
 		if (!(SR & SR_EXL))
 			m_cp0[CP0_BadVAddr] = address;
 
-		cpu_exception((intention & TRANSLATE_WRITE) ? EXCEPTION_ADES : EXCEPTION_ADEL);
+		cpu_exception((intention == TR_WRITE) ? EXCEPTION_ADES : EXCEPTION_ADEL);
 
 		// address errors shouldn't typically occur, so a breakpoint is handy
 		machine().debug_break();
@@ -3680,7 +3739,7 @@ void r4000_base_device::address_error(int intention, u64 const address)
 
 template <typename T> void r4000_base_device::accessors(T &m)
 {
-	space(AS_PROGRAM).cache(m);
+	space(AS_PROGRAM).specific(m);
 
 	read_byte = [&m](offs_t offset) { return m.read_byte(offset); };
 	read_word = [&m](offs_t offset) { return m.read_word(offset); };
@@ -3698,16 +3757,16 @@ template <typename T, bool Aligned, typename U> std::enable_if_t<std::is_convert
 	// alignment error
 	if (Aligned && (address & (sizeof(T) - 1)))
 	{
-		address_error(TRANSLATE_READ, address);
+		address_error(TR_READ, address);
 		return false;
 	}
 
-	translate_result const t = translate(TRANSLATE_READ, address);
+	translate_result const t = translate(TR_READ, false, address);
 
 	// address error
 	if (t == ERROR)
 	{
-		address_error(TRANSLATE_READ, address);
+		address_error(TR_READ, address);
 
 		return false;
 	}
@@ -3761,16 +3820,16 @@ template <typename T, typename U> std::enable_if_t<std::is_convertible<U, std::f
 	// alignment error
 	if (address & (sizeof(T) - 1))
 	{
-		address_error(TRANSLATE_READ, address);
+		address_error(TR_READ, address);
 		return false;
 	}
 
-	translate_result const t = translate(TRANSLATE_READ, address);
+	translate_result const t = translate(TR_READ, false, address);
 
 	// address error
 	if (t == ERROR)
 	{
-		address_error(TRANSLATE_READ, address);
+		address_error(TR_READ, address);
 		return false;
 	}
 
@@ -3806,16 +3865,16 @@ template <typename T, bool Aligned, typename U> std::enable_if_t<std::is_convert
 	// alignment error
 	if (Aligned && (address & (sizeof(T) - 1)))
 	{
-		address_error(TRANSLATE_WRITE, address);
+		address_error(TR_WRITE, address);
 		return false;
 	}
 
-	translate_result const t = translate(TRANSLATE_WRITE, address);
+	translate_result const t = translate(TR_WRITE, false, address);
 
 	// address error
 	if (t == ERROR)
 	{
-		address_error(TRANSLATE_WRITE, address);
+		address_error(TR_WRITE, address);
 		return false;
 	}
 
@@ -3859,17 +3918,17 @@ bool r4000_base_device::fetch(u64 address, std::function<void(u32)> &&apply)
 	// alignment error
 	if (address & 3)
 	{
-		address_error(TRANSLATE_FETCH, address);
+		address_error(TR_FETCH, address);
 
 		return false;
 	}
 
-	translate_result const t = translate(TRANSLATE_FETCH, address);
+	translate_result const t = translate(TR_FETCH, false, address);
 
 	// address error
 	if (t == ERROR)
 	{
-		address_error(TRANSLATE_FETCH, address);
+		address_error(TR_FETCH, address);
 
 		return false;
 	}
@@ -4020,4 +4079,47 @@ std::string r4000_base_device::debug_unicode_string(u64 unicode_string_pointer)
 		result.assign(L"[unmapped]");
 
 	return utf8_from_wstring(result);
+}
+
+void r4000_base_device::configure_scache()
+{
+	if (m_scache_size > 0)
+	{
+		/*
+		* Secondary cache tag size depends on the cache line size
+		* (how many bytes are transferred with one cache operation) and the
+		* size of the cache itself.
+		* For example, the Sony NEWS NWS-5000X has a 1MB secondary cache
+		* and a cache line size of 16 words. So, the slice of the physical
+		* address used to index into the cache is bits 19:6.
+		* See chapter 11 of the R4000 user manual for more details.
+		*/
+		if (m_scache_line_size == 0)
+			fatalerror("SCACHE size set but line size was not set!");
+
+		if (m_scache_line_size <= 0x10)
+			m_scache_line_index = 4;
+		else if (m_scache_line_size <= 0x20)
+		{
+			m_scache_line_index = 5;
+			m_cp0[CP0_Config] |= 1 << 22;
+		}
+		else if (m_scache_line_size <= 0x40)
+		{
+			m_scache_line_index = 6;
+			m_cp0[CP0_Config] |= 2 << 22;
+		}
+		else
+		{
+			m_scache_line_index = 7;
+			m_cp0[CP0_Config] |= 3 << 22;
+		}
+
+		m_scache_tag_size = m_scache_size >> m_scache_line_index;
+		m_scache_tag_mask = m_scache_size - 1;
+
+		m_scache_tag = std::make_unique<u32[]>(m_scache_tag_size);
+	}
+	else
+		m_cp0[CP0_Config] |= CONFIG_SC;
 }

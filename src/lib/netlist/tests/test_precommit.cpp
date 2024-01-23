@@ -2,15 +2,15 @@
 // copyright-holders:Couriersud
 
 ///
-/// \file test_pmfp.cpp
+/// \file test_precommit.cpp
 ///
-/// tests for `plib::pmfp`
+/// tests to check for experimental code before commit
 ///
+
+#include "nl_config.h"
 
 #include "plib/pconfig.h"
 #include "plib/ppmf.h"
-#include "netlist/nl_config.h"
-
 #include "plib/ptests.h"
 
 PTEST(test_precommit, precommit)

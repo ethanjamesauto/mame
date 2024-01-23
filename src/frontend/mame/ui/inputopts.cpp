@@ -87,12 +87,12 @@ void menu_input_options::menu_activated()
 }
 
 
-void menu_input_options::populate(float &customtop, float &custombottom)
+void menu_input_options::populate()
 {
 	bool inputmap, analog, toggle;
 	scan_inputs(machine(), inputmap, analog, toggle);
 
-	item_append(_("menu-inputopts", "Input Assignments (general)"), 0, (void *)INPUTMAP_GENERAL);
+	// system-specific stuff
 	if (inputmap)
 		item_append(_("menu-inputopts", "Input Assignments (this system)"), 0, (void *)INPUTMAP_MACHINE);
 	if (analog)
@@ -101,16 +101,17 @@ void menu_input_options::populate(float &customtop, float &custombottom)
 		item_append(_("menu-inputopts", "Keyboard Selection"), 0, (void *)KEYBOARD);
 	if (toggle)
 		item_append(_("menu-inputopts", "Toggle Inputs"), 0, (void *)TOGGLES);
+	if (inputmap || analog || machine().natkeyboard().keyboard_count() || toggle)
+		item_append(menu_item_type::SEPARATOR);
 
-	item_append(menu_item_type::SEPARATOR);
-
+	// general stuff
+	item_append(_("menu-inputopts", "Input Assignments (general)"), 0, (void *)INPUTMAP_GENERAL);
 	item_append(_("menu-inputopts", "Input Devices"), 0, (void *)INPUTDEV);
-
 	item_append(menu_item_type::SEPARATOR);
 }
 
 
-void menu_input_options::handle(event const *ev)
+bool menu_input_options::handle(event const *ev)
 {
 	if (ev && (IPT_UI_SELECT == ev->iptkey))
 	{
@@ -136,6 +137,8 @@ void menu_input_options::handle(event const *ev)
 			break;
 		}
 	}
+
+	return false;
 }
 
 } // namespace ui

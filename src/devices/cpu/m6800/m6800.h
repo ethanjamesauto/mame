@@ -75,22 +75,21 @@ protected:
 	PAIR    m_s;              /* Stack pointer */
 	PAIR    m_x;              /* Index register */
 	PAIR    m_d;              /* Accumulators */
-	uint8_t   m_cc;             /* Condition codes */
-	uint8_t   m_wai_state;      /* WAI opcode state ,(or sleep opcode state) */
-	uint8_t   m_nmi_state;      /* NMI line state */
-	uint8_t   m_nmi_pending;    /* NMI pending */
-	uint8_t   m_irq_state[4];   /* IRQ line state [IRQ1,TIN,SC1,IS] */
+	PAIR    m_ea;             /* effective address (temporary variable) */
+	uint8_t m_cc;             /* Condition codes */
+	uint8_t m_wai_state;      /* WAI opcode state (or sleep opcode state) */
+	uint8_t m_nmi_state;      /* NMI line state */
+	uint8_t m_nmi_pending;    /* NMI pending */
+	uint8_t m_irq_state[3];   /* IRQ line state [IRQ1,TIN,IS3] */
 
 	/* Memory spaces */
 	memory_access<16, 0, 0, ENDIANNESS_BIG>::cache m_cprogram, m_copcodes;
 	memory_access<16, 0, 0, ENDIANNESS_BIG>::specific m_program;
 
 	const op_func *m_insn;
-	const uint8_t *m_cycles;            /* clock cycle of instruction table */
+	const uint8_t *m_cycles;  /* clock cycle of instruction table */
 
-	int     m_icount;
-
-	PAIR m_ea;        /* effective address */
+	int m_icount;
 
 	static const uint8_t flags8i[256];
 	static const uint8_t flags8d[256];
@@ -101,8 +100,8 @@ protected:
 
 	uint32_t RM16(uint32_t Addr );
 	void WM16(uint32_t Addr, PAIR *p );
-	void enter_interrupt(const char *message,uint16_t irq_vector);
-	virtual void m6800_check_irq2() { }
+	void enter_interrupt(uint16_t irq_vector);
+	virtual void check_irq2() { }
 	void check_irq_lines();
 	virtual void increment_counter(int amount);
 	virtual void eat_cycles();
